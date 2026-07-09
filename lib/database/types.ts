@@ -59,5 +59,27 @@ export type RecommendationStatus =
   | "converted_to_job"
   | "deferred";
 
+export type PhotoCategory =
+  | "front"
+  | "rear"
+  | "left_side"
+  | "right_side"
+  | "odometer"
+  | "vin"
+  | "damage"
+  | "accessories"
+  | "fuel_level"
+  | "other";
+
+export type TechnicianNoteType =
+  | "general"
+  | "diagnostic_finding"
+  | "customer_concern_confirmed"
+  | "customer_concern_not_found"
+  | "parts_issue"
+  | "road_test"
+  | "quality_check"
+  | "internal_warning";
+
 /** Supabase client used by service helpers. Schema is untyped until generated types land. */
 export type DbClient = SupabaseClient;

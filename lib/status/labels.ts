@@ -5,6 +5,8 @@ import type {
   RecommendationSeverity,
   RecommendationStatus,
   PartStatus,
+  PhotoCategory,
+  TechnicianNoteType,
 } from "@/lib/database/types";
 
 export const WORK_ORDER_STATUS_LABELS: Record<WorkOrderStatus, string> = {
@@ -65,4 +67,38 @@ export const PART_STATUS_LABELS: Record<PartStatus, string> = {
   installed: "Installed",
   not_required: "Not Required",
   cancelled: "Cancelled",
+};
+
+export const PHOTO_CATEGORY_LABELS: Record<PhotoCategory, string> = {
+  front: "Front",
+  rear: "Rear",
+  left_side: "Left Side",
+  right_side: "Right Side",
+  odometer: "Odometer",
+  vin: "VIN",
+  damage: "Damage",
+  accessories: "Accessories",
+  fuel_level: "Fuel Level",
+  other: "Other",
+};
+
+/** Categories encouraged at intake (shown as missing until covered). */
+export const REQUIRED_PHOTO_CATEGORIES: PhotoCategory[] = [
+  "front",
+  "rear",
+  "left_side",
+  "right_side",
+  "odometer",
+  "vin",
+];
+
+export const TECHNICIAN_NOTE_TYPE_LABELS: Record<TechnicianNoteType, string> = {
+  general: "General",
+  diagnostic_finding: "Diagnostic Finding",
+  customer_concern_confirmed: "Customer Concern Confirmed",
+  customer_concern_not_found: "Customer Concern Not Found",
+  parts_issue: "Parts Issue",
+  road_test: "Road Test",
+  quality_check: "Quality Check",
+  internal_warning: "Internal Warning",
 };

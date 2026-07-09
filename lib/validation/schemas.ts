@@ -99,3 +99,38 @@ export const partStatusSchema = z.enum([
   "not_required",
   "cancelled",
 ]);
+
+export const photoCategorySchema = z.enum([
+  "front",
+  "rear",
+  "left_side",
+  "right_side",
+  "odometer",
+  "vin",
+  "damage",
+  "accessories",
+  "fuel_level",
+  "other",
+]);
+
+export const intakePhotoSchema = z.object({
+  category: photoCategorySchema,
+  notes: z.string().nullable().optional(),
+});
+
+export const technicianNoteTypeSchema = z.enum([
+  "general",
+  "diagnostic_finding",
+  "customer_concern_confirmed",
+  "customer_concern_not_found",
+  "parts_issue",
+  "road_test",
+  "quality_check",
+  "internal_warning",
+]);
+
+export const technicianNoteSchema = z.object({
+  note: z.string().min(1, "Note is required"),
+  note_type: technicianNoteTypeSchema.default("general"),
+  job_id: z.string().uuid().nullable().optional(),
+});

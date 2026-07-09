@@ -21,6 +21,7 @@ import { listServices } from "@/lib/services/serviceCatalogue";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import { listRecommendationsForWorkOrder } from "@/lib/services/recommendations";
 import { listPartsForWorkOrder } from "@/lib/services/parts";
+import { listIntakePhotos } from "@/lib/services/photos";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import {
   ComingSoonPanel,
@@ -33,6 +34,7 @@ import { JobsTab } from "@/components/jobs/JobsTab";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 import { RecommendationsTab } from "@/components/recommendations/RecommendationsTab";
 import { PartsTab } from "@/components/parts/PartsTab";
+import { PhotosTab } from "@/components/photos/PhotosTab";
 import {
   assignTechnicianAction,
   setPrimaryTechnicianAction,
@@ -54,6 +56,7 @@ import {
   addPartAction,
   updatePartStatusAction,
 } from "@/app/(app)/work_orders/part-actions";
+import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +81,7 @@ export default async function WorkOrderDetailPage({
   const detail = await getWorkOrderDetail(work_order_id);
   if (!detail) notFound();
 
-  const [technicians, services, inspection, recommendations, parts] =
+  const [technicians, services, inspection, recommendations, parts, photos] =
     await Promise.all([
       detail.is_foreign_location
         ? Promise.resolve([])
@@ -89,6 +92,7 @@ export default async function WorkOrderDetailPage({
       getInspectionForWorkOrder(work_order_id),
       listRecommendationsForWorkOrder(work_order_id),
       listPartsForWorkOrder(work_order_id),
+      listIntakePhotos(work_order_id),
     ]);
 
   const canAssign = canAssignTechnician(user.role);
@@ -102,6 +106,10 @@ export default async function WorkOrderDetailPage({
   const canManageParts = canOrderPart(user.role) || canEditWorkOrder(user.role);
   const canAdd =
     canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
+  const canUploadPhotos =
+    canEditWorkOrder(user.role) ||
+    canCreateWorkOrder(user.role) ||
+    user.role === "technician";
 
   const fromResult = fromResultId
     ? inspection?.results.find((r) => r.inspection_result_id === fromResultId)
@@ -252,7 +260,17 @@ export default async function WorkOrderDetailPage({
           }
         />
       ) : null}
-      {activeTab === "photos" ? <ComingSoonPanel title="Photos" /> : null}
+      {activeTab === "photos" ? (
+        <PhotosTab
+          photos={photos}
+          readOnly={detail.is_foreign_location}
+          canUpload={canUploadPhotos}
+          uploadAction={uploadIntakePhotoAction.bind(
+            null,
+            detail.work_order_id
+          )}
+        />
+      ) : null}
       {activeTab === "notes" ? <ComingSoonPanel title="Notes" /> : null}
       {activeTab === "timeline" ? <ComingSoonPanel title="Timeline" /> : null}
       {activeTab === "service-info" ? (

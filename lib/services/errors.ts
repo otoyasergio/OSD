@@ -36,6 +36,12 @@ const MESSAGES: Record<string, string> = {
     "Parts cannot be ordered before customer approval.",
   PART_INSTALL_REQUIRES_TECHNICIAN:
     "Assign a technician to the job before marking parts installed.",
+  PHOTO_REQUIRED: "Choose a photo to upload.",
+  PHOTO_TOO_LARGE: "Photos must be 10 MB or smaller.",
+  PHOTO_TYPE_INVALID: "Use a JPEG, PNG, WebP, or HEIC image.",
+  PHOTO_UPLOAD_FAILED: "Could not upload the photo. Try again.",
+  PHOTO_NOT_FOUND: "That photo no longer exists.",
+  NOTE_REQUIRED: "Enter a note before saving.",
 };
 
 export function toFormErrorMessage(error: unknown): string {
