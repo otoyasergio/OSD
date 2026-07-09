@@ -23,6 +23,7 @@ import { listRecommendationsForWorkOrder } from "@/lib/services/recommendations"
 import { listPartsForWorkOrder } from "@/lib/services/parts";
 import { listIntakePhotos } from "@/lib/services/photos";
 import { listTechnicianNotes } from "@/lib/services/notes";
+import { listTimelineEvents } from "@/lib/services/timeline";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import {
   ComingSoonPanel,
@@ -37,6 +38,7 @@ import { RecommendationsTab } from "@/components/recommendations/Recommendations
 import { PartsTab } from "@/components/parts/PartsTab";
 import { PhotosTab } from "@/components/photos/PhotosTab";
 import { TechnicianNotes } from "@/components/work_orders/TechnicianNotes";
+import { TimelineList } from "@/components/timeline/TimelineList";
 import {
   assignTechnicianAction,
   setPrimaryTechnicianAction,
@@ -92,6 +94,7 @@ export default async function WorkOrderDetailPage({
     parts,
     photos,
     notes,
+    timeline,
   ] = await Promise.all([
     detail.is_foreign_location
       ? Promise.resolve([])
@@ -104,6 +107,7 @@ export default async function WorkOrderDetailPage({
     listPartsForWorkOrder(work_order_id),
     listIntakePhotos(work_order_id),
     listTechnicianNotes(work_order_id),
+    listTimelineEvents(work_order_id),
   ]);
 
   const canAssign = canAssignTechnician(user.role);
@@ -292,7 +296,7 @@ export default async function WorkOrderDetailPage({
           addAction={addTechnicianNoteAction.bind(null, detail.work_order_id)}
         />
       ) : null}
-      {activeTab === "timeline" ? <ComingSoonPanel title="Timeline" /> : null}
+      {activeTab === "timeline" ? <TimelineList events={timeline} /> : null}
       {activeTab === "service-info" ? (
         <ComingSoonPanel title="Service Info" />
       ) : null}
