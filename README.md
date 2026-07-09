@@ -32,9 +32,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
-### 3. Apply migrations (001 → 007 in order)
+### 3. Apply migrations (001 → 013 in order)
 
-Migrations live in `supabase/migrations/`. Apply them **in numeric order**:
+Migrations live in `supabase/migrations/`. Apply them **in numeric order** (skip reserved 010/011 unless those optional features ship):
 
 | Order | File |
 |------:|------|
@@ -45,6 +45,10 @@ Migrations live in `supabase/migrations/`. Apply them **in numeric order**:
 | 5 | `005_seed_inspection_template.sql` |
 | 6 | `006_rls_policies.sql` (also creates the private `intake-photos` storage bucket) |
 | 7 | `007_mint_work_order_number.sql` |
+| 8 | `008_job_time_and_service_categories.sql` |
+| 9 | `009_user_preferences.sql` |
+| 10 | `012_rls_hardening.sql` |
+| 11 | `013_performance_indexes.sql` |
 
 **Option A — Supabase CLI** (after `npx supabase link`):
 
@@ -54,7 +58,7 @@ npx supabase db push
 
 **Option B — SQL editor:** paste and run each file in the Supabase SQL Editor, one after another.
 
-**Authorization note:** Role checks in `lib/permissions` (server actions) are the source of truth. RLS policies are defense in depth.
+**Authorization note:** Role checks in `lib/permissions` (server actions) are the source of truth. RLS policies are defense in depth. Full matrix: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md).
 
 ### 4. Create an Auth user and bootstrap data
 
