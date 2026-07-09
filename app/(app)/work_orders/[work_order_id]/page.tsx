@@ -3,9 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import {
   canAssignTechnician,
+  canCompleteInspection,
   canCompleteJob,
+  canCreateRecommendation,
   canCreateWorkOrder,
   canEditWorkOrder,
+  canOverrideWorkOrderStatus,
   canRecordCustomerApproval,
 } from "@/lib/permissions";
 import {
@@ -13,6 +16,7 @@ import {
   listTechniciansForActiveLocation,
 } from "@/lib/services/workOrders";
 import { listServices } from "@/lib/services/serviceCatalogue";
+import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import {
   ComingSoonPanel,
@@ -22,6 +26,7 @@ import {
 } from "@/components/work_orders/WorkOrderTabs";
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
 import { JobsTab } from "@/components/jobs/JobsTab";
+import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 import {
   assignTechnicianAction,
   setPrimaryTechnicianAction,
@@ -58,17 +63,21 @@ export default async function WorkOrderDetailPage({
   const detail = await getWorkOrderDetail(work_order_id);
   if (!detail) notFound();
 
-  const [technicians, services] = detail.is_foreign_location
-    ? [[], []]
+  const [technicians, services, inspection] = detail.is_foreign_location
+    ? [[], [], await getInspectionForWorkOrder(work_order_id)]
     : await Promise.all([
         listTechniciansForActiveLocation(),
         listServices({ includeInactive: false }),
+        getInspectionForWorkOrder(work_order_id),
       ]);
 
   const canAssign = canAssignTechnician(user.role);
   const canEdit = canEditWorkOrder(user.role);
   const canApprove = canRecordCustomerApproval(user.role);
   const canComplete = canCompleteJob(user.role);
+  const canInspect = canCompleteInspection(user.role);
+  const canForceInspect = canOverrideWorkOrderStatus(user.role);
+  const canRecommend = canCreateRecommendation(user.role);
   const canAdd =
     canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
 
@@ -139,7 +148,29 @@ export default async function WorkOrderDetailPage({
       ) : null}
 
       {activeTab === "inspection" ? (
-        <ComingSoonPanel title="Inspection" />
+        inspection ? (
+          <div className="flex flex-col gap-3">
+            <Link
+              href={`/work_orders/${detail.work_order_id}/inspection`}
+              className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+            >
+              Open full inspection screen →
+            </Link>
+            <InspectionChecklist
+              inspection={inspection}
+              canEdit={canInspect}
+              canForceComplete={canForceInspect}
+              recommendHref={
+                canRecommend
+                  ? (result) =>
+                      `/work_orders/${detail.work_order_id}?tab=recommendations&from_result=${result.inspection_result_id}`
+                  : undefined
+              }
+            />
+          </div>
+        ) : (
+          <ComingSoonPanel title="Inspection" />
+        )
       ) : null}
       {activeTab === "recommendations" ? (
         <ComingSoonPanel title="Recommendations" />
