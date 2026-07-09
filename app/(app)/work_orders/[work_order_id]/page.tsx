@@ -5,6 +5,7 @@ import {
   canAssignTechnician,
   canCompleteInspection,
   canCompleteJob,
+  canConvertRecommendation,
   canCreateRecommendation,
   canCreateWorkOrder,
   canEditWorkOrder,
@@ -17,6 +18,7 @@ import {
 } from "@/lib/services/workOrders";
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
+import { listRecommendationsForWorkOrder } from "@/lib/services/recommendations";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import {
   ComingSoonPanel,
@@ -27,6 +29,7 @@ import {
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
 import { JobsTab } from "@/components/jobs/JobsTab";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
+import { RecommendationsTab } from "@/components/recommendations/RecommendationsTab";
 import {
   assignTechnicianAction,
   setPrimaryTechnicianAction,
@@ -39,6 +42,11 @@ import {
   declineJobAction,
   updateJobStatusAction,
 } from "@/app/(app)/work_orders/job-actions";
+import {
+  convertRecommendationAction,
+  createRecommendationAction,
+  updateRecommendationStatusAction,
+} from "@/app/(app)/work_orders/recommendation-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -51,25 +59,29 @@ export default async function WorkOrderDetailPage({
   searchParams,
 }: {
   params: Promise<{ work_order_id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; from_result?: string }>;
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
   const { work_order_id } = await params;
-  const { tab: tabParam } = await searchParams;
+  const { tab: tabParam, from_result: fromResultId } = await searchParams;
   const activeTab: WorkOrderTabId = isTabId(tabParam) ? tabParam : "overview";
 
   const detail = await getWorkOrderDetail(work_order_id);
   if (!detail) notFound();
 
-  const [technicians, services, inspection] = detail.is_foreign_location
-    ? [[], [], await getInspectionForWorkOrder(work_order_id)]
-    : await Promise.all([
-        listTechniciansForActiveLocation(),
-        listServices({ includeInactive: false }),
-        getInspectionForWorkOrder(work_order_id),
-      ]);
+  const [technicians, services, inspection, recommendations] =
+    await Promise.all([
+      detail.is_foreign_location
+        ? Promise.resolve([])
+        : listTechniciansForActiveLocation(),
+      detail.is_foreign_location
+        ? Promise.resolve([])
+        : listServices({ includeInactive: false }),
+      getInspectionForWorkOrder(work_order_id),
+      listRecommendationsForWorkOrder(work_order_id),
+    ]);
 
   const canAssign = canAssignTechnician(user.role);
   const canEdit = canEditWorkOrder(user.role);
@@ -78,8 +90,22 @@ export default async function WorkOrderDetailPage({
   const canInspect = canCompleteInspection(user.role);
   const canForceInspect = canOverrideWorkOrderStatus(user.role);
   const canRecommend = canCreateRecommendation(user.role);
+  const canConvert = canConvertRecommendation(user.role);
   const canAdd =
     canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
+
+  const fromResult = fromResultId
+    ? inspection?.results.find((r) => r.inspection_result_id === fromResultId)
+    : null;
+  const fromResultDefaults = fromResult
+    ? {
+        description: `${fromResult.item_name_snapshot} (${fromResult.category_snapshot})`,
+        severity:
+          fromResult.status === "immediate_attention"
+            ? "immediate_attention"
+            : "future_attention",
+      }
+    : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -172,9 +198,38 @@ export default async function WorkOrderDetailPage({
           <ComingSoonPanel title="Inspection" />
         )
       ) : null}
+
       {activeTab === "recommendations" ? (
-        <ComingSoonPanel title="Recommendations" />
+        <RecommendationsTab
+          recommendations={recommendations}
+          services={services}
+          readOnly={detail.is_foreign_location}
+          canCreate={canRecommend}
+          canUpdateStatus={canApprove || canRecommend}
+          canConvert={canConvert}
+          createAction={createRecommendationAction.bind(
+            null,
+            detail.work_order_id
+          )}
+          statusActionFor={(recommendationId) =>
+            updateRecommendationStatusAction.bind(
+              null,
+              detail.work_order_id,
+              recommendationId
+            )
+          }
+          convertActionFor={(recommendationId) =>
+            convertRecommendationAction.bind(
+              null,
+              detail.work_order_id,
+              recommendationId
+            )
+          }
+          fromResultId={fromResultId ?? null}
+          fromResultDefaults={fromResultDefaults}
+        />
       ) : null}
+
       {activeTab === "parts" ? <ComingSoonPanel title="Parts" /> : null}
       {activeTab === "photos" ? <ComingSoonPanel title="Photos" /> : null}
       {activeTab === "notes" ? <ComingSoonPanel title="Notes" /> : null}

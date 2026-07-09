@@ -3,6 +3,8 @@ import type {
   JobStatus,
   InspectionResultStatus,
   RecommendationSeverity,
+  RecommendationStatus,
+  PartStatus,
 } from "@/lib/database/types";
 
 export const WORK_ORDER_STATUS_LABELS: Record<WorkOrderStatus, string> = {
@@ -45,4 +47,22 @@ export const RECOMMENDATION_SEVERITY_LABELS: Record<
   future_attention: "Future Attention",
   immediate_attention: "Immediate Attention",
   safety_critical: "Safety Critical",
+};
+
+export const RECOMMENDATION_STATUS_LABELS: Record<RecommendationStatus, string> =
+  {
+    pending: "Pending",
+    approved: "Approved",
+    declined: "Declined",
+    converted_to_job: "Converted To Job",
+    deferred: "Deferred",
+  };
+
+export const PART_STATUS_LABELS: Record<PartStatus, string> = {
+  needed: "Needed",
+  in_stock: "In Stock",
+  ordered: "Ordered",
+  installed: "Installed",
+  not_required: "Not Required",
+  cancelled: "Cancelled",
 };
