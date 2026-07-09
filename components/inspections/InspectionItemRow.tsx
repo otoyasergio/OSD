@@ -117,7 +117,7 @@ export function InspectionItemRow({
     status === "future_attention" || status === "immediate_attention";
 
   return (
-    <article className="rounded border border-zinc-200 bg-white p-4">
+    <article className="inspection-item-row rounded border border-zinc-200 bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-zinc-900">
@@ -131,7 +131,7 @@ export function InspectionItemRow({
           </p>
         </div>
         <span
-          className={`text-xs font-medium ${
+          className={`inspection-save-state text-xs font-medium ${
             saveState === "error"
               ? "text-red-700"
               : saveState === "saving"
@@ -162,7 +162,7 @@ export function InspectionItemRow({
               type="button"
               disabled={readOnly}
               onClick={() => saveStatus(option)}
-              className={`min-h-11 rounded border px-3 py-2 text-sm font-semibold disabled:opacity-50 ${
+              className={`inspection-status-btn min-h-12 min-w-12 rounded border px-3 py-2 text-sm font-semibold disabled:opacity-50 ${
                 selected
                   ? STATUS_BUTTON[key]
                   : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
@@ -181,7 +181,7 @@ export function InspectionItemRow({
               Measurement
             </span>
             <input
-              className="min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 disabled:bg-zinc-50"
+              className="min-h-12 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 disabled:bg-zinc-50"
               value={measurement}
               disabled={readOnly}
               onChange={(e) => {
@@ -221,7 +221,7 @@ export function InspectionItemRow({
           <button
             type="button"
             onClick={() => onRecommend(result)}
-            className="min-h-11 rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
+            className="btn btn-secondary min-h-12"
           >
             Create recommendation
           </button>

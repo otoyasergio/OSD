@@ -15,6 +15,8 @@ export type TechnicianAssignedJob = {
   motorcycle_label: string;
   customer_label: string;
   href: string;
+  inspection_complete: boolean;
+  inspection_href: string;
 };
 
 export type TechnicianAssignedWorkOrder = {
@@ -137,6 +139,7 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
     const customerRaw = motorcycle?.customer;
     const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw;
 
+    const inspectionComplete = Boolean(woRaw.inspection?.[0]?.completed_at);
     jobWoIds.add(woRaw.work_order_id);
     myJobs.push({
       job_id: row.job_id,
@@ -155,6 +158,8 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
         ? `${customer.first_name} ${customer.last_name}`
         : "—",
       href: `/work_orders/${woRaw.work_order_id}?tab=jobs`,
+      inspection_complete: inspectionComplete,
+      inspection_href: `/work_orders/${woRaw.work_order_id}/inspection`,
     });
   }
 

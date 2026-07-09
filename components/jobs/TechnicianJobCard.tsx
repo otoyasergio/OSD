@@ -50,6 +50,8 @@ export function TechnicianJobCard({
   motorcycleLabel,
   workOrderStatusLabel,
   workOrderHref,
+  inspectionHref,
+  inspectionComplete,
   canStart,
   canComplete,
   startAction,
@@ -63,12 +65,19 @@ export function TechnicianJobCard({
   motorcycleLabel: string;
   workOrderStatusLabel: string;
   workOrderHref: string;
+  inspectionHref?: string;
+  inspectionComplete?: boolean;
   canStart: boolean;
   canComplete: boolean;
   startAction?: StatusAction;
   completeAction?: StatusAction;
 }) {
   const showPrimaryCta = canStart || canComplete;
+  const preferInspection =
+    Boolean(inspectionHref) && inspectionComplete === false;
+  const openHref =
+    preferInspection && inspectionHref ? inspectionHref : workOrderHref;
+  const openLabel = preferInspection ? "Inspection" : "Open WO";
 
   return (
     <article className="tech-job-card">
@@ -101,9 +110,22 @@ export function TechnicianJobCard({
             variant="primary"
           />
         ) : null}
-        <Link href={workOrderHref} className="btn btn-secondary flex-1 sm:flex-none">
-          Open WO
+        <Link
+          href={openHref}
+          className={`btn flex-1 sm:flex-none ${
+            canComplete ? "btn-secondary" : "btn-primary"
+          }`}
+        >
+          {openLabel}
         </Link>
+        {preferInspection ? (
+          <Link
+            href={workOrderHref}
+            className="btn btn-secondary flex-1 sm:flex-none"
+          >
+            Jobs
+          </Link>
+        ) : null}
       </div>
 
       {!showPrimaryCta ? (

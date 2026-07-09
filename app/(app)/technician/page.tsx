@@ -62,6 +62,8 @@ export default async function TechnicianPage() {
                     motorcycleLabel={job.motorcycle_label}
                     workOrderStatusLabel={job.work_order_status_label}
                     workOrderHref={job.href}
+                    inspectionHref={job.inspection_href}
+                    inspectionComplete={job.inspection_complete}
                     canStart={canStart}
                     canComplete={canComplete}
                     startAction={updateJobStatusAction.bind(

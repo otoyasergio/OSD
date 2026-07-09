@@ -258,9 +258,9 @@ export default async function WorkOrderDetailPage({
           <div className="flex flex-col gap-3">
             <Link
               href={`/work_orders/${detail.work_order_id}/inspection`}
-              className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+              className="btn btn-primary self-start"
             >
-              Open full inspection screen →
+              Open full inspection screen
             </Link>
             <InspectionChecklist
               inspection={inspection}

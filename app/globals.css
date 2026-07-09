@@ -1075,3 +1075,156 @@ summary {
 .empty-state-action {
   margin-top: 1rem;
 }
+
+/* ── iPad fullscreen inspection ── */
+
+.inspection-fullscreen-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+}
+
+.inspection-fullscreen {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--background);
+}
+
+.inspection-fullscreen-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.5rem;
+  padding: 0.75rem 1rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.inspection-fullscreen-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  min-width: 3rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.inspection-fullscreen-back:active {
+  background: var(--surface-muted);
+}
+
+.inspection-fullscreen-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.inspection-fullscreen-wo {
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--foreground);
+}
+
+.inspection-fullscreen-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--status-neutral);
+}
+
+.inspection-fullscreen-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  scroll-padding-bottom: 12rem;
+}
+
+.inspection-fullscreen-hint {
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  color: var(--status-neutral);
+}
+
+.inspection-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.inspection-checklist-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.inspection-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inspection-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0 -0.25rem;
+  padding: 0.625rem 0.25rem;
+  background: color-mix(in srgb, var(--background) 92%, transparent);
+  backdrop-filter: blur(6px);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--status-neutral);
+}
+
+.inspection-fullscreen .inspection-section-header {
+  top: 0;
+}
+
+.inspection-section-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inspection-status-btn {
+  min-height: 3rem; /* 48px iPad tap target */
+  min-width: 3rem;
+}
+
+.inspection-item-row:focus-within {
+  scroll-margin-bottom: 12rem;
+}
+
+.inspection-save-state {
+  min-width: 3.5rem;
+  text-align: right;
+}

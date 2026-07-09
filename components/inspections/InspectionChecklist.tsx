@@ -41,8 +41,8 @@ export function InspectionChecklist({
   }, [inspection.results]);
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="inspection-checklist">
+      <div className="inspection-checklist-toolbar">
         <div>
           <p className="text-sm text-zinc-600">
             {inspection.incomplete_count === 0
@@ -66,7 +66,7 @@ export function InspectionChecklist({
                 <button
                   type="button"
                   onClick={() => setForceConfirm(true)}
-                  className="min-h-11 rounded border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-950 hover:bg-amber-100"
+                  className="btn btn-secondary min-h-12 border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100"
                 >
                   Force complete ({inspection.incomplete_count} incomplete)…
                 </button>
@@ -80,7 +80,7 @@ export function InspectionChecklist({
                   <button
                     type="button"
                     onClick={() => setForceConfirm(false)}
-                    className="min-h-11 rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800"
+                    className="btn btn-secondary min-h-12"
                   >
                     Cancel
                   </button>
@@ -100,25 +100,25 @@ export function InspectionChecklist({
       </div>
 
       {Object.entries(grouped).map(([category, results]) => (
-        <section key={category} className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
-            {category}
-          </h2>
-          {results.map((result) => (
-            <InspectionItemRow
-              key={result.inspection_result_id}
-              workOrderId={inspection.work_order_id}
-              result={result}
-              readOnly={readOnly}
-              onRecommend={
-                recommendHref
-                  ? (r) => {
-                      window.location.href = recommendHref(r);
-                    }
-                  : undefined
-              }
-            />
-          ))}
+        <section key={category} className="inspection-section">
+          <h2 className="inspection-section-header">{category}</h2>
+          <div className="inspection-section-items">
+            {results.map((result) => (
+              <InspectionItemRow
+                key={result.inspection_result_id}
+                workOrderId={inspection.work_order_id}
+                result={result}
+                readOnly={readOnly}
+                onRecommend={
+                  recommendHref
+                    ? (r) => {
+                        window.location.href = recommendHref(r);
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </div>
         </section>
       ))}
     </div>

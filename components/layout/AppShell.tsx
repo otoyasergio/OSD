@@ -1,5 +1,8 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { AppUser } from "@/lib/auth/session";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { Nav } from "@/components/layout/Nav";
@@ -22,8 +25,22 @@ type Props = {
   children: React.ReactNode;
 };
 
+function isInspectionFullscreenPath(pathname: string) {
+  return /\/work_orders\/[^/]+\/inspection\/?$/.test(pathname);
+}
+
 export function AppShell({ user, locations, children }: Props) {
+  const pathname = usePathname();
+  const hideChrome = isInspectionFullscreenPath(pathname);
   const displayName = `${user.first_name} ${user.last_name}`.trim();
+
+  if (hideChrome) {
+    return (
+      <div className="flex min-h-full flex-1 flex-col bg-background">
+        <main className="inspection-fullscreen-main">{children}</main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-background">
@@ -55,7 +72,9 @@ export function AppShell({ user, locations, children }: Props) {
               />
             ) : null}
             <div className="rounded-md border border-chrome-border bg-chrome-elevated px-3 py-1.5 text-sm text-chrome-muted">
-              <span className="font-semibold text-chrome-foreground">{displayName}</span>
+              <span className="font-semibold text-chrome-foreground">
+                {displayName}
+              </span>
               <span className="mx-1.5 opacity-40">·</span>
               <span>{ROLE_LABELS[user.role]}</span>
             </div>
