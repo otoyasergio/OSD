@@ -7,11 +7,13 @@ import {
   type DashboardCardKey,
 } from "@/lib/services/dashboard";
 import { canCreateWorkOrder } from "@/lib/permissions";
+import { listSavedDashboardViews } from "@/lib/services/userPreferences";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ShopBoard } from "@/components/work_orders/ShopBoard";
 import { WorkOrderListView } from "@/components/work_orders/WorkOrderListView";
 import { DashboardFilterChips } from "@/components/work_orders/DashboardFilterChips";
+import { SavedViewsBar } from "@/components/work_orders/SavedViewsBar";
 import { SELECT_CLASS } from "@/components/forms/Field";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
@@ -55,13 +57,16 @@ export default async function DashboardPage({
   const view = resolveView(params.view);
   const hideEmpty = params.hide_empty === "1";
   const density = params.density === "comfortable" ? "comfortable" : "compact";
-  const data = await getDashboardData({
-    status: (params.status as WorkOrderStatus) || "",
-    technician_id: params.technician_id || "",
-    flag: params.flag || "",
-    q: params.q || "",
-    card: (params.card as DashboardCardKey) || "",
-  });
+  const [data, savedViews] = await Promise.all([
+    getDashboardData({
+      status: (params.status as WorkOrderStatus) || "",
+      technician_id: params.technician_id || "",
+      flag: params.flag || "",
+      q: params.q || "",
+      card: (params.card as DashboardCardKey) || "",
+    }),
+    listSavedDashboardViews().catch(() => []),
+  ]);
 
   const filterBase = {
     status: data.filters.status || undefined,
@@ -215,6 +220,8 @@ export default async function DashboardPage({
         hideEmpty={hideEmpty}
         density={density}
       />
+
+      <SavedViewsBar views={savedViews} currentParams={filterBase} />
 
       {view === "board" ? (
         <div className="board-controls" role="group" aria-label="Board display options">

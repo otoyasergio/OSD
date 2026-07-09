@@ -55,6 +55,8 @@ const MESSAGES: Record<string, string> = {
   LOCATION_NOT_FOUND: "That location no longer exists.",
   USER_NOT_FOUND: "That user no longer exists.",
   USER_ALREADY_LINKED: "That auth user is already linked to an app account.",
+  VIEW_NAME_REQUIRED: "Enter a name for this view.",
+  VIEW_NAME_TOO_LONG: "View names must be 60 characters or fewer.",
 };
 
 export function toFormErrorMessage(error: unknown): string {
