@@ -13,8 +13,23 @@ export function ShopBoard({ rows }: { rows: WorkOrderCardData[] }) {
     byStatus.set(row.status, list);
   }
 
+  const columnCounts = SHOP_BOARD_COLUMNS.map((column) => ({
+    id: column.id,
+    count: column.statuses.reduce(
+      (total, status) => total + (byStatus.get(status)?.length ?? 0),
+      0
+    ),
+  }));
+  const activeColumns = columnCounts.filter((column) => column.count > 0).length;
+
   return (
-    <div className="shop-board">
+    <div className="shop-board-wrap">
+      <p className="shop-board-summary" aria-live="polite">
+        {rows.length === 0
+          ? "No work orders on the board"
+          : `${rows.length} work order${rows.length === 1 ? "" : "s"} across ${activeColumns} column${activeColumns === 1 ? "" : "s"}`}
+      </p>
+      <div className="shop-board">
       {SHOP_BOARD_COLUMNS.map((column) => {
         const cards = column.statuses.flatMap(
           (status) => byStatus.get(status) ?? []
@@ -42,6 +57,7 @@ export function ShopBoard({ rows }: { rows: WorkOrderCardData[] }) {
           </section>
         );
       })}
+      </div>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
   getDashboardData,
   type DashboardCardKey,
 } from "@/lib/services/dashboard";
+import { canCreateWorkOrder } from "@/lib/permissions";
 import { FlagBadges } from "@/components/status/FlagBadges";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -40,6 +41,7 @@ export default async function DashboardPage({
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
+  const canCreate = canCreateWorkOrder(user.role);
   const params = await searchParams;
   const view = params.view === "table" ? "table" : "board";
   const data = await getDashboardData({
@@ -64,7 +66,13 @@ export default async function DashboardPage({
         title="Dashboard"
         subtitle="Shop-floor command center for the active location."
         actions={
-          <div className="view-toggle" role="group" aria-label="View mode">
+          <div className="flex flex-wrap items-center gap-2">
+            {canCreate ? (
+              <Link href="/work_orders/new" className="btn btn-primary">
+                New work order
+              </Link>
+            ) : null}
+            <div className="view-toggle" role="group" aria-label="View mode">
             <Link
               href={buildHref({ ...filterBase, view: "board", card: data.filters.card || undefined })}
               className={
@@ -87,6 +95,7 @@ export default async function DashboardPage({
             >
               Table
             </Link>
+          </div>
           </div>
         }
       />

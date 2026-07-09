@@ -494,6 +494,32 @@ summary {
   font-weight: 600;
 }
 
+.global-search {
+  flex: 1;
+  min-width: 0;
+  max-width: 20rem;
+}
+
+.global-search-input {
+  width: 100%;
+  min-height: var(--tap-min);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-elevated);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--chrome-foreground);
+}
+
+.global-search-input::placeholder {
+  color: var(--chrome-muted);
+}
+
+.global-search-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* ── Alerts ── */
 
 .alert-error {
@@ -714,6 +740,18 @@ summary {
 
 /* ── Shop board (kanban columns) ── */
 
+.shop-board-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.shop-board-summary {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--status-neutral);
+}
+
 .shop-board {
   display: flex;
   gap: 0.75rem;
@@ -734,6 +772,9 @@ summary {
 }
 
 .shop-board-column-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;

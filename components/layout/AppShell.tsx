@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { AppUser } from "@/lib/auth/session";
+import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { Nav } from "@/components/layout/Nav";
 import {
   LocationSwitcher,
@@ -44,6 +45,7 @@ export function AppShell({ user, locations, children }: Props) {
               />
             </Link>
             <Nav />
+            <GlobalSearch />
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
             {user.active_location_id ? (
