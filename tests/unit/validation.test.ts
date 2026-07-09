@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { customerSchema, motorcycleSchema } from "@/lib/validation/schemas";
+import {
+  customerSchema,
+  motorcycleSchema,
+  serviceSchema,
+} from "@/lib/validation/schemas";
 
 describe("customerSchema", () => {
   it("requires phone or email", () => {
@@ -29,5 +33,30 @@ describe("motorcycleSchema", () => {
       model: "CBR600RR",
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe("serviceSchema", () => {
+  it("requires a name", () => {
+    const result = serviceSchema.safeParse({ name: "" });
+    expect(result.success).toBe(false);
+  });
+
+  it("allows null price and labour and defaults active to true", () => {
+    const result = serviceSchema.safeParse({
+      name: "Oil Change",
+      standard_price: null,
+      estimated_labour: null,
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.active).toBe(true);
+  });
+
+  it("rejects negative prices", () => {
+    const result = serviceSchema.safeParse({
+      name: "Oil Change",
+      standard_price: -10,
+    });
+    expect(result.success).toBe(false);
   });
 });

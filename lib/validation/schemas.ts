@@ -23,6 +23,13 @@ export const motorcycleSchema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+export const serviceSchema = z.object({
+  name: z.string().min(1, "Service name is required"),
+  standard_price: z.number().nonnegative().nullable().optional(),
+  estimated_labour: z.number().nonnegative().nullable().optional(),
+  active: z.boolean().default(true),
+});
+
 export const createWorkOrderSchema = z.object({
   motorcycle_id: z.string().uuid(),
   location_id: z.string().uuid(),
