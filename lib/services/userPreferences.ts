@@ -1,26 +1,16 @@
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
+import type {
+  DashboardViewParams,
+  SavedDashboardView,
+} from "@/lib/services/dashboardViewShared";
+
+export type { DashboardViewParams, SavedDashboardView };
+export { buildDashboardHref } from "@/lib/services/dashboardViewShared";
 
 export const DASHBOARD_VIEWS_KEY = "dashboard_views";
 export const DASHBOARD_DENSITY_KEY = "dashboard_density";
 export const DASHBOARD_HIDDEN_COLUMNS_KEY = "dashboard_hidden_columns";
-
-export type DashboardViewParams = {
-  view?: string;
-  status?: string;
-  technician_id?: string;
-  flag?: string;
-  q?: string;
-  hide_empty?: string;
-  density?: string;
-  card?: string;
-};
-
-export type SavedDashboardView = {
-  id: string;
-  name: string;
-  params: DashboardViewParams;
-};
 
 type DashboardViewsPayload = {
   views: SavedDashboardView[];
@@ -171,13 +161,4 @@ export async function setHiddenBoardColumnsPreference(
   await setPreference(DASHBOARD_HIDDEN_COLUMNS_KEY, {
     columns: columnIds,
   });
-}
-
-export function buildDashboardHref(params: DashboardViewParams): string {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value) search.set(key, value);
-  }
-  const qs = search.toString();
-  return qs ? `/dashboard?${qs}` : "/dashboard";
 }

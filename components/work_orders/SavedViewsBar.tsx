@@ -12,7 +12,7 @@ import {
   buildDashboardHref,
   type DashboardViewParams,
   type SavedDashboardView,
-} from "@/lib/services/userPreferences";
+} from "@/lib/services/dashboardViewShared";
 
 const initialState: ViewFormState = { error: null };
 

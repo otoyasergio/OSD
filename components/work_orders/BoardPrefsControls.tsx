@@ -10,7 +10,7 @@ import {
 } from "@/app/(app)/dashboard/view-actions";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
-import { buildDashboardHref, type DashboardViewParams } from "@/lib/services/userPreferences";
+import { buildDashboardHref, type DashboardViewParams } from "@/lib/services/dashboardViewShared";
 
 const initialState: ViewFormState = { error: null };
 
