@@ -13,6 +13,12 @@ import {
 } from "@/lib/permissions";
 import { saveInspectionResultSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import {
+  assertInspectionPhotosComplete,
+  countIncompleteInspectionResults,
+  getMissingInspectionPhotos,
+  type InspectionPhotoRequirement,
+} from "@/lib/services/inspectionGate";
 
 export type InspectionResultRow = {
   inspection_result_id: string;
@@ -29,6 +35,15 @@ export type InspectionResultRow = {
   updated_at: string;
 };
 
+export type InspectionHeader = {
+  customer_name: string | null;
+  motorcycle_label: string | null;
+  vin: string | null;
+  mileage: number | null;
+  technician_name: string | null;
+  date_created: string | null;
+};
+
 export type InspectionDetail = {
   inspection_id: string;
   work_order_id: string;
@@ -39,8 +54,17 @@ export type InspectionDetail = {
   work_order_number: string;
   work_order_status: string;
   is_foreign_location: boolean;
+  header: InspectionHeader;
   results: InspectionResultRow[];
   incomplete_count: number;
+  missing_photos: InspectionPhotoRequirement[];
+  photos: Array<{
+    photo_id: string;
+    category: string;
+    inspection_result_id: string | null;
+    signed_url: string | null;
+    notes: string | null;
+  }>;
 };
 
 type ResultWithInspection = InspectionResultRow & {
@@ -62,7 +86,7 @@ const RESULT_COLUMNS =
   "inspection_result_id, inspection_id, template_item_id, category_snapshot, item_name_snapshot, display_order_snapshot, requires_measurement_snapshot, status, measurement, notes, updated_by_user_id, updated_at";
 
 function countIncomplete(results: InspectionResultRow[]): number {
-  return results.filter((r) => r.status == null).length;
+  return countIncompleteInspectionResults(results);
 }
 
 async function requireMutableInspectionAccess(
@@ -107,7 +131,27 @@ export async function getInspectionForWorkOrder(
 
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
-    .select("work_order_id, location_id, work_order_number, status")
+    .select(
+      `
+      work_order_id,
+      location_id,
+      work_order_number,
+      status,
+      mileage,
+      date_created,
+      motorcycle:motorcycle_id (
+        year,
+        make,
+        model,
+        vin,
+        customer:customer_id ( first_name, last_name )
+      ),
+      primary_technician:primary_technician_id (
+        first_name,
+        last_name
+      )
+    `
+    )
     .eq("work_order_id", workOrderId)
     .maybeSingle();
 
@@ -140,6 +184,76 @@ export async function getInspectionForWorkOrder(
     (a, b) => a.display_order_snapshot - b.display_order_snapshot
   );
 
+  type NestedCustomer = { first_name: string; last_name: string };
+  type NestedMotorcycle = {
+    year: number;
+    make: string;
+    model: string;
+    vin: string | null;
+    customer: NestedCustomer | NestedCustomer[] | null;
+  };
+  type NestedTech = { first_name: string; last_name: string };
+
+  const motorcycleRaw = workOrder.motorcycle as
+    | NestedMotorcycle
+    | NestedMotorcycle[]
+    | null;
+  const motorcycle = Array.isArray(motorcycleRaw)
+    ? motorcycleRaw[0]
+    : motorcycleRaw;
+  const customerRaw = motorcycle?.customer;
+  const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw;
+  const techRaw = workOrder.primary_technician as
+    | NestedTech
+    | NestedTech[]
+    | null;
+  const tech = Array.isArray(techRaw) ? techRaw[0] : techRaw;
+
+  const { data: photoRows, error: photoError } = await supabase
+    .from("intake_photo")
+    .select("photo_id, category, inspection_result_id, notes, storage_path, photo_url")
+    .eq("work_order_id", workOrderId)
+    .in("category", [
+      "inspection_tires",
+      "inspection_brakes",
+      "inspection_forks",
+      "inspection_item",
+    ])
+    .order("created_at", { ascending: false });
+  if (photoError) throw photoError;
+
+  const rawPhotos = (photoRows ?? []) as Array<{
+    photo_id: string;
+    category: string;
+    inspection_result_id: string | null;
+    notes: string | null;
+    storage_path: string;
+    photo_url: string | null;
+  }>;
+
+  const signedByPath = new Map<string, string | null>();
+  if (rawPhotos.length > 0) {
+    const { data: signed } = await supabase.storage
+      .from("intake-photos")
+      .createSignedUrls(
+        rawPhotos.map((p) => p.storage_path),
+        60 * 60
+      );
+    for (const row of signed ?? []) {
+      if (row.path) {
+        signedByPath.set(row.path, row.signedUrl ?? null);
+      }
+    }
+  }
+
+  const photos = rawPhotos.map((p) => ({
+    photo_id: p.photo_id,
+    category: p.category,
+    inspection_result_id: p.inspection_result_id,
+    notes: p.notes,
+    signed_url: signedByPath.get(p.storage_path) ?? p.photo_url,
+  }));
+
   return {
     inspection_id: inspection.inspection_id,
     work_order_id: inspection.work_order_id,
@@ -150,8 +264,24 @@ export async function getInspectionForWorkOrder(
     work_order_number: workOrder.work_order_number,
     work_order_status: workOrder.status,
     is_foreign_location: workOrder.location_id !== user.active_location_id,
+    header: {
+      customer_name: customer
+        ? `${customer.first_name} ${customer.last_name}`
+        : null,
+      motorcycle_label: motorcycle
+        ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
+        : null,
+      vin: motorcycle?.vin ?? null,
+      mileage: (workOrder.mileage as number | null) ?? null,
+      technician_name: tech
+        ? `${tech.first_name} ${tech.last_name}`
+        : null,
+      date_created: (workOrder.date_created as string | null) ?? null,
+    },
     results,
     incomplete_count: countIncomplete(results),
+    missing_photos: getMissingInspectionPhotos(results, photos),
+    photos,
   };
 }
 
@@ -343,6 +473,7 @@ export async function completeInspection(
       inspection_result (
         inspection_result_id,
         status,
+        category_snapshot,
         item_name_snapshot
       )
     `
@@ -358,15 +489,36 @@ export async function completeInspection(
     (inspection.inspection_result as Array<{
       inspection_result_id: string;
       status: string | null;
+      category_snapshot: string;
       item_name_snapshot: string;
     }> | null) ?? [];
-  const incomplete = results.filter((r) => r.status == null);
+  const incompleteCount = countIncompleteInspectionResults(results);
 
-  if (incomplete.length > 0) {
+  if (incompleteCount > 0) {
     if (!options.force || !canOverrideWorkOrderStatus(user.role)) {
       throw new Error("INSPECTION_INCOMPLETE");
     }
   }
+
+  const { data: photoRows, error: photoError } = await supabase
+    .from("intake_photo")
+    .select("category, inspection_result_id")
+    .eq("work_order_id", workOrderId)
+    .in("category", [
+      "inspection_tires",
+      "inspection_brakes",
+      "inspection_forks",
+      "inspection_item",
+    ]);
+  if (photoError) throw photoError;
+
+  assertInspectionPhotosComplete(
+    results,
+    (photoRows ?? []) as Array<{
+      category: string;
+      inspection_result_id: string | null;
+    }>
+  );
 
   const now = new Date().toISOString();
   const { error: updateError } = await supabase
@@ -388,12 +540,12 @@ export async function completeInspection(
     entity_type: "inspection",
     entity_id: inspection.inspection_id,
     description:
-      incomplete.length > 0
-        ? `Inspection completed with ${incomplete.length} incomplete item(s)`
+      incompleteCount > 0
+        ? `Inspection completed with ${incompleteCount} incomplete item(s)`
         : "Inspection completed",
     new_value: {
-      incomplete_count: incomplete.length,
-      forced: Boolean(options.force && incomplete.length > 0),
+      incomplete_count: incompleteCount,
+      forced: Boolean(options.force && incompleteCount > 0),
     },
   });
 
@@ -405,8 +557,8 @@ export async function completeInspection(
     entity_id: inspection.inspection_id,
     description: `Inspection completed on ${workOrderNumber}`,
     new_value: {
-      incomplete_count: incomplete.length,
-      forced: Boolean(options.force && incomplete.length > 0),
+      incomplete_count: incompleteCount,
+      forced: Boolean(options.force && incompleteCount > 0),
     },
   });
 

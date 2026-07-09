@@ -128,9 +128,11 @@ export default async function TechnicianPage() {
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Link
                       href={wo.inspection_href}
-                      className="btn btn-secondary"
+                      className="btn btn-primary"
                     >
-                      Inspection
+                      {wo.inspection_complete
+                        ? "View inspection report"
+                        : "Open inspection report"}
                     </Link>
                     <Link href={wo.jobs_href} className="btn btn-secondary">
                       Jobs

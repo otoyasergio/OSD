@@ -9,8 +9,10 @@ export type PhotoFormState = { error: string | null };
 
 function revalidatePhotos(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
+  revalidatePath(`/work_orders/${workOrderId}/inspection`);
   revalidatePath("/work_orders");
   revalidatePath("/dashboard");
+  revalidatePath("/technician");
 }
 
 export async function uploadIntakePhotoAction(
@@ -24,9 +26,11 @@ export async function uploadIntakePhotoAction(
       return { error: toFormErrorMessage(new Error("PHOTO_REQUIRED")) };
     }
 
+    const resultId = String(formData.get("inspection_result_id") ?? "").trim();
     await uploadIntakePhoto(workOrderId, {
       category: String(formData.get("category") ?? "") as PhotoCategory,
       notes: String(formData.get("notes") ?? "").trim() || null,
+      inspection_result_id: resultId || null,
       file,
     });
   } catch (error) {

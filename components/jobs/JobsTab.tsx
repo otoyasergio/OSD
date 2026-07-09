@@ -27,6 +27,8 @@ export function JobsTab({
   canEdit,
   canComplete,
   currentUserId,
+  inspectionComplete,
+  inspectionHref,
   addAction,
   assignActionFor,
   statusActionFor,
@@ -43,6 +45,8 @@ export function JobsTab({
   canEdit: boolean;
   canComplete: boolean;
   currentUserId: string;
+  inspectionComplete?: boolean;
+  inspectionHref?: string;
   addAction: Action;
   assignActionFor: (jobId: string) => Action;
   statusActionFor: (jobId: string) => Action;
@@ -104,6 +108,8 @@ export function JobsTab({
               canEdit={canEdit}
               canComplete={canComplete}
               isTechnicianSelf={job.assigned_technician_id === currentUserId}
+              inspectionComplete={inspectionComplete}
+              inspectionHref={inspectionHref}
               assignAction={assignActionFor(job.job_id)}
               statusAction={statusActionFor(job.job_id)}
               approveAction={approveActionFor(job.job_id)}

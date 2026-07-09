@@ -69,7 +69,11 @@ export type PhotoCategory =
   | "damage"
   | "accessories"
   | "fuel_level"
-  | "other";
+  | "other"
+  | "inspection_tires"
+  | "inspection_brakes"
+  | "inspection_forks"
+  | "inspection_item";
 
 export type TechnicianNoteType =
   | "general"

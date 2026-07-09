@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import type { WorkOrderJob, TechnicianOption } from "@/lib/services/workOrders";
 import type { JobFormState } from "@/app/(app)/work_orders/job-actions";
@@ -53,6 +54,8 @@ export function JobCard({
   canEdit,
   canComplete,
   isTechnicianSelf,
+  inspectionComplete,
+  inspectionHref,
   assignAction,
   statusAction,
   approveAction,
@@ -66,6 +69,8 @@ export function JobCard({
   canEdit: boolean;
   canComplete: boolean;
   isTechnicianSelf: boolean;
+  inspectionComplete?: boolean;
+  inspectionHref?: string;
   assignAction: Action;
   statusAction: Action;
   approveAction: Action;
@@ -96,9 +101,11 @@ export function JobCard({
     (canComplete || isTechnicianSelf) &&
     (job.status === "approved" || job.status === "ready_to_start");
 
+  const inspectionBlocksComplete = inspectionComplete === false;
   const canMarkComplete =
     (canComplete || isTechnicianSelf) &&
     Boolean(job.assigned_technician_id) &&
+    !inspectionBlocksComplete &&
     (job.status === "in_progress" ||
       job.status === "approved" ||
       job.status === "ready_to_start");
@@ -266,6 +273,24 @@ export function JobCard({
                 label="Complete job"
                 variant="primary"
               />
+            ) : null}
+            {inspectionBlocksComplete &&
+            (canComplete || isTechnicianSelf) &&
+            Boolean(job.assigned_technician_id) &&
+            (job.status === "in_progress" ||
+              job.status === "approved" ||
+              job.status === "ready_to_start") ? (
+              <div className="w-full rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                <p>Complete the inspection report before finishing jobs.</p>
+                {inspectionHref ? (
+                  <Link
+                    href={inspectionHref}
+                    className="mt-2 inline-flex btn btn-primary min-h-12"
+                  >
+                    Open inspection report
+                  </Link>
+                ) : null}
+              </div>
             ) : null}
             {canEdit && job.status === "approved" ? (
               <StatusButton

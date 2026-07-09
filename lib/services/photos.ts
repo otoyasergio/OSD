@@ -16,6 +16,7 @@ export type IntakePhoto = {
   photo_url: string | null;
   category: PhotoCategory;
   notes: string | null;
+  inspection_result_id: string | null;
   created_at: string;
   signed_url?: string | null;
   uploaded_by?: {
@@ -26,7 +27,7 @@ export type IntakePhoto = {
 };
 
 const COLUMNS =
-  "photo_id, work_order_id, uploaded_by_user_id, storage_path, photo_url, category, notes, created_at";
+  "photo_id, work_order_id, uploaded_by_user_id, storage_path, photo_url, category, notes, inspection_result_id, created_at";
 
 const BUCKET = "intake-photos";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -162,6 +163,7 @@ export async function uploadIntakePhoto(
   input: {
     category: PhotoCategory;
     notes?: string | null;
+    inspection_result_id?: string | null;
     file: File;
   }
 ): Promise<IntakePhoto> {
@@ -171,7 +173,15 @@ export async function uploadIntakePhoto(
   const parsed = intakePhotoSchema.parse({
     category: input.category,
     notes: input.notes,
+    inspection_result_id: input.inspection_result_id,
   });
+
+  if (
+    parsed.category === "inspection_item" &&
+    !parsed.inspection_result_id
+  ) {
+    throw new Error("INSPECTION_RESULT_NOT_FOUND");
+  }
 
   const file = input.file;
   if (!file || file.size === 0) throw new Error("PHOTO_REQUIRED");
@@ -182,6 +192,27 @@ export async function uploadIntakePhoto(
 
   const { supabase, locationId, workOrderNumber } =
     await requireMutableWorkOrder(user, workOrderId);
+
+  if (parsed.inspection_result_id) {
+    const { data: resultRow, error: resultError } = await supabase
+      .from("inspection_result")
+      .select(
+        `
+        inspection_result_id,
+        inspection:inspection_id ( work_order_id )
+      `
+      )
+      .eq("inspection_result_id", parsed.inspection_result_id)
+      .maybeSingle();
+    if (resultError) throw resultError;
+    if (!resultRow) throw new Error("INSPECTION_RESULT_NOT_FOUND");
+    const inspection = resultRow.inspection as unknown as {
+      work_order_id: string;
+    } | null;
+    if (!inspection || inspection.work_order_id !== workOrderId) {
+      throw new Error("INSPECTION_RESULT_NOT_FOUND");
+    }
+  }
 
   const ext = extensionForType(file.type || "image/jpeg");
   const photoId = crypto.randomUUID();
@@ -207,6 +238,7 @@ export async function uploadIntakePhoto(
       photo_url: null,
       category: parsed.category,
       notes: parsed.notes ?? null,
+      inspection_result_id: parsed.inspection_result_id ?? null,
     })
     .select(COLUMNS)
     .single();

@@ -72,12 +72,17 @@ export function TechnicianJobCard({
   startAction?: StatusAction;
   completeAction?: StatusAction;
 }) {
-  const showPrimaryCta = canStart || canComplete;
+  const inspectionBlocksComplete =
+    canComplete && inspectionComplete === false && Boolean(inspectionHref);
+  const showComplete = canComplete && !inspectionBlocksComplete;
+  const showPrimaryCta = canStart || showComplete || inspectionBlocksComplete;
   const preferInspection =
     Boolean(inspectionHref) && inspectionComplete === false;
   const openHref =
     preferInspection && inspectionHref ? inspectionHref : workOrderHref;
-  const openLabel = preferInspection ? "Inspection" : "Open WO";
+  const openLabel = preferInspection
+    ? "Open inspection report"
+    : "Open WO";
 
   return (
     <article className="tech-job-card">
@@ -93,6 +98,12 @@ export function TechnicianJobCard({
         <span className="tech-job-card-wo-status">{workOrderStatusLabel}</span>
       </div>
 
+      {inspectionBlocksComplete ? (
+        <p className="tech-job-card-hint" role="status">
+          Complete the inspection report before finishing this job.
+        </p>
+      ) : null}
+
       <div className="tech-job-card-actions">
         {canStart && startAction ? (
           <JobStatusForm
@@ -102,7 +113,7 @@ export function TechnicianJobCard({
             variant="accent"
           />
         ) : null}
-        {canComplete && completeAction ? (
+        {showComplete && completeAction ? (
           <JobStatusForm
             action={completeAction}
             status="completed"
@@ -113,7 +124,7 @@ export function TechnicianJobCard({
         <Link
           href={openHref}
           className={`btn flex-1 sm:flex-none ${
-            canComplete ? "btn-secondary" : "btn-primary"
+            preferInspection || !showComplete ? "btn-primary" : "btn-secondary"
           }`}
         >
           {openLabel}

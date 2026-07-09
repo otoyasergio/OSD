@@ -15,6 +15,7 @@ import {
   approvalMethodSchema,
 } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
 
 type JobRow = {
   job_id: string;
@@ -263,6 +264,32 @@ export async function updateJobStatus(
 
   const { workOrder } = await requireMutableWorkOrder(user, job.work_order_id);
   assertStatusTransition(user, job, nextStatus, options.note);
+
+  if (nextStatus === "completed") {
+    const { data: inspection, error: inspectionError } = await supabase
+      .from("inspection")
+      .select("completed_at")
+      .eq("work_order_id", job.work_order_id)
+      .maybeSingle();
+    if (inspectionError) throw inspectionError;
+    try {
+      assertInspectionCompletedForJobFinish(inspection?.completed_at);
+    } catch (error) {
+      if (error instanceof Error && error.message === "INSPECTION_NOT_COMPLETED") {
+        await addAuditLog(supabase, {
+          actor_user_id: user.user_id,
+          location_id: workOrder.location_id,
+          action: "job_complete_blocked_inspection",
+          entity_type: "job",
+          entity_id: jobId,
+          description:
+            "Complete the inspection report before finishing jobs.",
+          new_value: { attempted_status: "completed" },
+        });
+      }
+      throw error;
+    }
+  }
 
   const updates: Record<string, unknown> = {
     status: nextStatus,

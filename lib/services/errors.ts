@@ -28,6 +28,10 @@ const MESSAGES: Record<string, string> = {
   INSPECTION_ALREADY_COMPLETE: "This inspection is already complete.",
   INSPECTION_INCOMPLETE:
     "Some checklist items are still incomplete. An owner or manager can force completion.",
+  INSPECTION_NOT_COMPLETED:
+    "Complete the inspection report before finishing jobs.",
+  INSPECTION_PHOTOS_REQUIRED:
+    "Add required inspection photos (tires, brakes, forks, and any items marked needing work) before completing the report.",
   RECOMMENDATION_NOT_FOUND: "That recommendation no longer exists.",
   RECOMMENDATION_ALREADY_CONVERTED:
     "That recommendation has already been converted to a job.",

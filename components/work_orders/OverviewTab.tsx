@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import type { WorkOrderDetail, TechnicianOption } from "@/lib/services/workOrders";
 import type { WorkOrderFormState } from "@/app/(app)/work_orders/actions";
@@ -110,6 +111,26 @@ export function OverviewTab({
 
   return (
     <div className="flex flex-col gap-6">
+      <section className="rounded border border-zinc-200 bg-white p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-900">
+              Inspection report
+            </h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              Visual Motorcycle Inspection Report — required before finishing
+              jobs.
+            </p>
+          </div>
+          <Link
+            href={`/work_orders/${detail.work_order_id}/inspection`}
+            className="btn btn-primary min-h-12"
+          >
+            Open inspection report
+          </Link>
+        </div>
+      </section>
+
       <section className="rounded border border-zinc-200 bg-white p-4">
         <h2 className="text-lg font-semibold text-zinc-900">Internal notes</h2>
         <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-700">

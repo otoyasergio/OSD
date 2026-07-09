@@ -3,40 +3,62 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { InspectionResultRow } from "@/lib/services/inspections";
 import type { InspectionResultStatus } from "@/lib/database/types";
-import { INSPECTION_RESULT_LABELS } from "@/lib/status/labels";
 import { saveInspectionResultAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
+import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
+import { BRAKE_INSPECTION_SKIP_ITEM } from "@/lib/services/inspectionGate";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
-const STATUS_OPTIONS: Array<InspectionResultStatus | null> = [
-  null,
-  "ok",
-  "future_attention",
-  "immediate_attention",
+const STATUS_OPTIONS: Array<{
+  value: InspectionResultStatus;
+  short: string;
+  className: string;
+}> = [
+  { value: "ok", short: "OK", className: "inspection-status-ok" },
+  {
+    value: "future_attention",
+    short: "Future",
+    className: "inspection-status-future",
+  },
+  {
+    value: "immediate_attention",
+    short: "Now",
+    className: "inspection-status-immediate",
+  },
 ];
 
-const STATUS_BUTTON: Record<string, string> = {
-  null: "border-zinc-300 bg-white text-zinc-700",
-  ok: "border-emerald-600 bg-emerald-50 text-emerald-900",
-  future_attention: "border-amber-500 bg-amber-50 text-amber-950",
-  immediate_attention: "border-red-500 bg-red-50 text-red-900",
-};
+function measurementHint(itemName: string): string | null {
+  if (/brake lining/i.test(itemName)) return "mm";
+  if (/tire tread/i.test(itemName)) return "32nds";
+  if (/tire pressure/i.test(itemName)) return "PSI";
+  if (/cold cranking/i.test(itemName)) return "CCA";
+  return null;
+}
 
-function statusLabel(status: InspectionResultStatus | null) {
-  if (status == null) return "Blank";
-  return INSPECTION_RESULT_LABELS[status];
+function displayName(itemName: string): string {
+  return itemName
+    .replace(/^Front\s+/i, "")
+    .replace(/^Rear\s+/i, "")
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .trim();
 }
 
 export function InspectionItemRow({
   workOrderId,
   result,
   readOnly,
+  photoUrl,
+  photoRequired,
   onRecommend,
+  compact,
 }: {
   workOrderId: string;
   result: InspectionResultRow;
   readOnly: boolean;
+  photoUrl?: string | null;
+  photoRequired?: boolean;
   onRecommend?: (result: InspectionResultRow) => void;
+  compact?: boolean;
 }) {
   const [status, setStatus] = useState<InspectionResultStatus | null>(
     result.status
@@ -91,8 +113,9 @@ export function InspectionItemRow({
   }
 
   function saveStatus(next: InspectionResultStatus | null) {
-    setStatus(next);
-    persist({ status: next });
+    const value = status === next ? null : next;
+    setStatus(value);
+    persist({ status: value });
   }
 
   function scheduleTextSave() {
@@ -115,92 +138,101 @@ export function InspectionItemRow({
 
   const needsAttention =
     status === "future_attention" || status === "immediate_attention";
+  const unit = measurementHint(result.item_name_snapshot);
+  const isSkip = result.item_name_snapshot === BRAKE_INSPECTION_SKIP_ITEM;
+  const showMeasurement =
+    result.requires_measurement_snapshot || Boolean(measurement) || Boolean(unit);
 
   return (
-    <article className="inspection-item-row rounded border border-zinc-200 bg-white p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-base font-semibold text-zinc-900">
-            {result.item_name_snapshot}
+    <article
+      className={`inspection-item-row ${compact ? "inspection-item-row--compact" : ""} ${
+        isSkip ? "inspection-item-row--skip" : ""
+      } ${needsAttention ? "inspection-item-row--flagged" : ""}`}
+    >
+      <div className="inspection-item-main">
+        <div className="inspection-item-title-row">
+          <h3 className="inspection-item-title">
+            {isSkip ? result.item_name_snapshot : displayName(result.item_name_snapshot)}
           </h3>
-          <p className="mt-0.5 text-sm text-zinc-500">
-            {result.category_snapshot}
-            {result.requires_measurement_snapshot
-              ? " · measurement required"
-              : ""}
-          </p>
-        </div>
-        <span
-          className={`inspection-save-state text-xs font-medium ${
-            saveState === "error"
-              ? "text-red-700"
-              : saveState === "saving"
-                ? "text-zinc-500"
-                : saveState === "saved"
-                  ? "text-emerald-700"
-                  : "text-transparent"
-          }`}
-          aria-live="polite"
-        >
-          {saveState === "saving"
-            ? "Saving…"
-            : saveState === "saved"
-              ? "Saved"
-              : saveState === "error"
-                ? "Error"
-                : "Idle"}
-        </span>
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        {STATUS_OPTIONS.map((option) => {
-          const key = String(option);
-          const selected = status === option;
-          return (
-            <button
-              key={key}
-              type="button"
-              disabled={readOnly}
-              onClick={() => saveStatus(option)}
-              className={`inspection-status-btn min-h-12 min-w-12 rounded border px-3 py-2 text-sm font-semibold disabled:opacity-50 ${
-                selected
-                  ? STATUS_BUTTON[key]
-                  : "border-zinc-200 bg-zinc-50 text-zinc-600 hover:bg-zinc-100"
-              }`}
-            >
-              {statusLabel(option)}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        {result.requires_measurement_snapshot || measurement ? (
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-              Measurement
-            </span>
-            <input
-              className="min-h-12 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 disabled:bg-zinc-50"
-              value={measurement}
-              disabled={readOnly}
-              onChange={(e) => {
-                setMeasurement(e.target.value);
-                scheduleTextSave();
-              }}
-              onBlur={flushTextSave}
-            />
-          </label>
-        ) : null}
-        <label className="block sm:col-span-2">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-            Notes
+          <span
+            className={`inspection-save-state text-xs font-medium ${
+              saveState === "error"
+                ? "text-red-700"
+                : saveState === "saving"
+                  ? "text-zinc-500"
+                  : saveState === "saved"
+                    ? "text-emerald-700"
+                    : "text-transparent"
+            }`}
+            aria-live="polite"
+          >
+            {saveState === "saving"
+              ? "Saving…"
+              : saveState === "saved"
+                ? "Saved"
+                : saveState === "error"
+                  ? "Error"
+                  : "Idle"}
           </span>
+        </div>
+
+        <div className="inspection-status-group" role="group" aria-label="Status">
+          {STATUS_OPTIONS.map((option) => {
+            const selected = status === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                disabled={readOnly}
+                onClick={() => saveStatus(option.value)}
+                className={`inspection-status-swatch ${option.className} ${
+                  selected ? "is-selected" : ""
+                }`}
+                aria-pressed={selected}
+                title={option.short}
+              >
+                <span className="sr-only">{option.short}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {showMeasurement ? (
+        <label className="inspection-measurement">
+          <span className="inspection-measurement-label">
+            {unit ? `Measurement (${unit})` : "Measurement"}
+          </span>
+          <input
+            className="inspection-measurement-input"
+            value={measurement}
+            disabled={readOnly}
+            inputMode="decimal"
+            placeholder={unit ?? ""}
+            onChange={(e) => {
+              setMeasurement(e.target.value);
+              scheduleTextSave();
+            }}
+            onBlur={flushTextSave}
+          />
+        </label>
+      ) : null}
+
+      {!compact || notes || needsAttention || isSkip ? (
+        <label className="inspection-notes">
+          <span className="sr-only">Notes</span>
           <textarea
-            className="min-h-20 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 disabled:bg-zinc-50"
-            rows={2}
+            className="inspection-notes-input"
+            rows={compact ? 1 : 2}
             value={notes}
             disabled={readOnly}
+            placeholder={
+              isSkip
+                ? "Optional note"
+                : needsAttention
+                  ? "Describe the issue…"
+                  : "Notes"
+            }
             onChange={(e) => {
               setNotes(e.target.value);
               scheduleTextSave();
@@ -208,7 +240,7 @@ export function InspectionItemRow({
             onBlur={flushTextSave}
           />
         </label>
-      </div>
+      ) : null}
 
       {error ? (
         <p role="alert" className="mt-2 text-sm text-red-700">
@@ -216,15 +248,26 @@ export function InspectionItemRow({
         </p>
       ) : null}
 
-      {!readOnly && needsAttention && onRecommend ? (
-        <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => onRecommend(result)}
-            className="btn btn-secondary min-h-12"
-          >
-            Create recommendation
-          </button>
+      {needsAttention ? (
+        <div className="inspection-item-photo">
+          <InspectionPhotoSlot
+            workOrderId={workOrderId}
+            category="inspection_item"
+            inspectionResultId={result.inspection_result_id}
+            label={`Photo for ${displayName(result.item_name_snapshot)}`}
+            required={photoRequired !== false}
+            existingUrl={photoUrl}
+            readOnly={readOnly}
+          />
+          {!readOnly && onRecommend ? (
+            <button
+              type="button"
+              onClick={() => onRecommend(result)}
+              className="btn btn-secondary min-h-12"
+            >
+              Create recommendation
+            </button>
+          ) : null}
         </div>
       ) : null}
     </article>

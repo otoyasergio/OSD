@@ -242,6 +242,8 @@ export default async function WorkOrderDetailPage({
           canEdit={canEdit}
           canComplete={canComplete}
           currentUserId={user.user_id}
+          inspectionComplete={Boolean(inspection?.completed_at)}
+          inspectionHref={`/work_orders/${detail.work_order_id}/inspection`}
           addAction={addJobAction.bind(null, detail.work_order_id)}
           assignActionFor={(jobId) =>
             assignJobTechnicianAction.bind(null, detail.work_order_id, jobId)
@@ -266,10 +268,25 @@ export default async function WorkOrderDetailPage({
           <div className="flex flex-col gap-3">
             <Link
               href={`/work_orders/${detail.work_order_id}/inspection`}
-              className="btn btn-primary self-start"
+              className="btn btn-primary min-h-12 self-start"
             >
-              Open full inspection screen
+              Open inspection report
             </Link>
+            {!inspection.completed_at ? (
+              <p className="text-sm text-[var(--status-neutral)]">
+                Jobs cannot be finished until this report is completed
+                {inspection.missing_photos.length > 0
+                  ? `, including ${inspection.missing_photos.length} required photo${
+                      inspection.missing_photos.length === 1 ? "" : "s"
+                    }`
+                  : ""}
+                .
+              </p>
+            ) : (
+              <p className="text-sm font-medium text-emerald-800">
+                Inspection report completed.
+              </p>
+            )}
             <InspectionChecklist
               inspection={inspection}
               canEdit={canInspect}

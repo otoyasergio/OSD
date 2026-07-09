@@ -112,11 +112,16 @@ export const photoCategorySchema = z.enum([
   "accessories",
   "fuel_level",
   "other",
+  "inspection_tires",
+  "inspection_brakes",
+  "inspection_forks",
+  "inspection_item",
 ]);
 
 export const intakePhotoSchema = z.object({
   category: photoCategorySchema,
   notes: z.string().nullable().optional(),
+  inspection_result_id: z.string().uuid().nullable().optional(),
 });
 
 export const technicianNoteTypeSchema = z.enum([

@@ -40,14 +40,17 @@ export default async function InspectionPage({
           <span className="inspection-fullscreen-wo">
             {inspection.work_order_number}
           </span>
-          <span className="inspection-fullscreen-label">Inspection</span>
+          <span className="inspection-fullscreen-label">
+            Visual Motorcycle Inspection Report
+          </span>
         </div>
       </header>
 
       <div className="inspection-fullscreen-body">
         <p className="inspection-fullscreen-hint">
-          Status saves immediately. Measurement and notes auto-save after you
-          pause typing.
+          Tap green / yellow / red to mark each item. Status saves immediately.
+          Add required photos for tires, brakes, forks, and anything marked
+          needing work before completing the report.
         </p>
 
         {inspection.is_foreign_location ? (

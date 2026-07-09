@@ -80,6 +80,10 @@ export const PHOTO_CATEGORY_LABELS: Record<PhotoCategory, string> = {
   accessories: "Accessories",
   fuel_level: "Fuel Level",
   other: "Other",
+  inspection_tires: "Inspection — Tires",
+  inspection_brakes: "Inspection — Brakes",
+  inspection_forks: "Inspection — Forks",
+  inspection_item: "Inspection — Needs work",
 };
 
 /** Categories required at work-order create (also shown as missing on Photos tab). */
