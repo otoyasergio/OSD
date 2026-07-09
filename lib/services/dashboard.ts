@@ -207,11 +207,16 @@ export async function getDashboardData(
   const user = await requireUser();
   const supabase = await createClient();
   const now = new Date();
+  const locationId = user.active_location_id!;
 
-  const { data, error } = await supabase
-    .from("work_order")
-    .select(
-      `
+  // Single nested select for board cards (no per-card fetches). Exclude
+  // completed/cancelled so the 300-row window stays on operational WOs.
+  // Technician filter options load in parallel with the board query.
+  const [woResult, membershipResult] = await Promise.all([
+    supabase
+      .from("work_order")
+      .select(
+        `
       work_order_id,
       work_order_number,
       external_invoice_number,
@@ -243,18 +248,25 @@ export async function getDashboardData(
       intake_photo ( photo_id ),
       inspection ( completed_at )
     `
-    )
-    .eq("location_id", user.active_location_id!)
-    .order("date_created", { ascending: false })
-    .limit(300);
+      )
+      .eq("location_id", locationId)
+      .in("status", ACTIVE_STATUSES)
+      .order("date_created", { ascending: false })
+      .limit(300),
+    supabase
+      .from("user_location")
+      .select("user_id")
+      .eq("location_id", locationId),
+  ]);
 
-  if (error) throw error;
+  if (woResult.error) throw woResult.error;
+  if (membershipResult.error) throw membershipResult.error;
 
-  const rawRows = (data ?? []) as unknown as RawRow[];
+  const rawRows = (woResult.data ?? []) as unknown as RawRow[];
   const counts = emptyCounts();
 
   for (const row of rawRows) {
-    if (ACTIVE_STATUSES.includes(row.status)) counts.open += 1;
+    counts.open += 1;
     if (row.status === "waiting_for_customer_approval") counts.waiting_approval += 1;
     if (row.status === "waiting_for_parts") counts.waiting_parts += 1;
     if (row.status === "ready_for_technician") counts.ready_for_technician += 1;
@@ -264,11 +276,7 @@ export async function getDashboardData(
     if (isOverdue(row.estimated_completion, row.status, now)) counts.overdue += 1;
 
     const inspection = row.inspection?.[0] ?? null;
-    if (
-      ACTIVE_STATUSES.includes(row.status) &&
-      inspection &&
-      !inspection.completed_at
-    ) {
+    if (inspection && !inspection.completed_at) {
       counts.incomplete_inspections += 1;
     }
 
@@ -326,13 +334,7 @@ export async function getDashboardData(
       return haystack.includes(query);
     });
 
-  const { data: memberships, error: membershipError } = await supabase
-    .from("user_location")
-    .select("user_id")
-    .eq("location_id", user.active_location_id!);
-  if (membershipError) throw membershipError;
-
-  const userIds = (memberships ?? []).map(
+  const userIds = (membershipResult.data ?? []).map(
     (row: { user_id: string }) => row.user_id
   );
 

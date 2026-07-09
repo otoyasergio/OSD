@@ -82,6 +82,10 @@ Open [http://localhost:3000](http://localhost:3000) and sign in with the Auth us
 
 Walk the checklist in [`docs/superpowers/acceptance/v1-checklist.md`](./docs/superpowers/acceptance/v1-checklist.md) (build-sheet Tests 1–17 plus design extras). Task 35 is not done until that live pass succeeds.
 
+### Performance baseline
+
+Dashboard board load uses one nested `work_order` query (jobs, recommendations, photos, inspection) scoped to the active location and non-terminal statuses, plus a parallel technician membership query. Target: **under 2s** for ~200 active work orders on a warm Supabase project after migrations `013_performance_indexes.sql`. Re-check with Safari Network after seeding volume.
+
 ## Tests
 
 ```bash
