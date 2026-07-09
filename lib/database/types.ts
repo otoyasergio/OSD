@@ -1,3 +1,5 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 export type UserRole =
   | "owner"
   | "manager"
@@ -56,3 +58,6 @@ export type RecommendationStatus =
   | "declined"
   | "converted_to_job"
   | "deferred";
+
+/** Supabase client used by service helpers. Schema is untyped until generated types land. */
+export type DbClient = SupabaseClient;

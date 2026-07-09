@@ -1,3 +1,5 @@
+import type { DbClient } from "@/lib/database/types";
+
 type Args = {
   actor_user_id: string | null;
   location_id?: string | null;
@@ -9,8 +11,7 @@ type Args = {
   new_value?: unknown;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function addAuditLog(supabase: any, args: Args) {
+export async function addAuditLog(supabase: DbClient, args: Args) {
   const { error } = await supabase.from("audit_log").insert({
     actor_user_id: args.actor_user_id,
     location_id: args.location_id ?? null,

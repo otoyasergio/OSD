@@ -1,3 +1,5 @@
+import type { DbClient } from "@/lib/database/types";
+
 type Args = {
   work_order_id: string;
   user_id: string | null;
@@ -9,8 +11,7 @@ type Args = {
   new_value?: unknown;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function addTimelineEvent(supabase: any, args: Args) {
+export async function addTimelineEvent(supabase: DbClient, args: Args) {
   const { error } = await supabase.from("timeline_event").insert({
     work_order_id: args.work_order_id,
     user_id: args.user_id,

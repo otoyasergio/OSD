@@ -1,4 +1,9 @@
-import type { JobStatus, PartStatus, WorkOrderStatus } from "@/lib/database/types";
+import type {
+  DbClient,
+  JobStatus,
+  PartStatus,
+  WorkOrderStatus,
+} from "@/lib/database/types";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
@@ -111,9 +116,8 @@ export function deriveWorkOrderStatus(
   return "open";
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function recalculateWorkOrderStatus(
-  supabase: any,
+  supabase: DbClient,
   workOrderId: string,
   actorUserId: string | null = null
 ) {
