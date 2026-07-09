@@ -7,6 +7,7 @@ import { serviceSchema } from "@/lib/validation/schemas";
 export type Service = {
   service_id: string;
   name: string;
+  category: string | null;
   standard_price: number | null;
   estimated_labour: number | null;
   active: boolean;
@@ -16,13 +17,37 @@ export type Service = {
 
 export type ServiceInput = {
   name: string;
+  category?: string | null;
   standard_price?: number | null;
   estimated_labour?: number | null;
   active?: boolean;
 };
 
 const SERVICE_COLUMNS =
-  "service_id, name, standard_price, estimated_labour, active, created_at, updated_at";
+  "service_id, name, category, standard_price, estimated_labour, active, created_at, updated_at";
+
+export const UNCATEGORISED_SERVICE_GROUP = "Other";
+
+/** Groups services by category, keeping category order alphabetical with uncategorised last. */
+export function groupServicesByCategory(
+  services: Service[]
+): Array<{ category: string; services: Service[] }> {
+  const groups = new Map<string, Service[]>();
+  for (const service of services) {
+    const key = service.category?.trim() || UNCATEGORISED_SERVICE_GROUP;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(service);
+    else groups.set(key, [service]);
+  }
+
+  return [...groups.entries()]
+    .sort(([a], [b]) => {
+      if (a === UNCATEGORISED_SERVICE_GROUP) return 1;
+      if (b === UNCATEGORISED_SERVICE_GROUP) return -1;
+      return a.localeCompare(b);
+    })
+    .map(([category, grouped]) => ({ category, services: grouped }));
+}
 
 export async function listServices(
   options: { includeInactive?: boolean } = {}
@@ -51,10 +76,13 @@ export async function createService(input: ServiceInput): Promise<Service> {
   const parsed = serviceSchema.parse(input);
 
   const supabase = await createClient();
+  const category = parsed.category?.trim() || null;
+
   const { data, error } = await supabase
     .from("service")
     .insert({
       name: parsed.name,
+      category,
       standard_price: parsed.standard_price ?? null,
       estimated_labour: parsed.estimated_labour ?? null,
       active: parsed.active,
@@ -94,10 +122,13 @@ export async function updateService(
 
   if (!previous) throw new Error("SERVICE_NOT_FOUND");
 
+  const category = parsed.category?.trim() || null;
+
   const { data, error } = await supabase
     .from("service")
     .update({
       name: parsed.name,
+      category,
       standard_price: parsed.standard_price ?? null,
       estimated_labour: parsed.estimated_labour ?? null,
       updated_at: new Date().toISOString(),

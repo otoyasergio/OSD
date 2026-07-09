@@ -24,6 +24,7 @@ export async function createServiceAction(
   try {
     await createService({
       name: String(formData.get("name") ?? "").trim(),
+      category: String(formData.get("category") ?? "").trim() || null,
       standard_price: readNumber(formData, "standard_price"),
       estimated_labour: readNumber(formData, "estimated_labour"),
     });
@@ -43,6 +44,7 @@ export async function updateServiceAction(
   try {
     await updateService(serviceId, {
       name: String(formData.get("name") ?? "").trim(),
+      category: String(formData.get("category") ?? "").trim() || null,
       standard_price: readNumber(formData, "standard_price"),
       estimated_labour: readNumber(formData, "estimated_labour"),
     });

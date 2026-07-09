@@ -5,7 +5,10 @@ import Link from "next/link";
 import type { WorkOrderFormState } from "@/app/(app)/work_orders/actions";
 import type { Customer } from "@/lib/services/customers";
 import type { MotorcycleWithCustomer } from "@/lib/services/motorcycles";
-import type { Service } from "@/lib/services/serviceCatalogue";
+import {
+  groupServicesByCategory,
+  type Service,
+} from "@/lib/services/serviceCatalogue";
 import type { TechnicianOption } from "@/lib/services/workOrders";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
@@ -50,6 +53,11 @@ export function CreateWorkOrderForm({
     if (!customerId) return [];
     return motorcycles.filter((bike) => bike.customer_id === customerId);
   }, [customerId, motorcycles]);
+
+  const groupedServices = useMemo(
+    () => groupServicesByCategory(services),
+    [services]
+  );
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-6">
@@ -158,33 +166,42 @@ export function CreateWorkOrderForm({
             No active services in the catalogue.
           </p>
         ) : (
-          <ul className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
-            {services.map((service) => (
-              <li key={service.service_id}>
-                <label className="flex min-h-11 cursor-pointer items-start gap-3 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    name="service_ids"
-                    value={service.service_id}
-                    className="mt-1 h-4 w-4"
-                  />
-                  <span>
-                    <span className="block font-medium text-zinc-900">
-                      {service.name}
-                    </span>
-                    <span className="block text-sm text-zinc-600">
-                      {service.standard_price != null
-                        ? `$${service.standard_price}`
-                        : "No price"}
-                      {service.estimated_labour != null
-                        ? ` · ${service.estimated_labour} h`
-                        : ""}
-                    </span>
-                  </span>
-                </label>
-              </li>
+          <div className="flex flex-col gap-4">
+            {groupedServices.map(({ category, services: categoryServices }) => (
+              <div key={category}>
+                <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+                  {category}
+                </h3>
+                <ul className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
+                  {categoryServices.map((service) => (
+                    <li key={service.service_id}>
+                      <label className="flex min-h-11 cursor-pointer items-start gap-3 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          name="service_ids"
+                          value={service.service_id}
+                          className="mt-1 h-4 w-4"
+                        />
+                        <span>
+                          <span className="block font-medium text-zinc-900">
+                            {service.name}
+                          </span>
+                          <span className="block text-sm text-zinc-600">
+                            {service.standard_price != null
+                              ? `$${service.standard_price}`
+                              : "No price"}
+                            {service.estimated_labour != null
+                              ? ` · ${service.estimated_labour} h`
+                              : ""}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </section>
 

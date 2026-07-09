@@ -2,7 +2,10 @@
 
 import { useActionState } from "react";
 import type { WorkOrderJob, TechnicianOption } from "@/lib/services/workOrders";
-import type { Service } from "@/lib/services/serviceCatalogue";
+import {
+  groupServicesByCategory,
+  type Service,
+} from "@/lib/services/serviceCatalogue";
 import type { JobFormState } from "@/app/(app)/work_orders/job-actions";
 import { JobCard } from "@/components/jobs/JobCard";
 import { FormError } from "@/components/forms/Field";
@@ -50,6 +53,7 @@ export function JobsTab({
   cancelActionFor: (jobId: string) => Action;
 }) {
   const [addState, addFormAction] = useActionState(addAction, { error: null });
+  const groupedServices = groupServicesByCategory(services);
 
   return (
     <div className="flex flex-col gap-4">
@@ -64,10 +68,14 @@ export function JobsTab({
             </span>
             <select className={SELECT_CLASS} name="service_id" required defaultValue="">
               <option value="">Select service</option>
-              {services.map((service) => (
-                <option key={service.service_id} value={service.service_id}>
-                  {service.name}
-                </option>
+              {groupedServices.map(({ category, services: categoryServices }) => (
+                <optgroup key={category} label={category}>
+                  {categoryServices.map((service) => (
+                    <option key={service.service_id} value={service.service_id}>
+                      {service.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>

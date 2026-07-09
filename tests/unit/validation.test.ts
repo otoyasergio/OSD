@@ -52,6 +52,20 @@ describe("serviceSchema", () => {
     expect(result.success && result.data.active).toBe(true);
   });
 
+  it("accepts an optional category", () => {
+    const withCategory = serviceSchema.safeParse({
+      name: "Oil Change",
+      category: "Maintenance",
+    });
+    expect(withCategory.success).toBe(true);
+    expect(withCategory.success && withCategory.data.category).toBe(
+      "Maintenance"
+    );
+
+    const withoutCategory = serviceSchema.safeParse({ name: "Oil Change" });
+    expect(withoutCategory.success).toBe(true);
+  });
+
   it("rejects negative prices", () => {
     const result = serviceSchema.safeParse({
       name: "Oil Change",

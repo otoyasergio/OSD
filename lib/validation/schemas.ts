@@ -25,6 +25,7 @@ export const motorcycleSchema = z.object({
 
 export const serviceSchema = z.object({
   name: z.string().min(1, "Service name is required"),
+  category: z.string().nullable().optional(),
   standard_price: z.number().nonnegative().nullable().optional(),
   estimated_labour: z.number().nonnegative().nullable().optional(),
   active: z.boolean().default(true),
