@@ -2,6 +2,12 @@ import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { canViewAuditLog } from "@/lib/permissions";
 
+/**
+ * Global audit log reads are owner-only in app permissions and RLS
+ * (`audit_log_select_owner`). Writes are append-only (INSERT); UPDATE/DELETE
+ * are denied at the policy layer. See docs/superpowers/acceptance/rls-audit.md.
+ */
+
 export type AuditLogEntry = {
   audit_log_id: string;
   actor_user_id: string | null;
