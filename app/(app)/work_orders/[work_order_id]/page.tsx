@@ -22,6 +22,7 @@ import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import { listRecommendationsForWorkOrder } from "@/lib/services/recommendations";
 import { listPartsForWorkOrder } from "@/lib/services/parts";
 import { listIntakePhotos } from "@/lib/services/photos";
+import { listTechnicianNotes } from "@/lib/services/notes";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import {
   ComingSoonPanel,
@@ -35,6 +36,7 @@ import { InspectionChecklist } from "@/components/inspections/InspectionChecklis
 import { RecommendationsTab } from "@/components/recommendations/RecommendationsTab";
 import { PartsTab } from "@/components/parts/PartsTab";
 import { PhotosTab } from "@/components/photos/PhotosTab";
+import { TechnicianNotes } from "@/components/work_orders/TechnicianNotes";
 import {
   assignTechnicianAction,
   setPrimaryTechnicianAction,
@@ -57,6 +59,7 @@ import {
   updatePartStatusAction,
 } from "@/app/(app)/work_orders/part-actions";
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
+import { addTechnicianNoteAction } from "@/app/(app)/work_orders/note-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -81,19 +84,27 @@ export default async function WorkOrderDetailPage({
   const detail = await getWorkOrderDetail(work_order_id);
   if (!detail) notFound();
 
-  const [technicians, services, inspection, recommendations, parts, photos] =
-    await Promise.all([
-      detail.is_foreign_location
-        ? Promise.resolve([])
-        : listTechniciansForActiveLocation(),
-      detail.is_foreign_location
-        ? Promise.resolve([])
-        : listServices({ includeInactive: false }),
-      getInspectionForWorkOrder(work_order_id),
-      listRecommendationsForWorkOrder(work_order_id),
-      listPartsForWorkOrder(work_order_id),
-      listIntakePhotos(work_order_id),
-    ]);
+  const [
+    technicians,
+    services,
+    inspection,
+    recommendations,
+    parts,
+    photos,
+    notes,
+  ] = await Promise.all([
+    detail.is_foreign_location
+      ? Promise.resolve([])
+      : listTechniciansForActiveLocation(),
+    detail.is_foreign_location
+      ? Promise.resolve([])
+      : listServices({ includeInactive: false }),
+    getInspectionForWorkOrder(work_order_id),
+    listRecommendationsForWorkOrder(work_order_id),
+    listPartsForWorkOrder(work_order_id),
+    listIntakePhotos(work_order_id),
+    listTechnicianNotes(work_order_id),
+  ]);
 
   const canAssign = canAssignTechnician(user.role);
   const canEdit = canEditWorkOrder(user.role);
@@ -110,6 +121,7 @@ export default async function WorkOrderDetailPage({
     canEditWorkOrder(user.role) ||
     canCreateWorkOrder(user.role) ||
     user.role === "technician";
+  const canAddNotes = canComplete || canEdit || canAdd;
 
   const fromResult = fromResultId
     ? inspection?.results.find((r) => r.inspection_result_id === fromResultId)
@@ -271,7 +283,15 @@ export default async function WorkOrderDetailPage({
           )}
         />
       ) : null}
-      {activeTab === "notes" ? <ComingSoonPanel title="Notes" /> : null}
+      {activeTab === "notes" ? (
+        <TechnicianNotes
+          notes={notes}
+          jobs={detail.jobs}
+          readOnly={detail.is_foreign_location}
+          canAdd={canAddNotes}
+          addAction={addTechnicianNoteAction.bind(null, detail.work_order_id)}
+        />
+      ) : null}
       {activeTab === "timeline" ? <ComingSoonPanel title="Timeline" /> : null}
       {activeTab === "service-info" ? (
         <ComingSoonPanel title="Service Info" />
