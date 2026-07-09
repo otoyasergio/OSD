@@ -108,8 +108,14 @@ npm run test:watch
 npm run build
 ```
 
+## Production
+
+See the production runbook: [`docs/superpowers/acceptance/production-checklist.md`](./docs/superpowers/acceptance/production-checklist.md) (env vars, migration order, Vercel/Safari, backups, owner recovery, advisors).
+
 ## Documentation
 
 - Design: [`docs/superpowers/specs/`](./docs/superpowers/specs/)
 - Implementation plan: [`docs/superpowers/plans/`](./docs/superpowers/plans/)
 - V1 acceptance checklist: [`docs/superpowers/acceptance/v1-checklist.md`](./docs/superpowers/acceptance/v1-checklist.md)
+- RLS audit: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md)
+- Production checklist: [`docs/superpowers/acceptance/production-checklist.md`](./docs/superpowers/acceptance/production-checklist.md)
