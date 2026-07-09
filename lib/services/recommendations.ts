@@ -340,7 +340,8 @@ export async function convertRecommendationToJob(
   if (serviceError) throw serviceError;
   if (!service || !service.active) throw new Error("SERVICE_NOT_FOUND");
 
-  const alreadyApproved = Boolean(input.already_approved);
+  const alreadyApproved =
+    Boolean(input.already_approved) || existing.status === "approved";
   const jobStatus: JobStatus = alreadyApproved
     ? "approved"
     : "waiting_for_approval";
