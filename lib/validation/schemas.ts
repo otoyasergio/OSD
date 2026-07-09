@@ -134,3 +134,45 @@ export const technicianNoteSchema = z.object({
   note_type: technicianNoteTypeSchema.default("general"),
   job_id: z.string().uuid().nullable().optional(),
 });
+
+export const locationSchema = z.object({
+  name: z.string().min(1, "Location name is required"),
+  code: z
+    .string()
+    .min(1, "Location code is required")
+    .max(16, "Code must be 16 characters or fewer")
+    .regex(/^[A-Za-z0-9_-]+$/, "Use letters, numbers, hyphens, or underscores"),
+  status: z.enum(["active", "inactive"]).default("active"),
+});
+
+export const appUserLinkSchema = z.object({
+  auth_user_id: z.string().uuid("Auth user id must be a UUID"),
+  first_name: z.string().min(1, "First name is required"),
+  last_name: z.string().min(1, "Last name is required"),
+  email: z.string().email("Valid email is required"),
+  phone: z.string().nullable().optional(),
+  role: z.enum([
+    "owner",
+    "manager",
+    "service_advisor",
+    "technician",
+    "admin",
+  ]),
+  location_ids: z.array(z.string().uuid()).min(1, "Assign at least one location"),
+});
+
+export const appUserUpdateSchema = z.object({
+  first_name: z.string().min(1, "First name is required"),
+  last_name: z.string().min(1, "Last name is required"),
+  email: z.string().email("Valid email is required"),
+  phone: z.string().nullable().optional(),
+  role: z.enum([
+    "owner",
+    "manager",
+    "service_advisor",
+    "technician",
+    "admin",
+  ]),
+  status: z.enum(["active", "inactive", "suspended"]),
+  location_ids: z.array(z.string().uuid()).min(1, "Assign at least one location"),
+});
