@@ -22,6 +22,20 @@ const MESSAGES: Record<string, string> = {
   JOB_CANNOT_DECLINE: "That job cannot be declined in its current status.",
   DECLINE_REASON_REQUIRED: "A decline reason is required.",
   CANCEL_NOTE_REQUIRED: "A cancel note is required.",
+  TEMPLATE_ITEM_NOT_FOUND: "That inspection template item no longer exists.",
+  INSPECTION_NOT_FOUND: "That inspection no longer exists.",
+  INSPECTION_RESULT_NOT_FOUND: "That inspection result no longer exists.",
+  INSPECTION_ALREADY_COMPLETE: "This inspection is already complete.",
+  INSPECTION_INCOMPLETE:
+    "Some checklist items are still incomplete. An owner or manager can force completion.",
+  RECOMMENDATION_NOT_FOUND: "That recommendation no longer exists.",
+  RECOMMENDATION_ALREADY_CONVERTED:
+    "That recommendation has already been converted to a job.",
+  PART_NOT_FOUND: "That part no longer exists.",
+  PARTS_ORDER_BEFORE_APPROVAL:
+    "Parts cannot be ordered before customer approval.",
+  PART_INSTALL_REQUIRES_TECHNICIAN:
+    "Assign a technician to the job before marking parts installed.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

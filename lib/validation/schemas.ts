@@ -54,3 +54,48 @@ export const addJobSchema = z.object({
   service_id: z.string().uuid(),
   require_approval: z.boolean().default(true),
 });
+
+export const inspectionTemplateItemSchema = z.object({
+  category: z.string().min(1, "Category is required"),
+  item_name: z.string().min(1, "Item name is required"),
+  display_order: z.number().int(),
+  requires_measurement: z.boolean().default(false),
+  active: z.boolean().default(true),
+});
+
+export const saveInspectionResultSchema = z.object({
+  status: z
+    .enum(["ok", "future_attention", "immediate_attention"])
+    .nullable()
+    .optional(),
+  measurement: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+export const recommendationSchema = z.object({
+  description: z.string().min(1, "Description is required"),
+  severity: z.enum([
+    "future_attention",
+    "immediate_attention",
+    "safety_critical",
+  ]),
+  notes: z.string().nullable().optional(),
+  inspection_result_id: z.string().uuid().nullable().optional(),
+});
+
+export const partSchema = z.object({
+  part_name: z.string().min(1, "Part name is required"),
+  part_number: z.string().nullable().optional(),
+  supplier: z.string().nullable().optional(),
+  quantity: z.number().positive().default(1),
+  notes: z.string().nullable().optional(),
+});
+
+export const partStatusSchema = z.enum([
+  "needed",
+  "in_stock",
+  "ordered",
+  "installed",
+  "not_required",
+  "cancelled",
+]);
