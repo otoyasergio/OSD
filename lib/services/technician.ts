@@ -101,53 +101,60 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
     .not("status", "in", '("completed","cancelled","declined")');
   if (jobError) throw jobError;
 
+  type NestedCustomer = { first_name: string; last_name: string };
+  type NestedMotorcycle = {
+    year: number;
+    make: string;
+    model: string;
+    customer: NestedCustomer | NestedCustomer[] | null;
+  };
   type NestedWo = {
     work_order_id: string;
     work_order_number: string;
     status: WorkOrderStatus;
     location_id: string;
     primary_technician_id: string | null;
-    motorcycle: {
-      year: number;
-      make: string;
-      model: string;
-      customer: { first_name: string; last_name: string } | null;
-    } | null;
+    motorcycle: NestedMotorcycle | NestedMotorcycle[] | null;
     inspection: Array<{ completed_at: string | null }> | null;
   };
 
   const myJobs: TechnicianAssignedJob[] = [];
   const jobWoIds = new Set<string>();
 
-  for (const row of (jobRows ?? []) as Array<{
+  for (const row of (jobRows ?? []) as unknown as Array<{
     job_id: string;
     service_name_snapshot: string;
     status: JobStatus;
     work_order: NestedWo | NestedWo[] | null;
   }>) {
-    const wo = Array.isArray(row.work_order) ? row.work_order[0] : row.work_order;
-    if (!wo || wo.location_id !== locationId) continue;
-    if (!ACTIVE_WO.includes(wo.status)) continue;
+    const woRaw = Array.isArray(row.work_order) ? row.work_order[0] : row.work_order;
+    if (!woRaw || woRaw.location_id !== locationId) continue;
+    if (!ACTIVE_WO.includes(woRaw.status)) continue;
 
-    jobWoIds.add(wo.work_order_id);
-    const customer = wo.motorcycle?.customer;
+    const motorcycle = Array.isArray(woRaw.motorcycle)
+      ? woRaw.motorcycle[0]
+      : woRaw.motorcycle;
+    const customerRaw = motorcycle?.customer;
+    const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw;
+
+    jobWoIds.add(woRaw.work_order_id);
     myJobs.push({
       job_id: row.job_id,
       service_name_snapshot: row.service_name_snapshot,
       status: row.status,
       status_label: JOB_STATUS_LABELS[row.status] ?? row.status,
-      work_order_id: wo.work_order_id,
-      work_order_number: wo.work_order_number,
-      work_order_status: wo.status,
+      work_order_id: woRaw.work_order_id,
+      work_order_number: woRaw.work_order_number,
+      work_order_status: woRaw.status,
       work_order_status_label:
-        WORK_ORDER_STATUS_LABELS[wo.status] ?? wo.status,
-      motorcycle_label: wo.motorcycle
-        ? `${wo.motorcycle.year} ${wo.motorcycle.make} ${wo.motorcycle.model}`
+        WORK_ORDER_STATUS_LABELS[woRaw.status] ?? woRaw.status,
+      motorcycle_label: motorcycle
+        ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : "—",
       customer_label: customer
         ? `${customer.first_name} ${customer.last_name}`
         : "—",
-      href: `/work_orders/${wo.work_order_id}?tab=jobs`,
+      href: `/work_orders/${woRaw.work_order_id}?tab=jobs`,
     });
   }
 
@@ -186,7 +193,7 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
   if (woError) throw woError;
 
   const workOrderList: TechnicianAssignedWorkOrder[] = (
-    (workOrders ?? []) as Array<{
+    (workOrders ?? []) as unknown as Array<{
       work_order_id: string;
       work_order_number: string;
       status: WorkOrderStatus;
@@ -203,15 +210,19 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
   )
     .filter((wo) => ACTIVE_WO.includes(wo.status))
     .map((wo) => {
-      const customer = wo.motorcycle?.customer;
+      const motorcycle = Array.isArray(wo.motorcycle)
+        ? wo.motorcycle[0]
+        : wo.motorcycle;
+      const customerRaw = motorcycle?.customer;
+      const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw;
       const inspectionComplete = Boolean(wo.inspection?.[0]?.completed_at);
       return {
         work_order_id: wo.work_order_id,
         work_order_number: wo.work_order_number,
         status: wo.status,
         status_label: WORK_ORDER_STATUS_LABELS[wo.status] ?? wo.status,
-        motorcycle_label: wo.motorcycle
-          ? `${wo.motorcycle.year} ${wo.motorcycle.make} ${wo.motorcycle.model}`
+        motorcycle_label: motorcycle
+          ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
           : "—",
         customer_label: customer
           ? `${customer.first_name} ${customer.last_name}`
