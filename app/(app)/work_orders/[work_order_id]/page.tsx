@@ -1,11 +1,18 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
-import { canAssignTechnician } from "@/lib/permissions";
+import {
+  canAssignTechnician,
+  canCompleteJob,
+  canCreateWorkOrder,
+  canEditWorkOrder,
+  canRecordCustomerApproval,
+} from "@/lib/permissions";
 import {
   getWorkOrderDetail,
   listTechniciansForActiveLocation,
 } from "@/lib/services/workOrders";
+import { listServices } from "@/lib/services/serviceCatalogue";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import {
   ComingSoonPanel,
@@ -14,10 +21,19 @@ import {
   type WorkOrderTabId,
 } from "@/components/work_orders/WorkOrderTabs";
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
+import { JobsTab } from "@/components/jobs/JobsTab";
 import {
   assignTechnicianAction,
   setPrimaryTechnicianAction,
 } from "@/app/(app)/work_orders/actions";
+import {
+  addJobAction,
+  approveJobAction,
+  assignJobTechnicianAction,
+  cancelJobAction,
+  declineJobAction,
+  updateJobStatusAction,
+} from "@/app/(app)/work_orders/job-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -42,11 +58,19 @@ export default async function WorkOrderDetailPage({
   const detail = await getWorkOrderDetail(work_order_id);
   if (!detail) notFound();
 
-  const technicians = detail.is_foreign_location
-    ? []
-    : await listTechniciansForActiveLocation();
+  const [technicians, services] = detail.is_foreign_location
+    ? [[], []]
+    : await Promise.all([
+        listTechniciansForActiveLocation(),
+        listServices({ includeInactive: false }),
+      ]);
 
   const canAssign = canAssignTechnician(user.role);
+  const canEdit = canEditWorkOrder(user.role);
+  const canApprove = canRecordCustomerApproval(user.role);
+  const canComplete = canCompleteJob(user.role);
+  const canAdd =
+    canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
 
   return (
     <div className="flex flex-col gap-4">
@@ -84,7 +108,36 @@ export default async function WorkOrderDetailPage({
         />
       ) : null}
 
-      {activeTab === "jobs" ? <ComingSoonPanel title="Jobs" /> : null}
+      {activeTab === "jobs" ? (
+        <JobsTab
+          jobs={detail.jobs}
+          services={services}
+          technicians={technicians}
+          readOnly={detail.is_foreign_location}
+          canAdd={canAdd}
+          canApprove={canApprove}
+          canEdit={canEdit}
+          canComplete={canComplete}
+          currentUserId={user.user_id}
+          addAction={addJobAction.bind(null, detail.work_order_id)}
+          assignActionFor={(jobId) =>
+            assignJobTechnicianAction.bind(null, detail.work_order_id, jobId)
+          }
+          statusActionFor={(jobId) =>
+            updateJobStatusAction.bind(null, detail.work_order_id, jobId)
+          }
+          approveActionFor={(jobId) =>
+            approveJobAction.bind(null, detail.work_order_id, jobId)
+          }
+          declineActionFor={(jobId) =>
+            declineJobAction.bind(null, detail.work_order_id, jobId)
+          }
+          cancelActionFor={(jobId) =>
+            cancelJobAction.bind(null, detail.work_order_id, jobId)
+          }
+        />
+      ) : null}
+
       {activeTab === "inspection" ? (
         <ComingSoonPanel title="Inspection" />
       ) : null}

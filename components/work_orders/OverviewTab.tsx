@@ -5,6 +5,7 @@ import type { WorkOrderDetail, TechnicianOption } from "@/lib/services/workOrder
 import type { WorkOrderFormState } from "@/app/(app)/work_orders/actions";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
@@ -148,7 +149,9 @@ export function OverviewTab({
                 <span className="font-medium text-zinc-900">
                   {job.service_name_snapshot}
                 </span>
-                <span className="text-zinc-600">{job.status}</span>
+                <span className="text-zinc-600">
+                  {JOB_STATUS_LABELS[job.status] ?? job.status}
+                </span>
               </li>
             ))}
           </ul>

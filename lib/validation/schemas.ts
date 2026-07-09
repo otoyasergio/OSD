@@ -40,3 +40,17 @@ export const createWorkOrderSchema = z.object({
   primary_technician_id: z.string().uuid().optional().nullable(),
   service_ids: z.array(z.string().uuid()).default([]),
 });
+
+export const approvalMethodSchema = z.enum([
+  "phone",
+  "email",
+  "text",
+  "in_person",
+  "written_estimate",
+  "other",
+]);
+
+export const addJobSchema = z.object({
+  service_id: z.string().uuid(),
+  require_approval: z.boolean().default(true),
+});
