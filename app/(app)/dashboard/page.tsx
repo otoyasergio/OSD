@@ -9,22 +9,24 @@ import {
 import { canCreateWorkOrder } from "@/lib/permissions";
 import {
   getDashboardDensityPreference,
+  getDashboardViewModePreference,
   getHiddenBoardColumnsPreference,
   listSavedDashboardViews,
+  type DashboardViewMode,
 } from "@/lib/services/userPreferences";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ShopBoard } from "@/components/work_orders/ShopBoard";
 import { WorkOrderListView } from "@/components/work_orders/WorkOrderListView";
+import { WorkOrderCardsView } from "@/components/work_orders/WorkOrderCardsView";
 import { DashboardFilterChips } from "@/components/work_orders/DashboardFilterChips";
 import { SavedViewsBar } from "@/components/work_orders/SavedViewsBar";
 import { BoardPrefsControls } from "@/components/work_orders/BoardPrefsControls";
+import { DashboardViewToggle } from "@/components/work_orders/DashboardViewToggle";
 import { SELECT_CLASS } from "@/components/forms/Field";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
 export const dynamic = "force-dynamic";
-
-type DashboardView = "board" | "list";
 
 function buildHref(params: Record<string, string | undefined | null>) {
   const search = new URLSearchParams();
@@ -35,8 +37,14 @@ function buildHref(params: Record<string, string | undefined | null>) {
   return qs ? `/dashboard?${qs}` : "/dashboard";
 }
 
-function resolveView(raw: string | undefined): DashboardView {
+function resolveView(
+  raw: string | undefined,
+  saved: DashboardViewMode | null
+): DashboardViewMode {
   if (raw === "list" || raw === "table") return "list";
+  if (raw === "cards" || raw === "card") return "cards";
+  if (raw === "board" || raw === "columns") return "board";
+  if (saved === "list" || saved === "cards" || saved === "board") return saved;
   return "board";
 }
 
@@ -59,20 +67,23 @@ export default async function DashboardPage({
 
   const canCreate = canCreateWorkOrder(user.role);
   const params = await searchParams;
-  const view = resolveView(params.view);
+  const [data, savedViews, savedDensity, savedViewMode, hiddenColumnIds] =
+    await Promise.all([
+      getDashboardData({
+        status: (params.status as WorkOrderStatus) || "",
+        technician_id: params.technician_id || "",
+        flag: params.flag || "",
+        q: params.q || "",
+        card: (params.card as DashboardCardKey) || "",
+      }),
+      listSavedDashboardViews().catch(() => []),
+      getDashboardDensityPreference().catch(() => null),
+      getDashboardViewModePreference().catch(() => null),
+      getHiddenBoardColumnsPreference().catch(() => [] as string[]),
+    ]);
+
+  const view = resolveView(params.view, savedViewMode);
   const hideEmpty = params.hide_empty === "1";
-  const [data, savedViews, savedDensity, hiddenColumnIds] = await Promise.all([
-    getDashboardData({
-      status: (params.status as WorkOrderStatus) || "",
-      technician_id: params.technician_id || "",
-      flag: params.flag || "",
-      q: params.q || "",
-      card: (params.card as DashboardCardKey) || "",
-    }),
-    listSavedDashboardViews().catch(() => []),
-    getDashboardDensityPreference().catch(() => null),
-    getHiddenBoardColumnsPreference().catch(() => [] as string[]),
-  ]);
 
   // URL params override persisted density; otherwise use saved preference.
   const density: "compact" | "comfortable" =
@@ -103,30 +114,7 @@ export default async function DashboardPage({
                 New work order
               </Link>
             ) : null}
-            <div className="view-toggle" role="group" aria-label="View mode">
-              <Link
-                href={buildHref({ ...filterBase, view: "board" })}
-                className={
-                  view === "board"
-                    ? "view-toggle-link view-toggle-link-active"
-                    : "view-toggle-link"
-                }
-                aria-current={view === "board" ? "true" : undefined}
-              >
-                Columns
-              </Link>
-              <Link
-                href={buildHref({ ...filterBase, view: "list" })}
-                className={
-                  view === "list"
-                    ? "view-toggle-link view-toggle-link-active"
-                    : "view-toggle-link"
-                }
-                aria-current={view === "list" ? "true" : undefined}
-              >
-                List
-              </Link>
-            </div>
+            <DashboardViewToggle view={view} filterBase={filterBase} />
           </div>
         }
       />
@@ -245,6 +233,7 @@ export default async function DashboardPage({
 
       {data.rows.length === 0 ? (
         <EmptyState
+          variant="work-orders"
           title="No work orders"
           description="No work orders match these filters at this location."
           action={{ href: "/work_orders/new", label: "Create work order" }}
@@ -258,6 +247,8 @@ export default async function DashboardPage({
           role={user.role}
           isForeignLocation={false}
         />
+      ) : view === "cards" ? (
+        <WorkOrderCardsView rows={data.rows} />
       ) : (
         <WorkOrderListView rows={data.rows} hideEmpty={hideEmpty} />
       )}

@@ -1,9 +1,11 @@
 import Link from "next/link";
 import type { WorkOrderDetail } from "@/lib/services/workOrders";
+import type { IntakePhoto } from "@/lib/services/photos";
 import { FlagBadges } from "@/components/status/FlagBadges";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { WorkOrderJobTodo } from "@/components/work_orders/WorkOrderJobTodo";
 import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
+import { WorkOrderPhotoStrip } from "@/components/work_orders/WorkOrderPhotoStrip";
 import { getWorkOrderNextAction } from "@/lib/status/pipeline";
 
 const INACTIVE_JOB_STATUSES = new Set(["cancelled", "declined", "completed"]);
@@ -22,7 +24,13 @@ function sumActiveEstimatedHours(detail: WorkOrderDetail): number | null {
   return hours.reduce((sum, h) => sum + h, 0);
 }
 
-export function WorkOrderHeader({ detail }: { detail: WorkOrderDetail }) {
+export function WorkOrderHeader({
+  detail,
+  photos = [],
+}: {
+  detail: WorkOrderDetail;
+  photos?: IntakePhoto[];
+}) {
   const customer = detail.motorcycle?.customer;
   const bike = detail.motorcycle;
   const nextAction = getWorkOrderNextAction(detail.status, detail.flags);
@@ -79,6 +87,8 @@ export function WorkOrderHeader({ detail }: { detail: WorkOrderDetail }) {
             ) : null}
           </div>
         ) : null}
+
+        <WorkOrderPhotoStrip photos={photos} />
 
         <p className="mt-3 text-sm text-[var(--status-neutral)]">
           <span className="font-semibold text-foreground">Next action:</span>{" "}

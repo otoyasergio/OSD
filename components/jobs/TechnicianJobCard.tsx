@@ -52,6 +52,7 @@ export function TechnicianJobCard({
   workOrderHref,
   inspectionHref,
   inspectionComplete,
+  primaryPhotoUrl,
   canStart,
   canComplete,
   startAction,
@@ -67,6 +68,7 @@ export function TechnicianJobCard({
   workOrderHref: string;
   inspectionHref?: string;
   inspectionComplete?: boolean;
+  primaryPhotoUrl?: string | null;
   canStart: boolean;
   canComplete: boolean;
   startAction?: StatusAction;
@@ -86,6 +88,17 @@ export function TechnicianJobCard({
 
   return (
     <article className="tech-job-card">
+      {primaryPhotoUrl ? (
+        <div className="tech-job-card-photo" aria-hidden>
+          {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
+          <img
+            src={primaryPhotoUrl}
+            alt=""
+            className="tech-job-card-photo-img"
+            loading="lazy"
+          />
+        </div>
+      ) : null}
       <div className="tech-job-card-hero">
         <p className="tech-job-card-bike">{motorcycleLabel}</p>
         <p className="tech-job-card-customer">{customerLabel}</p>

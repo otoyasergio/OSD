@@ -25,7 +25,7 @@ export function BoardPrefsControls({
   density: "compact" | "comfortable";
   hideEmpty: boolean;
   hiddenColumnIds: string[];
-  mode: "board" | "list";
+  mode: "board" | "list" | "cards";
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -54,6 +54,10 @@ export function BoardPrefsControls({
       );
       router.refresh();
     });
+  }
+
+  if (mode === "cards") {
+    return null;
   }
 
   return (

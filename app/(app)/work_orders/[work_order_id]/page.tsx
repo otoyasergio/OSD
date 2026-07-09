@@ -193,7 +193,7 @@ export default async function WorkOrderDetailPage({
         </div>
       ) : null}
 
-      <WorkOrderHeader detail={detail} />
+      <WorkOrderHeader detail={detail} photos={photos} />
       <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
 
       {activeTab === "overview" ? (

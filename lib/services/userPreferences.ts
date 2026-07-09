@@ -11,6 +11,9 @@ export { buildDashboardHref } from "@/lib/services/dashboardViewShared";
 export const DASHBOARD_VIEWS_KEY = "dashboard_views";
 export const DASHBOARD_DENSITY_KEY = "dashboard_density";
 export const DASHBOARD_HIDDEN_COLUMNS_KEY = "dashboard_hidden_columns";
+export const DASHBOARD_VIEW_MODE_KEY = "dashboard_view_mode";
+
+export type DashboardViewMode = "board" | "list" | "cards";
 
 type DashboardViewsPayload = {
   views: SavedDashboardView[];
@@ -141,6 +144,26 @@ export async function setDashboardDensityPreference(
   density: "compact" | "comfortable"
 ): Promise<void> {
   await setPreference(DASHBOARD_DENSITY_KEY, density);
+}
+
+export async function getDashboardViewModePreference(): Promise<DashboardViewMode | null> {
+  const value = await getPreference(DASHBOARD_VIEW_MODE_KEY);
+  if (value === "board" || value === "list" || value === "cards") return value;
+  const obj = asObject(value);
+  if (
+    obj?.view === "board" ||
+    obj?.view === "list" ||
+    obj?.view === "cards"
+  ) {
+    return obj.view;
+  }
+  return null;
+}
+
+export async function setDashboardViewModePreference(
+  view: DashboardViewMode
+): Promise<void> {
+  await setPreference(DASHBOARD_VIEW_MODE_KEY, view);
 }
 
 export async function getHiddenBoardColumnsPreference(): Promise<string[]> {

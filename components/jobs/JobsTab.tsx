@@ -95,7 +95,10 @@ export function JobsTab({
       ) : null}
 
       {jobs.length === 0 ? (
-        <EmptyState description="No jobs on this work order yet." />
+        <EmptyState
+          variant="jobs"
+          description="No jobs on this work order yet."
+        />
       ) : (
         <div className="flex flex-col gap-3">
           {jobs.map((job) => (

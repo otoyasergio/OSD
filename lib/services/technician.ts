@@ -1,7 +1,15 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { JobStatus, WorkOrderStatus } from "@/lib/database/types";
+import type {
+  JobStatus,
+  PhotoCategory,
+  WorkOrderStatus,
+} from "@/lib/database/types";
 import { WORK_ORDER_STATUS_LABELS, JOB_STATUS_LABELS } from "@/lib/status/labels";
+import {
+  resolvePrimaryPhotoUrls,
+  type IntakePhotoRef,
+} from "@/lib/services/photos";
 
 export type TechnicianAssignedJob = {
   job_id: string;
@@ -17,6 +25,7 @@ export type TechnicianAssignedJob = {
   href: string;
   inspection_complete: boolean;
   inspection_href: string;
+  primary_photo_url: string | null;
 };
 
 export type TechnicianAssignedWorkOrder = {
@@ -28,6 +37,7 @@ export type TechnicianAssignedWorkOrder = {
   customer_label: string;
   is_primary: boolean;
   inspection_complete: boolean;
+  primary_photo_url: string | null;
   jobs: Array<{
     job_id: string;
     service_name_snapshot: string;
@@ -95,7 +105,8 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
           model,
           customer:customer_id ( first_name, last_name )
         ),
-        inspection ( completed_at )
+        inspection ( completed_at ),
+        intake_photo ( photo_id, storage_path, photo_url, category, created_at )
       )
     `
     )
@@ -110,6 +121,13 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
     model: string;
     customer: NestedCustomer | NestedCustomer[] | null;
   };
+  type NestedPhoto = {
+    photo_id: string;
+    storage_path: string;
+    photo_url: string | null;
+    category: PhotoCategory;
+    created_at: string;
+  };
   type NestedWo = {
     work_order_id: string;
     work_order_number: string;
@@ -118,10 +136,13 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
     primary_technician_id: string | null;
     motorcycle: NestedMotorcycle | NestedMotorcycle[] | null;
     inspection: Array<{ completed_at: string | null }> | null;
+    intake_photo: NestedPhoto[] | null;
   };
 
-  const myJobs: TechnicianAssignedJob[] = [];
+  const myJobsDraft: Array<Omit<TechnicianAssignedJob, "primary_photo_url">> =
+    [];
   const jobWoIds = new Set<string>();
+  const jobPhotosByWo = new Map<string, IntakePhotoRef[]>();
 
   for (const row of (jobRows ?? []) as unknown as Array<{
     job_id: string;
@@ -141,7 +162,10 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
 
     const inspectionComplete = Boolean(woRaw.inspection?.[0]?.completed_at);
     jobWoIds.add(woRaw.work_order_id);
-    myJobs.push({
+    if (!jobPhotosByWo.has(woRaw.work_order_id)) {
+      jobPhotosByWo.set(woRaw.work_order_id, woRaw.intake_photo ?? []);
+    }
+    myJobsDraft.push({
       job_id: row.job_id,
       service_name_snapshot: row.service_name_snapshot,
       status: row.status,
@@ -184,6 +208,7 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
         customer:customer_id ( first_name, last_name )
       ),
       inspection ( completed_at ),
+      intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
       job (
         job_id,
         service_name_snapshot,
@@ -197,7 +222,8 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
     .order("date_created", { ascending: false });
   if (woError) throw woError;
 
-  const workOrderList: TechnicianAssignedWorkOrder[] = (
+  const photosByWorkOrder = new Map<string, IntakePhotoRef[]>(jobPhotosByWo);
+  const activeWorkOrders = (
     (workOrders ?? []) as unknown as Array<{
       work_order_id: string;
       work_order_number: string;
@@ -205,6 +231,7 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
       primary_technician_id: string | null;
       motorcycle: NestedWo["motorcycle"];
       inspection: Array<{ completed_at: string | null }> | null;
+      intake_photo: NestedPhoto[] | null;
       job: Array<{
         job_id: string;
         service_name_snapshot: string;
@@ -212,9 +239,24 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
         assigned_technician_id: string | null;
       }> | null;
     }>
-  )
-    .filter((wo) => ACTIVE_WO.includes(wo.status))
-    .map((wo) => {
+  ).filter((wo) => ACTIVE_WO.includes(wo.status));
+
+  for (const wo of activeWorkOrders) {
+    photosByWorkOrder.set(wo.work_order_id, wo.intake_photo ?? []);
+  }
+
+  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(
+    supabase,
+    photosByWorkOrder
+  );
+
+  const myJobs: TechnicianAssignedJob[] = myJobsDraft.map((job) => ({
+    ...job,
+    primary_photo_url: primaryPhotoUrls.get(job.work_order_id) ?? null,
+  }));
+
+  const workOrderList: TechnicianAssignedWorkOrder[] = activeWorkOrders.map(
+    (wo) => {
       const motorcycle = Array.isArray(wo.motorcycle)
         ? wo.motorcycle[0]
         : wo.motorcycle;
@@ -234,6 +276,7 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
           : "—",
         is_primary: wo.primary_technician_id === user.user_id,
         inspection_complete: inspectionComplete,
+        primary_photo_url: primaryPhotoUrls.get(wo.work_order_id) ?? null,
         jobs: (wo.job ?? []).map((job) => ({
           job_id: job.job_id,
           service_name_snapshot: job.service_name_snapshot,
@@ -245,7 +288,8 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
         inspection_href: `/work_orders/${wo.work_order_id}/inspection`,
         jobs_href: `/work_orders/${wo.work_order_id}?tab=jobs`,
       };
-    });
+    }
+  );
 
   return { workOrders: workOrderList, myJobs };
 }

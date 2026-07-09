@@ -32,7 +32,7 @@ export function DashboardFilterChips({
 }: {
   filters: DashboardFilters;
   technicians: Array<{ user_id: string; first_name: string; last_name: string }>;
-  view: "board" | "list";
+  view: "board" | "list" | "cards";
   hideEmpty: boolean;
   density: "compact" | "comfortable";
 }) {

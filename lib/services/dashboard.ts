@@ -1,11 +1,15 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { WorkOrderStatus } from "@/lib/database/types";
+import type { PhotoCategory, WorkOrderStatus } from "@/lib/database/types";
 import {
   buildWorkOrderFlags,
   isOverdue,
 } from "@/lib/status/flags";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
+import {
+  resolvePrimaryPhotoUrls,
+  type IntakePhotoRef,
+} from "@/lib/services/photos";
 
 export type DashboardCounts = {
   open: number;
@@ -57,6 +61,8 @@ export type DashboardRow = {
     last_name: string;
   } | null;
   flags: string[];
+  /** Signed (or public) URL for the preferred intake photo, when available. */
+  primary_photo_url: string | null;
 };
 
 export type DashboardData = {
@@ -113,7 +119,13 @@ type RawRow = {
     assigned_technician_id: string | null;
   }> | null;
   recommendation: Array<{ severity: string; status: string }> | null;
-  intake_photo: Array<{ photo_id: string }> | null;
+  intake_photo: Array<{
+    photo_id: string;
+    storage_path: string;
+    photo_url: string | null;
+    category: PhotoCategory;
+    created_at: string;
+  }> | null;
   inspection: Array<{ completed_at: string | null }> | null;
 };
 
@@ -172,7 +184,11 @@ function matchesCard(row: RawRow, card: DashboardCardKey, now: Date): boolean {
   }
 }
 
-function toDashboardRow(row: RawRow, now: Date): DashboardRow {
+function toDashboardRow(
+  row: RawRow,
+  now: Date,
+  primaryPhotoUrl: string | null = null
+): DashboardRow {
   const jobs = row.job ?? [];
   const recommendations = row.recommendation ?? [];
   const photos = row.intake_photo ?? [];
@@ -187,6 +203,7 @@ function toDashboardRow(row: RawRow, now: Date): DashboardRow {
     estimated_completion: row.estimated_completion,
     motorcycle: row.motorcycle,
     primary_technician: row.primary_technician,
+    primary_photo_url: primaryPhotoUrl,
     flags: buildWorkOrderFlags({
       status: row.status,
       vin: row.motorcycle?.vin,
@@ -245,7 +262,7 @@ export async function getDashboardData(
       ),
       job ( job_id, status, assigned_technician_id ),
       recommendation ( severity, status ),
-      intake_photo ( photo_id ),
+      intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
       inspection ( completed_at )
     `
       )
@@ -309,8 +326,23 @@ export async function getDashboardData(
     );
   }
 
+  const photosByWorkOrder = new Map<string, IntakePhotoRef[]>();
+  for (const row of filtered) {
+    photosByWorkOrder.set(row.work_order_id, row.intake_photo ?? []);
+  }
+  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(
+    supabase,
+    photosByWorkOrder
+  );
+
   const rows = filtered
-    .map((row) => toDashboardRow(row, now))
+    .map((row) =>
+      toDashboardRow(
+        row,
+        now,
+        primaryPhotoUrls.get(row.work_order_id) ?? null
+      )
+    )
     .filter((row) => {
       if (flagFilter && !row.flags.includes(flagFilter)) return false;
       if (!query) return true;

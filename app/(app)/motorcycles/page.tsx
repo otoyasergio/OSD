@@ -74,6 +74,7 @@ export default async function MotorcyclesPage({
 
       {motorcycles.length === 0 ? (
         <EmptyState
+          variant={q ? "search" : "work-orders"}
           title={q ? "No matches" : "No motorcycles yet"}
           description={
             q

@@ -40,6 +40,7 @@ export default async function TechnicianPage() {
         <h2 className="text-lg font-semibold text-foreground">My jobs</h2>
         {dashboard.myJobs.length === 0 ? (
           <EmptyState
+            variant="jobs"
             title="No active jobs"
             description="Jobs assigned to you will appear here with Start and Complete actions."
             action={{ href: "/dashboard", label: "View shop board" }}
@@ -64,6 +65,7 @@ export default async function TechnicianPage() {
                     workOrderHref={job.href}
                     inspectionHref={job.inspection_href}
                     inspectionComplete={job.inspection_complete}
+                    primaryPhotoUrl={job.primary_photo_url}
                     canStart={canStart}
                     canComplete={canComplete}
                     startAction={updateJobStatusAction.bind(
@@ -90,12 +92,24 @@ export default async function TechnicianPage() {
         </h2>
         {dashboard.workOrders.length === 0 ? (
           <EmptyState
+            variant="work-orders"
             description="Work orders you are assigned to will appear here."
           />
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2">
             {dashboard.workOrders.map((wo) => (
-              <li key={wo.work_order_id} className="card">
+              <li key={wo.work_order_id} className="card overflow-hidden">
+                {wo.primary_photo_url ? (
+                  <div className="tech-wo-card-photo" aria-hidden>
+                    {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
+                    <img
+                      src={wo.primary_photo_url}
+                      alt=""
+                      className="tech-wo-card-photo-img"
+                      loading="lazy"
+                    />
+                  </div>
+                ) : null}
                 <div className="card-body">
                   <div className="wo-card-hero">
                     <p className="wo-card-bike">{wo.motorcycle_label}</p>

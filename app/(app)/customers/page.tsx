@@ -65,6 +65,7 @@ export default async function CustomersPage({
 
       {customers.length === 0 ? (
         <EmptyState
+          variant={q ? "search" : "default"}
           title={q ? "No matches" : "No customers yet"}
           description={
             q

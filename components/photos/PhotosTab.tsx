@@ -144,11 +144,30 @@ export function PhotosTab({
       </div>
 
       {visible.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
-          {photos.length === 0
-            ? "No intake photos yet. Upload angles of the bike before work begins."
-            : "No photos in this category."}
-        </p>
+        <div className="empty-state">
+          <svg className="empty-state-icon" viewBox="0 0 64 48" aria-hidden>
+            <rect
+              x="10"
+              y="12"
+              width="44"
+              height="28"
+              rx="3"
+              fill="currentColor"
+              opacity="0.12"
+            />
+            <circle cx="24" cy="22" r="4" fill="currentColor" opacity="0.35" />
+            <path
+              d="M14 34l10-10 8 8 6-6 12 8H14z"
+              fill="currentColor"
+              opacity="0.3"
+            />
+          </svg>
+          <p>
+            {photos.length === 0
+              ? "No intake photos yet. Upload angles of the bike before work begins."
+              : "No photos in this category."}
+          </p>
+        </div>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {visible.map((photo) => (

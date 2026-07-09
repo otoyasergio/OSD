@@ -32,6 +32,7 @@ export default async function WorkOrdersPage() {
 
       {workOrders.length === 0 ? (
         <EmptyState
+          variant="work-orders"
           title="No work orders yet"
           description="Create the first work order to start tracking a visit."
           action={

@@ -88,23 +88,99 @@ function extensionForType(type: string): string {
   return "jpg";
 }
 
+export type IntakePhotoRef = {
+  photo_id: string;
+  storage_path: string;
+  photo_url?: string | null;
+  category?: PhotoCategory | string | null;
+  created_at?: string | null;
+};
+
+const PRIMARY_PHOTO_CATEGORY_RANK: Record<string, number> = {
+  front: 0,
+  left_side: 1,
+  right_side: 2,
+  rear: 3,
+  damage: 4,
+  accessories: 5,
+  other: 6,
+};
+
+/** Prefer front, then other bike angles, then oldest remaining photo. */
+export function pickPrimaryIntakePhoto<T extends IntakePhotoRef>(
+  photos: T[]
+): T | null {
+  if (photos.length === 0) return null;
+  return [...photos].sort((a, b) => {
+    const rankA =
+      PRIMARY_PHOTO_CATEGORY_RANK[a.category ?? ""] ?? Number.MAX_SAFE_INTEGER;
+    const rankB =
+      PRIMARY_PHOTO_CATEGORY_RANK[b.category ?? ""] ?? Number.MAX_SAFE_INTEGER;
+    if (rankA !== rankB) return rankA - rankB;
+    return (a.created_at ?? "").localeCompare(b.created_at ?? "");
+  })[0];
+}
+
+export async function signStoragePaths(
+  supabase: DbClient,
+  paths: string[],
+  expiresInSeconds = 60 * 60
+): Promise<Map<string, string | null>> {
+  const unique = [...new Set(paths.filter(Boolean))];
+  const byPath = new Map<string, string | null>();
+  if (unique.length === 0) return byPath;
+
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrls(unique, expiresInSeconds);
+
+  if (error || !data) {
+    for (const path of unique) byPath.set(path, null);
+    return byPath;
+  }
+
+  for (const row of data) {
+    if (row.path) byPath.set(row.path, row.signedUrl ?? null);
+  }
+  return byPath;
+}
+
+/** Sign one display URL per work order (front preferred). */
+export async function resolvePrimaryPhotoUrls(
+  supabase: DbClient,
+  photosByWorkOrder: Map<string, IntakePhotoRef[]>
+): Promise<Map<string, string | null>> {
+  const primaryByWo = new Map<string, IntakePhotoRef>();
+  const paths: string[] = [];
+
+  for (const [workOrderId, photos] of photosByWorkOrder) {
+    const primary = pickPrimaryIntakePhoto(photos);
+    if (!primary) continue;
+    primaryByWo.set(workOrderId, primary);
+    paths.push(primary.storage_path);
+  }
+
+  const signed = await signStoragePaths(supabase, paths);
+  const result = new Map<string, string | null>();
+
+  for (const [workOrderId, primary] of primaryByWo) {
+    result.set(
+      workOrderId,
+      signed.get(primary.storage_path) ?? primary.photo_url ?? null
+    );
+  }
+  return result;
+}
+
 async function signPaths(
   supabase: DbClient,
   photos: IntakePhoto[]
 ): Promise<IntakePhoto[]> {
   if (photos.length === 0) return photos;
 
-  const paths = photos.map((p) => p.storage_path);
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrls(paths, 60 * 60);
-
-  if (error || !data) {
-    return photos.map((p) => ({ ...p, signed_url: p.photo_url }));
-  }
-
-  const byPath = new Map(
-    data.map((row) => [row.path, row.signedUrl ?? null] as const)
+  const byPath = await signStoragePaths(
+    supabase,
+    photos.map((p) => p.storage_path)
   );
 
   return photos.map((p) => ({

@@ -8,7 +8,9 @@ import {
   deleteDashboardView,
   saveDashboardView,
   setDashboardDensityPreference,
+  setDashboardViewModePreference,
   setHiddenBoardColumnsPreference,
+  type DashboardViewMode,
   type DashboardViewParams,
 } from "@/lib/services/userPreferences";
 import { SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
@@ -72,6 +74,18 @@ export async function setDashboardDensityAction(
 ): Promise<ViewFormState> {
   try {
     await setDashboardDensityPreference(density);
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+  revalidatePath("/dashboard");
+  return { error: null };
+}
+
+export async function setDashboardViewModeAction(
+  view: DashboardViewMode
+): Promise<ViewFormState> {
+  try {
+    await setDashboardViewModePreference(view);
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
