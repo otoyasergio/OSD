@@ -117,6 +117,135 @@ summary {
 
 /* ── Layout ── */
 
+.app-shell {
+  display: flex;
+  min-height: 100dvh;
+}
+
+.sidebar {
+  display: flex;
+  width: 15rem;
+  flex-shrink: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--chrome-border);
+  background: var(--chrome);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  padding: 1rem 1rem 0.75rem;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem 1rem;
+}
+
+.sidebar-nav-primary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sidebar-nav-section {
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.sidebar-nav-section-label {
+  padding: 0.5rem 0.75rem 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--chrome-muted);
+}
+
+.sidebar .nav-link {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  overflow-x: auto;
+}
+
+.main-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--chrome-border);
+  background: var(--chrome);
+  padding: 0.75rem 1rem;
+}
+
+.main-topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.main-body {
+  flex: 1;
+  width: 100%;
+  padding: 1.5rem 1rem;
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--chrome-border);
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .sidebar-nav-primary {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .sidebar-nav-section {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .sidebar-nav-section-label {
+    display: none;
+  }
+
+  .sidebar .nav-link {
+    width: auto;
+  }
+}
+
 .page-stack {
   display: flex;
   flex-direction: column;
