@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { WorkOrderDetail } from "@/lib/services/workOrders";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
+import { FlagBadges } from "@/components/status/FlagBadges";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -26,18 +27,7 @@ export function WorkOrderHeader({ detail }: { detail: WorkOrderDetail }) {
             </span>
           </p>
         </div>
-        {detail.flags.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {detail.flags.map((flag) => (
-              <span
-                key={flag}
-                className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900"
-              >
-                {flag}
-              </span>
-            ))}
-          </div>
-        ) : null}
+        {detail.flags.length > 0 ? <FlagBadges flags={detail.flags} /> : null}
       </div>
 
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">

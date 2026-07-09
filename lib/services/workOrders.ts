@@ -7,6 +7,7 @@ import { TimelineEventType } from "@/lib/timeline/events";
 import { canAssignTechnician, canCreateWorkOrder } from "@/lib/permissions";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { buildWorkOrderFlags } from "@/lib/status/flags";
 
 export type WorkOrder = {
   work_order_id: string;
@@ -179,9 +180,11 @@ export async function listWorkOrdersForActiveLocation(): Promise<
       motorcycle,
       primary_technician:
         row.primary_technician as WorkOrderListItem["primary_technician"],
-      flags: buildFlags({
+      flags: buildWorkOrderFlags({
         status: row.status as WorkOrderStatus,
         vin: motorcycle?.vin,
+        external_invoice_number: row.external_invoice_number as string | null,
+        estimated_completion: row.estimated_completion as string | null,
         jobs,
         recommendations,
         photoCount: 1, // list view skips photo query; flag only on detail
@@ -261,31 +264,6 @@ export async function getWorkOrderById(
 
   if (error) throw error;
   return (data as WorkOrder) ?? null;
-}
-
-function buildFlags(input: {
-  status: WorkOrderStatus;
-  vin: string | null | undefined;
-  jobs: Array<{ status: string }>;
-  recommendations: Array<{ severity: string; status: string }>;
-  photoCount: number;
-}): string[] {
-  const flags: string[] = [];
-  if (!input.vin) flags.push("Missing VIN");
-  if (input.photoCount === 0) flags.push("No intake photos");
-  if (input.jobs.some((job) => job.status === "waiting_for_approval")) {
-    flags.push("Needs approval");
-  }
-  if (
-    input.recommendations.some(
-      (rec) => rec.status === "pending" && rec.severity === "safety_critical"
-    )
-  ) {
-    flags.push("Safety-critical");
-  }
-  if (input.status === "waiting_for_parts") flags.push("Waiting for parts");
-  if (input.status === "on_hold") flags.push("On hold");
-  return flags;
 }
 
 export async function getWorkOrderDetail(
@@ -393,9 +371,11 @@ export async function getWorkOrderDetail(
       row.primary_technician as WorkOrderDetail["primary_technician"],
     technicians,
     jobs,
-    flags: buildFlags({
+    flags: buildWorkOrderFlags({
       status: row.status as WorkOrderStatus,
       vin: motorcycle?.vin,
+      external_invoice_number: row.external_invoice_number as string | null,
+      estimated_completion: row.estimated_completion as string | null,
       jobs,
       recommendations,
       photoCount: photos.length,

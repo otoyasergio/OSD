@@ -4,6 +4,7 @@ import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import { canCreateWorkOrder } from "@/lib/permissions";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
+import { FlagBadges } from "@/components/status/FlagBadges";
 
 export const dynamic = "force-dynamic";
 
@@ -84,20 +85,7 @@ export default async function WorkOrdersPage() {
                       : "—"}
                   </td>
                   <td className="px-4 py-3">
-                    {wo.flags.length === 0 ? (
-                      <span className="text-zinc-400">—</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {wo.flags.map((flag) => (
-                          <span
-                            key={flag}
-                            className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900"
-                          >
-                            {flag}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <FlagBadges flags={wo.flags} />
                   </td>
                 </tr>
               ))}
