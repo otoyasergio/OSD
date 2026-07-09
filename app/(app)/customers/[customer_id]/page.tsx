@@ -18,7 +18,7 @@ export default async function CustomerDetailPage({
   const updateAction = updateCustomerAction.bind(null, customer_id);
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="page-stack page-stack--narrow">
       <div>
         <Link
           href="/customers"

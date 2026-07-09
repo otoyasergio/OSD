@@ -175,7 +175,7 @@ export default async function WorkOrderDetailPage({
     : null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="page-stack page-stack--narrow">
       <Link
         href="/work_orders"
         className="text-sm text-zinc-600 underline-offset-2 hover:underline"

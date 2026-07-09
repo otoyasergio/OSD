@@ -75,7 +75,7 @@ export default async function DashboardPage({
   };
 
   return (
-    <div className="page-stack">
+    <div className="page-stack page-stack--wide">
       <PageHeader
         title="Dashboard"
         subtitle="Shop-floor command center for the active location."

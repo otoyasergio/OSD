@@ -252,6 +252,17 @@ summary {
   gap: 1.5rem;
 }
 
+.page-stack--wide {
+  max-width: none;
+  padding-inline: 1rem;
+}
+
+.page-stack--narrow {
+  max-width: 72rem;
+  margin-inline: auto;
+  width: 100%;
+}
+
 .page-header {
   display: flex;
   flex-wrap: wrap;
@@ -894,6 +905,8 @@ summary {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .shop-board-summary {
