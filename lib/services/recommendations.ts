@@ -103,7 +103,7 @@ export async function listRecommendationsForWorkOrder(
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []) as Recommendation[];
+  return (data ?? []) as unknown as Recommendation[];
 }
 
 export async function createRecommendation(
@@ -136,7 +136,9 @@ export async function createRecommendation(
 
     if (resultError) throw resultError;
     if (!result) throw new Error("INSPECTION_RESULT_NOT_FOUND");
-    const inspection = result.inspection as { work_order_id: string } | null;
+    const inspection = result.inspection as unknown as {
+      work_order_id: string;
+    } | null;
     if (!inspection || inspection.work_order_id !== workOrderId) {
       throw new Error("INSPECTION_RESULT_NOT_FOUND");
     }
@@ -215,7 +217,9 @@ export async function createRecommendationFromInspectionResult(
   if (error) throw error;
   if (!result) throw new Error("INSPECTION_RESULT_NOT_FOUND");
 
-  const inspection = result.inspection as { work_order_id: string } | null;
+  const inspection = result.inspection as unknown as {
+    work_order_id: string;
+  } | null;
   if (!inspection) throw new Error("INSPECTION_NOT_FOUND");
 
   const defaultSeverity = severityFromInspectionStatus(

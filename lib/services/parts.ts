@@ -132,7 +132,7 @@ export async function listPartsForWorkOrder(
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []) as Part[];
+  return (data ?? []) as unknown as Part[];
 }
 
 export async function addPartToJob(
