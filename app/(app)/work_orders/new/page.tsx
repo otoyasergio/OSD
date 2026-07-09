@@ -7,7 +7,7 @@ import { searchMotorcycles } from "@/lib/services/motorcycles";
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
 import { CreateWorkOrderForm } from "@/components/forms/CreateWorkOrderForm";
-import { createWorkOrderAction } from "@/app/(app)/work_orders/actions";
+import { createWorkOrderWithIntakePhotosAction } from "@/app/(app)/work_orders/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -41,13 +41,13 @@ export default async function NewWorkOrderPage({
         New work order
       </h1>
       <p className="mt-1 text-sm text-zinc-600">
-        Creates the work order under your active location, with an inspection and
-        any selected service jobs.
+        Creates the work order under your active location, with an inspection,
+        any selected service jobs, and the six required intake photos.
       </p>
 
       <div className="mt-6">
         <CreateWorkOrderForm
-          action={createWorkOrderAction}
+          action={createWorkOrderWithIntakePhotosAction}
           customers={customers}
           motorcycles={motorcycles}
           services={services}

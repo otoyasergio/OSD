@@ -29,10 +29,15 @@ Unit tests alone do **not** complete Task 35.
 ### Test 3. Create work order
 
 - [ ] Work order saves
+- [ ] Create form requires six intake photos (front, rear, left side, right side, VIN, dash/odometer)
+- [ ] Submit blocked until all six are selected; photos upload with create
+- [ ] If a photo upload fails after create, recovery UI keeps the user on the missing slots
+- [ ] Dashboard “No intake photos” flag clears once intake photos exist
 - [ ] Inspection is automatically created
 - [ ] Inspection results are generated from active template
 - [ ] Timeline shows Work Order Created
 - [ ] Timeline shows Inspection Created
+- [ ] Timeline shows Intake Photo Uploaded for each required photo
 
 ### Test 4. Add job
 

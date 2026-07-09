@@ -56,7 +56,7 @@ export function PhotosTab({
           role="status"
           className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
         >
-          <p className="font-medium">Recommended intake angles still missing:</p>
+          <p className="font-medium">Required intake angles still missing:</p>
           <p className="mt-1">
             {missingRequired
               .map((c) => PHOTO_CATEGORY_LABELS[c])
@@ -65,7 +65,7 @@ export function PhotosTab({
         </div>
       ) : photos.length > 0 ? (
         <p className="text-sm text-zinc-600">
-          All recommended intake categories are covered.
+          All required intake categories are covered.
         </p>
       ) : null}
 

@@ -41,6 +41,10 @@ const MESSAGES: Record<string, string> = {
   PHOTO_TYPE_INVALID: "Use a JPEG, PNG, WebP, or HEIC image.",
   PHOTO_UPLOAD_FAILED: "Could not upload the photo. Try again.",
   PHOTO_NOT_FOUND: "That photo no longer exists.",
+  INTAKE_PHOTOS_REQUIRED:
+    "Add all six required intake photos before creating the work order.",
+  INTAKE_PHOTOS_PARTIAL:
+    "The work order was created, but some intake photos failed to upload. Finish the missing photos below.",
   NOTE_REQUIRED: "Enter a note before saving.",
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",

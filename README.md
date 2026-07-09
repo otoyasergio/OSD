@@ -90,7 +90,7 @@ Open [http://localhost:3000](http://localhost:3000) and sign in with one of the 
 ### 6. Safari notes
 
 - Prefer **Safari on Mac** for front-office flows and **Safari on iPad** for technician / floor flows.
-- Confirm login, location switcher, create work order, inspection auto-save, photo upload from camera roll, approval, parts order block, QC, and complete.
+- Confirm login, location switcher, create work order (six required intake photos: front, rear, left, right, VIN, dash/odometer), inspection auto-save, extra photo upload from Photos tab / camera roll, approval, parts order block, QC, and complete.
 - If cookies or auth redirects misbehave, confirm `.env.local` URL matches the project and that you are not mixing `localhost` with a different host.
 
 ### 7. Acceptance (Task 35)

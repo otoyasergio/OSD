@@ -14,6 +14,13 @@ import {
 import type { TechnicianOption } from "@/lib/services/workOrders";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import {
+  IntakePhotoSlots,
+  allRequiredIntakeSelected,
+  type IntakePhotoSelection,
+} from "@/components/forms/IntakePhotoSlots";
+import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
+import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
 
 type Props = {
   action: (
@@ -31,6 +38,8 @@ type Props = {
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
 
+const ALL_REQUIRED = CREATE_INTAKE_PHOTO_SLOTS.map((s) => s.category);
+
 export function CreateWorkOrderForm({
   action,
   customers,
@@ -41,6 +50,14 @@ export function CreateWorkOrderForm({
   initialMotorcycleId = "",
 }: Props) {
   const [state, formAction] = useActionState(action, { error: null });
+  const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
+  const [clientError, setClientError] = useState<string | null>(null);
+
+  const recoveryWorkOrderId = state.workOrderId ?? null;
+  const missingCategories = state.missingCategories ?? [];
+  const isRecovery = Boolean(
+    recoveryWorkOrderId && missingCategories.length > 0
+  );
 
   const resolvedInitialCustomerId =
     initialCustomerId ||
@@ -64,6 +81,8 @@ export function CreateWorkOrderForm({
     [services]
   );
 
+  const intakeComplete = allRequiredIntakeSelected(intakePhotos, ALL_REQUIRED);
+
   useEffect(() => {
     if (!motorcycleId) {
       setOutstanding([]);
@@ -80,9 +99,32 @@ export function CreateWorkOrderForm({
     };
   }, [motorcycleId]);
 
+  if (isRecovery && recoveryWorkOrderId) {
+    return (
+      <IntakePhotoRecoveryForm
+        workOrderId={recoveryWorkOrderId}
+        workOrderNumber={state.workOrderNumber}
+        missingCategories={missingCategories}
+        initialError={state.error}
+      />
+    );
+  }
+
   return (
-    <form action={formAction} className="flex max-w-3xl flex-col gap-6">
-      <FormError message={state.error} />
+    <form
+      action={formAction}
+      encType="multipart/form-data"
+      className="flex max-w-3xl flex-col gap-6"
+      onSubmit={(event) => {
+        if (!allRequiredIntakeSelected(intakePhotos, ALL_REQUIRED)) {
+          event.preventDefault();
+          setClientError(
+            "Add all six required intake photos before creating the work order."
+          );
+        }
+      }}
+    >
+      <FormError message={state.error ?? clientError} />
 
       <section className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold text-zinc-900">Customer & bike</h2>
@@ -255,8 +297,42 @@ export function CreateWorkOrderForm({
         </label>
       </section>
 
+      <section className="flex flex-col gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-zinc-900">
+            Intake photos <span className="text-red-600">*</span>
+          </h2>
+          <p className="mt-1 text-sm text-zinc-600">
+            Capture all six angles before creating the work order. On iPad, tap
+            a slot to use the camera.
+          </p>
+        </div>
+        <IntakePhotoSlots
+          value={intakePhotos}
+          onChange={(next) => {
+            setIntakePhotos(next);
+            setClientError(null);
+          }}
+        />
+        {!intakeComplete ? (
+          <p className="text-sm text-zinc-500">
+            {
+              Object.values(intakePhotos).filter(
+                (file) => file instanceof File && file.size > 0
+              ).length
+            }
+            /6 selected
+          </p>
+        ) : (
+          <p className="text-sm text-emerald-700">All six intake photos ready.</p>
+        )}
+      </section>
+
       <div>
-        <SubmitButton label="Create work order" pendingLabel="Creating…" />
+        <SubmitButton
+          label="Create work order"
+          pendingLabel="Creating & uploading…"
+        />
       </div>
     </form>
   );

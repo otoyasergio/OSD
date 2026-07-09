@@ -82,7 +82,7 @@ export const PHOTO_CATEGORY_LABELS: Record<PhotoCategory, string> = {
   other: "Other",
 };
 
-/** Categories encouraged at intake (shown as missing until covered). */
+/** Categories required at work-order create (also shown as missing on Photos tab). */
 export const REQUIRED_PHOTO_CATEGORIES: PhotoCategory[] = [
   "front",
   "rear",
@@ -90,6 +90,22 @@ export const REQUIRED_PHOTO_CATEGORIES: PhotoCategory[] = [
   "right_side",
   "odometer",
   "vin",
+];
+
+/** Human-readable slots for the create-work-order intake grid. */
+export const CREATE_INTAKE_PHOTO_SLOTS: Array<{
+  category: PhotoCategory;
+  label: string;
+}> = [
+  { category: "front", label: "Front" },
+  { category: "rear", label: "Rear" },
+  { category: "left_side", label: "Left side" },
+  { category: "right_side", label: "Right side" },
+  { category: "vin", label: "VIN" },
+  {
+    category: "odometer",
+    label: "Dash / odometer (bike on, mileage showing)",
+  },
 ];
 
 export const TECHNICIAN_NOTE_TYPE_LABELS: Record<TechnicianNoteType, string> = {
