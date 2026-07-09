@@ -60,12 +60,23 @@ npx supabase db push
 
 **Authorization note:** Role checks in `lib/permissions` (server actions) are the source of truth. RLS policies are defense in depth. Full matrix: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md).
 
-### 4. Create an Auth user and bootstrap data
+### 4. Create Auth users and bootstrap data
 
-1. In Supabase Dashboard → **Authentication → Users**, create a user (email + password). Copy the user’s UUID (`auth.users.id`).
+1. In Supabase Dashboard → **Authentication → Users**, create the demo Auth users below (email + password, confirmed). Copy each user’s UUID (`auth.users.id`).
 2. In the SQL Editor, run `supabase/seed/dev_bootstrap.sql` (creates Toronto / `TOR` + `work_order_sequence`).
-3. Uncomment and edit the Auth → `app_user` → `user_location` block at the bottom of that file (replace `<AUTH_USER_UUID>` and email), then run it.
-4. Optional: uncomment the second location / technician blocks in the same file for multi-location and permission acceptance tests.
+3. Uncomment and edit the Auth → `app_user` → `user_location` block at the bottom of that file (replace each `<…_AUTH_USER_UUID>`), then run it.
+4. Optional: uncomment the second location block in the same file for multi-location / WO-number acceptance tests.
+
+**Demo staff accounts** (dev / acceptance only — **change passwords after first login**):
+
+| Role | Email | Temp password |
+|------|-------|---------------|
+| owner | `owner@otomoto.local` | `Otomoto2026!` |
+| manager | `manager@otomoto.local` | `Otomoto2026!` |
+| service_advisor | `advisor@otomoto.local` | `Otomoto2026!` |
+| technician | `tech@otomoto.local` | `Otomoto2026!` |
+
+Do not commit `service_role` keys.
 
 ### 5. Install and run
 
@@ -74,7 +85,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and sign in with the Auth user you created.
+Open [http://localhost:3000](http://localhost:3000) and sign in with one of the demo accounts above.
 
 ### 6. Safari notes
 

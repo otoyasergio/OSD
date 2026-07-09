@@ -2,20 +2,34 @@
 -- OTOMOTO V1 — local / acceptance bootstrap seed
 -- =============================================================================
 -- Prerequisites (do these first):
---   1. Apply migrations 001 → 007 in order (see README Getting started).
---   2. Create an Auth user in Supabase Dashboard → Authentication → Users
---      (email + password). Copy that user's UUID (auth.users.id).
+--   1. Apply migrations 001 → 013 in order (see README Getting started).
+--   2. Create Auth users (Dashboard, Auth Admin API, or SQL into auth.users
+--      + auth.identities). Copy each user's UUID (auth.users.id).
 --
 -- What this script does:
 --   - Inserts one sample location (Toronto / TOR) if missing
 --   - Ensures work_order_sequence starts at 1001 for that location
 --
 -- What this script does NOT do:
---   - Create Auth users (must be done in the Dashboard or Auth Admin API)
+--   - Create Auth users (must be done in the Dashboard, Auth Admin API, or
+--     matching SQL inserts into auth.users + auth.identities)
 --   - Invent credentials — you supply the real auth_user_id below
 --
--- After running the location seed, link your Auth user → app_user → user_location
--- using the commented template at the bottom (replace placeholders).
+-- After running the location seed, link Auth users → app_user → user_location
+-- using the demo-account template at the bottom (replace placeholders).
+-- =============================================================================
+--
+-- Demo staff accounts (dev / acceptance only — change passwords after first login):
+--
+-- | Role            | Email                   | Temp password  |
+-- |-----------------|-------------------------|----------------|
+-- | owner           | owner@otomoto.local     | Otomoto2026!   |
+-- | manager         | manager@otomoto.local   | Otomoto2026!   |
+-- | service_advisor | advisor@otomoto.local   | Otomoto2026!   |
+-- | technician      | tech@otomoto.local      | Otomoto2026!   |
+--
+-- Create each Auth user first (email confirmed), then run the link block below
+-- with the matching auth.users.id values. Do not commit service_role keys.
 -- =============================================================================
 
 -- ---------------------------------------------------------------------------
@@ -32,35 +46,26 @@ WHERE code = 'TOR'
 ON CONFLICT (location_id) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
--- 2. Link Auth user → app_user (owner) → user_location
+-- 2. Link Auth users → app_user (roles) → user_location (Toronto)
 -- ---------------------------------------------------------------------------
--- Run AFTER you have created the Auth user and know its UUID.
+-- Run AFTER you have created the Auth users and know their UUIDs.
 --
--- Replace:
---   '<AUTH_USER_UUID>'  — auth.users.id from Supabase Auth
---   'you@example.com'   — same email as the Auth user
---   'Ada' / 'Owner'     — display name as you prefer
+-- Replace each '<…_AUTH_USER_UUID>' with auth.users.id for that email.
 --
 -- Example (uncomment and edit before running):
 --
 -- INSERT INTO app_user (
---   auth_user_id,
---   first_name,
---   last_name,
---   email,
---   role,
---   status
--- ) VALUES (
---   '<AUTH_USER_UUID>'::uuid,
---   'Ada',
---   'Owner',
---   'you@example.com',
---   'owner',
---   'active'
--- )
+--   auth_user_id, first_name, last_name, email, role, status
+-- ) VALUES
+--   ('<OWNER_AUTH_USER_UUID>'::uuid,   'Owner',   'User', 'owner@otomoto.local',   'owner',           'active'),
+--   ('<MANAGER_AUTH_USER_UUID>'::uuid, 'Manager', 'User', 'manager@otomoto.local', 'manager',         'active'),
+--   ('<ADVISOR_AUTH_USER_UUID>'::uuid, 'Advisor', 'User', 'advisor@otomoto.local', 'service_advisor', 'active'),
+--   ('<TECH_AUTH_USER_UUID>'::uuid,    'Tech',    'User', 'tech@otomoto.local',    'technician',      'active')
 -- ON CONFLICT (email) DO UPDATE
 --   SET auth_user_id = EXCLUDED.auth_user_id,
---       role = 'owner',
+--       first_name = EXCLUDED.first_name,
+--       last_name = EXCLUDED.last_name,
+--       role = EXCLUDED.role,
 --       status = 'active',
 --       updated_at = now();
 --
@@ -68,7 +73,12 @@ ON CONFLICT (location_id) DO NOTHING;
 -- SELECT u.user_id, l.location_id
 -- FROM app_user u
 -- CROSS JOIN location l
--- WHERE u.email = 'you@example.com'
+-- WHERE u.email IN (
+--   'owner@otomoto.local',
+--   'manager@otomoto.local',
+--   'advisor@otomoto.local',
+--   'tech@otomoto.local'
+-- )
 --   AND l.code = 'TOR'
 -- ON CONFLICT (user_id, location_id) DO NOTHING;
 --
@@ -88,34 +98,7 @@ ON CONFLICT (location_id) DO NOTHING;
 -- SELECT u.user_id, l.location_id
 -- FROM app_user u
 -- CROSS JOIN location l
--- WHERE u.email = 'you@example.com'
+-- WHERE u.email = 'owner@otomoto.local'
 --   AND l.code = 'MIS'
--- ON CONFLICT (user_id, location_id) DO NOTHING;
---
--- Optional non-owner user (for audit-blocked / technician permission tests):
--- Create a second Auth user, then:
---
--- INSERT INTO app_user (
---   auth_user_id, first_name, last_name, email, role, status
--- ) VALUES (
---   '<TECH_AUTH_USER_UUID>'::uuid,
---   'Ty',
---   'Tech',
---   'tech@example.com',
---   'technician',
---   'active'
--- )
--- ON CONFLICT (email) DO UPDATE
---   SET auth_user_id = EXCLUDED.auth_user_id,
---       role = 'technician',
---       status = 'active',
---       updated_at = now();
---
--- INSERT INTO user_location (user_id, location_id)
--- SELECT u.user_id, l.location_id
--- FROM app_user u
--- CROSS JOIN location l
--- WHERE u.email = 'tech@example.com'
---   AND l.code = 'TOR'
 -- ON CONFLICT (user_id, location_id) DO NOTHING;
 -- =============================================================================
