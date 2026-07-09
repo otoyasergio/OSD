@@ -16,7 +16,18 @@ Primary target is **Safari on Mac and iPad**. Layout and interactions should be 
 
    Fill in your Supabase project URL and keys in `.env.local`.
 
-2. Database migrations will live under `supabase/migrations` (added in a later task). When that folder exists, apply migrations with the Supabase CLI against your project.
+2. Apply database migrations in order from `supabase/migrations/`:
+
+   ```bash
+   # Option A: Supabase CLI (after linking your project)
+   npx supabase db push
+
+   # Option B: paste each migration file into the Supabase SQL editor and run in order (001 → 006)
+   ```
+
+   After migrations, create the `intake-photos` storage bucket if not created by migration 006 (private bucket for work-order photos).
+
+   **Authorization:** Role checks in `lib/permissions` (server actions) are the source of truth. RLS policies are defense in depth.
 
 ## Development
 
