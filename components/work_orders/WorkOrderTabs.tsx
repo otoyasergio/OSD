@@ -8,7 +8,7 @@ export const WORK_ORDER_TABS = [
   { id: "parts", label: "Parts" },
   { id: "photos", label: "Photos" },
   { id: "notes", label: "Notes" },
-  { id: "timeline", label: "Timeline" },
+  { id: "timeline", label: "Activity" },
   { id: "service-info", label: "Service Info" },
 ] as const;
 

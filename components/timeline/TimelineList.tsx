@@ -20,7 +20,8 @@ export function TimelineList({ events }: { events: TimelineEvent[] }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-zinc-600">
-          Read-only history of this work order. Events cannot be deleted.
+          Who changed what on this work order — every update is attributed and
+          cannot be deleted.
         </p>
         <label className="inline-flex min-h-11 items-center gap-2 text-sm text-zinc-800">
           <input
@@ -58,7 +59,7 @@ export function TimelineList({ events }: { events: TimelineEvent[] }) {
                   </time>
                 </div>
                 <p className="mt-1 text-sm text-zinc-700">{event.description}</p>
-                <p className="mt-2 text-xs text-zinc-500">
+                <p className="mt-2 text-xs font-medium text-zinc-600">
                   {event.user
                     ? `${event.user.first_name} ${event.user.last_name}`
                     : "System"}

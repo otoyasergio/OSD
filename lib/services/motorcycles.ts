@@ -113,6 +113,18 @@ export function buildMotorcycleSearchOrFilter(
   return filters.join(",");
 }
 
+export async function countMotorcycles(): Promise<number> {
+  await requireUser();
+  const supabase = await createClient();
+
+  const { count, error } = await supabase
+    .from("motorcycle")
+    .select("motorcycle_id", { count: "exact", head: true });
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function searchMotorcycles(
   term: string
 ): Promise<MotorcycleWithCustomer[]> {

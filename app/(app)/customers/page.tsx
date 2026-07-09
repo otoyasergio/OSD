@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { searchCustomers } from "@/lib/services/customers";
+import { countCustomers, searchCustomers } from "@/lib/services/customers";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -9,7 +9,10 @@ export default async function CustomersPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const { q = "" } = await searchParams;
-  const customers = await searchCustomers(q);
+  const [customers, totalCustomers] = await Promise.all([
+    searchCustomers(q),
+    countCustomers(),
+  ]);
 
   return (
     <div className="page-stack">
@@ -22,6 +25,19 @@ export default async function CustomersPage({
           </Link>
         }
       />
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:max-w-md">
+        <div className="stat-card" aria-label={`${totalCustomers} customers on file`}>
+          <span className="stat-card-label">Customers on file</span>
+          <span className="stat-card-value">{totalCustomers}</span>
+        </div>
+        {q ? (
+          <div className="stat-card" aria-label={`${customers.length} search matches`}>
+            <span className="stat-card-label">Search matches</span>
+            <span className="stat-card-value">{customers.length}</span>
+          </div>
+        ) : null}
+      </div>
 
       <form method="get" className="filter-panel sm:grid-cols-1 lg:grid-cols-2">
         <label className="block sm:col-span-2 lg:col-span-1">

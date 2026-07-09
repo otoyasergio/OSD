@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { WorkOrderDetail } from "@/lib/services/workOrders";
 import { FlagBadges } from "@/components/status/FlagBadges";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { WorkOrderJobTodo } from "@/components/work_orders/WorkOrderJobTodo";
 import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
 import { getWorkOrderNextAction } from "@/lib/status/pipeline";
 
@@ -74,6 +75,8 @@ export function WorkOrderHeader({ detail }: { detail: WorkOrderDetail }) {
       </div>
 
       <WorkOrderPipeline status={detail.status} />
+
+      <WorkOrderJobTodo jobs={detail.jobs} workOrderId={detail.work_order_id} />
 
       <dl className="grid gap-x-6 gap-y-4 px-4 py-4 text-sm sm:grid-cols-2 sm:px-5 lg:grid-cols-3">
         <div>

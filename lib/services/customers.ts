@@ -53,6 +53,18 @@ function normalizeOptional(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+export async function countCustomers(): Promise<number> {
+  await requireUser();
+  const supabase = await createClient();
+
+  const { count, error } = await supabase
+    .from("customer")
+    .select("customer_id", { count: "exact", head: true });
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function searchCustomers(term: string): Promise<Customer[]> {
   await requireUser();
   const supabase = await createClient();
