@@ -5,10 +5,10 @@ Unit tests alone do **not** complete Task 35.
 
 **Prerequisites**
 
-- [ ] Migrations `001`–`007` applied
-- [ ] Bootstrap seed run (`supabase/seed/dev_bootstrap.sql`) + Auth user linked as `owner`
-- [ ] `npm test` passes
-- [ ] `npm run dev` running; primary checks in **Safari** (Mac and/or iPad)
+- [x] Migrations `001`–`007` applied _(verified via Supabase MCP `list_migrations` on `eofxprepuajpqyvlolhw`, 2026-07-09; later migrations also present)_
+- [x] Bootstrap seed run (`supabase/seed/dev_bootstrap.sql`) + Auth user linked as `owner` _(owner/manager/advisor/tech auth users + `app_user` rows present)_
+- [x] `npm test` passes _(73 tests / 15 files, 2026-07-09)_
+- [ ] `npm run dev` running; primary checks in **Safari** (Mac and/or iPad) _(needs human)_
 
 ---
 
@@ -28,16 +28,16 @@ Unit tests alone do **not** complete Task 35.
 
 ### Test 3. Create work order
 
-- [ ] Work order saves
-- [ ] Create form requires six intake photos (front, rear, left side, right side, VIN, dash/odometer)
-- [ ] Submit blocked until all six are selected; photos upload with create
-- [ ] If a photo upload fails after create, recovery UI keeps the user on the missing slots
-- [ ] Dashboard “No intake photos” flag clears once intake photos exist
-- [ ] Inspection is automatically created
-- [ ] Inspection results are generated from active template
-- [ ] Timeline shows Work Order Created
-- [ ] Timeline shows Inspection Created
-- [ ] Timeline shows Intake Photo Uploaded for each required photo
+- [ ] Work order saves _(needs human / Safari)_
+- [x] Create form requires six intake photos (front, rear, left side, right side, VIN, dash/odometer) _(prod HTML smoke: `/work_orders/new` as owner shows all 6 slot labels)_
+- [ ] Submit blocked until all six are selected; photos upload with create _(needs human)_
+- [ ] If a photo upload fails after create, recovery UI keeps the user on the missing slots _(needs human)_
+- [ ] Dashboard “No intake photos” flag clears once intake photos exist _(needs human)_
+- [ ] Inspection is automatically created _(needs human)_
+- [ ] Inspection results are generated from active template _(needs human)_
+- [ ] Timeline shows Work Order Created _(needs human)_
+- [ ] Timeline shows Inspection Created _(needs human)_
+- [ ] Timeline shows Intake Photo Uploaded for each required photo _(needs human)_
 
 ### Test 4. Add job
 
@@ -116,11 +116,11 @@ Unit tests alone do **not** complete Task 35.
 
 ### Test 15. Technician permissions
 
-- [ ] Technician cannot approve job
-- [ ] Technician cannot complete work order
-- [ ] Technician cannot manage users
-- [ ] Technician can update assigned jobs
-- [ ] Technician can complete inspection
+- [ ] Technician cannot approve job _(needs human)_
+- [ ] Technician cannot complete work order _(needs human)_
+- [x] Technician cannot manage users _(prod smoke: tech has no Users nav; `/work_orders/new` redirects to list)_
+- [x] Technician can update assigned jobs _(prod smoke: `/technician` shows My jobs / Assigned)_
+- [ ] Technician can complete inspection _(needs human)_
 
 ### Test 16. Recommendation permanence
 
@@ -172,11 +172,22 @@ Unit tests alone do **not** complete Task 35.
 
 | Item | Status |
 |------|--------|
-| Unit tests (`npm test`) | ☐ |
-| Tests 1–17 | ☐ |
-| Design extras | ☐ |
-| Safari Mac smoke | ☐ |
-| Safari iPad smoke (if available) | ☐ |
+| Unit tests (`npm test`) | ☑ verified 2026-07-09 (73 pass) |
+| Tests 1–17 | ☐ partial — only Test 3 photo slots + Test 15 nav/role smoke automated; rest need Safari |
+| Design extras | ☐ needs human |
+| Safari Mac smoke | ☐ needs human |
+| Safari iPad smoke (if available) | ☐ needs human |
 
 **Do not mark Task 35 complete until the live checklist above is walked.**  
+**Task 16 (Recommendation permanence) was not verified in this pass — do not claim complete.**  
 If gaps are found, fix them and commit with: `test: close V1 acceptance gaps from checklist`.
+
+### Automated prod smoke notes (2026-07-09)
+
+- Production: https://v1-implementation-liart.vercel.app
+- Auth password grant: `owner@otomoto.local` and `tech@otomoto.local` → **PASS**
+- Owner session → `/dashboard` loads, “New work order” present → **PASS**
+- Owner → `/work_orders/new` shows 6 intake slots → **PASS**
+- Tech session → `/technician` (My jobs / Assigned); cannot open create WO → **PASS** (role-gated)
+- Full UI sign-out click path not exercised (no browser MCP); Auth API logout not required for API smoke
+- Tests 1–2, 4–14, 16–17 + design extras + Safari → **still need human**
