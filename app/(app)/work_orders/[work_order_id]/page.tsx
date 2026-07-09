@@ -5,13 +5,16 @@ import {
   canAssignTechnician,
   canCompleteInspection,
   canCompleteJob,
+  canCompleteWorkOrder,
   canConvertRecommendation,
   canCreateRecommendation,
   canCreateWorkOrder,
   canEditWorkOrder,
+  canMarkReadyForPickup,
   canOrderPart,
   canOverrideWorkOrderStatus,
   canRecordCustomerApproval,
+  canRunQualityCheck,
 } from "@/lib/permissions";
 import {
   getWorkOrderDetail,
@@ -62,6 +65,13 @@ import {
 } from "@/app/(app)/work_orders/part-actions";
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { addTechnicianNoteAction } from "@/app/(app)/work_orders/note-actions";
+import {
+  cancelWorkOrderAction,
+  completeQualityCheckAction,
+  completeWorkOrderAction,
+  markReadyForPickupAction,
+  placeWorkOrderOnHoldAction,
+} from "@/app/(app)/work_orders/quality-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -126,6 +136,12 @@ export default async function WorkOrderDetailPage({
     canCreateWorkOrder(user.role) ||
     user.role === "technician";
   const canAddNotes = canComplete || canEdit || canAdd;
+  const canRunQc = canRunQualityCheck(user.role);
+  const canMarkReady = canMarkReadyForPickup(user.role);
+  const canCompleteWo = canCompleteWorkOrder(user.role);
+  const canHoldOrCancel =
+    canCompleteWorkOrder(user.role) || canOverrideWorkOrderStatus(user.role);
+  const canOverrideComplete = canOverrideWorkOrderStatus(user.role);
 
   const fromResult = fromResultId
     ? inspection?.results.find((r) => r.inspection_result_id === fromResultId)
@@ -167,9 +183,25 @@ export default async function WorkOrderDetailPage({
           detail={detail}
           technicians={technicians}
           canAssign={canAssign}
+          canRunQc={canRunQc}
+          canMarkReady={canMarkReady}
+          canComplete={canCompleteWo}
+          canHoldOrCancel={canHoldOrCancel}
+          canOverrideComplete={canOverrideComplete}
           readOnly={detail.is_foreign_location}
           assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
           setPrimaryAction={setPrimaryTechnicianAction.bind(
+            null,
+            detail.work_order_id
+          )}
+          qcAction={completeQualityCheckAction.bind(null, detail.work_order_id)}
+          readyAction={markReadyForPickupAction.bind(null, detail.work_order_id)}
+          completeAction={completeWorkOrderAction.bind(
+            null,
+            detail.work_order_id
+          )}
+          cancelAction={cancelWorkOrderAction.bind(null, detail.work_order_id)}
+          holdAction={placeWorkOrderOnHoldAction.bind(
             null,
             detail.work_order_id
           )}

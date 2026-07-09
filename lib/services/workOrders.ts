@@ -24,8 +24,11 @@ export type WorkOrder = {
   internal_notes: string | null;
   quality_checked_by_user_id: string | null;
   quality_checked_at: string | null;
+  quality_check_notes: string | null;
   ready_for_pickup_at: string | null;
   completed_at: string | null;
+  released_by_user_id: string | null;
+  pickup_notes: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -78,7 +81,7 @@ export type TechnicianOption = {
 };
 
 const WORK_ORDER_COLUMNS =
-  "work_order_id, motorcycle_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, ready_for_pickup_at, completed_at, created_at, updated_at";
+  "work_order_id, motorcycle_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, created_at, updated_at";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -362,8 +365,11 @@ export async function getWorkOrderDetail(
     internal_notes: row.internal_notes as string | null,
     quality_checked_by_user_id: row.quality_checked_by_user_id as string | null,
     quality_checked_at: row.quality_checked_at as string | null,
+    quality_check_notes: row.quality_check_notes as string | null,
     ready_for_pickup_at: row.ready_for_pickup_at as string | null,
     completed_at: row.completed_at as string | null,
+    released_by_user_id: row.released_by_user_id as string | null,
+    pickup_notes: row.pickup_notes as string | null,
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
     motorcycle,

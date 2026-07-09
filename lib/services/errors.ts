@@ -42,6 +42,12 @@ const MESSAGES: Record<string, string> = {
   PHOTO_UPLOAD_FAILED: "Could not upload the photo. Try again.",
   PHOTO_NOT_FOUND: "That photo no longer exists.",
   NOTE_REQUIRED: "Enter a note before saving.",
+  NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
+  JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
+  QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
+  NOT_READY_FOR_PICKUP:
+    "Mark the work order ready for pickup before completing, or ask an owner/manager to override.",
+  HOLD_REASON_REQUIRED: "Enter a reason when placing a work order on hold.",
 };
 
 export function toFormErrorMessage(error: unknown): string {
