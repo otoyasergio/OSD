@@ -10,6 +10,7 @@ import { FlagBadges } from "@/components/status/FlagBadges";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ShopBoard } from "@/components/work_orders/ShopBoard";
 import { SELECT_CLASS } from "@/components/forms/Field";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
@@ -33,12 +34,14 @@ export default async function DashboardPage({
     flag?: string;
     q?: string;
     card?: string;
+    view?: string;
   }>;
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
   const params = await searchParams;
+  const view = params.view === "table" ? "table" : "board";
   const data = await getDashboardData({
     status: (params.status as WorkOrderStatus) || "",
     technician_id: params.technician_id || "",
@@ -52,13 +55,40 @@ export default async function DashboardPage({
     technician_id: data.filters.technician_id || undefined,
     flag: data.filters.flag || undefined,
     q: data.filters.q || undefined,
+    view,
   };
 
   return (
     <div className="page-stack">
       <PageHeader
         title="Dashboard"
-        subtitle="Operational view for the active location."
+        subtitle="Shop-floor command center for the active location."
+        actions={
+          <div className="view-toggle" role="group" aria-label="View mode">
+            <Link
+              href={buildHref({ ...filterBase, view: "board", card: data.filters.card || undefined })}
+              className={
+                view === "board"
+                  ? "view-toggle-link view-toggle-link-active"
+                  : "view-toggle-link"
+              }
+              aria-current={view === "board" ? "true" : undefined}
+            >
+              Board
+            </Link>
+            <Link
+              href={buildHref({ ...filterBase, view: "table", card: data.filters.card || undefined })}
+              className={
+                view === "table"
+                  ? "view-toggle-link view-toggle-link-active"
+                  : "view-toggle-link"
+              }
+              aria-current={view === "table" ? "true" : undefined}
+            >
+              Table
+            </Link>
+          </div>
+        }
       />
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
@@ -82,6 +112,7 @@ export default async function DashboardPage({
       </div>
 
       <form method="get" className="filter-panel">
+        <input type="hidden" name="view" value={view} />
         {data.filters.card ? (
           <input type="hidden" name="card" value={data.filters.card} />
         ) : null}
@@ -144,14 +175,20 @@ export default async function DashboardPage({
           <button type="submit" className="btn btn-primary">
             Apply filters
           </button>
-          <Link href="/dashboard" className="btn btn-secondary">
+          <Link href={`/dashboard?view=${view}`} className="btn btn-secondary">
             Clear
           </Link>
         </div>
       </form>
 
       {data.rows.length === 0 ? (
-        <EmptyState description="No work orders match these filters at this location." />
+        <EmptyState
+          title="No work orders"
+          description="No work orders match these filters at this location."
+          action={{ href: "/work_orders/new", label: "Create work order" }}
+        />
+      ) : view === "board" ? (
+        <ShopBoard rows={data.rows} />
       ) : (
         <div className="data-table-wrap">
           <table className="data-table">

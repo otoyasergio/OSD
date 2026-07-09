@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { searchCustomers } from "@/lib/services/customers";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default async function CustomersPage({
   searchParams,
@@ -10,68 +12,80 @@ export default async function CustomersPage({
   const customers = await searchCustomers(q);
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-          Customers
-        </h1>
-        <Link
-          href="/customers/new"
-          className="min-h-11 rounded bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
-        >
-          New customer
-        </Link>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        title="Customers"
+        subtitle="Search and manage customer records."
+        actions={
+          <Link href="/customers/new" className="btn btn-primary">
+            New customer
+          </Link>
+        }
+      />
 
-      <form method="get" className="mt-4 flex flex-wrap gap-2">
-        <input
-          type="search"
-          name="q"
-          defaultValue={q}
-          placeholder="Search name, phone, or email"
-          aria-label="Search customers"
-          className="min-h-11 w-full max-w-md rounded border border-zinc-300 bg-white px-3 py-2 text-base outline-none focus:border-zinc-900"
-        />
-        <button
-          type="submit"
-          className="min-h-11 rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
-        >
-          Search
-        </button>
+      <form method="get" className="filter-panel sm:grid-cols-1 lg:grid-cols-2">
+        <label className="block sm:col-span-2 lg:col-span-1">
+          <span className="field-label">Search</span>
+          <input
+            type="search"
+            name="q"
+            defaultValue={q}
+            placeholder="Name, phone, or email"
+            aria-label="Search customers"
+            className="input"
+          />
+        </label>
+        <div className="flex items-end gap-2">
+          <button type="submit" className="btn btn-primary">
+            Search
+          </button>
+          {q ? (
+            <Link href="/customers" className="btn btn-secondary">
+              Clear
+            </Link>
+          ) : null}
+        </div>
       </form>
 
       {customers.length === 0 ? (
-        <p className="mt-8 rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
-          {q ? `No customers match “${q}”.` : "No customers yet."}
-        </p>
+        <EmptyState
+          title={q ? "No matches" : "No customers yet"}
+          description={
+            q
+              ? `No customers match “${q}”. Try a different search or add a new customer.`
+              : "Add your first customer to start creating work orders."
+          }
+          action={
+            q
+              ? { href: "/customers/new", label: "New customer" }
+              : { href: "/customers/new", label: "Add customer" }
+          }
+        />
       ) : (
-        <div className="mt-4 overflow-x-auto rounded border border-zinc-200 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-600">
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-4 py-3 font-medium">Name</th>
-                <th className="px-4 py-3 font-medium">Phone</th>
-                <th className="px-4 py-3 font-medium">Email</th>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Email</th>
               </tr>
             </thead>
             <tbody>
               {customers.map((customer) => (
-                <tr
-                  key={customer.customer_id}
-                  className="border-b border-zinc-100 last:border-0"
-                >
-                  <td className="px-4 py-3">
+                <tr key={customer.customer_id}>
+                  <td>
                     <Link
                       href={`/customers/${customer.customer_id}`}
-                      className="font-medium text-zinc-900 underline-offset-2 hover:underline"
+                      className="data-table-link"
                     >
                       {customer.first_name} {customer.last_name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {customer.phone ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {customer.email ?? "—"}
                   </td>
                 </tr>

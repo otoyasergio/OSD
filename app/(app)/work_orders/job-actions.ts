@@ -16,6 +16,8 @@ export type JobFormState = { error: string | null };
 function revalidateWorkOrder(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath("/work_orders");
+  revalidatePath("/dashboard");
+  revalidatePath("/technician");
 }
 
 export async function addJobAction(

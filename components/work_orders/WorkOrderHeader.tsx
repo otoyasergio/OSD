@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { WorkOrderDetail } from "@/lib/services/workOrders";
 import { FlagBadges } from "@/components/status/FlagBadges";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
+import { getWorkOrderNextAction } from "@/lib/status/pipeline";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -11,6 +13,7 @@ function formatDate(value: string | null) {
 export function WorkOrderHeader({ detail }: { detail: WorkOrderDetail }) {
   const customer = detail.motorcycle?.customer;
   const bike = detail.motorcycle;
+  const nextAction = getWorkOrderNextAction(detail.status, detail.flags);
 
   return (
     <header className="card overflow-hidden">
@@ -23,80 +26,56 @@ export function WorkOrderHeader({ detail }: { detail: WorkOrderDetail }) {
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               {detail.work_order_number}
             </h1>
-            <div className="mt-3">
-              <StatusBadge status={detail.status} size="large" />
-            </div>
+            {detail.external_invoice_number ? (
+              <p className="mt-1 text-sm text-[var(--status-neutral)]">
+                Invoice {detail.external_invoice_number}
+              </p>
+            ) : null}
           </div>
-          {detail.flags.length > 0 ? (
-            <div className="flex flex-col items-end gap-1.5">
-              <span className="text-xs font-semibold uppercase tracking-wider text-[var(--status-neutral)]">
-                Flags
-              </span>
+          <div className="flex flex-col items-end gap-2">
+            <StatusBadge status={detail.status} size="large" />
+            {detail.flags.length > 0 ? (
               <FlagBadges flags={detail.flags} empty="" />
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
+
+        {bike || customer ? (
+          <div className="mt-4 rounded-lg border border-border bg-surface px-4 py-3">
+            {bike ? (
+              <p className="text-lg font-bold text-foreground">
+                {bike.year} {bike.make} {bike.model}
+              </p>
+            ) : null}
+            {customer ? (
+              <p className="mt-1 text-sm font-medium text-[var(--status-neutral-fg)]">
+                <Link
+                  href={`/customers/${customer.customer_id}`}
+                  className="data-table-link"
+                >
+                  {customer.first_name} {customer.last_name}
+                </Link>
+                {customer.phone ? ` · ${customer.phone}` : ""}
+                {customer.email ? ` · ${customer.email}` : ""}
+              </p>
+            ) : null}
+            {bike?.vin ? (
+              <p className="mt-1 font-mono text-xs text-[var(--status-neutral)]">
+                VIN {bike.vin}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <p className="mt-3 text-sm text-[var(--status-neutral)]">
+          <span className="font-semibold text-foreground">Next action:</span>{" "}
+          {nextAction}
+        </p>
       </div>
 
+      <WorkOrderPipeline status={detail.status} />
+
       <dl className="grid gap-x-6 gap-y-4 px-4 py-4 text-sm sm:grid-cols-2 sm:px-5 lg:grid-cols-3">
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-            External invoice
-          </dt>
-          <dd className="mt-0.5 font-semibold text-foreground">
-            {detail.external_invoice_number ?? "—"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-            Customer
-          </dt>
-          <dd className="mt-0.5 font-semibold text-foreground">
-            {customer ? (
-              <Link
-                href={`/customers/${customer.customer_id}`}
-                className="data-table-link"
-              >
-                {customer.first_name} {customer.last_name}
-              </Link>
-            ) : (
-              "—"
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-            Contact
-          </dt>
-          <dd className="mt-0.5 font-semibold text-foreground">
-            {customer?.phone || customer?.email || "—"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-            Motorcycle
-          </dt>
-          <dd className="mt-0.5 font-semibold text-foreground">
-            {bike ? (
-              <Link
-                href={`/motorcycles/${bike.motorcycle_id}`}
-                className="data-table-link"
-              >
-                {bike.year} {bike.make} {bike.model}
-              </Link>
-            ) : (
-              "—"
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-            VIN
-          </dt>
-          <dd className="mt-0.5 font-mono text-sm font-semibold text-foreground">
-            {bike?.vin ?? "—"}
-          </dd>
-        </div>
         <div>
           <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
             Colour
@@ -137,6 +116,21 @@ export function WorkOrderHeader({ detail }: { detail: WorkOrderDetail }) {
             {formatDate(detail.date_created)}
           </dd>
         </div>
+        {bike ? (
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
+              Motorcycle profile
+            </dt>
+            <dd className="mt-0.5 font-semibold text-foreground">
+              <Link
+                href={`/motorcycles/${bike.motorcycle_id}`}
+                className="data-table-link"
+              >
+                View motorcycle
+              </Link>
+            </dd>
+          </div>
+        ) : null}
       </dl>
     </header>
   );

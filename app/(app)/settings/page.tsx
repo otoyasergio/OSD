@@ -8,6 +8,8 @@ import {
   canManageUsers,
   canViewAuditLog,
 } from "@/lib/permissions";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export const dynamic = "force-dynamic";
 
@@ -49,27 +51,25 @@ export default async function SettingsPage() {
   ].filter((link) => link.visible);
 
   return (
-    <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-        Settings
-      </h1>
+    <div className="page-stack">
+      <PageHeader
+        title="Settings"
+        subtitle="Configure catalogue, locations, users, and audit."
+      />
 
       {links.length === 0 ? (
-        <p className="mt-8 rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
-          You do not have access to any settings.
-        </p>
+        <EmptyState description="You do not have access to any settings." />
       ) : (
-        <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+        <ul className="grid gap-3 sm:grid-cols-2">
           {links.map((link) => (
             <li key={link.href}>
-              <Link
-                href={link.href}
-                className="block rounded border border-zinc-200 bg-white p-4 hover:border-zinc-400"
-              >
-                <span className="font-medium text-zinc-900">{link.label}</span>
-                <span className="mt-1 block text-sm text-zinc-600">
-                  {link.description}
-                </span>
+              <Link href={link.href} className="card block transition-shadow active:shadow-md">
+                <div className="card-body">
+                  <span className="font-semibold text-foreground">{link.label}</span>
+                  <span className="mt-1 block text-sm text-[var(--status-neutral)]">
+                    {link.description}
+                  </span>
+                </div>
               </Link>
             </li>
           ))}
