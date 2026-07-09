@@ -5,7 +5,15 @@ import {
   type WorkOrderCardData,
 } from "@/components/work_orders/WorkOrderCard";
 
-export function ShopBoard({ rows }: { rows: WorkOrderCardData[] }) {
+export function ShopBoard({
+  rows,
+  hideEmpty = false,
+  compact = true,
+}: {
+  rows: WorkOrderCardData[];
+  hideEmpty?: boolean;
+  compact?: boolean;
+}) {
   const byStatus = new Map<WorkOrderStatus, WorkOrderCardData[]>();
   for (const row of rows) {
     const list = byStatus.get(row.status) ?? [];
@@ -35,6 +43,8 @@ export function ShopBoard({ rows }: { rows: WorkOrderCardData[] }) {
           (status) => byStatus.get(status) ?? []
         );
 
+        if (hideEmpty && cards.length === 0) return null;
+
         return (
           <section
             key={column.id}
@@ -50,7 +60,11 @@ export function ShopBoard({ rows }: { rows: WorkOrderCardData[] }) {
                 <p className="shop-board-empty">No orders</p>
               ) : (
                 cards.map((wo) => (
-                  <WorkOrderCard key={wo.work_order_id} workOrder={wo} compact />
+                  <WorkOrderCard
+                    key={wo.work_order_id}
+                    workOrder={wo}
+                    compact={compact}
+                  />
                 ))
               )}
             </div>

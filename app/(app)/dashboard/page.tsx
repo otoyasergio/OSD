@@ -7,15 +7,17 @@ import {
   type DashboardCardKey,
 } from "@/lib/services/dashboard";
 import { canCreateWorkOrder } from "@/lib/permissions";
-import { FlagBadges } from "@/components/status/FlagBadges";
-import { StatusBadge } from "@/components/ui/StatusBadge";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ShopBoard } from "@/components/work_orders/ShopBoard";
+import { WorkOrderListView } from "@/components/work_orders/WorkOrderListView";
+import { DashboardFilterChips } from "@/components/work_orders/DashboardFilterChips";
 import { SELECT_CLASS } from "@/components/forms/Field";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
 export const dynamic = "force-dynamic";
+
+type DashboardView = "board" | "list";
 
 function buildHref(params: Record<string, string | undefined | null>) {
   const search = new URLSearchParams();
@@ -24,6 +26,11 @@ function buildHref(params: Record<string, string | undefined | null>) {
   }
   const qs = search.toString();
   return qs ? `/dashboard?${qs}` : "/dashboard";
+}
+
+function resolveView(raw: string | undefined): DashboardView {
+  if (raw === "list" || raw === "table") return "list";
+  return "board";
 }
 
 export default async function DashboardPage({
@@ -36,6 +43,8 @@ export default async function DashboardPage({
     q?: string;
     card?: string;
     view?: string;
+    hide_empty?: string;
+    density?: string;
   }>;
 }) {
   const user = await getCurrentAppUser();
@@ -43,7 +52,9 @@ export default async function DashboardPage({
 
   const canCreate = canCreateWorkOrder(user.role);
   const params = await searchParams;
-  const view = params.view === "table" ? "table" : "board";
+  const view = resolveView(params.view);
+  const hideEmpty = params.hide_empty === "1";
+  const density = params.density === "comfortable" ? "comfortable" : "compact";
   const data = await getDashboardData({
     status: (params.status as WorkOrderStatus) || "",
     technician_id: params.technician_id || "",
@@ -58,6 +69,9 @@ export default async function DashboardPage({
     flag: data.filters.flag || undefined,
     q: data.filters.q || undefined,
     view,
+    hide_empty: hideEmpty ? "1" : undefined,
+    density: density === "comfortable" ? "comfortable" : undefined,
+    card: data.filters.card || undefined,
   };
 
   return (
@@ -73,29 +87,29 @@ export default async function DashboardPage({
               </Link>
             ) : null}
             <div className="view-toggle" role="group" aria-label="View mode">
-            <Link
-              href={buildHref({ ...filterBase, view: "board", card: data.filters.card || undefined })}
-              className={
-                view === "board"
-                  ? "view-toggle-link view-toggle-link-active"
-                  : "view-toggle-link"
-              }
-              aria-current={view === "board" ? "true" : undefined}
-            >
-              Board
-            </Link>
-            <Link
-              href={buildHref({ ...filterBase, view: "table", card: data.filters.card || undefined })}
-              className={
-                view === "table"
-                  ? "view-toggle-link view-toggle-link-active"
-                  : "view-toggle-link"
-              }
-              aria-current={view === "table" ? "true" : undefined}
-            >
-              Table
-            </Link>
-          </div>
+              <Link
+                href={buildHref({ ...filterBase, view: "board" })}
+                className={
+                  view === "board"
+                    ? "view-toggle-link view-toggle-link-active"
+                    : "view-toggle-link"
+                }
+                aria-current={view === "board" ? "true" : undefined}
+              >
+                Columns
+              </Link>
+              <Link
+                href={buildHref({ ...filterBase, view: "list" })}
+                className={
+                  view === "list"
+                    ? "view-toggle-link view-toggle-link-active"
+                    : "view-toggle-link"
+                }
+                aria-current={view === "list" ? "true" : undefined}
+              >
+                List
+              </Link>
+            </div>
           </div>
         }
       />
@@ -122,6 +136,10 @@ export default async function DashboardPage({
 
       <form method="get" className="filter-panel">
         <input type="hidden" name="view" value={view} />
+        {hideEmpty ? <input type="hidden" name="hide_empty" value="1" /> : null}
+        {density === "comfortable" ? (
+          <input type="hidden" name="density" value="comfortable" />
+        ) : null}
         {data.filters.card ? (
           <input type="hidden" name="card" value={data.filters.card} />
         ) : null}
@@ -190,6 +208,64 @@ export default async function DashboardPage({
         </div>
       </form>
 
+      <DashboardFilterChips
+        filters={data.filters}
+        technicians={data.technicians}
+        view={view}
+        hideEmpty={hideEmpty}
+        density={density}
+      />
+
+      {view === "board" ? (
+        <div className="board-controls" role="group" aria-label="Board display options">
+          <Link
+            href={buildHref({
+              ...filterBase,
+              hide_empty: hideEmpty ? undefined : "1",
+            })}
+            className={
+              hideEmpty
+                ? "board-control-link board-control-link-active"
+                : "board-control-link"
+            }
+            aria-pressed={hideEmpty}
+          >
+            Hide empty columns
+          </Link>
+          <Link
+            href={buildHref({
+              ...filterBase,
+              density: density === "compact" ? "comfortable" : undefined,
+            })}
+            className={
+              density === "comfortable"
+                ? "board-control-link board-control-link-active"
+                : "board-control-link"
+            }
+            aria-pressed={density === "comfortable"}
+          >
+            Comfortable cards
+          </Link>
+        </div>
+      ) : (
+        <div className="board-controls" role="group" aria-label="List display options">
+          <Link
+            href={buildHref({
+              ...filterBase,
+              hide_empty: hideEmpty ? undefined : "1",
+            })}
+            className={
+              hideEmpty
+                ? "board-control-link board-control-link-active"
+                : "board-control-link"
+            }
+            aria-pressed={hideEmpty}
+          >
+            Hide empty sections
+          </Link>
+        </div>
+      )}
+
       {data.rows.length === 0 ? (
         <EmptyState
           title="No work orders"
@@ -197,61 +273,13 @@ export default async function DashboardPage({
           action={{ href: "/work_orders/new", label: "Create work order" }}
         />
       ) : view === "board" ? (
-        <ShopBoard rows={data.rows} />
+        <ShopBoard
+          rows={data.rows}
+          hideEmpty={hideEmpty}
+          compact={density === "compact"}
+        />
       ) : (
-        <div className="data-table-wrap">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Number</th>
-                <th>Invoice</th>
-                <th>Customer</th>
-                <th>Bike</th>
-                <th>Status</th>
-                <th>Tech</th>
-                <th>Flags</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.map((wo) => (
-                <tr key={wo.work_order_id}>
-                  <td>
-                    <Link
-                      href={`/work_orders/${wo.work_order_id}`}
-                      className="data-table-link"
-                    >
-                      {wo.work_order_number}
-                    </Link>
-                  </td>
-                  <td className="text-[var(--status-neutral-fg)]">
-                    {wo.external_invoice_number ?? "—"}
-                  </td>
-                  <td className="text-[var(--status-neutral-fg)]">
-                    {wo.motorcycle?.customer
-                      ? `${wo.motorcycle.customer.first_name} ${wo.motorcycle.customer.last_name}`
-                      : "—"}
-                  </td>
-                  <td className="text-[var(--status-neutral-fg)]">
-                    {wo.motorcycle
-                      ? `${wo.motorcycle.year} ${wo.motorcycle.make} ${wo.motorcycle.model}`
-                      : "—"}
-                  </td>
-                  <td>
-                    <StatusBadge status={wo.status} />
-                  </td>
-                  <td className="text-[var(--status-neutral-fg)]">
-                    {wo.primary_technician
-                      ? `${wo.primary_technician.first_name} ${wo.primary_technician.last_name}`
-                      : "—"}
-                  </td>
-                  <td>
-                    <FlagBadges flags={wo.flags} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <WorkOrderListView rows={data.rows} hideEmpty={hideEmpty} />
       )}
     </div>
   );

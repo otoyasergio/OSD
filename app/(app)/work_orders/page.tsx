@@ -41,11 +41,22 @@ export default async function WorkOrdersPage() {
           }
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {workOrders.map((wo) => (
-            <WorkOrderCard key={wo.work_order_id} workOrder={wo} />
-          ))}
-        </div>
+        <>
+          <p className="text-sm text-[var(--status-neutral)]">
+            <Link href="/dashboard?view=board" className="data-table-link">
+              Open workflow board
+            </Link>
+            {" · "}
+            <Link href="/dashboard?view=list" className="data-table-link">
+              List by status
+            </Link>
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {workOrders.map((wo) => (
+              <WorkOrderCard key={wo.work_order_id} workOrder={wo} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
