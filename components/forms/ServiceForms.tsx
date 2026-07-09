@@ -2,7 +2,7 @@
 
 import { useActionState } from "react";
 import type { ServiceFormState } from "@/app/(app)/settings/services/actions";
-import type { Service } from "@/lib/services/serviceCatalogue";
+import type { Service } from "@/lib/services/serviceCatalogueShared";
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 

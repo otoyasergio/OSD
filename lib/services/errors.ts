@@ -49,6 +49,9 @@ const MESSAGES: Record<string, string> = {
     "Mark the work order ready for pickup before completing, or ask an owner/manager to override.",
   HOLD_REASON_REQUIRED: "Enter a reason when placing a work order on hold.",
   NOT_ON_HOLD: "This work order is not on hold.",
+  BOARD_MANUAL_STATUS_REQUIRED:
+    "Use the work order detail page to place on hold or cancel.",
+  INVALID_BOARD_COLUMN: "That board column is not a valid drop target.",
   LOCATION_NOT_FOUND: "That location no longer exists.",
   USER_NOT_FOUND: "That user no longer exists.",
   USER_ALREADY_LINKED: "That auth user is already linked to an app account.",

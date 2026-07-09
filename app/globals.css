@@ -985,6 +985,41 @@ summary {
   color: var(--status-neutral);
 }
 
+.shop-board-error {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--status-danger) 35%, var(--border));
+  background: color-mix(in srgb, var(--status-danger) 10%, var(--surface));
+  color: var(--status-danger);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.shop-board-column--drop-target {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.wo-card-drag-wrap {
+  touch-action: none;
+}
+
+.wo-card-drag-wrap--draggable {
+  cursor: grab;
+}
+
+.wo-card-drag-wrap--draggable:active {
+  cursor: grabbing;
+}
+
+.wo-card-drag-overlay {
+  box-shadow: var(--shadow-md);
+  border-radius: var(--radius-lg);
+  opacity: 0.95;
+  cursor: grabbing;
+}
+
 /* ── Technician job cards ── */
 
 .tech-job-card {

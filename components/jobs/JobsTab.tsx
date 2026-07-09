@@ -5,7 +5,7 @@ import type { WorkOrderJob, TechnicianOption } from "@/lib/services/workOrders";
 import {
   groupServicesByCategory,
   type Service,
-} from "@/lib/services/serviceCatalogue";
+} from "@/lib/services/serviceCatalogueShared";
 import type { JobFormState } from "@/app/(app)/work_orders/job-actions";
 import { JobCard } from "@/components/jobs/JobCard";
 import { FormError, SELECT_CLASS } from "@/components/forms/Field";

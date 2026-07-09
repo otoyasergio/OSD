@@ -3,7 +3,7 @@ import {
   groupServicesByCategory,
   UNCATEGORISED_SERVICE_GROUP,
   type Service,
-} from "@/lib/services/serviceCatalogue";
+} from "@/lib/services/serviceCatalogueShared";
 
 function service(
   overrides: Partial<Service> & Pick<Service, "service_id" | "name">

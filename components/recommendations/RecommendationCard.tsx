@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import type { Recommendation } from "@/lib/services/recommendations";
-import type { Service } from "@/lib/services/serviceCatalogue";
+import type { Service } from "@/lib/services/serviceCatalogueShared";
 import type { RecommendationFormState } from "@/app/(app)/work_orders/recommendation-actions";
 import {
   RECOMMENDATION_SEVERITY_LABELS,

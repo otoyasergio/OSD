@@ -3,17 +3,13 @@ import { createClient } from "@/lib/database/supabase-server";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { canManageServiceCatalogue } from "@/lib/permissions";
 import { serviceSchema } from "@/lib/validation/schemas";
+import type { Service } from "@/lib/services/serviceCatalogueShared";
 
-export type Service = {
-  service_id: string;
-  name: string;
-  category: string | null;
-  standard_price: number | null;
-  estimated_labour: number | null;
-  active: boolean;
-  created_at: string;
-  updated_at: string;
-};
+export type { Service } from "@/lib/services/serviceCatalogueShared";
+export {
+  groupServicesByCategory,
+  UNCATEGORISED_SERVICE_GROUP,
+} from "@/lib/services/serviceCatalogueShared";
 
 export type ServiceInput = {
   name: string;
@@ -25,29 +21,6 @@ export type ServiceInput = {
 
 const SERVICE_COLUMNS =
   "service_id, name, category, standard_price, estimated_labour, active, created_at, updated_at";
-
-export const UNCATEGORISED_SERVICE_GROUP = "Other";
-
-/** Groups services by category, keeping category order alphabetical with uncategorised last. */
-export function groupServicesByCategory(
-  services: Service[]
-): Array<{ category: string; services: Service[] }> {
-  const groups = new Map<string, Service[]>();
-  for (const service of services) {
-    const key = service.category?.trim() || UNCATEGORISED_SERVICE_GROUP;
-    const bucket = groups.get(key);
-    if (bucket) bucket.push(service);
-    else groups.set(key, [service]);
-  }
-
-  return [...groups.entries()]
-    .sort(([a], [b]) => {
-      if (a === UNCATEGORISED_SERVICE_GROUP) return 1;
-      if (b === UNCATEGORISED_SERVICE_GROUP) return -1;
-      return a.localeCompare(b);
-    })
-    .map(([category, grouped]) => ({ category, services: grouped }));
-}
 
 export async function listServices(
   options: { includeInactive?: boolean } = {}

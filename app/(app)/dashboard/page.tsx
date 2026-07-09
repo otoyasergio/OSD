@@ -277,6 +277,8 @@ export default async function DashboardPage({
           rows={data.rows}
           hideEmpty={hideEmpty}
           compact={density === "compact"}
+          role={user.role}
+          isForeignLocation={false}
         />
       ) : (
         <WorkOrderListView rows={data.rows} hideEmpty={hideEmpty} />

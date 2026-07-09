@@ -4,7 +4,7 @@ import type {
   OutstandingRecommendation,
   Recommendation,
 } from "@/lib/services/recommendations";
-import type { Service } from "@/lib/services/serviceCatalogue";
+import type { Service } from "@/lib/services/serviceCatalogueShared";
 import type { RecommendationFormState } from "@/app/(app)/work_orders/recommendation-actions";
 import {
   RecommendationCard,

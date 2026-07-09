@@ -10,7 +10,7 @@ import type { OutstandingRecommendation } from "@/lib/services/recommendations";
 import {
   groupServicesByCategory,
   type Service,
-} from "@/lib/services/serviceCatalogue";
+} from "@/lib/services/serviceCatalogueShared";
 import type { TechnicianOption } from "@/lib/services/workOrders";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
