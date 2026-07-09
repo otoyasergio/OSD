@@ -8,6 +8,7 @@ import type { JobStatus } from "@/lib/database/types";
 import { APPROVAL_METHOD_OPTIONS } from "@/components/jobs/JobActions";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { formatLabourComparison } from "@/lib/services/labour";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
@@ -99,6 +100,12 @@ export function JobCard({
       job.status === "approved" ||
       job.status === "ready_to_start");
 
+  const labour = formatLabourComparison(
+    job.estimated_labour_snapshot,
+    job.started_at,
+    job.completed_at
+  );
+
   return (
     <article className="rounded border border-zinc-200 bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -116,10 +123,21 @@ export function JobCard({
             {job.standard_price_snapshot != null
               ? `$${job.standard_price_snapshot}`
               : "No price"}
-            {job.estimated_labour_snapshot != null
+            {!labour && job.estimated_labour_snapshot != null
               ? ` · ${job.estimated_labour_snapshot} h`
               : ""}
           </p>
+          {labour ? (
+            <p
+              className={`mt-1 text-sm ${
+                labour.overEstimate
+                  ? "font-medium text-amber-700"
+                  : "text-zinc-500"
+              }`}
+            >
+              {labour.label}
+            </p>
+          ) : null}
         </div>
       </div>
 

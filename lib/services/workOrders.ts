@@ -210,6 +210,7 @@ export type WorkOrderJob = {
   declined_at: string | null;
   decline_reason: string | null;
   created_at: string;
+  started_at: string | null;
   completed_at: string | null;
   assigned_technician: {
     user_id: string;
@@ -323,6 +324,7 @@ export async function getWorkOrderDetail(
         declined_at,
         decline_reason,
         created_at,
+        started_at,
         completed_at,
         assigned_technician:assigned_technician_id (
           user_id,

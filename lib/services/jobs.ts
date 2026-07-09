@@ -24,6 +24,7 @@ type JobRow = {
   status: JobStatus;
   assigned_technician_id: string | null;
   notes: string | null;
+  started_at: string | null;
 };
 
 type WorkOrderRow = {
@@ -40,7 +41,7 @@ async function loadJob(
   const { data, error } = await supabase
     .from("job")
     .select(
-      "job_id, work_order_id, service_id, service_name_snapshot, status, assigned_technician_id, notes"
+      "job_id, work_order_id, service_id, service_name_snapshot, status, assigned_technician_id, notes, started_at"
     )
     .eq("job_id", jobId)
     .maybeSingle();
@@ -268,6 +269,9 @@ export async function updateJobStatus(
     updated_at: new Date().toISOString(),
   };
 
+  if (nextStatus === "in_progress" && !job.started_at) {
+    updates.started_at = new Date().toISOString();
+  }
   if (nextStatus === "completed") {
     updates.completed_at = new Date().toISOString();
   }

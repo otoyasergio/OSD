@@ -6,15 +6,27 @@ import { WorkOrderJobTodo } from "@/components/work_orders/WorkOrderJobTodo";
 import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
 import { getWorkOrderNextAction } from "@/lib/status/pipeline";
 
+const INACTIVE_JOB_STATUSES = new Set(["cancelled", "declined", "completed"]);
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleString();
+}
+
+function sumActiveEstimatedHours(detail: WorkOrderDetail): number | null {
+  const hours = detail.jobs
+    .filter((job) => !INACTIVE_JOB_STATUSES.has(job.status))
+    .map((job) => job.estimated_labour_snapshot)
+    .filter((h): h is number => h != null);
+  if (hours.length === 0) return null;
+  return hours.reduce((sum, h) => sum + h, 0);
 }
 
 export function WorkOrderHeader({ detail }: { detail: WorkOrderDetail }) {
   const customer = detail.motorcycle?.customer;
   const bike = detail.motorcycle;
   const nextAction = getWorkOrderNextAction(detail.status, detail.flags);
+  const estimatedLabourTotal = sumActiveEstimatedHours(detail);
 
   return (
     <header className="card overflow-hidden">
@@ -111,6 +123,19 @@ export function WorkOrderHeader({ detail }: { detail: WorkOrderDetail }) {
             {formatDate(detail.estimated_completion)}
           </dd>
         </div>
+        {estimatedLabourTotal != null ? (
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
+              Est. labour
+            </dt>
+            <dd className="mt-0.5 font-semibold tabular-nums text-foreground">
+              {Number.isInteger(estimatedLabourTotal)
+                ? estimatedLabourTotal
+                : estimatedLabourTotal.toFixed(1)}
+              h
+            </dd>
+          </div>
+        ) : null}
         <div>
           <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
             Created
