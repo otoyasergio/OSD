@@ -23,7 +23,10 @@ import {
 } from "@/lib/services/workOrders";
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
-import { listRecommendationsForWorkOrder } from "@/lib/services/recommendations";
+import {
+  listOutstandingRecommendationsForMotorcycle,
+  listRecommendationsForWorkOrder,
+} from "@/lib/services/recommendations";
 import { listPartsForWorkOrder } from "@/lib/services/parts";
 import { listIntakePhotos } from "@/lib/services/photos";
 import { listTechnicianNotes } from "@/lib/services/notes";
@@ -106,6 +109,7 @@ export default async function WorkOrderDetailPage({
     services,
     inspection,
     recommendations,
+    outstandingRecommendations,
     parts,
     photos,
     notes,
@@ -120,6 +124,10 @@ export default async function WorkOrderDetailPage({
       : listServices({ includeInactive: false }),
     getInspectionForWorkOrder(work_order_id),
     listRecommendationsForWorkOrder(work_order_id),
+    listOutstandingRecommendationsForMotorcycle(
+      detail.motorcycle_id,
+      work_order_id
+    ),
     listPartsForWorkOrder(work_order_id),
     listIntakePhotos(work_order_id),
     listTechnicianNotes(work_order_id),
@@ -282,6 +290,7 @@ export default async function WorkOrderDetailPage({
       {activeTab === "recommendations" ? (
         <RecommendationsTab
           recommendations={recommendations}
+          outstandingRecommendations={outstandingRecommendations}
           services={services}
           readOnly={detail.is_foreign_location}
           canCreate={canRecommend}

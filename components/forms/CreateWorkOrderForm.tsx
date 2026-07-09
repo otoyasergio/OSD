@@ -1,10 +1,12 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { WorkOrderFormState } from "@/app/(app)/work_orders/actions";
+import { getOutstandingRecommendationsAction } from "@/app/(app)/work_orders/recommendation-actions";
 import type { Customer } from "@/lib/services/customers";
 import type { MotorcycleWithCustomer } from "@/lib/services/motorcycles";
+import type { OutstandingRecommendation } from "@/lib/services/recommendations";
 import {
   groupServicesByCategory,
   type Service,
@@ -48,6 +50,9 @@ export function CreateWorkOrderForm({
 
   const [customerId, setCustomerId] = useState(resolvedInitialCustomerId);
   const [motorcycleId, setMotorcycleId] = useState(initialMotorcycleId);
+  const [outstanding, setOutstanding] = useState<OutstandingRecommendation[]>(
+    []
+  );
 
   const bikesForCustomer = useMemo(() => {
     if (!customerId) return [];
@@ -58,6 +63,22 @@ export function CreateWorkOrderForm({
     () => groupServicesByCategory(services),
     [services]
   );
+
+  useEffect(() => {
+    if (!motorcycleId) {
+      setOutstanding([]);
+      return;
+    }
+
+    let cancelled = false;
+    void getOutstandingRecommendationsAction(motorcycleId).then((rows) => {
+      if (!cancelled) setOutstanding(rows);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [motorcycleId]);
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-6">
@@ -131,6 +152,18 @@ export function CreateWorkOrderForm({
             .
           </span>
         </label>
+
+        {outstanding.length > 0 ? (
+          <p
+            role="status"
+            className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          >
+            This motorcycle has {outstanding.length} outstanding recommendation
+            {outstanding.length === 1 ? "" : "s"} from previous visits
+            (pending, deferred, or declined). Review them on the bike profile
+            after creating this work order.
+          </p>
+        ) : null}
       </section>
 
       <section className="flex flex-col gap-4">

@@ -1,12 +1,16 @@
 "use client";
 
-import type { Recommendation } from "@/lib/services/recommendations";
+import type {
+  OutstandingRecommendation,
+  Recommendation,
+} from "@/lib/services/recommendations";
 import type { Service } from "@/lib/services/serviceCatalogue";
 import type { RecommendationFormState } from "@/app/(app)/work_orders/recommendation-actions";
 import {
   RecommendationCard,
   RecommendationCreateForm,
 } from "@/components/recommendations/RecommendationCard";
+import { OutstandingRecommendations } from "@/components/recommendations/OutstandingRecommendations";
 
 type Action = (
   state: RecommendationFormState,
@@ -15,6 +19,7 @@ type Action = (
 
 export function RecommendationsTab({
   recommendations,
+  outstandingRecommendations = [],
   services,
   readOnly,
   canCreate,
@@ -27,6 +32,7 @@ export function RecommendationsTab({
   fromResultDefaults,
 }: {
   recommendations: Recommendation[];
+  outstandingRecommendations?: OutstandingRecommendation[];
   services: Service[];
   readOnly: boolean;
   canCreate: boolean;
@@ -42,36 +48,46 @@ export function RecommendationsTab({
   } | null;
 }) {
   return (
-    <div className="flex flex-col gap-4">
-      {!readOnly && canCreate ? (
-        <RecommendationCreateForm
-          action={createAction}
-          inspectionResultId={fromResultId}
-          defaultDescription={fromResultDefaults?.description}
-          defaultSeverity={fromResultDefaults?.severity}
-        />
-      ) : null}
+    <div className="flex flex-col gap-6">
+      <OutstandingRecommendations
+        recommendations={outstandingRecommendations}
+        title="Previously deferred on this motorcycle"
+        hideWhenEmpty
+      />
 
-      {recommendations.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
-          No recommendations yet.
-        </p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {recommendations.map((recommendation) => (
-            <RecommendationCard
-              key={recommendation.recommendation_id}
-              recommendation={recommendation}
-              services={services}
-              readOnly={readOnly}
-              canUpdateStatus={canUpdateStatus}
-              canConvert={canConvert}
-              statusAction={statusActionFor(recommendation.recommendation_id)}
-              convertAction={convertActionFor(recommendation.recommendation_id)}
-            />
-          ))}
-        </div>
-      )}
+      <div className="flex flex-col gap-4">
+        {!readOnly && canCreate ? (
+          <RecommendationCreateForm
+            action={createAction}
+            inspectionResultId={fromResultId}
+            defaultDescription={fromResultDefaults?.description}
+            defaultSeverity={fromResultDefaults?.severity}
+          />
+        ) : null}
+
+        {recommendations.length === 0 ? (
+          <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
+            No recommendations yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {recommendations.map((recommendation) => (
+              <RecommendationCard
+                key={recommendation.recommendation_id}
+                recommendation={recommendation}
+                services={services}
+                readOnly={readOnly}
+                canUpdateStatus={canUpdateStatus}
+                canConvert={canConvert}
+                statusAction={statusActionFor(recommendation.recommendation_id)}
+                convertAction={convertActionFor(
+                  recommendation.recommendation_id
+                )}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

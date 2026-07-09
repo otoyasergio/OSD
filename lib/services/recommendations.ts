@@ -37,6 +37,20 @@ export type Recommendation = {
   } | null;
 };
 
+export type OutstandingRecommendation = Recommendation & {
+  work_order: {
+    work_order_id: string;
+    work_order_number: string;
+    status: string;
+  };
+};
+
+const OUTSTANDING_STATUSES: RecommendationStatus[] = [
+  "pending",
+  "deferred",
+  "declined",
+];
+
 const COLUMNS =
   "recommendation_id, work_order_id, inspection_result_id, created_by_user_id, description, severity, status, converted_job_id, notes, created_at, resolved_at";
 
@@ -104,6 +118,55 @@ export async function listRecommendationsForWorkOrder(
 
   if (error) throw error;
   return (data ?? []) as unknown as Recommendation[];
+}
+
+export async function listOutstandingRecommendationsForMotorcycle(
+  motorcycleId: string,
+  excludeWorkOrderId?: string
+): Promise<OutstandingRecommendation[]> {
+  await requireUser();
+  const supabase = await createClient();
+
+  const { data: workOrders, error: woError } = await supabase
+    .from("work_order")
+    .select("work_order_id, work_order_number, status")
+    .eq("motorcycle_id", motorcycleId)
+    .not("status", "in", '("completed","cancelled")');
+
+  if (woError) throw woError;
+
+  const activeWorkOrders = (workOrders ?? []).filter(
+    (wo) => wo.work_order_id !== excludeWorkOrderId
+  );
+  if (activeWorkOrders.length === 0) return [];
+
+  const workOrderById = new Map(
+    activeWorkOrders.map((wo) => [
+      wo.work_order_id as string,
+      {
+        work_order_id: wo.work_order_id as string,
+        work_order_number: wo.work_order_number as string,
+        status: wo.status as string,
+      },
+    ])
+  );
+
+  const { data, error } = await supabase
+    .from("recommendation")
+    .select(COLUMNS)
+    .in("work_order_id", [...workOrderById.keys()])
+    .in("status", OUTSTANDING_STATUSES)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  return (data ?? []).map((row) => {
+    const workOrder = workOrderById.get(row.work_order_id as string)!;
+    return {
+      ...(row as Recommendation),
+      work_order: workOrder,
+    };
+  });
 }
 
 export async function createRecommendation(

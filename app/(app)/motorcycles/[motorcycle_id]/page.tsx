@@ -5,10 +5,12 @@ import {
   getServiceInformation,
 } from "@/lib/services/motorcycles";
 import { searchCustomers } from "@/lib/services/customers";
+import { listOutstandingRecommendationsForMotorcycle } from "@/lib/services/recommendations";
 import { requireUser } from "@/lib/auth/session";
 import { canUpdateServiceInformation } from "@/lib/permissions";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
+import { OutstandingRecommendations } from "@/components/recommendations/OutstandingRecommendations";
 import {
   updateMotorcycleAction,
   updateServiceInformationAction,
@@ -24,10 +26,12 @@ export default async function MotorcycleDetailPage({
   const motorcycle = await getMotorcycleById(motorcycle_id);
   if (!motorcycle) notFound();
 
-  const [serviceInformation, customers] = await Promise.all([
-    getServiceInformation(motorcycle_id),
-    searchCustomers(""),
-  ]);
+  const [serviceInformation, customers, outstandingRecommendations] =
+    await Promise.all([
+      getServiceInformation(motorcycle_id),
+      searchCustomers(""),
+      listOutstandingRecommendationsForMotorcycle(motorcycle_id),
+    ]);
 
   const updateAction = updateMotorcycleAction.bind(null, motorcycle_id);
   const serviceInfoAction = updateServiceInformationAction.bind(
@@ -71,6 +75,11 @@ export default async function MotorcycleDetailPage({
           Missing VIN — add the VIN before releasing this motorcycle.
         </p>
       )}
+
+      <OutstandingRecommendations
+        recommendations={outstandingRecommendations}
+        title="Follow-up from previous visits"
+      />
 
       <section>
         <h2 className="text-lg font-semibold text-zinc-900">

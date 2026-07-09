@@ -5,6 +5,8 @@ import {
   convertRecommendationToJob,
   createRecommendation,
   createRecommendationFromInspectionResult,
+  listOutstandingRecommendationsForMotorcycle,
+  type OutstandingRecommendation,
   updateRecommendationStatus,
 } from "@/lib/services/recommendations";
 import { toFormErrorMessage } from "@/lib/services/errors";
@@ -14,6 +16,13 @@ import type {
 } from "@/lib/database/types";
 
 export type RecommendationFormState = { error: string | null };
+
+export async function getOutstandingRecommendationsAction(
+  motorcycleId: string
+): Promise<OutstandingRecommendation[]> {
+  if (!motorcycleId) return [];
+  return listOutstandingRecommendationsForMotorcycle(motorcycleId);
+}
 
 function revalidateRecommendations(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
