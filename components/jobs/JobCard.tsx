@@ -3,15 +3,12 @@
 import { useActionState, useState } from "react";
 import type { WorkOrderJob, TechnicianOption } from "@/lib/services/workOrders";
 import type { JobFormState } from "@/app/(app)/work_orders/job-actions";
-import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import type { JobStatus } from "@/lib/database/types";
 import { APPROVAL_METHOD_OPTIONS } from "@/components/jobs/JobActions";
-import { FormError } from "@/components/forms/Field";
+import { FormError, SELECT_CLASS } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatLabourComparison } from "@/lib/services/labour";
-
-const SELECT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
 
 type Action = (
   state: JobFormState,
@@ -22,19 +19,25 @@ function StatusButton({
   action,
   status,
   label,
+  variant = "secondary",
 }: {
   action: Action;
   status: JobStatus;
   label: string;
+  variant?: "primary" | "accent" | "secondary";
 }) {
   const [state, formAction] = useActionState(action, { error: null });
+  const btnClass =
+    variant === "accent"
+      ? "btn btn-accent"
+      : variant === "primary"
+        ? "btn btn-primary"
+        : "btn btn-secondary";
+
   return (
     <form action={formAction} className="inline">
       <input type="hidden" name="status" value={status} />
-      <button
-        type="submit"
-        className="min-h-11 rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
-      >
+      <button type="submit" className={btnClass}>
         {label}
       </button>
       <FormError message={state.error} />
@@ -107,19 +110,21 @@ export function JobCard({
   );
 
   return (
-    <article className="rounded border border-zinc-200 bg-white p-4">
+    <article className="card card-body">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-zinc-900">
+          <h3 className="text-base font-semibold text-[var(--foreground)]">
             {job.service_name_snapshot}
           </h3>
-          <p className="mt-1 text-sm text-zinc-600">
-            {JOB_STATUS_LABELS[job.status] ?? job.status}
-            {job.assigned_technician
-              ? ` · ${job.assigned_technician.first_name} ${job.assigned_technician.last_name}`
-              : " · Unassigned"}
-          </p>
-          <p className="mt-1 text-sm text-zinc-500">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <StatusBadge status={job.status} kind="job" />
+            <span className="text-sm text-[var(--status-neutral)]">
+              {job.assigned_technician
+                ? `${job.assigned_technician.first_name} ${job.assigned_technician.last_name}`
+                : "Unassigned"}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
             {job.standard_price_snapshot != null
               ? `$${job.standard_price_snapshot}`
               : "No price"}
@@ -131,8 +136,8 @@ export function JobCard({
             <p
               className={`mt-1 text-sm ${
                 labour.overEstimate
-                  ? "font-medium text-amber-700"
-                  : "text-zinc-500"
+                  ? "font-medium text-[var(--status-warning-fg)]"
+                  : "text-[var(--status-neutral)]"
               }`}
             >
               {labour.label}
@@ -142,9 +147,7 @@ export function JobCard({
       </div>
 
       {job.decline_reason ? (
-        <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-          Declined: {job.decline_reason}
-        </p>
+        <p className="alert-error mt-3">Declined: {job.decline_reason}</p>
       ) : null}
 
       {!readOnly ? (
@@ -155,9 +158,7 @@ export function JobCard({
               className="flex flex-wrap items-end gap-2"
             >
               <label className="min-w-[12rem] flex-1">
-                <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-                  Assign technician
-                </span>
+                <span className="field-label">Assign technician</span>
                 <select
                   className={SELECT_CLASS}
                   name="technician_id"
@@ -183,9 +184,7 @@ export function JobCard({
               className="flex flex-wrap items-end gap-2"
             >
               <label className="min-w-[12rem] flex-1">
-                <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-                  Approval method
-                </span>
+                <span className="field-label">Approval method</span>
                 <select
                   className={SELECT_CLASS}
                   name="approval_method"
@@ -213,18 +212,19 @@ export function JobCard({
                 <button
                   type="button"
                   onClick={() => setShowDecline(true)}
-                  className="min-h-11 rounded border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-50"
+                  className="btn btn-danger"
                 >
                   Record decline…
                 </button>
               ) : (
                 <form action={declineFormAction} className="flex flex-col gap-2">
                   <label className="block">
-                    <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-                      Decline reason <span className="text-red-600">*</span>
+                    <span className="field-label">
+                      Decline reason{" "}
+                      <span className="text-[var(--status-danger)]">*</span>
                     </span>
                     <textarea
-                      className={`${SELECT_CLASS} min-h-24`}
+                      className="textarea"
                       name="decline_reason"
                       required
                       rows={3}
@@ -234,11 +234,12 @@ export function JobCard({
                     <SubmitButton
                       label="Confirm decline"
                       pendingLabel="Saving…"
+                      variant="danger"
                     />
                     <button
                       type="button"
                       onClick={() => setShowDecline(false)}
-                      className="min-h-11 rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800"
+                      className="btn btn-secondary"
                     >
                       Cancel
                     </button>
@@ -255,6 +256,7 @@ export function JobCard({
                 action={statusAction}
                 status="in_progress"
                 label="Start job"
+                variant="accent"
               />
             ) : null}
             {canMarkComplete ? (
@@ -262,6 +264,7 @@ export function JobCard({
                 action={statusAction}
                 status="completed"
                 label="Complete job"
+                variant="primary"
               />
             ) : null}
             {canEdit && job.status === "approved" ? (
@@ -269,6 +272,7 @@ export function JobCard({
                 action={statusAction}
                 status="ready_to_start"
                 label="Mark ready"
+                variant="secondary"
               />
             ) : null}
             {canEdit && job.status !== "cancelled" && job.status !== "completed" ? (
@@ -276,29 +280,34 @@ export function JobCard({
                 <button
                   type="button"
                   onClick={() => setShowCancel(true)}
-                  className="min-h-11 rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
+                  className="btn btn-secondary"
                 >
                   Cancel job…
                 </button>
               ) : (
                 <form action={cancelFormAction} className="w-full flex flex-col gap-2">
                   <label className="block">
-                    <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-                      Cancel note <span className="text-red-600">*</span>
+                    <span className="field-label">
+                      Cancel note{" "}
+                      <span className="text-[var(--status-danger)]">*</span>
                     </span>
                     <textarea
-                      className={`${SELECT_CLASS} min-h-24`}
+                      className="textarea"
                       name="note"
                       required
                       rows={2}
                     />
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    <SubmitButton label="Confirm cancel" pendingLabel="Saving…" />
+                    <SubmitButton
+                      label="Confirm cancel"
+                      pendingLabel="Saving…"
+                      variant="danger"
+                    />
                     <button
                       type="button"
                       onClick={() => setShowCancel(false)}
-                      className="min-h-11 rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800"
+                      className="btn btn-secondary"
                     >
                       Back
                     </button>

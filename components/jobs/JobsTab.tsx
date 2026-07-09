@@ -8,11 +8,9 @@ import {
 } from "@/lib/services/serviceCatalogue";
 import type { JobFormState } from "@/app/(app)/work_orders/job-actions";
 import { JobCard } from "@/components/jobs/JobCard";
-import { FormError } from "@/components/forms/Field";
+import { FormError, SELECT_CLASS } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-
-const SELECT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 type Action = (
   state: JobFormState,
@@ -60,12 +58,10 @@ export function JobsTab({
       {canAdd && !readOnly ? (
         <form
           action={addFormAction}
-          className="flex flex-wrap items-end gap-3 rounded border border-zinc-200 bg-white p-4"
+          className="card card-body flex flex-wrap items-end gap-3"
         >
           <label className="min-w-[14rem] flex-1">
-            <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-              Add service job
-            </span>
+            <span className="field-label">Add service job</span>
             <select className={SELECT_CLASS} name="service_id" required defaultValue="">
               <option value="">Select service</option>
               {groupedServices.map(({ category, services: categoryServices }) => (
@@ -79,7 +75,7 @@ export function JobsTab({
               ))}
             </select>
           </label>
-          <label className="flex min-h-11 items-center gap-2 text-sm text-zinc-800">
+          <label className="flex min-h-11 items-center gap-2 text-sm text-[var(--foreground)]">
             <input
               type="checkbox"
               name="require_approval"
@@ -95,9 +91,7 @@ export function JobsTab({
       ) : null}
 
       {jobs.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
-          No jobs on this work order yet.
-        </p>
+        <EmptyState description="No jobs on this work order yet." />
       ) : (
         <div className="flex flex-col gap-3">
           {jobs.map((job) => (
