@@ -32,7 +32,8 @@ export default async function MotorcycleDetailPage({
   const updateAction = updateMotorcycleAction.bind(null, motorcycle_id);
   const serviceInfoAction = updateServiceInformationAction.bind(
     null,
-    motorcycle_id
+    motorcycle_id,
+    null
   );
   const canEditServiceInfo = canUpdateServiceInformation(user.role);
 

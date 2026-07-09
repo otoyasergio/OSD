@@ -71,6 +71,7 @@ export async function updateMotorcycleAction(
 
 export async function updateServiceInformationAction(
   motorcycleId: string,
+  workOrderId: string | null,
   _prevState: MotorcycleFormState,
   formData: FormData
 ): Promise<MotorcycleFormState> {
@@ -80,11 +81,16 @@ export async function updateServiceInformationAction(
   }
 
   try {
-    await updateMotorcycleServiceInformation(motorcycleId, input);
+    await updateMotorcycleServiceInformation(motorcycleId, input, {
+      work_order_id: workOrderId,
+    });
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
 
   revalidatePath(`/motorcycles/${motorcycleId}`);
+  if (workOrderId) {
+    revalidatePath(`/work_orders/${workOrderId}`);
+  }
   return { error: null };
 }

@@ -15,6 +15,7 @@ import {
   canOverrideWorkOrderStatus,
   canRecordCustomerApproval,
   canRunQualityCheck,
+  canUpdateServiceInformation,
 } from "@/lib/permissions";
 import {
   getWorkOrderDetail,
@@ -27,6 +28,7 @@ import { listPartsForWorkOrder } from "@/lib/services/parts";
 import { listIntakePhotos } from "@/lib/services/photos";
 import { listTechnicianNotes } from "@/lib/services/notes";
 import { listTimelineEvents } from "@/lib/services/timeline";
+import { getServiceInformation } from "@/lib/services/motorcycles";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import {
   ComingSoonPanel,
@@ -35,6 +37,7 @@ import {
   type WorkOrderTabId,
 } from "@/components/work_orders/WorkOrderTabs";
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
+import { ServiceInfoTab } from "@/components/work_orders/ServiceInfoTab";
 import { JobsTab } from "@/components/jobs/JobsTab";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 import { RecommendationsTab } from "@/components/recommendations/RecommendationsTab";
@@ -42,6 +45,7 @@ import { PartsTab } from "@/components/parts/PartsTab";
 import { PhotosTab } from "@/components/photos/PhotosTab";
 import { TechnicianNotes } from "@/components/work_orders/TechnicianNotes";
 import { TimelineList } from "@/components/timeline/TimelineList";
+import { updateServiceInformationAction } from "@/app/(app)/motorcycles/actions";
 import {
   assignTechnicianAction,
   setPrimaryTechnicianAction,
@@ -106,6 +110,7 @@ export default async function WorkOrderDetailPage({
     photos,
     notes,
     timeline,
+    serviceInformation,
   ] = await Promise.all([
     detail.is_foreign_location
       ? Promise.resolve([])
@@ -119,6 +124,7 @@ export default async function WorkOrderDetailPage({
     listIntakePhotos(work_order_id),
     listTechnicianNotes(work_order_id),
     listTimelineEvents(work_order_id),
+    getServiceInformation(detail.motorcycle_id),
   ]);
 
   const canAssign = canAssignTechnician(user.role);
@@ -144,6 +150,8 @@ export default async function WorkOrderDetailPage({
     canCompleteWorkOrder(user.role) || canOverrideWorkOrderStatus(user.role);
   const canResumeHold = canOverrideWorkOrderStatus(user.role);
   const canOverrideComplete = canOverrideWorkOrderStatus(user.role);
+  const canEditServiceInfo =
+    !detail.is_foreign_location && canUpdateServiceInformation(user.role);
 
   const fromResult = fromResultId
     ? inspection?.results.find((r) => r.inspection_result_id === fromResultId)
@@ -337,7 +345,15 @@ export default async function WorkOrderDetailPage({
       ) : null}
       {activeTab === "timeline" ? <TimelineList events={timeline} /> : null}
       {activeTab === "service-info" ? (
-        <ComingSoonPanel title="Service Info" />
+        <ServiceInfoTab
+          serviceInformation={serviceInformation}
+          canEdit={canEditServiceInfo}
+          action={updateServiceInformationAction.bind(
+            null,
+            detail.motorcycle_id,
+            detail.work_order_id
+          )}
+        />
       ) : null}
     </div>
   );
