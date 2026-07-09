@@ -7,13 +7,13 @@ import {
   type DashboardCardKey,
 } from "@/lib/services/dashboard";
 import { FlagBadges } from "@/components/status/FlagBadges";
-import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SELECT_CLASS } from "@/components/forms/Field";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
 export const dynamic = "force-dynamic";
-
-const SELECT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
 
 function buildHref(params: Record<string, string | undefined | null>) {
   const search = new URLSearchParams();
@@ -55,15 +55,11 @@ export default async function DashboardPage({
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-          Dashboard
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600">
-          Operational view for the active location.
-        </p>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        title="Dashboard"
+        subtitle="Operational view for the active location."
+      />
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         {DASHBOARD_CARDS.map((card) => {
@@ -75,36 +71,24 @@ export default async function DashboardPage({
                 ...filterBase,
                 card: active ? undefined : card.key,
               })}
-              className={`min-h-11 rounded border px-3 py-3 ${
-                active
-                  ? "border-zinc-900 bg-zinc-900 text-white"
-                  : "border-zinc-200 bg-white text-zinc-900 hover:border-zinc-400"
-              }`}
+              className={active ? "stat-card stat-card-active" : "stat-card"}
+              aria-current={active ? "true" : undefined}
             >
-              <span className="block text-xs font-medium uppercase tracking-wide opacity-80">
-                {card.label}
-              </span>
-              <span className="mt-1 block text-2xl font-semibold tabular-nums">
-                {data.counts[card.key]}
-              </span>
+              <span className="stat-card-label">{card.label}</span>
+              <span className="stat-card-value">{data.counts[card.key]}</span>
             </Link>
           );
         })}
       </div>
 
-      <form
-        method="get"
-        className="grid gap-3 rounded border border-zinc-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-5"
-      >
+      <form method="get" className="filter-panel">
         {data.filters.card ? (
           <input type="hidden" name="card" value={data.filters.card} />
         ) : null}
         <label className="block lg:col-span-2">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-            Search
-          </span>
+          <span className="field-label">Search</span>
           <input
-            className={SELECT_CLASS}
+            className="input"
             name="q"
             type="search"
             defaultValue={data.filters.q ?? ""}
@@ -112,9 +96,7 @@ export default async function DashboardPage({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-            Status
-          </span>
+          <span className="field-label">Status</span>
           <select
             className={SELECT_CLASS}
             name="status"
@@ -129,9 +111,7 @@ export default async function DashboardPage({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-            Technician
-          </span>
+          <span className="field-label">Technician</span>
           <select
             className={SELECT_CLASS}
             name="technician_id"
@@ -146,9 +126,7 @@ export default async function DashboardPage({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-            Flag
-          </span>
+          <span className="field-label">Flag</span>
           <select
             className={SELECT_CLASS}
             name="flag"
@@ -163,75 +141,64 @@ export default async function DashboardPage({
           </select>
         </label>
         <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-5">
-          <button
-            type="submit"
-            className="min-h-11 rounded bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
-          >
+          <button type="submit" className="btn btn-primary">
             Apply filters
           </button>
-          <Link
-            href="/dashboard"
-            className="inline-flex min-h-11 items-center rounded border border-zinc-300 px-4 py-2.5 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-          >
+          <Link href="/dashboard" className="btn btn-secondary">
             Clear
           </Link>
         </div>
       </form>
 
       {data.rows.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
-          No work orders match these filters at this location.
-        </p>
+        <EmptyState description="No work orders match these filters at this location." />
       ) : (
-        <div className="overflow-x-auto rounded border border-zinc-200 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-600">
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-4 py-3 font-medium">Number</th>
-                <th className="px-4 py-3 font-medium">Invoice</th>
-                <th className="px-4 py-3 font-medium">Customer</th>
-                <th className="px-4 py-3 font-medium">Bike</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Tech</th>
-                <th className="px-4 py-3 font-medium">Flags</th>
+                <th>Number</th>
+                <th>Invoice</th>
+                <th>Customer</th>
+                <th>Bike</th>
+                <th>Status</th>
+                <th>Tech</th>
+                <th>Flags</th>
               </tr>
             </thead>
             <tbody>
               {data.rows.map((wo) => (
-                <tr
-                  key={wo.work_order_id}
-                  className="border-b border-zinc-100 last:border-0"
-                >
-                  <td className="px-4 py-3">
+                <tr key={wo.work_order_id}>
+                  <td>
                     <Link
                       href={`/work_orders/${wo.work_order_id}`}
-                      className="font-medium text-zinc-900 underline-offset-2 hover:underline"
+                      className="data-table-link"
                     >
                       {wo.work_order_number}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {wo.external_invoice_number ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {wo.motorcycle?.customer
                       ? `${wo.motorcycle.customer.first_name} ${wo.motorcycle.customer.last_name}`
                       : "—"}
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {wo.motorcycle
                       ? `${wo.motorcycle.year} ${wo.motorcycle.make} ${wo.motorcycle.model}`
                       : "—"}
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
-                    {WORK_ORDER_STATUS_LABELS[wo.status] ?? wo.status}
+                  <td>
+                    <StatusBadge status={wo.status} />
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {wo.primary_technician
                       ? `${wo.primary_technician.first_name} ${wo.primary_technician.last_name}`
                       : "—"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <FlagBadges flags={wo.flags} />
                   </td>
                 </tr>

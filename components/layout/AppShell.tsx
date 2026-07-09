@@ -25,10 +25,10 @@ export function AppShell({ user, locations, children }: Props) {
   const displayName = `${user.first_name} ${user.last_name}`.trim();
 
   return (
-    <div className="flex min-h-full flex-1 flex-col bg-zinc-50">
-      <header className="border-b border-zinc-800 bg-zinc-950">
+    <div className="flex min-h-full flex-1 flex-col bg-background">
+      <header className="border-b border-chrome-border bg-chrome">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
             <Link
               href="/dashboard"
               className="inline-flex shrink-0 items-center"
@@ -52,9 +52,9 @@ export function AppShell({ user, locations, children }: Props) {
                 activeLocationId={user.active_location_id}
               />
             ) : null}
-            <div className="text-sm text-zinc-300">
-              <span className="font-medium text-white">{displayName}</span>
-              <span className="mx-1.5 text-zinc-500">·</span>
+            <div className="rounded-md border border-chrome-border bg-chrome-elevated px-3 py-1.5 text-sm text-chrome-muted">
+              <span className="font-semibold text-chrome-foreground">{displayName}</span>
+              <span className="mx-1.5 opacity-40">·</span>
               <span>{ROLE_LABELS[user.role]}</span>
             </div>
           </div>

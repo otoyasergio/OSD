@@ -1,13 +1,16 @@
 const FLAG_STYLES: Record<string, string> = {
-  "Missing VIN": "bg-amber-100 text-amber-900",
-  "Missing invoice #": "bg-amber-100 text-amber-900",
-  "No intake photos": "bg-amber-100 text-amber-900",
-  "Incomplete inspection": "bg-orange-100 text-orange-900",
-  "Needs approval": "bg-sky-100 text-sky-900",
-  "Waiting for parts": "bg-violet-100 text-violet-900",
-  "Safety-critical": "bg-red-100 text-red-900",
-  Overdue: "bg-red-100 text-red-900",
-  "On hold": "bg-zinc-200 text-zinc-800",
+  "Missing VIN": "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
+  "Missing invoice #": "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
+  "No intake photos": "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
+  "Incomplete inspection":
+    "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] ring-1 ring-[var(--status-warning)]/20",
+  "Needs approval": "bg-[var(--status-info-bg)] text-[var(--status-info-fg)]",
+  "Waiting for parts": "bg-[var(--status-waiting-bg)] text-[var(--status-waiting-fg)]",
+  "Safety-critical":
+    "bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)] ring-1 ring-[var(--status-danger)]/25",
+  Overdue:
+    "bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)] ring-1 ring-[var(--status-danger)]/25",
+  "On hold": "bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]",
 };
 
 export function FlagBadges({
@@ -18,17 +21,15 @@ export function FlagBadges({
   empty?: string;
 }) {
   if (flags.length === 0) {
-    return <span className="text-zinc-400">{empty}</span>;
+    return <span className="text-chrome-muted text-sm">{empty}</span>;
   }
 
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1.5">
       {flags.map((flag) => (
         <span
           key={flag}
-          className={`rounded px-2 py-0.5 text-xs font-semibold ${
-            FLAG_STYLES[flag] ?? "bg-amber-100 text-amber-900"
-          }`}
+          className={`badge ${FLAG_STYLES[flag] ?? "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]"}`}
         >
           {flag}
         </span>

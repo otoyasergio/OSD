@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { listWorkOrdersForActiveLocation } from "@/lib/services/workOrders";
-import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import { canCreateWorkOrder } from "@/lib/permissions";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 import { FlagBadges } from "@/components/status/FlagBadges";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export const dynamic = "force-dynamic";
 
@@ -16,75 +18,67 @@ export default async function WorkOrdersPage() {
   const canCreate = canCreateWorkOrder(user.role);
 
   return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
-          Work orders
-        </h1>
-        {canCreate ? (
-          <Link
-            href="/work_orders/new"
-            className="min-h-11 rounded bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
-          >
-            New work order
-          </Link>
-        ) : null}
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        title="Work orders"
+        actions={
+          canCreate ? (
+            <Link href="/work_orders/new" className="btn btn-primary">
+              New work order
+            </Link>
+          ) : undefined
+        }
+      />
 
       {workOrders.length === 0 ? (
-        <p className="mt-8 rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
-          No work orders at this location yet.
-        </p>
+        <EmptyState description="No work orders at this location yet." />
       ) : (
-        <div className="mt-4 overflow-x-auto rounded border border-zinc-200 bg-white">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 text-zinc-600">
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-4 py-3 font-medium">Number</th>
-                <th className="px-4 py-3 font-medium">Invoice</th>
-                <th className="px-4 py-3 font-medium">Customer</th>
-                <th className="px-4 py-3 font-medium">Bike</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium">Tech</th>
-                <th className="px-4 py-3 font-medium">Flags</th>
+                <th>Number</th>
+                <th>Invoice</th>
+                <th>Customer</th>
+                <th>Bike</th>
+                <th>Status</th>
+                <th>Tech</th>
+                <th>Flags</th>
               </tr>
             </thead>
             <tbody>
               {workOrders.map((wo) => (
-                <tr
-                  key={wo.work_order_id}
-                  className="border-b border-zinc-100 last:border-0"
-                >
-                  <td className="px-4 py-3">
+                <tr key={wo.work_order_id}>
+                  <td>
                     <Link
                       href={`/work_orders/${wo.work_order_id}`}
-                      className="font-medium text-zinc-900 underline-offset-2 hover:underline"
+                      className="data-table-link"
                     >
                       {wo.work_order_number}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {wo.external_invoice_number ?? "—"}
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {wo.motorcycle?.customer
                       ? `${wo.motorcycle.customer.first_name} ${wo.motorcycle.customer.last_name}`
                       : "—"}
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {wo.motorcycle
                       ? `${wo.motorcycle.year} ${wo.motorcycle.make} ${wo.motorcycle.model}`
                       : "—"}
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
-                    {WORK_ORDER_STATUS_LABELS[wo.status] ?? wo.status}
+                  <td>
+                    <StatusBadge status={wo.status} />
                   </td>
-                  <td className="px-4 py-3 text-zinc-700">
+                  <td className="text-[var(--status-neutral-fg)]">
                     {wo.primary_technician
                       ? `${wo.primary_technician.first_name} ${wo.primary_technician.last_name}`
                       : "—"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <FlagBadges flags={wo.flags} />
                   </td>
                 </tr>

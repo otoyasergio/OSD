@@ -16,10 +16,10 @@ export default async function AppLayout({
 
   if (!user.active_location_id) {
     return (
-      <div className="flex min-h-full flex-1 items-center justify-center bg-zinc-50 px-4">
-        <div className="max-w-md text-center">
-          <h1 className="text-2xl font-semibold text-zinc-900">No location</h1>
-          <p className="mt-3 text-zinc-600">
+      <div className="flex min-h-full flex-1 items-center justify-center bg-background px-4">
+        <div className="card max-w-md p-8 text-center">
+          <h1 className="page-title">No location</h1>
+          <p className="page-subtitle mt-3">
             Contact owner to assign a location before using the workshop app.
           </p>
         </div>

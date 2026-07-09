@@ -32,13 +32,15 @@ export function LocationSwitcher({ locations, activeLocationId }: Props) {
   if (locations.length === 0) return null;
 
   return (
-    <label className="flex items-center gap-2 text-sm text-zinc-300">
-      <span className="whitespace-nowrap font-medium">Location</span>
+    <label className="flex items-center gap-2 text-sm text-chrome-muted">
+      <span className="whitespace-nowrap font-medium text-chrome-foreground">
+        Location
+      </span>
       <select
         value={activeLocationId}
         onChange={onChange}
         disabled={pending || locations.length === 1}
-        className="min-h-11 min-w-[10rem] rounded border border-zinc-700 bg-zinc-900 px-2 text-base text-white"
+        className="select-dark min-w-[10rem] disabled:opacity-60"
         aria-label="Active location"
       >
         {locations.map((loc) => (
