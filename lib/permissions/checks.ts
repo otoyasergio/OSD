@@ -29,6 +29,9 @@ export function canConvertRecommendation(role: UserRole) {
 export function canOrderPart(role: UserRole) {
   return FRONT_OFFICE.includes(role);
 }
+export function canViewPartsBoard(role: UserRole) {
+  return FRONT_OFFICE.includes(role) || role === "technician";
+}
 export function canCompleteJob(role: UserRole) {
   return role === "technician" || FRONT_OFFICE.includes(role);
 }

@@ -4,6 +4,7 @@ import {
   canManageUsers,
   canViewAuditLog,
   canOrderPart,
+  canViewPartsBoard,
   canCompleteWorkOrder,
   canRunQualityCheck,
   canManageServiceCatalogue,
@@ -48,6 +49,14 @@ describe("permissions", () => {
   it("canOrderPart is true for front office roles", () => {
     expect(canOrderPart("service_advisor")).toBe(true);
     expect(canOrderPart("technician")).toBe(false);
+  });
+
+  it("canViewPartsBoard allows front office and technicians", () => {
+    expect(canViewPartsBoard("owner")).toBe(true);
+    expect(canViewPartsBoard("manager")).toBe(true);
+    expect(canViewPartsBoard("service_advisor")).toBe(true);
+    expect(canViewPartsBoard("technician")).toBe(true);
+    expect(canViewPartsBoard("admin")).toBe(false);
   });
 
   it("front office can update motorcycle service information", () => {
