@@ -8,6 +8,7 @@ import {
   completeWorkOrder,
   markReadyForPickup,
   placeWorkOrderOnHold,
+  resumeWorkOrderFromHold,
 } from "@/lib/services/quality";
 
 export type QualityFormState = { error: string | null };
@@ -77,6 +78,20 @@ export async function cancelWorkOrderAction(
       workOrderId,
       String(formData.get("cancel_reason") ?? "")
     );
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+  revalidateWorkOrder(workOrderId);
+  return { error: null };
+}
+
+export async function resumeWorkOrderFromHoldAction(
+  workOrderId: string,
+  _prevState: QualityFormState,
+  _formData: FormData
+): Promise<QualityFormState> {
+  try {
+    await resumeWorkOrderFromHold(workOrderId);
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

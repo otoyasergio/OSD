@@ -48,6 +48,7 @@ const MESSAGES: Record<string, string> = {
   NOT_READY_FOR_PICKUP:
     "Mark the work order ready for pickup before completing, or ask an owner/manager to override.",
   HOLD_REASON_REQUIRED: "Enter a reason when placing a work order on hold.",
+  NOT_ON_HOLD: "This work order is not on hold.",
   LOCATION_NOT_FOUND: "That location no longer exists.",
   USER_NOT_FOUND: "That user no longer exists.",
   USER_ALREADY_LINKED: "That auth user is already linked to an app account.",

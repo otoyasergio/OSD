@@ -86,6 +86,39 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("quality_check");
   });
 
+  it("derives active status from open after resume from hold", () => {
+    // Resume-from-hold resets status to "open" before recalculating.
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "open",
+        jobs: [{ status: "in_progress" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("in_progress");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "open",
+        jobs: [{ status: "waiting_for_approval" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("waiting_for_customer_approval");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "open",
+        jobs: [],
+        parts: [],
+        inspectionComplete: false,
+        qualityCheckComplete: false,
+      })
+    ).toBe("open");
+  });
+
   it("sets ready_for_pickup when QC complete and not completed", () => {
     expect(
       deriveWorkOrderStatus({

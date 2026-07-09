@@ -340,3 +340,46 @@ export async function placeWorkOrderOnHold(
     new_value: { status: "on_hold", reason: trimmed },
   });
 }
+
+export async function resumeWorkOrderFromHold(
+  workOrderId: string
+): Promise<void> {
+  const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
+  if (!canOverrideWorkOrderStatus(user.role)) throw new Error("FORBIDDEN");
+  if (workOrder.status !== "on_hold") throw new Error("NOT_ON_HOLD");
+
+  // Reset to "open" so recalculation can derive the correct active status.
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("work_order")
+    .update({
+      status: "open",
+      updated_at: now,
+    })
+    .eq("work_order_id", workOrderId);
+  if (error) throw error;
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.WORK_ORDER_STATUS_CHANGED,
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: "Resumed from hold",
+    old_value: { status: "on_hold" },
+    new_value: { status: "open" },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "work_order_resumed_from_hold",
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: "Resumed from hold",
+    old_value: { status: "on_hold" },
+    new_value: { status: "open" },
+  });
+
+  await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+}

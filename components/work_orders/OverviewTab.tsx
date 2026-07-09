@@ -34,6 +34,7 @@ export function OverviewTab({
   canMarkReady,
   canComplete,
   canHoldOrCancel,
+  canResumeHold,
   canOverrideComplete,
   readOnly,
   assignAction,
@@ -43,6 +44,7 @@ export function OverviewTab({
   completeAction,
   cancelAction,
   holdAction,
+  resumeAction,
 }: {
   detail: WorkOrderDetail;
   technicians: TechnicianOption[];
@@ -51,6 +53,7 @@ export function OverviewTab({
   canMarkReady: boolean;
   canComplete: boolean;
   canHoldOrCancel: boolean;
+  canResumeHold: boolean;
   canOverrideComplete: boolean;
   readOnly: boolean;
   assignAction: Action;
@@ -60,6 +63,7 @@ export function OverviewTab({
   completeAction: QualityAction;
   cancelAction: QualityAction;
   holdAction: QualityAction;
+  resumeAction: QualityAction;
 }) {
   const [assignState, assignFormAction] = useActionState(assignAction, {
     error: null,
@@ -78,6 +82,9 @@ export function OverviewTab({
     error: null,
   });
   const [holdState, holdFormAction] = useActionState(holdAction, {
+    error: null,
+  });
+  const [resumeState, resumeFormAction] = useActionState(resumeAction, {
     error: null,
   });
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -348,36 +355,57 @@ export function OverviewTab({
                 <h3 className="font-semibold text-zinc-900">Hold / cancel</h3>
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div>
-                    <FormError message={holdState.error} />
-                    {confirmHold ? (
-                      <form action={holdFormAction} className="flex flex-col gap-3">
-                        <TextAreaField
-                          label="Hold reason (optional)"
-                          name="hold_reason"
-                          rows={2}
-                        />
-                        <div className="flex flex-wrap gap-2">
+                    {detail.status === "on_hold" && canResumeHold ? (
+                      <div className="flex flex-col gap-3">
+                        <FormError message={resumeState.error} />
+                        <p className="text-sm text-zinc-600">
+                          This work order is on hold. Resuming returns it to the
+                          active flow.
+                        </p>
+                        <form action={resumeFormAction}>
                           <SubmitButton
-                            label="Confirm on hold"
-                            pendingLabel="Saving…"
+                            label="Resume from hold"
+                            pendingLabel="Resuming…"
                           />
+                        </form>
+                      </div>
+                    ) : (
+                      <>
+                        <FormError message={holdState.error} />
+                        {confirmHold ? (
+                          <form
+                            action={holdFormAction}
+                            className="flex flex-col gap-3"
+                          >
+                            <TextAreaField
+                              label="Hold reason (optional)"
+                              name="hold_reason"
+                              rows={2}
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              <SubmitButton
+                                label="Confirm on hold"
+                                pendingLabel="Saving…"
+                              />
+                              <button
+                                type="button"
+                                className="min-h-11 rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+                                onClick={() => setConfirmHold(false)}
+                              >
+                                Back
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
                           <button
                             type="button"
                             className="min-h-11 rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-                            onClick={() => setConfirmHold(false)}
+                            onClick={() => setConfirmHold(true)}
                           >
-                            Back
+                            Place on hold
                           </button>
-                        </div>
-                      </form>
-                    ) : (
-                      <button
-                        type="button"
-                        className="min-h-11 rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
-                        onClick={() => setConfirmHold(true)}
-                      >
-                        Place on hold
-                      </button>
+                        )}
+                      </>
                     )}
                   </div>
                   <div>

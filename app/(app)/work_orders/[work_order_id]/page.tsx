@@ -71,6 +71,7 @@ import {
   completeWorkOrderAction,
   markReadyForPickupAction,
   placeWorkOrderOnHoldAction,
+  resumeWorkOrderFromHoldAction,
 } from "@/app/(app)/work_orders/quality-actions";
 
 export const dynamic = "force-dynamic";
@@ -141,6 +142,7 @@ export default async function WorkOrderDetailPage({
   const canCompleteWo = canCompleteWorkOrder(user.role);
   const canHoldOrCancel =
     canCompleteWorkOrder(user.role) || canOverrideWorkOrderStatus(user.role);
+  const canResumeHold = canOverrideWorkOrderStatus(user.role);
   const canOverrideComplete = canOverrideWorkOrderStatus(user.role);
 
   const fromResult = fromResultId
@@ -187,6 +189,7 @@ export default async function WorkOrderDetailPage({
           canMarkReady={canMarkReady}
           canComplete={canCompleteWo}
           canHoldOrCancel={canHoldOrCancel}
+          canResumeHold={canResumeHold}
           canOverrideComplete={canOverrideComplete}
           readOnly={detail.is_foreign_location}
           assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
@@ -202,6 +205,10 @@ export default async function WorkOrderDetailPage({
           )}
           cancelAction={cancelWorkOrderAction.bind(null, detail.work_order_id)}
           holdAction={placeWorkOrderOnHoldAction.bind(
+            null,
+            detail.work_order_id
+          )}
+          resumeAction={resumeWorkOrderFromHoldAction.bind(
             null,
             detail.work_order_id
           )}
