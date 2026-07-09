@@ -7,6 +7,7 @@ import {
   canCompleteWorkOrder,
   canRunQualityCheck,
   canManageServiceCatalogue,
+  canUpdateServiceInformation,
 } from "@/lib/permissions/checks";
 
 describe("permissions", () => {
@@ -47,5 +48,13 @@ describe("permissions", () => {
   it("canOrderPart is true for front office roles", () => {
     expect(canOrderPart("service_advisor")).toBe(true);
     expect(canOrderPart("technician")).toBe(false);
+  });
+
+  it("front office can update motorcycle service information", () => {
+    expect(canUpdateServiceInformation("owner")).toBe(true);
+    expect(canUpdateServiceInformation("manager")).toBe(true);
+    expect(canUpdateServiceInformation("service_advisor")).toBe(true);
+    expect(canUpdateServiceInformation("technician")).toBe(false);
+    expect(canUpdateServiceInformation("admin")).toBe(false);
   });
 });

@@ -1,17 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCustomerById } from "@/lib/services/customers";
-import { createClient } from "@/lib/database/supabase-server";
+import { listMotorcyclesForCustomer } from "@/lib/services/motorcycles";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { updateCustomerAction } from "@/app/(app)/customers/actions";
-
-type MotorcycleSummary = {
-  motorcycle_id: string;
-  year: number;
-  make: string;
-  model: string;
-  vin: string | null;
-};
 
 export default async function CustomerDetailPage({
   params,
@@ -22,14 +14,7 @@ export default async function CustomerDetailPage({
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 
-  const supabase = await createClient();
-  const { data: motorcycleRows } = await supabase
-    .from("motorcycle")
-    .select("motorcycle_id, year, make, model, vin")
-    .eq("customer_id", customer_id)
-    .order("year", { ascending: false });
-  const motorcycles = (motorcycleRows ?? []) as MotorcycleSummary[];
-
+  const motorcycles = await listMotorcyclesForCustomer(customer_id);
   const updateAction = updateCustomerAction.bind(null, customer_id);
 
   return (
@@ -50,7 +35,15 @@ export default async function CustomerDetailPage({
       </div>
 
       <section>
-        <h2 className="text-lg font-semibold text-zinc-900">Motorcycles</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-zinc-900">Motorcycles</h2>
+          <Link
+            href={`/motorcycles/new?customer_id=${customer_id}`}
+            className="min-h-11 rounded border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
+          >
+            Add motorcycle
+          </Link>
+        </div>
         {motorcycles.length === 0 ? (
           <p className="mt-3 rounded border border-dashed border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600">
             No motorcycles for this customer yet.

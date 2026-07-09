@@ -41,6 +41,9 @@ export function canMarkReadyForPickup(role: UserRole) {
 export function canCompleteWorkOrder(role: UserRole) {
   return FRONT_OFFICE.includes(role);
 }
+export function canUpdateServiceInformation(role: UserRole) {
+  return FRONT_OFFICE.includes(role);
+}
 export function canManageServiceCatalogue(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }

@@ -1,0 +1,105 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import {
+  getMotorcycleById,
+  getServiceInformation,
+} from "@/lib/services/motorcycles";
+import { searchCustomers } from "@/lib/services/customers";
+import { requireUser } from "@/lib/auth/session";
+import { canUpdateServiceInformation } from "@/lib/permissions";
+import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
+import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
+import {
+  updateMotorcycleAction,
+  updateServiceInformationAction,
+} from "@/app/(app)/motorcycles/actions";
+
+export default async function MotorcycleDetailPage({
+  params,
+}: {
+  params: Promise<{ motorcycle_id: string }>;
+}) {
+  const { motorcycle_id } = await params;
+  const user = await requireUser();
+  const motorcycle = await getMotorcycleById(motorcycle_id);
+  if (!motorcycle) notFound();
+
+  const [serviceInformation, customers] = await Promise.all([
+    getServiceInformation(motorcycle_id),
+    searchCustomers(""),
+  ]);
+
+  const updateAction = updateMotorcycleAction.bind(null, motorcycle_id);
+  const serviceInfoAction = updateServiceInformationAction.bind(
+    null,
+    motorcycle_id
+  );
+  const canEditServiceInfo = canUpdateServiceInformation(user.role);
+
+  return (
+    <div className="flex flex-col gap-8">
+      <div>
+        <Link
+          href="/motorcycles"
+          className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+        >
+          ← Motorcycles
+        </Link>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
+          {motorcycle.year} {motorcycle.make} {motorcycle.model}
+        </h1>
+        <p className="mt-1 text-sm text-zinc-600">
+          Owner:{" "}
+          <Link
+            href={`/customers/${motorcycle.customer_id}`}
+            className="underline-offset-2 hover:underline"
+          >
+            {motorcycle.customer
+              ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
+              : "Unknown"}
+          </Link>
+          {motorcycle.colour ? ` · ${motorcycle.colour}` : null}
+        </p>
+      </div>
+
+      {motorcycle.vin ? null : (
+        <p
+          role="status"
+          className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900"
+        >
+          Missing VIN — add the VIN before releasing this motorcycle.
+        </p>
+      )}
+
+      <section>
+        <h2 className="text-lg font-semibold text-zinc-900">
+          Service information
+        </h2>
+        <p className="mt-1 text-sm text-zinc-600">
+          {serviceInformation?.last_updated
+            ? `Last updated ${new Date(serviceInformation.last_updated).toLocaleString()}`
+            : "Not recorded yet."}
+        </p>
+        <div className="mt-3">
+          <ServiceInformationForm
+            action={serviceInfoAction}
+            serviceInformation={serviceInformation}
+            canEdit={canEditServiceInfo}
+          />
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold text-zinc-900">Edit motorcycle</h2>
+        <div className="mt-3">
+          <MotorcycleForm
+            action={updateAction}
+            customers={customers}
+            motorcycle={motorcycle}
+            submitLabel="Save changes"
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
