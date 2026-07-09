@@ -26,8 +26,8 @@ export function Nav() {
             href={link.href}
             className={`min-h-11 rounded px-3 py-2 text-sm font-medium ${
               active
-                ? "bg-zinc-900 text-white"
-                : "text-zinc-700 hover:bg-zinc-200"
+                ? "bg-white text-zinc-950"
+                : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
             }`}
           >
             {link.label}

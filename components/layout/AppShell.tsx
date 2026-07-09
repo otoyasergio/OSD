@@ -1,3 +1,5 @@
+import Image from "next/image";
+import Link from "next/link";
 import type { AppUser } from "@/lib/auth/session";
 import { Nav } from "@/components/layout/Nav";
 import {
@@ -24,12 +26,23 @@ export function AppShell({ user, locations, children }: Props) {
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-zinc-50">
-      <header className="border-b border-zinc-200 bg-white">
+      <header className="border-b border-zinc-800 bg-zinc-950">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
-            <p className="text-lg font-semibold tracking-tight text-zinc-900">
-              OTOMOTO
-            </p>
+            <Link
+              href="/dashboard"
+              className="inline-flex shrink-0 items-center"
+              aria-label="OTOMOTO Toronto Moto home"
+            >
+              <Image
+                src="/otomoto-logo.png"
+                alt="OTOMOTO Toronto Moto"
+                width={150}
+                height={52}
+                className="h-9 w-auto"
+                priority
+              />
+            </Link>
             <Nav />
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
@@ -39,9 +52,9 @@ export function AppShell({ user, locations, children }: Props) {
                 activeLocationId={user.active_location_id}
               />
             ) : null}
-            <div className="text-sm text-zinc-600">
-              <span className="font-medium text-zinc-900">{displayName}</span>
-              <span className="mx-1.5 text-zinc-400">·</span>
+            <div className="text-sm text-zinc-300">
+              <span className="font-medium text-white">{displayName}</span>
+              <span className="mx-1.5 text-zinc-500">·</span>
               <span>{ROLE_LABELS[user.role]}</span>
             </div>
           </div>

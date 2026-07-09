@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/database/supabase-browser";
 
@@ -38,20 +39,27 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-full flex-1 items-center justify-center bg-zinc-100 px-4 py-12">
+    <main className="flex min-h-full flex-1 items-center justify-center bg-zinc-950 px-4 py-12">
       <div className="w-full max-w-md">
-        <h1 className="mb-2 text-3xl font-semibold tracking-tight text-zinc-900">
-          OTOMOTO
-        </h1>
-        <p className="mb-8 text-sm text-zinc-600">
-          Sign in to the workshop management app.
-        </p>
+        <div className="mb-8 flex flex-col items-start gap-4">
+          <Image
+            src="/otomoto-logo.png"
+            alt="OTOMOTO Toronto Moto"
+            width={180}
+            height={62}
+            className="h-12 w-auto"
+            priority
+          />
+          <p className="text-sm text-zinc-400">
+            Sign in to the workshop management app.
+          </p>
+        </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
             <label
               htmlFor="email"
-              className="mb-1 block text-sm font-medium text-zinc-800"
+              className="mb-1 block text-sm font-medium text-zinc-200"
             >
               Email
             </label>
@@ -63,14 +71,14 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="min-h-11 w-full rounded border border-zinc-300 bg-white px-3 text-base text-zinc-900 outline-none focus:border-zinc-500"
+              className="min-h-11 w-full rounded border border-zinc-700 bg-zinc-900 px-3 text-base text-white outline-none focus:border-zinc-500"
             />
           </div>
 
           <div>
             <label
               htmlFor="password"
-              className="mb-1 block text-sm font-medium text-zinc-800"
+              className="mb-1 block text-sm font-medium text-zinc-200"
             >
               Password
             </label>
@@ -82,12 +90,12 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="min-h-11 w-full rounded border border-zinc-300 bg-white px-3 text-base text-zinc-900 outline-none focus:border-zinc-500"
+              className="min-h-11 w-full rounded border border-zinc-700 bg-zinc-900 px-3 text-base text-white outline-none focus:border-zinc-500"
             />
           </div>
 
           {error ? (
-            <p className="text-sm text-red-700" role="alert">
+            <p className="text-sm text-red-400" role="alert">
               {error}
             </p>
           ) : null}
@@ -95,11 +103,21 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={pending}
-            className="min-h-11 w-full rounded bg-zinc-900 px-4 text-base font-medium text-white disabled:opacity-60"
+            className="min-h-11 w-full rounded bg-white px-4 text-base font-medium text-zinc-950 disabled:opacity-60"
           >
             {pending ? "Signing in…" : "Sign in"}
           </button>
         </form>
+
+        <div className="mt-10 border-t border-zinc-800 pt-6">
+          <Image
+            src="/otomoto-service-logo.png"
+            alt="OTOMOTO Moto Service"
+            width={160}
+            height={124}
+            className="h-16 w-auto opacity-80"
+          />
+        </div>
       </div>
     </main>
   );
