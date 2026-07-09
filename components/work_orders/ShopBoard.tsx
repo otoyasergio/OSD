@@ -80,15 +80,21 @@ export function ShopBoard({
   rows,
   hideEmpty = false,
   compact = true,
+  hiddenColumnIds = [],
   role,
   isForeignLocation = false,
 }: {
   rows: WorkOrderCardData[];
   hideEmpty?: boolean;
   compact?: boolean;
+  hiddenColumnIds?: string[];
   role: UserRole;
   isForeignLocation?: boolean;
 }) {
+  const hiddenSet = useMemo(
+    () => new Set(hiddenColumnIds),
+    [hiddenColumnIds]
+  );
   const [boardRows, setBoardRows] = useState(rows);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -120,7 +126,10 @@ export function ShopBoard({
     return map;
   }, [boardRows]);
 
-  const columnCounts = SHOP_BOARD_COLUMNS.map((column) => ({
+  const visibleColumns = SHOP_BOARD_COLUMNS.filter(
+    (column) => !hiddenSet.has(column.id)
+  );
+  const columnCounts = visibleColumns.map((column) => ({
     id: column.id,
     count: column.statuses.reduce(
       (total, status) => total + (byStatus.get(status)?.length ?? 0),
@@ -209,7 +218,7 @@ export function ShopBoard({
         onDragCancel={handleDragCancel}
       >
         <div className="shop-board">
-          {SHOP_BOARD_COLUMNS.map((column) => {
+          {visibleColumns.map((column) => {
             const cards = column.statuses.flatMap(
               (status) => byStatus.get(status) ?? []
             );

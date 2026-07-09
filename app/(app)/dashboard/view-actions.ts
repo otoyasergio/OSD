@@ -11,6 +11,7 @@ import {
   setHiddenBoardColumnsPreference,
   type DashboardViewParams,
 } from "@/lib/services/userPreferences";
+import { SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
 
 export type ViewFormState = { error: string | null };
 
@@ -82,11 +83,16 @@ export async function setHiddenBoardColumnsAction(
   formData: FormData
 ): Promise<ViewFormState> {
   try {
-    const columnIds = formData
-      .getAll("hidden_columns")
-      .map((value) => String(value))
-      .filter(Boolean);
-    await setHiddenBoardColumnsPreference(columnIds);
+    const visible = new Set(
+      formData
+        .getAll("visible_columns")
+        .map((value) => String(value))
+        .filter(Boolean)
+    );
+    const hidden = SHOP_BOARD_COLUMNS.map((column) => column.id).filter(
+      (id) => !visible.has(id)
+    );
+    await setHiddenBoardColumnsPreference(hidden);
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

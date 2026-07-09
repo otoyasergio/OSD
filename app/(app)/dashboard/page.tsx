@@ -7,13 +7,18 @@ import {
   type DashboardCardKey,
 } from "@/lib/services/dashboard";
 import { canCreateWorkOrder } from "@/lib/permissions";
-import { listSavedDashboardViews } from "@/lib/services/userPreferences";
+import {
+  getDashboardDensityPreference,
+  getHiddenBoardColumnsPreference,
+  listSavedDashboardViews,
+} from "@/lib/services/userPreferences";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ShopBoard } from "@/components/work_orders/ShopBoard";
 import { WorkOrderListView } from "@/components/work_orders/WorkOrderListView";
 import { DashboardFilterChips } from "@/components/work_orders/DashboardFilterChips";
 import { SavedViewsBar } from "@/components/work_orders/SavedViewsBar";
+import { BoardPrefsControls } from "@/components/work_orders/BoardPrefsControls";
 import { SELECT_CLASS } from "@/components/forms/Field";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
@@ -56,8 +61,7 @@ export default async function DashboardPage({
   const params = await searchParams;
   const view = resolveView(params.view);
   const hideEmpty = params.hide_empty === "1";
-  const density = params.density === "comfortable" ? "comfortable" : "compact";
-  const [data, savedViews] = await Promise.all([
+  const [data, savedViews, savedDensity, hiddenColumnIds] = await Promise.all([
     getDashboardData({
       status: (params.status as WorkOrderStatus) || "",
       technician_id: params.technician_id || "",
@@ -66,7 +70,15 @@ export default async function DashboardPage({
       card: (params.card as DashboardCardKey) || "",
     }),
     listSavedDashboardViews().catch(() => []),
+    getDashboardDensityPreference().catch(() => null),
+    getHiddenBoardColumnsPreference().catch(() => [] as string[]),
   ]);
+
+  // URL params override persisted density; otherwise use saved preference.
+  const density: "compact" | "comfortable" =
+    params.density === "comfortable" || params.density === "compact"
+      ? params.density
+      : (savedDensity ?? "compact");
 
   const filterBase = {
     status: data.filters.status || undefined,
@@ -223,55 +235,13 @@ export default async function DashboardPage({
 
       <SavedViewsBar views={savedViews} currentParams={filterBase} />
 
-      {view === "board" ? (
-        <div className="board-controls" role="group" aria-label="Board display options">
-          <Link
-            href={buildHref({
-              ...filterBase,
-              hide_empty: hideEmpty ? undefined : "1",
-            })}
-            className={
-              hideEmpty
-                ? "board-control-link board-control-link-active"
-                : "board-control-link"
-            }
-            aria-pressed={hideEmpty}
-          >
-            Hide empty columns
-          </Link>
-          <Link
-            href={buildHref({
-              ...filterBase,
-              density: density === "compact" ? "comfortable" : undefined,
-            })}
-            className={
-              density === "comfortable"
-                ? "board-control-link board-control-link-active"
-                : "board-control-link"
-            }
-            aria-pressed={density === "comfortable"}
-          >
-            Comfortable cards
-          </Link>
-        </div>
-      ) : (
-        <div className="board-controls" role="group" aria-label="List display options">
-          <Link
-            href={buildHref({
-              ...filterBase,
-              hide_empty: hideEmpty ? undefined : "1",
-            })}
-            className={
-              hideEmpty
-                ? "board-control-link board-control-link-active"
-                : "board-control-link"
-            }
-            aria-pressed={hideEmpty}
-          >
-            Hide empty sections
-          </Link>
-        </div>
-      )}
+      <BoardPrefsControls
+        filterBase={filterBase}
+        density={density}
+        hideEmpty={hideEmpty}
+        hiddenColumnIds={hiddenColumnIds}
+        mode={view}
+      />
 
       {data.rows.length === 0 ? (
         <EmptyState
@@ -284,6 +254,7 @@ export default async function DashboardPage({
           rows={data.rows}
           hideEmpty={hideEmpty}
           compact={density === "compact"}
+          hiddenColumnIds={hiddenColumnIds}
           role={user.role}
           isForeignLocation={false}
         />
