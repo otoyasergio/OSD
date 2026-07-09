@@ -2,7 +2,11 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createWorkOrder } from "@/lib/services/workOrders";
+import {
+  assignTechnicianToWorkOrder,
+  createWorkOrder,
+  setPrimaryTechnician,
+} from "@/lib/services/workOrders";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { requireUser } from "@/lib/auth/session";
 
@@ -58,4 +62,38 @@ export async function createWorkOrderAction(
 
   revalidatePath("/work_orders");
   redirect(`/work_orders/${workOrderId}`);
+}
+
+export async function assignTechnicianAction(
+  workOrderId: string,
+  _prevState: WorkOrderFormState,
+  formData: FormData
+): Promise<WorkOrderFormState> {
+  try {
+    await assignTechnicianToWorkOrder(
+      workOrderId,
+      String(formData.get("technician_id") ?? "")
+    );
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+
+  revalidatePath(`/work_orders/${workOrderId}`);
+  return { error: null };
+}
+
+export async function setPrimaryTechnicianAction(
+  workOrderId: string,
+  _prevState: WorkOrderFormState,
+  formData: FormData
+): Promise<WorkOrderFormState> {
+  try {
+    const technicianId = String(formData.get("technician_id") ?? "").trim();
+    await setPrimaryTechnician(workOrderId, technicianId || null);
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+
+  revalidatePath(`/work_orders/${workOrderId}`);
+  return { error: null };
 }

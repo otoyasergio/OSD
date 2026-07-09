@@ -12,6 +12,8 @@ const MESSAGES: Record<string, string> = {
   WORK_ORDER_NOT_FOUND: "That work order no longer exists.",
   WORK_ORDER_NUMBER_FAILED: "Could not mint a work order number. Try again.",
   JOB_NOT_FOUND: "That job no longer exists.",
+  FOREIGN_LOCATION:
+    "This work order belongs to another location. Switch location to make changes.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

@@ -4,7 +4,7 @@ import type { DbClient, JobStatus, WorkOrderStatus } from "@/lib/database/types"
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canCreateWorkOrder } from "@/lib/permissions";
+import { canAssignTechnician, canCreateWorkOrder } from "@/lib/permissions";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 
@@ -168,22 +168,6 @@ export async function listWorkOrdersForActiveLocation(): Promise<
       (row.recommendation as Array<{ severity: string; status: string }> | null) ??
       [];
 
-    const flags: string[] = [];
-    if (!motorcycle?.vin) flags.push("Missing VIN");
-    if (jobs.some((job) => job.status === "waiting_for_approval")) {
-      flags.push("Needs approval");
-    }
-    if (
-      recommendations.some(
-        (rec) =>
-          rec.status === "pending" && rec.severity === "safety_critical"
-      )
-    ) {
-      flags.push("Safety-critical");
-    }
-    if (row.status === "waiting_for_parts") flags.push("Waiting for parts");
-    if (row.status === "on_hold") flags.push("On hold");
-
     return {
       work_order_id: row.work_order_id as string,
       work_order_number: row.work_order_number as string,
@@ -195,10 +179,73 @@ export async function listWorkOrdersForActiveLocation(): Promise<
       motorcycle,
       primary_technician:
         row.primary_technician as WorkOrderListItem["primary_technician"],
-      flags,
+      flags: buildFlags({
+        status: row.status as WorkOrderStatus,
+        vin: motorcycle?.vin,
+        jobs,
+        recommendations,
+        photoCount: 1, // list view skips photo query; flag only on detail
+      }).filter((flag) => flag !== "No intake photos"),
     };
   });
 }
+
+export type WorkOrderJob = {
+  job_id: string;
+  service_id: string;
+  service_name_snapshot: string;
+  standard_price_snapshot: number | null;
+  estimated_labour_snapshot: number | null;
+  assigned_technician_id: string | null;
+  status: JobStatus;
+  notes: string | null;
+  approved_by_customer_at: string | null;
+  approval_method: string | null;
+  declined_at: string | null;
+  decline_reason: string | null;
+  created_at: string;
+  completed_at: string | null;
+  assigned_technician: {
+    user_id: string;
+    first_name: string;
+    last_name: string;
+  } | null;
+};
+
+export type WorkOrderDetail = WorkOrder & {
+  motorcycle: {
+    motorcycle_id: string;
+    year: number;
+    make: string;
+    model: string;
+    vin: string | null;
+    colour: string | null;
+    customer: {
+      customer_id: string;
+      first_name: string;
+      last_name: string;
+      phone: string | null;
+      email: string | null;
+    } | null;
+  } | null;
+  primary_technician: {
+    user_id: string;
+    first_name: string;
+    last_name: string;
+  } | null;
+  technicians: Array<{
+    technician_id: string;
+    assigned_at: string;
+    technician: {
+      user_id: string;
+      first_name: string;
+      last_name: string;
+    } | null;
+  }>;
+  jobs: WorkOrderJob[];
+  flags: string[];
+  is_foreign_location: boolean;
+};
 
 export async function getWorkOrderById(
   workOrderId: string
@@ -214,6 +261,279 @@ export async function getWorkOrderById(
 
   if (error) throw error;
   return (data as WorkOrder) ?? null;
+}
+
+function buildFlags(input: {
+  status: WorkOrderStatus;
+  vin: string | null | undefined;
+  jobs: Array<{ status: string }>;
+  recommendations: Array<{ severity: string; status: string }>;
+  photoCount: number;
+}): string[] {
+  const flags: string[] = [];
+  if (!input.vin) flags.push("Missing VIN");
+  if (input.photoCount === 0) flags.push("No intake photos");
+  if (input.jobs.some((job) => job.status === "waiting_for_approval")) {
+    flags.push("Needs approval");
+  }
+  if (
+    input.recommendations.some(
+      (rec) => rec.status === "pending" && rec.severity === "safety_critical"
+    )
+  ) {
+    flags.push("Safety-critical");
+  }
+  if (input.status === "waiting_for_parts") flags.push("Waiting for parts");
+  if (input.status === "on_hold") flags.push("On hold");
+  return flags;
+}
+
+export async function getWorkOrderDetail(
+  workOrderId: string
+): Promise<WorkOrderDetail | null> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("work_order")
+    .select(
+      `
+      ${WORK_ORDER_COLUMNS},
+      motorcycle:motorcycle_id (
+        motorcycle_id,
+        year,
+        make,
+        model,
+        vin,
+        colour,
+        customer:customer_id (
+          customer_id,
+          first_name,
+          last_name,
+          phone,
+          email
+        )
+      ),
+      primary_technician:primary_technician_id (
+        user_id,
+        first_name,
+        last_name
+      ),
+      work_order_technician (
+        technician_id,
+        assigned_at,
+        technician:technician_id (
+          user_id,
+          first_name,
+          last_name
+        )
+      ),
+      job (
+        job_id,
+        service_id,
+        service_name_snapshot,
+        standard_price_snapshot,
+        estimated_labour_snapshot,
+        assigned_technician_id,
+        status,
+        notes,
+        approved_by_customer_at,
+        approval_method,
+        declined_at,
+        decline_reason,
+        created_at,
+        completed_at,
+        assigned_technician:assigned_technician_id (
+          user_id,
+          first_name,
+          last_name
+        )
+      ),
+      recommendation ( severity, status ),
+      intake_photo ( photo_id )
+    `
+    )
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as Record<string, unknown>;
+  const motorcycle = row.motorcycle as WorkOrderDetail["motorcycle"];
+  const jobs = (row.job as WorkOrderJob[] | null) ?? [];
+  const recommendations =
+    (row.recommendation as Array<{ severity: string; status: string }> | null) ??
+    [];
+  const photos = (row.intake_photo as Array<{ photo_id: string }> | null) ?? [];
+  const technicians =
+    (row.work_order_technician as WorkOrderDetail["technicians"] | null) ?? [];
+
+  return {
+    work_order_id: row.work_order_id as string,
+    motorcycle_id: row.motorcycle_id as string,
+    location_id: row.location_id as string,
+    work_order_number: row.work_order_number as string,
+    external_invoice_number: row.external_invoice_number as string | null,
+    status: row.status as WorkOrderStatus,
+    primary_technician_id: row.primary_technician_id as string | null,
+    created_by_user_id: row.created_by_user_id as string | null,
+    date_created: row.date_created as string,
+    estimated_completion: row.estimated_completion as string | null,
+    mileage: row.mileage as number | null,
+    internal_notes: row.internal_notes as string | null,
+    quality_checked_by_user_id: row.quality_checked_by_user_id as string | null,
+    quality_checked_at: row.quality_checked_at as string | null,
+    ready_for_pickup_at: row.ready_for_pickup_at as string | null,
+    completed_at: row.completed_at as string | null,
+    created_at: row.created_at as string,
+    updated_at: row.updated_at as string,
+    motorcycle,
+    primary_technician:
+      row.primary_technician as WorkOrderDetail["primary_technician"],
+    technicians,
+    jobs,
+    flags: buildFlags({
+      status: row.status as WorkOrderStatus,
+      vin: motorcycle?.vin,
+      jobs,
+      recommendations,
+      photoCount: photos.length,
+    }),
+    is_foreign_location: row.location_id !== user.active_location_id,
+  };
+}
+
+async function assertCanMutateWorkOrder(
+  workOrderId: string
+): Promise<{ user: Awaited<ReturnType<typeof requireUser>>; workOrder: WorkOrder }> {
+  const user = await requireUser();
+  if (!canAssignTechnician(user.role)) throw new Error("FORBIDDEN");
+
+  const workOrder = await getWorkOrderById(workOrderId);
+  if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+  if (workOrder.location_id !== user.active_location_id) {
+    throw new Error("FOREIGN_LOCATION");
+  }
+  return { user, workOrder };
+}
+
+export async function assignTechnicianToWorkOrder(
+  workOrderId: string,
+  technicianId: string
+): Promise<void> {
+  const { user, workOrder } = await assertCanMutateWorkOrder(workOrderId);
+  const supabase = await createClient();
+
+  const { data: tech, error: techError } = await supabase
+    .from("app_user")
+    .select("user_id, first_name, last_name, role, status")
+    .eq("user_id", technicianId)
+    .maybeSingle();
+
+  if (techError) throw techError;
+  if (!tech || tech.role !== "technician" || tech.status !== "active") {
+    throw new Error("TECHNICIAN_NOT_FOUND");
+  }
+
+  const { error } = await supabase.from("work_order_technician").upsert(
+    {
+      work_order_id: workOrderId,
+      technician_id: technicianId,
+      assigned_by_user_id: user.user_id,
+      assigned_at: new Date().toISOString(),
+    },
+    { onConflict: "work_order_id,technician_id" }
+  );
+  if (error) throw error;
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.TECHNICIAN_ASSIGNED,
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Technician ${tech.first_name} ${tech.last_name} assigned`,
+    new_value: { technician_id: technicianId },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "technician_assigned",
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Technician ${tech.first_name} ${tech.last_name} assigned to ${workOrder.work_order_number}`,
+    new_value: { technician_id: technicianId },
+  });
+}
+
+export async function setPrimaryTechnician(
+  workOrderId: string,
+  technicianId: string | null
+): Promise<void> {
+  const { user, workOrder } = await assertCanMutateWorkOrder(workOrderId);
+  const supabase = await createClient();
+
+  if (technicianId) {
+    const { data: tech, error: techError } = await supabase
+      .from("app_user")
+      .select("user_id, role, status")
+      .eq("user_id", technicianId)
+      .maybeSingle();
+
+    if (techError) throw techError;
+    if (!tech || tech.role !== "technician" || tech.status !== "active") {
+      throw new Error("TECHNICIAN_NOT_FOUND");
+    }
+
+    const { error: assignError } = await supabase
+      .from("work_order_technician")
+      .upsert(
+        {
+          work_order_id: workOrderId,
+          technician_id: technicianId,
+          assigned_by_user_id: user.user_id,
+          assigned_at: new Date().toISOString(),
+        },
+        { onConflict: "work_order_id,technician_id" }
+      );
+    if (assignError) throw assignError;
+  }
+
+  const { error } = await supabase
+    .from("work_order")
+    .update({
+      primary_technician_id: technicianId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("work_order_id", workOrderId);
+
+  if (error) throw error;
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.PRIMARY_TECHNICIAN_CHANGED,
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: technicianId
+      ? "Primary technician changed"
+      : "Primary technician cleared",
+    old_value: { primary_technician_id: workOrder.primary_technician_id },
+    new_value: { primary_technician_id: technicianId },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "primary_technician_changed",
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Primary technician updated on ${workOrder.work_order_number}`,
+    old_value: { primary_technician_id: workOrder.primary_technician_id },
+    new_value: { primary_technician_id: technicianId },
+  });
 }
 
 async function mintWorkOrderNumber(
