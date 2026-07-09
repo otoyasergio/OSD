@@ -24,10 +24,10 @@ export function Nav() {
           <Link
             key={link.href}
             href={link.href}
-            className={`min-h-11 rounded px-3 py-2 text-sm font-medium ${
+            className={`inline-flex min-h-11 items-center rounded px-3 py-2 text-sm font-medium ${
               active
                 ? "bg-white text-zinc-950"
-                : "text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                : "text-zinc-300"
             }`}
           >
             {link.label}

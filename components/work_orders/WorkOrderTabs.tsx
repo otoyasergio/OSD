@@ -32,10 +32,10 @@ export function WorkOrderTabs({
           <Link
             key={tab.id}
             href={`/work_orders/${workOrderId}?tab=${tab.id}`}
-            className={`min-h-11 px-3 py-2 text-sm font-medium ${
+            className={`inline-flex min-h-11 items-center px-3 py-2 text-sm font-medium ${
               active
                 ? "border-b-2 border-zinc-900 text-zinc-900"
-                : "text-zinc-600 hover:text-zinc-900"
+                : "border-b-2 border-transparent text-zinc-600"
             }`}
           >
             {tab.label}
