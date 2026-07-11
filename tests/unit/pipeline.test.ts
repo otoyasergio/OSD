@@ -33,6 +33,10 @@ describe("getWorkOrderNextAction", () => {
   it("returns status-specific hints when no flags", () => {
     expect(getWorkOrderNextAction("quality_check", [])).toContain("quality");
     expect(getWorkOrderNextAction("waiting_for_parts", [])).toContain("parts");
+    expect(getWorkOrderNextAction("open", [])).toBe("Start inspection");
+    expect(getWorkOrderNextAction("open", ["No intake photos"])).toBe(
+      "Capture intake photos"
+    );
   });
 });
 

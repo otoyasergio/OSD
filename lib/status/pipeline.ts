@@ -127,7 +127,7 @@ export function getWorkOrderNextAction(
   switch (status) {
     case "draft":
     case "open":
-      return "Begin intake — photos and inspection";
+      return "Start inspection";
     case "inspection_in_progress":
       return "Finish inspection and add recommendations";
     case "waiting_for_customer_approval":

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -66,6 +66,7 @@ export function CreateWorkOrderForm({
 }: Props) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [clientError, setClientError] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<WorkOrderFormState | null>(null);
@@ -178,6 +179,8 @@ export function CreateWorkOrderForm({
   }
 
   async function submitCreate(form: HTMLFormElement) {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setClientError(null);
     setSubmitting(true);
 
@@ -237,6 +240,7 @@ export function CreateWorkOrderForm({
     } catch (error) {
       setClientError(toFormErrorMessage(error));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   }
@@ -400,6 +404,11 @@ export function CreateWorkOrderForm({
                 </option>
               ))}
             </select>
+            {customerId && bikesForCustomer.length === 0 ? (
+              <span className="mt-1 block text-sm text-amber-800">
+                This customer has no motorcycles yet. Create one to continue.
+              </span>
+            ) : null}
             <span className="mt-1 block text-xs text-zinc-500">
               Need a new bike?{" "}
               <Link
@@ -464,11 +473,17 @@ export function CreateWorkOrderForm({
                 className={INPUT_CLASS}
                 type="number"
                 min={0}
+                step={1}
                 inputMode="numeric"
                 value={mileage}
                 onChange={(event) => setMileage(event.target.value)}
                 required
               />
+              {mileage.trim() && !/^\d+$/.test(mileage.trim()) ? (
+                <span className="mt-1 block text-xs text-red-700">
+                  Enter whole kilometres or miles (no decimals).
+                </span>
+              ) : null}
             </label>
             <label className="block sm:col-span-2">
               <span className="mb-1.5 block text-sm font-medium text-zinc-800">

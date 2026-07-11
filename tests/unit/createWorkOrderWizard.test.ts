@@ -52,6 +52,12 @@ describe("create work order wizard steps", () => {
       canProceedFromVisitStep({ mileage: "-1", externalInvoiceNumber: "" })
     ).toBe(false);
     expect(
+      canProceedFromVisitStep({ mileage: "12.5", externalInvoiceNumber: "" })
+    ).toBe(false);
+    expect(
+      canProceedFromVisitStep({ mileage: "12e3", externalInvoiceNumber: "" })
+    ).toBe(false);
+    expect(
       canProceedFromVisitStep({ mileage: "12000", externalInvoiceNumber: "" })
     ).toBe(true);
     expect(

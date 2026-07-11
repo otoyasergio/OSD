@@ -23,8 +23,10 @@ export function canProceedFromVisitStep(data: {
 }): boolean {
   const trimmed = data.mileage.trim();
   if (!trimmed) return false;
+  // Reject decimals / scientific notation — server schema requires a nonnegative int.
+  if (!/^\d+$/.test(trimmed)) return false;
   const value = Number(trimmed);
-  return Number.isFinite(value) && value >= 0;
+  return Number.isFinite(value) && Number.isInteger(value) && value >= 0;
 }
 
 export function canProceedFromPhotosStep(intakeComplete: boolean): boolean {

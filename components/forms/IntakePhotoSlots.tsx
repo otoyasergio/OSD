@@ -292,10 +292,11 @@ export function IntakePhotoSlots({
                 ref={(el) => {
                   cameraRefs.current[slot.category] = el;
                 }}
-                className="sr-only"
+                className="photo-file-input"
                 type="file"
                 accept={cameraProps.accept}
                 capture={cameraProps.capture}
+                tabIndex={-1}
                 disabled={disabled}
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
@@ -307,9 +308,10 @@ export function IntakePhotoSlots({
                 ref={(el) => {
                   libraryRefs.current[slot.category] = el;
                 }}
-                className="sr-only"
+                className="photo-file-input"
                 type="file"
                 accept={libraryProps.accept}
+                tabIndex={-1}
                 disabled={disabled}
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;

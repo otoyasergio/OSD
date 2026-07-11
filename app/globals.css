@@ -2031,6 +2031,21 @@ button.board-control-link {
   border: 0;
 }
 
+/*
+ * File inputs opened via programmatic click() — avoid clip/visibility tricks
+ * that iOS Safari sometimes ignores for the camera/library picker.
+ */
+.photo-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  border: 0;
+}
+
 /* ── Intake wizard (New work order) ── */
 
 .intake-wizard {

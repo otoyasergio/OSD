@@ -93,7 +93,7 @@ export function InspectionPhotoSlot({
               type="file"
               accept={cameraProps.accept}
               capture={cameraProps.capture}
-              className="sr-only"
+              className="photo-file-input"
               tabIndex={-1}
               onChange={(e) => uploadFromInput(e.currentTarget)}
             />
@@ -101,7 +101,7 @@ export function InspectionPhotoSlot({
               ref={libraryRef}
               type="file"
               accept={libraryProps.accept}
-              className="sr-only"
+              className="photo-file-input"
               tabIndex={-1}
               onChange={(e) => uploadFromInput(e.currentTarget)}
             />
