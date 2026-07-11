@@ -31,7 +31,7 @@ export function WorkOrderHeader({
   detail: WorkOrderDetail;
   photos?: IntakePhoto[];
 }) {
-  const customer = detail.motorcycle?.customer;
+  const customer = detail.customer;
   const bike = detail.motorcycle;
   const nextAction = getWorkOrderNextAction(detail.status, detail.flags);
   const estimatedLabourTotal = sumActiveEstimatedHours(detail);

@@ -19,64 +19,82 @@ function BikeSilhouette() {
   );
 }
 
-export function GarageBikeCardView({ bike }: { bike: GarageBikeCard }) {
+export function GarageBikeCardView({
+  bike,
+  showTransfer = false,
+}: {
+  bike: GarageBikeCard;
+  showTransfer?: boolean;
+}) {
   const label = `${bike.year} ${bike.make} ${bike.model}`;
   const colour = bike.colour?.trim() || "Colour not set";
   const vinLabel = bike.vin?.trim() || null;
+  const transferHref = `/motorcycles/${bike.motorcycle_id}#transfer-ownership`;
 
   return (
-    <Link
-      href={bike.href}
-      className="wo-card wo-card-photo garage-card"
-      aria-label={`View ${label}`}
-    >
-      <div className="wo-card-strip wo-card-strip-neutral" aria-hidden />
-      <div
-        className="wo-card-photo-frame"
-        aria-hidden={!bike.primary_photo_url}
+    <article className="wo-card wo-card-photo garage-card">
+      <Link
+        href={bike.href}
+        className="garage-card-main"
+        aria-label={`View ${label}`}
       >
-        {bike.primary_photo_url ? (
-          // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-          <img
-            src={bike.primary_photo_url}
-            alt=""
-            className="wo-card-photo-img"
-            loading="lazy"
-          />
-        ) : (
-          <div className="wo-card-photo-placeholder">
-            <BikeSilhouette />
-          </div>
-        )}
-      </div>
-      <div className="wo-card-body">
-        <div className="wo-card-hero">
-          <p className="wo-card-bike">{label}</p>
-          <p className="wo-card-meta">{colour}</p>
-        </div>
-        <div className="wo-card-footer">
-          {bike.missing_vin ? (
-            <span className="garage-card-vin-warn">Missing VIN</span>
+        <div className="wo-card-strip wo-card-strip-neutral" aria-hidden />
+        <div
+          className="wo-card-photo-frame"
+          aria-hidden={!bike.primary_photo_url}
+        >
+          {bike.primary_photo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
+            <img
+              src={bike.primary_photo_url}
+              alt=""
+              className="wo-card-photo-img"
+              loading="lazy"
+            />
           ) : (
-            <p className="garage-card-vin" title={vinLabel ?? undefined}>
-              VIN {vinLabel}
-            </p>
+            <div className="wo-card-photo-placeholder">
+              <BikeSilhouette />
+            </div>
           )}
-          <p className="wo-card-next-action">
-            <span className="wo-card-next-label">Open</span> motorcycle profile
-          </p>
         </div>
-      </div>
-    </Link>
+        <div className="wo-card-body">
+          <div className="wo-card-hero">
+            <p className="wo-card-bike">{label}</p>
+            <p className="wo-card-meta">{colour}</p>
+          </div>
+          <div className="wo-card-footer">
+            {bike.missing_vin ? (
+              <span className="garage-card-vin-warn">Missing VIN</span>
+            ) : (
+              <p className="garage-card-vin" title={vinLabel ?? undefined}>
+                VIN {vinLabel}
+              </p>
+            )}
+            <p className="wo-card-next-action">
+              <span className="wo-card-next-label">Open</span> motorcycle profile
+            </p>
+          </div>
+        </div>
+      </Link>
+      {showTransfer ? (
+        <div className="garage-card-actions">
+          <Link href={transferHref} className="garage-card-transfer">
+            Transfer
+          </Link>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
 export function ClientGarage({
   customerId,
   bikes,
+  canTransfer = false,
 }: {
   customerId: string;
   bikes: GarageBikeCard[];
+  canTransfer?: boolean;
 }) {
   const addHref = `/motorcycles/new?customer_id=${customerId}`;
 
@@ -110,7 +128,11 @@ export function ClientGarage({
       ) : (
         <div className="wo-cards-view garage-grid">
           {bikes.map((bike) => (
-            <GarageBikeCardView key={bike.motorcycle_id} bike={bike} />
+            <GarageBikeCardView
+              key={bike.motorcycle_id}
+              bike={bike}
+              showTransfer={canTransfer}
+            />
           ))}
         </div>
       )}

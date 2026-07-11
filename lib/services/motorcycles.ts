@@ -5,6 +5,7 @@ import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import {
   canAdminHelpCreateRecords,
+  canEditWorkOrder,
   canUpdateServiceInformation,
 } from "@/lib/permissions";
 import { motorcycleSchema } from "@/lib/validation/schemas";
@@ -55,6 +56,30 @@ export type MotorcycleInput = {
   colour?: string | null;
   notes?: string | null;
 };
+
+export type TransferMotorcycleInput = {
+  motorcycle_id: string;
+  new_customer_id: string;
+};
+
+/**
+ * Pure validation for ownership transfer. Used by transferMotorcycle and unit tests.
+ */
+export function validateMotorcycleTransfer(args: {
+  motorcycle: { motorcycle_id: string; customer_id: string } | null;
+  newCustomer: { customer_id: string } | null;
+  new_customer_id: string;
+}): { from_customer_id: string; to_customer_id: string } {
+  if (!args.motorcycle) throw new Error("MOTORCYCLE_NOT_FOUND");
+  if (!args.newCustomer) throw new Error("CUSTOMER_NOT_FOUND");
+  if (args.motorcycle.customer_id === args.new_customer_id) {
+    throw new Error("SAME_CUSTOMER");
+  }
+  return {
+    from_customer_id: args.motorcycle.customer_id,
+    to_customer_id: args.new_customer_id,
+  };
+}
 
 export const SERVICE_INFORMATION_FIELDS = [
   "oil_filter",
@@ -300,6 +325,80 @@ export async function updateMotorcycle(
     description: `Motorcycle ${motorcycle.year} ${motorcycle.make} ${motorcycle.model} updated`,
     old_value: previous,
     new_value: motorcycle,
+  });
+
+  return motorcycle;
+}
+
+/**
+ * Move a motorcycle to another customer's garage. Same motorcycle_id / VIN /
+ * service info / WO history stay; only motorcycle.customer_id changes.
+ * Past work orders keep their visit customer via work_order.customer_id.
+ */
+export async function transferMotorcycle(
+  input: TransferMotorcycleInput
+): Promise<Motorcycle> {
+  const user = await requireUser();
+  if (!canEditWorkOrder(user.role)) throw new Error("FORBIDDEN");
+
+  const supabase = await createClient();
+
+  const { data: motorcycleRow, error: motorcycleError } = await supabase
+    .from("motorcycle")
+    .select(MOTORCYCLE_COLUMNS)
+    .eq("motorcycle_id", input.motorcycle_id)
+    .maybeSingle();
+
+  if (motorcycleError) throw motorcycleError;
+
+  const { data: newCustomer, error: customerError } = await supabase
+    .from("customer")
+    .select("customer_id, first_name, last_name")
+    .eq("customer_id", input.new_customer_id)
+    .maybeSingle();
+
+  if (customerError) throw customerError;
+
+  const { from_customer_id, to_customer_id } = validateMotorcycleTransfer({
+    motorcycle: motorcycleRow as Motorcycle | null,
+    newCustomer,
+    new_customer_id: input.new_customer_id,
+  });
+
+  const previous = motorcycleRow as Motorcycle;
+
+  const { data, error } = await supabase
+    .from("motorcycle")
+    .update({
+      customer_id: to_customer_id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("motorcycle_id", input.motorcycle_id)
+    .select(MOTORCYCLE_COLUMNS)
+    .single();
+
+  if (error) throw error;
+  const motorcycle = data as Motorcycle;
+
+  const bikeLabel = `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`;
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: user.active_location_id,
+    action: "motorcycle_transferred",
+    entity_type: "motorcycle",
+    entity_id: motorcycle.motorcycle_id,
+    description: `Motorcycle ${bikeLabel} transferred to new owner`,
+    old_value: {
+      customer_id: from_customer_id,
+      motorcycle_id: motorcycle.motorcycle_id,
+    },
+    new_value: {
+      customer_id: to_customer_id,
+      motorcycle_id: motorcycle.motorcycle_id,
+      new_customer_name: newCustomer
+        ? `${newCustomer.first_name} ${newCustomer.last_name}`
+        : null,
+    },
   });
 
   return motorcycle;

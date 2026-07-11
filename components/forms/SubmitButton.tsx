@@ -7,11 +7,13 @@ export function SubmitButton({
   pendingLabel,
   variant = "primary",
   className = "",
+  disabled = false,
 }: {
   label: string;
   pendingLabel: string;
   variant?: "primary" | "accent" | "secondary" | "danger";
   className?: string;
+  disabled?: boolean;
 }) {
   const { pending } = useFormStatus();
   const variantClass =
@@ -26,7 +28,7 @@ export function SubmitButton({
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={pending || disabled}
       className={`btn ${variantClass} ${className}`.trim()}
     >
       {pending ? pendingLabel : label}

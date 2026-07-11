@@ -7,13 +7,18 @@ import {
 import { searchCustomers } from "@/lib/services/customers";
 import { listOutstandingRecommendationsForMotorcycle } from "@/lib/services/recommendations";
 import { requireUser } from "@/lib/auth/session";
-import { canUpdateServiceInformation } from "@/lib/permissions";
+import {
+  canEditWorkOrder,
+  canUpdateServiceInformation,
+} from "@/lib/permissions";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
+import { TransferMotorcycleForm } from "@/components/forms/TransferMotorcycleForm";
 import { OutstandingRecommendations } from "@/components/recommendations/OutstandingRecommendations";
 import {
   updateMotorcycleAction,
   updateServiceInformationAction,
+  transferMotorcycleAction,
 } from "@/app/(app)/motorcycles/actions";
 
 export default async function MotorcycleDetailPage({
@@ -34,12 +39,18 @@ export default async function MotorcycleDetailPage({
     ]);
 
   const updateAction = updateMotorcycleAction.bind(null, motorcycle_id);
+  const transferAction = transferMotorcycleAction.bind(null, motorcycle_id);
   const serviceInfoAction = updateServiceInformationAction.bind(
     null,
     motorcycle_id,
     null
   );
   const canEditServiceInfo = canUpdateServiceInformation(user.role);
+  const canTransfer = canEditWorkOrder(user.role);
+  const ownerName = motorcycle.customer
+    ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
+    : "Unknown";
+  const bikeLabel = `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`;
 
   return (
     <div className="flex flex-col gap-8">
@@ -51,7 +62,7 @@ export default async function MotorcycleDetailPage({
           ← Motorcycles
         </Link>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
-          {motorcycle.year} {motorcycle.make} {motorcycle.model}
+          {bikeLabel}
         </h1>
         <p className="mt-1 text-sm text-zinc-600">
           Owner:{" "}
@@ -59,11 +70,20 @@ export default async function MotorcycleDetailPage({
             href={`/customers/${motorcycle.customer_id}`}
             className="underline-offset-2 hover:underline"
           >
-            {motorcycle.customer
-              ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
-              : "Unknown"}
+            {ownerName}
           </Link>
           {motorcycle.colour ? ` · ${motorcycle.colour}` : null}
+          {canTransfer ? (
+            <>
+              {" · "}
+              <a
+                href="#transfer-ownership"
+                className="font-semibold text-zinc-800 underline-offset-2 hover:underline"
+              >
+                Transfer
+              </a>
+            </>
+          ) : null}
         </p>
       </div>
 
@@ -110,6 +130,26 @@ export default async function MotorcycleDetailPage({
           />
         </div>
       </section>
+
+      {canTransfer ? (
+        <section id="transfer-ownership">
+          <h2 className="text-lg font-semibold text-zinc-900">
+            Transfer ownership
+          </h2>
+          <p className="mt-1 text-sm text-zinc-600">
+            Use when this bike is sold to a different customer.
+          </p>
+          <div className="mt-3">
+            <TransferMotorcycleForm
+              action={transferAction}
+              customers={customers}
+              currentCustomerId={motorcycle.customer_id}
+              currentCustomerName={ownerName}
+              bikeLabel={bikeLabel}
+            />
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

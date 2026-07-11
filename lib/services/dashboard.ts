@@ -111,7 +111,20 @@ type RawRow = {
   date_created: string;
   estimated_completion: string | null;
   primary_technician_id: string | null;
-  motorcycle: DashboardRow["motorcycle"];
+  customer: {
+    customer_id: string;
+    first_name: string;
+    last_name: string;
+    phone: string | null;
+    email: string | null;
+  } | null;
+  motorcycle: {
+    motorcycle_id: string;
+    year: number;
+    make: string;
+    model: string;
+    vin: string | null;
+  } | null;
   primary_technician: DashboardRow["primary_technician"];
   job: Array<{
     job_id: string;
@@ -193,6 +206,7 @@ function toDashboardRow(
   const recommendations = row.recommendation ?? [];
   const photos = row.intake_photo ?? [];
   const inspection = row.inspection?.[0] ?? null;
+  const bike = row.motorcycle;
 
   return {
     work_order_id: row.work_order_id,
@@ -201,12 +215,21 @@ function toDashboardRow(
     status: row.status,
     date_created: row.date_created,
     estimated_completion: row.estimated_completion,
-    motorcycle: row.motorcycle,
+    motorcycle: bike
+      ? {
+          motorcycle_id: bike.motorcycle_id,
+          year: bike.year,
+          make: bike.make,
+          model: bike.model,
+          vin: bike.vin,
+          customer: row.customer,
+        }
+      : null,
     primary_technician: row.primary_technician,
     primary_photo_url: primaryPhotoUrl,
     flags: buildWorkOrderFlags({
       status: row.status,
-      vin: row.motorcycle?.vin,
+      vin: bike?.vin,
       external_invoice_number: row.external_invoice_number,
       estimated_completion: row.estimated_completion,
       jobs,
@@ -241,19 +264,19 @@ export async function getDashboardData(
       date_created,
       estimated_completion,
       primary_technician_id,
+      customer:customer_id (
+        customer_id,
+        first_name,
+        last_name,
+        phone,
+        email
+      ),
       motorcycle:motorcycle_id (
         motorcycle_id,
         year,
         make,
         model,
-        vin,
-        customer:customer_id (
-          customer_id,
-          first_name,
-          last_name,
-          phone,
-          email
-        )
+        vin
       ),
       primary_technician:primary_technician_id (
         user_id,

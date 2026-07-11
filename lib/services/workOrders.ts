@@ -12,6 +12,7 @@ import { buildWorkOrderFlags } from "@/lib/status/flags";
 export type WorkOrder = {
   work_order_id: string;
   motorcycle_id: string;
+  customer_id: string;
   location_id: string;
   work_order_number: string;
   external_invoice_number: string | null;
@@ -47,6 +48,7 @@ export type WorkOrderListItem = {
     make: string;
     model: string;
     vin: string | null;
+    /** Visit customer snapshot (work_order.customer_id), not current garage owner. */
     customer: {
       customer_id: string;
       first_name: string;
@@ -81,7 +83,7 @@ export type TechnicianOption = {
 };
 
 const WORK_ORDER_COLUMNS =
-  "work_order_id, motorcycle_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, created_at, updated_at";
+  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, created_at, updated_at";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -136,19 +138,19 @@ export async function listWorkOrdersForActiveLocation(): Promise<
       mileage,
       date_created,
       estimated_completion,
+      customer:customer_id (
+        customer_id,
+        first_name,
+        last_name,
+        phone,
+        email
+      ),
       motorcycle:motorcycle_id (
         motorcycle_id,
         year,
         make,
         model,
-        vin,
-        customer:customer_id (
-          customer_id,
-          first_name,
-          last_name,
-          phone,
-          email
-        )
+        vin
       ),
       primary_technician:primary_technician_id (
         user_id,
@@ -166,7 +168,20 @@ export async function listWorkOrdersForActiveLocation(): Promise<
   if (error) throw error;
 
   return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
-    const motorcycle = row.motorcycle as WorkOrderListItem["motorcycle"];
+    const bike = row.motorcycle as {
+      motorcycle_id: string;
+      year: number;
+      make: string;
+      model: string;
+      vin: string | null;
+    } | null;
+    const visitCustomer = row.customer as {
+      customer_id: string;
+      first_name: string;
+      last_name: string;
+      phone: string | null;
+      email: string | null;
+    } | null;
     const jobs = (row.job as Array<{ status: string }> | null) ?? [];
     const recommendations =
       (row.recommendation as Array<{ severity: string; status: string }> | null) ??
@@ -180,12 +195,17 @@ export async function listWorkOrdersForActiveLocation(): Promise<
       mileage: row.mileage as number | null,
       date_created: row.date_created as string,
       estimated_completion: row.estimated_completion as string | null,
-      motorcycle,
+      motorcycle: bike
+        ? {
+            ...bike,
+            customer: visitCustomer,
+          }
+        : null,
       primary_technician:
         row.primary_technician as WorkOrderListItem["primary_technician"],
       flags: buildWorkOrderFlags({
         status: row.status as WorkOrderStatus,
-        vin: motorcycle?.vin,
+        vin: bike?.vin,
         external_invoice_number: row.external_invoice_number as string | null,
         estimated_completion: row.estimated_completion as string | null,
         jobs,
@@ -220,6 +240,14 @@ export type WorkOrderJob = {
 };
 
 export type WorkOrderDetail = WorkOrder & {
+  /** Visit customer snapshot — preserved across motorcycle ownership transfers. */
+  customer: {
+    customer_id: string;
+    first_name: string;
+    last_name: string;
+    phone: string | null;
+    email: string | null;
+  } | null;
   motorcycle: {
     motorcycle_id: string;
     year: number;
@@ -227,13 +255,7 @@ export type WorkOrderDetail = WorkOrder & {
     model: string;
     vin: string | null;
     colour: string | null;
-    customer: {
-      customer_id: string;
-      first_name: string;
-      last_name: string;
-      phone: string | null;
-      email: string | null;
-    } | null;
+    customer_id: string;
   } | null;
   primary_technician: {
     user_id: string;
@@ -281,6 +303,13 @@ export async function getWorkOrderDetail(
     .select(
       `
       ${WORK_ORDER_COLUMNS},
+      customer:customer_id (
+        customer_id,
+        first_name,
+        last_name,
+        phone,
+        email
+      ),
       motorcycle:motorcycle_id (
         motorcycle_id,
         year,
@@ -288,13 +317,7 @@ export async function getWorkOrderDetail(
         model,
         vin,
         colour,
-        customer:customer_id (
-          customer_id,
-          first_name,
-          last_name,
-          phone,
-          email
-        )
+        customer_id
       ),
       primary_technician:primary_technician_id (
         user_id,
@@ -344,6 +367,7 @@ export async function getWorkOrderDetail(
 
   const row = data as Record<string, unknown>;
   const motorcycle = row.motorcycle as WorkOrderDetail["motorcycle"];
+  const customer = row.customer as WorkOrderDetail["customer"];
   const jobs = (row.job as WorkOrderJob[] | null) ?? [];
   const recommendations =
     (row.recommendation as Array<{ severity: string; status: string }> | null) ??
@@ -355,6 +379,7 @@ export async function getWorkOrderDetail(
   return {
     work_order_id: row.work_order_id as string,
     motorcycle_id: row.motorcycle_id as string,
+    customer_id: row.customer_id as string,
     location_id: row.location_id as string,
     work_order_number: row.work_order_number as string,
     external_invoice_number: row.external_invoice_number as string | null,
@@ -374,6 +399,7 @@ export async function getWorkOrderDetail(
     pickup_notes: row.pickup_notes as string | null,
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
+    customer,
     motorcycle,
     primary_technician:
       row.primary_technician as WorkOrderDetail["primary_technician"],
@@ -614,6 +640,7 @@ export async function createWorkOrder(
     .from("work_order")
     .insert({
       motorcycle_id: parsed.motorcycle_id,
+      customer_id: motorcycle.customer_id,
       location_id: parsed.location_id,
       work_order_number: workOrderNumber,
       external_invoice_number: parsed.external_invoice_number ?? null,

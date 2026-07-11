@@ -138,16 +138,16 @@ type RawFiledWo = {
   status: WorkOrderStatus;
   completed_at: string | null;
   date_created: string;
+  customer: {
+    first_name: string;
+    last_name: string;
+    phone: string | null;
+  } | null;
   motorcycle: {
     year: number;
     make: string;
     model: string;
     vin: string | null;
-    customer: {
-      first_name: string;
-      last_name: string;
-      phone: string | null;
-    } | null;
   } | null;
   primary_technician: {
     first_name: string;
@@ -182,16 +182,15 @@ export async function listWorkOrdersForCustomer(
       completed_at,
       date_created,
       location:location_id ( name, code ),
-      motorcycle:motorcycle_id!inner (
+      motorcycle:motorcycle_id (
         year,
         make,
-        model,
-        customer_id
+        model
       ),
       job ( service_name_snapshot, status )
     `
     )
-    .eq("motorcycle.customer_id", customerId)
+    .eq("customer_id", customerId)
     .order("date_created", { ascending: false })
     .limit(200);
 
@@ -235,16 +234,16 @@ export async function listCompletedWorkOrdersForActiveLocation(
       status,
       completed_at,
       date_created,
+      customer:customer_id (
+        first_name,
+        last_name,
+        phone
+      ),
       motorcycle:motorcycle_id (
         year,
         make,
         model,
-        vin,
-        customer:customer_id (
-          first_name,
-          last_name,
-          phone
-        )
+        vin
       ),
       primary_technician:primary_technician_id (
         first_name,
@@ -273,7 +272,7 @@ export async function listCompletedWorkOrdersForActiveLocation(
 
   return rawRows
     .filter((row) => {
-      const customer = row.motorcycle?.customer;
+      const customer = row.customer;
       const bike = row.motorcycle;
       return matchesFiledWorkOrderSearch(
         {
@@ -291,7 +290,7 @@ export async function listCompletedWorkOrdersForActiveLocation(
       );
     })
     .map((row) => {
-      const customer = row.motorcycle?.customer;
+      const customer = row.customer;
       const bike = row.motorcycle;
       return {
         work_order_id: row.work_order_id,

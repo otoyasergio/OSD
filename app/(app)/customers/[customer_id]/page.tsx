@@ -3,12 +3,14 @@ import { notFound } from "next/navigation";
 import { getCustomerById } from "@/lib/services/customers";
 import { listGarageForCustomer } from "@/lib/services/clientGarage";
 import { listWorkOrdersForCustomer } from "@/lib/services/filedWorkOrders";
-import { ClientGarage } from "@/components/customers/ClientGarage";
 import { CustomerForm } from "@/components/forms/CustomerForm";
+import { ClientGarage } from "@/components/customers/ClientGarage";
 import { updateCustomerAction } from "@/app/(app)/customers/actions";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import type { CustomerWorkOrderSummary } from "@/lib/services/filedWorkOrders";
+import { requireUser } from "@/lib/auth/session";
+import { canEditWorkOrder } from "@/lib/permissions";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -89,6 +91,7 @@ export default async function CustomerDetailPage({
   params: Promise<{ customer_id: string }>;
 }) {
   const { customer_id } = await params;
+  const user = await requireUser();
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 
@@ -97,6 +100,7 @@ export default async function CustomerDetailPage({
     listWorkOrdersForCustomer(customer_id),
   ]);
   const updateAction = updateCustomerAction.bind(null, customer_id);
+  const canTransfer = canEditWorkOrder(user.role);
 
   return (
     <div className="page-stack page-stack--narrow">
@@ -115,7 +119,11 @@ export default async function CustomerDetailPage({
         </p>
       </div>
 
-      <ClientGarage customerId={customer_id} bikes={garage} />
+      <ClientGarage
+        customerId={customer_id}
+        bikes={garage}
+        canTransfer={canTransfer}
+      />
 
       <section>
         <h2 className="text-lg font-semibold text-zinc-900">Open work orders</h2>

@@ -6,6 +6,8 @@ import {
   createMotorcycle,
   updateMotorcycle,
   updateMotorcycleServiceInformation,
+  transferMotorcycle,
+  getMotorcycleById,
   SERVICE_INFORMATION_FIELDS,
   type ServiceInformationInput,
 } from "@/lib/services/motorcycles";
@@ -66,7 +68,39 @@ export async function updateMotorcycleAction(
 
   revalidatePath("/motorcycles");
   revalidatePath(`/motorcycles/${motorcycleId}`);
+  revalidatePath(`/customers/${input.customer_id}`);
   return { error: null };
+}
+
+export async function transferMotorcycleAction(
+  motorcycleId: string,
+  _prevState: MotorcycleFormState,
+  formData: FormData
+): Promise<MotorcycleFormState> {
+  const newCustomerId = String(formData.get("new_customer_id") ?? "").trim();
+  if (!newCustomerId) {
+    return { error: "Select a customer to transfer to." };
+  }
+
+  let fromCustomerId: string | null = null;
+  try {
+    const previous = await getMotorcycleById(motorcycleId);
+    fromCustomerId = previous?.customer_id ?? null;
+    await transferMotorcycle({
+      motorcycle_id: motorcycleId,
+      new_customer_id: newCustomerId,
+    });
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+
+  revalidatePath("/motorcycles");
+  revalidatePath(`/motorcycles/${motorcycleId}`);
+  revalidatePath(`/customers/${newCustomerId}`);
+  if (fromCustomerId) {
+    revalidatePath(`/customers/${fromCustomerId}`);
+  }
+  redirect(`/customers/${newCustomerId}`);
 }
 
 export async function updateServiceInformationAction(
