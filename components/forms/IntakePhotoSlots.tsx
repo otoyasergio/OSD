@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { PhotoCategory } from "@/lib/database/types";
+import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
 
 export type IntakePhotoSelection = Partial<Record<PhotoCategory, File | null>>;
@@ -126,6 +133,24 @@ function CheckIcon() {
   );
 }
 
+function LibraryIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="m3 15 5-4 4 3 3-2 6 5" />
+      <circle cx="9" cy="9" r="1.5" />
+    </svg>
+  );
+}
+
 export function IntakePhotoSlots({
   categories,
   value,
@@ -134,8 +159,18 @@ export function IntakePhotoSlots({
   htmlRequired = true,
 }: Props) {
   const slots = slotsFor(categories);
+  const titleId = useId();
   const [previews, setPreviews] = useState<
     Partial<Record<PhotoCategory, string>>
+  >({});
+  const [chooserCategory, setChooserCategory] = useState<PhotoCategory | null>(
+    null
+  );
+  const cameraRefs = useRef<Partial<Record<PhotoCategory, HTMLInputElement | null>>>(
+    {}
+  );
+  const libraryRefs = useRef<
+    Partial<Record<PhotoCategory, HTMLInputElement | null>>
   >({});
 
   useEffect(() => {
@@ -157,80 +192,189 @@ export function IntakePhotoSlots({
     };
   }, [value]);
 
-  return (
-    <div className="intake-photo-grid">
-      {slots.map((slot) => {
-        const preview = previews[slot.category];
-        const selected = value[slot.category];
-        const filled = selected instanceof File && selected.size > 0;
-        const inputId = `intake_${slot.category}`;
+  useEffect(() => {
+    if (!chooserCategory) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setChooserCategory(null);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [chooserCategory]);
 
-        return (
-          <label
-            key={slot.category}
-            htmlFor={inputId}
-            className={`intake-photo-slot${filled ? " is-filled" : ""}${
-              disabled ? " is-disabled" : ""
-            }`}
+  const cameraProps = photoFileInputProps("camera");
+  const libraryProps = photoFileInputProps("library");
+  const chooserSlot = chooserCategory
+    ? slots.find((slot) => slot.category === chooserCategory) ??
+      CREATE_INTAKE_PHOTO_SLOTS.find((slot) => slot.category === chooserCategory)
+    : null;
+
+  return (
+    <>
+      <div className="intake-photo-grid">
+        {slots.map((slot) => {
+          const preview = previews[slot.category];
+          const selected = value[slot.category];
+          const filled = selected instanceof File && selected.size > 0;
+
+          return (
+            <div
+              key={slot.category}
+              className={`intake-photo-slot${filled ? " is-filled" : ""}${
+                disabled ? " is-disabled" : ""
+              }`}
+            >
+              <button
+                type="button"
+                className="intake-photo-slot-trigger"
+                disabled={disabled}
+                aria-label={
+                  filled
+                    ? `Retake ${slot.label} photo`
+                    : `Add ${slot.label} photo`
+                }
+                onClick={() => setChooserCategory(slot.category)}
+              >
+                <span className="intake-photo-slot-chrome">
+                  <span className="intake-photo-slot-title">
+                    <SlotIcon category={slot.category} />
+                    <span className="intake-photo-slot-title-text">
+                      {slot.label}{" "}
+                      <span className="intake-photo-slot-req">*</span>
+                    </span>
+                  </span>
+                  <span className="intake-photo-slot-badge">
+                    {filled ? "Ready" : "Required"}
+                  </span>
+                </span>
+                <span className="intake-photo-slot-body">
+                  {preview ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={preview}
+                        alt={`${slot.label} preview`}
+                      />
+                      <span className="intake-photo-slot-check">
+                        <CheckIcon />
+                      </span>
+                      <span className="intake-photo-slot-retake">
+                        Tap to retake
+                      </span>
+                    </>
+                  ) : (
+                    <span className="intake-photo-slot-empty">
+                      <span className="intake-photo-slot-icon">
+                        <CameraIcon />
+                      </span>
+                      <span className="intake-photo-slot-hint">
+                        Tap to add photo
+                      </span>
+                      <span className="intake-photo-slot-subhint">
+                        Camera or photo library
+                      </span>
+                    </span>
+                  )}
+                </span>
+              </button>
+              {/* Native required sentinel — dual file inputs cannot both be required. */}
+              {htmlRequired ? (
+                <input
+                  className="sr-only"
+                  tabIndex={-1}
+                  aria-hidden
+                  required={!filled}
+                  value={filled ? "1" : ""}
+                  onChange={() => {}}
+                  name={`intake_${slot.category}_present`}
+                />
+              ) : null}
+              <input
+                ref={(el) => {
+                  cameraRefs.current[slot.category] = el;
+                }}
+                className="sr-only"
+                type="file"
+                accept={cameraProps.accept}
+                capture={cameraProps.capture}
+                disabled={disabled}
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  onChange({ ...value, [slot.category]: file });
+                  event.target.value = "";
+                }}
+              />
+              <input
+                ref={(el) => {
+                  libraryRefs.current[slot.category] = el;
+                }}
+                className="sr-only"
+                type="file"
+                accept={libraryProps.accept}
+                disabled={disabled}
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  onChange({ ...value, [slot.category]: file });
+                  event.target.value = "";
+                }}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {chooserSlot ? (
+        <div
+          className="photo-source-sheet"
+          role="presentation"
+          onClick={() => setChooserCategory(null)}
+        >
+          <div
+            className="photo-source-sheet-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            onClick={(event) => event.stopPropagation()}
           >
-            <span className="intake-photo-slot-chrome">
-              <span className="intake-photo-slot-title">
-                <SlotIcon category={slot.category} />
-                <span className="intake-photo-slot-title-text">
-                  {slot.label}{" "}
-                  <span className="intake-photo-slot-req">*</span>
-                </span>
-              </span>
-              <span className="intake-photo-slot-badge">
-                {filled ? "Ready" : "Required"}
-              </span>
-            </span>
-            <span className="intake-photo-slot-body">
-              {preview ? (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={preview}
-                    alt={`${slot.label} preview`}
-                  />
-                  <span className="intake-photo-slot-check">
-                    <CheckIcon />
-                  </span>
-                  <span className="intake-photo-slot-retake">Tap to retake</span>
-                </>
-              ) : (
-                <span className="intake-photo-slot-empty">
-                  <span className="intake-photo-slot-icon">
-                    <CameraIcon />
-                  </span>
-                  <span className="intake-photo-slot-hint">
-                    Tap to capture
-                  </span>
-                  <span className="intake-photo-slot-subhint">
-                    Camera or photo library
-                  </span>
-                </span>
-              )}
-            </span>
-            <input
-              id={inputId}
-              className="sr-only"
-              type="file"
-              name={`intake_${slot.category}`}
-              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*"
-              // Prefer rear camera when the device offers a capture UI (iPad/Safari).
-              capture="environment"
-              disabled={disabled}
-              required={htmlRequired && !selected}
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                onChange({ ...value, [slot.category]: file });
+            <p id={titleId} className="photo-source-sheet-title">
+              Add {chooserSlot.label} photo
+            </p>
+            <p className="photo-source-sheet-lede">
+              Take a new photo or choose one from your library.
+            </p>
+            <button
+              type="button"
+              className="btn btn-primary photo-source-sheet-action"
+              onClick={() => {
+                // Must stay synchronous for iOS Safari user-gesture rules.
+                cameraRefs.current[chooserSlot.category]?.click();
+                setChooserCategory(null);
               }}
-            />
-          </label>
-        );
-      })}
-    </div>
+            >
+              <CameraIcon />
+              Take photo
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary photo-source-sheet-action"
+              onClick={() => {
+                libraryRefs.current[chooserSlot.category]?.click();
+                setChooserCategory(null);
+              }}
+            >
+              <LibraryIcon />
+              Upload from library
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost photo-source-sheet-cancel"
+              onClick={() => setChooserCategory(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 

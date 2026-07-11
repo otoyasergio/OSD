@@ -2305,7 +2305,6 @@ button.board-control-link {
   border: 2px dashed var(--border-strong);
   border-radius: var(--radius-lg);
   background: linear-gradient(165deg, var(--surface) 0%, var(--surface-muted) 100%);
-  cursor: pointer;
   transition:
     border-color 0.18s ease,
     background-color 0.18s ease,
@@ -2313,12 +2312,28 @@ button.board-control-link {
     transform 0.15s ease;
 }
 
+.intake-photo-slot-trigger {
+  display: flex;
+  flex: 1;
+  min-height: inherit;
+  flex-direction: column;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
 .intake-photo-slot:hover {
   border-color: var(--chrome-muted);
   box-shadow: var(--shadow-sm);
 }
 
-.intake-photo-slot:active {
+.intake-photo-slot:has(.intake-photo-slot-trigger:active) {
   transform: scale(0.992);
 }
 
@@ -2491,6 +2506,80 @@ button.board-control-link {
 .intake-photo-slot.is-filled:hover .intake-photo-slot-retake,
 .intake-photo-slot.is-filled:focus-within .intake-photo-slot-retake {
   opacity: 1;
+}
+
+@media (hover: none) {
+  .intake-photo-slot.is-filled .intake-photo-slot-retake {
+    opacity: 1;
+  }
+}
+
+/* Photo source chooser (camera vs library) */
+
+.photo-source-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(15 23 42 / 0.45);
+}
+
+.photo-source-sheet-panel {
+  width: min(100%, 26rem);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-md) var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  padding: 1.25rem 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.photo-source-sheet-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--foreground);
+}
+
+.photo-source-sheet-lede {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--status-neutral);
+}
+
+.photo-source-sheet-action {
+  min-height: 3.25rem;
+  width: 100%;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  padding-inline: 1.125rem;
+  font-size: 1rem;
+}
+
+.photo-source-sheet-action svg {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex-shrink: 0;
+}
+
+.photo-source-sheet-cancel {
+  min-height: 2.75rem;
+  width: 100%;
+  margin-top: 0.15rem;
+}
+
+@media (min-width: 640px) {
+  .photo-source-sheet {
+    align-items: center;
+  }
+
+  .photo-source-sheet-panel {
+    border-radius: var(--radius-lg);
+  }
 }
 
 /* Review cards */
