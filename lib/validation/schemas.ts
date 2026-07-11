@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeVin, validateOptionalVin } from "@/lib/vin/validate";
 
 export const customerSchema = z
   .object({
@@ -18,7 +19,20 @@ export const motorcycleSchema = z.object({
   year: z.number().int().min(1900).max(2100),
   make: z.string().min(1),
   model: z.string().min(1),
-  vin: z.string().optional().nullable(),
+  vin: z
+    .string()
+    .optional()
+    .nullable()
+    .transform((value) => {
+      if (value == null || !String(value).trim()) return null;
+      return normalizeVin(value);
+    })
+    .superRefine((value, ctx) => {
+      const result = validateOptionalVin(value);
+      if (!result.ok) {
+        ctx.addIssue({ code: "custom", message: result.error });
+      }
+    }),
   colour: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 });

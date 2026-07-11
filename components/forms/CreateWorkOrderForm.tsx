@@ -25,6 +25,8 @@ import {
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
 import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
+import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
+
 import { CREATE_INTAKE_PHOTO_SLOTS, PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import {
   CREATE_WORK_ORDER_WIZARD_STEPS,
@@ -424,6 +426,7 @@ export function CreateWorkOrderForm({
               .
             </span>
           </label>
+          {selectedBike ? <VinDecodePanel vin={selectedBike.vin} /> : null}
           {outstanding.length > 0 ? (
             <p
               role="status"

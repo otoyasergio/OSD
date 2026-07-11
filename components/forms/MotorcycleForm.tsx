@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { MotorcycleFormState } from "@/app/(app)/motorcycles/actions";
 import type { Motorcycle } from "@/lib/services/motorcycles";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { VinField, type VinAutofillSuggestion } from "@/components/forms/VinField";
 
 export type CustomerOption = {
   customer_id: string;
@@ -23,6 +24,10 @@ type Props = {
   submitLabel: string;
 };
 
+function isBlank(value: string): boolean {
+  return !value.trim();
+}
+
 export function MotorcycleForm({
   action,
   customers,
@@ -32,6 +37,29 @@ export function MotorcycleForm({
 }: Props) {
   const [state, formAction] = useActionState(action, { error: null });
   const selectedCustomerId = motorcycle?.customer_id ?? defaultCustomerId;
+
+  const [year, setYear] = useState(
+    motorcycle?.year != null ? String(motorcycle.year) : ""
+  );
+  const [make, setMake] = useState(motorcycle?.make ?? "");
+  const [model, setModel] = useState(motorcycle?.model ?? "");
+  const [touched, setTouched] = useState({
+    year: Boolean(motorcycle?.year),
+    make: Boolean(motorcycle?.make),
+    model: Boolean(motorcycle?.model),
+  });
+
+  function applyVinSuggestion(suggestion: VinAutofillSuggestion) {
+    if (suggestion.year && (isBlank(year) || !touched.year)) {
+      setYear(suggestion.year);
+    }
+    if (suggestion.make && (isBlank(make) || !touched.make)) {
+      setMake(suggestion.make);
+    }
+    if (suggestion.model && (isBlank(model) || !touched.model)) {
+      setModel(suggestion.model);
+    }
+  }
 
   return (
     <form action={formAction} className="flex max-w-2xl flex-col gap-4">
@@ -58,37 +86,61 @@ export function MotorcycleForm({
         </select>
       </label>
 
+      <VinField
+        defaultValue={motorcycle?.vin}
+        onSuggestion={applyVinSuggestion}
+      />
+
       <div className="grid gap-4 sm:grid-cols-3">
-        <TextField
-          label="Year"
-          name="year"
-          type="number"
-          required
-          defaultValue={motorcycle?.year}
-        />
-        <TextField
-          label="Make"
-          name="make"
-          required
-          defaultValue={motorcycle?.make}
-        />
-        <TextField
-          label="Model"
-          name="model"
-          required
-          defaultValue={motorcycle?.model}
-        />
+        <label className="block">
+          <span className="field-label">
+            Year<span className="ml-1 text-[var(--status-danger)]">*</span>
+          </span>
+          <input
+            className="input"
+            name="year"
+            type="number"
+            required
+            value={year}
+            onChange={(event) => {
+              setYear(event.target.value);
+              setTouched((prev) => ({ ...prev, year: true }));
+            }}
+          />
+        </label>
+        <label className="block">
+          <span className="field-label">
+            Make<span className="ml-1 text-[var(--status-danger)]">*</span>
+          </span>
+          <input
+            className="input"
+            name="make"
+            required
+            value={make}
+            onChange={(event) => {
+              setMake(event.target.value);
+              setTouched((prev) => ({ ...prev, make: true }));
+            }}
+          />
+        </label>
+        <label className="block">
+          <span className="field-label">
+            Model<span className="ml-1 text-[var(--status-danger)]">*</span>
+          </span>
+          <input
+            className="input"
+            name="model"
+            required
+            value={model}
+            onChange={(event) => {
+              setModel(event.target.value);
+              setTouched((prev) => ({ ...prev, model: true }));
+            }}
+          />
+        </label>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          label="VIN"
-          name="vin"
-          defaultValue={motorcycle?.vin}
-          hint="Optional, but missing VIN is flagged in the shop"
-        />
-        <TextField label="Colour" name="colour" defaultValue={motorcycle?.colour} />
-      </div>
+      <TextField label="Colour" name="colour" defaultValue={motorcycle?.colour} />
 
       <TextAreaField
         label="Internal notes"
