@@ -1,8 +1,13 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { WorkOrderFormState } from "@/app/(app)/work_orders/actions";
+import { useRouter } from "next/navigation";
+import {
+  createWorkOrderOnlyAction,
+  type WorkOrderFormState,
+} from "@/app/(app)/work_orders/actions";
+import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { getOutstandingRecommendationsAction } from "@/app/(app)/work_orders/recommendation-actions";
 import type { Customer } from "@/lib/services/customers";
 import type { MotorcycleWithCustomer } from "@/lib/services/motorcycles";
@@ -12,27 +17,26 @@ import {
   type Service,
 } from "@/lib/services/serviceCatalogueShared";
 import type { TechnicianOption } from "@/lib/services/workOrders";
+import type { PhotoCategory } from "@/lib/database/types";
 import { FormError } from "@/components/forms/Field";
-import { SubmitButton } from "@/components/forms/SubmitButton";
 import {
   IntakePhotoSlots,
   allRequiredIntakeSelected,
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
 import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
-import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
+import { CREATE_INTAKE_PHOTO_SLOTS, PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import {
   CREATE_WORK_ORDER_WIZARD_STEPS,
   canNavigateToWizardStep,
   canProceedFromWizardStep,
   canSubmitCreateWorkOrderWizard,
 } from "@/lib/forms/createWorkOrderWizard";
+import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
+import { stripIntakePhotoFields } from "@/lib/forms/intakeFormData";
+import { toFormErrorMessage } from "@/lib/services/errors";
 
 type Props = {
-  action: (
-    state: WorkOrderFormState,
-    formData: FormData
-  ) => Promise<WorkOrderFormState>;
   customers: Customer[];
   motorcycles: MotorcycleWithCustomer[];
   services: Service[];
@@ -53,7 +57,6 @@ const NAV_BTN_CLASS =
 const ALL_REQUIRED = CREATE_INTAKE_PHOTO_SLOTS.map((s) => s.category);
 
 export function CreateWorkOrderForm({
-  action,
   customers,
   motorcycles,
   services,
@@ -61,12 +64,14 @@ export function CreateWorkOrderForm({
   initialCustomerId = "",
   initialMotorcycleId = "",
 }: Props) {
-  const [state, formAction] = useActionState(action, { error: null });
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [clientError, setClientError] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState<WorkOrderFormState | null>(null);
 
-  const recoveryWorkOrderId = state.workOrderId ?? null;
-  const missingCategories = state.missingCategories ?? [];
+  const recoveryWorkOrderId = recovery?.workOrderId ?? null;
+  const missingCategories = recovery?.missingCategories ?? [];
   const isRecovery = Boolean(
     recoveryWorkOrderId && missingCategories.length > 0
   );
@@ -172,20 +177,83 @@ export function CreateWorkOrderForm({
     setClientError(null);
   }
 
+  async function submitCreate(form: HTMLFormElement) {
+    setClientError(null);
+    setSubmitting(true);
+
+    try {
+      const formData = new FormData(form);
+      // Never send six camera originals in one serverless POST — Vercel rejects
+      // large bodies with an unexpected-response crash instead of a form error.
+      stripIntakePhotoFields(formData, ALL_REQUIRED);
+
+      const created = await createWorkOrderOnlyAction({ error: null }, formData);
+      if (created.error || !created.workOrderId) {
+        setClientError(
+          created.error ?? "Could not create the work order. Try again."
+        );
+        return;
+      }
+
+      const failed: PhotoCategory[] = [];
+      for (const category of ALL_REQUIRED) {
+        const original = intakePhotos[category];
+        if (!(original instanceof File) || original.size === 0) {
+          failed.push(category);
+          continue;
+        }
+
+        try {
+          const file = await compressImageForUpload(original);
+          const photoData = new FormData();
+          photoData.set("file", file);
+          photoData.set("category", category);
+          const uploaded = await uploadIntakePhotoAction(
+            created.workOrderId,
+            { error: null },
+            photoData
+          );
+          if (uploaded.error) failed.push(category);
+        } catch {
+          failed.push(category);
+        }
+      }
+
+      if (failed.length > 0) {
+        const labels = failed
+          .map((c) => PHOTO_CATEGORY_LABELS[c] ?? c)
+          .join(", ");
+        setRecovery({
+          error: `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`,
+          workOrderId: created.workOrderId,
+          workOrderNumber: created.workOrderNumber,
+          missingCategories: failed,
+        });
+        return;
+      }
+
+      router.push(`/work_orders/${created.workOrderId}`);
+      router.refresh();
+    } catch (error) {
+      setClientError(toFormErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (isRecovery && recoveryWorkOrderId) {
     return (
       <IntakePhotoRecoveryForm
         workOrderId={recoveryWorkOrderId}
-        workOrderNumber={state.workOrderNumber}
+        workOrderNumber={recovery?.workOrderNumber}
         missingCategories={missingCategories}
-        initialError={state.error}
+        initialError={recovery?.error}
       />
     );
   }
 
   return (
     <form
-      action={formAction}
       encType="multipart/form-data"
       className="flex max-w-3xl flex-col gap-6"
       onKeyDown={(event) => {
@@ -198,6 +266,7 @@ export function CreateWorkOrderForm({
         if (!isLastStep && canProceed) goNext();
       }}
       onSubmit={(event) => {
+        event.preventDefault();
         const ok = canSubmitCreateWorkOrderWizard({
           stepId,
           customerId,
@@ -206,16 +275,19 @@ export function CreateWorkOrderForm({
           intakeComplete,
         });
         if (!ok) {
-          event.preventDefault();
           setClientError(
             isLastStep
               ? "Complete every required step, including all six intake photos, before creating the work order."
               : "Finish each step in order before creating the work order."
           );
+          return;
         }
+
+        const form = event.currentTarget;
+        void submitCreate(form);
       }}
     >
-      <FormError message={state.error ?? clientError} />
+      <FormError message={clientError} />
 
       <WizardProgress
         stepIndex={stepIndex}
@@ -643,25 +715,22 @@ export function CreateWorkOrderForm({
               Next
             </button>
           ) : (
-            <span
-              className={
-                canSubmitCreateWorkOrderWizard({
+            <button
+              type="submit"
+              disabled={
+                submitting ||
+                !canSubmitCreateWorkOrderWizard({
                   stepId,
                   customerId,
                   motorcycleId,
                   mileage,
                   intakeComplete,
                 })
-                  ? undefined
-                  : "pointer-events-none opacity-60"
               }
+              className={`${NAV_BTN_CLASS} btn-primary disabled:pointer-events-none disabled:opacity-60`}
             >
-              <SubmitButton
-                label="Create work order"
-                pendingLabel="Creating & uploading…"
-                className="min-h-12 min-w-[8rem] px-6 text-base sm:min-h-14 sm:text-lg"
-              />
-            </span>
+              {submitting ? "Creating & uploading…" : "Create work order"}
+            </button>
           )}
         </div>
       </div>

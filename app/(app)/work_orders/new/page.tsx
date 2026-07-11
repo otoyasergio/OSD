@@ -7,7 +7,6 @@ import { searchMotorcycles } from "@/lib/services/motorcycles";
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
 import { CreateWorkOrderForm } from "@/components/forms/CreateWorkOrderForm";
-import { createWorkOrderWithIntakePhotosAction } from "@/app/(app)/work_orders/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +46,6 @@ export default async function NewWorkOrderPage({
 
       <div className="mt-6">
         <CreateWorkOrderForm
-          action={createWorkOrderWithIntakePhotosAction}
           customers={customers}
           motorcycles={motorcycles}
           services={services}

@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { revalidatePath } from "next/cache";
 import {
   assignTechnicianToWorkOrder,
@@ -105,64 +106,101 @@ function intakePartialError(
   };
 }
 
+async function createWorkOrderFromFormData(formData: FormData): Promise<{
+  work_order_id: string;
+  work_order_number: string;
+}> {
+  const user = await requireUser();
+  const serviceIds = formData
+    .getAll("service_ids")
+    .map((value) => String(value))
+    .filter(Boolean);
+
+  const primaryTech = String(
+    formData.get("primary_technician_id") ?? ""
+  ).trim();
+
+  return createWorkOrder({
+    motorcycle_id: String(formData.get("motorcycle_id") ?? ""),
+    location_id: user.active_location_id!,
+    external_invoice_number: String(
+      formData.get("external_invoice_number") ?? ""
+    ),
+    mileage: readOptionalNumber(formData, "mileage"),
+    estimated_completion: readEstimatedCompletion(formData),
+    internal_notes: String(formData.get("internal_notes") ?? ""),
+    primary_technician_id: primaryTech || null,
+    service_ids: serviceIds,
+  });
+}
+
+/**
+ * Create the work order only (no photo bytes). Used by the wizard so each
+ * intake photo can be uploaded in a separate request under body-size limits.
+ */
+export async function createWorkOrderOnlyAction(
+  _prevState: WorkOrderFormState,
+  formData: FormData
+): Promise<WorkOrderFormState> {
+  try {
+    const result = await createWorkOrderFromFormData(formData);
+    revalidatePath("/work_orders");
+    revalidatePath("/dashboard");
+    revalidatePath(`/work_orders/${result.work_order_id}`);
+    return {
+      error: null,
+      workOrderId: result.work_order_id,
+      workOrderNumber: result.work_order_number,
+    };
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    return { error: toFormErrorMessage(error) };
+  }
+}
+
 /**
  * Create a work order and upload the six required intake photos in one flow.
+ * Prefer the wizard's create-then-upload path for large camera photos.
  * If create succeeds but some uploads fail, returns a recovery state instead of redirecting.
  */
 export async function createWorkOrderWithIntakePhotosAction(
   _prevState: WorkOrderFormState,
   formData: FormData
 ): Promise<WorkOrderFormState> {
-  const { files, missing } = collectRequiredIntakeFiles(formData);
-  if (missing.length > 0) {
-    return {
-      error: toFormErrorMessage(new Error("INTAKE_PHOTOS_REQUIRED")),
-    };
-  }
-
-  let workOrderId: string;
-  let workOrderNumber: string;
-
   try {
-    const user = await requireUser();
-    const serviceIds = formData
-      .getAll("service_ids")
-      .map((value) => String(value))
-      .filter(Boolean);
+    const { files, missing } = collectRequiredIntakeFiles(formData);
+    if (missing.length > 0) {
+      return {
+        error: toFormErrorMessage(new Error("INTAKE_PHOTOS_REQUIRED")),
+      };
+    }
 
-    const primaryTech = String(
-      formData.get("primary_technician_id") ?? ""
-    ).trim();
+    let workOrderId: string;
+    let workOrderNumber: string;
 
-    const result = await createWorkOrder({
-      motorcycle_id: String(formData.get("motorcycle_id") ?? ""),
-      location_id: user.active_location_id!,
-      external_invoice_number: String(
-        formData.get("external_invoice_number") ?? ""
-      ),
-      mileage: readOptionalNumber(formData, "mileage"),
-      estimated_completion: readEstimatedCompletion(formData),
-      internal_notes: String(formData.get("internal_notes") ?? ""),
-      primary_technician_id: primaryTech || null,
-      service_ids: serviceIds,
-    });
-    workOrderId = result.work_order_id;
-    workOrderNumber = result.work_order_number;
+    try {
+      const result = await createWorkOrderFromFormData(formData);
+      workOrderId = result.work_order_id;
+      workOrderNumber = result.work_order_number;
+    } catch (error) {
+      return { error: toFormErrorMessage(error) };
+    }
+
+    const failed = await uploadIntakeBatch(workOrderId, files);
+    revalidatePath("/work_orders");
+    revalidatePath("/dashboard");
+
+    if (failed.length > 0) {
+      revalidatePath(`/work_orders/${workOrderId}`);
+      return intakePartialError(workOrderId, workOrderNumber, failed);
+    }
+
+    revalidatePath(`/work_orders/${workOrderId}`);
+    redirect(`/work_orders/${workOrderId}`);
   } catch (error) {
+    if (isRedirectError(error)) throw error;
     return { error: toFormErrorMessage(error) };
   }
-
-  const failed = await uploadIntakeBatch(workOrderId, files);
-  revalidatePath("/work_orders");
-  revalidatePath("/dashboard");
-
-  if (failed.length > 0) {
-    revalidatePath(`/work_orders/${workOrderId}`);
-    return intakePartialError(workOrderId, workOrderNumber, failed);
-  }
-
-  revalidatePath(`/work_orders/${workOrderId}`);
-  redirect(`/work_orders/${workOrderId}`);
 }
 
 async function missingRequiredIntakeCategories(
@@ -182,54 +220,61 @@ export async function completeIntakePhotosAction(
   _prevState: WorkOrderFormState,
   formData: FormData
 ): Promise<WorkOrderFormState> {
-  if (!workOrderId) {
-    return {
-      error: toFormErrorMessage(new Error("WORK_ORDER_NOT_FOUND")),
-    };
-  }
-
-  let stillMissing: PhotoCategory[];
   try {
-    stillMissing = await missingRequiredIntakeCategories(workOrderId);
+    if (!workOrderId) {
+      return {
+        error: toFormErrorMessage(new Error("WORK_ORDER_NOT_FOUND")),
+      };
+    }
+
+    let stillMissing: PhotoCategory[];
+    try {
+      stillMissing = await missingRequiredIntakeCategories(workOrderId);
+    } catch (error) {
+      return {
+        error: toFormErrorMessage(error),
+        workOrderId,
+      };
+    }
+
+    if (stillMissing.length === 0) {
+      revalidatePath(`/work_orders/${workOrderId}`);
+      redirect(`/work_orders/${workOrderId}`);
+    }
+
+    const { files, missing } = collectRequiredIntakeFiles(
+      formData,
+      stillMissing
+    );
+    if (missing.length > 0) {
+      return {
+        error: toFormErrorMessage(new Error("INTAKE_PHOTOS_REQUIRED")),
+        workOrderId,
+        missingCategories: stillMissing,
+      };
+    }
+
+    const failed = await uploadIntakeBatch(workOrderId, files);
+    revalidatePath("/work_orders");
+    revalidatePath("/dashboard");
+    revalidatePath(`/work_orders/${workOrderId}`);
+
+    if (failed.length > 0) {
+      const remaining = await missingRequiredIntakeCategories(workOrderId).catch(
+        () => failed
+      );
+      return intakePartialError(workOrderId, "", remaining);
+    }
+
+    redirect(`/work_orders/${workOrderId}`);
   } catch (error) {
+    if (isRedirectError(error)) throw error;
     return {
       error: toFormErrorMessage(error),
       workOrderId,
     };
   }
-
-  if (stillMissing.length === 0) {
-    revalidatePath(`/work_orders/${workOrderId}`);
-    redirect(`/work_orders/${workOrderId}`);
-  }
-
-  const { files, missing } = collectRequiredIntakeFiles(
-    formData,
-    stillMissing
-  );
-  if (missing.length > 0) {
-    return {
-      error: toFormErrorMessage(new Error("INTAKE_PHOTOS_REQUIRED")),
-      workOrderId,
-      missingCategories: stillMissing,
-    };
-  }
-
-  const failed = await uploadIntakeBatch(workOrderId, files);
-  revalidatePath("/work_orders");
-  revalidatePath("/dashboard");
-  revalidatePath(`/work_orders/${workOrderId}`);
-
-  if (failed.length > 0) {
-    const remaining = await missingRequiredIntakeCategories(workOrderId).catch(
-      () => failed
-    );
-    return intakePartialError(workOrderId, "", remaining);
-  }
-
-  redirect(`/work_orders/${workOrderId}`);
 }
-
 /** @deprecated Prefer createWorkOrderWithIntakePhotosAction for new creates. */
 export async function createWorkOrderAction(
   _prevState: WorkOrderFormState,
