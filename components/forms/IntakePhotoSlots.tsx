@@ -17,6 +17,8 @@ type Props = {
   value: IntakePhotoSelection;
   onChange: (next: IntakePhotoSelection) => void;
   disabled?: boolean;
+  /** When false, skip HTML required so step wizards can gate submit themselves. */
+  htmlRequired?: boolean;
 };
 
 function slotsFor(categories?: PhotoCategory[]): SlotDef[] {
@@ -42,6 +44,7 @@ export function IntakePhotoSlots({
   value,
   onChange,
   disabled = false,
+  htmlRequired = true,
 }: Props) {
   const slots = slotsFor(categories);
   const [previews, setPreviews] = useState<
@@ -110,7 +113,7 @@ export function IntakePhotoSlots({
               // Prefer rear camera when the device offers a capture UI (iPad/Safari).
               capture="environment"
               disabled={disabled}
-              required={!selected}
+              required={htmlRequired && !selected}
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
                 onChange({ ...value, [slot.category]: file });

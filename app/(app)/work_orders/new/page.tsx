@@ -41,8 +41,8 @@ export default async function NewWorkOrderPage({
         New work order
       </h1>
       <p className="mt-1 text-sm text-zinc-600">
-        Creates the work order under your active location, with an inspection,
-        any selected service jobs, and the six required intake photos.
+        Step through customer, motorcycle, visit details, and all six intake
+        photos — then review and create under your active location.
       </p>
 
       <div className="mt-6">
