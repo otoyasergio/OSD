@@ -26,6 +26,7 @@ import {
 } from "@/components/forms/IntakePhotoSlots";
 import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
 import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
+import { FindMotorcycleByVin } from "@/components/forms/FindMotorcycleByVin";
 
 import { CREATE_INTAKE_PHOTO_SLOTS, PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import {
@@ -426,6 +427,21 @@ export function CreateWorkOrderForm({
               .
             </span>
           </label>
+          {customerId ? (
+            <FindMotorcycleByVin
+              customerId={customerId}
+              currentCustomerName={
+                selectedCustomer
+                  ? `${selectedCustomer.first_name} ${selectedCustomer.last_name}`
+                  : undefined
+              }
+              onSelectMotorcycle={(id) => {
+                setMotorcycleId(id);
+                setMaxReachedIndex((prev) => Math.min(prev, 1));
+                router.refresh();
+              }}
+            />
+          ) : null}
           {selectedBike ? <VinDecodePanel vin={selectedBike.vin} /> : null}
           {outstanding.length > 0 ? (
             <p

@@ -6,6 +6,8 @@ const MESSAGES: Record<string, string> = {
   NO_LOCATION: "Ask an owner to assign you a location before continuing.",
   CUSTOMER_NOT_FOUND: "That customer no longer exists.",
   SAME_CUSTOMER: "Choose a different customer to transfer this motorcycle to.",
+  VIN_ALREADY_EXISTS:
+    "That VIN is already on another motorcycle. Transfer it or use a different VIN.",
   MOTORCYCLE_NOT_FOUND: "That motorcycle no longer exists.",
   SERVICE_NOT_FOUND: "That service no longer exists.",
   LOCATION_MISMATCH: "Work orders must be created under your active location.",

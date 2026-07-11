@@ -10,6 +10,7 @@ import {
 } from "@/lib/permissions";
 import { motorcycleSchema } from "@/lib/validation/schemas";
 import { escapeSearchTerm } from "@/lib/services/customers";
+import { normalizeVin } from "@/lib/vin";
 
 export type Motorcycle = {
   motorcycle_id: string;
@@ -62,6 +63,14 @@ export type TransferMotorcycleInput = {
   new_customer_id: string;
 };
 
+export type VinOwnershipConflict = {
+  motorcycle_id: string;
+  customer_id: string;
+  owner_name: string;
+  bike_label: string;
+  vin: string;
+};
+
 /**
  * Pure validation for ownership transfer. Used by transferMotorcycle and unit tests.
  */
@@ -78,6 +87,44 @@ export function validateMotorcycleTransfer(args: {
   return {
     from_customer_id: args.motorcycle.customer_id,
     to_customer_id: args.new_customer_id,
+  };
+}
+
+export function isVinOwnedByOtherCustomer(args: {
+  existing: {
+    motorcycle_id: string;
+    customer_id: string;
+  } | null;
+  currentCustomerId: string;
+  excludeMotorcycleId?: string | null;
+}): boolean {
+  if (!args.existing) return false;
+  if (
+    args.excludeMotorcycleId &&
+    args.existing.motorcycle_id === args.excludeMotorcycleId
+  ) {
+    return false;
+  }
+  return args.existing.customer_id !== args.currentCustomerId;
+}
+
+export function buildVinOwnershipConflict(existing: {
+  motorcycle_id: string;
+  customer_id: string;
+  year: number;
+  make: string;
+  model: string;
+  vin: string | null;
+  customer: { first_name: string; last_name: string } | null;
+}): VinOwnershipConflict {
+  return {
+    motorcycle_id: existing.motorcycle_id,
+    customer_id: existing.customer_id,
+    owner_name: existing.customer
+      ? `${existing.customer.first_name} ${existing.customer.last_name}`
+      : "another customer",
+    bike_label: `${existing.year} ${existing.make} ${existing.model}`,
+    vin: existing.vin ?? "",
   };
 }
 
@@ -214,6 +261,64 @@ export async function getMotorcycleById(
   return (data as unknown as MotorcycleWithCustomer) ?? null;
 }
 
+/** Exact match on normalized VIN (uppercase, no spaces/dashes). */
+export async function findMotorcycleByVin(
+  vin: string
+): Promise<MotorcycleWithCustomer | null> {
+  await requireUser();
+  const normalized = normalizeVin(vin);
+  if (!normalized) return null;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("motorcycle")
+    .select(`${MOTORCYCLE_COLUMNS}, customer:customer_id(first_name, last_name)`)
+    .eq("vin", normalized)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as unknown as MotorcycleWithCustomer) ?? null;
+}
+
+/**
+ * Soft unique VIN lookup for forms. Returns a conflict when another customer
+ * owns the VIN. Same-customer duplicates are left to assertVinAvailable on save.
+ */
+export async function lookupVinOwnershipConflict(args: {
+  vin: string;
+  currentCustomerId: string;
+  excludeMotorcycleId?: string | null;
+}): Promise<VinOwnershipConflict | null> {
+  const existing = await findMotorcycleByVin(args.vin);
+  if (
+    !isVinOwnedByOtherCustomer({
+      existing,
+      currentCustomerId: args.currentCustomerId,
+      excludeMotorcycleId: args.excludeMotorcycleId,
+    })
+  ) {
+    return null;
+  }
+  return buildVinOwnershipConflict(existing!);
+}
+
+async function assertVinAvailable(args: {
+  vin: string | null;
+  excludeMotorcycleId?: string | null;
+}): Promise<void> {
+  if (!args.vin) return;
+  const existing = await findMotorcycleByVin(args.vin);
+  if (!existing) return;
+  if (
+    args.excludeMotorcycleId &&
+    existing.motorcycle_id === args.excludeMotorcycleId
+  ) {
+    return;
+  }
+  throw new Error("VIN_ALREADY_EXISTS");
+}
+
 export async function getServiceInformation(
   motorcycleId: string
 ): Promise<ServiceInformation | null> {
@@ -244,6 +349,8 @@ export async function createMotorcycle(
   });
 
   const supabase = await createClient();
+  await assertVinAvailable({ vin: normalizeOptional(parsed.vin) });
+
   const { data, error } = await supabase
     .from("motorcycle")
     .insert({
@@ -296,6 +403,11 @@ export async function updateMotorcycle(
   const supabase = await createClient();
   const previous = await getMotorcycleById(motorcycleId);
   if (!previous) throw new Error("MOTORCYCLE_NOT_FOUND");
+
+  await assertVinAvailable({
+    vin: normalizeOptional(parsed.vin),
+    excludeMotorcycleId: motorcycleId,
+  });
 
   const { data, error } = await supabase
     .from("motorcycle")

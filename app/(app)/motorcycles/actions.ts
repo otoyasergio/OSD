@@ -8,10 +8,15 @@ import {
   updateMotorcycleServiceInformation,
   transferMotorcycle,
   getMotorcycleById,
+  findMotorcycleByVin,
+  lookupVinOwnershipConflict,
+  buildVinOwnershipConflict,
   SERVICE_INFORMATION_FIELDS,
   type ServiceInformationInput,
+  type VinOwnershipConflict,
 } from "@/lib/services/motorcycles";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { validateOptionalVin } from "@/lib/vin";
 
 export type MotorcycleFormState = { error: string | null };
 
@@ -101,6 +106,104 @@ export async function transferMotorcycleAction(
     revalidatePath(`/customers/${fromCustomerId}`);
   }
   redirect(`/customers/${newCustomerId}`);
+}
+
+export async function lookupVinOwnershipAction(args: {
+  vin: string;
+  currentCustomerId: string;
+  excludeMotorcycleId?: string | null;
+}): Promise<VinOwnershipConflict | null> {
+  const validation = validateOptionalVin(args.vin);
+  if (!validation.ok || !validation.vin || !args.currentCustomerId) {
+    return null;
+  }
+
+  try {
+    return await lookupVinOwnershipConflict({
+      vin: validation.vin,
+      currentCustomerId: args.currentCustomerId,
+      excludeMotorcycleId: args.excludeMotorcycleId,
+    });
+  } catch {
+    return null;
+  }
+}
+
+export type VinGarageLookupResult =
+  | { kind: "not_found" }
+  | {
+      kind: "same_garage";
+      motorcycle_id: string;
+      bike_label: string;
+    }
+  | { kind: "other_owner"; conflict: VinOwnershipConflict };
+
+/** Intake / garage VIN lookup: select existing bike or prompt transfer. */
+export async function lookupVinInGarageAction(args: {
+  vin: string;
+  currentCustomerId: string;
+}): Promise<VinGarageLookupResult> {
+  const validation = validateOptionalVin(args.vin);
+  if (!validation.ok || !validation.vin || !args.currentCustomerId) {
+    return { kind: "not_found" };
+  }
+
+  try {
+    const existing = await findMotorcycleByVin(validation.vin);
+    if (!existing) return { kind: "not_found" };
+
+    if (existing.customer_id === args.currentCustomerId) {
+      return {
+        kind: "same_garage",
+        motorcycle_id: existing.motorcycle_id,
+        bike_label: `${existing.year} ${existing.make} ${existing.model}`,
+      };
+    }
+
+    return {
+      kind: "other_owner",
+      conflict: buildVinOwnershipConflict(existing),
+    };
+  } catch {
+    return { kind: "not_found" };
+  }
+}
+
+/**
+ * Accept the VIN conflict prompt: transfer the existing bike into the current
+ * customer's garage (no duplicate row).
+ * Set `redirect: false` when staying on the current page (e.g. WO intake).
+ */
+export async function acceptVinTransferAction(args: {
+  motorcycle_id: string;
+  new_customer_id: string;
+  redirect?: boolean;
+}): Promise<{ error: string | null; motorcycle_id?: string }> {
+  const shouldRedirect = args.redirect !== false;
+  let fromCustomerId: string | null = null;
+  try {
+    const previous = await getMotorcycleById(args.motorcycle_id);
+    fromCustomerId = previous?.customer_id ?? null;
+    await transferMotorcycle({
+      motorcycle_id: args.motorcycle_id,
+      new_customer_id: args.new_customer_id,
+    });
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+
+  revalidatePath("/motorcycles");
+  revalidatePath(`/motorcycles/${args.motorcycle_id}`);
+  revalidatePath(`/customers/${args.new_customer_id}`);
+  if (fromCustomerId) {
+    revalidatePath(`/customers/${fromCustomerId}`);
+  }
+
+  if (shouldRedirect) {
+    redirect(`/motorcycles/${args.motorcycle_id}`);
+  }
+
+  return { error: null, motorcycle_id: args.motorcycle_id };
 }
 
 export async function updateServiceInformationAction(

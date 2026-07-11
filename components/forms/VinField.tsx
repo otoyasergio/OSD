@@ -19,6 +19,8 @@ type Props = {
   defaultValue?: string | null;
   /** Called when decode succeeds with useful year/make/model. */
   onSuggestion?: (suggestion: VinAutofillSuggestion) => void;
+  /** Called with a valid 17-char VIN, or null when cleared / invalid. */
+  onVinReady?: (vin: string | null) => void;
 };
 
 function formatDisplacement(result: VinDecodeResult): string | null {
@@ -38,6 +40,7 @@ export function VinField({
   name = "vin",
   defaultValue,
   onSuggestion,
+  onVinReady,
 }: Props) {
   const [value, setValue] = useState(() =>
     defaultValue ? normalizeVin(defaultValue) : ""
@@ -48,15 +51,23 @@ export function VinField({
   const lastDecoded = useRef<string>("");
   const onSuggestionRef = useRef(onSuggestion);
   onSuggestionRef.current = onSuggestion;
+  const onVinReadyRef = useRef(onVinReady);
+  onVinReadyRef.current = onVinReady;
 
   function runValidation(next: string): boolean {
     const result = validateOptionalVin(next);
     if (!result.ok) {
       setError(result.error);
       setDecode(null);
+      onVinReadyRef.current?.(null);
       return false;
     }
     setError(null);
+    if (result.vin) {
+      onVinReadyRef.current?.(result.vin);
+    } else {
+      onVinReadyRef.current?.(null);
+    }
     return Boolean(result.vin);
   }
 
@@ -92,6 +103,7 @@ export function VinField({
     if (!defaultValue) return;
     const normalized = normalizeVin(defaultValue);
     if (normalized.length === 17 && validateOptionalVin(normalized).ok) {
+      runValidation(normalized);
       requestDecode(normalized);
     }
     // Initial mount only — intentional.
@@ -121,6 +133,7 @@ export function VinField({
               setError(null);
               setDecode(null);
               lastDecoded.current = "";
+              onVinReadyRef.current?.(null);
               return;
             }
             if (next.length === 17) {
@@ -128,11 +141,13 @@ export function VinField({
             } else {
               setError(null);
               setDecode(null);
+              onVinReadyRef.current?.(null);
             }
           }}
           onBlur={() => {
             if (!value) {
               setError(null);
+              onVinReadyRef.current?.(null);
               return;
             }
             if (runValidation(value)) requestDecode(value);

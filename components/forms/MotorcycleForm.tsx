@@ -1,11 +1,17 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import type { MotorcycleFormState } from "@/app/(app)/motorcycles/actions";
+import {
+  acceptVinTransferAction,
+  lookupVinOwnershipAction,
+} from "@/app/(app)/motorcycles/actions";
 import type { Motorcycle } from "@/lib/services/motorcycles";
+import type { VinOwnershipConflict } from "@/lib/services/motorcycles";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { VinField, type VinAutofillSuggestion } from "@/components/forms/VinField";
+import { VinOwnershipConflictNotice } from "@/components/forms/VinOwnershipConflictNotice";
 
 export type CustomerOption = {
   customer_id: string;
@@ -38,16 +44,27 @@ export function MotorcycleForm({
   const [state, formAction] = useActionState(action, { error: null });
   const selectedCustomerId = motorcycle?.customer_id ?? defaultCustomerId;
 
+  const [customerId, setCustomerId] = useState(selectedCustomerId ?? "");
   const [year, setYear] = useState(
     motorcycle?.year != null ? String(motorcycle.year) : ""
   );
   const [make, setMake] = useState(motorcycle?.make ?? "");
   const [model, setModel] = useState(motorcycle?.model ?? "");
+  const [vinKey, setVinKey] = useState(0);
   const [touched, setTouched] = useState({
     year: Boolean(motorcycle?.year),
     make: Boolean(motorcycle?.make),
     model: Boolean(motorcycle?.model),
   });
+
+  const [conflict, setConflict] = useState<VinOwnershipConflict | null>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
+  const [transferPending, startTransfer] = useTransition();
+
+  const currentCustomer = customers.find((c) => c.customer_id === customerId);
+  const currentCustomerName = currentCustomer
+    ? `${currentCustomer.first_name} ${currentCustomer.last_name}`
+    : undefined;
 
   function applyVinSuggestion(suggestion: VinAutofillSuggestion) {
     if (suggestion.year && (isBlank(year) || !touched.year)) {
@@ -61,6 +78,44 @@ export function MotorcycleForm({
     }
   }
 
+  async function checkVinOwnership(vin: string | null) {
+    setTransferError(null);
+    if (!vin || !customerId) {
+      setConflict(null);
+      return;
+    }
+    const result = await lookupVinOwnershipAction({
+      vin,
+      currentCustomerId: customerId,
+      excludeMotorcycleId: motorcycle?.motorcycle_id,
+    });
+    setConflict(result);
+  }
+
+  useEffect(() => {
+    // Re-check when customer changes while a conflict VIN may still be present.
+    setConflict(null);
+  }, [customerId]);
+
+  function clearVin() {
+    setConflict(null);
+    setTransferError(null);
+    setVinKey((k) => k + 1);
+  }
+
+  function acceptTransfer() {
+    if (!conflict || !customerId) return;
+    startTransfer(async () => {
+      const result = await acceptVinTransferAction({
+        motorcycle_id: conflict.motorcycle_id,
+        new_customer_id: customerId,
+      });
+      if (result?.error) {
+        setTransferError(result.error);
+      }
+    });
+  }
+
   return (
     <form action={formAction} className="flex max-w-2xl flex-col gap-4">
       <FormError message={state.error} />
@@ -72,7 +127,8 @@ export function MotorcycleForm({
         <select
           name="customer_id"
           required
-          defaultValue={selectedCustomerId ?? ""}
+          value={customerId}
+          onChange={(event) => setCustomerId(event.target.value)}
           className="min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900"
         >
           <option value="" disabled>
@@ -87,9 +143,22 @@ export function MotorcycleForm({
       </label>
 
       <VinField
+        key={vinKey}
         defaultValue={motorcycle?.vin}
         onSuggestion={applyVinSuggestion}
+        onVinReady={checkVinOwnership}
       />
+
+      {conflict ? (
+        <VinOwnershipConflictNotice
+          conflict={conflict}
+          currentCustomerName={currentCustomerName}
+          pending={transferPending}
+          error={transferError}
+          onAccept={acceptTransfer}
+          onDecline={clearVin}
+        />
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <label className="block">
@@ -149,7 +218,16 @@ export function MotorcycleForm({
       />
 
       <div>
-        <SubmitButton label={submitLabel} pendingLabel="Saving…" />
+        <SubmitButton
+          label={submitLabel}
+          pendingLabel="Saving…"
+          disabled={Boolean(conflict) || transferPending}
+        />
+        {conflict ? (
+          <p className="mt-2 text-xs text-zinc-500">
+            Resolve the VIN ownership notice before saving a new motorcycle.
+          </p>
+        ) : null}
       </div>
     </form>
   );
