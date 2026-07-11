@@ -39,9 +39,9 @@ export default async function NewWorkOrderPage({
       <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
         New work order
       </h1>
-      <p className="mt-1 text-sm text-zinc-600">
-        Step through customer, motorcycle, visit details, and all six intake
-        photos — then review and create under your active location.
+      <p className="mt-1 max-w-2xl text-sm text-zinc-600">
+        Guided intake: customer, motorcycle, visit details, and all six photos —
+        then review and create under your active location.
       </p>
 
       <div className="mt-6">

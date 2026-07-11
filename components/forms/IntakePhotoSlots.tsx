@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { PhotoCategory } from "@/lib/database/types";
 import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
 
@@ -39,6 +39,93 @@ export function allRequiredIntakeSelected(
   });
 }
 
+function SlotIcon({ category }: { category: PhotoCategory }) {
+  const common = {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.75,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+
+  switch (category) {
+    case "front":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="10" r="3.5" />
+          <path d="M5 18c1.5-3 4-4.5 7-4.5s5.5 1.5 7 4.5" />
+          <path d="M8 7.5 6.5 5M16 7.5 17.5 5" />
+        </svg>
+      );
+    case "rear":
+      return (
+        <svg {...common}>
+          <rect x="7" y="7" width="10" height="10" rx="2" />
+          <path d="M10 12h4M12 10v4" />
+          <path d="M5 19h14" />
+        </svg>
+      );
+    case "left_side":
+      return (
+        <svg {...common}>
+          <path d="M4 15h3l2-5h6l2 3h3" />
+          <circle cx="8" cy="17" r="1.75" />
+          <circle cx="16.5" cy="17" r="1.75" />
+          <path d="M9 10V8h4" />
+        </svg>
+      );
+    case "right_side":
+      return (
+        <svg {...common}>
+          <path d="M20 15h-3l-2-5H9L7 13H4" />
+          <circle cx="16" cy="17" r="1.75" />
+          <circle cx="7.5" cy="17" r="1.75" />
+          <path d="M15 10V8h-4" />
+        </svg>
+      );
+    case "vin":
+      return (
+        <svg {...common}>
+          <rect x="4" y="6" width="16" height="12" rx="2" />
+          <path d="M8 10h8M8 14h5" />
+        </svg>
+      );
+    case "odometer":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="7" />
+          <path d="M12 12 15.5 9" />
+          <path d="M12 5v1.5M19 12h-1.5M12 19v-1.5M5 12h1.5" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h2l1.2-1.5h4.6L15.5 6H17.5A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      );
+  }
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
 export function IntakePhotoSlots({
   categories,
   value,
@@ -71,36 +158,57 @@ export function IntakePhotoSlots({
   }, [value]);
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="intake-photo-grid">
       {slots.map((slot) => {
         const preview = previews[slot.category];
         const selected = value[slot.category];
+        const filled = selected instanceof File && selected.size > 0;
         const inputId = `intake_${slot.category}`;
 
         return (
           <label
             key={slot.category}
             htmlFor={inputId}
-            className={`flex min-h-36 cursor-pointer flex-col overflow-hidden rounded border bg-white transition ${
-              selected
-                ? "border-zinc-900 ring-2 ring-zinc-900/10"
-                : "border-dashed border-zinc-300 hover:border-zinc-500"
-            } ${disabled ? "pointer-events-none opacity-60" : ""}`}
+            className={`intake-photo-slot${filled ? " is-filled" : ""}${
+              disabled ? " is-disabled" : ""
+            }`}
           >
-            <span className="border-b border-zinc-100 px-3 py-2 text-sm font-medium text-zinc-900">
-              {slot.label} <span className="text-red-600">*</span>
+            <span className="intake-photo-slot-chrome">
+              <span className="intake-photo-slot-title">
+                <SlotIcon category={slot.category} />
+                <span className="intake-photo-slot-title-text">
+                  {slot.label}{" "}
+                  <span className="intake-photo-slot-req">*</span>
+                </span>
+              </span>
+              <span className="intake-photo-slot-badge">
+                {filled ? "Ready" : "Required"}
+              </span>
             </span>
-            <span className="relative flex flex-1 items-center justify-center bg-zinc-50">
+            <span className="intake-photo-slot-body">
               {preview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={preview}
-                  alt={`${slot.label} preview`}
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={preview}
+                    alt={`${slot.label} preview`}
+                  />
+                  <span className="intake-photo-slot-check">
+                    <CheckIcon />
+                  </span>
+                  <span className="intake-photo-slot-retake">Tap to retake</span>
+                </>
               ) : (
-                <span className="px-4 py-8 text-center text-sm text-zinc-500">
-                  Tap to take or choose photo
+                <span className="intake-photo-slot-empty">
+                  <span className="intake-photo-slot-icon">
+                    <CameraIcon />
+                  </span>
+                  <span className="intake-photo-slot-hint">
+                    Tap to capture
+                  </span>
+                  <span className="intake-photo-slot-subhint">
+                    Camera or photo library
+                  </span>
                 </span>
               )}
             </span>
@@ -123,5 +231,22 @@ export function IntakePhotoSlots({
         );
       })}
     </div>
+  );
+}
+
+function CameraIcon(): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h2l1.2-1.5h4.6L15.5 6H17.5A2.5 2.5 0 0 1 20 8.5v7A2.5 2.5 0 0 1 17.5 18h-11A2.5 2.5 0 0 1 4 15.5v-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
   );
 }

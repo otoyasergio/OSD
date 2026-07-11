@@ -252,10 +252,14 @@ export function CreateWorkOrderForm({
     );
   }
 
+  const selectedPhotoCount = Object.values(intakePhotos).filter(
+    (file) => file instanceof File && file.size > 0
+  ).length;
+
   return (
     <form
       encType="multipart/form-data"
-      className="flex max-w-3xl flex-col gap-6"
+      className="intake-wizard"
       onKeyDown={(event) => {
         if (event.key !== "Enter") return;
         const target = event.target as HTMLElement;
@@ -319,8 +323,11 @@ export function CreateWorkOrderForm({
       ))}
 
       {stepId === "customer" ? (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-lg font-semibold text-zinc-900">Customer</h2>
+        <section className="intake-wizard-panel">
+          <h2 className="intake-wizard-panel-title">Customer</h2>
+          <p className="intake-wizard-panel-lede">
+            Who owns the bike for this visit?
+          </p>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-zinc-800">
               Customer <span className="ml-1 text-red-600">*</span>
@@ -361,9 +368,9 @@ export function CreateWorkOrderForm({
       ) : null}
 
       {stepId === "motorcycle" ? (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-lg font-semibold text-zinc-900">Motorcycle</h2>
-          <p className="text-sm text-zinc-600">
+        <section className="intake-wizard-panel">
+          <h2 className="intake-wizard-panel-title">Motorcycle</h2>
+          <p className="intake-wizard-panel-lede">
             Customer:{" "}
             <span className="font-medium text-zinc-900">
               {selectedCustomer
@@ -424,8 +431,11 @@ export function CreateWorkOrderForm({
       ) : null}
 
       {stepId === "visit" ? (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-lg font-semibold text-zinc-900">Visit details</h2>
+        <section className="intake-wizard-panel">
+          <h2 className="intake-wizard-panel-title">Visit details</h2>
+          <p className="intake-wizard-panel-lede">
+            Mileage, invoice reference, services, and technician.
+          </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-zinc-800">
@@ -576,18 +586,34 @@ export function CreateWorkOrderForm({
       {/* Keep file inputs mounted so Safari/FormData retain selected photos */}
       <section
         className={
-          stepId === "photos" ? "flex flex-col gap-3" : "sr-only"
+          stepId === "photos" ? "intake-wizard-panel" : "sr-only"
         }
         aria-hidden={stepId !== "photos"}
       >
-        <div>
-          <h2 className="text-lg font-semibold text-zinc-900">
-            Intake photos <span className="text-red-600">*</span>
-          </h2>
-          <p className="mt-1 text-sm text-zinc-600">
-            Capture all six angles before continuing. On iPad, tap a slot to
-            use the camera.
-          </p>
+        <div className="intake-photo-header">
+          <div>
+            <h2 className="intake-wizard-panel-title">
+              Intake photos <span className="text-red-600">*</span>
+            </h2>
+            <p className="intake-wizard-panel-lede mt-1">
+              Capture all six angles before continuing. On iPad, tap a slot to
+              use the camera.
+            </p>
+          </div>
+          {stepId === "photos" ? (
+            <div
+              className={`intake-photo-progress${
+                intakeComplete ? " is-complete" : ""
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="intake-photo-progress-meter">
+                {selectedPhotoCount}/6
+              </span>
+              {intakeComplete ? "All set" : "photos selected"}
+            </div>
+          ) : null}
         </div>
         <IntakePhotoSlots
           value={intakePhotos}
@@ -604,31 +630,17 @@ export function CreateWorkOrderForm({
             }
           }}
         />
-        {stepId === "photos" ? (
-          !intakeComplete ? (
-            <p className="text-sm text-zinc-500">
-              {
-                Object.values(intakePhotos).filter(
-                  (file) => file instanceof File && file.size > 0
-                ).length
-              }
-              /6 selected
-            </p>
-          ) : (
-            <p className="text-sm text-emerald-700">
-              All six intake photos ready.
-            </p>
-          )
-        ) : null}
       </section>
 
       {stepId === "review" ? (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-lg font-semibold text-zinc-900">
-            Review & create
-          </h2>
-          <dl className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
-            <ReviewRow
+        <section className="intake-wizard-panel">
+          <h2 className="intake-wizard-panel-title">Review & create</h2>
+          <p className="intake-wizard-panel-lede">
+            Confirm details, then create the work order and upload intake
+            photos.
+          </p>
+          <div className="intake-review-grid">
+            <ReviewCard
               label="Customer"
               value={
                 selectedCustomer
@@ -636,7 +648,7 @@ export function CreateWorkOrderForm({
                   : "—"
               }
             />
-            <ReviewRow
+            <ReviewCard
               label="Motorcycle"
               value={
                 selectedBike
@@ -644,43 +656,54 @@ export function CreateWorkOrderForm({
                   : "—"
               }
             />
-            <ReviewRow
+            <ReviewCard
               label="External invoice #"
               value={externalInvoiceNumber.trim() || "Not provided"}
+              muted={!externalInvoiceNumber.trim()}
             />
-            <ReviewRow label="Mileage" value={mileage || "—"} />
-            <ReviewRow
+            <ReviewCard label="Mileage" value={mileage || "—"} />
+            <ReviewCard
               label="Estimated completion"
               value={
                 estimatedCompletion
                   ? new Date(estimatedCompletion).toLocaleString()
                   : "Not set"
               }
+              muted={!estimatedCompletion}
             />
-            <ReviewRow
+            <ReviewCard
               label="Primary technician"
               value={
                 selectedTech
                   ? `${selectedTech.first_name} ${selectedTech.last_name}`
                   : "Unassigned"
               }
+              muted={!selectedTech}
             />
-            <ReviewRow
+            <ReviewCard
               label="Services"
               value={
                 selectedServices.length > 0
                   ? selectedServices.map((s) => s.name).join(", ")
                   : "None selected"
               }
+              muted={selectedServices.length === 0}
+              wide
             />
-            <ReviewRow
+            <ReviewCard
               label="Intake photos"
               value={intakeComplete ? "All 6 ready" : "Incomplete"}
+              ok={intakeComplete}
+              wide
             />
             {internalNotes.trim() ? (
-              <ReviewRow label="Internal notes" value={internalNotes} />
+              <ReviewCard
+                label="Internal notes"
+                value={internalNotes}
+                wide
+              />
             ) : null}
-          </dl>
+          </div>
           {!externalInvoiceNumber.trim() ? (
             <p
               role="status"
@@ -692,7 +715,7 @@ export function CreateWorkOrderForm({
         </section>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-4">
+      <div className="intake-wizard-nav">
         {stepIndex > 0 ? (
           <button
             type="button"
@@ -702,9 +725,9 @@ export function CreateWorkOrderForm({
             Back
           </button>
         ) : (
-          <span className="min-w-[8rem]" aria-hidden />
+          <span className="intake-wizard-nav-spacer" aria-hidden />
         )}
-        <div className="ml-auto flex flex-wrap gap-3">
+        <div className="intake-wizard-nav-actions">
           {!isLastStep ? (
             <button
               type="button"
@@ -748,35 +771,39 @@ function WizardProgress({
   onSelect: (index: number) => void;
 }) {
   return (
-    <nav aria-label="Work order steps" className="overflow-x-auto">
-      <ol className="flex min-w-full gap-2 sm:gap-3">
+    <nav aria-label="Work order steps" className="intake-wizard-progress">
+      <ol className="intake-wizard-progress-list">
         {CREATE_WORK_ORDER_WIZARD_STEPS.map((step, index) => {
           const isCurrent = index === stepIndex;
           const isComplete = index < stepIndex;
+          const isUpcoming = !isCurrent && !isComplete;
           const canClick = canNavigateToWizardStep(index, maxReachedIndex);
           const clickable = canClick && !isCurrent;
 
           return (
-            <li key={step.id} className="min-w-0 flex-1">
+            <li
+              key={step.id}
+              className={`intake-wizard-progress-item${
+                isCurrent ? " is-current" : ""
+              }${isComplete ? " is-complete" : ""}${
+                isUpcoming ? " is-upcoming" : ""
+              }`}
+            >
               <button
                 type="button"
                 disabled={!clickable}
                 onClick={() => onSelect(index)}
                 aria-current={isCurrent ? "step" : undefined}
-                className={`flex w-full flex-col items-start gap-1 rounded border px-3 py-3 text-left transition ${
-                  isCurrent
-                    ? "border-zinc-900 bg-zinc-900 text-white"
-                    : isComplete
-                      ? "border-zinc-300 bg-white text-zinc-900 hover:border-zinc-500"
-                      : "border-zinc-200 bg-zinc-50 text-zinc-400"
-                } ${!clickable ? "cursor-default" : "cursor-pointer"}`}
+                className={`intake-wizard-progress-btn${
+                  isCurrent ? " is-current" : ""
+                }${isComplete ? " is-complete" : ""}${
+                  isUpcoming ? " is-upcoming" : ""
+                }${clickable ? " is-clickable" : ""}`}
               >
-                <span className="text-xs font-semibold uppercase tracking-wide opacity-80">
-                  Step {index + 1}
+                <span className="intake-wizard-progress-pill" aria-hidden>
+                  {isComplete ? <ProgressCheckIcon /> : index + 1}
                 </span>
-                <span className="text-sm font-semibold leading-tight">
-                  {step.label}
-                </span>
+                <span className="intake-wizard-progress-label">{step.label}</span>
               </button>
             </li>
           );
@@ -786,11 +813,47 @@ function WizardProgress({
   );
 }
 
-function ReviewRow({ label, value }: { label: string; value: string }) {
+function ProgressCheckIcon() {
   return (
-    <div className="grid gap-1 px-4 py-3 sm:grid-cols-[10rem_1fr] sm:gap-4">
-      <dt className="text-sm font-medium text-zinc-500">{label}</dt>
-      <dd className="text-sm text-zinc-900">{value}</dd>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+function ReviewCard({
+  label,
+  value,
+  muted = false,
+  ok = false,
+  wide = false,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+  ok?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <div className={`intake-review-card${wide ? " is-wide" : ""}`}>
+      <div className="intake-review-card-label">{label}</div>
+      <div
+        className={`intake-review-card-value${muted ? " is-muted" : ""}${
+          ok ? " is-ok" : ""
+        }`}
+      >
+        {value}
+      </div>
     </div>
   );
 }

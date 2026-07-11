@@ -35,6 +35,12 @@ export function IntakePhotoRecoveryForm({
   const [remaining, setRemaining] =
     useState<PhotoCategory[]>(missingCategories);
 
+  const selectedCount = Object.values(intakePhotos).filter(
+    (file) => file instanceof File && file.size > 0
+  ).length;
+  const needed = remaining.length;
+  const allSelected = allRequiredIntakeSelected(intakePhotos, remaining);
+
   async function uploadRemaining() {
     setClientError(null);
     setSubmitting(true);
@@ -88,7 +94,7 @@ export function IntakePhotoRecoveryForm({
   return (
     <form
       encType="multipart/form-data"
-      className="flex max-w-3xl flex-col gap-6"
+      className="intake-wizard"
       onSubmit={(event) => {
         event.preventDefault();
         if (!allRequiredIntakeSelected(intakePhotos, remaining)) {
@@ -100,18 +106,30 @@ export function IntakePhotoRecoveryForm({
     >
       <FormError message={clientError} />
 
-      <section className="flex flex-col gap-3 rounded border border-amber-200 bg-amber-50 px-4 py-4">
-        <h2 className="text-lg font-semibold text-zinc-900">
-          Finish intake photos
-        </h2>
-        <p className="text-sm text-amber-950">
-          Work order{" "}
-          <span className="font-medium">
-            {workOrderNumber || workOrderId}
-          </span>{" "}
-          was created, but some required photos did not upload. Add the missing
-          photos below to continue.
-        </p>
+      <section className="intake-recovery">
+        <div className="intake-photo-header">
+          <div>
+            <h2 className="intake-recovery-title">Finish intake photos</h2>
+            <p className="intake-recovery-body mt-1">
+              Work order{" "}
+              <span className="font-medium">
+                {workOrderNumber || workOrderId}
+              </span>{" "}
+              was created, but some required photos did not upload. Add the
+              missing photos below to continue.
+            </p>
+          </div>
+          <div
+            className={`intake-photo-progress${allSelected ? " is-complete" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="intake-photo-progress-meter">
+              {selectedCount}/{needed}
+            </span>
+            {allSelected ? "Ready to upload" : "remaining"}
+          </div>
+        </div>
         <IntakePhotoSlots
           categories={remaining}
           value={intakePhotos}
@@ -122,7 +140,7 @@ export function IntakePhotoRecoveryForm({
         />
       </section>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="intake-wizard-nav">
         <button
           type="submit"
           disabled={submitting}
