@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getCustomerById } from "@/lib/services/customers";
-import { listMotorcyclesForCustomer } from "@/lib/services/motorcycles";
+import { listGarageForCustomer } from "@/lib/services/clientGarage";
 import { listWorkOrdersForCustomer } from "@/lib/services/filedWorkOrders";
+import { ClientGarage } from "@/components/customers/ClientGarage";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { updateCustomerAction } from "@/app/(app)/customers/actions";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -91,8 +92,8 @@ export default async function CustomerDetailPage({
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 
-  const [motorcycles, history] = await Promise.all([
-    listMotorcyclesForCustomer(customer_id),
+  const [garage, history] = await Promise.all([
+    listGarageForCustomer(customer_id),
     listWorkOrdersForCustomer(customer_id),
   ]);
   const updateAction = updateCustomerAction.bind(null, customer_id);
@@ -114,40 +115,7 @@ export default async function CustomerDetailPage({
         </p>
       </div>
 
-      <section>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-zinc-900">Motorcycles</h2>
-          <Link
-            href={`/motorcycles/new?customer_id=${customer_id}`}
-            className="min-h-11 rounded border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
-          >
-            Add motorcycle
-          </Link>
-        </div>
-        {motorcycles.length === 0 ? (
-          <p className="mt-3 rounded border border-dashed border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600">
-            No motorcycles for this customer yet.
-          </p>
-        ) : (
-          <ul className="mt-3 divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
-            {motorcycles.map((motorcycle) => (
-              <li key={motorcycle.motorcycle_id} className="px-4 py-3">
-                <Link
-                  href={`/motorcycles/${motorcycle.motorcycle_id}`}
-                  className="font-medium text-zinc-900 underline-offset-2 hover:underline"
-                >
-                  {motorcycle.year} {motorcycle.make} {motorcycle.model}
-                </Link>
-                {motorcycle.vin ? null : (
-                  <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
-                    Missing VIN
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <ClientGarage customerId={customer_id} bikes={garage} />
 
       <section>
         <h2 className="text-lg font-semibold text-zinc-900">Open work orders</h2>
