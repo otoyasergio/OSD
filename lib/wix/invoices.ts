@@ -1,9 +1,9 @@
+import { getWixContactsConfig } from "@/lib/wix/config";
 import type {
   WixCreateInvoiceRequest,
   WixCreateInvoiceResponse,
   WixInvoiceLineItem,
 } from "@/lib/wix/types";
-import { getWixInvoiceBridgeConfig } from "@/lib/wix/config";
 
 const BILLABLE_JOB_STATUSES = new Set([
   "approved",
@@ -58,35 +58,123 @@ export function buildInvoiceLineItems(input: {
   return lines;
 }
 
-export async function createWixInvoiceViaBridge(
+function formatPrice(value: number): string {
+  const n = Number.isFinite(value) ? Math.max(0, value) : 0;
+  // Payment Links DECIMAL_VALUE — avoid trailing float noise.
+  return (Math.round(n * 1000) / 1000).toFixed(2);
+}
+
+/**
+ * Create a Wix Payment Link (ECOM + custom line items) for a work order.
+ * Prefer this over the legacy Velo invoice HTTP bridge.
+ */
+export async function createWixPaymentLink(
   payload: WixCreateInvoiceRequest
 ): Promise<WixCreateInvoiceResponse> {
-  const { httpUrl, httpSecret } = getWixInvoiceBridgeConfig();
+  const { apiKey, siteId, accountId, currency } = getWixContactsConfig();
+  const useCurrency = payload.currency || currency;
 
-  const response = await fetch(httpUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${httpSecret}`,
-      "Content-Type": "application/json",
+  const lineItems = payload.lineItems
+    .filter((item) => item.quantity > 0)
+    .map((item) => ({
+      type: "CUSTOM",
+      customItem: {
+        name: item.name.slice(0, 200),
+        description: (item.description ?? "").slice(0, 600) || undefined,
+        quantity: Math.min(100000, Math.max(1, Math.round(item.quantity))),
+        price: formatPrice(item.price),
+      },
+    }));
+
+  if (lineItems.length === 0) {
+    throw new Error("WIX_INVOICE_NO_LINE_ITEMS");
+  }
+
+  const recipients = payload.contactId
+    ? [
+        {
+          contactId: payload.contactId,
+          sendMethods: payload.email ? ["EMAIL_METHOD"] : [],
+        },
+      ]
+    : undefined;
+
+  const body = {
+    paymentLink: {
+      title: payload.title.slice(0, 200),
+      description: `OTOMOTO ${payload.workOrderNumber}`.slice(0, 500),
+      currency: useCurrency,
+      type: "ECOM",
+      paymentsLimit: 1,
+      recipients,
+      note: {
+        text: `OTOMOTO work order ${payload.workOrderNumber}`.slice(0, 500),
+      },
+      ecomPaymentLink: { lineItems },
     },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
+  };
+
+  const headers: Record<string, string> = {
+    Authorization: apiKey,
+    "wix-site-id": siteId,
+    "Content-Type": "application/json",
+  };
+  if (accountId) headers["wix-account-id"] = accountId;
+
+  const response = await fetch(
+    "https://www.wixapis.com/payment-links/v1/payment-links",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      cache: "no-store",
+    }
+  );
 
   if (!response.ok) {
     let detail = `WIX_INVOICE_HTTP_${response.status}`;
     try {
-      const body = (await response.json()) as { error?: string; message?: string };
-      detail = body.error || body.message || detail;
+      const err = (await response.json()) as {
+        message?: string;
+        details?: { applicationError?: { description?: string; code?: string } };
+      };
+      detail =
+        err.details?.applicationError?.description ||
+        err.details?.applicationError?.code ||
+        err.message ||
+        detail;
     } catch {
-      /* keep status code message */
+      /* keep status */
     }
     throw new Error(detail);
   }
 
-  const body = (await response.json()) as WixCreateInvoiceResponse;
-  if (!body.invoiceId) {
-    throw new Error("WIX_INVOICE_INVALID_RESPONSE");
-  }
-  return body;
+  const data = (await response.json()) as {
+    paymentLink?: {
+      id?: string;
+      links?: { url?: { url?: string; base?: string; path?: string } };
+      displayData?: { title?: string };
+    };
+  };
+
+  const invoiceId = data.paymentLink?.id;
+  if (!invoiceId) throw new Error("WIX_INVOICE_INVALID_RESPONSE");
+
+  const url =
+    data.paymentLink?.links?.url?.url ||
+    data.paymentLink?.links?.url?.base ||
+    null;
+
+  return {
+    invoiceId,
+    invoiceNumber: payload.workOrderNumber,
+    paymentLinkUrl: url,
+  };
+}
+
+/** @deprecated Prefer createWixPaymentLink — kept for optional Velo bridge. */
+export async function createWixInvoiceViaBridge(
+  payload: WixCreateInvoiceRequest
+): Promise<WixCreateInvoiceResponse> {
+  return createWixPaymentLink(payload);
 }

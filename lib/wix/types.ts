@@ -55,6 +55,7 @@ export type WixCreateInvoiceRequest = {
 export type WixCreateInvoiceResponse = {
   invoiceId: string;
   invoiceNumber?: string | null;
+  paymentLinkUrl?: string | null;
 };
 
 export type WixWebhookContactPayload = {

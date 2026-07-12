@@ -22,8 +22,8 @@ export async function createWixInvoiceAction(
     return {
       error: null,
       success: result.external_invoice_number
-        ? `Wix invoice ${result.external_invoice_number} created.`
-        : "Wix invoice created.",
+        ? `Wix payment link ${result.external_invoice_number} created.`
+        : "Wix payment link created.",
     };
   } catch (error) {
     return { error: toFormErrorMessage(error), success: null };

@@ -59,7 +59,7 @@ const MESSAGES: Record<string, string> = {
   WIX_NOT_CONFIGURED:
     "Wix is not configured. Add WIX_API_KEY and WIX_SITE_ID on the server.",
   WIX_INVOICE_NOT_CONFIGURED:
-    "Wix invoicing is not configured. Add WIX_INVOICE_HTTP_URL and WIX_INVOICE_HTTP_SECRET.",
+    "Wix is not configured. Add WIX_API_KEY and WIX_SITE_ID on the server.",
   WIX_WEBHOOK_NOT_CONFIGURED: "Wix webhook secret is not configured.",
   WIX_SYNC_MISCONFIGURED:
     "Wix sync needs SUPABASE_SERVICE_ROLE_KEY and Supabase URL.",
@@ -68,12 +68,13 @@ const MESSAGES: Record<string, string> = {
     "This customer is not linked to a Wix contact yet. Sync to Wix first.",
   WIX_CONTACT_SYNC_FAILED: "Could not sync this customer to Wix.",
   WIX_INVOICE_STATUS:
-    "Wix invoices can only be created when the work order is ready for pickup or completed.",
-  WIX_INVOICE_ALREADY_EXISTS: "A Wix invoice already exists for this work order.",
+    "Wix payment links can only be created when the work order is ready for pickup or completed.",
+  WIX_INVOICE_ALREADY_EXISTS:
+    "A Wix payment link already exists for this work order.",
   WIX_INVOICE_NO_LINE_ITEMS:
-    "Add billable jobs or parts before creating a Wix invoice.",
+    "Add billable jobs or parts before creating a Wix payment link.",
   WIX_INVOICE_INVALID_RESPONSE:
-    "Wix returned an unexpected invoice response. Check the site HTTP function.",
+    "Wix returned an unexpected payment link response.",
   WIX_WEBHOOK_INVALID: "Wix webhook payload is missing a contact id.",
   WIX_WEBHOOK_CONTACT_REQUIRED:
     "Wix webhook contact needs an email or phone number.",

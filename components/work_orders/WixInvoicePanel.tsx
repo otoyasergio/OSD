@@ -37,22 +37,25 @@ export function WixInvoicePanel({
 
   return (
     <section className="rounded border border-zinc-200 bg-white p-4">
-      <h2 className="text-lg font-semibold text-zinc-900">Wix invoice</h2>
+      <h2 className="text-lg font-semibold text-zinc-900">Wix payment link</h2>
       <p className="mt-1 text-sm text-zinc-600">
         {alreadyCreated
-          ? `Linked Wix invoice${
+          ? `Linked Wix payment link${
               externalInvoiceNumber ? ` ${externalInvoiceNumber}` : ""
             }.`
           : configured
             ? eligible
-              ? "Create a Wix invoice draft from billable jobs and parts on this work order."
+              ? "Create a Wix payment link from billable jobs and parts on this work order."
               : "Available when the work order is ready for pickup or completed."
-            : "Configure WIX_INVOICE_HTTP_URL and WIX_INVOICE_HTTP_SECRET to enable."}
+            : "Add WIX_API_KEY and WIX_SITE_ID on the server to enable."}
       </p>
 
       {!readOnly && canCreate && configured && eligible && !alreadyCreated ? (
         <form action={action} className="mt-3">
-          <SubmitButton label="Create Wix invoice" pendingLabel="Creating…" />
+          <SubmitButton
+            label="Create Wix payment link"
+            pendingLabel="Creating…"
+          />
         </form>
       ) : null}
 

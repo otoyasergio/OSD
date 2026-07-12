@@ -5,11 +5,10 @@ import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canCreateWixInvoice } from "@/lib/permissions";
 import {
-  getWixInvoiceBridgeConfig,
+  getWixContactsConfig,
   isWixContactsConfigured,
-  isWixInvoiceConfigured,
 } from "@/lib/wix/config";
-import { buildInvoiceLineItems, createWixInvoiceViaBridge } from "@/lib/wix/invoices";
+import { buildInvoiceLineItems, createWixPaymentLink } from "@/lib/wix/invoices";
 import { syncCustomerToWix } from "@/lib/services/wixContacts";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
@@ -21,10 +20,11 @@ const INVOICE_ELIGIBLE: WorkOrderStatus[] = [
 export type WixInvoiceResult = {
   wix_invoice_id: string;
   external_invoice_number: string | null;
+  payment_link_url: string | null;
 };
 
 export function isWixInvoiceAvailable(): boolean {
-  return isWixInvoiceConfigured() && isWixContactsConfigured();
+  return isWixContactsConfigured();
 }
 
 /**
@@ -36,7 +36,6 @@ export async function createWixInvoiceForWorkOrder(
 ): Promise<WixInvoiceResult> {
   const user = await requireUser();
   if (!canCreateWixInvoice(user.role)) throw new Error("FORBIDDEN");
-  if (!isWixInvoiceConfigured()) throw new Error("WIX_INVOICE_NOT_CONFIGURED");
   if (!isWixContactsConfigured()) throw new Error("WIX_NOT_CONFIGURED");
 
   const supabase = await createClient();
@@ -168,12 +167,12 @@ export async function createWixInvoiceForWorkOrder(
     ? motorcycleRel[0] ?? null
     : motorcycleRel;
 
-  const { currency } = getWixInvoiceBridgeConfig();
+  const { currency } = getWixContactsConfig();
   const title = motorcycle
     ? `${wo.work_order_number} · ${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
     : String(wo.work_order_number);
 
-  const created = await createWixInvoiceViaBridge({
+  const created = await createWixPaymentLink({
     workOrderNumber: String(wo.work_order_number),
     title,
     currency,
@@ -214,10 +213,13 @@ export async function createWixInvoiceForWorkOrder(
     event_type: TimelineEventType.EXTERNAL_INVOICE_NUMBER_ADDED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Wix invoice created (${invoiceNumber})`,
+    description: created.paymentLinkUrl
+      ? `Wix payment link created (${invoiceNumber})`
+      : `Wix payment link created (${invoiceNumber})`,
     new_value: {
       wix_invoice_id: created.invoiceId,
       invoice_number: invoiceNumber,
+      payment_link_url: created.paymentLinkUrl,
     },
   });
 
@@ -227,15 +229,17 @@ export async function createWixInvoiceForWorkOrder(
     action: "work_order_wix_invoice_created",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Wix invoice ${invoiceNumber} created for ${wo.work_order_number}`,
+    description: `Wix payment link ${invoiceNumber} created for ${wo.work_order_number}`,
     new_value: {
       wix_invoice_id: created.invoiceId,
       external_invoice_number: invoiceNumber,
+      payment_link_url: created.paymentLinkUrl,
     },
   });
 
   return {
     wix_invoice_id: created.invoiceId,
     external_invoice_number: invoiceNumber,
+    payment_link_url: created.paymentLinkUrl ?? null,
   };
 }
