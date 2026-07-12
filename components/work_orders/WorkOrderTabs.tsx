@@ -24,7 +24,7 @@ export function WorkOrderTabs({
   activeTab: WorkOrderTabId;
 }) {
   return (
-    <nav aria-label="Work order sections" className="tab-bar">
+    <nav aria-label="Work order sections" className="tab-bar tab-bar-scroll">
       {WORK_ORDER_TABS.map((tab) => {
         const active = tab.id === activeTab;
         return (

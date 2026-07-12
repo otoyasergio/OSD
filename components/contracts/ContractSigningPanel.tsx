@@ -76,14 +76,14 @@ export function ContractSigningPanel({
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-6">
+    <form onSubmit={submit} className="contract-signing-form flex flex-col gap-6">
       <div
-        className="prose prose-sm max-w-none rounded border border-zinc-200 bg-white p-4"
+        className="contract-signing-prose prose prose-sm max-w-none rounded border border-zinc-200 bg-white p-4"
         dangerouslySetInnerHTML={{ __html: template.body_html }}
       />
 
       {template.initial_fields.map((field) => (
-        <label key={field} className="block max-w-xs">
+        <label key={field} className="block w-full max-w-md">
           <span className="field-label capitalize">Initial — {field}</span>
           <input
             type="text"

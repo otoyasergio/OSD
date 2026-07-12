@@ -22,7 +22,7 @@ export default async function CustomerPortalPage({
   const template = view.has_signed_contract ? null : await getActiveAgreementTemplate();
 
   return (
-    <div className="min-h-dvh bg-zinc-100 px-4 py-8">
+    <div className="min-h-dvh bg-zinc-100 px-4 py-8 portal-page">
       <div className="mx-auto max-w-2xl">
         <header className="mb-6 text-center">
           <p className="text-sm font-semibold uppercase tracking-widest text-zinc-500">

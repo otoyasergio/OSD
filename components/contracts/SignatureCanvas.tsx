@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 type Props = {
   onChange: (dataUrl: string | null) => void;
@@ -14,12 +14,28 @@ export function SignatureCanvas({ onChange, height = 180 }: Props) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.strokeStyle = "#111";
-    ctx.lineWidth = 2;
-    ctx.lineCap = "round";
-  }, []);
+
+    const setup = () => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width <= 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.strokeStyle = "#111";
+      ctx.lineWidth = 2;
+      ctx.lineCap = "round";
+    };
+
+    setup();
+    const observer = new ResizeObserver(setup);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [height]);
 
   function pointerPos(
     event: React.PointerEvent<HTMLCanvasElement>
@@ -27,8 +43,8 @@ export function SignatureCanvas({ onChange, height = 180 }: Props) {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     return {
-      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
-      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
     };
   }
 
@@ -70,7 +86,8 @@ export function SignatureCanvas({ onChange, height = 180 }: Props) {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const dpr = window.devicePixelRatio || 1;
+    ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
     onChange(null);
   }
 
@@ -78,8 +95,6 @@ export function SignatureCanvas({ onChange, height = 180 }: Props) {
     <div className="flex flex-col gap-2">
       <canvas
         ref={canvasRef}
-        width={800}
-        height={height * 2}
         className="w-full touch-none rounded border border-zinc-300 bg-white"
         style={{ height }}
         aria-label="Signature pad"

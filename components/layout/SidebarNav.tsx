@@ -19,7 +19,11 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function SidebarNav() {
+type Props = {
+  onNavigate?: () => void;
+};
+
+export function SidebarNav({ onNavigate }: Props) {
   const pathname = usePathname();
 
   return (
@@ -33,6 +37,7 @@ export function SidebarNav() {
               href={link.href}
               className={active ? "nav-link nav-link-active" : "nav-link"}
               aria-current={active ? "page" : undefined}
+              onClick={onNavigate}
             >
               {link.label}
             </Link>
@@ -51,6 +56,7 @@ export function SidebarNav() {
           aria-current={
             isActivePath(pathname, SETTINGS_LINK.href) ? "page" : undefined
           }
+          onClick={onNavigate}
         >
           {SETTINGS_LINK.label}
         </Link>
