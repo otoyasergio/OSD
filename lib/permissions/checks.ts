@@ -32,6 +32,14 @@ export function canOrderPart(role: UserRole) {
 export function canViewPartsBoard(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "technician";
 }
+/** MSRP + dealer cost on catalog/part lines. */
+export function canViewPartCost(role: UserRole) {
+  return FRONT_OFFICE.includes(role) || role === "admin";
+}
+/** Manual Parts Canada inventory sync (owner/manager). */
+export function canSyncPartsCanadaCatalog(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
 export function canCompleteJob(role: UserRole) {
   return role === "technician" || FRONT_OFFICE.includes(role);
 }

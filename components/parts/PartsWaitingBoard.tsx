@@ -8,7 +8,14 @@ function daysLabel(days: number): string {
   return `${days} days`;
 }
 
+function moneyLabel(value: number | null): string | null {
+  if (value == null || !Number.isFinite(Number(value))) return null;
+  return `$${Number(value).toFixed(2)}`;
+}
+
 function PartWaitingCard({ item }: { item: PartsWaitingItem }) {
+  const price = moneyLabel(item.unit_price);
+
   return (
     <article className="card">
       <div className="card-body flex flex-col gap-2">
@@ -19,6 +26,7 @@ function PartWaitingCard({ item }: { item: PartsWaitingItem }) {
         <p className="wo-card-meta">
           {item.job_name}
           {item.quantity > 1 ? ` · qty ${item.quantity}` : ""}
+          {price ? ` · ${price}` : ""}
         </p>
         <p className="wo-card-meta">{item.motorcycle_label}</p>
         {item.assigned_technician_label ? (
@@ -33,10 +41,18 @@ function PartWaitingCard({ item }: { item: PartsWaitingItem }) {
               {daysLabel(item.days_waiting)}
             </span>
           </div>
-          {item.supplier || item.part_number ? (
+          {item.supplier || item.part_number || item.supplier_stock != null ? (
             <p className="wo-card-next-action">
               <span className="wo-card-next-label">
-                {[item.part_number, item.supplier].filter(Boolean).join(" · ")}
+                {[
+                  item.part_number,
+                  item.supplier,
+                  item.supplier_stock != null
+                    ? `PC stock ${item.supplier_stock}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             </p>
           ) : null}
@@ -75,25 +91,31 @@ function Column({
 }
 
 export function PartsWaitingBoard({ items }: { items: PartsWaitingItem[] }) {
-  const needed = items.filter((item) => item.status === "needed");
-  const ordered = items.filter((item) => item.status === "ordered");
+  const toOrder = items.filter((item) => item.bucket === "to_order");
+  const inStock = items.filter((item) => item.bucket === "in_stock");
+  const ordered = items.filter((item) => item.bucket === "ordered");
 
   if (items.length === 0) {
     return (
       <EmptyState
-        title="No parts waiting"
-        description="Parts marked needed or ordered on open work orders will appear here."
+        title="No parts in the pipeline"
+        description="After a job is approved, needed parts show under To order. In-stock and ordered parts appear in their own columns."
         action={{ href: "/work_orders", label: "View work orders" }}
       />
     );
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-3">
       <Column
-        title="Needed"
-        items={needed}
-        emptyDescription="No parts still marked as needed."
+        title="To order"
+        items={toOrder}
+        emptyDescription="No approved parts still need ordering."
+      />
+      <Column
+        title="In stock"
+        items={inStock}
+        emptyDescription="No parts marked in stock on open work orders."
       />
       <Column
         title="Ordered"

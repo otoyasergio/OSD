@@ -1,8 +1,10 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { PartStatus, WorkOrderStatus } from "@/lib/database/types";
+import type { JobStatus, PartStatus, WorkOrderStatus } from "@/lib/database/types";
 import { canViewPartsBoard } from "@/lib/permissions";
 import { PART_STATUS_LABELS } from "@/lib/status/labels";
+
+export type PartsBoardBucket = "to_order" | "in_stock" | "ordered";
 
 export type PartsWaitingItem = {
   part_id: string;
@@ -10,7 +12,10 @@ export type PartsWaitingItem = {
   part_number: string | null;
   supplier: string | null;
   quantity: number;
-  status: Extract<PartStatus, "needed" | "ordered">;
+  unit_price: number | null;
+  supplier_stock: number | null;
+  status: Extract<PartStatus, "needed" | "in_stock" | "ordered">;
+  bucket: PartsBoardBucket;
   status_label: string;
   ordered_at: string | null;
   created_at: string;
@@ -18,6 +23,7 @@ export type PartsWaitingItem = {
   days_waiting: number;
   job_id: string;
   job_name: string;
+  job_status: JobStatus;
   assigned_technician_id: string | null;
   assigned_technician_label: string | null;
   work_order_id: string;
@@ -28,9 +34,15 @@ export type PartsWaitingItem = {
   href: string;
 };
 
-const WAITING_STATUSES: Array<Extract<PartStatus, "needed" | "ordered">> = [
-  "needed",
-  "ordered",
+const BOARD_STATUSES: Array<
+  Extract<PartStatus, "needed" | "in_stock" | "ordered">
+> = ["needed", "in_stock", "ordered"];
+
+const ORDERABLE_JOB_STATUSES: JobStatus[] = [
+  "approved",
+  "waiting_for_parts",
+  "ready_to_start",
+  "in_progress",
 ];
 
 type NestedCustomer = { first_name: string; last_name: string };
@@ -55,6 +67,7 @@ type NestedWorkOrder = {
 type NestedJob = {
   job_id: string;
   service_name_snapshot: string;
+  status: JobStatus;
   assigned_technician_id: string | null;
   assigned_technician: NestedTechnician | NestedTechnician[] | null;
   work_order: NestedWorkOrder | NestedWorkOrder[] | null;
@@ -70,6 +83,19 @@ function daysBetween(fromIso: string, now: Date): number {
   if (Number.isNaN(from.getTime())) return 0;
   const ms = now.getTime() - from.getTime();
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+}
+
+function resolveBucket(
+  status: Extract<PartStatus, "needed" | "in_stock" | "ordered">,
+  jobStatus: JobStatus
+): PartsBoardBucket | null {
+  if (status === "in_stock") return "in_stock";
+  if (status === "ordered") return "ordered";
+  // To order: still needed, and job already approved (or later).
+  if (status === "needed" && ORDERABLE_JOB_STATUSES.includes(jobStatus)) {
+    return "to_order";
+  }
+  return null;
 }
 
 export async function listPartsWaitingForLocation(
@@ -90,12 +116,15 @@ export async function listPartsWaitingForLocation(
       part_number,
       supplier,
       quantity,
+      unit_price,
+      supplier_stock,
       status,
       ordered_at,
       created_at,
       job:job_id (
         job_id,
         service_name_snapshot,
+        status,
         assigned_technician_id,
         assigned_technician:assigned_technician_id (
           user_id,
@@ -120,7 +149,7 @@ export async function listPartsWaitingForLocation(
       )
     `
     )
-    .in("status", WAITING_STATUSES)
+    .in("status", BOARD_STATUSES)
     .order("created_at", { ascending: true });
 
   if (error) throw error;
@@ -135,7 +164,9 @@ export async function listPartsWaitingForLocation(
     part_number: string | null;
     supplier: string | null;
     quantity: number;
-    status: Extract<PartStatus, "needed" | "ordered">;
+    unit_price: number | null;
+    supplier_stock: number | null;
+    status: Extract<PartStatus, "needed" | "in_stock" | "ordered">;
     ordered_at: string | null;
     created_at: string;
     job: NestedJob | NestedJob[] | null;
@@ -157,6 +188,9 @@ export async function listPartsWaitingForLocation(
       continue;
     }
 
+    const bucket = resolveBucket(row.status, job.status);
+    if (!bucket) continue;
+
     const motorcycle = unwrapOne(workOrder.motorcycle);
     const customer = unwrapOne(motorcycle?.customer);
     const technician = unwrapOne(job.assigned_technician);
@@ -171,7 +205,10 @@ export async function listPartsWaitingForLocation(
       part_number: row.part_number,
       supplier: row.supplier,
       quantity: row.quantity,
+      unit_price: row.unit_price,
+      supplier_stock: row.supplier_stock,
       status: row.status,
+      bucket,
       status_label: PART_STATUS_LABELS[row.status] ?? row.status,
       ordered_at: row.ordered_at,
       created_at: row.created_at,
@@ -179,6 +216,7 @@ export async function listPartsWaitingForLocation(
       days_waiting: daysBetween(waitingSince, now),
       job_id: job.job_id,
       job_name: job.service_name_snapshot,
+      job_status: job.status,
       assigned_technician_id: job.assigned_technician_id,
       assigned_technician_label: technician
         ? `${technician.first_name} ${technician.last_name}`

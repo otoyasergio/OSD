@@ -8,6 +8,7 @@ import {
   canCompleteJob,
   canEditWorkOrder,
   canOrderPart,
+  canViewPartCost,
 } from "@/lib/permissions";
 import { partSchema, partStatusSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
@@ -21,6 +22,10 @@ export type Part = {
   quantity: number;
   status: PartStatus;
   notes: string | null;
+  unit_price: number | null;
+  unit_cost: number | null;
+  supplier_stock: number | null;
+  catalog_source: "parts_canada" | "manual" | null;
   created_by_user_id: string | null;
   ordered_at: string | null;
   installed_at: string | null;
@@ -43,7 +48,7 @@ const ORDERABLE_JOB_STATUSES: JobStatus[] = [
 ];
 
 const COLUMNS =
-  "part_id, job_id, part_name, part_number, supplier, quantity, status, notes, created_by_user_id, ordered_at, installed_at, created_at, updated_at";
+  "part_id, job_id, part_name, part_number, supplier, quantity, status, notes, unit_price, unit_cost, supplier_stock, catalog_source, created_by_user_id, ordered_at, installed_at, created_at, updated_at";
 
 type JobRow = {
   job_id: string;
@@ -102,7 +107,7 @@ async function requireMutableWorkOrder(
 export async function listPartsForWorkOrder(
   workOrderId: string
 ): Promise<Part[]> {
-  await requireUser();
+  const user = await requireUser();
   const supabase = await createClient();
 
   const { data: jobs, error: jobsError } = await supabase
@@ -132,7 +137,9 @@ export async function listPartsForWorkOrder(
     .order("created_at", { ascending: false });
 
   if (error) throw error;
-  return (data ?? []) as unknown as Part[];
+  const parts = (data ?? []) as unknown as Part[];
+  if (canViewPartCost(user.role)) return parts;
+  return parts.map((part) => ({ ...part, unit_cost: null }));
 }
 
 export async function addPartToJob(
@@ -143,6 +150,10 @@ export async function addPartToJob(
     supplier?: string | null;
     quantity?: number;
     notes?: string | null;
+    unit_price?: number | null;
+    unit_cost?: number | null;
+    supplier_stock?: number | null;
+    catalog_source?: "parts_canada" | "manual" | null;
   }
 ): Promise<Part> {
   const user = await requireUser();
@@ -169,6 +180,10 @@ export async function addPartToJob(
       supplier: parsed.supplier ?? null,
       quantity: parsed.quantity,
       notes: parsed.notes ?? null,
+      unit_price: parsed.unit_price ?? null,
+      unit_cost: parsed.unit_cost ?? null,
+      supplier_stock: parsed.supplier_stock ?? null,
+      catalog_source: parsed.catalog_source ?? "manual",
       status: "needed",
       created_by_user_id: user.user_id,
     })
@@ -199,6 +214,68 @@ export async function addPartToJob(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  return part;
+}
+
+export async function updatePartUnitPrice(
+  partId: string,
+  unitPrice: number | null
+): Promise<Part> {
+  const user = await requireUser();
+  if (!canOrderPart(user.role) && !canEditWorkOrder(user.role)) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const price =
+    unitPrice === null || unitPrice === undefined
+      ? null
+      : Number(unitPrice);
+  if (price !== null && (!Number.isFinite(price) || price < 0)) {
+    throw new Error("Invalid unit price");
+  }
+
+  const supabase = await createClient();
+  const { data: existing, error: loadError } = await supabase
+    .from("part")
+    .select(COLUMNS)
+    .eq("part_id", partId)
+    .maybeSingle();
+
+  if (loadError) throw loadError;
+  if (!existing) throw new Error("PART_NOT_FOUND");
+
+  const job = await loadJob(supabase, existing.job_id);
+  if (!job) throw new Error("JOB_NOT_FOUND");
+
+  const { locationId, workOrderNumber } = await requireMutableWorkOrder(
+    user,
+    job.work_order_id
+  );
+
+  const { data, error } = await supabase
+    .from("part")
+    .update({
+      unit_price: price,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("part_id", partId)
+    .select(COLUMNS)
+    .single();
+
+  if (error) throw error;
+  const part = data as Part;
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: locationId,
+    action: "part_price_updated",
+    entity_type: "part",
+    entity_id: partId,
+    description: `Part price updated on ${workOrderNumber}`,
+    old_value: { unit_price: existing.unit_price },
+    new_value: { unit_price: part.unit_price },
+  });
+
   return part;
 }
 

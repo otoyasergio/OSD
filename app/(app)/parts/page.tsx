@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
-import { canViewPartsBoard } from "@/lib/permissions";
+import {
+  canOrderPart,
+  canSyncPartsCanadaCatalog,
+  canViewPartsBoard,
+} from "@/lib/permissions";
 import { listPartsWaitingForLocation } from "@/lib/services/partsBoard";
+import { getPartsCanadaSyncStatus } from "@/lib/services/partsCanadaCatalog";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PartsWaitingBoard } from "@/components/parts/PartsWaitingBoard";
+import { PartsCanadaSyncPanel } from "@/components/parts/PartsCanadaSyncPanel";
 import { SELECT_CLASS } from "@/components/forms/Field";
 
 export const dynamic = "force-dynamic";
@@ -22,32 +28,45 @@ export default async function PartsWaitingPage({
 
   const params = await searchParams;
   const technicianId = params.technician_id?.trim() || "";
+  const canSync = canSyncPartsCanadaCatalog(user.role);
 
-  const [items, technicians] = await Promise.all([
+  const [items, technicians, syncStatus] = await Promise.all([
     listPartsWaitingForLocation(user.active_location_id, {
       technicianId: technicianId || undefined,
     }),
     listTechniciansForActiveLocation(),
+    canOrderPart(user.role)
+      ? getPartsCanadaSyncStatus().catch(() => null)
+      : Promise.resolve(null),
   ]);
 
-  const neededCount = items.filter((item) => item.status === "needed").length;
-  const orderedCount = items.filter((item) => item.status === "ordered").length;
+  const toOrderCount = items.filter((item) => item.bucket === "to_order").length;
+  const inStockCount = items.filter((item) => item.bucket === "in_stock").length;
+  const orderedCount = items.filter((item) => item.bucket === "ordered").length;
 
   return (
     <div className="page-stack page-stack--wide">
       <PageHeader
-        title="Parts waiting"
-        subtitle="Needed and ordered parts across open work orders at this location."
+        title="Parts"
+        subtitle="To order (after customer approval), in stock, and ordered — across open work orders at this location."
       />
 
-      <div className="grid gap-2 sm:grid-cols-3 lg:max-w-2xl">
-        <div className="stat-card" aria-label={`${items.length} parts waiting`}>
-          <span className="stat-card-label">Waiting</span>
+      {syncStatus ? (
+        <PartsCanadaSyncPanel status={syncStatus} canSync={canSync} />
+      ) : null}
+
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 lg:max-w-4xl">
+        <div className="stat-card" aria-label={`${items.length} parts total`}>
+          <span className="stat-card-label">Total</span>
           <span className="stat-card-value">{items.length}</span>
         </div>
-        <div className="stat-card" aria-label={`${neededCount} needed`}>
-          <span className="stat-card-label">Needed</span>
-          <span className="stat-card-value">{neededCount}</span>
+        <div className="stat-card" aria-label={`${toOrderCount} to order`}>
+          <span className="stat-card-label">To order</span>
+          <span className="stat-card-value">{toOrderCount}</span>
+        </div>
+        <div className="stat-card" aria-label={`${inStockCount} in stock`}>
+          <span className="stat-card-label">In stock</span>
+          <span className="stat-card-value">{inStockCount}</span>
         </div>
         <div className="stat-card" aria-label={`${orderedCount} ordered`}>
           <span className="stat-card-label">Ordered</span>

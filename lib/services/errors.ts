@@ -43,6 +43,19 @@ const MESSAGES: Record<string, string> = {
     "Parts cannot be ordered before customer approval.",
   PART_INSTALL_REQUIRES_TECHNICIAN:
     "Assign a technician to the job before marking parts installed.",
+  PARTS_CANADA_NOT_CONFIGURED:
+    "Parts Canada is not configured. Add PARTS_CANADA_API_KEY on the server.",
+  PARTS_CANADA_SYNC_MISCONFIGURED:
+    "Parts Canada sync needs SUPABASE_SERVICE_ROLE_KEY and Supabase URL.",
+  PARTS_CANADA_FORBIDDEN:
+    "Parts Canada denied access. Check the API key and account mode.",
+  PARTS_CANADA_INVENTORY_MISSING:
+    "Parts Canada inventory file is not available yet.",
+  PARTS_CANADA_INVENTORY_INVALID:
+    "Parts Canada inventory download did not contain a CSV file.",
+  PARTS_CANADA_RATE_LIMITED:
+    "Parts Canada rate limit hit. Try again later (inventory is limited to a few downloads per day).",
+  PARTS_CANADA_SYNC_FAILED: "Parts Canada catalog sync failed.",
   PHOTO_REQUIRED: "Choose a photo to upload.",
   PHOTO_TOO_LARGE: "Photos must be 10 MB or smaller.",
   PHOTO_TYPE_INVALID: "Use a JPEG, PNG, WebP, or HEIC image.",

@@ -104,6 +104,10 @@ export const partSchema = z.object({
   supplier: z.string().nullable().optional(),
   quantity: z.number().positive().default(1),
   notes: z.string().nullable().optional(),
+  unit_price: z.number().nonnegative().nullable().optional(),
+  unit_cost: z.number().nonnegative().nullable().optional(),
+  supplier_stock: z.number().int().nullable().optional(),
+  catalog_source: z.enum(["parts_canada", "manual"]).nullable().optional(),
 });
 
 export const partStatusSchema = z.enum([

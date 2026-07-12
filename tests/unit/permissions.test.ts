@@ -5,6 +5,8 @@ import {
   canViewAuditLog,
   canOrderPart,
   canViewPartsBoard,
+  canViewPartCost,
+  canSyncPartsCanadaCatalog,
   canCompleteWorkOrder,
   canRunQualityCheck,
   canManageServiceCatalogue,
@@ -57,6 +59,21 @@ describe("permissions", () => {
     expect(canViewPartsBoard("service_advisor")).toBe(true);
     expect(canViewPartsBoard("technician")).toBe(true);
     expect(canViewPartsBoard("admin")).toBe(false);
+  });
+
+  it("canViewPartCost allows front office and admin, not technicians", () => {
+    expect(canViewPartCost("owner")).toBe(true);
+    expect(canViewPartCost("manager")).toBe(true);
+    expect(canViewPartCost("service_advisor")).toBe(true);
+    expect(canViewPartCost("admin")).toBe(true);
+    expect(canViewPartCost("technician")).toBe(false);
+  });
+
+  it("canSyncPartsCanadaCatalog is owner/manager only", () => {
+    expect(canSyncPartsCanadaCatalog("owner")).toBe(true);
+    expect(canSyncPartsCanadaCatalog("manager")).toBe(true);
+    expect(canSyncPartsCanadaCatalog("service_advisor")).toBe(false);
+    expect(canSyncPartsCanadaCatalog("technician")).toBe(false);
   });
 
   it("front office can update motorcycle service information", () => {

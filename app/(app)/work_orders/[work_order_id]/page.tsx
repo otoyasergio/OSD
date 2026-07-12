@@ -16,6 +16,7 @@ import {
   canRecordCustomerApproval,
   canRunQualityCheck,
   canUpdateServiceInformation,
+  canViewPartCost,
 } from "@/lib/permissions";
 import {
   getWorkOrderDetail,
@@ -68,6 +69,7 @@ import {
 } from "@/app/(app)/work_orders/recommendation-actions";
 import {
   addPartAction,
+  updatePartPriceAction,
   updatePartStatusAction,
 } from "@/app/(app)/work_orders/part-actions";
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
@@ -144,6 +146,7 @@ export default async function WorkOrderDetailPage({
   const canRecommend = canCreateRecommendation(user.role);
   const canConvert = canConvertRecommendation(user.role);
   const canManageParts = canOrderPart(user.role) || canEditWorkOrder(user.role);
+  const canSeePartCost = canViewPartCost(user.role);
   const canAdd =
     canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
   const canUploadPhotos =
@@ -343,9 +346,13 @@ export default async function WorkOrderDetailPage({
           readOnly={detail.is_foreign_location}
           canManage={canManageParts}
           canInstall={canComplete}
+          canViewCost={canSeePartCost}
           addAction={addPartAction.bind(null, detail.work_order_id)}
           statusActionFor={(partId) =>
             updatePartStatusAction.bind(null, detail.work_order_id, partId)
+          }
+          priceActionFor={(partId) =>
+            updatePartPriceAction.bind(null, detail.work_order_id, partId)
           }
         />
       ) : null}
