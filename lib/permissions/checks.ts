@@ -40,6 +40,13 @@ export function canViewPartCost(role: UserRole) {
 export function canSyncPartsCanadaCatalog(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
+/** Push/pull Wix contacts and create Wix invoices from work orders. */
+export function canSyncWixContacts(role: UserRole) {
+  return FRONT_OFFICE.includes(role) || role === "admin";
+}
+export function canCreateWixInvoice(role: UserRole) {
+  return FRONT_OFFICE.includes(role);
+}
 export function canCompleteJob(role: UserRole) {
   return role === "technician" || FRONT_OFFICE.includes(role);
 }

@@ -8,6 +8,7 @@ import type { QualityFormState } from "@/app/(app)/work_orders/quality-actions";
 import { FormError, TextAreaField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
+import { WixInvoicePanel } from "@/components/work_orders/WixInvoicePanel";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
@@ -38,6 +39,8 @@ export function OverviewTab({
   canResumeHold,
   canOverrideComplete,
   readOnly,
+  wixInvoiceConfigured,
+  canCreateWixInvoice,
   assignAction,
   setPrimaryAction,
   qcAction,
@@ -57,6 +60,8 @@ export function OverviewTab({
   canResumeHold: boolean;
   canOverrideComplete: boolean;
   readOnly: boolean;
+  wixInvoiceConfigured: boolean;
+  canCreateWixInvoice: boolean;
   assignAction: Action;
   setPrimaryAction: Action;
   qcAction: QualityAction;
@@ -137,6 +142,16 @@ export function OverviewTab({
           {detail.internal_notes?.trim() || "No internal notes."}
         </p>
       </section>
+
+      <WixInvoicePanel
+        workOrderId={detail.work_order_id}
+        status={detail.status}
+        externalInvoiceNumber={detail.external_invoice_number}
+        wixInvoiceId={detail.wix_invoice_id}
+        configured={wixInvoiceConfigured}
+        canCreate={canCreateWixInvoice}
+        readOnly={readOnly}
+      />
 
       <section className="rounded border border-zinc-200 bg-white p-4">
         <h2 className="text-lg font-semibold text-zinc-900">Assigned technicians</h2>

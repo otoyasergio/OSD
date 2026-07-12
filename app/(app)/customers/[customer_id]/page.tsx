@@ -5,12 +5,14 @@ import { listGarageForCustomer } from "@/lib/services/clientGarage";
 import { listWorkOrdersForCustomer } from "@/lib/services/filedWorkOrders";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { ClientGarage } from "@/components/customers/ClientGarage";
+import { WixCustomerSyncPanel } from "@/components/customers/WixCustomerSyncPanel";
 import { updateCustomerAction } from "@/app/(app)/customers/actions";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import type { CustomerWorkOrderSummary } from "@/lib/services/filedWorkOrders";
 import { requireUser } from "@/lib/auth/session";
-import { canEditWorkOrder } from "@/lib/permissions";
+import { canEditWorkOrder, canSyncWixContacts } from "@/lib/permissions";
+import { isWixSyncAvailable } from "@/lib/services/wixContacts";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -101,6 +103,8 @@ export default async function CustomerDetailPage({
   ]);
   const updateAction = updateCustomerAction.bind(null, customer_id);
   const canTransfer = canEditWorkOrder(user.role);
+  const canSyncWix = canSyncWixContacts(user.role);
+  const wixConfigured = isWixSyncAvailable();
 
   return (
     <div className="page-stack page-stack--narrow">
@@ -118,6 +122,13 @@ export default async function CustomerDetailPage({
           {customer.phone ?? "No phone"} · {customer.email ?? "No email"}
         </p>
       </div>
+
+      <WixCustomerSyncPanel
+        customerId={customer_id}
+        wixContactId={customer.wix_contact_id}
+        configured={wixConfigured}
+        canSync={canSyncWix}
+      />
 
       <ClientGarage
         customerId={customer_id}

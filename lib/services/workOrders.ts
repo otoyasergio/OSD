@@ -16,6 +16,7 @@ export type WorkOrder = {
   location_id: string;
   work_order_number: string;
   external_invoice_number: string | null;
+  wix_invoice_id: string | null;
   status: WorkOrderStatus;
   primary_technician_id: string | null;
   created_by_user_id: string | null;
@@ -83,7 +84,7 @@ export type TechnicianOption = {
 };
 
 const WORK_ORDER_COLUMNS =
-  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, created_at, updated_at";
+  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, wix_invoice_id, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, created_at, updated_at";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -383,6 +384,7 @@ export async function getWorkOrderDetail(
     location_id: row.location_id as string,
     work_order_number: row.work_order_number as string,
     external_invoice_number: row.external_invoice_number as string | null,
+    wix_invoice_id: row.wix_invoice_id as string | null,
     status: row.status as WorkOrderStatus,
     primary_technician_id: row.primary_technician_id as string | null,
     created_by_user_id: row.created_by_user_id as string | null,

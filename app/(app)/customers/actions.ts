@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createCustomer, updateCustomer } from "@/lib/services/customers";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { syncCustomerToWixAfterSave } from "@/app/(app)/customers/wix-actions";
 
 export type CustomerFormState = { error: string | null };
 
@@ -26,6 +27,7 @@ export async function createCustomerAction(
   try {
     const customer = await createCustomer(readCustomerInput(formData));
     customerId = customer.customer_id;
+    await syncCustomerToWixAfterSave(customerId);
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -41,6 +43,7 @@ export async function updateCustomerAction(
 ): Promise<CustomerFormState> {
   try {
     await updateCustomer(customerId, readCustomerInput(formData));
+    await syncCustomerToWixAfterSave(customerId);
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

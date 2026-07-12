@@ -12,12 +12,14 @@ import {
   canEditWorkOrder,
   canMarkReadyForPickup,
   canOrderPart,
+  canCreateWixInvoice,
   canOverrideWorkOrderStatus,
   canRecordCustomerApproval,
   canRunQualityCheck,
   canUpdateServiceInformation,
   canViewPartCost,
 } from "@/lib/permissions";
+import { isWixInvoiceAvailable } from "@/lib/services/wixInvoices";
 import {
   getWorkOrderDetail,
   listTechniciansForActiveLocation,
@@ -163,6 +165,8 @@ export default async function WorkOrderDetailPage({
   const canOverrideComplete = canOverrideWorkOrderStatus(user.role);
   const canEditServiceInfo =
     !detail.is_foreign_location && canUpdateServiceInformation(user.role);
+  const canWixInvoice = canCreateWixInvoice(user.role);
+  const wixInvoiceConfigured = isWixInvoiceAvailable();
 
   const fromResult = fromResultId
     ? inspection?.results.find((r) => r.inspection_result_id === fromResultId)
@@ -211,6 +215,8 @@ export default async function WorkOrderDetailPage({
           canResumeHold={canResumeHold}
           canOverrideComplete={canOverrideComplete}
           readOnly={detail.is_foreign_location}
+          wixInvoiceConfigured={wixInvoiceConfigured}
+          canCreateWixInvoice={canWixInvoice}
           assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
           setPrimaryAction={setPrimaryTechnicianAction.bind(
             null,
