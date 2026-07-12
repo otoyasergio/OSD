@@ -72,11 +72,20 @@ export function InspectionItemRow({
   const measurementRef = useRef(measurement);
   const notesRef = useRef(notes);
 
-  useEffect(() => {
+  // Re-sync local edits when the server row changes (adjust-state-during-render
+  // pattern, https://react.dev/learn/you-might-not-need-an-effect).
+  const [prevResult, setPrevResult] = useState(result);
+  if (
+    prevResult.status !== result.status ||
+    prevResult.measurement !== result.measurement ||
+    prevResult.notes !== result.notes ||
+    prevResult.updated_at !== result.updated_at
+  ) {
+    setPrevResult(result);
     setStatus(result.status);
     setMeasurement(result.measurement ?? "");
     setNotes(result.notes ?? "");
-  }, [result.status, result.measurement, result.notes, result.updated_at]);
+  }
 
   useEffect(() => {
     measurementRef.current = measurement;

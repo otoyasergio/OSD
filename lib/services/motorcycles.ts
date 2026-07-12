@@ -477,8 +477,6 @@ export async function transferMotorcycle(
     new_customer_id: input.new_customer_id,
   });
 
-  const previous = motorcycleRow as Motorcycle;
-
   const { data, error } = await supabase
     .from("motorcycle")
     .update({

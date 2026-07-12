@@ -38,9 +38,7 @@ export async function completeQualityCheckAction(
 }
 
 export async function markReadyForPickupAction(
-  workOrderId: string,
-  _prevState: QualityFormState,
-  _formData: FormData
+  workOrderId: string
 ): Promise<QualityFormState> {
   try {
     await markReadyForPickup(workOrderId);
@@ -86,9 +84,7 @@ export async function cancelWorkOrderAction(
 }
 
 export async function resumeWorkOrderFromHoldAction(
-  workOrderId: string,
-  _prevState: QualityFormState,
-  _formData: FormData
+  workOrderId: string
 ): Promise<QualityFormState> {
   try {
     await resumeWorkOrderFromHold(workOrderId);

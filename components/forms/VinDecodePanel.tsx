@@ -22,18 +22,23 @@ function formatDisplacement(result: VinDecodeResult): string | null {
 }
 
 export function VinDecodePanel({ vin }: Props) {
-  const [decode, setDecode] = useState<VinDecodeResult | null>(null);
+  const [lookup, setLookup] = useState<{
+    vin: string;
+    result: VinDecodeResult;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
+  const value = vin?.trim() ? vin.trim().toUpperCase() : null;
 
   useEffect(() => {
-    setDecode(null);
-    if (!vin?.trim()) return;
-    const value = vin.trim().toUpperCase();
+    if (!value) return;
     startTransition(async () => {
       const result = await decodeVinAction(value);
-      setDecode(result);
+      setLookup({ vin: value, result });
     });
-  }, [vin]);
+  }, [value]);
+
+  // Only show a decode that matches the current VIN; stale lookups read as null.
+  const decode = value && lookup?.vin === value ? lookup.result : null;
 
   if (!vin?.trim()) {
     return (

@@ -50,9 +50,11 @@ export function VinField({
   const [isPending, startTransition] = useTransition();
   const lastDecoded = useRef<string>("");
   const onSuggestionRef = useRef(onSuggestion);
-  onSuggestionRef.current = onSuggestion;
   const onVinReadyRef = useRef(onVinReady);
-  onVinReadyRef.current = onVinReady;
+  useEffect(() => {
+    onSuggestionRef.current = onSuggestion;
+    onVinReadyRef.current = onVinReady;
+  });
 
   function runValidation(next: string): boolean {
     const result = validateOptionalVin(next);
@@ -73,10 +75,8 @@ export function VinField({
 
   function requestDecode(raw: string) {
     const result = validateOptionalVin(raw);
-    if (!result.ok || !result.vin) {
-      setDecode(null);
-      return;
-    }
+    // Callers only pass VINs that already passed validation.
+    if (!result.ok || !result.vin) return;
     if (lastDecoded.current === result.vin) return;
     lastDecoded.current = result.vin;
 
@@ -103,7 +103,9 @@ export function VinField({
     if (!defaultValue) return;
     const normalized = normalizeVin(defaultValue);
     if (normalized.length === 17 && validateOptionalVin(normalized).ok) {
-      runValidation(normalized);
+      // A valid prefilled VIN renders with error already null; just notify
+      // the parent and kick off the decode.
+      onVinReadyRef.current?.(normalized);
       requestDecode(normalized);
     }
     // Initial mount only — intentional.

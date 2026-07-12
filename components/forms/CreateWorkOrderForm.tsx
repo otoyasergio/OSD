@@ -94,9 +94,16 @@ export function CreateWorkOrderForm({
   const [internalNotes, setInternalNotes] = useState("");
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [primaryTechnicianId, setPrimaryTechnicianId] = useState("");
-  const [outstanding, setOutstanding] = useState<OutstandingRecommendation[]>(
-    []
-  );
+  const [outstandingFetch, setOutstandingFetch] = useState<{
+    motorcycleId: string;
+    rows: OutstandingRecommendation[];
+  } | null>(null);
+  // Only show recommendations fetched for the currently selected bike; a
+  // stale or absent fetch reads as empty.
+  const outstanding =
+    motorcycleId && outstandingFetch?.motorcycleId === motorcycleId
+      ? outstandingFetch.rows
+      : [];
 
   const initialStepIndex = (() => {
     if (initialMotorcycleId && resolvedInitialCustomerId) return 2;
@@ -143,14 +150,11 @@ export function CreateWorkOrderForm({
   const canProceed = canProceedFromWizardStep(stepId, stepData);
 
   useEffect(() => {
-    if (!motorcycleId) {
-      setOutstanding([]);
-      return;
-    }
+    if (!motorcycleId) return;
 
     let cancelled = false;
     void getOutstandingRecommendationsAction(motorcycleId).then((rows) => {
-      if (!cancelled) setOutstanding(rows);
+      if (!cancelled) setOutstandingFetch({ motorcycleId, rows });
     });
 
     return () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import Link from "next/link";
 import type { MotorcycleFormState } from "@/app/(app)/motorcycles/actions";
 import type { CustomerOption } from "@/components/forms/MotorcycleForm";
 import { FormError } from "@/components/forms/Field";
@@ -76,9 +77,9 @@ export function TransferMotorcycleForm({
       {candidates.length === 0 ? (
         <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           No other customers on file.{" "}
-          <a href="/customers/new" className="font-semibold underline-offset-2 hover:underline">
+          <Link href="/customers/new" className="font-semibold underline-offset-2 hover:underline">
             Create a customer
-          </a>{" "}
+          </Link>{" "}
           first, then transfer.
         </p>
       ) : null}

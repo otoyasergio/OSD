@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import type { MotorcycleFormState } from "@/app/(app)/motorcycles/actions";
 import {
   acceptVinTransferAction,
@@ -92,11 +92,6 @@ export function MotorcycleForm({
     setConflict(result);
   }
 
-  useEffect(() => {
-    // Re-check when customer changes while a conflict VIN may still be present.
-    setConflict(null);
-  }, [customerId]);
-
   function clearVin() {
     setConflict(null);
     setTransferError(null);
@@ -128,7 +123,11 @@ export function MotorcycleForm({
           name="customer_id"
           required
           value={customerId}
-          onChange={(event) => setCustomerId(event.target.value)}
+          onChange={(event) => {
+            setCustomerId(event.target.value);
+            // Re-check when customer changes while a conflict VIN may still be present.
+            setConflict(null);
+          }}
           className="min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900"
         >
           <option value="" disabled>

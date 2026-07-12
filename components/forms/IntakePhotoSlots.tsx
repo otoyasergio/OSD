@@ -3,6 +3,7 @@
 import {
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -160,9 +161,6 @@ export function IntakePhotoSlots({
 }: Props) {
   const slots = slotsFor(categories);
   const titleId = useId();
-  const [previews, setPreviews] = useState<
-    Partial<Record<PhotoCategory, string>>
-  >({});
   const [chooserCategory, setChooserCategory] = useState<PhotoCategory | null>(
     null
   );
@@ -173,24 +171,23 @@ export function IntakePhotoSlots({
     Partial<Record<PhotoCategory, HTMLInputElement | null>>
   >({});
 
-  useEffect(() => {
+  const previews = useMemo(() => {
     const next: Partial<Record<PhotoCategory, string>> = {};
-    const urls: string[] = [];
-
     for (const slot of CREATE_INTAKE_PHOTO_SLOTS) {
       const file = value[slot.category];
       if (file instanceof File && file.size > 0) {
-        const url = URL.createObjectURL(file);
-        next[slot.category] = url;
-        urls.push(url);
+        next[slot.category] = URL.createObjectURL(file);
       }
     }
+    return next;
+  }, [value]);
 
-    setPreviews(next);
+  useEffect(() => {
+    const urls = Object.values(previews);
     return () => {
       for (const url of urls) URL.revokeObjectURL(url);
     };
-  }, [value]);
+  }, [previews]);
 
   useEffect(() => {
     if (!chooserCategory) return;
