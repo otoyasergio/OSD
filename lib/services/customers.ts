@@ -45,13 +45,22 @@ export function escapeSearchTerm(term: string): string {
 }
 
 export function buildCustomerSearchOrFilter(term: string): string {
-  const pattern = `%${escapeSearchTerm(term)}%`;
-  return [
+  const escaped = escapeSearchTerm(term);
+  const pattern = `%${escaped}%`;
+  const filters = [
     `first_name.ilike.${pattern}`,
     `last_name.ilike.${pattern}`,
     `phone.ilike.${pattern}`,
     `email.ilike.${pattern}`,
-  ].join(",");
+  ];
+
+  // Allow "416-751-6488" / "(416) 751 6488" to match digit-only stored phones.
+  const digits = term.replace(/\D/g, "");
+  if (digits.length >= 3 && digits !== escaped) {
+    filters.push(`phone.ilike.%${digits}%`);
+  }
+
+  return filters.join(",");
 }
 
 function normalizeOptional(value: string | null | undefined): string | null {

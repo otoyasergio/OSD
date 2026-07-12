@@ -30,4 +30,10 @@ describe("buildCustomerSearchOrFilter", () => {
       "first_name.ilike.%a\\_b%"
     );
   });
+
+  it("also matches digit-only phone when the query has punctuation", () => {
+    expect(buildCustomerSearchOrFilter("(416) 751-6488")).toContain(
+      "phone.ilike.%4167516488%"
+    );
+  });
 });

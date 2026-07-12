@@ -11,7 +11,9 @@ import {
   findMotorcycleByVin,
   lookupVinOwnershipConflict,
   buildVinOwnershipConflict,
+  listMotorcyclesForCustomer,
   SERVICE_INFORMATION_FIELDS,
+  type Motorcycle,
   type ServiceInformationInput,
   type VinOwnershipConflict,
 } from "@/lib/services/motorcycles";
@@ -19,6 +21,14 @@ import { toFormErrorMessage } from "@/lib/services/errors";
 import { validateOptionalVin } from "@/lib/vin";
 
 export type MotorcycleFormState = { error: string | null };
+
+/** Load bikes for a selected customer during intake / forms. */
+export async function listMotorcyclesForCustomerAction(
+  customerId: string
+): Promise<Motorcycle[]> {
+  if (!customerId.trim()) return [];
+  return listMotorcyclesForCustomer(customerId);
+}
 
 function readMotorcycleInput(formData: FormData) {
   const yearRaw = String(formData.get("year") ?? "").trim();

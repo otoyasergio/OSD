@@ -4,12 +4,21 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import {
   createCustomer,
+  searchCustomers,
   updateCustomer,
+  type Customer,
   type CustomerAccountType,
 } from "@/lib/services/customers";
 import { toFormErrorMessage } from "@/lib/services/errors";
 
 export type CustomerFormState = { error: string | null };
+
+/** Typeahead search for intake and other customer pickers. */
+export async function searchCustomersAction(
+  query: string
+): Promise<Customer[]> {
+  return searchCustomers(query);
+}
 
 function readCustomerInput(formData: FormData) {
   const accountType = String(formData.get("account_type") ?? "retail");

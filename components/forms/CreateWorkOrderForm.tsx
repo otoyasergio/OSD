@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -9,8 +9,12 @@ import {
 } from "@/app/(app)/work_orders/actions";
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { getOutstandingRecommendationsAction } from "@/app/(app)/work_orders/recommendation-actions";
+import { listMotorcyclesForCustomerAction } from "@/app/(app)/motorcycles/actions";
 import type { Customer } from "@/lib/services/customers";
-import type { MotorcycleWithCustomer } from "@/lib/services/motorcycles";
+import type {
+  Motorcycle,
+  MotorcycleWithCustomer,
+} from "@/lib/services/motorcycles";
 import type { OutstandingRecommendation } from "@/lib/services/recommendations";
 import {
   groupServicesByCategory,
@@ -25,6 +29,7 @@ import {
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
 import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
+import { CustomerSearchPicker } from "@/components/forms/CustomerSearchPicker";
 import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
 import { FindMotorcycleByVin } from "@/components/forms/FindMotorcycleByVin";
 
@@ -73,6 +78,9 @@ export function CreateWorkOrderForm({
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [clientError, setClientError] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<WorkOrderFormState | null>(null);
+  const [motorcycleOptions, setMotorcycleOptions] =
+    useState<MotorcycleWithCustomer[]>(motorcycles);
+  const [, startBikeLoad] = useTransition();
 
   const recoveryWorkOrderId = recovery?.workOrderId ?? null;
   const missingCategories = recovery?.missingCategories ?? [];
@@ -114,10 +122,12 @@ export function CreateWorkOrderForm({
   const [stepIndex, setStepIndex] = useState(initialStepIndex);
   const [maxReachedIndex, setMaxReachedIndex] = useState(initialStepIndex);
 
+  const [knownCustomers, setKnownCustomers] = useState(customers);
+
   const bikesForCustomer = useMemo(() => {
     if (!customerId) return [];
-    return motorcycles.filter((bike) => bike.customer_id === customerId);
-  }, [customerId, motorcycles]);
+    return motorcycleOptions.filter((bike) => bike.customer_id === customerId);
+  }, [customerId, motorcycleOptions]);
 
   const groupedServices = useMemo(
     () => groupServicesByCategory(services),
@@ -128,10 +138,59 @@ export function CreateWorkOrderForm({
   const stepId = CREATE_WORK_ORDER_WIZARD_STEPS[stepIndex].id;
   const isLastStep = stepId === "review";
 
-  const selectedCustomer = customers.find((c) => c.customer_id === customerId);
-  const selectedBike = motorcycles.find(
+  const selectedCustomer = knownCustomers.find(
+    (c) => c.customer_id === customerId
+  );
+  const selectedBike = motorcycleOptions.find(
     (bike) => bike.motorcycle_id === motorcycleId
   );
+
+  function mergeMotorcycleOptions(rows: Motorcycle[], customer: Customer | null) {
+    setMotorcycleOptions((prev) => {
+      const byId = new Map(prev.map((bike) => [bike.motorcycle_id, bike]));
+      for (const row of rows) {
+        const existing = byId.get(row.motorcycle_id);
+        byId.set(row.motorcycle_id, {
+          ...row,
+          customer:
+            existing?.customer ??
+            (customer
+              ? {
+                  first_name: customer.first_name,
+                  last_name: customer.last_name,
+                }
+              : null),
+        });
+      }
+      return [...byId.values()];
+    });
+  }
+
+  function handleCustomerChange(
+    nextCustomerId: string,
+    customer: Customer | null
+  ) {
+    setCustomerId(nextCustomerId);
+    setMotorcycleId("");
+    setMaxReachedIndex(0);
+    if (customer) {
+      setKnownCustomers((prev) => {
+        if (prev.some((c) => c.customer_id === customer.customer_id)) {
+          return prev;
+        }
+        return [...prev, customer];
+      });
+    }
+    if (!nextCustomerId) return;
+    startBikeLoad(async () => {
+      try {
+        const bikes = await listMotorcyclesForCustomerAction(nextCustomerId);
+        mergeMotorcycleOptions(bikes, customer);
+      } catch {
+        // Motorcycle step can still offer create-bike if none are loaded.
+      }
+    });
+  }
   const selectedTech = technicians.find(
     (tech) => tech.user_id === primaryTechnicianId
   );
@@ -148,6 +207,39 @@ export function CreateWorkOrderForm({
   };
 
   const canProceed = canProceedFromWizardStep(stepId, stepData);
+
+  useEffect(() => {
+    setMotorcycleOptions((prev) => {
+      const byId = new Map(prev.map((bike) => [bike.motorcycle_id, bike]));
+      for (const bike of motorcycles) byId.set(bike.motorcycle_id, bike);
+      return [...byId.values()];
+    });
+  }, [motorcycles]);
+
+  useEffect(() => {
+    if (!resolvedInitialCustomerId) return;
+    let cancelled = false;
+    startBikeLoad(async () => {
+      try {
+        const bikes = await listMotorcyclesForCustomerAction(
+          resolvedInitialCustomerId
+        );
+        if (cancelled) return;
+        const customer =
+          knownCustomers.find(
+            (c) => c.customer_id === resolvedInitialCustomerId
+          ) ?? null;
+        mergeMotorcycleOptions(bikes, customer);
+      } catch {
+        // Deep-linked customer may still proceed once bikes are created.
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally once for deep-link preload.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedInitialCustomerId]);
 
   useEffect(() => {
     if (!motorcycleId) return;
@@ -339,33 +431,18 @@ export function CreateWorkOrderForm({
           <p className="intake-wizard-panel-lede">
             Who owns the bike for this visit?
           </p>
-          <label className="block">
+          <div className="block">
             <span className="mb-1.5 block text-sm font-medium text-zinc-800">
               Customer <span className="ml-1 text-red-600">*</span>
             </span>
-            <select
-              className={SELECT_CLASS}
+            <CustomerSearchPicker
               value={customerId}
-              onChange={(event) => {
-                setCustomerId(event.target.value);
-                setMotorcycleId("");
-                setMaxReachedIndex(0);
-              }}
+              initialCustomers={knownCustomers}
+              onChange={handleCustomerChange}
               required
-            >
-              <option value="">Select a customer</option>
-              {customers.map((customer) => (
-                <option
-                  key={customer.customer_id}
-                  value={customer.customer_id}
-                >
-                  {customer.last_name}, {customer.first_name}
-                  {customer.phone ? ` · ${customer.phone}` : ""}
-                </option>
-              ))}
-            </select>
+            />
             <span className="mt-1 block text-xs text-zinc-500">
-              Need a new customer?{" "}
+              Search by name, email, or phone. Need a new customer?{" "}
               <Link
                 href="/customers/new"
                 className="underline underline-offset-2"
@@ -374,7 +451,7 @@ export function CreateWorkOrderForm({
               </Link>
               .
             </span>
-          </label>
+          </div>
         </section>
       ) : null}
 
