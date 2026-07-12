@@ -32,6 +32,13 @@ export type WorkOrder = {
   pickup_notes: string | null;
   square_invoice_id: string | null;
   square_payment_status: string | null;
+  square_invoice_public_url: string | null;
+  billing_stage: string;
+  billing_amount_mode: string | null;
+  billing_amount_cents: number | null;
+  billing_collected_cents: number;
+  estimate_sent_at: string | null;
+  invoice_published_at: string | null;
   wix_booking_id: string | null;
   scheduled_at: string | null;
   source: string;
@@ -88,7 +95,7 @@ export type TechnicianOption = {
 };
 
 const WORK_ORDER_COLUMNS =
-  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, square_invoice_id, square_payment_status, wix_booking_id, scheduled_at, source, created_at, updated_at";
+  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, square_invoice_id, square_payment_status, square_invoice_public_url, billing_stage, billing_amount_mode, billing_amount_cents, billing_collected_cents, estimate_sent_at, invoice_published_at, wix_booking_id, scheduled_at, source, created_at, updated_at";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -404,6 +411,14 @@ export async function getWorkOrderDetail(
     pickup_notes: row.pickup_notes as string | null,
     square_invoice_id: row.square_invoice_id as string | null,
     square_payment_status: row.square_payment_status as string | null,
+    square_invoice_public_url: (row.square_invoice_public_url as string | null) ?? null,
+    billing_stage: (row.billing_stage as string) ?? "none",
+    billing_amount_mode: (row.billing_amount_mode as string | null) ?? null,
+    billing_amount_cents:
+      row.billing_amount_cents == null ? null : Number(row.billing_amount_cents),
+    billing_collected_cents: Number(row.billing_collected_cents ?? 0),
+    estimate_sent_at: (row.estimate_sent_at as string | null) ?? null,
+    invoice_published_at: (row.invoice_published_at as string | null) ?? null,
     wix_booking_id: row.wix_booking_id as string | null,
     scheduled_at: row.scheduled_at as string | null,
     source: (row.source as string) ?? "walk_in",

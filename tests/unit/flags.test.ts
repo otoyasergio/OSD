@@ -17,7 +17,6 @@ describe("buildWorkOrderFlags", () => {
 
     expect(flags).toEqual([
       "Missing VIN",
-      "Missing invoice #",
       "No intake photos",
       "Incomplete inspection",
       "Needs approval",

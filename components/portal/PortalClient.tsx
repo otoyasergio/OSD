@@ -164,11 +164,27 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
         <p className="text-right font-semibold">
           Total (est.): ${estimateTotal.toFixed(2)}
         </p>
-        {view.square_payment_status === "paid" ? (
-          <p className="mt-3 text-center font-medium text-emerald-700">Paid — thank you!</p>
+        {view.square_payment_status === "paid" &&
+        view.billing_stage === "paid" ? (
+          <p className="mt-3 text-center font-medium text-emerald-700">
+            Paid — thank you!
+          </p>
+        ) : view.billing_stage === "invoiced" &&
+          view.square_invoice_public_url ? (
+          <a
+            href={view.square_invoice_public_url}
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-primary mt-4 w-full text-center"
+          >
+            Pay now
+          </a>
         ) : (
           <p className="mt-3 text-center text-sm text-zinc-600">
-            Payment link will be sent when your bike is ready for pickup.
+            {view.billing_stage === "awaiting_approval" ||
+            pendingJobs.length > 0
+              ? "Approve the work above. Payment link will appear when the shop publishes your invoice."
+              : "Payment link will be sent when your invoice is ready."}
           </p>
         )}
       </section>

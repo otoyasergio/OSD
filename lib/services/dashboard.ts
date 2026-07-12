@@ -93,7 +93,6 @@ const ACTIVE_STATUSES: WorkOrderStatus[] = [
 
 const FLAG_OPTIONS = [
   "Missing VIN",
-  "Missing invoice #",
   "No intake photos",
   "Incomplete inspection",
   "Needs approval",

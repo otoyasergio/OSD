@@ -40,6 +40,9 @@ export type PortalWorkOrderView = {
   }[];
   square_invoice_id: string | null;
   square_payment_status: string | null;
+  square_invoice_public_url: string | null;
+  billing_stage: string;
+  billing_collected_cents: number;
   inspection_completed: boolean;
   has_signed_contract: boolean;
   has_inspection_ack: boolean;
@@ -120,6 +123,9 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
       status,
       square_invoice_id,
       square_payment_status,
+      square_invoice_public_url,
+      billing_stage,
+      billing_collected_cents,
       customer:customer_id ( first_name, last_name ),
       motorcycle:motorcycle_id ( year, make, model )
     `
@@ -191,6 +197,9 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
     parts,
     square_invoice_id: wo.square_invoice_id,
     square_payment_status: wo.square_payment_status,
+    square_invoice_public_url: wo.square_invoice_public_url ?? null,
+    billing_stage: wo.billing_stage ?? "none",
+    billing_collected_cents: Number(wo.billing_collected_cents ?? 0),
     inspection_completed: Boolean(inspection?.completed_at),
     has_signed_contract: Boolean(contract),
     has_inspection_ack: Boolean(ack),
@@ -236,6 +245,11 @@ export async function portalApproveJob(
     description: "Customer approved via portal",
     new_value: { approval_method: "email" },
   });
+
+  const { recomputeWorkOrderBillingStage } = await import(
+    "@/lib/services/squareBilling"
+  );
+  await recomputeWorkOrderBillingStage(session.work_order_id);
 }
 
 export async function portalDeclineJob(
@@ -274,6 +288,11 @@ export async function portalDeclineJob(
     description: "Customer declined via portal",
     new_value: { approval_method: "email", reason },
   });
+
+  const { recomputeWorkOrderBillingStage } = await import(
+    "@/lib/services/squareBilling"
+  );
+  await recomputeWorkOrderBillingStage(session.work_order_id);
 }
 
 export async function portalSignContract(

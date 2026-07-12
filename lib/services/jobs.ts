@@ -397,6 +397,10 @@ export async function recordCustomerApproval(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  const { recomputeWorkOrderBillingStage } = await import(
+    "@/lib/services/squareBilling"
+  );
+  await recomputeWorkOrderBillingStage(job.work_order_id);
 }
 
 export async function recordCustomerDecline(
@@ -459,4 +463,8 @@ export async function recordCustomerDecline(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  const { recomputeWorkOrderBillingStage } = await import(
+    "@/lib/services/squareBilling"
+  );
+  await recomputeWorkOrderBillingStage(job.work_order_id);
 }

@@ -179,6 +179,23 @@ export default async function WorkOrderDetailPage({
   const canEditServiceInfo =
     !detail.is_foreign_location && canUpdateServiceInformation(user.role);
 
+  const estimateTotalCents = Math.round(
+    (detail.jobs
+      .filter((job) => job.status !== "cancelled" && job.status !== "declined")
+      .reduce((sum, job) => sum + Number(job.standard_price_snapshot ?? 0), 0) +
+      parts
+        .filter(
+          (part) =>
+            part.status !== "cancelled" && part.status !== "not_required"
+        )
+        .reduce(
+          (sum, part) =>
+            sum + Number(part.unit_price ?? 0) * Number(part.quantity ?? 0),
+          0
+        )) *
+      100
+  );
+
   const fromResult = fromResultId
     ? inspection?.results.find((r) => r.inspection_result_id === fromResultId)
     : null;
@@ -252,7 +269,11 @@ export default async function WorkOrderDetailPage({
             workOrderId={detail.work_order_id}
             squareInvoiceId={detail.square_invoice_id}
             squarePaymentStatus={detail.square_payment_status}
-            canManage={canMarkReady}
+            squareInvoicePublicUrl={detail.square_invoice_public_url}
+            billingStage={detail.billing_stage}
+            billingCollectedCents={detail.billing_collected_cents}
+            estimateTotalCents={estimateTotalCents}
+            canManage={canApprove}
             readOnly={detail.is_foreign_location}
           />
         </>

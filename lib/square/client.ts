@@ -114,13 +114,15 @@ export type SquareInvoiceLine = {
   basePriceMoney: { amount: bigint; currency: string };
 };
 
-export async function createSquareInvoice(input: {
+type SquareInvoiceWithVersion = SquareInvoice & { version?: number };
+
+export async function createSquareInvoiceDraft(input: {
   customerId: string;
   title: string;
   description?: string;
   lineItems: SquareInvoiceLine[];
   dueDate?: string;
-}): Promise<SquareInvoice> {
+}): Promise<SquareInvoiceWithVersion> {
   const config = getSquareConfig();
 
   const dueDate =
@@ -149,9 +151,7 @@ export async function createSquareInvoice(input: {
     }
   );
 
-  const orderId = orderResponse.order.id;
-
-  const invoiceResponse = await squareFetch<{ invoice: SquareInvoice }>(
+  const invoiceResponse = await squareFetch<{ invoice: SquareInvoiceWithVersion }>(
     "/v2/invoices",
     {
       method: "POST",
@@ -159,7 +159,7 @@ export async function createSquareInvoice(input: {
         idempotency_key: crypto.randomUUID(),
         invoice: {
           location_id: config.locationId,
-          order_id: orderId,
+          order_id: orderResponse.order.id,
           primary_recipient: { customer_id: input.customerId },
           payment_requests: [
             {
@@ -184,22 +184,58 @@ export async function createSquareInvoice(input: {
     }
   );
 
-  const published = await squareFetch<{ invoice: SquareInvoice }>(
-    `/v2/invoices/${invoiceResponse.invoice.id}/publish`,
+  return invoiceResponse.invoice;
+}
+
+export async function publishSquareInvoice(
+  invoiceId: string,
+  version: number
+): Promise<SquareInvoiceWithVersion> {
+  const published = await squareFetch<{ invoice: SquareInvoiceWithVersion }>(
+    `/v2/invoices/${invoiceId}/publish`,
     {
       method: "POST",
       body: JSON.stringify({
         idempotency_key: crypto.randomUUID(),
-        version: 0,
+        version,
       }),
     }
   );
-
   return published.invoice;
 }
 
-export async function getSquareInvoice(invoiceId: string): Promise<SquareInvoice> {
-  const response = await squareFetch<{ invoice: SquareInvoice }>(
+export async function cancelSquareInvoice(
+  invoiceId: string,
+  version: number
+): Promise<SquareInvoiceWithVersion> {
+  const cancelled = await squareFetch<{ invoice: SquareInvoiceWithVersion }>(
+    `/v2/invoices/${invoiceId}/cancel`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        version,
+      }),
+    }
+  );
+  return cancelled.invoice;
+}
+
+/** Create draft and immediately publish (legacy one-shot). */
+export async function createSquareInvoice(input: {
+  customerId: string;
+  title: string;
+  description?: string;
+  lineItems: SquareInvoiceLine[];
+  dueDate?: string;
+}): Promise<SquareInvoice> {
+  const draft = await createSquareInvoiceDraft(input);
+  return publishSquareInvoice(draft.id, draft.version ?? 0);
+}
+
+export async function getSquareInvoice(
+  invoiceId: string
+): Promise<SquareInvoiceWithVersion> {
+  const response = await squareFetch<{ invoice: SquareInvoiceWithVersion }>(
     `/v2/invoices/${invoiceId}`
   );
   return response.invoice;
