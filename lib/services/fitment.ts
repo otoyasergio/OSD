@@ -6,12 +6,7 @@ import {
   extractPartNumbers,
   skuLookupVariants,
 } from "@/lib/fitment/partMatch";
-import {
-  distinctYearsFromRanges,
-  makesForYear,
-  modelsForYearMake,
-  rowCoversYear,
-} from "@/lib/fitment/fitmentRange";
+import { rowCoversYear } from "@/lib/fitment/fitmentRange";
 import { fitmentFieldLabel, FITMENT_SPEC_FIELDS } from "@/lib/fitment/fieldLabels";
 import { canOrderPart } from "@/lib/permissions";
 import type { PartsCanadaSearchHit } from "@/lib/services/partsCanadaCatalog";
@@ -74,23 +69,58 @@ export async function getFitmentImportStatus(): Promise<{
 export async function listFitmentYears(): Promise<number[]> {
   await requireUser();
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("fitment_vehicle")
-    .select("year_start, year_end");
+  const currentYear = new Date().getFullYear();
 
-  if (error) throw error;
-  return distinctYearsFromRanges(data ?? []);
+  const [{ data: minRow, error: minError }, { data: maxRow, error: maxError }] =
+    await Promise.all([
+      supabase
+        .from("fitment_vehicle")
+        .select("year_start")
+        .order("year_start", { ascending: true })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("fitment_vehicle")
+        .select("year_end")
+        .order("year_end", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+  if (minError) throw minError;
+  if (maxError) throw maxError;
+  if (!minRow || !maxRow) return [];
+
+  const start = minRow.year_start;
+  const end = Math.min(maxRow.year_end, currentYear + 1);
+  const years: number[] = [];
+  for (let y = end; y >= start; y--) years.push(y);
+  return years;
 }
 
 export async function listFitmentMakes(year: number): Promise<string[]> {
   await requireUser();
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("fitment_vehicle")
-    .select("make, year_start, year_end");
+  const makes = new Set<string>();
+  const pageSize = 1000;
 
-  if (error) throw error;
-  return makesForYear(data ?? [], year);
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("fitment_vehicle")
+      .select("make")
+      .lte("year_start", year)
+      .gte("year_end", year)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    if (!data?.length) break;
+    for (const row of data) {
+      if (row.make?.trim()) makes.add(row.make);
+    }
+    if (data.length < pageSize) break;
+  }
+
+  return [...makes].sort((a, b) => a.localeCompare(b));
 }
 
 export async function listFitmentModels(
@@ -99,12 +129,27 @@ export async function listFitmentModels(
 ): Promise<string[]> {
   await requireUser();
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("fitment_vehicle")
-    .select("make, model, year_start, year_end");
+  const models = new Set<string>();
+  const pageSize = 1000;
 
-  if (error) throw error;
-  return modelsForYearMake(data ?? [], year, make);
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("fitment_vehicle")
+      .select("model")
+      .ilike("make", make)
+      .lte("year_start", year)
+      .gte("year_end", year)
+      .range(from, from + pageSize - 1);
+
+    if (error) throw error;
+    if (!data?.length) break;
+    for (const row of data) {
+      if (row.model?.trim()) models.add(row.model);
+    }
+    if (data.length < pageSize) break;
+  }
+
+  return [...models].sort((a, b) => a.localeCompare(b));
 }
 
 export async function getFitmentVehicle(
