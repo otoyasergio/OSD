@@ -248,21 +248,17 @@ export default async function WorkOrderDetailPage({
           inspectionComplete={Boolean(inspection?.completed_at)}
           inspectionHref={`/work_orders/${detail.work_order_id}/inspection`}
           addAction={addJobAction.bind(null, detail.work_order_id)}
-          assignActionFor={(jobId) =>
-            assignJobTechnicianAction.bind(null, detail.work_order_id, jobId)
-          }
-          statusActionFor={(jobId) =>
-            updateJobStatusAction.bind(null, detail.work_order_id, jobId)
-          }
-          approveActionFor={(jobId) =>
-            approveJobAction.bind(null, detail.work_order_id, jobId)
-          }
-          declineActionFor={(jobId) =>
-            declineJobAction.bind(null, detail.work_order_id, jobId)
-          }
-          cancelActionFor={(jobId) =>
-            cancelJobAction.bind(null, detail.work_order_id, jobId)
-          }
+          assignActionFor={assignJobTechnicianAction.bind(
+            null,
+            detail.work_order_id
+          )}
+          statusActionFor={updateJobStatusAction.bind(
+            null,
+            detail.work_order_id
+          )}
+          approveActionFor={approveJobAction.bind(null, detail.work_order_id)}
+          declineActionFor={declineJobAction.bind(null, detail.work_order_id)}
+          cancelActionFor={cancelJobAction.bind(null, detail.work_order_id)}
         />
       ) : null}
 
@@ -315,20 +311,14 @@ export default async function WorkOrderDetailPage({
             null,
             detail.work_order_id
           )}
-          statusActionFor={(recommendationId) =>
-            updateRecommendationStatusAction.bind(
-              null,
-              detail.work_order_id,
-              recommendationId
-            )
-          }
-          convertActionFor={(recommendationId) =>
-            convertRecommendationAction.bind(
-              null,
-              detail.work_order_id,
-              recommendationId
-            )
-          }
+          statusActionFor={updateRecommendationStatusAction.bind(
+            null,
+            detail.work_order_id
+          )}
+          convertActionFor={convertRecommendationAction.bind(
+            null,
+            detail.work_order_id
+          )}
           fromResultId={fromResultId ?? null}
           fromResultDefaults={fromResultDefaults}
         />
@@ -343,12 +333,14 @@ export default async function WorkOrderDetailPage({
           canInstall={canComplete}
           canViewCost={canSeePartCost}
           addAction={addPartAction.bind(null, detail.work_order_id)}
-          statusActionFor={(partId) =>
-            updatePartStatusAction.bind(null, detail.work_order_id, partId)
-          }
-          priceActionFor={(partId) =>
-            updatePartPriceAction.bind(null, detail.work_order_id, partId)
-          }
+          statusActionFor={updatePartStatusAction.bind(
+            null,
+            detail.work_order_id
+          )}
+          priceActionFor={updatePartPriceAction.bind(
+            null,
+            detail.work_order_id
+          )}
         />
       ) : null}
       {activeTab === "photos" ? (

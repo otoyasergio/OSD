@@ -17,6 +17,14 @@ type Action = (
   formData: FormData
 ) => Promise<RecommendationFormState>;
 
+// Server action curried with work_order_id; recommendationId is bound
+// client-side so no function factory has to cross the RSC boundary.
+type RecommendationAction = (
+  recommendationId: string,
+  state: RecommendationFormState,
+  formData: FormData
+) => Promise<RecommendationFormState>;
+
 export function RecommendationsTab({
   recommendations,
   outstandingRecommendations = [],
@@ -39,8 +47,8 @@ export function RecommendationsTab({
   canUpdateStatus: boolean;
   canConvert: boolean;
   createAction: Action;
-  statusActionFor: (recommendationId: string) => Action;
-  convertActionFor: (recommendationId: string) => Action;
+  statusActionFor: RecommendationAction;
+  convertActionFor: RecommendationAction;
   fromResultId?: string | null;
   fromResultDefaults?: {
     description: string;
@@ -79,8 +87,12 @@ export function RecommendationsTab({
                 readOnly={readOnly}
                 canUpdateStatus={canUpdateStatus}
                 canConvert={canConvert}
-                statusAction={statusActionFor(recommendation.recommendation_id)}
-                convertAction={convertActionFor(
+                statusAction={statusActionFor.bind(
+                  null,
+                  recommendation.recommendation_id
+                )}
+                convertAction={convertActionFor.bind(
+                  null,
                   recommendation.recommendation_id
                 )}
               />

@@ -18,6 +18,14 @@ type Action = (
   formData: FormData
 ) => Promise<PartFormState>;
 
+// Server action curried with work_order_id; partId is bound client-side so no
+// function factory has to cross the RSC boundary.
+type PartAction = (
+  partId: string,
+  state: PartFormState,
+  formData: FormData
+) => Promise<PartFormState>;
+
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
 
@@ -65,8 +73,8 @@ export function PartsTab({
   canInstall: boolean;
   canViewCost: boolean;
   addAction: Action;
-  statusActionFor: (partId: string) => Action;
-  priceActionFor: (partId: string) => Action;
+  statusActionFor: PartAction;
+  priceActionFor: PartAction;
 }) {
   const [addState, addFormAction] = useActionState(addAction, { error: null });
   const [catalog, setCatalog] = useState({
@@ -203,8 +211,8 @@ export function PartsTab({
               canManage={canManage}
               canInstall={canInstall}
               canViewCost={canViewCost}
-              statusAction={statusActionFor(part.part_id)}
-              priceAction={priceActionFor(part.part_id)}
+              statusAction={statusActionFor.bind(null, part.part_id)}
+              priceAction={priceActionFor.bind(null, part.part_id)}
             />
           ))}
         </div>

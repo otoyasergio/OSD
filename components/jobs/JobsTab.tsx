@@ -17,6 +17,14 @@ type Action = (
   formData: FormData
 ) => Promise<JobFormState>;
 
+// Server action curried with work_order_id; jobId is bound client-side so no
+// function factory has to cross the RSC boundary.
+type JobAction = (
+  jobId: string,
+  state: JobFormState,
+  formData: FormData
+) => Promise<JobFormState>;
+
 export function JobsTab({
   jobs,
   services,
@@ -48,11 +56,11 @@ export function JobsTab({
   inspectionComplete?: boolean;
   inspectionHref?: string;
   addAction: Action;
-  assignActionFor: (jobId: string) => Action;
-  statusActionFor: (jobId: string) => Action;
-  approveActionFor: (jobId: string) => Action;
-  declineActionFor: (jobId: string) => Action;
-  cancelActionFor: (jobId: string) => Action;
+  assignActionFor: JobAction;
+  statusActionFor: JobAction;
+  approveActionFor: JobAction;
+  declineActionFor: JobAction;
+  cancelActionFor: JobAction;
 }) {
   const [addState, addFormAction] = useActionState(addAction, { error: null });
   const groupedServices = groupServicesByCategory(services);
@@ -113,11 +121,11 @@ export function JobsTab({
               isTechnicianSelf={job.assigned_technician_id === currentUserId}
               inspectionComplete={inspectionComplete}
               inspectionHref={inspectionHref}
-              assignAction={assignActionFor(job.job_id)}
-              statusAction={statusActionFor(job.job_id)}
-              approveAction={approveActionFor(job.job_id)}
-              declineAction={declineActionFor(job.job_id)}
-              cancelAction={cancelActionFor(job.job_id)}
+              assignAction={assignActionFor.bind(null, job.job_id)}
+              statusAction={statusActionFor.bind(null, job.job_id)}
+              approveAction={approveActionFor.bind(null, job.job_id)}
+              declineAction={declineActionFor.bind(null, job.job_id)}
+              cancelAction={cancelActionFor.bind(null, job.job_id)}
             />
           ))}
         </div>
