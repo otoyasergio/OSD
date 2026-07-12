@@ -10,6 +10,7 @@ import {
   canCompleteWorkOrder,
   canRunQualityCheck,
   canManageServiceCatalogue,
+  canManageContractTemplate,
   canUpdateServiceInformation,
 } from "@/lib/permissions/checks";
 
@@ -37,6 +38,13 @@ describe("permissions", () => {
     expect(canManageServiceCatalogue("owner")).toBe(true);
     expect(canManageServiceCatalogue("manager")).toBe(true);
     expect(canManageServiceCatalogue("service_advisor")).toBe(false);
+  });
+
+  it("owner and manager can manage contract template", () => {
+    expect(canManageContractTemplate("owner")).toBe(true);
+    expect(canManageContractTemplate("manager")).toBe(true);
+    expect(canManageContractTemplate("service_advisor")).toBe(false);
+    expect(canManageContractTemplate("technician")).toBe(false);
   });
 
   it("technician cannot complete work order", () => {

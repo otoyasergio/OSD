@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import {
+  canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
   canManageServiceCatalogue,
@@ -29,6 +30,12 @@ export default async function SettingsPage() {
       label: "Inspection template",
       description: "Edit the checklist used for new inspections.",
       visible: canManageInspectionTemplate(user.role),
+    },
+    {
+      href: "/settings/contract_template",
+      label: "Drop-off contract",
+      description: "Edit the agreement customers sign at intake.",
+      visible: canManageContractTemplate(user.role),
     },
     {
       href: "/settings/locations",

@@ -30,6 +30,11 @@ export type WorkOrder = {
   completed_at: string | null;
   released_by_user_id: string | null;
   pickup_notes: string | null;
+  square_invoice_id: string | null;
+  square_payment_status: string | null;
+  wix_booking_id: string | null;
+  scheduled_at: string | null;
+  source: string;
   created_at: string;
   updated_at: string;
 };
@@ -83,7 +88,7 @@ export type TechnicianOption = {
 };
 
 const WORK_ORDER_COLUMNS =
-  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, created_at, updated_at";
+  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, square_invoice_id, square_payment_status, wix_booking_id, scheduled_at, source, created_at, updated_at";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -397,6 +402,11 @@ export async function getWorkOrderDetail(
     completed_at: row.completed_at as string | null,
     released_by_user_id: row.released_by_user_id as string | null,
     pickup_notes: row.pickup_notes as string | null,
+    square_invoice_id: row.square_invoice_id as string | null,
+    square_payment_status: row.square_payment_status as string | null,
+    wix_booking_id: row.wix_booking_id as string | null,
+    scheduled_at: row.scheduled_at as string | null,
+    source: (row.source as string) ?? "walk_in",
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
     customer,

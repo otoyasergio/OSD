@@ -9,9 +9,11 @@ import {
 import { listPartsWaitingForLocation } from "@/lib/services/partsBoard";
 import { getPartsCanadaSyncStatus } from "@/lib/services/partsCanadaCatalog";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
+import { getFitmentImportStatus } from "@/lib/services/fitment";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PartsWaitingBoard } from "@/components/parts/PartsWaitingBoard";
 import { PartsCanadaSyncPanel } from "@/components/parts/PartsCanadaSyncPanel";
+import { YmmFitmentFilter } from "@/components/fitment/YmmFitmentFilter";
 import { SELECT_CLASS } from "@/components/forms/Field";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +32,7 @@ export default async function PartsWaitingPage({
   const technicianId = params.technician_id?.trim() || "";
   const canSync = canSyncPartsCanadaCatalog(user.role);
 
-  const [items, technicians, syncStatus] = await Promise.all([
+  const [items, technicians, syncStatus, fitmentStatus] = await Promise.all([
     listPartsWaitingForLocation(user.active_location_id, {
       technicianId: technicianId || undefined,
     }),
@@ -38,6 +40,7 @@ export default async function PartsWaitingPage({
     canOrderPart(user.role)
       ? getPartsCanadaSyncStatus().catch(() => null)
       : Promise.resolve(null),
+    getFitmentImportStatus().catch(() => ({ vehicle_count: 0, last_run: null })),
   ]);
 
   const toOrderCount = items.filter((item) => item.bucket === "to_order").length;
@@ -54,6 +57,18 @@ export default async function PartsWaitingPage({
       {syncStatus ? (
         <PartsCanadaSyncPanel status={syncStatus} canSync={canSync} />
       ) : null}
+
+      <div className="card card-pad flex flex-col gap-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-600">
+          YMM fitment finder
+        </h2>
+        <p className="text-sm text-zinc-600">
+          {fitmentStatus.vehicle_count > 0
+            ? `${fitmentStatus.vehicle_count.toLocaleString()} vehicles in catalogue.`
+            : "Import fitment data with scripts/import-fitment.ts to enable Year / Make / Model lookup."}
+        </p>
+        {fitmentStatus.vehicle_count > 0 ? <YmmFitmentFilter /> : null}
+      </div>
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 lg:max-w-4xl">
         <div className="stat-card" aria-label={`${items.length} parts total`}>

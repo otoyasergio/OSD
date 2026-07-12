@@ -159,6 +159,43 @@ export const technicianNoteSchema = z.object({
   job_id: z.string().uuid().nullable().optional(),
 });
 
+export const dropOffAgreementSchema = z.object({
+  signer_name: z.string().min(1, "Signer name is required"),
+  initials: z.record(z.string(), z.string()),
+  signature_data_url: z.string().min(1, "Signature is required"),
+  ip_address: z.string().nullable().optional(),
+  user_agent: z.string().nullable().optional(),
+});
+
+export const publishAgreementTemplateSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  body_html: z.string().min(1, "Contract body is required"),
+  initial_fields: z.array(z.string().min(1)).min(1, "At least one initial field is required"),
+  version: z.string().min(1).optional(),
+});
+
+export const customerCreditSchema = z.object({
+  customer_id: z.string().uuid(),
+  amount: z.number().positive(),
+  reason: z.string().min(1),
+  source_work_order_id: z.string().uuid().nullable().optional(),
+});
+
+export const sendMessageSchema = z.object({
+  template_key: z.enum([
+    "approval_request",
+    "ready_for_pickup",
+    "contract_link",
+    "payment_reminder",
+  ]),
+  channel: z.enum(["sms", "email"]),
+});
+
+export const portalAcknowledgementSchema = z.object({
+  signer_name: z.string().min(1),
+  signature_data_url: z.string().optional(),
+});
+
 export const locationSchema = z.object({
   name: z.string().min(1, "Location name is required"),
   code: z

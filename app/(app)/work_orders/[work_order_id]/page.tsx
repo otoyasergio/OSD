@@ -33,6 +33,11 @@ import { listIntakePhotos } from "@/lib/services/photos";
 import { listTechnicianNotes } from "@/lib/services/notes";
 import { listTimelineEvents } from "@/lib/services/timeline";
 import { getServiceInformation } from "@/lib/services/motorcycles";
+import { listCommunicationLog } from "@/lib/services/communications";
+import {
+  getActiveAgreementTemplate,
+  getDropOffAgreement,
+} from "@/lib/services/contracts";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import {
   ComingSoonPanel,
@@ -42,6 +47,9 @@ import {
 } from "@/components/work_orders/WorkOrderTabs";
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
 import { ServiceInfoTab } from "@/components/work_orders/ServiceInfoTab";
+import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
+import { SendMessagePanel } from "@/components/communications/SendMessagePanel";
+import { SquareInvoicePanel } from "@/components/square/SquareInvoicePanel";
 import { JobsTab } from "@/components/jobs/JobsTab";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 import { RecommendationsTab } from "@/components/recommendations/RecommendationsTab";
@@ -82,6 +90,7 @@ import {
   placeWorkOrderOnHoldAction,
   resumeWorkOrderFromHoldAction,
 } from "@/app/(app)/work_orders/quality-actions";
+import { signDropOffAgreementAction } from "@/app/(app)/work_orders/contract-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +126,9 @@ export default async function WorkOrderDetailPage({
     notes,
     timeline,
     serviceInformation,
+    agreement,
+    agreementTemplate,
+    communicationLogs,
   ] = await Promise.all([
     detail.is_foreign_location
       ? Promise.resolve([])
@@ -135,6 +147,9 @@ export default async function WorkOrderDetailPage({
     listTechnicianNotes(work_order_id),
     listTimelineEvents(work_order_id),
     getServiceInformation(detail.motorcycle_id),
+    getDropOffAgreement(work_order_id),
+    getActiveAgreementTemplate(),
+    listCommunicationLog(work_order_id),
   ]);
 
   const canAssign = canAssignTechnician(user.role);
@@ -200,7 +215,8 @@ export default async function WorkOrderDetailPage({
       <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
 
       {activeTab === "overview" ? (
-        <OverviewTab
+        <>
+          <OverviewTab
           detail={detail}
           technicians={technicians}
           canAssign={canAssign}
@@ -232,6 +248,14 @@ export default async function WorkOrderDetailPage({
             detail.work_order_id
           )}
         />
+          <SquareInvoicePanel
+            workOrderId={detail.work_order_id}
+            squareInvoiceId={detail.square_invoice_id}
+            squarePaymentStatus={detail.square_payment_status}
+            canManage={canMarkReady}
+            readOnly={detail.is_foreign_location}
+          />
+        </>
       ) : null}
 
       {activeTab === "jobs" ? (
@@ -373,6 +397,34 @@ export default async function WorkOrderDetailPage({
             detail.motorcycle_id,
             detail.work_order_id
           )}
+        />
+      ) : null}
+      {activeTab === "contract" ? (
+        agreementTemplate ? (
+          <div className="flex flex-col gap-3">
+            <Link
+              href={`/work_orders/${detail.work_order_id}/contract`}
+              className="btn btn-primary min-h-12 self-start"
+            >
+              Open iPad signing screen
+            </Link>
+            <ContractSigningPanel
+              template={agreementTemplate}
+              existing={agreement}
+              readOnly={detail.is_foreign_location}
+              action={signDropOffAgreementAction.bind(null, detail.work_order_id)}
+            />
+          </div>
+        ) : (
+          <ComingSoonPanel title="Contract" />
+        )
+      ) : null}
+      {activeTab === "messages" ? (
+        <SendMessagePanel
+          workOrderId={detail.work_order_id}
+          logs={communicationLogs}
+          canSend={canApprove}
+          readOnly={detail.is_foreign_location}
         />
       ) : null}
     </div>

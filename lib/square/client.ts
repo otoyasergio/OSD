@@ -1,0 +1,208 @@
+import {
+  getSquareConfig,
+  isSquareConfigured,
+  squareApiBase,
+} from "@/lib/square/config";
+
+type SquareCustomer = { id: string };
+type SquareInvoice = {
+  id: string;
+  invoice_number?: string;
+  public_url?: string;
+  status?: string;
+};
+
+async function squareFetch<T>(
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  const config = getSquareConfig();
+  const base = squareApiBase(config.environment);
+  const response = await fetch(`${base}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${config.accessToken}`,
+      "Content-Type": "application/json",
+      "Square-Version": "2024-12-18",
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  const body = (await response.json()) as T & {
+    errors?: { detail?: string; code?: string }[];
+  };
+
+  if (!response.ok) {
+    const detail =
+      body.errors?.[0]?.detail ?? body.errors?.[0]?.code ?? response.statusText;
+    throw new Error(`SQUARE_API_ERROR: ${detail}`);
+  }
+
+  return body;
+}
+
+/** Square expects E.164; omit junk / incomplete shop numbers rather than failing the invoice. */
+function toSquarePhone(phone?: string | null): string | undefined {
+  if (!phone?.trim()) return undefined;
+  const digits = phone.replace(/\D/g, "");
+  // Reject obvious placeholders (all same digit / sequential test junk)
+  if (/^(\d)\1{9,}$/.test(digits)) return undefined;
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  if (phone.trim().startsWith("+") && digits.length >= 10) return `+${digits}`;
+  return undefined;
+}
+
+function customerBody(input: {
+  givenName: string;
+  familyName: string;
+  email?: string | null;
+  phone?: string | null;
+  referenceId?: string;
+}) {
+  return {
+    given_name: input.givenName,
+    family_name: input.familyName,
+    email_address: input.email?.trim() || undefined,
+    phone_number: toSquarePhone(input.phone),
+    reference_id: input.referenceId,
+  };
+}
+
+export async function upsertSquareCustomer(input: {
+  givenName: string;
+  familyName: string;
+  email?: string | null;
+  phone?: string | null;
+  referenceId?: string;
+  existingId?: string | null;
+}): Promise<SquareCustomer> {
+  if (!isSquareConfigured()) throw new Error("SQUARE_NOT_CONFIGURED");
+
+  const body = customerBody(input);
+
+  async function request(path: string, method: "POST" | "PUT", payload: typeof body) {
+    return squareFetch<{ customer: SquareCustomer }>(path, {
+      method,
+      body: JSON.stringify(payload),
+    });
+  }
+
+  try {
+    if (input.existingId) {
+      const updated = await request(`/v2/customers/${input.existingId}`, "PUT", body);
+      return updated.customer;
+    }
+    const created = await request("/v2/customers", "POST", body);
+    return created.customer;
+  } catch (error) {
+    // Retry without phone/email if Square rejects contact fields
+    if (!body.phone_number && !body.email_address) throw error;
+    const stripped = { ...body, phone_number: undefined, email_address: undefined };
+    if (input.existingId) {
+      const updated = await request(`/v2/customers/${input.existingId}`, "PUT", stripped);
+      return updated.customer;
+    }
+    const created = await request("/v2/customers", "POST", stripped);
+    return created.customer;
+  }
+}
+
+export type SquareInvoiceLine = {
+  name: string;
+  quantity: string;
+  basePriceMoney: { amount: bigint; currency: string };
+};
+
+export async function createSquareInvoice(input: {
+  customerId: string;
+  title: string;
+  description?: string;
+  lineItems: SquareInvoiceLine[];
+  dueDate?: string;
+}): Promise<SquareInvoice> {
+  const config = getSquareConfig();
+
+  const dueDate =
+    input.dueDate ??
+    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const orderResponse = await squareFetch<{ order: { id: string } }>(
+    "/v2/orders",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        idempotency_key: crypto.randomUUID(),
+        order: {
+          location_id: config.locationId,
+          customer_id: input.customerId,
+          line_items: input.lineItems.map((line) => ({
+            name: line.name,
+            quantity: line.quantity,
+            base_price_money: {
+              amount: Number(line.basePriceMoney.amount),
+              currency: line.basePriceMoney.currency,
+            },
+          })),
+        },
+      }),
+    }
+  );
+
+  const orderId = orderResponse.order.id;
+
+  const invoiceResponse = await squareFetch<{ invoice: SquareInvoice }>(
+    "/v2/invoices",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        idempotency_key: crypto.randomUUID(),
+        invoice: {
+          location_id: config.locationId,
+          order_id: orderId,
+          primary_recipient: { customer_id: input.customerId },
+          payment_requests: [
+            {
+              request_type: "BALANCE",
+              due_date: dueDate,
+              tipping_enabled: false,
+              automatic_payment_source: "NONE",
+            },
+          ],
+          delivery_method: "SHARE_MANUALLY",
+          accepted_payment_methods: {
+            card: true,
+            square_gift_card: false,
+            bank_account: false,
+            buy_now_pay_later: false,
+            cash_app_pay: false,
+          },
+          title: input.title,
+          description: input.description,
+        },
+      }),
+    }
+  );
+
+  const published = await squareFetch<{ invoice: SquareInvoice }>(
+    `/v2/invoices/${invoiceResponse.invoice.id}/publish`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        idempotency_key: crypto.randomUUID(),
+        version: 0,
+      }),
+    }
+  );
+
+  return published.invoice;
+}
+
+export async function getSquareInvoice(invoiceId: string): Promise<SquareInvoice> {
+  const response = await squareFetch<{ invoice: SquareInvoice }>(
+    `/v2/invoices/${invoiceId}`
+  );
+  return response.invoice;
+}
+
+export { isSquareConfigured };

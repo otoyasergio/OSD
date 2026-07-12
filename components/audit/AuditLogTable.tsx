@@ -125,8 +125,8 @@ export function AuditLogTable({
           No audit log entries match these filters.
         </p>
       ) : (
-        <div className="overflow-x-auto rounded border border-zinc-200 bg-white">
-          <table className="min-w-full text-left text-sm">
+        <div className="data-table-wrap">
+          <table className="data-table min-w-[48rem] text-sm">
             <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
               <tr>
                 <th className="px-3 py-2 font-medium">When</th>

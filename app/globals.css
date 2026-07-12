@@ -204,45 +204,155 @@ summary {
   padding: 1.5rem 1rem;
 }
 
+.mobile-header {
+  display: none;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .app-shell {
     flex-direction: column;
   }
 
-  .sidebar {
-    width: 100%;
-    border-right: none;
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
     border-bottom: 1px solid var(--chrome-border);
+    background: var(--chrome);
+    padding: 0.5rem max(0.75rem, env(safe-area-inset-left))
+      0.5rem max(0.75rem, env(safe-area-inset-right));
+    padding-top: max(0.5rem, env(safe-area-inset-top));
+  }
+
+  .mobile-header-brand {
+    display: flex;
+    align-items: center;
+    min-height: var(--tap-min);
+  }
+
+  .mobile-menu-button {
+    display: inline-flex;
+    min-height: var(--tap-min);
+    min-width: var(--tap-min);
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--chrome-border);
+    background: var(--chrome-elevated);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--chrome-foreground);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    border: none;
+    background: rgb(0 0 0 / 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .app-shell-nav-open .sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 50;
+    width: min(18rem, 88vw);
+    height: 100dvh;
+    border-right: 1px solid var(--chrome-border);
+    border-bottom: none;
+    background: var(--chrome);
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    overflow-y: auto;
+  }
+
+  .app-shell-nav-open .sidebar {
+    transform: translateX(0);
+  }
+
+  .sidebar-brand-desktop {
+    display: none;
   }
 
   .sidebar-nav {
-    flex-direction: row;
-    flex-wrap: wrap;
+    flex-direction: column;
+    flex-wrap: nowrap;
     gap: 0.25rem;
-    padding-bottom: 0.75rem;
+    padding: 0.75rem;
   }
 
   .sidebar-nav-primary {
-    flex-direction: row;
-    flex-wrap: wrap;
+    flex-direction: column;
+    flex-wrap: nowrap;
   }
 
   .sidebar-nav-section {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: none;
+    margin-top: auto;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--chrome-border);
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
+    flex-direction: column;
+    flex-wrap: nowrap;
     gap: 0.25rem;
   }
 
   .sidebar-nav-section-label {
-    display: none;
+    display: block;
   }
 
   .sidebar .nav-link {
-    width: auto;
+    width: 100%;
+  }
+
+  .main-content {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .main-topbar {
+    padding-inline: max(0.75rem, env(safe-area-inset-left))
+      max(0.75rem, env(safe-area-inset-right));
+  }
+
+  .main-topbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .main-topbar-user {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .global-search {
+    width: 100%;
+    max-width: none;
+  }
+
+  .main-body {
+    padding-inline: max(1rem, env(safe-area-inset-left))
+      max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
   }
 }
 
@@ -622,6 +732,37 @@ summary {
   border-bottom-color: var(--accent);
   color: var(--foreground);
   font-weight: 600;
+}
+
+.tab-bar-scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.tab-bar-scroll .tab-link {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ── Portal & contract (mobile) ── */
+
+.portal-page {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+}
+
+.contract-signing-prose {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+  .contract-signing-form label {
+    max-width: none;
+  }
 }
 
 /* ── Nav (header) ── */

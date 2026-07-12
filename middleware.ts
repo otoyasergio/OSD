@@ -11,6 +11,10 @@ const PROTECTED_PREFIXES = [
   "/settings",
 ];
 
+function isPublicPath(pathname: string) {
+  return pathname.startsWith("/c/") || pathname.startsWith("/api/");
+}
+
 function isProtectedPath(pathname: string) {
   return PROTECTED_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
@@ -60,7 +64,7 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  if (!user && isProtectedPath(pathname)) {
+  if (!user && isProtectedPath(pathname) && !isPublicPath(pathname)) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.searchParams.set("next", pathname);
