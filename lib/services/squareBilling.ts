@@ -4,13 +4,28 @@ import { createAdminClient } from "@/lib/database/supabase-admin";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canMarkReadyForPickup, canRecordCustomerApproval } from "@/lib/permissions";
+import { canRecordCustomerApproval } from "@/lib/permissions";
 import {
-  createSquareInvoice,
+  type BillingAmountMode,
+  type BillingStage,
+  type BillableLine,
+  DRAFT_JOB_STATUSES,
+  PUBLISHABLE_JOB_STATUSES,
+  computePublishAmountCents,
+  dollarsToCents,
+  stageAfterJobApprovals,
+  sumLines,
+} from "@/lib/billing/stages";
+import {
+  cancelSquareInvoice,
+  createSquareInvoiceDraft,
   getSquareInvoice,
   isSquareConfigured,
+  publishSquareInvoice,
   upsertSquareCustomer,
 } from "@/lib/square/client";
+import { createPortalToken } from "@/lib/services/portal";
+import { sendWorkOrderMessage } from "@/lib/services/communications";
 
 export type CustomerCredit = {
   credit_id: string;
@@ -27,10 +42,36 @@ export type SquareInvoiceSummary = {
   public_url: string | null;
   total_cents: number;
   credit_applied: number;
+  billing_stage: BillingStage;
 };
 
-function dollarsToCents(amount: number): bigint {
-  return BigInt(Math.round(amount * 100));
+type WorkOrderBillingRow = {
+  work_order_id: string;
+  work_order_number: string;
+  location_id: string;
+  status: string;
+  customer_id: string;
+  square_invoice_id: string | null;
+  square_payment_status: string | null;
+  square_invoice_public_url: string | null;
+  billing_stage: BillingStage;
+  billing_collected_cents: number;
+  estimate_sent_at: string | null;
+  customer: {
+    customer_id: string;
+    first_name: string;
+    last_name: string;
+    email: string | null;
+    phone: string | null;
+    square_customer_id: string | null;
+  };
+};
+
+function toSquareMoney(amountDollars: number) {
+  return {
+    amount: BigInt(dollarsToCents(amountDollars)),
+    currency: "CAD",
+  };
 }
 
 export async function listCustomerCredits(
@@ -88,18 +129,27 @@ export async function addCustomerCredit(input: {
   return data as CustomerCredit;
 }
 
-async function buildBillableLines(workOrderId: string) {
+async function buildLines(
+  workOrderId: string,
+  mode: "draft" | "publish"
+): Promise<BillableLine[]> {
   const supabase = await createClient();
+  const statuses =
+    mode === "draft"
+      ? [...DRAFT_JOB_STATUSES]
+      : [...PUBLISHABLE_JOB_STATUSES];
+
   const { data: jobs, error: jobsError } = await supabase
     .from("job")
     .select("job_id, service_name_snapshot, standard_price_snapshot, status")
     .eq("work_order_id", workOrderId)
-    .in("status", ["approved", "waiting_for_parts", "ready_to_start", "in_progress", "completed"]);
+    .in("status", statuses);
 
   if (jobsError) throw jobsError;
 
   const jobIds = (jobs ?? []).map((j) => j.job_id);
-  let parts: { part_name: string; quantity: number; unit_price: number | null }[] = [];
+  let parts: { part_name: string; quantity: number; unit_price: number | null }[] =
+    [];
 
   if (jobIds.length > 0) {
     const { data: partRows, error: partsError } = await supabase
@@ -116,7 +166,7 @@ async function buildBillableLines(workOrderId: string) {
     }));
   }
 
-  const lines: { name: string; amount: number }[] = [];
+  const lines: BillableLine[] = [];
 
   for (const job of jobs ?? []) {
     const price = Number(job.standard_price_snapshot ?? 0);
@@ -138,12 +188,11 @@ async function buildBillableLines(workOrderId: string) {
   return lines;
 }
 
-export async function createWorkOrderSquareInvoice(
+async function loadBillingWorkOrder(
   workOrderId: string
-): Promise<SquareInvoiceSummary> {
+): Promise<WorkOrderBillingRow> {
   const user = await requireUser();
-  if (!canMarkReadyForPickup(user.role)) throw new Error("FORBIDDEN");
-  if (!isSquareConfigured()) throw new Error("SQUARE_NOT_CONFIGURED");
+  if (!canRecordCustomerApproval(user.role)) throw new Error("FORBIDDEN");
 
   const supabase = await createClient();
   const { data: detail, error } = await supabase
@@ -154,8 +203,13 @@ export async function createWorkOrderSquareInvoice(
       work_order_number,
       location_id,
       status,
+      customer_id,
       square_invoice_id,
       square_payment_status,
+      square_invoice_public_url,
+      billing_stage,
+      billing_collected_cents,
+      estimate_sent_at,
       customer:customer_id (
         customer_id,
         first_name,
@@ -175,33 +229,15 @@ export async function createWorkOrderSquareInvoice(
     throw new Error("FOREIGN_LOCATION");
   }
 
-  if (
-    detail.status !== "ready_for_pickup" &&
-    detail.status !== "completed"
-  ) {
-    throw new Error("SQUARE_INVOICE_NOT_READY");
-  }
-
-  if (detail.square_invoice_id) {
-    const existing = await getSquareInvoice(detail.square_invoice_id);
-    return {
-      square_invoice_id: detail.square_invoice_id,
-      square_payment_status: detail.square_payment_status,
-      public_url: existing.public_url ?? null,
-      total_cents: 0,
-      credit_applied: 0,
-    };
-  }
-
-  const customer = detail.customer as unknown as {
-    customer_id: string;
-    first_name: string;
-    last_name: string;
-    email: string | null;
-    phone: string | null;
-    square_customer_id: string | null;
+  return {
+    ...(detail as Omit<WorkOrderBillingRow, "customer" | "billing_stage">),
+    billing_stage: (detail.billing_stage ?? "none") as BillingStage,
+    billing_collected_cents: Number(detail.billing_collected_cents ?? 0),
+    customer: detail.customer as unknown as WorkOrderBillingRow["customer"],
   };
+}
 
+async function ensureSquareCustomer(customer: WorkOrderBillingRow["customer"]) {
   const squareCustomer = await upsertSquareCustomer({
     givenName: customer.first_name,
     familyName: customer.last_name,
@@ -212,92 +248,461 @@ export async function createWorkOrderSquareInvoice(
   });
 
   if (squareCustomer.id !== customer.square_customer_id) {
+    const supabase = await createClient();
     await supabase
       .from("customer")
       .update({ square_customer_id: squareCustomer.id })
       .eq("customer_id", customer.customer_id);
   }
 
-  const billableLines = await buildBillableLines(workOrderId);
-  if (billableLines.length === 0) throw new Error("SQUARE_NO_BILLABLE_LINES");
+  return squareCustomer;
+}
 
-  const credits = await listCustomerCredits(customer.customer_id);
-  let creditApplied = 0;
-  for (const credit of credits) {
-    creditApplied += Number(credit.remaining_amount);
-  }
-
-  let runningTotal = billableLines.reduce((sum, l) => sum + l.amount, 0);
-  runningTotal = Math.max(0, runningTotal - creditApplied);
-
-  const squareLines = billableLines.map((line) => ({
+function linesToSquareItems(lines: BillableLine[], creditApplied: number) {
+  const squareLines = lines.map((line) => ({
     name: line.name,
     quantity: "1",
-    basePriceMoney: {
-      amount: dollarsToCents(line.amount),
-      currency: "CAD",
-    },
+    basePriceMoney: toSquareMoney(line.amount),
   }));
 
   if (creditApplied > 0) {
     squareLines.push({
       name: "Customer credit applied",
       quantity: "1",
-      basePriceMoney: {
-        amount: dollarsToCents(-creditApplied),
-        currency: "CAD",
-      },
+      basePriceMoney: toSquareMoney(-creditApplied),
     });
   }
 
-  const invoice = await createSquareInvoice({
+  return squareLines;
+}
+
+export async function syncWorkOrderSquareDraft(
+  workOrderId: string
+): Promise<SquareInvoiceSummary> {
+  const user = await requireUser();
+  if (!isSquareConfigured()) throw new Error("SQUARE_NOT_CONFIGURED");
+
+  const detail = await loadBillingWorkOrder(workOrderId);
+  if (detail.billing_stage === "invoiced" || detail.billing_stage === "paid") {
+    throw new Error("SQUARE_INVOICE_ALREADY_PUBLISHED");
+  }
+
+  const supabase = await createClient();
+
+  if (detail.square_invoice_id && detail.square_payment_status === "draft") {
+    try {
+      const existing = await getSquareInvoice(detail.square_invoice_id);
+      if (existing.status === "DRAFT" || existing.status === "UNPAID") {
+        await cancelSquareInvoice(detail.square_invoice_id, existing.version ?? 0);
+      }
+    } catch {
+      // Continue and create a fresh draft if cancel fails
+    }
+  } else if (
+    detail.square_invoice_id &&
+    detail.billing_stage !== "draft" &&
+    detail.billing_stage !== "awaiting_approval" &&
+    detail.billing_stage !== "ready_to_invoice" &&
+    detail.billing_stage !== "none"
+  ) {
+    throw new Error("SQUARE_INVOICE_ALREADY_PUBLISHED");
+  } else if (
+    detail.square_invoice_id &&
+    (detail.square_payment_status === "unpaid" ||
+      detail.square_payment_status === "partially_paid" ||
+      detail.square_payment_status === "paid")
+  ) {
+    throw new Error("SQUARE_INVOICE_ALREADY_PUBLISHED");
+  }
+
+  const squareCustomer = await ensureSquareCustomer(detail.customer);
+  const billableLines = await buildLines(workOrderId, "draft");
+  if (billableLines.length === 0) throw new Error("SQUARE_NO_BILLABLE_LINES");
+
+  const invoice = await createSquareInvoiceDraft({
     customerId: squareCustomer.id,
-    title: `Work order ${detail.work_order_number}`,
-    description: `Service invoice for ${detail.work_order_number}`,
-    lineItems: squareLines,
+    title: `Estimate ${detail.work_order_number}`,
+    description: `Service estimate for ${detail.work_order_number}`,
+    lineItems: linesToSquareItems(billableLines, 0),
   });
+
+  const nextStage: BillingStage =
+    detail.billing_stage === "awaiting_approval" ||
+    detail.billing_stage === "ready_to_invoice"
+      ? detail.billing_stage
+      : "draft";
 
   await supabase
     .from("work_order")
     .update({
       square_invoice_id: invoice.id,
-      square_payment_status: "unpaid",
+      square_payment_status: "draft",
+      square_invoice_public_url: invoice.public_url ?? null,
+      billing_stage: nextStage,
     })
     .eq("work_order_id", workOrderId);
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,
     user_id: user.user_id,
-    event_type: TimelineEventType.SQUARE_INVOICE_CREATED,
+    event_type: TimelineEventType.SQUARE_INVOICE_DRAFT_SYNCED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Square invoice created for ${detail.work_order_number}`,
-    new_value: { square_invoice_id: invoice.id, credit_applied: creditApplied },
+    description: `Square draft synced for ${detail.work_order_number}`,
+    new_value: { square_invoice_id: invoice.id },
   });
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,
     location_id: detail.location_id,
-    action: "square_invoice_created",
+    action: "square_invoice_draft_synced",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Square invoice on ${detail.work_order_number}`,
+    description: `Square draft on ${detail.work_order_number}`,
     new_value: { square_invoice_id: invoice.id },
+  });
+
+  return {
+    square_invoice_id: invoice.id!,
+    square_payment_status: "draft",
+    public_url: invoice.public_url ?? null,
+    total_cents: dollarsToCents(sumLines(billableLines)),
+    credit_applied: 0,
+    billing_stage: nextStage,
+  };
+}
+
+export async function sendWorkOrderEstimateApproval(
+  workOrderId: string,
+  channel: "sms" | "email" = "email"
+): Promise<{ sent: boolean }> {
+  const user = await requireUser();
+  const detail = await loadBillingWorkOrder(workOrderId);
+  const supabase = await createClient();
+
+  let sent = false;
+  try {
+    await sendWorkOrderMessage({
+      work_order_id: workOrderId,
+      channel,
+      template_key: "approval_request",
+    });
+    sent = true;
+  } catch {
+    // Messaging may be unconfigured in alpha — still mark estimate sent for staff portal use
+    await createPortalToken({
+      workOrderId,
+      purpose: "estimate",
+      expiresInDays: 14,
+    });
+  }
+
+  await supabase
+    .from("work_order")
+    .update({
+      billing_stage: "awaiting_approval",
+      estimate_sent_at: new Date().toISOString(),
+    })
+    .eq("work_order_id", workOrderId);
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.ESTIMATE_SENT,
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Estimate approval sent for ${detail.work_order_number}`,
+    new_value: { channel, message_sent: sent },
+  });
+
+  return { sent };
+}
+
+export async function publishWorkOrderSquareInvoice(
+  workOrderId: string,
+  input: {
+    mode: BillingAmountMode;
+    depositPercent?: number;
+    customCents?: number;
+  }
+): Promise<SquareInvoiceSummary> {
+  const user = await requireUser();
+  if (!isSquareConfigured()) throw new Error("SQUARE_NOT_CONFIGURED");
+
+  const detail = await loadBillingWorkOrder(workOrderId);
+
+  const publishingBalance = input.mode === "balance";
+  if (detail.billing_stage === "paid" && !publishingBalance) {
+    throw new Error("SQUARE_ALREADY_PAID");
+  }
+  if (
+    detail.billing_stage === "invoiced" &&
+    detail.square_payment_status !== "cancelled" &&
+    detail.square_payment_status !== "paid" &&
+    !publishingBalance
+  ) {
+    throw new Error("SQUARE_INVOICE_ALREADY_PUBLISHED");
+  }
+  // Balance after a paid deposit: prior invoice stays in timeline; new active invoice is created
+  if (
+    publishingBalance &&
+    detail.square_payment_status !== "paid" &&
+    detail.billing_collected_cents <= 0
+  ) {
+    throw new Error("SQUARE_BALANCE_NOT_READY");
+  }
+
+  const supabase = await createClient();
+  const squareCustomer = await ensureSquareCustomer(detail.customer);
+  const publishLines = await buildLines(workOrderId, "publish");
+  if (publishLines.length === 0) throw new Error("SQUARE_NO_BILLABLE_LINES");
+
+  const credits = await listCustomerCredits(detail.customer.customer_id);
+  const creditApplied = credits.reduce(
+    (sum, c) => sum + Number(c.remaining_amount),
+    0
+  );
+
+  const billableTotalCents = Math.max(
+    0,
+    dollarsToCents(sumLines(publishLines)) - dollarsToCents(creditApplied)
+  );
+  const chargeCents = computePublishAmountCents({
+    mode: input.mode,
+    billableTotalCents,
+    collectedCents: detail.billing_collected_cents,
+    depositPercent: input.depositPercent,
+    customCents: input.customCents,
+  });
+
+  if (chargeCents <= 0) throw new Error("SQUARE_NO_BILLABLE_LINES");
+
+  // Cancel existing draft before publishing a new one
+  if (detail.square_invoice_id) {
+    try {
+      const existing = await getSquareInvoice(detail.square_invoice_id);
+      if (existing.status === "DRAFT") {
+        await cancelSquareInvoice(detail.square_invoice_id, existing.version ?? 0);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const isDeposit =
+    input.mode === "deposit_percent" || input.mode === "custom";
+  const useSingleChargeLine =
+    isDeposit || input.mode === "balance" || detail.billing_collected_cents > 0;
+
+  const lineItems = useSingleChargeLine
+    ? [
+        {
+          name: `${isDeposit ? "Deposit" : "Balance"} — ${detail.work_order_number}`,
+          quantity: "1",
+          basePriceMoney: {
+            amount: BigInt(chargeCents),
+            currency: "CAD",
+          },
+        },
+      ]
+    : linesToSquareItems(publishLines, creditApplied);
+
+  const draft = await createSquareInvoiceDraft({
+    customerId: squareCustomer.id,
+    title: isDeposit
+      ? `Deposit ${detail.work_order_number}`
+      : `Invoice ${detail.work_order_number}`,
+    description: `Service ${isDeposit ? "deposit" : "invoice"} for ${detail.work_order_number}`,
+    lineItems,
+  });
+
+  const invoice = await publishSquareInvoice(draft.id, draft.version ?? 0);
+
+  await supabase
+    .from("work_order")
+    .update({
+      square_invoice_id: invoice.id,
+      square_payment_status: "unpaid",
+      square_invoice_public_url: invoice.public_url ?? null,
+      billing_stage: "invoiced",
+      billing_amount_mode: input.mode,
+      billing_amount_cents: chargeCents,
+      invoice_published_at: new Date().toISOString(),
+    })
+    .eq("work_order_id", workOrderId);
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.SQUARE_INVOICE_PUBLISHED,
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Square invoice published for ${detail.work_order_number}`,
+    new_value: {
+      square_invoice_id: invoice.id,
+      mode: input.mode,
+      amount_cents: chargeCents,
+      previous_invoice_id: detail.square_invoice_id,
+    },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: detail.location_id,
+    action: "square_invoice_published",
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Square invoice published on ${detail.work_order_number}`,
+    new_value: { square_invoice_id: invoice.id, mode: input.mode },
   });
 
   return {
     square_invoice_id: invoice.id!,
     square_payment_status: "unpaid",
     public_url: invoice.public_url ?? null,
-    total_cents: Math.round(runningTotal * 100),
-    credit_applied: creditApplied,
+    total_cents: chargeCents,
+    credit_applied: isDeposit ? 0 : creditApplied,
+    billing_stage: "invoiced",
   };
+}
+
+export async function publishWorkOrderSquareBalance(
+  workOrderId: string
+): Promise<SquareInvoiceSummary> {
+  return publishWorkOrderSquareInvoice(workOrderId, { mode: "balance" });
+}
+
+export async function cancelAndRecreateSquareInvoice(
+  workOrderId: string
+): Promise<void> {
+  const user = await requireUser();
+  if (!isSquareConfigured()) throw new Error("SQUARE_NOT_CONFIGURED");
+
+  const detail = await loadBillingWorkOrder(workOrderId);
+  const status = detail.square_payment_status;
+  if (status === "partially_paid" || status === "paid") {
+    throw new Error("SQUARE_CANCEL_NOT_ALLOWED");
+  }
+
+  const supabase = await createClient();
+
+  if (detail.square_invoice_id) {
+    try {
+      const existing = await getSquareInvoice(detail.square_invoice_id);
+      if (existing.status !== "CANCELED" && existing.status !== "PAID") {
+        await cancelSquareInvoice(detail.square_invoice_id, existing.version ?? 0);
+      }
+    } catch {
+      // Clear local state even if Square cancel fails
+    }
+  }
+
+  await supabase
+    .from("work_order")
+    .update({
+      square_invoice_id: null,
+      square_payment_status: null,
+      square_invoice_public_url: null,
+      billing_stage: "none",
+      billing_amount_mode: null,
+      billing_amount_cents: null,
+      invoice_published_at: null,
+    })
+    .eq("work_order_id", workOrderId);
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.SQUARE_INVOICE_CANCELLED,
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Square invoice cancelled for ${detail.work_order_number}`,
+    new_value: { previous_invoice_id: detail.square_invoice_id },
+  });
+}
+
+/** @deprecated Use publishWorkOrderSquareInvoice — kept for older callers */
+export async function createWorkOrderSquareInvoice(
+  workOrderId: string
+): Promise<SquareInvoiceSummary> {
+  return publishWorkOrderSquareInvoice(workOrderId, { mode: "full" });
+}
+
+export async function recomputeWorkOrderBillingStage(
+  workOrderId: string
+): Promise<void> {
+  const admin = createAdminClient();
+  const { data: wo } = await admin
+    .from("work_order")
+    .select(
+      "billing_stage, square_invoice_id, estimate_sent_at, square_payment_status"
+    )
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (!wo) return;
+  const current = (wo.billing_stage ?? "none") as BillingStage;
+  if (current === "invoiced" || current === "paid") return;
+
+  const { data: jobs } = await admin
+    .from("job")
+    .select("job_id, status, standard_price_snapshot")
+    .eq("work_order_id", workOrderId);
+
+  const hasAwaitingApproval = (jobs ?? []).some(
+    (j) => j.status === "waiting_for_approval"
+  );
+  const publishableJobs = (jobs ?? []).filter((j) =>
+    (PUBLISHABLE_JOB_STATUSES as readonly string[]).includes(j.status)
+  );
+  const jobIds = publishableJobs.map((j) => j.job_id);
+
+  let hasPublishableLines = publishableJobs.some(
+    (j) => Number(j.standard_price_snapshot ?? 0) > 0
+  );
+
+  if (!hasPublishableLines && jobIds.length > 0) {
+    const { data: parts } = await admin
+      .from("part")
+      .select("unit_price, quantity, status")
+      .in("job_id", jobIds)
+      .not("status", "in", "(cancelled,not_required)");
+    hasPublishableLines = (parts ?? []).some(
+      (p) => Number(p.unit_price ?? 0) * Number(p.quantity ?? 0) > 0
+    );
+  }
+
+  const next = stageAfterJobApprovals({
+    current,
+    hasPublishableLines,
+    hasAwaitingApproval,
+    hasSquareDraft: Boolean(wo.square_invoice_id),
+    estimateSent: Boolean(wo.estimate_sent_at),
+  });
+
+  if (next !== current) {
+    await admin
+      .from("work_order")
+      .update({ billing_stage: next })
+      .eq("work_order_id", workOrderId);
+  }
 }
 
 export async function processSquareWebhookEvent(payload: {
   type: string;
   event_id: string;
-  data: { object?: { invoice?: { id?: string; status?: string } } };
+  data: {
+    object?: {
+      invoice?: {
+        id?: string;
+        status?: string;
+        payment_requests?: Array<{
+          computed_amount_money?: { amount?: number };
+          total_completed_amount_money?: { amount?: number };
+        }>;
+      };
+    };
+  };
 }): Promise<void> {
   const admin = createAdminClient();
 
@@ -312,8 +717,9 @@ export async function processSquareWebhookEvent(payload: {
     throw dedupeError;
   }
 
-  const invoiceId = payload.data?.object?.invoice?.id;
-  const invoiceStatus = payload.data?.object?.invoice?.status;
+  const invoice = payload.data?.object?.invoice;
+  const invoiceId = invoice?.id;
+  const invoiceStatus = invoice?.status;
   if (!invoiceId) return;
 
   const statusMap: Record<string, string> = {
@@ -327,33 +733,64 @@ export async function processSquareWebhookEvent(payload: {
   const mapped = invoiceStatus ? statusMap[invoiceStatus] : null;
   if (!mapped) return;
 
+  const paidAmount =
+    invoice?.payment_requests?.[0]?.total_completed_amount_money?.amount ?? null;
+
   const { data: workOrders, error } = await admin
     .from("work_order")
-    .select("work_order_id, work_order_number, location_id, customer_id")
+    .select(
+      "work_order_id, work_order_number, location_id, customer_id, billing_collected_cents, billing_amount_cents, billing_amount_mode"
+    )
     .eq("square_invoice_id", invoiceId);
 
   if (error) throw error;
 
   for (const wo of workOrders ?? []) {
-    await admin
-      .from("work_order")
-      .update({ square_payment_status: mapped })
-      .eq("work_order_id", wo.work_order_id);
+    const updates: Record<string, unknown> = {
+      square_payment_status: mapped,
+    };
+    const mode = wo.billing_amount_mode as string | null;
+    const isDeposit = mode === "deposit_percent" || mode === "custom";
 
     if (mapped === "paid") {
-      const credits = await admin
-        .from("customer_credit")
-        .select("credit_id, remaining_amount")
-        .eq("customer_id", wo.customer_id)
-        .gt("remaining_amount", 0);
+      const add =
+        paidAmount ?? Number(wo.billing_amount_cents ?? 0);
+      const collected =
+        Number(wo.billing_collected_cents ?? 0) + (add > 0 ? add : 0);
+      updates.billing_collected_cents = collected;
+      // Deposit paid → ready for balance invoice; full/balance paid → paid
+      updates.billing_stage = isDeposit ? "ready_to_invoice" : "paid";
 
-      for (const credit of credits.data ?? []) {
-        await admin
+      if (!isDeposit) {
+        const credits = await admin
           .from("customer_credit")
-          .update({ remaining_amount: 0 })
-          .eq("credit_id", credit.credit_id);
+          .select("credit_id, remaining_amount")
+          .eq("customer_id", wo.customer_id)
+          .gt("remaining_amount", 0);
+
+        for (const credit of credits.data ?? []) {
+          await admin
+            .from("customer_credit")
+            .update({ remaining_amount: 0 })
+            .eq("credit_id", credit.credit_id);
+        }
       }
+    } else if (mapped === "partially_paid") {
+      updates.billing_stage = "invoiced";
+      if (paidAmount != null) {
+        updates.billing_collected_cents = Math.max(
+          Number(wo.billing_collected_cents ?? 0),
+          paidAmount
+        );
+      }
+    } else if (mapped === "cancelled") {
+      updates.billing_stage = "none";
     }
+
+    await admin
+      .from("work_order")
+      .update(updates)
+      .eq("work_order_id", wo.work_order_id);
 
     await addTimelineEvent(admin, {
       work_order_id: wo.work_order_id,

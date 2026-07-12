@@ -88,8 +88,14 @@ const MESSAGES: Record<string, string> = {
   SIGNATURE_TOO_LARGE: "Signature image is too large.",
   SIGNATURE_UPLOAD_FAILED: "Could not save the signature. Try again.",
   SQUARE_NOT_CONFIGURED: "Square is not configured. Add SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID.",
-  SQUARE_INVOICE_NOT_READY: "Mark the work order ready for pickup before creating a Square invoice.",
-  SQUARE_NO_BILLABLE_LINES: "No approved jobs or priced parts to invoice.",
+  SQUARE_INVOICE_NOT_READY: "Sync a draft and get approvals before publishing the Square invoice.",
+  SQUARE_NO_BILLABLE_LINES: "No priced jobs or parts to put on the estimate/invoice.",
+  SQUARE_INVOICE_ALREADY_PUBLISHED:
+    "A Square invoice is already published. Cancel & recreate, or publish the balance after a deposit.",
+  SQUARE_ALREADY_PAID: "This work order is already fully paid.",
+  SQUARE_CANCEL_NOT_ALLOWED:
+    "Cannot cancel a partially paid or paid invoice. Handle the remainder in Square or publish balance.",
+  SQUARE_BALANCE_NOT_READY: "Collect a deposit payment before publishing the balance.",
   TWILIO_NOT_CONFIGURED: "Twilio is not configured for SMS.",
   EMAIL_NOT_CONFIGURED: "Email is not configured. Add RESEND_API_KEY.",
   CUSTOMER_PHONE_REQUIRED: "Customer needs a phone number to send SMS.",
@@ -101,8 +107,6 @@ const MESSAGES: Record<string, string> = {
   BOOKING_MOTORCYCLE_REQUIRED: "Could not match a motorcycle for this booking. Link the customer bike first.",
   WIX_NOT_CONFIGURED: "Wix is not configured.",
   FITMENT_IMPORT_FAILED: "Fitment import failed.",
-  ALREADY_CLOCKED_IN: "You are already clocked in.",
-  NOT_CLOCKED_IN: "You are not clocked in.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

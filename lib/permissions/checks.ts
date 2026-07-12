@@ -77,6 +77,33 @@ export function canOverrideWorkOrderStatus(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
 
+/** Billing area (/billing) — front office only; technicians excluded. */
+export function canViewBillingArea(role: UserRole) {
+  return FRONT_OFFICE.includes(role);
+}
+export function canViewBillingMoneyDesk(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
+export function canViewBillingLedger(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
+
+export type BillingTab = "collections" | "money_desk" | "ledger";
+
+export function defaultBillingTab(role: UserRole): BillingTab {
+  if (role === "owner") return "ledger";
+  if (role === "manager") return "money_desk";
+  return "collections";
+}
+
+export function canViewBillingTab(role: UserRole, tab: BillingTab): boolean {
+  if (!canViewBillingArea(role)) return false;
+  if (tab === "collections") return true;
+  if (tab === "money_desk") return canViewBillingMoneyDesk(role);
+  if (tab === "ledger") return canViewBillingLedger(role);
+  return false;
+}
+
 /** Admin: limited operational help; no workflow override, no audit, no user/location admin. */
 export function canAdminHelpCreateRecords(role: UserRole) {
   return role === "admin" || FRONT_OFFICE.includes(role);

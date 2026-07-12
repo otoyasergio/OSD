@@ -29,9 +29,7 @@ export function buildWorkOrderFlags(input: WorkOrderFlagInput): string[] {
   const flags: string[] = [];
 
   if (!input.vin?.trim()) flags.push("Missing VIN");
-  if (!input.external_invoice_number?.trim()) {
-    flags.push("Missing invoice #");
-  }
+  // External invoice # is legacy; Square billing on the WO replaces it for alpha
   if (input.photoCount === 0) flags.push("No intake photos");
   if (input.inspectionComplete === false) {
     flags.push("Incomplete inspection");

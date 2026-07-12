@@ -112,7 +112,10 @@ export function AppShell({ user, locations, children }: Props) {
             priority
           />
         </Link>
-        <SidebarNav onNavigate={() => setMobileNavOpen(false)} />
+        <SidebarNav
+          role={user.role}
+          onNavigate={() => setMobileNavOpen(false)}
+        />
       </aside>
 
       <div className="main-content">
