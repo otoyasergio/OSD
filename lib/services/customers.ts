@@ -3,8 +3,10 @@ import { createClient } from "@/lib/database/supabase-server";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { canAdminHelpCreateRecords } from "@/lib/permissions";
 import { customerSchema } from "@/lib/validation/schemas";
+import type { CustomerAccountType } from "@/lib/services/customerShared";
 
-export type CustomerAccountType = "retail" | "fleet" | "commercial";
+export type { CustomerAccountType } from "@/lib/services/customerShared";
+export { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 
 export type Customer = {
   customer_id: string;
@@ -26,13 +28,6 @@ export type CustomerInput = {
   notes?: string | null;
   account_type?: CustomerAccountType;
 };
-
-export const CUSTOMER_ACCOUNT_TYPE_LABELS: Record<CustomerAccountType, string> =
-  {
-    retail: "Retail",
-    fleet: "Fleet",
-    commercial: "Commercial",
-  };
 
 const CUSTOMER_COLUMNS =
   "customer_id, first_name, last_name, phone, email, notes, account_type, created_at, updated_at";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatElapsedMs } from "@/lib/services/timeClock";
+import { formatElapsedMs } from "@/lib/services/timeClockShared";
 
 describe("formatElapsedMs", () => {
   it("formats under an hour as m:ss", () => {

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCustomerById, CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customers";
+import { getCustomerById } from "@/lib/services/customers";
+import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { listGarageForCustomer } from "@/lib/services/clientGarage";
 import { listWorkOrdersForCustomer } from "@/lib/services/filedWorkOrders";
 import { CustomerForm } from "@/components/forms/CustomerForm";

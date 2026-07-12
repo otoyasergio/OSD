@@ -3,7 +3,7 @@
 import { useActionState } from "react";
 import type { CustomerFormState } from "@/app/(app)/customers/actions";
 import type { Customer } from "@/lib/services/customers";
-import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customers";
+import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 

@@ -7,7 +7,7 @@ import {
   clockOutAction,
 } from "@/app/(app)/technician/clock-actions";
 import type { TimeClockEntry } from "@/lib/services/timeClock";
-import { formatElapsedMs } from "@/lib/services/timeClock";
+import { formatElapsedMs } from "@/lib/services/timeClockShared";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 
