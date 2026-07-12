@@ -12,17 +12,25 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 const STATUS_OPTIONS: Array<{
   value: InspectionResultStatus;
   short: string;
+  long: string;
   className: string;
 }> = [
-  { value: "ok", short: "OK", className: "inspection-status-ok" },
+  {
+    value: "ok",
+    short: "OK",
+    long: "Checked and OK",
+    className: "inspection-status-ok",
+  },
   {
     value: "future_attention",
     short: "Future",
+    long: "May need future attention",
     className: "inspection-status-future",
   },
   {
     value: "immediate_attention",
     short: "Now",
+    long: "Requires immediate attention",
     className: "inspection-status-immediate",
   },
 ];
@@ -36,11 +44,12 @@ function measurementHint(itemName: string): string | null {
 }
 
 function displayName(itemName: string): string {
-  return itemName
+  const cleaned = itemName
     .replace(/^Front\s+/i, "")
     .replace(/^Rear\s+/i, "")
     .replace(/\s*\([^)]*\)\s*$/, "")
     .trim();
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 export function InspectionItemRow({
@@ -151,105 +160,153 @@ export function InspectionItemRow({
   const isSkip = result.item_name_snapshot === BRAKE_INSPECTION_SKIP_ITEM;
   const showMeasurement =
     result.requires_measurement_snapshot || Boolean(measurement) || Boolean(unit);
+  const selectedOption = STATUS_OPTIONS.find((o) => o.value === status);
+  const attentionClass =
+    status === "immediate_attention"
+      ? "inspection-item-row--immediate"
+      : status === "future_attention"
+        ? "inspection-item-row--flagged"
+        : "";
 
   return (
     <article
       className={`inspection-item-row ${compact ? "inspection-item-row--compact" : ""} ${
         isSkip ? "inspection-item-row--skip" : ""
-      } ${needsAttention ? "inspection-item-row--flagged" : ""}`}
+      } ${attentionClass}`}
     >
       <div className="inspection-item-main">
         <div className="inspection-item-title-row">
           <h3 className="inspection-item-title">
             {isSkip ? result.item_name_snapshot : displayName(result.item_name_snapshot)}
           </h3>
-          <span
-            className={`inspection-save-state text-xs font-medium ${
-              saveState === "error"
-                ? "text-red-700"
-                : saveState === "saving"
-                  ? "text-zinc-500"
-                  : saveState === "saved"
-                    ? "text-emerald-700"
-                    : "text-transparent"
-            }`}
-            aria-live="polite"
-          >
-            {saveState === "saving"
-              ? "Saving…"
-              : saveState === "saved"
-                ? "Saved"
-                : saveState === "error"
-                  ? "Error"
-                  : "Idle"}
-          </span>
+          {!readOnly ? (
+            <span
+              className={`inspection-save-state text-xs font-medium ${
+                saveState === "error"
+                  ? "text-red-700"
+                  : saveState === "saving"
+                    ? "text-zinc-500"
+                    : saveState === "saved"
+                      ? "text-emerald-700"
+                      : "text-transparent"
+              }`}
+              aria-live="polite"
+            >
+              {saveState === "saving"
+                ? "Saving…"
+                : saveState === "saved"
+                  ? "Saved"
+                  : saveState === "error"
+                    ? "Error"
+                    : "Idle"}
+            </span>
+          ) : null}
         </div>
 
-        <div className="inspection-status-group" role="group" aria-label="Status">
-          {STATUS_OPTIONS.map((option) => {
-            const selected = status === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                disabled={readOnly}
-                onClick={() => saveStatus(option.value)}
-                className={`inspection-status-swatch ${option.className} ${
-                  selected ? "is-selected" : ""
-                }`}
-                aria-pressed={selected}
-                title={option.short}
-              >
-                <span className="sr-only">{option.short}</span>
-              </button>
-            );
-          })}
-        </div>
+        {readOnly ? (
+          <span
+            className={`inspection-status-chip ${
+              selectedOption
+                ? isSkip
+                  ? "inspection-status-chip--skip"
+                  : `inspection-status-chip--${selectedOption.value}`
+                : "inspection-status-chip--none"
+            }`}
+          >
+            {selectedOption
+              ? isSkip
+                ? "Not performed this visit"
+                : selectedOption.long
+              : "Not checked"}
+          </span>
+        ) : (
+          <div className="inspection-status-group" role="group" aria-label="Status">
+            {STATUS_OPTIONS.map((option) => {
+              const selected = status === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => saveStatus(option.value)}
+                  className={`inspection-status-swatch ${option.className} ${
+                    selected ? "is-selected" : ""
+                  }`}
+                  aria-pressed={selected}
+                  aria-label={option.long}
+                  title={option.long}
+                >
+                  <span className="inspection-status-swatch-label" aria-hidden>
+                    {option.short}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {showMeasurement ? (
-        <label className="inspection-measurement">
-          <span className="inspection-measurement-label">
-            {unit ? `Measurement (${unit})` : "Measurement"}
-          </span>
-          <input
-            className="inspection-measurement-input"
-            value={measurement}
-            disabled={readOnly}
-            inputMode="decimal"
-            placeholder={unit ?? ""}
-            onChange={(e) => {
-              setMeasurement(e.target.value);
-              scheduleTextSave();
-            }}
-            onBlur={flushTextSave}
-          />
-        </label>
-      ) : null}
+      {readOnly ? (
+        <>
+          {measurement ? (
+            <p className="inspection-readonly-line">
+              <span className="inspection-readonly-label">
+                {unit ? `Measurement (${unit})` : "Measurement"}
+              </span>
+              <span className="inspection-readonly-value">{measurement}</span>
+            </p>
+          ) : null}
+          {notes ? (
+            <p className="inspection-readonly-line">
+              <span className="inspection-readonly-label">Notes</span>
+              <span className="inspection-readonly-value">{notes}</span>
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          {showMeasurement ? (
+            <label className="inspection-measurement">
+              <span className="inspection-measurement-label">
+                {unit ? `Measurement (${unit})` : "Measurement"}
+              </span>
+              <input
+                className="inspection-measurement-input"
+                value={measurement}
+                inputMode="decimal"
+                placeholder={unit ?? ""}
+                onChange={(e) => {
+                  setMeasurement(e.target.value);
+                  scheduleTextSave();
+                }}
+                onBlur={flushTextSave}
+              />
+            </label>
+          ) : null}
 
-      {!compact || notes || needsAttention || isSkip ? (
-        <label className="inspection-notes">
-          <span className="sr-only">Notes</span>
-          <textarea
-            className="inspection-notes-input"
-            rows={compact ? 1 : 2}
-            value={notes}
-            disabled={readOnly}
-            placeholder={
-              isSkip
-                ? "Optional note"
-                : needsAttention
-                  ? "Describe the issue…"
-                  : "Notes"
-            }
-            onChange={(e) => {
-              setNotes(e.target.value);
-              scheduleTextSave();
-            }}
-            onBlur={flushTextSave}
-          />
-        </label>
-      ) : null}
+          {!compact || notes || needsAttention || isSkip ? (
+            <label className="inspection-notes">
+              <span className="sr-only">Notes</span>
+              <textarea
+                className="inspection-notes-input"
+                rows={compact ? 1 : 2}
+                value={notes}
+                placeholder={
+                  isSkip
+                    ? "Optional note"
+                    : needsAttention
+                      ? "Describe the issue…"
+                      : "Notes"
+                }
+                onChange={(e) => {
+                  setNotes(e.target.value);
+                  scheduleTextSave();
+                }}
+                onBlur={flushTextSave}
+              />
+            </label>
+          ) : null}
+        </>
+      )}
 
       {error ? (
         <p role="alert" className="mt-2 text-sm text-red-700">
@@ -257,7 +314,7 @@ export function InspectionItemRow({
         </p>
       ) : null}
 
-      {needsAttention ? (
+      {needsAttention && (!readOnly || photoUrl) ? (
         <div className="inspection-item-photo">
           <InspectionPhotoSlot
             workOrderId={workOrderId}

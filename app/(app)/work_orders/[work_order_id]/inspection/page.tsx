@@ -7,6 +7,7 @@ import {
   canOverrideWorkOrderStatus,
 } from "@/lib/permissions";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
+import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,12 @@ export default async function InspectionPage({
   const canEdit = canCompleteInspection(user.role);
   const canForce = canOverrideWorkOrderStatus(user.role);
   const canRecommend = canCreateRecommendation(user.role);
+  const readOnly = isInspectionReadOnly({
+    is_foreign_location: inspection.is_foreign_location,
+    completed_at: inspection.completed_at,
+    work_order_status: inspection.work_order_status,
+    canEdit,
+  });
 
   return (
     <>
@@ -47,11 +54,13 @@ export default async function InspectionPage({
       </header>
 
       <div className="inspection-fullscreen-body">
-        <p className="inspection-fullscreen-hint">
-          Tap green / yellow / red to mark each item. Status saves immediately.
-          Add required photos for tires, brakes, forks, and anything marked
-          needing work before completing the report.
-        </p>
+        {!readOnly ? (
+          <p className="inspection-fullscreen-hint">
+            Tap green / yellow / red to mark each item. Status saves
+            immediately. Add required photos for tires, brakes, forks, and
+            anything marked needing work before completing the report.
+          </p>
+        ) : null}
 
         {inspection.is_foreign_location ? (
           <div

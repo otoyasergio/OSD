@@ -202,3 +202,23 @@ export function assertInspectionCompletedForJobFinish(
     throw new Error("INSPECTION_NOT_COMPLETED");
   }
 }
+
+/**
+ * When the checklist renders as a read-only report instead of an editable
+ * form. Terminal work orders reject inspection writes server-side, so they
+ * must render read-only too.
+ */
+export function isInspectionReadOnly(input: {
+  is_foreign_location: boolean;
+  completed_at: string | null;
+  work_order_status: string;
+  canEdit: boolean;
+}): boolean {
+  return (
+    input.is_foreign_location ||
+    Boolean(input.completed_at) ||
+    input.work_order_status === "completed" ||
+    input.work_order_status === "cancelled" ||
+    !input.canEdit
+  );
+}

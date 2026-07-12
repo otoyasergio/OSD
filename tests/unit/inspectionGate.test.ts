@@ -5,8 +5,47 @@ import {
   countIncompleteInspectionResults,
   getMissingInspectionPhotos,
   getRequiredInspectionPhotos,
+  isInspectionReadOnly,
   BRAKE_INSPECTION_SKIP_ITEM,
 } from "@/lib/services/inspectionGate";
+
+describe("isInspectionReadOnly", () => {
+  const editable = {
+    is_foreign_location: false,
+    completed_at: null,
+    work_order_status: "inspection_in_progress",
+    canEdit: true,
+  };
+
+  it("is editable for an active work order with edit permission", () => {
+    expect(isInspectionReadOnly(editable)).toBe(false);
+  });
+
+  it("is read-only once the inspection is completed", () => {
+    expect(
+      isInspectionReadOnly({
+        ...editable,
+        completed_at: "2026-07-09T12:00:00.000Z",
+      })
+    ).toBe(true);
+  });
+
+  it("is read-only for terminal work orders", () => {
+    expect(
+      isInspectionReadOnly({ ...editable, work_order_status: "completed" })
+    ).toBe(true);
+    expect(
+      isInspectionReadOnly({ ...editable, work_order_status: "cancelled" })
+    ).toBe(true);
+  });
+
+  it("is read-only for foreign locations and viewers without edit rights", () => {
+    expect(
+      isInspectionReadOnly({ ...editable, is_foreign_location: true })
+    ).toBe(true);
+    expect(isInspectionReadOnly({ ...editable, canEdit: false })).toBe(true);
+  });
+});
 
 describe("assertInspectionCompletedForJobFinish", () => {
   it("blocks job finish when inspection.completed_at is null", () => {

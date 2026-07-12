@@ -5,6 +5,7 @@ import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspe
 import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import { completeInspectionAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
+import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import type { PhotoCategory } from "@/lib/database/types";
@@ -52,10 +53,12 @@ export function InspectionChecklist({
     { error: null }
   );
   const [forceConfirm, setForceConfirm] = useState(false);
-  const readOnly =
-    inspection.is_foreign_location ||
-    Boolean(inspection.completed_at) ||
-    !canEdit;
+  const readOnly = isInspectionReadOnly({
+    is_foreign_location: inspection.is_foreign_location,
+    completed_at: inspection.completed_at,
+    work_order_status: inspection.work_order_status,
+    canEdit,
+  });
 
   const grouped = useMemo(() => {
     return inspection.results.reduce<Record<string, InspectionResultRow[]>>(
@@ -90,6 +93,19 @@ export function InspectionChecklist({
   }, [inspection.photos]);
 
   const missingPhotoLabels = inspection.missing_photos.map((p) => p.label);
+  const totalCount = inspection.results.length;
+  const checkedCount = totalCount - inspection.incomplete_count;
+  const statusTotals = useMemo(() => {
+    let ok = 0;
+    let future = 0;
+    let immediate = 0;
+    for (const r of inspection.results) {
+      if (r.status === "ok") ok += 1;
+      else if (r.status === "future_attention") future += 1;
+      else if (r.status === "immediate_attention") immediate += 1;
+    }
+    return { ok, future, immediate };
+  }, [inspection.results]);
   const brakeSkipped = inspection.results.some(
     (r) =>
       r.item_name_snapshot ===
@@ -172,24 +188,49 @@ export function InspectionChecklist({
       </header>
 
       <div className="inspection-checklist-toolbar">
-        <div>
-          <p className="text-sm text-zinc-600">
-            {inspection.incomplete_count === 0
-              ? "All items have a status."
-              : `${inspection.incomplete_count} incomplete item${
-                  inspection.incomplete_count === 1 ? "" : "s"
-                }`}
-          </p>
-          {missingPhotoLabels.length > 0 ? (
-            <p className="mt-1 text-sm font-medium text-amber-900">
-              {missingPhotoLabels.length} required photo
-              {missingPhotoLabels.length === 1 ? "" : "s"} still needed.
-            </p>
-          ) : null}
-          {inspection.completed_at ? (
-            <p className="mt-1 text-sm font-medium text-emerald-800">
+        <div className="inspection-progress">
+          {!inspection.completed_at ? (
+            <>
+              <div
+                className="inspection-progress-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={totalCount}
+                aria-valuenow={checkedCount}
+                aria-label="Inspection progress"
+              >
+                <span
+                  className="inspection-progress-fill"
+                  style={{
+                    width: `${totalCount === 0 ? 0 : Math.round((checkedCount / totalCount) * 100)}%`,
+                  }}
+                />
+              </div>
+              <p className="inspection-progress-text">
+                <strong>{checkedCount}</strong> of {totalCount} items checked
+              </p>
+            </>
+          ) : (
+            <p className="text-sm font-medium text-emerald-800">
               Inspection completed{" "}
               {new Date(inspection.completed_at).toLocaleString()}
+            </p>
+          )}
+          <div className="inspection-summary-chips" aria-label="Result totals">
+            <span className="inspection-summary-chip inspection-summary-chip--ok">
+              {statusTotals.ok} OK
+            </span>
+            <span className="inspection-summary-chip inspection-summary-chip--future">
+              {statusTotals.future} future
+            </span>
+            <span className="inspection-summary-chip inspection-summary-chip--immediate">
+              {statusTotals.immediate} immediate
+            </span>
+          </div>
+          {missingPhotoLabels.length > 0 ? (
+            <p className="text-sm font-medium text-amber-900">
+              {missingPhotoLabels.length} required photo
+              {missingPhotoLabels.length === 1 ? "" : "s"} still needed.
             </p>
           ) : null}
         </div>
@@ -234,26 +275,33 @@ export function InspectionChecklist({
         ) : null}
       </div>
 
-      {showTireBrakePhotos ? (
+      {showTireBrakePhotos &&
+      (!readOnly ||
+        sectionPhotoUrl.get("inspection_tires") ||
+        sectionPhotoUrl.get("inspection_brakes")) ? (
         <section className="inspection-section-photos">
           <h2 className="inspection-section-header">Required section photos</h2>
           <div className="inspection-photo-grid">
-            <InspectionPhotoSlot
-              workOrderId={inspection.work_order_id}
-              category="inspection_tires"
-              label="Tires"
-              required
-              existingUrl={sectionPhotoUrl.get("inspection_tires")}
-              readOnly={readOnly}
-            />
-            <InspectionPhotoSlot
-              workOrderId={inspection.work_order_id}
-              category="inspection_brakes"
-              label="Brakes"
-              required
-              existingUrl={sectionPhotoUrl.get("inspection_brakes")}
-              readOnly={readOnly}
-            />
+            {!readOnly || sectionPhotoUrl.get("inspection_tires") ? (
+              <InspectionPhotoSlot
+                workOrderId={inspection.work_order_id}
+                category="inspection_tires"
+                label="Tires"
+                required
+                existingUrl={sectionPhotoUrl.get("inspection_tires")}
+                readOnly={readOnly}
+              />
+            ) : null}
+            {!readOnly || sectionPhotoUrl.get("inspection_brakes") ? (
+              <InspectionPhotoSlot
+                workOrderId={inspection.work_order_id}
+                category="inspection_brakes"
+                label="Brakes"
+                required
+                existingUrl={sectionPhotoUrl.get("inspection_brakes")}
+                readOnly={readOnly}
+              />
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -272,10 +320,43 @@ export function InspectionChecklist({
                   r.status != null && /front forks/i.test(r.item_name_snapshot)
               ));
 
+          const sectionChecked = results.filter((r) => r.status != null).length;
+          const sectionImmediate = results.filter(
+            (r) => r.status === "immediate_attention"
+          ).length;
+          const sectionFuture = results.filter(
+            (r) => r.status === "future_attention"
+          ).length;
+          const sectionDone = sectionChecked === results.length;
+          const countClass = sectionImmediate
+            ? "inspection-section-count--immediate"
+            : sectionFuture
+              ? "inspection-section-count--future"
+              : sectionDone
+                ? "inspection-section-count--done"
+                : "";
+
           return (
             <section key={category} className="inspection-section">
-              <h2 className="inspection-section-header">{category}</h2>
-              {forksNeeded && sectionPhoto ? (
+              <h2 className="inspection-section-header">
+                <span className="inspection-section-header-title">
+                  {category}
+                </span>
+                <span
+                  className={`inspection-section-count ${countClass}`}
+                  aria-label={`${sectionChecked} of ${results.length} items checked${
+                    sectionImmediate
+                      ? `, ${sectionImmediate} requiring immediate attention`
+                      : ""
+                  }`}
+                >
+                  {sectionDone ? "✓ " : ""}
+                  {sectionChecked}/{results.length}
+                </span>
+              </h2>
+              {forksNeeded &&
+              sectionPhoto &&
+              (!readOnly || sectionPhotoUrl.get(sectionPhoto.category)) ? (
                 <div className="mb-3">
                   <InspectionPhotoSlot
                     workOrderId={inspection.work_order_id}
