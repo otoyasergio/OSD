@@ -1,0 +1,32 @@
+export const TimelineEventType = {
+  WORK_ORDER_CREATED: "Work Order Created",
+  WORK_ORDER_STATUS_CHANGED: "Work Order Status Changed",
+  EXTERNAL_INVOICE_NUMBER_ADDED: "External Invoice Number Added",
+  INTAKE_PHOTO_UPLOADED: "Intake Photo Uploaded",
+  INSPECTION_CREATED: "Inspection Created",
+  INSPECTION_STARTED: "Inspection Started",
+  INSPECTION_RESULT_UPDATED: "Inspection Result Updated",
+  INSPECTION_COMPLETED: "Inspection Completed",
+  JOB_CREATED: "Job Created",
+  JOB_ASSIGNED: "Job Assigned",
+  JOB_STATUS_CHANGED: "Job Status Changed",
+  CUSTOMER_APPROVAL_RECORDED: "Customer Approval Recorded",
+  CUSTOMER_DECLINE_RECORDED: "Customer Decline Recorded",
+  RECOMMENDATION_CREATED: "Recommendation Created",
+  RECOMMENDATION_STATUS_CHANGED: "Recommendation Status Changed",
+  RECOMMENDATION_CONVERTED_TO_JOB: "Recommendation Converted To Job",
+  PART_ADDED: "Part Added",
+  PART_STATUS_CHANGED: "Part Status Changed",
+  TECHNICIAN_ASSIGNED: "Technician Assigned",
+  PRIMARY_TECHNICIAN_CHANGED: "Primary Technician Changed",
+  TECHNICIAN_NOTE_ADDED: "Technician Note Added",
+  SERVICE_INFORMATION_UPDATED: "Service Information Updated",
+  QUALITY_CHECK_COMPLETED: "Quality Check Completed",
+  READY_FOR_PICKUP: "Ready For Pickup",
+  WORK_ORDER_COMPLETED: "Work Order Completed",
+  WORK_ORDER_CANCELLED: "Work Order Cancelled",
+  WORK_ORDER_PLACED_ON_HOLD: "Work Order Placed On Hold",
+} as const;
+
+export type TimelineEventTypeValue =
+  (typeof TimelineEventType)[keyof typeof TimelineEventType];

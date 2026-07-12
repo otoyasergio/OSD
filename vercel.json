@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/parts-canada-sync",
+      "schedule": "0 15 * * *"
+    }
+  ]
+}
