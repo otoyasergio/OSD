@@ -61,6 +61,9 @@ export function canManageServiceCatalogue(role: UserRole) {
 export function canManageInspectionTemplate(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
+export function canManageContractTemplate(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
 export function canManageUsers(role: UserRole) {
   return OWNERS.includes(role);
 }

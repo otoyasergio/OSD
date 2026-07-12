@@ -10,6 +10,8 @@ export const WORK_ORDER_TABS = [
   { id: "notes", label: "Notes" },
   { id: "timeline", label: "Activity" },
   { id: "service-info", label: "Service Info" },
+  { id: "contract", label: "Contract" },
+  { id: "messages", label: "Messages" },
 ] as const;
 
 export type WorkOrderTabId = (typeof WORK_ORDER_TABS)[number]["id"];

@@ -242,7 +242,7 @@ export function CreateWorkOrderForm({
         return;
       }
 
-      router.push(`/work_orders/${created.workOrderId}`);
+      router.push(`/work_orders/${created.workOrderId}/contract?from=intake`);
       router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));

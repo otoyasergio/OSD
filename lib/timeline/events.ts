@@ -26,6 +26,11 @@ export const TimelineEventType = {
   WORK_ORDER_COMPLETED: "Work Order Completed",
   WORK_ORDER_CANCELLED: "Work Order Cancelled",
   WORK_ORDER_PLACED_ON_HOLD: "Work Order Placed On Hold",
+  DROP_OFF_AGREEMENT_SIGNED: "Drop-Off Agreement Signed",
+  SQUARE_INVOICE_CREATED: "Square Invoice Created",
+  SQUARE_PAYMENT_UPDATED: "Square Payment Updated",
+  MESSAGE_SENT: "Message Sent",
+  INSPECTION_ACKNOWLEDGED: "Inspection Acknowledged",
 } as const;
 
 export type TimelineEventTypeValue =
