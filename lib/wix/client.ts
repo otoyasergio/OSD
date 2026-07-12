@@ -166,14 +166,51 @@ export async function findWixContactByEmailOrPhone(input: {
   return null;
 }
 
-async function queryWixContacts(body: Record<string, unknown>): Promise<
-  WixContact[]
-> {
+type WixContactsQueryResponse = {
+  contacts?: WixContact[];
+  pagingMetadata?: {
+    count?: number;
+    offset?: number;
+    total?: number;
+    hasNext?: boolean;
+  };
+};
+
+async function queryWixContactsPage(
+  body: Record<string, unknown>
+): Promise<WixContactsQueryResponse> {
   const response = await wixFetch("/contacts/v4/contacts/query", {
     method: "POST",
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await readWixError(response));
-  const data = (await response.json()) as { contacts?: WixContact[] };
+  return (await response.json()) as WixContactsQueryResponse;
+}
+
+async function queryWixContacts(body: Record<string, unknown>): Promise<
+  WixContact[]
+> {
+  const data = await queryWixContactsPage(body);
   return data.contacts ?? [];
+}
+
+const LIST_PAGE_SIZE = 100;
+
+/** Page through all site contacts (offset paging). */
+export async function listAllWixContacts(): Promise<WixContact[]> {
+  const contacts: WixContact[] = [];
+  let offset = 0;
+
+  for (;;) {
+    const page = await queryWixContactsPage({
+      paging: { limit: LIST_PAGE_SIZE, offset },
+    });
+    const batch = page.contacts ?? [];
+    if (!batch.length) break;
+    contacts.push(...batch);
+    if (batch.length < LIST_PAGE_SIZE) break;
+    offset += batch.length;
+  }
+
+  return contacts;
 }
