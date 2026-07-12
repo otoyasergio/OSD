@@ -1,7 +1,7 @@
 # Before-arrival process (client contact → counter)
 
 **Date:** 2026-07-12  
-**Status:** Draft for user review  
+**Status:** Approved for implementation  
 **Extends:** [2026-07-08-otomoto-workshop-management-design.md](./2026-07-08-otomoto-workshop-management-design.md)  
 **Related:** Wix Bookings calendar sync (separate brainstorm / upcoming spec)
 
@@ -62,6 +62,7 @@ Before the bike is at the counter, the shop mixes phone, Wix online booking, and
 | `motorcycle_id` | Nullable until known; required before finishing intake |
 | `reason` / notes | Why they’re coming |
 | `wix_booking_id` | Nullable; idempotency key for Wix sync |
+| `wix_sync_status` | `synced` \| `not_synced` \| `n/a` — outbound companion uses this |
 | `work_order_id` | Linked draft WO (set immediately for phone/Wix) |
 | `created_by_user_id` | Nullable for pure Wix inbound |
 | timestamps | `created_at`, `updated_at` |
@@ -69,22 +70,26 @@ Before the bike is at the counter, the shop mixes phone, Wix online booking, and
 ### Work order (existing)
 
 - Created as status `draft` from booking (promoted to `open` on **Arrive**, then normal recalc applies)  
-- Carries reason into visit notes / requested services when known  
+- `motorcycle_id` may be **null only while status is `draft`**; **Arrive** requires a motorcycle (create/link first if missing)  
+- Inspection row + template results are **not** created at booking; they are created on **Arrive** (same path as today’s open WO)  
+- Carries reason into `internal_notes` / visit notes when known  
 - Intake photos remain required at arrival (same six-slot rules as today)  
-- Future-dated draft WOs do **not** clutter the live in-shop board until **Arrive**
+- Live shop board **excludes** `status = draft` (scheduled bookings live on Calendar until Arrive)  
+- Keep denormalized `work_order.wix_booking_id` / `scheduled_at` / `source` for search; **appointment** is source of truth for sync idempotency  
 
 ### Customer / motorcycle (existing)
 
 - Match by phone/email when possible; create if new  
-- Bike optional at booking; required before finishing intake for a real visit  
+- Bike optional at booking; required before **Arrive** completes  
 
 ### Rules
 
-1. One active appointment → at most one draft WO  
+1. One active appointment (`scheduled`) → at most one linked draft WO  
 2. Cancel / no-show appointment → set linked draft WO to `cancelled` (not left on the live board)  
 3. Rebook → new appointment + new draft WO (do not revive a cancelled draft)  
 4. Wix sync unit is the **appointment**; the WO follows appointment create/cancel  
-5. Duplicate Wix webhooks are idempotent on `wix_booking_id`  
+5. Duplicate Wix webhooks are idempotent on `appointment.wix_booking_id`  
+6. **Wix outbound push** (OTOMOTO → Wix create/cancel) is **out of this plan** — store `wix_sync_status` (`synced` \| `not_synced` \| `n/a`) and leave outbound for the companion calendar sync spec; inbound webhook is in scope  
 
 ## Staff UI
 
@@ -97,11 +102,12 @@ Before the bike is at the counter, the shop mixes phone, Wix online booking, and
 ### Phone book flow
 
 - Short form: who, phone, bike (optional), reason, slot  
-- Saves appointment + draft WO; pushes to Wix when sync is enabled  
+- Saves appointment + draft WO; `wix_sync_status = not_synced` until companion outbound sync lands  
 
 ### Wix inbound
 
-- Webhook/sync creates appointment + draft WO automatically  
+- Webhook/sync creates appointment + draft WO automatically (`channel = wix`, `wix_sync_status = synced`)  
+- Motorcycle optional: if unknown, draft WO has null `motorcycle_id` (no longer hard-fail)  
 - Appears on calendar / upcoming list — no retyping  
 
 ### Arrival / walk-in
@@ -116,7 +122,7 @@ Before the bike is at the counter, the shop mixes phone, Wix online booking, and
 |------|----------|
 | Cancel | Appointment `cancelled` → linked draft WO → `cancelled` → sync cancel to Wix when applicable |
 | No-show | Appointment `no_show` → linked draft WO → `cancelled`; retain history on customer |
-| Wix sync failure | Appointment (and draft WO) still saved in OTOMOTO; flag “not synced” for retry |
+| Wix sync failure | Appointment (and draft WO) still saved in OTOMOTO; `wix_sync_status = not_synced` for outbound retry (companion) |
 | Duplicate webhook | No second appointment/WO |
 | Unknown bike at booking | Draft WO allowed; motorcycle required before finishing intake |
 
