@@ -27,6 +27,15 @@ type Props = {
   customers: CustomerOption[];
   motorcycle?: Motorcycle;
   defaultCustomerId?: string;
+  /** Prefill when creating from a VIN lookup (intake). */
+  defaults?: {
+    vin?: string;
+    year?: string;
+    make?: string;
+    model?: string;
+  };
+  /** After create, redirect here (intake deep link) with motorcycle_id added. */
+  returnTo?: string;
   submitLabel: string;
 };
 
@@ -39,6 +48,8 @@ export function MotorcycleForm({
   customers,
   motorcycle,
   defaultCustomerId,
+  defaults,
+  returnTo,
   submitLabel,
 }: Props) {
   const [state, formAction] = useActionState(action, { error: null });
@@ -46,15 +57,17 @@ export function MotorcycleForm({
 
   const [customerId, setCustomerId] = useState(selectedCustomerId ?? "");
   const [year, setYear] = useState(
-    motorcycle?.year != null ? String(motorcycle.year) : ""
+    motorcycle?.year != null
+      ? String(motorcycle.year)
+      : defaults?.year ?? ""
   );
-  const [make, setMake] = useState(motorcycle?.make ?? "");
-  const [model, setModel] = useState(motorcycle?.model ?? "");
+  const [make, setMake] = useState(motorcycle?.make ?? defaults?.make ?? "");
+  const [model, setModel] = useState(motorcycle?.model ?? defaults?.model ?? "");
   const [vinKey, setVinKey] = useState(0);
   const [touched, setTouched] = useState({
-    year: Boolean(motorcycle?.year),
-    make: Boolean(motorcycle?.make),
-    model: Boolean(motorcycle?.model),
+    year: Boolean(motorcycle?.year ?? defaults?.year),
+    make: Boolean(motorcycle?.make ?? defaults?.make),
+    model: Boolean(motorcycle?.model ?? defaults?.model),
   });
 
   const [conflict, setConflict] = useState<VinOwnershipConflict | null>(null);
@@ -114,6 +127,9 @@ export function MotorcycleForm({
   return (
     <form action={formAction} className="flex max-w-2xl flex-col gap-4">
       <FormError message={state.error} />
+      {returnTo ? (
+        <input type="hidden" name="return_to" value={returnTo} />
+      ) : null}
 
       <label className="block">
         <span className="mb-1.5 block text-sm font-medium text-zinc-800">
@@ -143,7 +159,7 @@ export function MotorcycleForm({
 
       <VinField
         key={vinKey}
-        defaultValue={motorcycle?.vin}
+        defaultValue={motorcycle?.vin ?? defaults?.vin}
         onSuggestion={applyVinSuggestion}
         onVinReady={checkVinOwnership}
       />

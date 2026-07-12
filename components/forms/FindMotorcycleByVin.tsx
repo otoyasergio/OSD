@@ -1,13 +1,20 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   acceptVinTransferAction,
   lookupVinInGarageAction,
 } from "@/app/(app)/motorcycles/actions";
+import { decodeVinAction } from "@/app/(app)/vin/actions";
 import type { VinOwnershipConflict } from "@/lib/services/motorcycles";
-import { normalizeVin, validateOptionalVin } from "@/lib/vin";
+import {
+  normalizeVin,
+  summarizeDecode,
+  validateOptionalVin,
+  type VinDecodeResult,
+} from "@/lib/vin";
 import { VinOwnershipConflictNotice } from "@/components/forms/VinOwnershipConflictNotice";
 
 type Props = {
@@ -15,6 +22,40 @@ type Props = {
   currentCustomerName?: string;
   onSelectMotorcycle: (motorcycleId: string) => void;
 };
+
+function formatDisplacement(result: VinDecodeResult): string | null {
+  const { displacementL, displacementCC } = result.fields;
+  if (displacementL) {
+    const liters = Number(displacementL);
+    if (Number.isFinite(liters) && liters > 0) {
+      return `${(liters * 1000).toFixed(0)} cc`;
+    }
+    return `${displacementL} L`;
+  }
+  if (displacementCC) return `${displacementCC} cc`;
+  return null;
+}
+
+function buildCreateHref(
+  customerId: string,
+  decodedVin: string,
+  decode: VinDecodeResult | null
+): string {
+  const params = new URLSearchParams({
+    customer_id: customerId,
+    vin: decodedVin,
+    return_to: `/work_orders/new?customer_id=${customerId}`,
+  });
+  const year = decode?.fields.modelYear ?? (decode?.local?.modelYear != null
+    ? String(decode.local.modelYear)
+    : "");
+  const make = decode?.fields.make ?? decode?.local?.manufacturerHint ?? "";
+  const model = decode?.fields.model ?? "";
+  if (year) params.set("year", year);
+  if (make) params.set("make", make);
+  if (model) params.set("model", model);
+  return `/motorcycles/new?${params.toString()}`;
+}
 
 export function FindMotorcycleByVin({
   customerId,
@@ -24,6 +65,8 @@ export function FindMotorcycleByVin({
   const router = useRouter();
   const [vin, setVin] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [notFoundVin, setNotFoundVin] = useState<string | null>(null);
+  const [decode, setDecode] = useState<VinDecodeResult | null>(null);
   const [conflict, setConflict] = useState<VinOwnershipConflict | null>(null);
   const [transferError, setTransferError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -31,6 +74,8 @@ export function FindMotorcycleByVin({
   function clear() {
     setVin("");
     setMessage(null);
+    setNotFoundVin(null);
+    setDecode(null);
     setConflict(null);
     setTransferError(null);
   }
@@ -39,6 +84,8 @@ export function FindMotorcycleByVin({
     setMessage(null);
     setConflict(null);
     setTransferError(null);
+    setNotFoundVin(null);
+    setDecode(null);
     const validation = validateOptionalVin(vin);
     if (!validation.ok || !validation.vin) {
       setMessage(validation.ok ? "Enter a VIN to look up." : validation.error);
@@ -68,9 +115,14 @@ export function FindMotorcycleByVin({
         return;
       }
 
-      setMessage(
-        "No motorcycle with that VIN yet. Create one for this customer, or check the number."
-      );
+      setNotFoundVin(validation.vin);
+      setMessage("No motorcycle with that VIN yet.");
+      try {
+        const decoded = await decodeVinAction(validation.vin);
+        setDecode(decoded);
+      } catch {
+        setDecode(null);
+      }
     });
   }
 
@@ -92,6 +144,13 @@ export function FindMotorcycleByVin({
     });
   }
 
+  const createHref =
+    notFoundVin && customerId
+      ? buildCreateHref(customerId, notFoundVin, decode)
+      : null;
+  const bikeTitle = decode?.valid ? summarizeDecode(decode) : null;
+  const displacement = decode ? formatDisplacement(decode) : null;
+
   return (
     <div className="mt-4 rounded border border-zinc-200 bg-white px-3 py-3">
       <p className="text-sm font-medium text-zinc-800">Find by VIN</p>
@@ -111,6 +170,8 @@ export function FindMotorcycleByVin({
             setVin(normalizeVin(event.target.value).slice(0, 17));
             setConflict(null);
             setMessage(null);
+            setNotFoundVin(null);
+            setDecode(null);
           }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
@@ -129,10 +190,58 @@ export function FindMotorcycleByVin({
         </button>
       </div>
 
-      {message ? (
+      {message && !notFoundVin ? (
         <p className="mt-2 text-sm text-zinc-700" role="status">
           {message}
         </p>
+      ) : null}
+
+      {notFoundVin ? (
+        <div
+          className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-3"
+          role="status"
+        >
+          <p className="text-sm text-amber-950">
+            No motorcycle with that VIN yet. Create one for this customer, or
+            check the number.
+          </p>
+          {pending && !decode ? (
+            <p className="mt-2 text-sm text-zinc-600">Identifying bike from VIN…</p>
+          ) : null}
+          {decode?.valid ? (
+            <div className="mt-2 rounded border border-amber-100 bg-white px-3 py-2 text-sm text-zinc-800">
+              <p className="font-mono text-xs text-zinc-500">{decode.vin}</p>
+              {bikeTitle ? (
+                <p className="font-medium text-zinc-900">{bikeTitle}</p>
+              ) : null}
+              <ul className="mt-1 space-y-0.5 text-zinc-600">
+                {decode.fields.vehicleType ? (
+                  <li>Type: {decode.fields.vehicleType}</li>
+                ) : null}
+                {decode.fields.bodyClass ? (
+                  <li>Body: {decode.fields.bodyClass}</li>
+                ) : null}
+                {displacement ? <li>Engine: {displacement}</li> : null}
+              </ul>
+              {decode.message ? (
+                <p className="mt-1 text-amber-800">{decode.message}</p>
+              ) : null}
+            </div>
+          ) : null}
+          {decode && !decode.valid ? (
+            <p className="mt-2 text-sm text-amber-900">
+              VIN could not be fully decoded
+              {decode.validationError ? `: ${decode.validationError}` : "."}
+            </p>
+          ) : null}
+          {createHref ? (
+            <div className="mt-3">
+              <Link href={createHref} className="btn btn-primary">
+                Create Motorcycle
+              </Link>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {conflict ? (

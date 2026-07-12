@@ -30,6 +30,25 @@ export async function listMotorcyclesForCustomerAction(
   return listMotorcyclesForCustomer(customerId);
 }
 
+function safeReturnTo(
+  raw: string,
+  motorcycleId: string,
+  customerId: string
+): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
+  try {
+    const url = new URL(trimmed, "https://example.invalid");
+    url.searchParams.set("motorcycle_id", motorcycleId);
+    if (customerId && !url.searchParams.get("customer_id")) {
+      url.searchParams.set("customer_id", customerId);
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
 function readMotorcycleInput(formData: FormData) {
   const yearRaw = String(formData.get("year") ?? "").trim();
   return {
@@ -62,7 +81,13 @@ export async function createMotorcycleAction(
 
   revalidatePath("/motorcycles");
   revalidatePath(`/customers/${input.customer_id}`);
-  redirect(`/motorcycles/${motorcycleId}`);
+
+  const returnTo = safeReturnTo(
+    String(formData.get("return_to") ?? ""),
+    motorcycleId,
+    input.customer_id
+  );
+  redirect(returnTo ?? `/motorcycles/${motorcycleId}`);
 }
 
 export async function updateMotorcycleAction(

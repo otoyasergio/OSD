@@ -6,6 +6,7 @@ import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canAssignTechnician, canCreateWorkOrder } from "@/lib/permissions";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
+import { resolveJobSnapshots } from "@/lib/forms/serviceLines";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { buildWorkOrderFlags } from "@/lib/status/flags";
 
@@ -86,6 +87,12 @@ export type CreateWorkOrderInput = {
   internal_notes?: string | null;
   primary_technician_id?: string | null;
   service_ids?: string[];
+  service_lines?: Array<{
+    service_id: string;
+    note?: string | null;
+    estimated_labour?: number | null;
+    standard_price?: number | null;
+  }>;
 };
 
 export type TechnicianOption = {
@@ -602,7 +609,20 @@ export async function createWorkOrder(
     primary_technician_id: normalizeOptional(input.primary_technician_id),
     estimated_completion: normalizeOptional(input.estimated_completion),
     service_ids: input.service_ids ?? [],
+    service_lines: input.service_lines ?? [],
   });
+
+  const serviceLineById = new Map(
+    parsed.service_lines.map((line) => [
+      line.service_id,
+      {
+        service_id: line.service_id,
+        note: line.note?.trim() ? line.note.trim() : null,
+        estimated_labour: line.estimated_labour ?? null,
+        standard_price: line.standard_price ?? null,
+      },
+    ])
+  );
 
   if (parsed.location_id !== user.active_location_id) {
     throw new Error("LOCATION_MISMATCH");
@@ -742,14 +762,20 @@ export async function createWorkOrder(
   for (const service of services) {
     // Booked intake services are already customer-approved.
     const jobStatus: JobStatus = "approved";
+    const snapshots = resolveJobSnapshots({
+      catalogueLabour: service.estimated_labour,
+      cataloguePrice: service.standard_price,
+      line: serviceLineById.get(service.service_id),
+    });
     const { data: job, error: jobError } = await supabase
       .from("job")
       .insert({
         work_order_id: workOrderId,
         service_id: service.service_id,
         service_name_snapshot: service.name,
-        standard_price_snapshot: service.standard_price,
-        estimated_labour_snapshot: service.estimated_labour,
+        standard_price_snapshot: snapshots.standard_price_snapshot,
+        estimated_labour_snapshot: snapshots.estimated_labour_snapshot,
+        notes: snapshots.notes,
         status: jobStatus,
         created_by_user_id: user.user_id,
         approved_by_customer_at: new Date().toISOString(),

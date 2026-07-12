@@ -15,6 +15,7 @@ import {
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { requireUser } from "@/lib/auth/session";
 import type { PhotoCategory } from "@/lib/database/types";
+import { readServiceLinesFromFormData } from "@/lib/forms/serviceLines";
 import {
   CREATE_INTAKE_PHOTO_SLOTS,
   PHOTO_CATEGORY_LABELS,
@@ -120,6 +121,8 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
     formData.get("primary_technician_id") ?? ""
   ).trim();
 
+  const serviceLines = readServiceLinesFromFormData(formData, serviceIds);
+
   return createWorkOrder({
     motorcycle_id: String(formData.get("motorcycle_id") ?? ""),
     location_id: user.active_location_id!,
@@ -131,6 +134,7 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
     internal_notes: String(formData.get("internal_notes") ?? ""),
     primary_technician_id: primaryTech || null,
     service_ids: serviceIds,
+    service_lines: serviceLines,
   });
 }
 

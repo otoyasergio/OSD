@@ -61,6 +61,16 @@ export const createWorkOrderSchema = z.object({
   internal_notes: z.string().optional().nullable(),
   primary_technician_id: z.string().uuid().optional().nullable(),
   service_ids: z.array(z.string().uuid()).default([]),
+  service_lines: z
+    .array(
+      z.object({
+        service_id: z.string().uuid(),
+        note: z.string().nullable().optional(),
+        estimated_labour: z.number().nonnegative().nullable().optional(),
+        standard_price: z.number().nonnegative().nullable().optional(),
+      })
+    )
+    .default([]),
 });
 
 export const approvalMethodSchema = z.enum([

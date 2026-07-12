@@ -42,6 +42,10 @@ import {
 } from "@/lib/forms/createWorkOrderWizard";
 import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
 import { stripIntakePhotoFields } from "@/lib/forms/intakeFormData";
+import {
+  formatServiceLineSummary,
+  type ServiceLineDraft,
+} from "@/lib/forms/serviceLines";
 import { toFormErrorMessage } from "@/lib/services/errors";
 
 type Props = {
@@ -101,6 +105,9 @@ export function CreateWorkOrderForm({
   const [estimatedCompletion, setEstimatedCompletion] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [serviceLines, setServiceLines] = useState<
+    Record<string, ServiceLineDraft>
+  >({});
   const [primaryTechnicianId, setPrimaryTechnicianId] = useState("");
   const [outstandingFetch, setOutstandingFetch] = useState<{
     motorcycleId: string;
@@ -424,6 +431,29 @@ export function CreateWorkOrderForm({
       {selectedServiceIds.map((id) => (
         <input key={id} type="hidden" name="service_ids" value={id} />
       ))}
+      {selectedServiceIds.map((id) => {
+        const line = serviceLines[id];
+        if (!line) return null;
+        return (
+          <span key={`line-${id}`}>
+            <input
+              type="hidden"
+              name={`service_note_${id}`}
+              value={line.note}
+            />
+            <input
+              type="hidden"
+              name={`service_labour_${id}`}
+              value={line.labourHours}
+            />
+            <input
+              type="hidden"
+              name={`service_price_${id}`}
+              value={line.price}
+            />
+          </span>
+        );
+      })}
 
       {stepId === "customer" ? (
         <section className="intake-wizard-panel">
@@ -614,8 +644,8 @@ export function CreateWorkOrderForm({
           <div className="flex flex-col gap-3">
             <h3 className="text-base font-semibold text-zinc-900">Services</h3>
             <p className="text-sm text-zinc-600">
-              Selected services become approved jobs on the work order
-              (optional).
+              Select work for this visit. Hours and price vary by bike — edit
+              them after selecting. Notes are optional.
             </p>
             {services.length === 0 ? (
               <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-6 text-sm text-zinc-600">
@@ -634,20 +664,41 @@ export function CreateWorkOrderForm({
                           const checked = selectedServiceIds.includes(
                             service.service_id
                           );
+                          const line = serviceLines[service.service_id];
                           return (
-                            <li key={service.service_id}>
-                              <label className="flex min-h-11 cursor-pointer items-start gap-3 px-4 py-3">
+                            <li key={service.service_id} className="px-4 py-3">
+                              <label className="flex min-h-11 cursor-pointer items-start gap-3">
                                 <input
                                   type="checkbox"
                                   checked={checked}
                                   onChange={() => {
-                                    setSelectedServiceIds((prev) =>
-                                      checked
-                                        ? prev.filter(
-                                            (id) => id !== service.service_id
-                                          )
-                                        : [...prev, service.service_id]
-                                    );
+                                    setSelectedServiceIds((prev) => {
+                                      if (checked) {
+                                        setServiceLines((lines) => {
+                                          const next = { ...lines };
+                                          delete next[service.service_id];
+                                          return next;
+                                        });
+                                        return prev.filter(
+                                          (id) => id !== service.service_id
+                                        );
+                                      }
+                                      setServiceLines((lines) => ({
+                                        ...lines,
+                                        [service.service_id]: {
+                                          note: "",
+                                          labourHours:
+                                            service.estimated_labour != null
+                                              ? String(service.estimated_labour)
+                                              : "",
+                                          price:
+                                            service.standard_price != null
+                                              ? String(service.standard_price)
+                                              : "",
+                                        },
+                                      }));
+                                      return [...prev, service.service_id];
+                                    });
                                   }}
                                   className="mt-1 h-4 w-4"
                                 />
@@ -655,16 +706,91 @@ export function CreateWorkOrderForm({
                                   <span className="block font-medium text-zinc-900">
                                     {service.name}
                                   </span>
-                                  <span className="block text-sm text-zinc-600">
-                                    {service.standard_price != null
-                                      ? `$${service.standard_price}`
-                                      : "No price"}
-                                    {service.estimated_labour != null
-                                      ? ` · ${service.estimated_labour} h`
-                                      : ""}
-                                  </span>
+                                  {!checked ? (
+                                    <span className="block text-sm text-zinc-600">
+                                      {service.standard_price != null
+                                        ? `Default $${service.standard_price}`
+                                        : "Price per bike"}
+                                      {service.estimated_labour != null
+                                        ? ` · default ${service.estimated_labour} h`
+                                        : ""}
+                                    </span>
+                                  ) : null}
                                 </span>
                               </label>
+                              {checked && line ? (
+                                <div className="mt-3 ml-7 grid gap-3 sm:grid-cols-2">
+                                  <label className="block">
+                                    <span className="mb-1 block text-xs font-medium text-zinc-700">
+                                      Hours
+                                    </span>
+                                    <input
+                                      className={INPUT_CLASS}
+                                      type="number"
+                                      min={0}
+                                      step={0.1}
+                                      inputMode="decimal"
+                                      value={line.labourHours}
+                                      placeholder="Hours for this bike"
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        setServiceLines((prev) => ({
+                                          ...prev,
+                                          [service.service_id]: {
+                                            ...prev[service.service_id],
+                                            labourHours: value,
+                                          },
+                                        }));
+                                      }}
+                                    />
+                                  </label>
+                                  <label className="block">
+                                    <span className="mb-1 block text-xs font-medium text-zinc-700">
+                                      Price
+                                    </span>
+                                    <input
+                                      className={INPUT_CLASS}
+                                      type="number"
+                                      min={0}
+                                      step={0.01}
+                                      inputMode="decimal"
+                                      value={line.price}
+                                      placeholder="Price for this bike"
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        setServiceLines((prev) => ({
+                                          ...prev,
+                                          [service.service_id]: {
+                                            ...prev[service.service_id],
+                                            price: value,
+                                          },
+                                        }));
+                                      }}
+                                    />
+                                  </label>
+                                  <label className="block sm:col-span-2">
+                                    <span className="mb-1 block text-xs font-medium text-zinc-700">
+                                      Note
+                                    </span>
+                                    <textarea
+                                      className="min-h-20 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10"
+                                      rows={2}
+                                      value={line.note}
+                                      placeholder="Note for this service…"
+                                      onChange={(event) => {
+                                        const value = event.target.value;
+                                        setServiceLines((prev) => ({
+                                          ...prev,
+                                          [service.service_id]: {
+                                            ...prev[service.service_id],
+                                            note: value,
+                                          },
+                                        }));
+                                      }}
+                                    />
+                                  </label>
+                                </div>
+                              ) : null}
                             </li>
                           );
                         })}
@@ -799,7 +925,17 @@ export function CreateWorkOrderForm({
               label="Services"
               value={
                 selectedServices.length > 0
-                  ? selectedServices.map((s) => s.name).join(", ")
+                  ? selectedServices
+                      .map((s) => {
+                        const line = serviceLines[s.service_id];
+                        return formatServiceLineSummary({
+                          name: s.name,
+                          labourHours: line?.labourHours ?? "",
+                          price: line?.price ?? "",
+                          note: line?.note ?? "",
+                        });
+                      })
+                      .join("\n")
                   : "None selected"
               }
               muted={selectedServices.length === 0}
@@ -963,7 +1099,7 @@ function ReviewCard({
     <div className={`intake-review-card${wide ? " is-wide" : ""}`}>
       <div className="intake-review-card-label">{label}</div>
       <div
-        className={`intake-review-card-value${muted ? " is-muted" : ""}${
+        className={`intake-review-card-value whitespace-pre-line${muted ? " is-muted" : ""}${
           ok ? " is-ok" : ""
         }`}
       >
