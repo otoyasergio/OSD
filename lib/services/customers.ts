@@ -4,6 +4,8 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { canAdminHelpCreateRecords } from "@/lib/permissions";
 import { customerSchema } from "@/lib/validation/schemas";
 
+export type CustomerAccountType = "retail" | "fleet" | "commercial";
+
 export type Customer = {
   customer_id: string;
   first_name: string;
@@ -11,6 +13,7 @@ export type Customer = {
   phone: string | null;
   email: string | null;
   notes: string | null;
+  account_type: CustomerAccountType;
   created_at: string;
   updated_at: string;
 };
@@ -21,10 +24,18 @@ export type CustomerInput = {
   phone?: string | null;
   email?: string | null;
   notes?: string | null;
+  account_type?: CustomerAccountType;
 };
 
+export const CUSTOMER_ACCOUNT_TYPE_LABELS: Record<CustomerAccountType, string> =
+  {
+    retail: "Retail",
+    fleet: "Fleet",
+    commercial: "Commercial",
+  };
+
 const CUSTOMER_COLUMNS =
-  "customer_id, first_name, last_name, phone, email, notes, created_at, updated_at";
+  "customer_id, first_name, last_name, phone, email, notes, account_type, created_at, updated_at";
 
 /**
  * PostgREST `or()` uses commas and parentheses as syntax, so those characters are
@@ -65,7 +76,10 @@ export async function countCustomers(): Promise<number> {
   return count ?? 0;
 }
 
-export async function searchCustomers(term: string): Promise<Customer[]> {
+export async function searchCustomers(
+  term: string,
+  options?: { account_type?: CustomerAccountType }
+): Promise<Customer[]> {
   await requireUser();
   const supabase = await createClient();
 
@@ -73,6 +87,9 @@ export async function searchCustomers(term: string): Promise<Customer[]> {
   const cleaned = escapeSearchTerm(term);
   if (cleaned) {
     query = query.or(buildCustomerSearchOrFilter(term));
+  }
+  if (options?.account_type) {
+    query = query.eq("account_type", options.account_type);
   }
 
   const { data, error } = await query
@@ -120,6 +137,7 @@ export async function createCustomer(input: CustomerInput): Promise<Customer> {
       phone: normalizeOptional(parsed.phone),
       email: normalizeOptional(parsed.email),
       notes: normalizeOptional(parsed.notes),
+      account_type: parsed.account_type,
     })
     .select(CUSTOMER_COLUMNS)
     .single();
@@ -166,6 +184,7 @@ export async function updateCustomer(
       phone: normalizeOptional(parsed.phone),
       email: normalizeOptional(parsed.email),
       notes: normalizeOptional(parsed.notes),
+      account_type: parsed.account_type,
       updated_at: new Date().toISOString(),
     })
     .eq("customer_id", customerId)

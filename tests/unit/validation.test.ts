@@ -21,6 +21,18 @@ describe("customerSchema", () => {
       phone: "4165551212",
     });
     expect(result.success).toBe(true);
+    expect(result.success && result.data.account_type).toBe("retail");
+  });
+
+  it("accepts fleet account type", () => {
+    const result = customerSchema.safeParse({
+      first_name: "Fleet",
+      last_name: "Co",
+      phone: "4165550199",
+      account_type: "fleet",
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.account_type).toBe("fleet");
   });
 });
 

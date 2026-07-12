@@ -2,8 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { canCreateWorkOrder } from "@/lib/permissions";
-import { searchCustomers } from "@/lib/services/customers";
-import { searchMotorcycles } from "@/lib/services/motorcycles";
+import {
+  getCustomerById,
+  searchCustomers,
+} from "@/lib/services/customers";
+import {
+  getMotorcycleById,
+  searchMotorcycles,
+} from "@/lib/services/motorcycles";
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
 import { CreateWorkOrderForm } from "@/components/forms/CreateWorkOrderForm";
@@ -28,6 +34,25 @@ export default async function NewWorkOrderPage({
     listTechniciansForActiveLocation(),
   ]);
 
+  // search* caps at 50; deep links must still resolve the selected records.
+  let customerOptions = customers;
+  if (
+    customer_id &&
+    !customers.some((c) => c.customer_id === customer_id)
+  ) {
+    const selected = await getCustomerById(customer_id);
+    if (selected) customerOptions = [selected, ...customers];
+  }
+
+  let motorcycleOptions = motorcycles;
+  if (
+    motorcycle_id &&
+    !motorcycles.some((m) => m.motorcycle_id === motorcycle_id)
+  ) {
+    const selected = await getMotorcycleById(motorcycle_id);
+    if (selected) motorcycleOptions = [selected, ...motorcycles];
+  }
+
   return (
     <div>
       <Link
@@ -46,8 +71,8 @@ export default async function NewWorkOrderPage({
 
       <div className="mt-6">
         <CreateWorkOrderForm
-          customers={customers}
-          motorcycles={motorcycles}
+          customers={customerOptions}
+          motorcycles={motorcycleOptions}
           services={services}
           technicians={technicians}
           initialCustomerId={customer_id}

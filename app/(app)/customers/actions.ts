@@ -2,18 +2,24 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { createCustomer, updateCustomer } from "@/lib/services/customers";
+import {
+  createCustomer,
+  updateCustomer,
+  type CustomerAccountType,
+} from "@/lib/services/customers";
 import { toFormErrorMessage } from "@/lib/services/errors";
 
 export type CustomerFormState = { error: string | null };
 
 function readCustomerInput(formData: FormData) {
+  const accountType = String(formData.get("account_type") ?? "retail");
   return {
     first_name: String(formData.get("first_name") ?? ""),
     last_name: String(formData.get("last_name") ?? ""),
     phone: String(formData.get("phone") ?? ""),
     email: String(formData.get("email") ?? ""),
     notes: String(formData.get("notes") ?? ""),
+    account_type: accountType as CustomerAccountType,
   };
 }
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { getTechnicianDashboard } from "@/lib/services/technician";
+import { getOpenTimeClockEntry } from "@/lib/services/timeClock";
 import {
   canCompleteWorkOrder,
   canRecordCustomerApproval,
@@ -10,6 +11,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { TechnicianJobCard } from "@/components/jobs/TechnicianJobCard";
+import { TimeClockWidget } from "@/components/technician/TimeClockWidget";
 import { updateJobStatusAction } from "@/app/(app)/work_orders/job-actions";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +20,10 @@ export default async function TechnicianPage() {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
-  const dashboard = await getTechnicianDashboard();
+  const [dashboard, openClock] = await Promise.all([
+    getTechnicianDashboard(),
+    getOpenTimeClockEntry(user.user_id),
+  ]);
   const canApprove = canRecordCustomerApproval(user.role);
   const canCompleteWo = canCompleteWorkOrder(user.role);
 
@@ -28,6 +33,8 @@ export default async function TechnicianPage() {
         title="Technician"
         subtitle={`Assigned work at the active location for ${user.first_name} ${user.last_name}.`}
       />
+
+      <TimeClockWidget openEntry={openClock} />
 
       {!canApprove && !canCompleteWo ? (
         <p className="text-sm text-[var(--status-neutral)]">

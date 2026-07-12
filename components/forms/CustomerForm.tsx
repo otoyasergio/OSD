@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import type { CustomerFormState } from "@/app/(app)/customers/actions";
 import type { Customer } from "@/lib/services/customers";
+import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customers";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 
@@ -49,6 +50,25 @@ export function CustomerForm({ action, customer, submitLabel }: Props) {
           defaultValue={customer?.email}
         />
       </div>
+
+      <label className="block">
+        <span className="field-label">Account type</span>
+        <select
+          name="account_type"
+          defaultValue={customer?.account_type ?? "retail"}
+          className="input"
+        >
+          {(
+            Object.keys(CUSTOMER_ACCOUNT_TYPE_LABELS) as Array<
+              keyof typeof CUSTOMER_ACCOUNT_TYPE_LABELS
+            >
+          ).map((value) => (
+            <option key={value} value={value}>
+              {CUSTOMER_ACCOUNT_TYPE_LABELS[value]}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <TextAreaField label="Notes" name="notes" defaultValue={customer?.notes} />
 

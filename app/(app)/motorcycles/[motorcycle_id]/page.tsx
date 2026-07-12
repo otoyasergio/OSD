@@ -4,7 +4,10 @@ import {
   getMotorcycleById,
   getServiceInformation,
 } from "@/lib/services/motorcycles";
-import { searchCustomers } from "@/lib/services/customers";
+import {
+  getCustomerById,
+  searchCustomers,
+} from "@/lib/services/customers";
 import { listOutstandingRecommendationsForMotorcycle } from "@/lib/services/recommendations";
 import { requireUser } from "@/lib/auth/session";
 import {
@@ -37,6 +40,12 @@ export default async function MotorcycleDetailPage({
       searchCustomers(""),
       listOutstandingRecommendationsForMotorcycle(motorcycle_id),
     ]);
+
+  let customerOptions = customers;
+  if (!customers.some((c) => c.customer_id === motorcycle.customer_id)) {
+    const owner = await getCustomerById(motorcycle.customer_id);
+    if (owner) customerOptions = [owner, ...customers];
+  }
 
   const updateAction = updateMotorcycleAction.bind(null, motorcycle_id);
   const transferAction = transferMotorcycleAction.bind(null, motorcycle_id);
@@ -124,7 +133,7 @@ export default async function MotorcycleDetailPage({
         <div className="mt-3">
           <MotorcycleForm
             action={updateAction}
-            customers={customers}
+            customers={customerOptions}
             motorcycle={motorcycle}
             submitLabel="Save changes"
           />
@@ -142,7 +151,7 @@ export default async function MotorcycleDetailPage({
           <div className="mt-3">
             <TransferMotorcycleForm
               action={transferAction}
-              customers={customers}
+              customers={customerOptions}
               currentCustomerId={motorcycle.customer_id}
               currentCustomerName={ownerName}
               bikeLabel={bikeLabel}

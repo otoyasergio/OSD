@@ -31,9 +31,11 @@ Recent UX passes (commits `62a3e80` → `15c8069`) added Shopmonkey/Fullbay-insp
 | `15c8069` | Scoped search, record counts, `WorkOrderJobTodo` strip, Activity tab rename |
 | `e7358c6` | Resume-from-hold action |
 
-**Not yet done:** Task 35 live acceptance walkthrough (requires configured Supabase + Safari smoke). One spec tab remains a placeholder: **Service Info on work order detail** (`ComingSoonPanel` in `app/(app)/work_orders/[work_order_id]/page.tsx`).
+**V2 status (2026-07-12):** Tasks **1–13** and **17–19** are implemented on this branch. Tasks **14–15** (time clock + fleet/commercial tags) shipped with migrations `021_customer_account_type.sql` and `022_time_clock.sql`. Task **16** (live acceptance) is **partially** walked on production — remaining items need Safari human (photo intake wizard, inspection auto-save, QC/complete, template rename, Ottawa WO number uniqueness). See `docs/superpowers/acceptance/v1-checklist.md`.
 
-**Fourth video review status:** Commit `feat: apply UX patterns from fourth video review` **does not exist**. Subagent analysis of [Shopmonkey Q1 2026 What's New](https://www.youtube.com/watch?v=R-oIS6t8mIs) (playlist: Shopmonkey Features) started migration `008_job_time_and_service_categories.sql` but was interrupted before commit. Planned quick wins from that pass are folded into Phase C below.
+**Not yet done for full V1 sign-off:** Safari Mac/iPad walkthrough of remaining checklist rows.
+
+**Fourth video review status:** Operational wins from video 4 (categories, labour hours, deferred recs) landed via Phase C commits; migration `008` is in tree.
 
 ### What V2 adds
 

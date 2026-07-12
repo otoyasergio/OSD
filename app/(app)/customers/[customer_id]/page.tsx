@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCustomerById } from "@/lib/services/customers";
+import { getCustomerById, CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customers";
 import { listGarageForCustomer } from "@/lib/services/clientGarage";
 import { listWorkOrdersForCustomer } from "@/lib/services/filedWorkOrders";
 import { CustomerForm } from "@/components/forms/CustomerForm";
@@ -115,6 +115,9 @@ export default async function CustomerDetailPage({
           {customer.first_name} {customer.last_name}
         </h1>
         <p className="mt-1 text-sm text-zinc-600">
+          <span className="badge mr-2 bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]">
+            {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
+          </span>
           {customer.phone ?? "No phone"} · {customer.email ?? "No email"}
         </p>
       </div>

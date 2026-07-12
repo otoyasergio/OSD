@@ -101,6 +101,8 @@ const MESSAGES: Record<string, string> = {
   BOOKING_MOTORCYCLE_REQUIRED: "Could not match a motorcycle for this booking. Link the customer bike first.",
   WIX_NOT_CONFIGURED: "Wix is not configured.",
   FITMENT_IMPORT_FAILED: "Fitment import failed.",
+  ALREADY_CLOCKED_IN: "You are already clocked in.",
+  NOT_CLOCKED_IN: "You are not clocked in.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

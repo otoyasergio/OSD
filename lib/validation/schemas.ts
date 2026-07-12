@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { normalizeVin, validateOptionalVin } from "@/lib/vin/validate";
 
+export const customerAccountTypeSchema = z.enum([
+  "retail",
+  "fleet",
+  "commercial",
+]);
+
 export const customerSchema = z
   .object({
     first_name: z.string().min(1),
@@ -8,6 +14,7 @@ export const customerSchema = z
     phone: z.string().optional().nullable(),
     email: z.string().email().optional().nullable().or(z.literal("")),
     notes: z.string().optional().nullable(),
+    account_type: customerAccountTypeSchema.default("retail"),
   })
   .refine((v) => Boolean(v.phone?.trim() || v.email?.trim()), {
     message: "Phone or email is required",
