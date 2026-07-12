@@ -13,6 +13,7 @@ import { toFormErrorMessage } from "@/lib/services/errors";
 
 function revalidateWo(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
+  revalidatePath("/billing");
 }
 
 /** @deprecated Prefer publishSquareInvoiceAction */
