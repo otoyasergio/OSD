@@ -11,7 +11,32 @@ export type Service = {
 
 export const UNCATEGORISED_SERVICE_GROUP = "Other";
 
-/** Groups services by category, keeping category order alphabetical with uncategorised last. */
+/** Preferred Visit details / catalogue display order. */
+export const SERVICE_CATEGORY_ORDER = [
+  "Oil & Fluids",
+  "Filters & Ignition",
+  "Electrical",
+  "Brakes",
+  "Tires",
+  "Chain & Drive",
+  "Suspension",
+  "Inspection & Diagnostics",
+  "Seasonal",
+  "Storage",
+  "Other",
+] as const;
+
+function categorySortKey(category: string): number {
+  const index = SERVICE_CATEGORY_ORDER.indexOf(
+    category as (typeof SERVICE_CATEGORY_ORDER)[number]
+  );
+  if (index >= 0) return index;
+  if (category === UNCATEGORISED_SERVICE_GROUP) return SERVICE_CATEGORY_ORDER.length;
+  // Unknown categories after known ones, before Other
+  return SERVICE_CATEGORY_ORDER.length - 0.5;
+}
+
+/** Groups services by category in shop-floor display order. */
 export function groupServicesByCategory(
   services: Service[]
 ): Array<{ category: string; services: Service[] }> {
@@ -23,10 +48,15 @@ export function groupServicesByCategory(
     else groups.set(key, [service]);
   }
 
+  for (const bucket of groups.values()) {
+    bucket.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   return [...groups.entries()]
     .sort(([a], [b]) => {
-      if (a === UNCATEGORISED_SERVICE_GROUP) return 1;
-      if (b === UNCATEGORISED_SERVICE_GROUP) return -1;
+      const ka = categorySortKey(a);
+      const kb = categorySortKey(b);
+      if (ka !== kb) return ka - kb;
       return a.localeCompare(b);
     })
     .map(([category, grouped]) => ({ category, services: grouped }));

@@ -46,6 +46,11 @@ import {
   formatServiceLineSummary,
   type ServiceLineDraft,
 } from "@/lib/forms/serviceLines";
+import {
+  SHOP_HOURLY_RATE,
+  isFlatRateService,
+  suggestedPriceFromLabourHours,
+} from "@/lib/pricing/shopRate";
 import { toFormErrorMessage } from "@/lib/services/errors";
 
 type Props = {
@@ -100,7 +105,6 @@ export function CreateWorkOrderForm({
 
   const [customerId, setCustomerId] = useState(resolvedInitialCustomerId);
   const [motorcycleId, setMotorcycleId] = useState(initialMotorcycleId);
-  const [externalInvoiceNumber, setExternalInvoiceNumber] = useState("");
   const [mileage, setMileage] = useState("");
   const [estimatedCompletion, setEstimatedCompletion] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
@@ -209,7 +213,6 @@ export function CreateWorkOrderForm({
     customerId,
     motorcycleId,
     mileage,
-    externalInvoiceNumber,
     intakeComplete,
   };
 
@@ -411,11 +414,6 @@ export function CreateWorkOrderForm({
 
       {/* Persist values for submit regardless of which step is visible */}
       <input type="hidden" name="motorcycle_id" value={motorcycleId} />
-      <input
-        type="hidden"
-        name="external_invoice_number"
-        value={externalInvoiceNumber}
-      />
       <input type="hidden" name="mileage" value={mileage} />
       <input
         type="hidden"
@@ -573,28 +571,10 @@ export function CreateWorkOrderForm({
         <section className="intake-wizard-panel">
           <h2 className="intake-wizard-panel-title">Visit details</h2>
           <p className="intake-wizard-panel-lede">
-            Mileage, invoice reference, services, and technician.
+            Mileage, services, and technician. Square invoicing is created
+            later from the work order Billing panel.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-                External invoice #
-              </span>
-              <input
-                className={INPUT_CLASS}
-                value={externalInvoiceNumber}
-                onChange={(event) =>
-                  setExternalInvoiceNumber(event.target.value)
-                }
-                placeholder="From invoicing software"
-              />
-              {!externalInvoiceNumber.trim() ? (
-                <span className="mt-1 block text-xs text-amber-800">
-                  Recommended — helps match this visit to your invoicing
-                  software.
-                </span>
-              ) : null}
-            </label>
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-zinc-800">
                 Mileage <span className="ml-1 text-red-600">*</span>
@@ -644,8 +624,9 @@ export function CreateWorkOrderForm({
           <div className="flex flex-col gap-3">
             <h3 className="text-base font-semibold text-zinc-900">Services</h3>
             <p className="text-sm text-zinc-600">
-              Select work for this visit. Hours and price vary by bike — edit
-              them after selecting. Notes are optional.
+              Select work for this visit. Labour jobs: enter hours (price
+              defaults to × ${SHOP_HOURLY_RATE}/h). Storage is flat-rate — enter
+              price only. Notes are optional.
             </p>
             {services.length === 0 ? (
               <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-6 text-sm text-zinc-600">
@@ -665,6 +646,11 @@ export function CreateWorkOrderForm({
                             service.service_id
                           );
                           const line = serviceLines[service.service_id];
+                          const flatRate = isFlatRateService(service);
+                          const fixedCataloguePrice =
+                            service.standard_price != null &&
+                            Number.isFinite(service.standard_price);
+                          const useHourlyRate = !flatRate && !fixedCataloguePrice;
                           return (
                             <li key={service.service_id} className="px-4 py-3">
                               <label className="flex min-h-11 cursor-pointer items-start gap-3">
@@ -687,14 +673,10 @@ export function CreateWorkOrderForm({
                                         ...lines,
                                         [service.service_id]: {
                                           note: "",
-                                          labourHours:
-                                            service.estimated_labour != null
-                                              ? String(service.estimated_labour)
-                                              : "",
-                                          price:
-                                            service.standard_price != null
-                                              ? String(service.standard_price)
-                                              : "",
+                                          labourHours: "",
+                                          price: fixedCataloguePrice
+                                            ? String(service.standard_price)
+                                            : "",
                                         },
                                       }));
                                       return [...prev, service.service_id];
@@ -708,45 +690,62 @@ export function CreateWorkOrderForm({
                                   </span>
                                   {!checked ? (
                                     <span className="block text-sm text-zinc-600">
-                                      {service.standard_price != null
-                                        ? `Default $${service.standard_price}`
-                                        : "Price per bike"}
-                                      {service.estimated_labour != null
-                                        ? ` · default ${service.estimated_labour} h`
-                                        : ""}
+                                      {flatRate
+                                        ? "Flat rate — enter price"
+                                        : fixedCataloguePrice
+                                          ? `$${service.standard_price}`
+                                          : `$${SHOP_HOURLY_RATE}/h — enter hours for this bike`}
                                     </span>
                                   ) : null}
                                 </span>
                               </label>
                               {checked && line ? (
                                 <div className="mt-3 ml-7 grid gap-3 sm:grid-cols-2">
-                                  <label className="block">
-                                    <span className="mb-1 block text-xs font-medium text-zinc-700">
-                                      Hours
-                                    </span>
-                                    <input
-                                      className={INPUT_CLASS}
-                                      type="number"
-                                      min={0}
-                                      step={0.1}
-                                      inputMode="decimal"
-                                      value={line.labourHours}
-                                      placeholder="Hours for this bike"
-                                      onChange={(event) => {
-                                        const value = event.target.value;
-                                        setServiceLines((prev) => ({
-                                          ...prev,
-                                          [service.service_id]: {
-                                            ...prev[service.service_id],
-                                            labourHours: value,
-                                          },
-                                        }));
-                                      }}
-                                    />
-                                  </label>
-                                  <label className="block">
+                                  {!flatRate ? (
+                                    <label className="block">
+                                      <span className="mb-1 block text-xs font-medium text-zinc-700">
+                                        Hours
+                                      </span>
+                                      <input
+                                        className={INPUT_CLASS}
+                                        type="number"
+                                        min={0}
+                                        step={0.1}
+                                        inputMode="decimal"
+                                        value={line.labourHours}
+                                        placeholder="Hours for this bike"
+                                        onChange={(event) => {
+                                          const value = event.target.value;
+                                          setServiceLines((prev) => ({
+                                            ...prev,
+                                            [service.service_id]: {
+                                              ...prev[service.service_id],
+                                              labourHours: value,
+                                              ...(useHourlyRate
+                                                ? {
+                                                    price:
+                                                      suggestedPriceFromLabourHours(
+                                                        value
+                                                      ),
+                                                  }
+                                                : {}),
+                                            },
+                                          }));
+                                        }}
+                                      />
+                                    </label>
+                                  ) : null}
+                                  <label
+                                    className={`block${flatRate ? " sm:col-span-2" : ""}`}
+                                  >
                                     <span className="mb-1 block text-xs font-medium text-zinc-700">
                                       Price
+                                      {useHourlyRate ? (
+                                        <span className="font-normal text-zinc-500">
+                                          {" "}
+                                          (${SHOP_HOURLY_RATE}/h)
+                                        </span>
+                                      ) : null}
                                     </span>
                                     <input
                                       className={INPUT_CLASS}
@@ -755,7 +754,11 @@ export function CreateWorkOrderForm({
                                       step={0.01}
                                       inputMode="decimal"
                                       value={line.price}
-                                      placeholder="Price for this bike"
+                                      placeholder={
+                                        flatRate
+                                          ? "Flat storage price"
+                                          : "Price for this bike"
+                                      }
                                       onChange={(event) => {
                                         const value = event.target.value;
                                         setServiceLines((prev) => ({
@@ -897,11 +900,6 @@ export function CreateWorkOrderForm({
                   : "—"
               }
             />
-            <ReviewCard
-              label="External invoice #"
-              value={externalInvoiceNumber.trim() || "Not provided"}
-              muted={!externalInvoiceNumber.trim()}
-            />
             <ReviewCard label="Mileage" value={mileage || "—"} />
             <ReviewCard
               label="Estimated completion"
@@ -955,14 +953,6 @@ export function CreateWorkOrderForm({
               />
             ) : null}
           </div>
-          {!externalInvoiceNumber.trim() ? (
-            <p
-              role="status"
-              className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-            >
-              No external invoice # — you can still create this work order.
-            </p>
-          ) : null}
         </section>
       ) : null}
 

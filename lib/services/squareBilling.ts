@@ -22,6 +22,7 @@ import {
   getSquareInvoice,
   isSquareConfigured,
   publishSquareInvoice,
+  squareInvoiceDisplayNumber,
   upsertSquareCustomer,
 } from "@/lib/square/client";
 import { createPortalToken } from "@/lib/services/portal";
@@ -332,6 +333,8 @@ export async function syncWorkOrderSquareDraft(
       ? detail.billing_stage
       : "draft";
 
+  const displayNumber = squareInvoiceDisplayNumber(invoice);
+
   await supabase
     .from("work_order")
     .update({
@@ -339,6 +342,9 @@ export async function syncWorkOrderSquareDraft(
       square_payment_status: "draft",
       square_invoice_public_url: invoice.public_url ?? null,
       billing_stage: nextStage,
+      ...(displayNumber
+        ? { external_invoice_number: displayNumber }
+        : {}),
     })
     .eq("work_order_id", workOrderId);
 
@@ -349,7 +355,10 @@ export async function syncWorkOrderSquareDraft(
     entity_type: "work_order",
     entity_id: workOrderId,
     description: `Square draft synced for ${detail.work_order_number}`,
-    new_value: { square_invoice_id: invoice.id },
+    new_value: {
+      square_invoice_id: invoice.id,
+      external_invoice_number: displayNumber,
+    },
   });
 
   await addAuditLog(supabase, {
@@ -359,7 +368,10 @@ export async function syncWorkOrderSquareDraft(
     entity_type: "work_order",
     entity_id: workOrderId,
     description: `Square draft on ${detail.work_order_number}`,
-    new_value: { square_invoice_id: invoice.id },
+    new_value: {
+      square_invoice_id: invoice.id,
+      external_invoice_number: displayNumber,
+    },
   });
 
   return {
@@ -517,6 +529,9 @@ export async function publishWorkOrderSquareInvoice(
   });
 
   const invoice = await publishSquareInvoice(draft.id, draft.version ?? 0);
+  const displayNumber =
+    squareInvoiceDisplayNumber(invoice) ??
+    squareInvoiceDisplayNumber(draft);
 
   await supabase
     .from("work_order")
@@ -528,6 +543,9 @@ export async function publishWorkOrderSquareInvoice(
       billing_amount_mode: input.mode,
       billing_amount_cents: chargeCents,
       invoice_published_at: new Date().toISOString(),
+      ...(displayNumber
+        ? { external_invoice_number: displayNumber }
+        : {}),
     })
     .eq("work_order_id", workOrderId);
 
@@ -540,6 +558,7 @@ export async function publishWorkOrderSquareInvoice(
     description: `Square invoice published for ${detail.work_order_number}`,
     new_value: {
       square_invoice_id: invoice.id,
+      external_invoice_number: displayNumber,
       mode: input.mode,
       amount_cents: chargeCents,
       previous_invoice_id: detail.square_invoice_id,
@@ -553,7 +572,11 @@ export async function publishWorkOrderSquareInvoice(
     entity_type: "work_order",
     entity_id: workOrderId,
     description: `Square invoice published on ${detail.work_order_number}`,
-    new_value: { square_invoice_id: invoice.id, mode: input.mode },
+    new_value: {
+      square_invoice_id: invoice.id,
+      external_invoice_number: displayNumber,
+      mode: input.mode,
+    },
   });
 
   return {
@@ -603,6 +626,7 @@ export async function cancelAndRecreateSquareInvoice(
       square_invoice_id: null,
       square_payment_status: null,
       square_invoice_public_url: null,
+      external_invoice_number: null,
       billing_stage: "none",
       billing_amount_mode: null,
       billing_amount_cents: null,
@@ -695,6 +719,7 @@ export async function processSquareWebhookEvent(payload: {
     object?: {
       invoice?: {
         id?: string;
+        invoice_number?: string;
         status?: string;
         payment_requests?: Array<{
           computed_amount_money?: { amount?: number };
@@ -746,8 +771,13 @@ export async function processSquareWebhookEvent(payload: {
   if (error) throw error;
 
   for (const wo of workOrders ?? []) {
+    const displayNumber = squareInvoiceDisplayNumber({
+      invoice_number: invoice?.invoice_number,
+      id: invoiceId,
+    });
     const updates: Record<string, unknown> = {
       square_payment_status: mapped,
+      ...(displayNumber ? { external_invoice_number: displayNumber } : {}),
     };
     const mode = wo.billing_amount_mode as string | null;
     const isDeposit = mode === "deposit_percent" || mode === "custom";

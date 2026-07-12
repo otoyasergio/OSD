@@ -141,7 +141,7 @@ export function WorkOrderCard({
             <span className="wo-card-number">{workOrder.work_order_number}</span>
             {workOrder.external_invoice_number ? (
               <span className="wo-card-invoice">
-                Inv {workOrder.external_invoice_number}
+                Square invoicing {workOrder.external_invoice_number}
               </span>
             ) : null}
           </div>

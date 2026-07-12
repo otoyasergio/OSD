@@ -1,7 +1,7 @@
 export const TimelineEventType = {
   WORK_ORDER_CREATED: "Work Order Created",
   WORK_ORDER_STATUS_CHANGED: "Work Order Status Changed",
-  EXTERNAL_INVOICE_NUMBER_ADDED: "External Invoice Number Added",
+  EXTERNAL_INVOICE_NUMBER_ADDED: "Square Invoicing Reference Added",
   INTAKE_PHOTO_UPLOADED: "Intake Photo Uploaded",
   INSPECTION_CREATED: "Inspection Created",
   INSPECTION_STARTED: "Inspection Started",

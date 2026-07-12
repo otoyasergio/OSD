@@ -225,7 +225,6 @@ export async function listWorkOrdersForActiveLocation(): Promise<
       flags: buildWorkOrderFlags({
         status: row.status as WorkOrderStatus,
         vin: bike?.vin,
-        external_invoice_number: row.external_invoice_number as string | null,
         estimated_completion: row.estimated_completion as string | null,
         jobs,
         recommendations,
@@ -440,7 +439,6 @@ export async function getWorkOrderDetail(
     flags: buildWorkOrderFlags({
       status: row.status as WorkOrderStatus,
       vin: motorcycle?.vin,
-      external_invoice_number: row.external_invoice_number as string | null,
       estimated_completion: row.estimated_completion as string | null,
       jobs,
       recommendations,

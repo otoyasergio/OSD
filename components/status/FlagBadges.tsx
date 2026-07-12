@@ -1,6 +1,5 @@
 const FLAG_STYLES: Record<string, string> = {
   "Missing VIN": "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
-  "Missing invoice #": "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
   "No intake photos": "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
   "Incomplete inspection":
     "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] ring-1 ring-[var(--status-warning)]/20",

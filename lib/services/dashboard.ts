@@ -93,7 +93,6 @@ const ACTIVE_STATUSES: WorkOrderStatus[] = [
 
 const FLAG_OPTIONS = [
   "Missing VIN",
-  "Missing invoice #",
   "No intake photos",
   "Incomplete inspection",
   "Needs approval",
@@ -230,7 +229,6 @@ function toDashboardRow(
     flags: buildWorkOrderFlags({
       status: row.status,
       vin: bike?.vin,
-      external_invoice_number: row.external_invoice_number,
       estimated_completion: row.estimated_completion,
       jobs,
       recommendations,

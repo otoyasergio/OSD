@@ -17,10 +17,7 @@ export function canProceedFromMotorcycleStep(motorcycleId: string): boolean {
   return motorcycleId.trim().length > 0;
 }
 
-export function canProceedFromVisitStep(data: {
-  mileage: string;
-  externalInvoiceNumber: string;
-}): boolean {
+export function canProceedFromVisitStep(data: { mileage: string }): boolean {
   const trimmed = data.mileage.trim();
   if (!trimmed) return false;
   // Reject decimals / scientific notation — server schema requires a nonnegative int.
@@ -49,7 +46,6 @@ type StepCompleteInput = {
   customerId?: string;
   motorcycleId?: string;
   mileage?: string;
-  externalInvoiceNumber?: string;
   intakeComplete?: boolean;
 };
 
@@ -65,7 +61,6 @@ export function isWizardStepComplete(
     case "visit":
       return canProceedFromVisitStep({
         mileage: data.mileage ?? "",
-        externalInvoiceNumber: data.externalInvoiceNumber ?? "",
       });
     case "photos":
       return canProceedFromPhotosStep(Boolean(data.intakeComplete));
@@ -88,10 +83,7 @@ export function canSubmitCreateWorkOrderWizard(data: {
   return (
     canProceedFromCustomerStep(data.customerId) &&
     canProceedFromMotorcycleStep(data.motorcycleId) &&
-    canProceedFromVisitStep({
-      mileage: data.mileage,
-      externalInvoiceNumber: "",
-    }) &&
+    canProceedFromVisitStep({ mileage: data.mileage }) &&
     canProceedFromPhotosStep(data.intakeComplete)
   );
 }

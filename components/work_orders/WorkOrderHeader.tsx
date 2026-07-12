@@ -49,7 +49,7 @@ export function WorkOrderHeader({
             </h1>
             {detail.external_invoice_number ? (
               <p className="mt-1 text-sm text-[var(--status-neutral)]">
-                Invoice {detail.external_invoice_number}
+                Square invoicing {detail.external_invoice_number}
               </p>
             ) : null}
           </div>

@@ -12,6 +12,17 @@ type SquareInvoice = {
   status?: string;
 };
 
+/** Prefer Square's human-readable invoice_number; fall back to id. */
+export function squareInvoiceDisplayNumber(invoice: {
+  invoice_number?: string | null;
+  id?: string | null;
+}): string | null {
+  const number = invoice.invoice_number?.trim();
+  if (number) return number;
+  const id = invoice.id?.trim();
+  return id || null;
+}
+
 async function squareFetch<T>(
   path: string,
   init?: RequestInit

@@ -41,31 +41,14 @@ describe("create work order wizard steps", () => {
     expect(canProceedFromMotorcycleStep("bike-1")).toBe(true);
   });
 
-  it("requires mileage on visit details; external invoice is optional", () => {
-    expect(canProceedFromVisitStep({ mileage: "", externalInvoiceNumber: "" })).toBe(
-      false
-    );
-    expect(
-      canProceedFromVisitStep({ mileage: "abc", externalInvoiceNumber: "INV-1" })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({ mileage: "-1", externalInvoiceNumber: "" })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({ mileage: "12.5", externalInvoiceNumber: "" })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({ mileage: "12e3", externalInvoiceNumber: "" })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({ mileage: "12000", externalInvoiceNumber: "" })
-    ).toBe(true);
-    expect(
-      canProceedFromVisitStep({
-        mileage: "0",
-        externalInvoiceNumber: "INV-99",
-      })
-    ).toBe(true);
+  it("requires mileage on visit details", () => {
+    expect(canProceedFromVisitStep({ mileage: "" })).toBe(false);
+    expect(canProceedFromVisitStep({ mileage: "abc" })).toBe(false);
+    expect(canProceedFromVisitStep({ mileage: "-1" })).toBe(false);
+    expect(canProceedFromVisitStep({ mileage: "12.5" })).toBe(false);
+    expect(canProceedFromVisitStep({ mileage: "12e3" })).toBe(false);
+    expect(canProceedFromVisitStep({ mileage: "12000" })).toBe(true);
+    expect(canProceedFromVisitStep({ mileage: "0" })).toBe(true);
   });
 
   it("requires all six intake photos before continuing", () => {
@@ -102,7 +85,6 @@ describe("create work order wizard steps", () => {
     expect(
       isWizardStepComplete("visit", {
         mileage: "100",
-        externalInvoiceNumber: "",
       })
     ).toBe(true);
     expect(isWizardStepComplete("photos", { intakeComplete: false })).toBe(

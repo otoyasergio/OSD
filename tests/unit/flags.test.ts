@@ -6,7 +6,6 @@ describe("buildWorkOrderFlags", () => {
     const flags = buildWorkOrderFlags({
       status: "in_progress",
       vin: null,
-      external_invoice_number: null,
       estimated_completion: "2020-01-01T00:00:00.000Z",
       jobs: [{ status: "waiting_for_approval" }],
       recommendations: [{ severity: "safety_critical", status: "pending" }],
@@ -17,7 +16,6 @@ describe("buildWorkOrderFlags", () => {
 
     expect(flags).toEqual([
       "Missing VIN",
-      "Missing invoice #",
       "No intake photos",
       "Incomplete inspection",
       "Needs approval",

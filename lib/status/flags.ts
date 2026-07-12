@@ -3,7 +3,6 @@ import type { WorkOrderStatus } from "@/lib/database/types";
 export type WorkOrderFlagInput = {
   status: WorkOrderStatus;
   vin?: string | null;
-  external_invoice_number?: string | null;
   estimated_completion?: string | null;
   jobs: Array<{ status: string; assigned_technician_id?: string | null }>;
   recommendations: Array<{ severity: string; status: string }>;
@@ -29,7 +28,6 @@ export function buildWorkOrderFlags(input: WorkOrderFlagInput): string[] {
   const flags: string[] = [];
 
   if (!input.vin?.trim()) flags.push("Missing VIN");
-  // External invoice # is legacy; Square billing on the WO replaces it for alpha
   if (input.photoCount === 0) flags.push("No intake photos");
   if (input.inspectionComplete === false) {
     flags.push("Incomplete inspection");
