@@ -294,12 +294,7 @@ export default async function WorkOrderDetailPage({
               inspection={inspection}
               canEdit={canInspect}
               canForceComplete={canForceInspect}
-              recommendHref={
-                canRecommend
-                  ? (result) =>
-                      `/work_orders/${detail.work_order_id}?tab=recommendations&from_result=${result.inspection_result_id}`
-                  : undefined
-              }
+              canRecommend={canRecommend}
             />
           </div>
         ) : (

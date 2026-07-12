@@ -41,7 +41,7 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-full flex-1 items-center justify-center bg-chrome px-4 py-12">
       <div className="w-full max-w-md">
-        <div className="card overflow-hidden border-chrome-border bg-chrome-elevated shadow-[var(--shadow-md)]">
+        <div className="card overflow-hidden border-chrome-border! bg-chrome-elevated! shadow-[var(--shadow-md)]">
           <div className="h-1 bg-accent" aria-hidden="true" />
 
           <div className="card-body space-y-6 p-6 sm:p-8">

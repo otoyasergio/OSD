@@ -40,12 +40,12 @@ export function InspectionChecklist({
   inspection,
   canEdit,
   canForceComplete,
-  recommendHref,
+  canRecommend,
 }: {
   inspection: InspectionDetail;
   canEdit: boolean;
   canForceComplete: boolean;
-  recommendHref?: (result: InspectionResultRow) => string;
+  canRecommend?: boolean;
 }) {
   const [completeState, completeAction] = useActionState(
     completeInspectionAction.bind(null, inspection.work_order_id),
@@ -304,9 +304,9 @@ export function InspectionChecklist({
                         p.inspection_result_id === result.inspection_result_id
                     )}
                     onRecommend={
-                      recommendHref
+                      canRecommend
                         ? (r) => {
-                            window.location.href = recommendHref(r);
+                            window.location.href = `/work_orders/${inspection.work_order_id}?tab=recommendations&from_result=${r.inspection_result_id}`;
                           }
                         : undefined
                     }
