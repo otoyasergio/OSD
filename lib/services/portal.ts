@@ -30,7 +30,7 @@ export type PortalWorkOrderView = {
     name_snapshot: string;
     status: string;
     standard_price_snapshot: number | null;
-    require_approval: boolean;
+    require_approval: boolean; // derived: status === waiting_for_approval
   }[];
   parts: {
     part_name: string;
@@ -130,13 +130,21 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
   if (error) throw error;
   if (!wo) throw new Error("WORK_ORDER_NOT_FOUND");
 
-  const { data: jobs } = await admin
+  const { data: jobRows } = await admin
     .from("job")
-    .select("job_id, name_snapshot, status, standard_price_snapshot, require_approval")
+    .select("job_id, service_name_snapshot, status, standard_price_snapshot")
     .eq("work_order_id", session.work_order_id)
     .not("status", "eq", "cancelled");
 
-  const jobIds = (jobs ?? []).map((j) => j.job_id);
+  const jobs: PortalWorkOrderView["jobs"] = (jobRows ?? []).map((j) => ({
+    job_id: j.job_id,
+    name_snapshot: j.service_name_snapshot,
+    status: j.status,
+    standard_price_snapshot: j.standard_price_snapshot,
+    require_approval: j.status === "waiting_for_approval",
+  }));
+
+  const jobIds = jobs.map((j) => j.job_id);
   let parts: PortalWorkOrderView["parts"] = [];
 
   if (jobIds.length > 0) {
@@ -151,7 +159,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
       quantity: p.quantity,
       unit_price: p.unit_price,
       job_name:
-        jobs?.find((j) => j.job_id === p.job_id)?.name_snapshot ?? "Job",
+        jobs.find((j) => j.job_id === p.job_id)?.name_snapshot ?? "Job",
     }));
   }
 
@@ -179,7 +187,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
     status: wo.status,
     customer: wo.customer as unknown as PortalWorkOrderView["customer"],
     motorcycle: wo.motorcycle as unknown as PortalWorkOrderView["motorcycle"],
-    jobs: (jobs ?? []) as PortalWorkOrderView["jobs"],
+    jobs,
     parts,
     square_invoice_id: wo.square_invoice_id,
     square_payment_status: wo.square_payment_status,

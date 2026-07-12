@@ -92,7 +92,7 @@ async function buildBillableLines(workOrderId: string) {
   const supabase = await createClient();
   const { data: jobs, error: jobsError } = await supabase
     .from("job")
-    .select("job_id, name_snapshot, standard_price_snapshot, status")
+    .select("job_id, service_name_snapshot, standard_price_snapshot, status")
     .eq("work_order_id", workOrderId)
     .in("status", ["approved", "waiting_for_parts", "ready_to_start", "in_progress", "completed"]);
 
@@ -121,7 +121,7 @@ async function buildBillableLines(workOrderId: string) {
   for (const job of jobs ?? []) {
     const price = Number(job.standard_price_snapshot ?? 0);
     if (price > 0) {
-      lines.push({ name: job.name_snapshot, amount: price });
+      lines.push({ name: job.service_name_snapshot, amount: price });
     }
   }
 

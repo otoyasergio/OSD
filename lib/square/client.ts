@@ -41,6 +41,34 @@ async function squareFetch<T>(
   return body;
 }
 
+/** Square expects E.164; omit junk / incomplete shop numbers rather than failing the invoice. */
+function toSquarePhone(phone?: string | null): string | undefined {
+  if (!phone?.trim()) return undefined;
+  const digits = phone.replace(/\D/g, "");
+  // Reject obvious placeholders (all same digit / sequential test junk)
+  if (/^(\d)\1{9,}$/.test(digits)) return undefined;
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  if (phone.trim().startsWith("+") && digits.length >= 10) return `+${digits}`;
+  return undefined;
+}
+
+function customerBody(input: {
+  givenName: string;
+  familyName: string;
+  email?: string | null;
+  phone?: string | null;
+  referenceId?: string;
+}) {
+  return {
+    given_name: input.givenName,
+    family_name: input.familyName,
+    email_address: input.email?.trim() || undefined,
+    phone_number: toSquarePhone(input.phone),
+    reference_id: input.referenceId,
+  };
+}
+
 export async function upsertSquareCustomer(input: {
   givenName: string;
   familyName: string;
@@ -51,37 +79,33 @@ export async function upsertSquareCustomer(input: {
 }): Promise<SquareCustomer> {
   if (!isSquareConfigured()) throw new Error("SQUARE_NOT_CONFIGURED");
 
-  if (input.existingId) {
-    const updated = await squareFetch<{ customer: SquareCustomer }>(
-      `/v2/customers/${input.existingId}`,
-      {
-        method: "PUT",
-        body: JSON.stringify({
-          given_name: input.givenName,
-          family_name: input.familyName,
-          email_address: input.email ?? undefined,
-          phone_number: input.phone ?? undefined,
-          reference_id: input.referenceId,
-        }),
-      }
-    );
-    return updated.customer;
+  const body = customerBody(input);
+
+  async function request(path: string, method: "POST" | "PUT", payload: typeof body) {
+    return squareFetch<{ customer: SquareCustomer }>(path, {
+      method,
+      body: JSON.stringify(payload),
+    });
   }
 
-  const created = await squareFetch<{ customer: SquareCustomer }>(
-    "/v2/customers",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        given_name: input.givenName,
-        family_name: input.familyName,
-        email_address: input.email ?? undefined,
-        phone_number: input.phone ?? undefined,
-        reference_id: input.referenceId,
-      }),
+  try {
+    if (input.existingId) {
+      const updated = await request(`/v2/customers/${input.existingId}`, "PUT", body);
+      return updated.customer;
     }
-  );
-  return created.customer;
+    const created = await request("/v2/customers", "POST", body);
+    return created.customer;
+  } catch (error) {
+    // Retry without phone/email if Square rejects contact fields
+    if (!body.phone_number && !body.email_address) throw error;
+    const stripped = { ...body, phone_number: undefined, email_address: undefined };
+    if (input.existingId) {
+      const updated = await request(`/v2/customers/${input.existingId}`, "PUT", stripped);
+      return updated.customer;
+    }
+    const created = await request("/v2/customers", "POST", stripped);
+    return created.customer;
+  }
 }
 
 export type SquareInvoiceLine = {
@@ -98,6 +122,10 @@ export async function createSquareInvoice(input: {
   dueDate?: string;
 }): Promise<SquareInvoice> {
   const config = getSquareConfig();
+
+  const dueDate =
+    input.dueDate ??
+    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const orderResponse = await squareFetch<{ order: { id: string } }>(
     "/v2/orders",
@@ -136,11 +164,19 @@ export async function createSquareInvoice(input: {
           payment_requests: [
             {
               request_type: "BALANCE",
-              due_date: input.dueDate,
+              due_date: dueDate,
               tipping_enabled: false,
+              automatic_payment_source: "NONE",
             },
           ],
           delivery_method: "SHARE_MANUALLY",
+          accepted_payment_methods: {
+            card: true,
+            square_gift_card: false,
+            bank_account: false,
+            buy_now_pay_later: false,
+            cash_app_pay: false,
+          },
           title: input.title,
           description: input.description,
         },
