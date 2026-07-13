@@ -1,11 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useSyncExternalStore } from "react";
 import type { ClockFormState } from "@/app/(app)/technician/clock-actions";
-import {
-  clockInAction,
-  clockOutAction,
-} from "@/app/(app)/technician/clock-actions";
+import { clockInAction, clockOutAction } from "@/app/(app)/technician/clock-actions";
 import type { TimeClockEntry } from "@/lib/services/timeClock";
 import { formatElapsedMs } from "@/lib/services/timeClockShared";
 import { FormError } from "@/components/forms/Field";
@@ -16,6 +13,19 @@ type Props = {
   openEntry: TimeClockEntry | null;
 };
 
+function subscribeClock(onStoreChange: () => void) {
+  const id = window.setInterval(onStoreChange, 1000);
+  return () => window.clearInterval(id);
+}
+
+function getClockNow() {
+  return Date.now();
+}
+
+function getServerClockNow() {
+  return 0;
+}
+
 export function TimeClockWidget({ openEntry }: Props) {
   const [inState, inAction] = useActionState(clockInAction, {
     error: null,
@@ -23,16 +33,17 @@ export function TimeClockWidget({ openEntry }: Props) {
   const [outState, outAction] = useActionState(clockOutAction, {
     error: null,
   } satisfies ClockFormState);
-  const [nowMs, setNowMs] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!openEntry) return;
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [openEntry]);
+  // Client-only clock via getServerSnapshot — avoids SSR Date.now() hydration drift.
+  const nowMs = useSyncExternalStore(
+    openEntry ? subscribeClock : () => () => {},
+    getClockNow,
+    getServerClockNow
+  );
 
   const elapsed = openEntry
-    ? formatElapsedMs(openEntry.clock_in_at, nowMs)
+    ? nowMs > 0
+      ? formatElapsedMs(openEntry.clock_in_at, nowMs)
+      : "…"
     : "0:00";
 
   return (
@@ -63,7 +74,10 @@ export function TimeClockWidget({ openEntry }: Props) {
           <SubmitButton label="Clock out" pendingLabel="Clocking out…" />
         </form>
       ) : (
-        <form action={inAction} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <form
+          action={inAction}
+          className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end"
+        >
           <label className="block flex-1">
             <span className="field-label">Notes (optional)</span>
             <input name="notes" className="input" placeholder="Shift note" />
