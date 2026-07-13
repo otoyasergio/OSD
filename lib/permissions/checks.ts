@@ -40,6 +40,10 @@ export function canViewPartCost(role: UserRole) {
 export function canSyncPartsCanadaCatalog(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
+/** Push/pull Wix contacts (front office + admin). Billing stays on Square. */
+export function canSyncWixContacts(role: UserRole) {
+  return FRONT_OFFICE.includes(role) || role === "admin";
+}
 export function canCompleteJob(role: UserRole) {
   return role === "technician" || FRONT_OFFICE.includes(role);
 }

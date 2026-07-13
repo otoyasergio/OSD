@@ -53,8 +53,26 @@ test.describe("webhook security", () => {
     expect([401, 503]).toContain(response.status());
   });
 
+  test("Wix contacts webhook fails closed without secret or rejects bad auth", async ({
+    request,
+  }) => {
+    const response = await request.post("/api/wix/webhooks/contacts", {
+      data: {
+        event: "contact.created",
+        contact: { id: "e2e-contact", email: "e2e@example.com" },
+      },
+      headers: { Authorization: "Bearer wrong-secret" },
+    });
+    expect([401, 503]).toContain(response.status());
+  });
+
   test("cron rejects missing bearer", async ({ request }) => {
     const response = await request.get("/api/cron/parts-canada-sync");
+    expect([401, 500]).toContain(response.status());
+  });
+
+  test("wix contacts cron rejects missing bearer", async ({ request }) => {
+    const response = await request.get("/api/cron/wix-contacts-sync");
     expect([401, 500]).toContain(response.status());
   });
 });

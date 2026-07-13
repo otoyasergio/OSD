@@ -12,7 +12,9 @@ verify signatures / secrets or fail closed.
 | `POST /api/square/webhooks`       | HMAC-SHA256 (`x-square-hmacsha256-signature`) using `SQUARE_WEBHOOK_SIGNATURE_KEY` over `NEXT_PUBLIC_APP_URL` + path + raw body |
 | `POST /api/twilio/webhooks`       | Twilio `X-Twilio-Signature` using `TWILIO_AUTH_TOKEN`                                                                           |
 | `POST /api/wix/webhooks/bookings` | `Authorization: Bearer ${WIX_WEBHOOK_SECRET}` — **fail closed** if secret unset                                                 |
+| `POST /api/wix/webhooks/contacts` | `Authorization: Bearer ${WIX_WEBHOOK_SECRET}` — **fail closed** if secret unset                                                 |
 | `GET /api/cron/parts-canada-sync` | `Authorization: Bearer ${CRON_SECRET}` only (no query-string secret)                                                            |
+| `GET /api/cron/wix-contacts-sync` | `Authorization: Bearer ${CRON_SECRET}` only (no query-string secret)                                                            |
 
 Set `NEXT_PUBLIC_APP_URL` to the exact public HTTPS origin registered with Square/Twilio
 so signature URLs match.

@@ -113,7 +113,16 @@ const MESSAGES: Record<string, string> = {
   CREDIT_AMOUNT_INVALID: "Credit amount must be greater than zero.",
   BOOKING_MOTORCYCLE_REQUIRED:
     "Could not match a motorcycle for this booking. Link the customer bike first.",
-  WIX_NOT_CONFIGURED: "Wix is not configured.",
+  WIX_NOT_CONFIGURED:
+    "Wix is not configured. Add WIX_API_KEY and WIX_SITE_ID on the server.",
+  WIX_WEBHOOK_NOT_CONFIGURED: "Wix webhook secret is not configured.",
+  WIX_SYNC_MISCONFIGURED: "Wix sync needs SUPABASE_SERVICE_ROLE_KEY and Supabase URL.",
+  WIX_CONTACT_NOT_FOUND: "That Wix contact no longer exists.",
+  WIX_CONTACT_NOT_LINKED:
+    "This customer is not linked to a Wix contact yet. Sync to Wix first.",
+  WIX_CONTACT_SYNC_FAILED: "Could not sync this customer to Wix.",
+  WIX_WEBHOOK_INVALID: "Wix webhook payload is missing a contact id.",
+  WIX_WEBHOOK_CONTACT_REQUIRED: "Wix webhook contact needs an email or phone number.",
   FITMENT_IMPORT_FAILED: "Fitment import failed.",
   ALREADY_CLOCKED_IN: "That person already has an open punch. Clock them out first.",
   NOT_CLOCKED_IN: "Not clocked in.",

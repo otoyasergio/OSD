@@ -16,6 +16,7 @@ export type Customer = {
   email: string | null;
   notes: string | null;
   account_type: CustomerAccountType;
+  wix_contact_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -30,7 +31,7 @@ export type CustomerInput = {
 };
 
 const CUSTOMER_COLUMNS =
-  "customer_id, first_name, last_name, phone, email, notes, account_type, created_at, updated_at";
+  "customer_id, first_name, last_name, phone, email, notes, account_type, wix_contact_id, created_at, updated_at";
 
 /**
  * PostgREST `or()` uses commas and parentheses as syntax, so those characters are
@@ -96,18 +97,13 @@ export async function searchCustomers(
     query = query.eq("account_type", options.account_type);
   }
 
-  const { data, error } = await query
-    .order("last_name")
-    .order("first_name")
-    .limit(50);
+  const { data, error } = await query.order("last_name").order("first_name").limit(50);
 
   if (error) throw error;
   return (data ?? []) as Customer[];
 }
 
-export async function getCustomerById(
-  customerId: string
-): Promise<Customer | null> {
+export async function getCustomerById(customerId: string): Promise<Customer | null> {
   await requireUser();
   const supabase = await createClient();
 

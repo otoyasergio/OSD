@@ -7,6 +7,7 @@ import {
   canViewPartsBoard,
   canViewPartCost,
   canSyncPartsCanadaCatalog,
+  canSyncWixContacts,
   canCompleteWorkOrder,
   canRunQualityCheck,
   canManageServiceCatalogue,
@@ -87,6 +88,13 @@ describe("permissions", () => {
     expect(canSyncPartsCanadaCatalog("manager")).toBe(true);
     expect(canSyncPartsCanadaCatalog("service_advisor")).toBe(false);
     expect(canSyncPartsCanadaCatalog("technician")).toBe(false);
+  });
+
+  it("canSyncWixContacts allows front office and admin", () => {
+    expect(canSyncWixContacts("owner")).toBe(true);
+    expect(canSyncWixContacts("service_advisor")).toBe(true);
+    expect(canSyncWixContacts("admin")).toBe(true);
+    expect(canSyncWixContacts("technician")).toBe(false);
   });
 
   it("front office can update motorcycle service information", () => {

@@ -8,6 +8,7 @@ import { listCustomerDocuments } from "@/lib/services/customerDocuments";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { ClientGarage } from "@/components/customers/ClientGarage";
 import { CustomerDocuments } from "@/components/customers/CustomerDocuments";
+import { WixCustomerSyncPanel } from "@/components/customers/WixCustomerSyncPanel";
 import { updateCustomerAction } from "@/app/(app)/customers/actions";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
@@ -16,9 +17,11 @@ import { requireUser } from "@/lib/auth/session";
 import {
   canDeleteCustomerDocuments,
   canEditWorkOrder,
+  canSyncWixContacts,
   canUploadCustomerDocuments,
   canViewCustomerDocuments,
 } from "@/lib/permissions";
+import { isWixSyncAvailable } from "@/lib/services/wixContacts";
 import { formatDate } from "@/lib/datetime/format";
 
 function WorkOrderHistoryList({
@@ -107,6 +110,8 @@ export default async function CustomerDetailPage({
   const canUploadDocs = canUploadCustomerDocuments(user.role);
   const canDeleteDocs = canDeleteCustomerDocuments(user.role);
   const canViewDocs = canViewCustomerDocuments(user.role);
+  const canSyncWix = canSyncWixContacts(user.role);
+  const wixConfigured = isWixSyncAvailable();
 
   return (
     <div className="page-stack page-stack--narrow">
@@ -128,11 +133,14 @@ export default async function CustomerDetailPage({
         </p>
       </div>
 
-      <ClientGarage
+      <WixCustomerSyncPanel
         customerId={customer_id}
-        bikes={garage}
-        canTransfer={canTransfer}
+        wixContactId={customer.wix_contact_id}
+        configured={wixConfigured}
+        canSync={canSyncWix}
       />
+
+      <ClientGarage customerId={customer_id} bikes={garage} canTransfer={canTransfer} />
 
       {canViewDocs ? (
         <CustomerDocuments
@@ -145,9 +153,7 @@ export default async function CustomerDetailPage({
 
       <section>
         <h2 className="text-lg font-semibold text-zinc-900">Open work orders</h2>
-        <p className="mt-1 text-sm text-zinc-600">
-          Active visits across all locations.
-        </p>
+        <p className="mt-1 text-sm text-zinc-600">Active visits across all locations.</p>
         <WorkOrderHistoryList
           items={history.open}
           emptyMessage="No open work orders for this customer."
@@ -159,8 +165,8 @@ export default async function CustomerDetailPage({
           Completed / filed work orders
         </h2>
         <p className="mt-1 text-sm text-zinc-600">
-          Released visits (status Completed), with jobs from each work order.
-          Browse all filed work at this location in{" "}
+          Released visits (status Completed), with jobs from each work order. Browse all
+          filed work at this location in{" "}
           <Link href="/complete" className="underline-offset-2 hover:underline">
             Complete and filed
           </Link>
