@@ -48,7 +48,7 @@ export const VISIT_PIPELINE_STAGES = [
 
 export type VisitPipelineStageId = (typeof VISIT_PIPELINE_STAGES)[number]["id"];
 
-/** Board columns for the dashboard shop-floor view. */
+/** Board columns for the dashboard shop-floor view (detailed). */
 export const SHOP_BOARD_COLUMNS = [
   {
     id: "intake",
@@ -96,6 +96,59 @@ export const SHOP_BOARD_COLUMNS = [
     statuses: ["on_hold"] as WorkOrderStatus[],
   },
 ] as const;
+
+/** Calm Track Day gallery — fewer wide stage columns (default board). */
+export const GALLERY_BOARD_COLUMNS = [
+  {
+    id: "gallery_intake",
+    label: "Intake",
+    statuses: [
+      "draft",
+      "open",
+      "inspection_in_progress",
+      "waiting_for_customer_approval",
+    ] as WorkOrderStatus[],
+  },
+  {
+    id: "gallery_in_bay",
+    label: "In bay",
+    statuses: [
+      "waiting_for_parts",
+      "ready_for_technician",
+      "in_progress",
+      "on_hold",
+    ] as WorkOrderStatus[],
+  },
+  {
+    id: "gallery_qc",
+    label: "QC",
+    statuses: ["quality_check"] as WorkOrderStatus[],
+  },
+  {
+    id: "gallery_ready",
+    label: "Ready",
+    statuses: ["ready_for_pickup", "completed"] as WorkOrderStatus[],
+  },
+] as const;
+
+export function getGalleryStageForStatus(status: WorkOrderStatus): {
+  label: string;
+  tone: "teal" | "orange" | "muted" | "danger";
+} {
+  if (status === "cancelled") return { label: "Cancelled", tone: "danger" };
+  if (status === "on_hold") return { label: "On hold", tone: "danger" };
+  for (const column of GALLERY_BOARD_COLUMNS) {
+    if ((column.statuses as readonly WorkOrderStatus[]).includes(status)) {
+      if (column.id === "gallery_in_bay" && status === "in_progress") {
+        return { label: column.label, tone: "orange" };
+      }
+      if (column.id === "gallery_qc") return { label: column.label, tone: "orange" };
+      if (column.id === "gallery_ready") return { label: column.label, tone: "muted" };
+      return { label: column.label, tone: "teal" };
+    }
+  }
+  return { label: status, tone: "muted" };
+}
 
 export function getPipelineStageIndex(status: WorkOrderStatus): number {
   if (status === "cancelled") return -1;

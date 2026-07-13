@@ -3,10 +3,11 @@ import type { WorkOrderDetail } from "@/lib/services/workOrders";
 import type { IntakePhoto } from "@/lib/services/photos";
 import { FlagBadges } from "@/components/status/FlagBadges";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StageChip } from "@/components/ui/StageChip";
 import { WorkOrderJobTodo } from "@/components/work_orders/WorkOrderJobTodo";
 import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
 import { WorkOrderPhotoStrip } from "@/components/work_orders/WorkOrderPhotoStrip";
-import { getWorkOrderNextAction } from "@/lib/status/pipeline";
+import { getGalleryStageForStatus, getWorkOrderNextAction } from "@/lib/status/pipeline";
 import { formatDateTime } from "@/lib/datetime/format";
 
 const INACTIVE_JOB_STATUSES = new Set(["cancelled", "declined", "completed"]);
@@ -36,15 +37,19 @@ export function WorkOrderHeader({
   const bike = detail.motorcycle;
   const nextAction = getWorkOrderNextAction(detail.status, detail.flags);
   const estimatedLabourTotal = sumActiveEstimatedHours(detail);
+  const galleryStage = getGalleryStageForStatus(detail.status);
 
   return (
     <header className="card overflow-hidden">
       <div className="border-b border-border bg-surface-muted px-4 py-4 sm:px-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--status-neutral)]">
-              Work order
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--status-neutral)]">
+                Work order
+              </p>
+              <StageChip label={galleryStage.label} tone={galleryStage.tone} />
+            </div>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               {detail.work_order_number}
             </h1>

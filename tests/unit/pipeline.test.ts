@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  GALLERY_BOARD_COLUMNS,
+  getGalleryStageForStatus,
   getPipelineStageIndex,
   getWorkOrderNextAction,
   VISIT_PIPELINE_STAGES,
 } from "@/lib/status/pipeline";
+import type { WorkOrderStatus } from "@/lib/database/types";
 
 describe("getPipelineStageIndex", () => {
   it("maps operational statuses to pipeline stages", () => {
@@ -46,5 +49,38 @@ describe("getWorkOrderNextAction", () => {
 describe("VISIT_PIPELINE_STAGES", () => {
   it("covers the main operational flow", () => {
     expect(VISIT_PIPELINE_STAGES).toHaveLength(7);
+  });
+});
+
+describe("GALLERY_BOARD_COLUMNS", () => {
+  it("uses four Track Day stages covering operational statuses", () => {
+    expect(GALLERY_BOARD_COLUMNS).toHaveLength(4);
+    const covered = new Set(
+      GALLERY_BOARD_COLUMNS.flatMap((column) => [...column.statuses])
+    );
+    const required: WorkOrderStatus[] = [
+      "draft",
+      "open",
+      "inspection_in_progress",
+      "waiting_for_customer_approval",
+      "waiting_for_parts",
+      "ready_for_technician",
+      "in_progress",
+      "on_hold",
+      "quality_check",
+      "ready_for_pickup",
+      "completed",
+    ];
+    for (const status of required) {
+      expect(covered.has(status)).toBe(true);
+    }
+  });
+
+  it("maps statuses to gallery stage labels", () => {
+    expect(getGalleryStageForStatus("in_progress")).toEqual({
+      label: "In bay",
+      tone: "orange",
+    });
+    expect(getGalleryStageForStatus("quality_check").label).toBe("QC");
   });
 });

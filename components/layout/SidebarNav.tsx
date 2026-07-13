@@ -2,6 +2,25 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { LucideIcon } from "lucide-react";
+import {
+  LayoutDashboard,
+  ClipboardList,
+  Package,
+  Wrench,
+  Clock3,
+  Users,
+  Bike,
+  Settings,
+  MapPin,
+  FileCheck,
+  ScrollText,
+  BookOpen,
+  Shield,
+  BarChart3,
+  Wallet,
+  Archive,
+} from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
   canManageContractTemplate,
@@ -16,7 +35,31 @@ import {
   canViewReports,
 } from "@/lib/permissions/checks";
 
-type NavLink = { href: string; label: string };
+type NavLink = { href: string; label: string; icon: LucideIcon };
+
+const NAV_ICONS: Record<string, LucideIcon> = {
+  "/dashboard": LayoutDashboard,
+  "/work_orders": ClipboardList,
+  "/parts": Package,
+  "/technician": Wrench,
+  "/settings/timesheets": Clock3,
+  "/customers": Users,
+  "/motorcycles": Bike,
+  "/settings": Settings,
+  "/settings/locations": MapPin,
+  "/settings/inspection_template": FileCheck,
+  "/settings/contract_template": ScrollText,
+  "/settings/services": BookOpen,
+  "/settings/users": Shield,
+  "/settings/audit": ScrollText,
+  "/settings/reports": BarChart3,
+  "/billing": Wallet,
+  "/complete": Archive,
+};
+
+function iconFor(href: string): LucideIcon {
+  return NAV_ICONS[href] ?? ClipboardList;
+}
 
 type NavSubgroup = {
   heading?: string;
@@ -32,37 +75,65 @@ type NavCategory = {
 export function buildNavCategories(role: UserRole): NavCategory[] {
   const financesLinks: NavLink[] = [];
   if (canViewBillingArea(role)) {
-    financesLinks.push({ href: "/billing", label: "Billing" });
+    financesLinks.push({
+      href: "/billing",
+      label: "Billing",
+      icon: iconFor("/billing"),
+    });
   }
-  financesLinks.push({ href: "/complete", label: "Complete and filed" });
+  financesLinks.push({
+    href: "/complete",
+    label: "Complete and filed",
+    icon: iconFor("/complete"),
+  });
 
   const shopFloorLinks: NavLink[] = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/work_orders", label: "Work Orders" },
+    { href: "/dashboard", label: "Dashboard", icon: iconFor("/dashboard") },
+    {
+      href: "/work_orders",
+      label: "Work Orders",
+      icon: iconFor("/work_orders"),
+    },
   ];
   if (canViewPartsBoard(role)) {
-    shopFloorLinks.push({ href: "/parts", label: "Parts" });
+    shopFloorLinks.push({
+      href: "/parts",
+      label: "Parts",
+      icon: iconFor("/parts"),
+    });
   }
 
-  const staffingLinks: NavLink[] = [{ href: "/technician", label: "Technician" }];
+  const staffingLinks: NavLink[] = [
+    { href: "/technician", label: "Technician", icon: iconFor("/technician") },
+  ];
   if (canManageTimesheets(role)) {
-    staffingLinks.push({ href: "/settings/timesheets", label: "Timesheets" });
+    staffingLinks.push({
+      href: "/settings/timesheets",
+      label: "Timesheets",
+      icon: iconFor("/settings/timesheets"),
+    });
   }
 
   const shopSettings: NavLink[] = [];
   if (canManageLocations(role)) {
-    shopSettings.push({ href: "/settings/locations", label: "Locations" });
+    shopSettings.push({
+      href: "/settings/locations",
+      label: "Locations",
+      icon: iconFor("/settings/locations"),
+    });
   }
   if (canManageInspectionTemplate(role)) {
     shopSettings.push({
       href: "/settings/inspection_template",
       label: "Inspection template",
+      icon: iconFor("/settings/inspection_template"),
     });
   }
   if (canManageContractTemplate(role)) {
     shopSettings.push({
       href: "/settings/contract_template",
       label: "Drop-off contract",
+      icon: iconFor("/settings/contract_template"),
     });
   }
 
@@ -71,22 +142,37 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     catalogueSettings.push({
       href: "/settings/services",
       label: "Service catalogue",
+      icon: iconFor("/settings/services"),
     });
   }
 
   const adminSettings: NavLink[] = [];
   if (canManageUsers(role)) {
-    adminSettings.push({ href: "/settings/users", label: "Users" });
+    adminSettings.push({
+      href: "/settings/users",
+      label: "Users",
+      icon: iconFor("/settings/users"),
+    });
   }
   if (canViewAuditLog(role)) {
-    adminSettings.push({ href: "/settings/audit", label: "Audit log" });
+    adminSettings.push({
+      href: "/settings/audit",
+      label: "Audit log",
+      icon: iconFor("/settings/audit"),
+    });
   }
   if (canViewReports(role)) {
-    adminSettings.push({ href: "/settings/reports", label: "Reports" });
+    adminSettings.push({
+      href: "/settings/reports",
+      label: "Reports",
+      icon: iconFor("/settings/reports"),
+    });
   }
 
   const settingsSubgroups: NavSubgroup[] = [
-    { links: [{ href: "/settings", label: "Settings" }] },
+    {
+      links: [{ href: "/settings", label: "Settings", icon: iconFor("/settings") }],
+    },
   ];
   if (shopSettings.length > 0) {
     settingsSubgroups.push({ heading: "Shop", links: shopSettings });
@@ -112,8 +198,16 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
         {
           heading: "Records",
           links: [
-            { href: "/customers", label: "Customers" },
-            { href: "/motorcycles", label: "Motorcycles" },
+            {
+              href: "/customers",
+              label: "Customers",
+              icon: iconFor("/customers"),
+            },
+            {
+              href: "/motorcycles",
+              label: "Motorcycles",
+              icon: iconFor("/motorcycles"),
+            },
           ],
         },
       ],
@@ -172,6 +266,7 @@ export function SidebarNav({ role, onNavigate }: Props) {
               ) : null}
               {group.links.map((link) => {
                 const active = isActivePath(pathname, link.href);
+                const Icon = link.icon;
                 return (
                   <Link
                     key={link.href}
@@ -180,6 +275,7 @@ export function SidebarNav({ role, onNavigate }: Props) {
                     aria-current={active ? "page" : undefined}
                     onClick={onNavigate}
                   >
+                    <Icon className="nav-link-icon" aria-hidden />
                     {link.label}
                   </Link>
                 );

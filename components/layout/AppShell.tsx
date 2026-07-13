@@ -115,6 +115,9 @@ export function AppShell({ user, locations, children }: Props) {
             className="h-9 w-auto"
             priority
           />
+          <span className="brand-wordmark" aria-hidden>
+            OTOMOTO
+          </span>
         </Link>
         <SidebarNav role={user.role} onNavigate={() => setMobileNavOpen(false)} />
       </aside>

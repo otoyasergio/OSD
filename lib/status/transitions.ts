@@ -1,11 +1,10 @@
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
-import {
-  canEditWorkOrder,
-  canOverrideWorkOrderStatus,
-} from "@/lib/permissions";
-import type { SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
+import { canEditWorkOrder, canOverrideWorkOrderStatus } from "@/lib/permissions";
+import type { GALLERY_BOARD_COLUMNS, SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
 
-export type ShopBoardColumnId = (typeof SHOP_BOARD_COLUMNS)[number]["id"];
+export type ShopBoardColumnId =
+  | (typeof SHOP_BOARD_COLUMNS)[number]["id"]
+  | (typeof GALLERY_BOARD_COLUMNS)[number]["id"];
 
 /** Primary status applied when a card is dropped into a board column. */
 const COLUMN_TARGET_STATUS: Record<ShopBoardColumnId, WorkOrderStatus | null> = {
@@ -17,13 +16,14 @@ const COLUMN_TARGET_STATUS: Record<ShopBoardColumnId, WorkOrderStatus | null> = 
   in_progress: "in_progress",
   qc: "quality_check",
   pickup: "ready_for_pickup",
-  // Hold/cancel are detail-page actions only — not board drops.
   on_hold: null,
+  gallery_intake: "open",
+  gallery_in_bay: "in_progress",
+  gallery_qc: "quality_check",
+  gallery_ready: "ready_for_pickup",
 };
 
-export function getTargetStatusForColumn(
-  columnId: string
-): WorkOrderStatus | null {
+export function getTargetStatusForColumn(columnId: string): WorkOrderStatus | null {
   if (!(columnId in COLUMN_TARGET_STATUS)) return null;
   return COLUMN_TARGET_STATUS[columnId as ShopBoardColumnId];
 }
@@ -54,7 +54,7 @@ export function canDropInColumn(
   }
 
   // QC column requires status override (managers/owners).
-  if (columnId === "qc") {
+  if (columnId === "qc" || columnId === "gallery_qc") {
     return canOverrideWorkOrderStatus(role);
   }
 

@@ -140,9 +140,17 @@ summary {
 
 .sidebar-brand {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
   min-height: var(--tap-min);
   padding: 1rem 1rem 0.75rem;
+}
+
+.sidebar-brand .brand-wordmark {
+  font-size: 0.8125rem;
+  letter-spacing: 0.14em;
+  color: var(--signal-teal-bright);
 }
 
 .sidebar-nav {
@@ -544,12 +552,13 @@ summary {
 }
 
 .btn-primary {
-  background: var(--chrome);
-  color: var(--chrome-foreground);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: var(--accent);
 }
 
 .btn-primary:active:not(:disabled) {
-  background: var(--chrome-elevated);
+  background: var(--accent-hover);
 }
 
 .btn-accent {
@@ -686,7 +695,8 @@ summary {
   border-radius: var(--radius-lg);
   border: 1px dashed var(--border-strong);
   background:
-    radial-gradient(ellipse at 50% 0%, rgb(245 158 11 / 0.06), transparent 55%),
+    radial-gradient(ellipse at 50% 0%, rgb(20 184 166 / 0.12), transparent 55%),
+    radial-gradient(ellipse at 100% 100%, rgb(249 115 22 / 0.08), transparent 45%),
     var(--surface);
   padding: 2.5rem 1rem;
   text-align: center;
@@ -698,7 +708,7 @@ summary {
   width: 4rem;
   height: 3rem;
   margin: 0 auto 0.75rem;
-  color: var(--chrome);
+  color: var(--signal-teal);
 }
 
 .empty-state-title {
@@ -3775,4 +3785,239 @@ label.photo-source-sheet-action {
 
 .floor-dock-msg--ok {
   color: var(--status-success-fg);
+}
+
+/* ── Track Day primitives ── */
+
+.brand-wordmark {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 1.125rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--chrome-foreground);
+}
+
+.stage-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.stage-chip--teal {
+  background: var(--signal-teal-muted);
+  color: var(--signal-teal);
+}
+
+.stage-chip--orange {
+  background: var(--accent-muted);
+  color: var(--accent-hover);
+}
+
+.stage-chip--muted {
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-fg);
+}
+
+.stage-chip--danger {
+  background: var(--status-danger-bg);
+  color: var(--status-danger-fg);
+}
+
+.photo-action-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  text-decoration: none;
+  color: inherit;
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.photo-action-card--flagged {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.photo-action-card-media {
+  aspect-ratio: 16 / 10;
+  background: linear-gradient(145deg, #334155, var(--signal-teal));
+  overflow: hidden;
+}
+
+.photo-action-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-action-card-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgb(255 255 255 / 0.7);
+}
+
+.photo-action-card-bike {
+  width: 3rem;
+  height: 2rem;
+}
+
+.photo-action-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem 0.75rem;
+}
+
+.photo-action-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.photo-action-card-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.photo-action-card-subtitle {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--status-neutral);
+}
+
+.photo-action-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.photo-action-card-primary {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.photo-action-card-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-muted);
+  color: var(--accent-hover);
+}
+
+.photo-action-card--compact .photo-action-card-title {
+  font-size: 0.875rem;
+}
+
+.photo-action-card--compact .photo-action-card-body {
+  padding: 0.5rem 0.6rem 0.6rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .photo-action-card:active {
+    transform: scale(0.98);
+  }
+
+  .td-enter {
+    animation: td-enter 0.18s ease-out;
+  }
+
+  @keyframes td-enter {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+.nav-link-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 1.125rem;
+  height: 1.125rem;
+  opacity: 0.85;
+}
+
+.sidebar-nav .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dashboard-more {
+  margin-bottom: 0.75rem;
+}
+
+.dashboard-more-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: var(--tap-min);
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-size: 0.875rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.dashboard-more-panel {
+  margin-top: 0.75rem;
+  padding: 0.875rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.shop-board--gallery {
+  grid-template-columns: repeat(4, minmax(14rem, 1fr));
+}
+
+.floor-stage-pill--current {
+  background: var(--signal-teal);
+  color: #ecfdf5;
+  border-color: var(--signal-teal);
 }
