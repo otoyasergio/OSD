@@ -8,6 +8,7 @@ describe("canUseMessenger", () => {
       "manager",
       "service_advisor",
       "technician",
+      "head_tech",
       "admin",
     ] as const) {
       expect(canUseMessenger(role)).toBe(true);

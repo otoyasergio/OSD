@@ -18,6 +18,7 @@ const ROLE_LABELS: Record<AppUser["role"], string> = {
   manager: "Manager",
   service_advisor: "Service Advisor",
   technician: "Technician",
+  head_tech: "Head Tech",
   admin: "Admin",
 };
 

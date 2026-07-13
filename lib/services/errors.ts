@@ -81,6 +81,8 @@ const MESSAGES: Record<string, string> = {
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
   QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
+  SAFETY_FAIL_RECOMMENDATIONS_REQUIRED:
+    "Add at least one recommendation when failing safety.",
   CONTRACT_REQUIRED:
     "Sign the drop-off agreement before pulling or marking ready for technician.",
   NOT_READY_FOR_PICKUP:

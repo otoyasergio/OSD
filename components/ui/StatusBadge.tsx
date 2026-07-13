@@ -11,6 +11,7 @@ const WORK_ORDER_STATUS_STYLES: Record<WorkOrderStatus, string> = {
   ready_for_technician: "bg-[var(--status-success-bg)] text-[var(--status-success-fg)]",
   in_progress: "bg-[var(--status-info-bg)] text-[var(--status-info-fg)]",
   quality_check: "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
+  safety_check: "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
   ready_for_pickup: "bg-[var(--status-success-bg)] text-[var(--status-success-fg)]",
   completed: "bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]",
   cancelled: "bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)]",
@@ -19,8 +20,7 @@ const WORK_ORDER_STATUS_STYLES: Record<WorkOrderStatus, string> = {
 
 const JOB_STATUS_STYLES: Record<JobStatus, string> = {
   draft: "bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]",
-  waiting_for_approval:
-    "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
+  waiting_for_approval: "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
   approved: "bg-[var(--status-success-bg)] text-[var(--status-success-fg)]",
   declined: "bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)]",
   waiting_for_parts: "bg-[var(--status-waiting-bg)] text-[var(--status-waiting-fg)]",

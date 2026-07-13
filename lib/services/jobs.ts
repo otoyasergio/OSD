@@ -10,6 +10,7 @@ import {
   canEditWorkOrder,
   canPullJob,
   canRecordCustomerApproval,
+  isFloorTech,
 } from "@/lib/permissions";
 import { addJobSchema, approvalMethodSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
@@ -170,7 +171,7 @@ export async function assignTechnicianToJob(
     .maybeSingle();
 
   if (techError) throw techError;
-  if (!tech || tech.role !== "technician" || tech.status !== "active") {
+  if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
     throw new Error("TECHNICIAN_NOT_FOUND");
   }
 
@@ -213,7 +214,7 @@ export async function pullJob(
 ): Promise<void> {
   const user = await requireUser();
   if (!canPullJob(user.role)) throw new Error("FORBIDDEN");
-  if (user.role !== "technician") {
+  if (!isFloorTech(user.role)) {
     throw new Error("FORBIDDEN");
   }
 
@@ -318,7 +319,7 @@ function assertStatusTransition(
     if (job.status !== "approved" && job.status !== "ready_to_start") {
       throw new Error("JOB_NOT_READY");
     }
-    if (user.role === "technician" && job.assigned_technician_id !== user.user_id) {
+    if (isFloorTech(user.role) && job.assigned_technician_id !== user.user_id) {
       throw new Error("JOB_NOT_ASSIGNED_TO_YOU");
     }
     if (!canCompleteJob(user.role)) throw new Error("FORBIDDEN");
@@ -326,7 +327,7 @@ function assertStatusTransition(
 
   if (nextStatus === "completed") {
     if (!job.assigned_technician_id) throw new Error("JOB_NOT_ASSIGNED");
-    if (user.role === "technician" && job.assigned_technician_id !== user.user_id) {
+    if (isFloorTech(user.role) && job.assigned_technician_id !== user.user_id) {
       throw new Error("JOB_NOT_ASSIGNED_TO_YOU");
     }
     if (!canCompleteJob(user.role)) throw new Error("FORBIDDEN");
@@ -338,7 +339,7 @@ function assertStatusTransition(
   }
 
   if (nextStatus === "ready_to_start" || nextStatus === "waiting_for_parts") {
-    if (!canEditWorkOrder(user.role) && user.role !== "technician") {
+    if (!canEditWorkOrder(user.role) && !isFloorTech(user.role)) {
       throw new Error("FORBIDDEN");
     }
   }

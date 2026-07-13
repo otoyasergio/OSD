@@ -6,19 +6,20 @@ import { formatLabourComparison } from "@/lib/services/labour";
 import { listJobChecklist, type JobChecklistItem } from "@/lib/services/jobChecklist";
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 import type { AdminFlag } from "@/lib/services/adminFlags";
+import { canPerformSafetyCheck } from "@/lib/permissions";
 
-export type FloorOsMode = "job" | "inspection" | "parts" | "qc" | "notes";
+export type FloorOsMode = "job" | "inspection" | "parts" | "qc" | "notes" | "safety";
 
 export type FloorQueueItem = {
   key: string;
-  kind: "job" | "qc" | "flag";
+  kind: "job" | "qc" | "flag" | "safety";
   job_id: string | null;
   work_order_id: string;
   work_order_number: string;
   title: string;
   subtitle: string;
   status_label: string;
-  lane: "priority" | "ready_to_pull" | "needs_qc" | "flagged";
+  lane: "priority" | "ready_to_pull" | "needs_qc" | "safeties" | "flagged";
   is_active: boolean;
 };
 
@@ -60,6 +61,8 @@ export type FloorOsSurface = {
   can_pull: boolean;
   is_qc: boolean;
   qc_assignee_is_me: boolean;
+  is_safety: boolean;
+  can_safety: boolean;
   flags: AdminFlag[];
 };
 
@@ -67,6 +70,7 @@ export type TechnicianFloorOs = {
   priority: FloorQueueItem[];
   readyToPull: FloorQueueItem[];
   needsQc: FloorQueueItem[];
+  safeties: FloorQueueItem[];
   flagged: FloorQueueItem[];
   selected: FloorOsSurface | null;
 };
@@ -101,6 +105,7 @@ export async function getTechnicianFloorOs(input: {
     { data: myJobs, error: myJobsError },
     { data: pullJobs, error: pullError },
     { data: qcRows, error: qcError },
+    { data: safetyRows, error: safetyError },
     { data: myFlags, error: flagsError },
   ] = await Promise.all([
     supabase
@@ -151,6 +156,21 @@ export async function getTechnicianFloorOs(input: {
       .eq("location_id", locationId)
       .eq("status", "quality_check")
       .eq("quality_check_assigned_to", user.user_id),
+    canPerformSafetyCheck(user.role)
+      ? supabase
+          .from("work_order")
+          .select(
+            `
+            work_order_id, work_order_number, status, location_id,
+            motorcycle:motorcycle_id (
+              year, make, model,
+              customer:customer_id ( first_name, last_name )
+            )
+          `
+          )
+          .eq("location_id", locationId)
+          .eq("status", "safety_check")
+      : Promise.resolve({ data: [] as unknown[], error: null }),
     supabase
       .from("admin_flag")
       .select(
@@ -163,6 +183,7 @@ export async function getTechnicianFloorOs(input: {
   if (myJobsError) throw myJobsError;
   if (pullError) throw pullError;
   if (qcError) throw qcError;
+  if (safetyError) throw safetyError;
   if (flagsError) throw flagsError;
 
   type NestedWo = {
@@ -297,6 +318,41 @@ export async function getTechnicianFloorOs(input: {
     });
   }
 
+  const safeties: FloorQueueItem[] = [];
+  for (const wo of safetyRows ?? []) {
+    const row = wo as {
+      work_order_id: string;
+      work_order_number: string;
+      motorcycle: unknown;
+    };
+    const motoRaw = row.motorcycle;
+    const moto = Array.isArray(motoRaw) ? motoRaw[0] : motoRaw;
+    const customerRaw = moto?.customer;
+    const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw;
+    const labels = bikeCustomerLabel(
+      moto
+        ? {
+            year: moto.year,
+            make: moto.make,
+            model: moto.model,
+            customer: customer ?? null,
+          }
+        : null
+    );
+    safeties.push({
+      key: `safety-${row.work_order_id}`,
+      kind: "safety",
+      job_id: null,
+      work_order_id: row.work_order_id,
+      work_order_number: row.work_order_number,
+      title: `${labels.motorcycle_label} · Safety`,
+      subtitle: row.work_order_number,
+      status_label: WORK_ORDER_STATUS_LABELS.safety_check,
+      lane: "safeties",
+      is_active: false,
+    });
+  }
+
   const flagged: FloorQueueItem[] = [];
   const flagRows = (myFlags ?? []) as AdminFlag[];
   if (flagRows.length > 0) {
@@ -354,6 +410,7 @@ export async function getTechnicianFloorOs(input: {
     const first =
       priority.find((item) => item.is_active) ??
       priority[0] ??
+      safeties[0] ??
       needsQc[0] ??
       readyToPull[0] ??
       flagged[0] ??
@@ -361,7 +418,7 @@ export async function getTechnicianFloorOs(input: {
     if (first) {
       selectedJobId = first.job_id;
       selectedWoId = first.work_order_id;
-      mode = first.kind === "qc" ? "qc" : "job";
+      mode = first.kind === "qc" ? "qc" : first.kind === "safety" ? "safety" : "job";
     }
   }
 
@@ -373,6 +430,9 @@ export async function getTechnicianFloorOs(input: {
 
   if (needsQc.some((item) => item.work_order_id === selectedWoId) && !selectedJobId) {
     mode = input.mode ?? "qc";
+  }
+  if (safeties.some((item) => item.work_order_id === selectedWoId) && !selectedJobId) {
+    mode = input.mode ?? "safety";
   }
 
   let selected: FloorOsSurface | null = null;
@@ -497,6 +557,8 @@ export async function getTechnicianFloorOs(input: {
           unassigned && woPullable && readyToPull.some((i) => i.job_id === job.job_id),
         is_qc: false,
         qc_assignee_is_me: false,
+        is_safety: wo.status === "safety_check",
+        can_safety: canPerformSafetyCheck(user.role) && wo.status === "safety_check",
         flags: (openFlags as AdminFlag[]) ?? [],
       };
     }
@@ -539,8 +601,9 @@ export async function getTechnicianFloorOs(input: {
         .eq("work_order_id", wo.work_order_id)
         .is("cleared_at", null);
       const returnTo = encodeURIComponent(`/technician?wo=${wo.work_order_id}`);
+      const isSafety = wo.status === "safety_check";
       selected = {
-        mode: mode === "job" && !pullItem ? "qc" : mode,
+        mode: mode === "job" && !pullItem ? (isSafety ? "safety" : "qc") : mode,
         job_id: pullItem?.job_id ?? null,
         work_order_id: wo.work_order_id,
         work_order_number: wo.work_order_number,
@@ -574,10 +637,12 @@ export async function getTechnicianFloorOs(input: {
         can_pull: Boolean(pullItem),
         is_qc: wo.status === "quality_check",
         qc_assignee_is_me: wo.quality_check_assigned_to === user.user_id,
+        is_safety: isSafety,
+        can_safety: canPerformSafetyCheck(user.role) && isSafety,
         flags: (openFlags as AdminFlag[]) ?? [],
       };
     }
   }
 
-  return { priority, readyToPull, needsQc, flagged, selected };
+  return { priority, readyToPull, needsQc, safeties, flagged, selected };
 }

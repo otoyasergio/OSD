@@ -24,6 +24,11 @@ import {
   canDeleteCustomerDocuments,
   canViewReports,
   canChangeOwnPassword,
+  canPerformSafetyCheck,
+  canOverrideSafetyRequirement,
+  canCompleteInspection,
+  canCompleteJob,
+  canCreateRecommendation,
 } from "@/lib/permissions/checks";
 
 describe("permissions", () => {
@@ -164,9 +169,41 @@ describe("permissions", () => {
       "manager",
       "service_advisor",
       "technician",
+      "head_tech",
       "admin",
     ] as const) {
       expect(canChangeOwnPassword(role)).toBe(true);
     }
+  });
+
+  it("only head_tech can perform safety check", () => {
+    expect(canPerformSafetyCheck("head_tech")).toBe(true);
+    expect(canPerformSafetyCheck("technician")).toBe(false);
+    expect(canPerformSafetyCheck("service_advisor")).toBe(false);
+    expect(canPerformSafetyCheck("manager")).toBe(false);
+    expect(canPerformSafetyCheck("owner")).toBe(false);
+    expect(canPerformSafetyCheck("admin")).toBe(false);
+  });
+
+  it("front office can override safety requirement", () => {
+    expect(canOverrideSafetyRequirement("owner")).toBe(true);
+    expect(canOverrideSafetyRequirement("manager")).toBe(true);
+    expect(canOverrideSafetyRequirement("service_advisor")).toBe(true);
+    expect(canOverrideSafetyRequirement("head_tech")).toBe(false);
+    expect(canOverrideSafetyRequirement("technician")).toBe(false);
+    expect(canOverrideSafetyRequirement("admin")).toBe(false);
+  });
+
+  it("head_tech inherits technician floor permissions without client CRM", () => {
+    expect(canPullJob("head_tech")).toBe(true);
+    expect(canPerformPeerQualityCheck("head_tech")).toBe(true);
+    expect(canCompleteJob("head_tech")).toBe(true);
+    expect(canCompleteInspection("head_tech")).toBe(true);
+    expect(canCreateRecommendation("head_tech")).toBe(true);
+    expect(canViewPartsBoard("head_tech")).toBe(true);
+    expect(canCreateAdminFlag("head_tech")).toBe(true);
+    expect(canViewClients("head_tech")).toBe(false);
+    expect(canRunQualityCheck("head_tech")).toBe(false);
+    expect(canRecordCustomerApproval("head_tech")).toBe(false);
   });
 });

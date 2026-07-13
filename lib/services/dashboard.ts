@@ -13,6 +13,7 @@ export type DashboardCounts = {
   ready_for_technician: number;
   in_progress: number;
   quality_check: number;
+  safety_check: number;
   ready_for_pickup: number;
   overdue: number;
   incomplete_inspections: number;
@@ -82,6 +83,7 @@ const ACTIVE_STATUSES: WorkOrderStatus[] = [
   "ready_for_technician",
   "in_progress",
   "quality_check",
+  "safety_check",
   "ready_for_pickup",
   "on_hold",
 ];
@@ -147,6 +149,7 @@ function emptyCounts(): DashboardCounts {
     ready_for_technician: 0,
     in_progress: 0,
     quality_check: 0,
+    safety_check: 0,
     ready_for_pickup: 0,
     overdue: 0,
     incomplete_inspections: 0,
@@ -175,6 +178,8 @@ function matchesCard(row: RawRow, card: DashboardCardKey, now: Date): boolean {
       return row.status === "in_progress";
     case "quality_check":
       return row.status === "quality_check";
+    case "safety_check":
+      return row.status === "safety_check";
     case "ready_for_pickup":
       return row.status === "ready_for_pickup";
     case "overdue":
@@ -307,6 +312,7 @@ export async function getDashboardData(
     if (row.status === "ready_for_technician") counts.ready_for_technician += 1;
     if (row.status === "in_progress") counts.in_progress += 1;
     if (row.status === "quality_check") counts.quality_check += 1;
+    if (row.status === "safety_check") counts.safety_check += 1;
     if (row.status === "ready_for_pickup") counts.ready_for_pickup += 1;
     if (isOverdue(row.estimated_completion, row.status, now)) counts.overdue += 1;
 
@@ -396,7 +402,7 @@ export async function getDashboardData(
     const { data: techRows, error: techError } = await supabase
       .from("app_user")
       .select("user_id, first_name, last_name")
-      .eq("role", "technician")
+      .in("role", ["technician", "head_tech"])
       .eq("status", "active")
       .in("user_id", userIds)
       .order("last_name")
@@ -433,6 +439,7 @@ export const DASHBOARD_CARDS: Array<{
   { key: "ready_for_technician", label: "Ready for tech" },
   { key: "in_progress", label: "In progress" },
   { key: "quality_check", label: "Quality check" },
+  { key: "safety_check", label: "Safety" },
   { key: "ready_for_pickup", label: "Ready pickup" },
   { key: "overdue", label: "Overdue" },
   { key: "incomplete_inspections", label: "Incomplete inspections" },

@@ -43,6 +43,8 @@ function base(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface {
     can_pull: false,
     is_qc: false,
     qc_assignee_is_me: false,
+    is_safety: false,
+    can_safety: false,
     flags: [],
     ...overrides,
   };
@@ -94,5 +96,19 @@ describe("deriveDefaultStage", () => {
         })
       )
     ).toBe("qc");
+  });
+
+  it("uses safety for head tech safety queue without a job", () => {
+    expect(
+      deriveDefaultStage(
+        base({
+          job_id: null,
+          is_safety: true,
+          can_safety: true,
+          can_complete: false,
+          wo_status: "safety_check",
+        })
+      )
+    ).toBe("safety");
   });
 });

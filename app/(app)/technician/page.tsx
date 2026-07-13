@@ -10,7 +10,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const STAGES = new Set<FloorStage>(["inspect", "work", "proof", "done", "qc"]);
+const STAGES = new Set<FloorStage>(["inspect", "work", "proof", "done", "qc", "safety"]);
 
 function stageFromParams(params: { stage?: string; mode?: string }): FloorStage | null {
   if (params.stage && STAGES.has(params.stage as FloorStage)) {
@@ -25,6 +25,8 @@ function stageFromParams(params: { stage?: string; mode?: string }): FloorStage 
       return "work";
     case "qc":
       return "qc";
+    case "safety":
+      return "safety";
     case "notes":
       return "done";
     default:
@@ -35,6 +37,7 @@ function stageFromParams(params: { stage?: string; mode?: string }): FloorStage 
 function modeForFetch(stage: FloorStage | null): FloorOsMode {
   if (stage === "inspect") return "inspection";
   if (stage === "qc") return "qc";
+  if (stage === "safety") return "safety";
   return "job";
 }
 

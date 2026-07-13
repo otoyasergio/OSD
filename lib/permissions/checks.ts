@@ -4,6 +4,12 @@ const FRONT_OFFICE: UserRole[] = ["owner", "manager", "service_advisor"];
 const OWNERS: UserRole[] = ["owner"];
 const OWNERS_MANAGERS: UserRole[] = ["owner", "manager"];
 const QC_ROLES: UserRole[] = ["owner", "manager", "service_advisor"];
+/** Floor techs: regular technician + head tech (same shop-floor powers). */
+const FLOOR_TECH: UserRole[] = ["technician", "head_tech"];
+
+export function isFloorTech(role: UserRole) {
+  return FLOOR_TECH.includes(role);
+}
 
 export function canCreateWorkOrder(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "admin";
@@ -18,10 +24,10 @@ export function canRecordCustomerApproval(role: UserRole) {
   return FRONT_OFFICE.includes(role);
 }
 export function canCompleteInspection(role: UserRole) {
-  return role === "technician" || FRONT_OFFICE.includes(role);
+  return isFloorTech(role) || FRONT_OFFICE.includes(role);
 }
 export function canCreateRecommendation(role: UserRole) {
-  return role === "technician" || FRONT_OFFICE.includes(role);
+  return isFloorTech(role) || FRONT_OFFICE.includes(role);
 }
 export function canConvertRecommendation(role: UserRole) {
   return FRONT_OFFICE.includes(role);
@@ -30,7 +36,7 @@ export function canOrderPart(role: UserRole) {
   return FRONT_OFFICE.includes(role);
 }
 export function canViewPartsBoard(role: UserRole) {
-  return FRONT_OFFICE.includes(role) || role === "technician";
+  return FRONT_OFFICE.includes(role) || isFloorTech(role);
 }
 /** MSRP + dealer cost on catalog/part lines. */
 export function canViewPartCost(role: UserRole) {
@@ -45,18 +51,18 @@ export function canSyncWixContacts(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "admin";
 }
 export function canCompleteJob(role: UserRole) {
-  return role === "technician" || FRONT_OFFICE.includes(role);
+  return isFloorTech(role) || FRONT_OFFICE.includes(role);
 }
 export function canRunQualityCheck(role: UserRole) {
   return QC_ROLES.includes(role);
 }
-/** Technicians may run peer QC when assigned (enforced in service). */
+/** Floor techs may run peer QC when assigned (enforced in service). */
 export function canPerformPeerQualityCheck(role: UserRole) {
-  return role === "technician" || QC_ROLES.includes(role);
+  return isFloorTech(role) || QC_ROLES.includes(role);
 }
-/** Technicians may pull unassigned ready jobs onto themselves. */
+/** Floor techs may pull unassigned ready jobs onto themselves. */
 export function canPullJob(role: UserRole) {
-  return role === "technician" || FRONT_OFFICE.includes(role);
+  return isFloorTech(role) || FRONT_OFFICE.includes(role);
 }
 /** Front office clears admin andon flags. */
 export function canClearAdminFlag(role: UserRole) {
@@ -64,7 +70,15 @@ export function canClearAdminFlag(role: UserRole) {
 }
 /** Any staff who can complete jobs may raise an admin flag. */
 export function canCreateAdminFlag(role: UserRole) {
-  return role === "technician" || FRONT_OFFICE.includes(role);
+  return isFloorTech(role) || FRONT_OFFICE.includes(role);
+}
+/** Only head tech may pass/fail the post-QC safety stage. */
+export function canPerformSafetyCheck(role: UserRole) {
+  return role === "head_tech";
+}
+/** Front office may force or waive the safety requirement on a work order. */
+export function canOverrideSafetyRequirement(role: UserRole) {
+  return FRONT_OFFICE.includes(role);
 }
 export function canMarkReadyForPickup(role: UserRole) {
   return FRONT_OFFICE.includes(role);
@@ -169,6 +183,7 @@ const ACTIVE_STAFF_ROLES: UserRole[] = [
   "manager",
   "service_advisor",
   "technician",
+  "head_tech",
   "admin",
 ];
 

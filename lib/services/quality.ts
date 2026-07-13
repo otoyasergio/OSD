@@ -9,6 +9,7 @@ import {
   canMarkReadyForPickup,
   canOverrideWorkOrderStatus,
   canRunQualityCheck,
+  isFloorTech,
 } from "@/lib/permissions";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 
@@ -80,7 +81,7 @@ export async function completeQualityCheck(
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (
     !canRunQualityCheck(user.role) &&
-    !(options.allowPeerTechnician && user.role === "technician")
+    !(options.allowPeerTechnician && isFloorTech(user.role))
   ) {
     throw new Error("FORBIDDEN");
   }
@@ -146,6 +147,19 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
 
   if (!workOrder.quality_checked_at && !workOrder.quality_checked_by_user_id) {
     throw new Error("QC_REQUIRED");
+  }
+
+  // Load safety fields — markReady still used by front office; block if safety pending.
+  const { data: safetyRow, error: safetyError } = await supabase
+    .from("work_order")
+    .select(
+      "safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived, status"
+    )
+    .eq("work_order_id", workOrderId)
+    .single();
+  if (safetyError) throw safetyError;
+  if (safetyRow?.status === "safety_check") {
+    throw new Error("INVALID_STATUS");
   }
 
   const now = new Date().toISOString();

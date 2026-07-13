@@ -57,6 +57,7 @@ const ACTIVE_WO: WorkOrderStatus[] = [
   "ready_for_technician",
   "in_progress",
   "quality_check",
+  "safety_check",
   "ready_for_pickup",
   "on_hold",
 ];

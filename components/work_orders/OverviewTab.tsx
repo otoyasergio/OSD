@@ -5,10 +5,12 @@ import { useActionState, useState } from "react";
 import type { WorkOrderDetail, TechnicianOption } from "@/lib/services/workOrders";
 import type { WorkOrderFormState } from "@/app/(app)/work_orders/actions";
 import type { QualityFormState } from "@/app/(app)/work_orders/quality-actions";
+import type { SafetyFormState } from "@/app/(app)/work_orders/safety-actions";
 import { FormError, TextAreaField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import { formatDateTime } from "@/lib/datetime/format";
+import { isSafetyRequired } from "@/lib/status/safetyRequired";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
@@ -22,6 +24,11 @@ type QualityAction = (
   state: QualityFormState,
   formData: FormData
 ) => Promise<QualityFormState>;
+
+type SafetyAction = (
+  state: SafetyFormState,
+  formData: FormData
+) => Promise<SafetyFormState>;
 
 function formatDate(value: string | null) {
   if (!value) return null;
@@ -39,6 +46,7 @@ export function OverviewTab({
   canResumeHold,
   canOverrideComplete,
   canClearFlags = false,
+  canOverrideSafety = false,
   readOnly,
   assignAction,
   setPrimaryAction,
@@ -49,6 +57,7 @@ export function OverviewTab({
   holdAction,
   resumeAction,
   clearFlagAction,
+  safetyOverrideAction,
 }: {
   detail: WorkOrderDetail;
   technicians: TechnicianOption[];
@@ -60,6 +69,7 @@ export function OverviewTab({
   canResumeHold: boolean;
   canOverrideComplete: boolean;
   canClearFlags?: boolean;
+  canOverrideSafety?: boolean;
   readOnly: boolean;
   assignAction: Action;
   setPrimaryAction: Action;
@@ -70,6 +80,7 @@ export function OverviewTab({
   holdAction: QualityAction;
   resumeAction: QualityAction;
   clearFlagAction?: QualityAction;
+  safetyOverrideAction?: SafetyAction;
 }) {
   const [assignState, assignFormAction] = useActionState(assignAction, {
     error: null,
@@ -97,6 +108,10 @@ export function OverviewTab({
   const [resumeState, resumeFormAction] = useActionState(resumeAction, {
     error: null,
   });
+  const [safetyState, safetyFormAction] = useActionState(
+    safetyOverrideAction ?? (async () => ({ error: null })),
+    { error: null }
+  );
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [confirmHold, setConfirmHold] = useState(false);
@@ -105,6 +120,17 @@ export function OverviewTab({
 
   const locked = detail.status === "completed" || detail.status === "cancelled";
   const qcDone = Boolean(detail.quality_checked_at || detail.quality_checked_by_user_id);
+  const safetyDone = Boolean(
+    detail.safety_checked_at || detail.safety_checked_by_user_id
+  );
+  const safetyNeeded = isSafetyRequired({
+    safety_required: detail.safety_required,
+    safety_waived: detail.safety_waived,
+    jobs: detail.jobs.map((job) => ({
+      status: job.status,
+      service_name_snapshot: job.service_name_snapshot,
+    })),
+  });
   const readyDone = Boolean(
     detail.ready_for_pickup_at || detail.status === "ready_for_pickup"
   );
@@ -302,6 +328,19 @@ export function OverviewTab({
             </dd>
           </div>
           <div>
+            <dt className="text-[var(--status-neutral)]">Safety check</dt>
+            <dd className="font-medium text-foreground">
+              {detail.safety_waived
+                ? "Waived"
+                : (formatDate(detail.safety_checked_at) ??
+                  (safetyNeeded
+                    ? detail.status === "safety_check"
+                      ? "Awaiting Head Tech"
+                      : "Required"
+                    : "Not required"))}
+            </dd>
+          </div>
+          <div>
             <dt className="text-[var(--status-neutral)]">Ready for pickup</dt>
             <dd className="font-medium text-foreground">
               {formatDate(detail.ready_for_pickup_at) ?? "Not marked"}
@@ -324,6 +363,54 @@ export function OverviewTab({
           <p className="mt-3 whitespace-pre-wrap text-sm text-foreground">
             QC notes: {detail.quality_check_notes}
           </p>
+        ) : null}
+        {detail.safety_check_notes?.trim() ? (
+          <p className="mt-3 whitespace-pre-wrap text-sm text-foreground">
+            Safety notes: {detail.safety_check_notes}
+          </p>
+        ) : null}
+
+        {canOverrideSafety && !locked && safetyOverrideAction ? (
+          <form
+            action={safetyFormAction}
+            className="mt-4 flex flex-col gap-3 rounded border border-[var(--border)] p-4"
+          >
+            <h3 className="font-semibold text-foreground">Safety requirement</h3>
+            <p className="text-sm text-[var(--status-neutral)]">
+              Default: required when a Safety Inspection job is on the visit. Office can
+              force on or waive.
+            </p>
+            <FormError message={safetyState.error} />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="submit"
+                name="safety_override"
+                value="require"
+                className="btn btn-secondary"
+                disabled={detail.safety_required === true && !detail.safety_waived}
+              >
+                Force require
+              </button>
+              <button
+                type="submit"
+                name="safety_override"
+                value="waive"
+                className="btn btn-secondary"
+                disabled={detail.safety_waived}
+              >
+                Waive
+              </button>
+              <button
+                type="submit"
+                name="safety_override"
+                value="default"
+                className="btn btn-secondary"
+                disabled={detail.safety_required == null && !detail.safety_waived}
+              >
+                Use default
+              </button>
+            </div>
+          </form>
         ) : null}
 
         {showCompletion ? (
@@ -349,7 +436,7 @@ export function OverviewTab({
               </form>
             ) : null}
 
-            {canMarkReady && qcDone && !readyDone ? (
+            {canMarkReady && qcDone && (!safetyNeeded || safetyDone) && !readyDone ? (
               <form
                 action={readyFormAction}
                 className="flex flex-col gap-3 rounded border border-[var(--border)] p-4"

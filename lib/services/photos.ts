@@ -8,6 +8,7 @@ import {
   canEditWorkOrder,
   canCreateWorkOrder,
   canDeleteIntakePhoto,
+  isFloorTech,
 } from "@/lib/permissions";
 import { intakePhotoSchema } from "@/lib/validation/schemas";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
@@ -44,7 +45,7 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 function canUploadPhotos(role: AppUser["role"]) {
-  return canEditWorkOrder(role) || canCreateWorkOrder(role) || role === "technician";
+  return canEditWorkOrder(role) || canCreateWorkOrder(role) || isFloorTech(role);
 }
 
 async function requireMutableWorkOrder(
@@ -279,7 +280,7 @@ export async function uploadIntakePhoto(
     if (!jobRow || jobRow.work_order_id !== workOrderId) {
       throw new Error("JOB_NOT_FOUND");
     }
-    if (user.role === "technician" && jobRow.assigned_technician_id !== user.user_id) {
+    if (isFloorTech(user.role) && jobRow.assigned_technician_id !== user.user_id) {
       throw new Error("JOB_NOT_ASSIGNED_TO_YOU");
     }
   }

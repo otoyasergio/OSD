@@ -14,7 +14,9 @@ describe("getPipelineStageIndex", () => {
     expect(getPipelineStageIndex("inspection_in_progress")).toBe(1);
     expect(getPipelineStageIndex("waiting_for_customer_approval")).toBe(2);
     expect(getPipelineStageIndex("in_progress")).toBe(4);
-    expect(getPipelineStageIndex("ready_for_pickup")).toBe(6);
+    expect(getPipelineStageIndex("quality_check")).toBe(5);
+    expect(getPipelineStageIndex("safety_check")).toBe(6);
+    expect(getPipelineStageIndex("ready_for_pickup")).toBe(7);
   });
 
   it("returns -1 for cancelled and -2 for on hold", () => {
@@ -38,6 +40,7 @@ describe("getWorkOrderNextAction", () => {
 
   it("returns status-specific hints when no flags", () => {
     expect(getWorkOrderNextAction("quality_check", [])).toMatch(/QC|quality/i);
+    expect(getWorkOrderNextAction("safety_check", [])).toMatch(/safety/i);
     expect(getWorkOrderNextAction("waiting_for_parts", [])).toContain("parts");
     expect(getWorkOrderNextAction("open", [])).toBe("Start inspection");
     expect(getWorkOrderNextAction("open", ["No intake photos"])).toBe(
@@ -48,13 +51,13 @@ describe("getWorkOrderNextAction", () => {
 
 describe("VISIT_PIPELINE_STAGES", () => {
   it("covers the main operational flow", () => {
-    expect(VISIT_PIPELINE_STAGES).toHaveLength(7);
+    expect(VISIT_PIPELINE_STAGES).toHaveLength(8);
   });
 });
 
 describe("GALLERY_BOARD_COLUMNS", () => {
-  it("uses four Track Day stages covering operational statuses", () => {
-    expect(GALLERY_BOARD_COLUMNS).toHaveLength(4);
+  it("uses Track Day stages covering operational statuses", () => {
+    expect(GALLERY_BOARD_COLUMNS).toHaveLength(5);
     const covered = new Set(
       GALLERY_BOARD_COLUMNS.flatMap((column) => [...column.statuses])
     );
@@ -68,6 +71,7 @@ describe("GALLERY_BOARD_COLUMNS", () => {
       "in_progress",
       "on_hold",
       "quality_check",
+      "safety_check",
       "ready_for_pickup",
       "completed",
     ];
@@ -82,5 +86,6 @@ describe("GALLERY_BOARD_COLUMNS", () => {
       tone: "orange",
     });
     expect(getGalleryStageForStatus("quality_check").label).toBe("QC");
+    expect(getGalleryStageForStatus("safety_check").label).toBe("Safety");
   });
 });

@@ -30,7 +30,7 @@ async function listClockedInTechnicianIds(
     .from("app_user")
     .select("user_id")
     .in("user_id", userIds)
-    .eq("role", "technician")
+    .in("role", ["technician", "head_tech"])
     .eq("status", "active");
   if (techError) throw techError;
   return (techs ?? []).map((row: { user_id: string }) => row.user_id);

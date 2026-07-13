@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type UserRole = "owner" | "manager" | "service_advisor" | "technician" | "admin";
+export type UserRole =
+  "owner" | "manager" | "service_advisor" | "technician" | "head_tech" | "admin";
 
 export type UserStatus = "active" | "inactive" | "suspended";
 
@@ -13,6 +14,7 @@ export type WorkOrderStatus =
   | "ready_for_technician"
   | "in_progress"
   | "quality_check"
+  | "safety_check"
   | "ready_for_pickup"
   | "completed"
   | "cancelled"

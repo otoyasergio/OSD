@@ -17,9 +17,11 @@ import {
   canRecordCustomerApproval,
   canRunQualityCheck,
   canClearAdminFlag,
+  canOverrideSafetyRequirement,
   canUpdateServiceInformation,
   canViewClients,
   canViewPartCost,
+  isFloorTech,
 } from "@/lib/permissions";
 import {
   getWorkOrderDetail,
@@ -97,6 +99,7 @@ import {
   placeWorkOrderOnHoldAction,
   resumeWorkOrderFromHoldAction,
 } from "@/app/(app)/work_orders/quality-actions";
+import { overrideSafetyRequirementAction } from "@/app/(app)/work_orders/safety-actions";
 import { signDropOffAgreementAction } from "@/app/(app)/work_orders/contract-actions";
 
 export const dynamic = "force-dynamic";
@@ -183,11 +186,12 @@ export default async function WorkOrderDetailPage({
   const canUploadPhotos =
     canEditWorkOrder(user.role) ||
     canCreateWorkOrder(user.role) ||
-    user.role === "technician";
+    isFloorTech(user.role);
   const canDeletePhotos = canDeleteIntakePhoto(user.role);
   const canAddNotes = canComplete || canEdit || canAdd;
   const canRunQc = canRunQualityCheck(user.role);
   const canClearFlags = canClearAdminFlag(user.role);
+  const canOverrideSafety = canOverrideSafetyRequirement(user.role);
   const canMarkReady = canMarkReadyForPickup(user.role);
   const canCompleteWo = canCompleteWorkOrder(user.role);
   const canHoldOrCancel =
@@ -258,6 +262,7 @@ export default async function WorkOrderDetailPage({
             canResumeHold={canResumeHold}
             canOverrideComplete={canOverrideComplete}
             canClearFlags={canClearFlags}
+            canOverrideSafety={canOverrideSafety}
             readOnly={detail.is_foreign_location}
             assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
             setPrimaryAction={setPrimaryTechnicianAction.bind(null, detail.work_order_id)}
@@ -268,6 +273,10 @@ export default async function WorkOrderDetailPage({
             cancelAction={cancelWorkOrderAction.bind(null, detail.work_order_id)}
             holdAction={placeWorkOrderOnHoldAction.bind(null, detail.work_order_id)}
             resumeAction={resumeWorkOrderFromHoldAction.bind(null, detail.work_order_id)}
+            safetyOverrideAction={overrideSafetyRequirementAction.bind(
+              null,
+              detail.work_order_id
+            )}
           />
           <SquareInvoicePanel
             workOrderId={detail.work_order_id}

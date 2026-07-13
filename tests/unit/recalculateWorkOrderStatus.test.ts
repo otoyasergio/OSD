@@ -131,6 +131,48 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("ready_for_pickup");
   });
 
+  it("sets safety_check when QC complete and safety required but not stamped", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "quality_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: true,
+        safetyCheckComplete: false,
+      })
+    ).toBe("safety_check");
+  });
+
+  it("sets ready_for_pickup when safety required and stamped", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: true,
+        safetyCheckComplete: true,
+      })
+    ).toBe("ready_for_pickup");
+  });
+
+  it("skips safety_check when waived (safetyRequired false)", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "quality_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: false,
+        safetyCheckComplete: false,
+      })
+    ).toBe("ready_for_pickup");
+  });
+
   it("sets ready_for_technician when all jobs approved and contract signed", () => {
     expect(
       deriveWorkOrderStatus({

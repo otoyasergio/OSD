@@ -39,6 +39,13 @@ describe("buildNavCategories", () => {
     expect(hrefs).not.toContain("/customers");
     expect(hrefs).not.toContain("/motorcycles");
 
+    const headTech = buildNavCategories("head_tech");
+    const headTechHrefs = headTech.flatMap((c) =>
+      c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+    );
+    expect(headTechHrefs).not.toContain("/customers");
+    expect(headTechHrefs).not.toContain("/motorcycles");
+
     const owner = buildNavCategories("owner");
     const ownerHrefs = owner.flatMap((c) =>
       c.subgroups.flatMap((g) => g.links.map((l) => l.href))
@@ -53,6 +60,7 @@ describe("buildNavCategories", () => {
       "manager",
       "service_advisor",
       "technician",
+      "head_tech",
       "admin",
     ] as const) {
       const categories = buildNavCategories(role);

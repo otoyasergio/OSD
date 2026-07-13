@@ -8,6 +8,7 @@ import {
   canAssignTechnician,
   canCreateWorkOrder,
   canViewClients,
+  isFloorTech,
 } from "@/lib/permissions";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
 import { resolveJobSnapshots } from "@/lib/forms/serviceLines";
@@ -32,6 +33,11 @@ export type WorkOrder = {
   quality_checked_at: string | null;
   quality_check_notes: string | null;
   quality_check_assigned_to: string | null;
+  safety_checked_by_user_id: string | null;
+  safety_checked_at: string | null;
+  safety_check_notes: string | null;
+  safety_required: boolean | null;
+  safety_waived: boolean;
   ready_for_pickup_at: string | null;
   completed_at: string | null;
   released_by_user_id: string | null;
@@ -107,7 +113,7 @@ export type TechnicianOption = {
 };
 
 const WORK_ORDER_COLUMNS =
-  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, quality_check_assigned_to, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, square_invoice_id, square_payment_status, square_invoice_public_url, billing_stage, billing_amount_mode, billing_amount_cents, billing_collected_cents, estimate_sent_at, invoice_published_at, wix_booking_id, scheduled_at, source, created_at, updated_at";
+  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, quality_check_assigned_to, safety_checked_by_user_id, safety_checked_at, safety_check_notes, safety_required, safety_waived, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, square_invoice_id, square_payment_status, square_invoice_public_url, billing_stage, billing_amount_mode, billing_amount_cents, billing_collected_cents, estimate_sent_at, invoice_published_at, wix_booking_id, scheduled_at, source, created_at, updated_at";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -131,7 +137,7 @@ export async function listTechniciansForActiveLocation(): Promise<TechnicianOpti
   const { data, error } = await supabase
     .from("app_user")
     .select("user_id, first_name, last_name")
-    .eq("role", "technician")
+    .in("role", ["technician", "head_tech"])
     .eq("status", "active")
     .in("user_id", userIds)
     .order("last_name")
@@ -439,6 +445,11 @@ export async function getWorkOrderDetail(
     quality_checked_at: row.quality_checked_at as string | null,
     quality_check_notes: row.quality_check_notes as string | null,
     quality_check_assigned_to: row.quality_check_assigned_to as string | null,
+    safety_checked_by_user_id: row.safety_checked_by_user_id as string | null,
+    safety_checked_at: row.safety_checked_at as string | null,
+    safety_check_notes: row.safety_check_notes as string | null,
+    safety_required: (row.safety_required as boolean | null) ?? null,
+    safety_waived: Boolean(row.safety_waived),
     ready_for_pickup_at: row.ready_for_pickup_at as string | null,
     completed_at: row.completed_at as string | null,
     released_by_user_id: row.released_by_user_id as string | null,
@@ -508,7 +519,7 @@ export async function assignTechnicianToWorkOrder(
     .maybeSingle();
 
   if (techError) throw techError;
-  if (!tech || tech.role !== "technician" || tech.status !== "active") {
+  if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
     throw new Error("TECHNICIAN_NOT_FOUND");
   }
 
@@ -559,7 +570,7 @@ export async function setPrimaryTechnician(
       .maybeSingle();
 
     if (techError) throw techError;
-    if (!tech || tech.role !== "technician" || tech.status !== "active") {
+    if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
       throw new Error("TECHNICIAN_NOT_FOUND");
     }
 
@@ -697,7 +708,7 @@ export async function createWorkOrder(
       .maybeSingle();
 
     if (techError) throw techError;
-    if (!tech || tech.role !== "technician" || tech.status !== "active") {
+    if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
       throw new Error("TECHNICIAN_NOT_FOUND");
     }
   }

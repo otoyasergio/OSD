@@ -4,7 +4,7 @@ import type { AdminFlagReason, DbClient } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canClearAdminFlag, canCreateAdminFlag } from "@/lib/permissions";
+import { canClearAdminFlag, canCreateAdminFlag, isFloorTech } from "@/lib/permissions";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 
 export type AdminFlag = {
@@ -100,7 +100,7 @@ export async function createAdminFlag(input: {
       .maybeSingle();
     if (
       job?.status === "in_progress" &&
-      (user.role !== "technician" || job.assigned_technician_id === user.user_id)
+      (!isFloorTech(user.role) || job.assigned_technician_id === user.user_id)
     ) {
       const now = new Date().toISOString();
       const flagNote = `Flagged for admin (${input.reason})`;

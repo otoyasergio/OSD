@@ -39,6 +39,12 @@ export const VISIT_PIPELINE_STAGES = [
     statuses: ["quality_check"] as WorkOrderStatus[],
   },
   {
+    id: "safety",
+    label: "Safety",
+    shortLabel: "Safety",
+    statuses: ["safety_check"] as WorkOrderStatus[],
+  },
+  {
     id: "pickup",
     label: "Pickup",
     shortLabel: "Pickup",
@@ -86,6 +92,11 @@ export const SHOP_BOARD_COLUMNS = [
     statuses: ["quality_check"] as WorkOrderStatus[],
   },
   {
+    id: "safety",
+    label: "Safety",
+    statuses: ["safety_check"] as WorkOrderStatus[],
+  },
+  {
     id: "pickup",
     label: "Ready pickup",
     statuses: ["ready_for_pickup"] as WorkOrderStatus[],
@@ -125,6 +136,11 @@ export const GALLERY_BOARD_COLUMNS = [
     statuses: ["quality_check"] as WorkOrderStatus[],
   },
   {
+    id: "gallery_safety",
+    label: "Safety",
+    statuses: ["safety_check"] as WorkOrderStatus[],
+  },
+  {
     id: "gallery_ready",
     label: "Ready",
     statuses: ["ready_for_pickup", "completed"] as WorkOrderStatus[],
@@ -143,6 +159,7 @@ export function getGalleryStageForStatus(status: WorkOrderStatus): {
         return { label: column.label, tone: "orange" };
       }
       if (column.id === "gallery_qc") return { label: column.label, tone: "orange" };
+      if (column.id === "gallery_safety") return { label: column.label, tone: "orange" };
       if (column.id === "gallery_ready") return { label: column.label, tone: "muted" };
       return { label: column.label, tone: "teal" };
     }
@@ -191,6 +208,8 @@ export function getWorkOrderNextAction(status: WorkOrderStatus, flags: string[])
       return "Complete assigned jobs";
     case "quality_check":
       return "Peer QC on Tech floor or complete QC on Overview";
+    case "safety_check":
+      return "Head Tech safety pass on Tech floor";
     case "ready_for_pickup":
       return "Notify customer — ready for pickup";
     default:

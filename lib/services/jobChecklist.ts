@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import type { DbClient } from "@/lib/database/types";
-import { canCompleteJob } from "@/lib/permissions";
+import { canCompleteJob, isFloorTech } from "@/lib/permissions";
 
 export const DEFAULT_JOB_CHECKLIST_TITLES = [
   "Perform work per SOP",
@@ -83,7 +83,7 @@ export async function toggleJobChecklistItem(
   if (jobError) throw jobError;
   if (!job) throw new Error("JOB_NOT_FOUND");
 
-  if (user.role === "technician" && job.assigned_technician_id !== user.user_id) {
+  if (isFloorTech(user.role) && job.assigned_technician_id !== user.user_id) {
     throw new Error("JOB_NOT_ASSIGNED_TO_YOU");
   }
 

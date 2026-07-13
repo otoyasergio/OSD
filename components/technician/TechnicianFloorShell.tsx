@@ -22,10 +22,16 @@ import {
   uploadJobProofAction,
   type FloorActionState,
 } from "@/app/(app)/technician/floor-actions";
+import {
+  failSafetyCheckAction,
+  passSafetyCheckAction,
+  type SafetyFormState,
+} from "@/app/(app)/work_orders/safety-actions";
 
-export type FloorStage = "inspect" | "work" | "proof" | "done" | "qc";
+export type FloorStage = "inspect" | "work" | "proof" | "done" | "qc" | "safety";
 
 export function deriveDefaultStage(surface: FloorOsSurface): FloorStage {
+  if (surface.is_safety && surface.can_safety) return "safety";
   if (surface.is_qc && surface.qc_assignee_is_me && !surface.job_id) return "qc";
   if (surface.can_pull) return "work";
   if (!surface.inspection_complete) return "inspect";
@@ -41,6 +47,7 @@ function hrefForItem(item: FloorQueueItem, stage?: FloorStage): string {
   if (item.job_id) params.set("job", item.job_id);
   params.set("wo", item.work_order_id);
   if (item.kind === "qc") params.set("stage", "qc");
+  else if (item.kind === "safety") params.set("stage", "safety");
   else if (stage) params.set("stage", stage);
   return `/technician?${params.toString()}`;
 }
@@ -95,6 +102,7 @@ function QueueLane({
                   isNow && !selected ? "floor-queue-card--now" : "",
                   item.lane === "flagged" ? "floor-queue-card--flagged" : "",
                   item.lane === "needs_qc" ? "floor-queue-card--qc" : "",
+                  item.lane === "safeties" ? "floor-queue-card--qc" : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -114,6 +122,16 @@ function QueueLane({
 }
 
 function StageRail({ surface, stage }: { surface: FloorOsSurface; stage: FloorStage }) {
+  if (
+    stage === "safety" ||
+    (surface.is_safety && surface.can_safety && !surface.job_id)
+  ) {
+    return (
+      <div className="floor-stage-rail" aria-label="Safety check">
+        <span className="floor-stage-pill floor-stage-pill--current">Safety</span>
+      </div>
+    );
+  }
   if (stage === "qc" || (surface.is_qc && surface.qc_assignee_is_me && !surface.job_id)) {
     return (
       <div className="floor-stage-rail" aria-label="Quality check">
@@ -481,6 +499,33 @@ function QcStage({ surface }: { surface: FloorOsSurface }) {
   );
 }
 
+function SafetyStage({ surface }: { surface: FloorOsSurface }) {
+  if (!surface.is_safety) {
+    return <p className="floor-muted">No safety check on this work order yet.</p>;
+  }
+  if (!surface.can_safety) {
+    return <p className="floor-muted">Only Head Tech can pass or fail safety.</p>;
+  }
+
+  return (
+    <div className="floor-stage-body">
+      <p className="floor-lead">
+        Review the inspection report for {surface.motorcycle_label}, then pass or fail
+        safety from the dock.
+      </p>
+      <Link
+        href={surface.inspection_href}
+        className="btn btn-secondary floor-tap floor-tap--wide"
+      >
+        Open inspection report
+      </Link>
+      <p className="floor-muted">
+        Fail requires a recommendation — the visit returns to customer approval.
+      </p>
+    </div>
+  );
+}
+
 function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorStage }) {
   const [startState, startAction, startPending] = useActionState(
     startJobFloorAction,
@@ -494,8 +539,19 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
   const [flagState, flagAction, flagPending] = useActionState(flagForAdminAction, null);
   const [passState, passAction, passPending] = useActionState(passPeerQcAction, null);
   const [failState, failAction, failPending] = useActionState(failPeerQcAction, null);
+  const [passSafetyState, passSafetyAction, passSafetyPending] = useActionState(
+    (prev: SafetyFormState, formData: FormData) =>
+      passSafetyCheckAction(surface.work_order_id, prev, formData),
+    { error: null }
+  );
+  const [failSafetyState, failSafetyAction, failSafetyPending] = useActionState(
+    (prev: SafetyFormState, formData: FormData) =>
+      failSafetyCheckAction(surface.work_order_id, prev, formData),
+    { error: null }
+  );
 
-  const showFlag = Boolean(surface.job_id) && !surface.can_pull && stage !== "qc";
+  const showFlag =
+    Boolean(surface.job_id) && !surface.can_pull && stage !== "qc" && stage !== "safety";
   const checklistOpen = surface.checklist.some((item) => !item.checked_at);
   const partsOpen = surface.parts.some((part) => part.can_install);
   const proofOk = surface.proof_count > 0 || surface.has_proof_exception;
@@ -515,6 +571,61 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
         </button>
         <ActionMessage state={pullState} />
       </form>
+    );
+  } else if (stage === "safety" && surface.can_safety) {
+    primary = (
+      <form action={passSafetyAction} className="floor-dock-primary">
+        <input
+          type="hidden"
+          name="safety_check_notes"
+          value="Safety checklist reviewed"
+        />
+        <button className="btn btn-primary floor-dock-btn" disabled={passSafetyPending}>
+          {passSafetyPending ? "Passing…" : "Pass safety"}
+        </button>
+        {passSafetyState.error ? (
+          <p className="floor-dock-msg floor-dock-msg--error" role="status">
+            {passSafetyState.error}
+          </p>
+        ) : null}
+      </form>
+    );
+    secondary = (
+      <details className="floor-flag-details floor-dock-fail">
+        <summary className="floor-flag-summary">Fail safety</summary>
+        <form action={failSafetyAction} className="floor-flag-form">
+          <textarea
+            name="recommendation_description"
+            required
+            rows={2}
+            placeholder="Recommendation for customer approval"
+            className="input"
+          />
+          <select
+            name="recommendation_severity"
+            className="input"
+            defaultValue="immediate_attention"
+          >
+            <option value="future_attention">Future attention</option>
+            <option value="immediate_attention">Immediate attention</option>
+            <option value="safety_critical">Safety critical</option>
+          </select>
+          <textarea
+            name="safety_check_notes"
+            rows={2}
+            placeholder="Safety notes (optional)"
+            className="input"
+          />
+          <button className="btn btn-secondary floor-tap" disabled={failSafetyPending}>
+            {failSafetyPending ? "Failing…" : "Confirm fail"}
+          </button>
+          {failSafetyState.error ? (
+            <p className="floor-dock-msg floor-dock-msg--error" role="status">
+              {failSafetyState.error}
+            </p>
+          ) : null}
+        </form>
+      </details>
     );
   } else if (stage === "qc" && surface.qc_assignee_is_me) {
     primary = (
@@ -644,13 +755,15 @@ export function TechnicianFloorShell({
   const selectedKey =
     selected == null
       ? null
-      : selected.is_qc && !selected.job_id
-        ? `qc-${selected.work_order_id}`
-        : selected.job_id
-          ? (floor.priority.find((i) => i.job_id === selected.job_id)?.key ??
-            floor.readyToPull.find((i) => i.job_id === selected.job_id)?.key ??
-            `job-${selected.job_id}`)
-          : null;
+      : selected.is_safety && !selected.job_id
+        ? `safety-${selected.work_order_id}`
+        : selected.is_qc && !selected.job_id
+          ? `qc-${selected.work_order_id}`
+          : selected.job_id
+            ? (floor.priority.find((i) => i.job_id === selected.job_id)?.key ??
+              floor.readyToPull.find((i) => i.job_id === selected.job_id)?.key ??
+              `job-${selected.job_id}`)
+            : null;
 
   return (
     <div className="floor-shell">
@@ -675,10 +788,12 @@ export function TechnicianFloorShell({
             selectedKey={selectedKey}
           />
           <QueueLane title="Needs QC" items={floor.needsQc} selectedKey={selectedKey} />
+          <QueueLane title="Safeties" items={floor.safeties} selectedKey={selectedKey} />
           <QueueLane title="Flagged" items={floor.flagged} selectedKey={selectedKey} />
           {floor.priority.length === 0 &&
           floor.readyToPull.length === 0 &&
           floor.needsQc.length === 0 &&
+          floor.safeties.length === 0 &&
           floor.flagged.length === 0 ? (
             <p className="floor-muted">
               Queue empty — wait for assignment or pull ready work.
@@ -733,6 +848,7 @@ export function TechnicianFloorShell({
                 {stage === "proof" ? <ProofStage surface={selected} /> : null}
                 {stage === "done" ? <DoneStage surface={selected} /> : null}
                 {stage === "qc" ? <QcStage surface={selected} /> : null}
+                {stage === "safety" ? <SafetyStage surface={selected} /> : null}
               </div>
 
               <StickyDock surface={selected} stage={stage} />

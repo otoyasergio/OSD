@@ -7,10 +7,12 @@ import type {
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
+import { isSafetyRequired } from "@/lib/status/safetyRequired";
 
 export type DeriveJobInput = {
   status: JobStatus | string;
   job_id?: string;
+  service_name_snapshot?: string | null;
 };
 
 export type DerivePartInput = {
@@ -26,6 +28,9 @@ export type DeriveWorkOrderStatusInput = {
   qualityCheckComplete: boolean;
   /** When false, do not auto-promote to ready_for_technician. Omit/undefined allows promote. */
   hasSignedAgreement?: boolean;
+  /** When true, visit must pass Head Tech safety after QC. */
+  safetyRequired?: boolean;
+  safetyCheckComplete?: boolean;
 };
 
 function isActiveJob(status: string) {
@@ -61,6 +66,8 @@ export function deriveWorkOrderStatus(
     inspectionComplete,
     qualityCheckComplete,
     hasSignedAgreement,
+    safetyRequired = false,
+    safetyCheckComplete = false,
   } = input;
 
   if (
@@ -95,6 +102,9 @@ export function deriveWorkOrderStatus(
   }
 
   if (allActiveCompleted && qualityCheckComplete) {
+    if (safetyRequired && !safetyCheckComplete) {
+      return "safety_check";
+    }
     return "ready_for_pickup";
   }
 
@@ -130,7 +140,7 @@ export async function recalculateWorkOrderStatus(
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
     .select(
-      "work_order_id, status, location_id, quality_checked_at, quality_checked_by_user_id"
+      "work_order_id, status, location_id, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived"
     )
     .eq("work_order_id", workOrderId)
     .single();
@@ -140,7 +150,7 @@ export async function recalculateWorkOrderStatus(
 
   const { data: jobs, error: jobsError } = await supabase
     .from("job")
-    .select("job_id, status")
+    .select("job_id, status, service_name_snapshot")
     .eq("work_order_id", workOrderId);
 
   if (jobsError) throw jobsError;
@@ -174,6 +184,12 @@ export async function recalculateWorkOrderStatus(
 
   if (agreementError) throw agreementError;
 
+  const safetyRequired = isSafetyRequired({
+    safety_required: (workOrder.safety_required as boolean | null) ?? null,
+    safety_waived: Boolean(workOrder.safety_waived),
+    jobs: jobs ?? [],
+  });
+
   const nextStatus = deriveWorkOrderStatus({
     currentStatus: workOrder.status,
     jobs: jobs ?? [],
@@ -183,6 +199,10 @@ export async function recalculateWorkOrderStatus(
       workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
     ),
     hasSignedAgreement: Boolean(agreement),
+    safetyRequired,
+    safetyCheckComplete: Boolean(
+      workOrder.safety_checked_at || workOrder.safety_checked_by_user_id
+    ),
   });
 
   if (nextStatus === workOrder.status) {

@@ -18,6 +18,7 @@ export const WORK_ORDER_STATUS_LABELS: Record<WorkOrderStatus, string> = {
   ready_for_technician: "Ready For Technician",
   in_progress: "In Progress",
   quality_check: "Quality Check",
+  safety_check: "Safety Check",
   ready_for_pickup: "Ready For Pickup",
   completed: "Completed",
   cancelled: "Cancelled",

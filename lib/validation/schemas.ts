@@ -223,7 +223,14 @@ export const appUserLinkSchema = z.object({
   last_name: z.string().min(1, "Last name is required"),
   email: z.string().email("Valid email is required"),
   phone: z.string().nullable().optional(),
-  role: z.enum(["owner", "manager", "service_advisor", "technician", "admin"]),
+  role: z.enum([
+    "owner",
+    "manager",
+    "service_advisor",
+    "technician",
+    "head_tech",
+    "admin",
+  ]),
   location_ids: z.array(z.string().uuid()).min(1, "Assign at least one location"),
 });
 
@@ -232,7 +239,14 @@ export const appUserUpdateSchema = z.object({
   last_name: z.string().min(1, "Last name is required"),
   email: z.string().email("Valid email is required"),
   phone: z.string().nullable().optional(),
-  role: z.enum(["owner", "manager", "service_advisor", "technician", "admin"]),
+  role: z.enum([
+    "owner",
+    "manager",
+    "service_advisor",
+    "technician",
+    "head_tech",
+    "admin",
+  ]),
   status: z.enum(["active", "inactive", "suspended"]),
   location_ids: z.array(z.string().uuid()).min(1, "Assign at least one location"),
 });

@@ -15,11 +15,13 @@ const COLUMN_TARGET_STATUS: Record<ShopBoardColumnId, WorkOrderStatus | null> = 
   ready: "ready_for_technician",
   in_progress: "in_progress",
   qc: "quality_check",
+  safety: "safety_check",
   pickup: "ready_for_pickup",
   on_hold: null,
   gallery_intake: "open",
   gallery_in_bay: "in_progress",
   gallery_qc: "quality_check",
+  gallery_safety: "safety_check",
   gallery_ready: "ready_for_pickup",
 };
 
@@ -53,8 +55,13 @@ export function canDropInColumn(
     return false;
   }
 
-  // QC column requires status override (managers/owners).
-  if (columnId === "qc" || columnId === "gallery_qc") {
+  // QC / safety columns require status override (managers/owners).
+  if (
+    columnId === "qc" ||
+    columnId === "gallery_qc" ||
+    columnId === "safety" ||
+    columnId === "gallery_safety"
+  ) {
     return canOverrideWorkOrderStatus(role);
   }
 
