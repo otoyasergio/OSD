@@ -2,10 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { canViewAuditLog } from "@/lib/permissions";
-import {
-  listAuditFilterOptions,
-  listAuditLogs,
-} from "@/lib/services/audit";
+import { listAuditFilterOptions, listAuditLogs } from "@/lib/services/audit";
 import { AuditLogTable } from "@/components/audit/AuditLogTable";
 
 export const dynamic = "force-dynamic";
@@ -49,17 +46,17 @@ export default async function AuditLogPage({
     <div className="flex flex-col gap-4">
       <Link
         href="/settings"
-        className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+        className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
       >
         ← Settings
       </Link>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">
           Audit log
         </h1>
-        <p className="mt-1 text-sm text-zinc-600">
-          Owner-only company-wide record of meaningful actions. Showing the
-          latest {entries.length} matching entries.
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+          Owner-only company-wide record of meaningful actions. Showing the latest{" "}
+          {entries.length} matching entries.
         </p>
       </div>
       <AuditLogTable

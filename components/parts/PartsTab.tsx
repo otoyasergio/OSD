@@ -13,10 +13,7 @@ import {
   type PartsCanadaSelection,
 } from "@/components/parts/PartsCanadaFinder";
 
-type Action = (
-  state: PartFormState,
-  formData: FormData
-) => Promise<PartFormState>;
+type Action = (state: PartFormState, formData: FormData) => Promise<PartFormState>;
 
 // Server action curried with work_order_id; partId is bound client-side so no
 // function factory has to cross the RSC boundary.
@@ -27,7 +24,7 @@ type PartAction = (
 ) => Promise<PartFormState>;
 
 const SELECT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
+  "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
 const ORDERABLE_JOB_STATUSES: JobStatus[] = [
   "approved",
@@ -108,26 +105,19 @@ export function PartsTab({
       {!readOnly && canManage ? (
         <form
           action={addFormAction}
-          className="flex flex-col gap-3 rounded border border-zinc-200 bg-white p-4"
+          className="flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
         >
-          <h3 className="text-base font-semibold text-zinc-900">Add part</h3>
+          <h3 className="text-base font-semibold text-foreground">Add part</h3>
           <FormError message={addState.error} />
 
-          <PartsCanadaFinder
-            canViewCost={canViewCost}
-            onSelect={applyCatalogSelection}
-          />
+          <PartsCanadaFinder canViewCost={canViewCost} onSelect={applyCatalogSelection} />
 
           <input type="hidden" name="catalog_source" value={catalog.catalog_source} />
           <input type="hidden" name="unit_cost" value={catalog.unit_cost} />
-          <input
-            type="hidden"
-            name="supplier_stock"
-            value={catalog.supplier_stock}
-          />
+          <input type="hidden" name="supplier_stock" value={catalog.supplier_stock} />
 
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">
               Job <span className="text-red-600">*</span>
             </span>
             <select className={SELECT_CLASS} name="job_id" required defaultValue="">
@@ -160,12 +150,7 @@ export function PartsTab({
               key={`supplier-${catalog.supplier}-${catalog.part_number}`}
               defaultValue={catalog.supplier}
             />
-            <TextField
-              label="Quantity"
-              name="quantity"
-              type="number"
-              defaultValue={1}
-            />
+            <TextField label="Quantity" name="quantity" type="number" defaultValue={1} />
             <TextField
               label="Sell price (MSRP)"
               name="unit_price"
@@ -174,14 +159,12 @@ export function PartsTab({
               defaultValue={catalog.unit_price}
             />
             {canViewCost && catalog.unit_cost ? (
-              <p className="self-end text-sm text-zinc-600">
+              <p className="self-end text-sm text-[var(--status-neutral)]">
                 Dealer cost: {moneyLabel(Number(catalog.unit_cost))}
-                {catalog.supplier_stock
-                  ? ` · PC stock: ${catalog.supplier_stock}`
-                  : ""}
+                {catalog.supplier_stock ? ` · PC stock: ${catalog.supplier_stock}` : ""}
               </p>
             ) : catalog.supplier_stock ? (
-              <p className="self-end text-sm text-zinc-600">
+              <p className="self-end text-sm text-[var(--status-neutral)]">
                 PC stock: {catalog.supplier_stock}
               </p>
             ) : null}
@@ -190,15 +173,15 @@ export function PartsTab({
           <div>
             <SubmitButton label="Add part" pendingLabel="Adding…" />
           </div>
-          <p className="text-xs text-zinc-500">
-            Parts can be listed before approval. Ordering is blocked until the
-            job is approved. Sell price is editable for this line only.
+          <p className="text-xs text-[var(--status-neutral)]">
+            Parts can be listed before approval. Ordering is blocked until the job is
+            approved. Sell price is editable for this line only.
           </p>
         </form>
       ) : null}
 
       {parts.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
+        <p className="rounded border border-dashed border-[var(--border-strong)] bg-white px-4 py-10 text-center text-[var(--status-neutral)]">
           No parts on this work order yet.
         </p>
       ) : (
@@ -246,42 +229,35 @@ function PartCard({
   const orderAllowed = canOrderForJob(jobStatus);
 
   return (
-    <article className="rounded border border-zinc-200 bg-white p-4">
+    <article className="rounded border border-[var(--border)] bg-white p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-zinc-900">
-            {part.part_name}
-          </h3>
-          <p className="mt-1 text-sm text-zinc-600">
+          <h3 className="text-base font-semibold text-foreground">{part.part_name}</h3>
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
             {PART_STATUS_LABELS[part.status]} · qty {part.quantity}
             {part.job
               ? ` · ${part.job.service_name_snapshot} (${JOB_STATUS_LABELS[part.job.status]})`
               : ""}
           </p>
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
             {[part.part_number, part.supplier].filter(Boolean).join(" · ") ||
               "No part # / supplier"}
           </p>
-          <p className="mt-1 text-sm text-zinc-700">
+          <p className="mt-1 text-sm text-foreground">
             Sell {moneyLabel(part.unit_price)}
             {canViewCost ? ` · Cost ${moneyLabel(part.unit_cost)}` : ""}
-            {part.supplier_stock != null
-              ? ` · PC stock ${part.supplier_stock}`
-              : ""}
+            {part.supplier_stock != null ? ` · PC stock ${part.supplier_stock}` : ""}
           </p>
           {part.notes ? (
-            <p className="mt-2 text-sm text-zinc-700">{part.notes}</p>
+            <p className="mt-2 text-sm text-foreground">{part.notes}</p>
           ) : null}
         </div>
       </div>
 
       {!readOnly && canManage ? (
-        <form
-          action={priceFormAction}
-          className="mt-3 flex flex-wrap items-end gap-2"
-        >
+        <form action={priceFormAction} className="mt-3 flex flex-wrap items-end gap-2">
           <label className="block">
-            <span className="mb-1 block text-xs font-medium text-zinc-700">
+            <span className="mb-1 block text-xs font-medium text-foreground">
               Edit sell price
             </span>
             <input
@@ -290,7 +266,7 @@ function PartCard({
               step="0.01"
               min="0"
               defaultValue={part.unit_price ?? ""}
-              className="min-h-11 w-36 rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10"
+              className="min-h-11 w-36 rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]"
             />
           </label>
           <SubmitButton label="Update price" pendingLabel="Saving…" />
@@ -305,18 +281,10 @@ function PartCard({
               (status) => {
                 if (status === "ordered" && !canManage) return null;
                 if (status === "ordered" && !orderAllowed) return null;
-                if (
-                  status === "installed" &&
-                  !canInstall &&
-                  !canManage
-                ) {
+                if (status === "installed" && !canInstall && !canManage) {
                   return null;
                 }
-                if (
-                  status !== "ordered" &&
-                  status !== "installed" &&
-                  !canManage
-                ) {
+                if (status !== "ordered" && status !== "installed" && !canManage) {
                   return null;
                 }
 
@@ -325,7 +293,7 @@ function PartCard({
                     <input type="hidden" name="status" value={status} />
                     <button
                       type="submit"
-                      className="min-h-11 rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
+                      className="min-h-11 rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-sm font-semibold text-foreground hover:bg-[var(--surface-muted)]"
                     >
                       Mark {PART_STATUS_LABELS[status].toLowerCase()}
                     </button>

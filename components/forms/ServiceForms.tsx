@@ -17,7 +17,7 @@ export function ServiceCreateForm({ action }: { action: ServiceAction }) {
   return (
     <form
       action={formAction}
-      className="flex flex-col gap-4 rounded border border-zinc-200 bg-white p-4"
+      className="flex flex-col gap-4 rounded border border-[var(--border)] bg-white p-4"
     >
       <FormError message={state.error} />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -50,7 +50,12 @@ export function ServiceEditForm({
     <form action={formAction} className="flex flex-col gap-3 pt-3">
       <FormError message={state.error} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <TextField label="Service name" name="name" required defaultValue={service.name} />
+        <TextField
+          label="Service name"
+          name="name"
+          required
+          defaultValue={service.name}
+        />
         <TextField
           label="Category"
           name="category"

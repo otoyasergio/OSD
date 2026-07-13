@@ -76,13 +76,15 @@ export default async function ReportsPage({
       </div>
 
       <section className="card card-pad">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
           Open work orders by status
         </h2>
         {report.by_status.length === 0 ? (
-          <p className="mt-3 text-sm text-zinc-600">No open work orders.</p>
+          <p className="mt-3 text-sm text-[var(--status-neutral)]">
+            No open work orders.
+          </p>
         ) : (
-          <ul className="mt-3 divide-y divide-zinc-100">
+          <ul className="mt-3 divide-y divide-[var(--border)]">
             {report.by_status.map((row) => (
               <li
                 key={row.status}
@@ -102,10 +104,10 @@ export default async function ReportsPage({
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="card card-pad">
-      <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums text-zinc-900">{value}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{value}</p>
     </div>
   );
 }

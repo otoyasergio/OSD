@@ -29,11 +29,8 @@ export function IntakePhotoRecoveryForm({
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
-  const [clientError, setClientError] = useState<string | null>(
-    initialError ?? null
-  );
-  const [remaining, setRemaining] =
-    useState<PhotoCategory[]>(missingCategories);
+  const [clientError, setClientError] = useState<string | null>(initialError ?? null);
+  const [remaining, setRemaining] = useState<PhotoCategory[]>(missingCategories);
 
   const selectedCount = Object.values(intakePhotos).filter(
     (file) => file instanceof File && file.size > 0
@@ -72,9 +69,7 @@ export function IntakePhotoRecoveryForm({
 
       if (failed.length > 0) {
         setRemaining(failed);
-        const labels = failed
-          .map((c) => PHOTO_CATEGORY_LABELS[c] ?? c)
-          .join(", ");
+        const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
         setClientError(
           `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`
         );
@@ -112,11 +107,9 @@ export function IntakePhotoRecoveryForm({
             <h2 className="intake-recovery-title">Finish intake photos</h2>
             <p className="intake-recovery-body mt-1">
               Work order{" "}
-              <span className="font-medium">
-                {workOrderNumber || workOrderId}
-              </span>{" "}
-              was created, but some required photos did not upload. Add the
-              missing photos below to continue.
+              <span className="font-medium">{workOrderNumber || workOrderId}</span> was
+              created, but some required photos did not upload. Add the missing photos
+              below to continue.
             </p>
           </div>
           <div
@@ -150,7 +143,7 @@ export function IntakePhotoRecoveryForm({
         </button>
         <Link
           href={`/work_orders/${workOrderId}?tab=photos`}
-          className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+          className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
         >
           Open work order Photos tab
         </Link>

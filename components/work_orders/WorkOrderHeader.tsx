@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { WorkOrderDetail } from "@/lib/services/workOrders";
 import type { IntakePhoto } from "@/lib/services/photos";
 import { FlagBadges } from "@/components/status/FlagBadges";
-import { StatusBadge } from "@/components/ui/StatusBadge";
 import { StageChip } from "@/components/ui/StageChip";
 import { WorkOrderJobTodo } from "@/components/work_orders/WorkOrderJobTodo";
 import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
@@ -60,7 +59,6 @@ export function WorkOrderHeader({
             ) : null}
           </div>
           <div className="flex flex-col items-end gap-2">
-            <StatusBadge status={detail.status} size="large" />
             {detail.flags.length > 0 ? (
               <FlagBadges flags={detail.flags} empty="" />
             ) : null}

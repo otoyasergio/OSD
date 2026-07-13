@@ -2,11 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { decodeVinAction } from "@/app/(app)/vin/actions";
-import {
-  normalizeVin,
-  validateOptionalVin,
-  type VinDecodeResult,
-} from "@/lib/vin";
+import { normalizeVin, validateOptionalVin, type VinDecodeResult } from "@/lib/vin";
 
 export type VinAutofillSuggestion = {
   year?: string;
@@ -157,25 +153,30 @@ export function VinField({
         />
       </label>
       {error ? (
-        <span id="vin-error" role="alert" className="field-hint text-[var(--status-danger)]">
+        <span
+          id="vin-error"
+          role="alert"
+          className="field-hint text-[var(--status-danger)]"
+        >
           {error}
         </span>
       ) : (
         <span id="vin-hint" className="field-hint">
-          Optional, but missing VIN is flagged in the shop. When entered, must be a valid 17-character VIN.
+          Optional, but missing VIN is flagged in the shop. When entered, must be a valid
+          17-character VIN.
         </span>
       )}
 
       {isPending ? (
-        <p className="mt-2 text-sm text-zinc-500">Looking up vehicle…</p>
+        <p className="mt-2 text-sm text-[var(--status-neutral)]">Looking up vehicle…</p>
       ) : null}
 
       {decode && decode.valid ? (
         <div
-          className="mt-3 rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800"
+          className="mt-3 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-foreground"
           role="status"
         >
-          <p className="font-medium text-zinc-900">
+          <p className="font-medium text-foreground">
             {[
               decode.fields.modelYear,
               decode.fields.make ?? decode.local?.manufacturerHint,
@@ -184,17 +185,13 @@ export function VinField({
               .filter(Boolean)
               .join(" ") || "Vehicle details"}
           </p>
-          <ul className="mt-1 space-y-0.5 text-zinc-600">
+          <ul className="mt-1 space-y-0.5 text-[var(--status-neutral)]">
             {decode.fields.vehicleType ? (
               <li>Type: {decode.fields.vehicleType}</li>
             ) : null}
-            {decode.fields.bodyClass ? (
-              <li>Body: {decode.fields.bodyClass}</li>
-            ) : null}
+            {decode.fields.bodyClass ? <li>Body: {decode.fields.bodyClass}</li> : null}
             {displacement ? <li>Engine: {displacement}</li> : null}
-            {decode.fields.engineHP ? (
-              <li>Power: {decode.fields.engineHP} hp</li>
-            ) : null}
+            {decode.fields.engineHP ? <li>Power: {decode.fields.engineHP} hp</li> : null}
             {decode.fields.motorcycleChassisType ? (
               <li>Chassis: {decode.fields.motorcycleChassisType}</li>
             ) : null}
@@ -211,7 +208,9 @@ export function VinField({
           {decode.message ? (
             <p className="mt-1 text-amber-800">{decode.message}</p>
           ) : decode.source === "nhtsa" ? (
-            <p className="mt-1 text-xs text-zinc-500">Decoded via NHTSA vPIC</p>
+            <p className="mt-1 text-xs text-[var(--status-neutral)]">
+              Decoded via NHTSA vPIC
+            </p>
           ) : null}
         </div>
       ) : null}

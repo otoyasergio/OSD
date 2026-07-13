@@ -46,9 +46,9 @@ function buildCreateHref(
     vin: decodedVin,
     return_to: `/work_orders/new?customer_id=${customerId}`,
   });
-  const year = decode?.fields.modelYear ?? (decode?.local?.modelYear != null
-    ? String(decode.local.modelYear)
-    : "");
+  const year =
+    decode?.fields.modelYear ??
+    (decode?.local?.modelYear != null ? String(decode.local.modelYear) : "");
   const make = decode?.fields.make ?? decode?.local?.manufacturerHint ?? "";
   const model = decode?.fields.model ?? "";
   if (year) params.set("year", year);
@@ -145,18 +145,16 @@ export function FindMotorcycleByVin({
   }
 
   const createHref =
-    notFoundVin && customerId
-      ? buildCreateHref(customerId, notFoundVin, decode)
-      : null;
+    notFoundVin && customerId ? buildCreateHref(customerId, notFoundVin, decode) : null;
   const bikeTitle = decode?.valid ? summarizeDecode(decode) : null;
   const displacement = decode ? formatDisplacement(decode) : null;
 
   return (
-    <div className="mt-4 rounded border border-zinc-200 bg-white px-3 py-3">
-      <p className="text-sm font-medium text-zinc-800">Find by VIN</p>
-      <p className="mt-0.5 text-xs text-zinc-500">
-        If this bike already exists for another customer, you can transfer it
-        here instead of creating a duplicate.
+    <div className="mt-4 rounded border border-[var(--border)] bg-white px-3 py-3">
+      <p className="text-sm font-medium text-foreground">Find by VIN</p>
+      <p className="mt-0.5 text-xs text-[var(--status-neutral)]">
+        If this bike already exists for another customer, you can transfer it here instead
+        of creating a duplicate.
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
         <input
@@ -191,7 +189,7 @@ export function FindMotorcycleByVin({
       </div>
 
       {message && !notFoundVin ? (
-        <p className="mt-2 text-sm text-zinc-700" role="status">
+        <p className="mt-2 text-sm text-foreground" role="status">
           {message}
         </p>
       ) : null}
@@ -202,19 +200,23 @@ export function FindMotorcycleByVin({
           role="status"
         >
           <p className="text-sm text-amber-950">
-            No motorcycle with that VIN yet. Create one for this customer, or
-            check the number.
+            No motorcycle with that VIN yet. Create one for this customer, or check the
+            number.
           </p>
           {pending && !decode ? (
-            <p className="mt-2 text-sm text-zinc-600">Identifying bike from VIN…</p>
+            <p className="mt-2 text-sm text-[var(--status-neutral)]">
+              Identifying bike from VIN…
+            </p>
           ) : null}
           {decode?.valid ? (
-            <div className="mt-2 rounded border border-amber-100 bg-white px-3 py-2 text-sm text-zinc-800">
-              <p className="font-mono text-xs text-zinc-500">{decode.vin}</p>
+            <div className="mt-2 rounded border border-amber-100 bg-white px-3 py-2 text-sm text-foreground">
+              <p className="font-mono text-xs text-[var(--status-neutral)]">
+                {decode.vin}
+              </p>
               {bikeTitle ? (
-                <p className="font-medium text-zinc-900">{bikeTitle}</p>
+                <p className="font-medium text-foreground">{bikeTitle}</p>
               ) : null}
-              <ul className="mt-1 space-y-0.5 text-zinc-600">
+              <ul className="mt-1 space-y-0.5 text-[var(--status-neutral)]">
                 {decode.fields.vehicleType ? (
                   <li>Type: {decode.fields.vehicleType}</li>
                 ) : null}

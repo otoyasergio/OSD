@@ -7,7 +7,7 @@ import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 
 const SELECT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
+  "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
 type Action = (
   state: LocationFormState,
@@ -19,9 +19,9 @@ export function LocationCreateForm({ action }: { action: Action }) {
   return (
     <form
       action={formAction}
-      className="flex flex-col gap-3 rounded border border-zinc-200 bg-white p-4"
+      className="flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
     >
-      <h2 className="font-semibold text-zinc-900">Create location</h2>
+      <h2 className="font-semibold text-foreground">Create location</h2>
       <FormError message={state.error} />
       <div className="grid gap-3 sm:grid-cols-2">
         <TextField label="Name" name="name" required />
@@ -62,19 +62,13 @@ export function LocationEditForm({
   return (
     <div className="mt-3 grid gap-4 lg:grid-cols-2">
       <form action={updateFormAction} className="flex flex-col gap-3">
-        <h3 className="text-sm font-semibold text-zinc-900">Details</h3>
+        <h3 className="text-sm font-semibold text-foreground">Details</h3>
         <FormError message={updateState.error} />
         <TextField label="Name" name="name" required defaultValue={location.name} />
         <TextField label="Code" name="code" required defaultValue={location.code} />
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-            Status
-          </span>
-          <select
-            className={SELECT_CLASS}
-            name="status"
-            defaultValue={location.status}
-          >
+          <span className="mb-1.5 block text-sm font-medium text-foreground">Status</span>
+          <select className={SELECT_CLASS} name="status" defaultValue={location.status}>
             <option value="active">Active</option>
             <option value="inactive">Inactive</option>
           </select>
@@ -85,18 +79,18 @@ export function LocationEditForm({
       </form>
 
       <form action={assignFormAction} className="flex flex-col gap-3">
-        <h3 className="text-sm font-semibold text-zinc-900">
+        <h3 className="text-sm font-semibold text-foreground">
           Assigned staff ({location.user_count})
         </h3>
         <FormError message={assignState.error} />
-        <div className="max-h-64 space-y-2 overflow-y-auto rounded border border-zinc-200 p-3">
+        <div className="max-h-64 space-y-2 overflow-y-auto rounded border border-[var(--border)] p-3">
           {users.length === 0 ? (
-            <p className="text-sm text-zinc-600">No users yet.</p>
+            <p className="text-sm text-[var(--status-neutral)]">No users yet.</p>
           ) : (
             users.map((person) => (
               <label
                 key={person.user_id}
-                className="flex min-h-11 items-center gap-2 text-sm text-zinc-800"
+                className="flex min-h-11 items-center gap-2 text-sm text-foreground"
               >
                 <input
                   type="checkbox"
@@ -107,7 +101,7 @@ export function LocationEditForm({
                 />
                 <span>
                   {person.first_name} {person.last_name}{" "}
-                  <span className="text-zinc-500">
+                  <span className="text-[var(--status-neutral)]">
                     ({person.role}
                     {person.status !== "active" ? ` · ${person.status}` : ""})
                   </span>

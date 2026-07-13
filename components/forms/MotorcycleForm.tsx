@@ -57,9 +57,7 @@ export function MotorcycleForm({
 
   const [customerId, setCustomerId] = useState(selectedCustomerId ?? "");
   const [year, setYear] = useState(
-    motorcycle?.year != null
-      ? String(motorcycle.year)
-      : defaults?.year ?? ""
+    motorcycle?.year != null ? String(motorcycle.year) : (defaults?.year ?? "")
   );
   const [make, setMake] = useState(motorcycle?.make ?? defaults?.make ?? "");
   const [model, setModel] = useState(motorcycle?.model ?? defaults?.model ?? "");
@@ -127,12 +125,10 @@ export function MotorcycleForm({
   return (
     <form action={formAction} className="flex max-w-2xl flex-col gap-4">
       <FormError message={state.error} />
-      {returnTo ? (
-        <input type="hidden" name="return_to" value={returnTo} />
-      ) : null}
+      {returnTo ? <input type="hidden" name="return_to" value={returnTo} /> : null}
 
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+        <span className="mb-1.5 block text-sm font-medium text-foreground">
           Customer<span className="ml-1 text-red-600">*</span>
         </span>
         <select
@@ -144,7 +140,7 @@ export function MotorcycleForm({
             // Re-check when customer changes while a conflict VIN may still be present.
             setConflict(null);
           }}
-          className="min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900"
+          className="min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)]"
         >
           <option value="" disabled>
             Select a customer
@@ -239,7 +235,7 @@ export function MotorcycleForm({
           disabled={Boolean(conflict) || transferPending}
         />
         {conflict ? (
-          <p className="mt-2 text-xs text-zinc-500">
+          <p className="mt-2 text-xs text-[var(--status-neutral)]">
             Resolve the VIN ownership notice before saving a new motorcycle.
           </p>
         ) : null}

@@ -13,7 +13,7 @@ const Form = dynamic(
   {
     loading: () => (
       <div
-        className="flex min-h-[320px] items-center justify-center rounded-lg border border-zinc-200 bg-zinc-50 text-sm text-zinc-600"
+        className="flex min-h-[320px] items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] text-sm text-[var(--status-neutral)]"
         aria-busy="true"
       >
         Loading intake form…

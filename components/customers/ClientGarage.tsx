@@ -3,11 +3,7 @@ import type { GarageBikeCard } from "@/lib/services/clientGarage";
 
 function BikeSilhouette() {
   return (
-    <svg
-      viewBox="0 0 48 32"
-      className="wo-card-photo-placeholder-icon"
-      aria-hidden
-    >
+    <svg viewBox="0 0 48 32" className="wo-card-photo-placeholder-icon" aria-hidden>
       <path
         d="M8 22c2-6 6-10 10-11 3 4 7 6 12 6 2 0 4-.4 6-1.2L40 22H8z"
         fill="currentColor"
@@ -33,16 +29,9 @@ export function GarageBikeCardView({
 
   return (
     <article className="wo-card wo-card-photo garage-card">
-      <Link
-        href={bike.href}
-        className="garage-card-main"
-        aria-label={`View ${label}`}
-      >
+      <Link href={bike.href} className="garage-card-main" aria-label={`View ${label}`}>
         <div className="wo-card-strip wo-card-strip-neutral" aria-hidden />
-        <div
-          className="wo-card-photo-frame"
-          aria-hidden={!bike.primary_photo_url}
-        >
+        <div className="wo-card-photo-frame" aria-hidden={!bike.primary_photo_url}>
           {bike.primary_photo_url ? (
             // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
             <img
@@ -102,10 +91,13 @@ export function ClientGarage({
     <section className="garage-section" aria-labelledby="client-garage-heading">
       <div className="garage-section-header">
         <div>
-          <h2 id="client-garage-heading" className="text-lg font-semibold text-zinc-900">
+          <h2
+            id="client-garage-heading"
+            className="text-lg font-semibold text-foreground"
+          >
             Client garage
           </h2>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
             Motorcycles on file for this customer.
           </p>
         </div>
@@ -118,8 +110,7 @@ export function ClientGarage({
         <div className="garage-empty">
           <p className="garage-empty-title">No bikes in this garage yet</p>
           <p className="garage-empty-copy">
-            Add the first motorcycle to keep intake photos and service history
-            together.
+            Add the first motorcycle to keep intake photos and service history together.
           </p>
           <Link href={addHref} className="btn btn-accent mt-4">
             Add motorcycle

@@ -30,19 +30,19 @@ export function PartsCanadaSyncPanel({
   const last = status.last_run;
 
   return (
-    <section className="rounded border border-zinc-200 bg-white p-4">
+    <section className="rounded border border-[var(--border)] bg-white p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-zinc-900">
+          <h2 className="text-base font-semibold text-foreground">
             Parts Canada catalog
           </h2>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
             {status.configured
               ? `${status.catalog_count.toLocaleString()} items cached locally.`
               : "API key not configured on the server yet."}
           </p>
           {last ? (
-            <p className="mt-1 text-sm text-zinc-500">
+            <p className="mt-1 text-sm text-[var(--status-neutral)]">
               Last sync: {last.status}
               {last.row_count != null
                 ? ` · ${last.row_count.toLocaleString()} rows`
@@ -51,7 +51,9 @@ export function PartsCanadaSyncPanel({
               {last.error_message ? ` · ${last.error_message}` : ""}
             </p>
           ) : (
-            <p className="mt-1 text-sm text-zinc-500">No sync has run yet.</p>
+            <p className="mt-1 text-sm text-[var(--status-neutral)]">
+              No sync has run yet.
+            </p>
           )}
         </div>
         {canSync ? (
@@ -70,9 +72,9 @@ export function PartsCanadaSyncPanel({
           {state.success}
         </p>
       ) : null}
-      <p className="mt-2 text-xs text-zinc-500">
-        Inventory is downloaded once per day (Parts Canada rate limit). Pricing
-        and stock in search results come from this local catalog.
+      <p className="mt-2 text-xs text-[var(--status-neutral)]">
+        Inventory is downloaded once per day (Parts Canada rate limit). Pricing and stock
+        in search results come from this local catalog.
       </p>
     </section>
   );

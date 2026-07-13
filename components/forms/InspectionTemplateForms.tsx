@@ -11,7 +11,7 @@ type TemplateAction = (
   formData: FormData
 ) => Promise<TemplateFormState>;
 
-const CHECKBOX_CLASS = "h-4 w-4 rounded border-zinc-300 text-zinc-900";
+const CHECKBOX_CLASS = "h-4 w-4 rounded border-[var(--border-strong)] text-foreground";
 
 export function InspectionTemplateCreateForm({
   action,
@@ -25,7 +25,7 @@ export function InspectionTemplateCreateForm({
   return (
     <form
       action={formAction}
-      className="flex flex-col gap-4 rounded border border-zinc-200 bg-white p-4"
+      className="flex flex-col gap-4 rounded border border-[var(--border)] bg-white p-4"
     >
       <FormError message={state.error} />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -45,7 +45,7 @@ export function InspectionTemplateCreateForm({
             name="requires_measurement"
             value="true"
           />
-          <span className="text-sm font-medium text-zinc-800">
+          <span className="text-sm font-medium text-foreground">
             Requires measurement
           </span>
         </label>
@@ -97,7 +97,7 @@ export function InspectionTemplateEditForm({
             value="true"
             defaultChecked={item.requires_measurement}
           />
-          <span className="text-sm font-medium text-zinc-800">
+          <span className="text-sm font-medium text-foreground">
             Requires measurement
           </span>
         </label>

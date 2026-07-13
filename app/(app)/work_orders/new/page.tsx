@@ -45,14 +45,14 @@ export default async function NewWorkOrderPage({
     <div>
       <Link
         href="/work_orders"
-        className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+        className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
       >
         ← Work orders
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
         New work order
       </h1>
-      <p className="mt-1 max-w-2xl text-sm text-zinc-600">
+      <p className="mt-1 max-w-2xl text-sm text-[var(--status-neutral)]">
         Guided intake: customer, motorcycle, visit details, and all six photos — then
         review and create under your active location.
       </p>

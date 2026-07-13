@@ -26,21 +26,21 @@ export default async function ContractTemplatePage() {
       <div>
         <Link
           href="/settings"
-          className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+          className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
         >
           ← Settings
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
           Drop-off contract
         </h1>
-        <p className="mt-1 text-sm text-zinc-600">
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
           Edit the agreement customers initial and sign at drop-off. New intakes use the
           active version.
         </p>
       </div>
 
       {!template ? (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-[var(--status-neutral)]">
           No active template is configured. Publish one below to enable contract signing.
         </p>
       ) : null}

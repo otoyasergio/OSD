@@ -7,14 +7,14 @@ export default function NewCustomerPage() {
     <div>
       <Link
         href="/customers"
-        className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+        className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
       >
         ← Customers
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
         New customer
       </h1>
-      <p className="mt-1 text-sm text-zinc-600">
+      <p className="mt-1 text-sm text-[var(--status-neutral)]">
         Phone or email is required so the shop can reach the customer.
       </p>
 

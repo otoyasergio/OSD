@@ -225,7 +225,7 @@ export default async function WorkOrderDetailPage({
     <div className="page-stack page-stack--narrow">
       <Link
         href="/work_orders"
-        className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+        className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
       >
         ← Work orders
       </Link>

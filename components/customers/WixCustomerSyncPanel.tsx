@@ -32,9 +32,9 @@ export function WixCustomerSyncPanel({
   if (!canSync) return null;
 
   return (
-    <section className="rounded border border-zinc-200 bg-white p-4">
-      <h2 className="text-lg font-semibold text-zinc-900">Wix contact</h2>
-      <p className="mt-1 text-sm text-zinc-600">
+    <section className="rounded border border-[var(--border)] bg-white p-4">
+      <h2 className="text-lg font-semibold text-foreground">Wix contact</h2>
+      <p className="mt-1 text-sm text-[var(--status-neutral)]">
         {configured
           ? wixContactId
             ? `Linked to Wix contact ${wixContactId}.`

@@ -17,7 +17,7 @@ type Action = (
 ) => Promise<RecommendationFormState>;
 
 const SELECT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
+  "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
 const SEVERITY_OPTIONS = [
   "future_attention",
@@ -41,18 +41,12 @@ export function RecommendationCreateForm({
   return (
     <form
       action={formAction}
-      className="flex flex-col gap-3 rounded border border-zinc-200 bg-white p-4"
+      className="flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
     >
-      <h3 className="text-base font-semibold text-zinc-900">
-        New recommendation
-      </h3>
+      <h3 className="text-base font-semibold text-foreground">New recommendation</h3>
       <FormError message={state.error} />
       {inspectionResultId ? (
-        <input
-          type="hidden"
-          name="inspection_result_id"
-          value={inspectionResultId}
-        />
+        <input type="hidden" name="inspection_result_id" value={inspectionResultId} />
       ) : null}
       <TextField
         label="Description"
@@ -61,7 +55,7 @@ export function RecommendationCreateForm({
         defaultValue={defaultDescription}
       />
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+        <span className="mb-1.5 block text-sm font-medium text-foreground">
           Severity <span className="text-red-600">*</span>
         </span>
         <select
@@ -112,36 +106,30 @@ export function RecommendationCard({
 
   const isSafety = recommendation.severity === "safety_critical";
   const isConverted = recommendation.status === "converted_to_job";
-  const canAct =
-    !readOnly &&
-    !isConverted &&
-    recommendation.status !== "declined";
+  const canAct = !readOnly && !isConverted && recommendation.status !== "declined";
 
   return (
     <article
       className={`rounded border p-4 ${
-        isSafety
-          ? "border-red-400 bg-red-50"
-          : "border-zinc-200 bg-white"
+        isSafety ? "border-red-400 bg-red-50" : "border-[var(--border)] bg-white"
       }`}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-zinc-900">
+          <h3 className="text-base font-semibold text-foreground">
             {recommendation.description}
           </h3>
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
             {RECOMMENDATION_SEVERITY_LABELS[recommendation.severity]} ·{" "}
             {RECOMMENDATION_STATUS_LABELS[recommendation.status]}
           </p>
           {recommendation.inspection_result ? (
-            <p className="mt-1 text-sm text-zinc-500">
-              From inspection:{" "}
-              {recommendation.inspection_result.item_name_snapshot}
+            <p className="mt-1 text-sm text-[var(--status-neutral)]">
+              From inspection: {recommendation.inspection_result.item_name_snapshot}
             </p>
           ) : null}
           {recommendation.notes ? (
-            <p className="mt-2 text-sm text-zinc-700">{recommendation.notes}</p>
+            <p className="mt-2 text-sm text-foreground">{recommendation.notes}</p>
           ) : null}
           {isConverted && recommendation.converted_job_id ? (
             <p className="mt-2 text-sm font-medium text-emerald-800">
@@ -165,7 +153,7 @@ export function RecommendationCard({
                   <input type="hidden" name="status" value={status} />
                   <button
                     type="submit"
-                    className="min-h-11 rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
+                    className="min-h-11 rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-sm font-semibold text-foreground hover:bg-[var(--surface-muted)]"
                   >
                     {RECOMMENDATION_STATUS_LABELS[status]}
                   </button>
@@ -181,17 +169,17 @@ export function RecommendationCard({
                 <button
                   type="button"
                   onClick={() => setShowConvert(true)}
-                  className="min-h-11 rounded border border-zinc-900 bg-zinc-900 px-3 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                  className="min-h-11 rounded border border-[var(--chrome)] bg-[var(--chrome)] px-3 py-2 text-sm font-semibold text-white hover:bg-[var(--chrome-elevated)]"
                 >
                   Convert to job…
                 </button>
               ) : (
                 <form
                   action={convertFormAction}
-                  className="flex flex-col gap-3 rounded border border-zinc-200 bg-white p-3"
+                  className="flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-3"
                 >
                   <label className="block">
-                    <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+                    <span className="mb-1.5 block text-sm font-medium text-foreground">
                       Service <span className="text-red-600">*</span>
                     </span>
                     <select
@@ -202,10 +190,7 @@ export function RecommendationCard({
                     >
                       <option value="">Select service</option>
                       {services.map((service) => (
-                        <option
-                          key={service.service_id}
-                          value={service.service_id}
-                        >
+                        <option key={service.service_id} value={service.service_id}>
                           {service.name}
                         </option>
                       ))}
@@ -216,21 +201,18 @@ export function RecommendationCard({
                       type="checkbox"
                       name="already_approved"
                       value="true"
-                      className="h-4 w-4 rounded border-zinc-300"
+                      className="h-4 w-4 rounded border-[var(--border-strong)]"
                     />
-                    <span className="text-sm text-zinc-800">
+                    <span className="text-sm text-foreground">
                       Already approved by customer
                     </span>
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    <SubmitButton
-                      label="Confirm convert"
-                      pendingLabel="Converting…"
-                    />
+                    <SubmitButton label="Confirm convert" pendingLabel="Converting…" />
                     <button
                       type="button"
                       onClick={() => setShowConvert(false)}
-                      className="min-h-11 rounded border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-800"
+                      className="min-h-11 rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-sm font-semibold text-foreground"
                     >
                       Cancel
                     </button>

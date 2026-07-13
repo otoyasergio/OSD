@@ -1,8 +1,5 @@
 import Link from "next/link";
-import {
-  getCustomerById,
-  searchCustomers,
-} from "@/lib/services/customers";
+import { getCustomerById, searchCustomers } from "@/lib/services/customers";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { createMotorcycleAction } from "@/app/(app)/motorcycles/actions";
 import { normalizeVin } from "@/lib/vin";
@@ -32,10 +29,7 @@ export default async function NewMotorcyclePage({
 
   // searchCustomers caps at 50; always include the preselected customer from garage/deep links.
   let customerOptions = customers;
-  if (
-    customer_id &&
-    !customers.some((c) => c.customer_id === customer_id)
-  ) {
+  if (customer_id && !customers.some((c) => c.customer_id === customer_id)) {
     const selected = await getCustomerById(customer_id);
     if (selected) {
       customerOptions = [selected, ...customers];
@@ -43,30 +37,24 @@ export default async function NewMotorcyclePage({
   }
 
   const returnTo =
-    return_to.startsWith("/") && !return_to.startsWith("//")
-      ? return_to
-      : undefined;
+    return_to.startsWith("/") && !return_to.startsWith("//") ? return_to : undefined;
 
   return (
     <div>
       <Link
         href={
-          returnTo
-            ? returnTo
-            : customer_id
-              ? `/customers/${customer_id}`
-              : "/motorcycles"
+          returnTo ? returnTo : customer_id ? `/customers/${customer_id}` : "/motorcycles"
         }
-        className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+        className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
       >
         ← {returnTo ? "Back to intake" : "Motorcycles"}
       </Link>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
         New motorcycle
       </h1>
 
       {customerOptions.length === 0 ? (
-        <p className="mt-6 rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
+        <p className="mt-6 rounded border border-dashed border-[var(--border-strong)] bg-white px-4 py-10 text-center text-[var(--status-neutral)]">
           Create a customer first, then add their motorcycle.
         </p>
       ) : (

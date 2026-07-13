@@ -12,7 +12,7 @@ const SEVERITY_STYLES = {
 } as const;
 
 const STATUS_STYLES = {
-  pending: "bg-zinc-100 text-zinc-800",
+  pending: "bg-[var(--surface-muted)] text-foreground",
   deferred: "bg-sky-100 text-sky-900",
   declined: "bg-rose-100 text-rose-900",
   approved: "bg-emerald-100 text-emerald-900",
@@ -32,8 +32,8 @@ export function OutstandingRecommendations({
     if (hideWhenEmpty) return null;
     return (
       <section className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
-        <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-6 text-sm text-zinc-600">
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+        <p className="rounded border border-dashed border-[var(--border-strong)] bg-white px-4 py-6 text-sm text-[var(--status-neutral)]">
           No outstanding recommendations from previous visits.
         </p>
       </section>
@@ -42,7 +42,7 @@ export function OutstandingRecommendations({
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold text-zinc-900">{title}</h2>
+      <h2 className="text-lg font-semibold text-foreground">{title}</h2>
       <ul className="flex flex-col gap-2">
         {recommendations.map((recommendation) => {
           const isSafety = recommendation.severity === "safety_critical";
@@ -50,13 +50,11 @@ export function OutstandingRecommendations({
             <li
               key={recommendation.recommendation_id}
               className={`rounded border px-4 py-3 ${
-                isSafety
-                  ? "border-red-300 bg-red-50"
-                  : "border-zinc-200 bg-white"
+                isSafety ? "border-red-300 bg-red-50" : "border-[var(--border)] bg-white"
               }`}
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <p className="font-medium text-zinc-900">
+                <p className="font-medium text-foreground">
                   {recommendation.description}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -76,7 +74,7 @@ export function OutstandingRecommendations({
                   </span>
                 </div>
               </div>
-              <p className="mt-1.5 text-sm text-zinc-600">
+              <p className="mt-1.5 text-sm text-[var(--status-neutral)]">
                 Source:{" "}
                 <Link
                   href={`/work_orders/${recommendation.work_order.work_order_id}`}

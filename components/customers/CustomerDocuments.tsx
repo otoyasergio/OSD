@@ -77,27 +77,27 @@ export function CustomerDocuments({
 
   return (
     <section>
-      <h2 className="text-lg font-semibold text-zinc-900">Documents</h2>
-      <p className="mt-1 text-sm text-zinc-600">
+      <h2 className="text-lg font-semibold text-foreground">Documents</h2>
+      <p className="mt-1 text-sm text-[var(--status-neutral)]">
         Signed drop-off agreements and uploaded files for this customer.
       </p>
 
       <FormError message={error} />
 
       {documents.length === 0 ? (
-        <p className="mt-3 rounded border border-dashed border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600">
+        <p className="mt-3 rounded border border-dashed border-[var(--border-strong)] bg-white px-4 py-8 text-center text-sm text-[var(--status-neutral)]">
           No documents on file yet.
         </p>
       ) : (
-        <ul className="mt-3 divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
+        <ul className="mt-3 divide-y divide-[var(--border)] rounded border border-[var(--border)] bg-white">
           {documents.map((doc) => (
             <li
               key={doc.document_id}
               className="flex flex-wrap items-start justify-between gap-3 px-4 py-3"
             >
               <div className="min-w-0">
-                <p className="font-medium text-zinc-900">{doc.title}</p>
-                <p className="mt-0.5 text-xs text-zinc-500">
+                <p className="font-medium text-foreground">{doc.title}</p>
+                <p className="mt-0.5 text-xs text-[var(--status-neutral)]">
                   {sourceLabel(doc.source)} · {formatDate(doc.created_at)}
                   {doc.work_order_id && doc.work_order_number ? (
                     <>
@@ -142,9 +142,9 @@ export function CustomerDocuments({
       {canUpload ? (
         <form
           onSubmit={onUpload}
-          className="mt-4 flex flex-col gap-3 rounded border border-zinc-200 bg-white p-4"
+          className="mt-4 flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
         >
-          <p className="text-sm font-medium text-zinc-900">Upload document</p>
+          <p className="text-sm font-medium text-foreground">Upload document</p>
           <label className="block max-w-md">
             <span className="field-label">Title</span>
             <input
@@ -152,7 +152,7 @@ export function CustomerDocuments({
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="min-h-11 w-full rounded border border-zinc-300 px-3"
+              className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
               placeholder="e.g. Insurance card"
             />
           </label>

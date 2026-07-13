@@ -1,19 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  getMotorcycleById,
-  getServiceInformation,
-} from "@/lib/services/motorcycles";
-import {
-  getCustomerById,
-  searchCustomers,
-} from "@/lib/services/customers";
+import { getMotorcycleById, getServiceInformation } from "@/lib/services/motorcycles";
+import { getCustomerById, searchCustomers } from "@/lib/services/customers";
 import { listOutstandingRecommendationsForMotorcycle } from "@/lib/services/recommendations";
 import { requireUser } from "@/lib/auth/session";
-import {
-  canEditWorkOrder,
-  canUpdateServiceInformation,
-} from "@/lib/permissions";
+import { canEditWorkOrder, canUpdateServiceInformation } from "@/lib/permissions";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
 import { TransferMotorcycleForm } from "@/components/forms/TransferMotorcycleForm";
@@ -35,12 +26,11 @@ export default async function MotorcycleDetailPage({
   const motorcycle = await getMotorcycleById(motorcycle_id);
   if (!motorcycle) notFound();
 
-  const [serviceInformation, customers, outstandingRecommendations] =
-    await Promise.all([
-      getServiceInformation(motorcycle_id),
-      searchCustomers(""),
-      listOutstandingRecommendationsForMotorcycle(motorcycle_id),
-    ]);
+  const [serviceInformation, customers, outstandingRecommendations] = await Promise.all([
+    getServiceInformation(motorcycle_id),
+    searchCustomers(""),
+    listOutstandingRecommendationsForMotorcycle(motorcycle_id),
+  ]);
 
   let customerOptions = customers;
   if (!customers.some((c) => c.customer_id === motorcycle.customer_id)) {
@@ -67,14 +57,14 @@ export default async function MotorcycleDetailPage({
       <div>
         <Link
           href="/motorcycles"
-          className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+          className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
         >
           ← Motorcycles
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
           {bikeLabel}
         </h1>
-        <p className="mt-1 text-sm text-zinc-600">
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
           Owner:{" "}
           <Link
             href={`/customers/${motorcycle.customer_id}`}
@@ -88,7 +78,7 @@ export default async function MotorcycleDetailPage({
               {" · "}
               <a
                 href="#transfer-ownership"
-                className="font-semibold text-zinc-800 underline-offset-2 hover:underline"
+                className="font-semibold text-foreground underline-offset-2 hover:underline"
               >
                 Transfer
               </a>
@@ -112,10 +102,8 @@ export default async function MotorcycleDetailPage({
       />
 
       <section>
-        <h2 className="text-lg font-semibold text-zinc-900">
-          Service information
-        </h2>
-        <p className="mt-1 text-sm text-zinc-600">
+        <h2 className="text-lg font-semibold text-foreground">Service information</h2>
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
           {serviceInformation?.last_updated
             ? `Last updated ${formatDateTime(serviceInformation.last_updated)}`
             : "Not recorded yet."}
@@ -132,7 +120,7 @@ export default async function MotorcycleDetailPage({
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold text-zinc-900">Edit motorcycle</h2>
+        <h2 className="text-lg font-semibold text-foreground">Edit motorcycle</h2>
         <div className="mt-3">
           <MotorcycleForm
             action={updateAction}
@@ -145,10 +133,8 @@ export default async function MotorcycleDetailPage({
 
       {canTransfer ? (
         <section id="transfer-ownership">
-          <h2 className="text-lg font-semibold text-zinc-900">
-            Transfer ownership
-          </h2>
-          <p className="mt-1 text-sm text-zinc-600">
+          <h2 className="text-lg font-semibold text-foreground">Transfer ownership</h2>
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
             Use when this bike is sold to a different customer.
           </p>
           <div className="mt-3">

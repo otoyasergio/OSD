@@ -12,18 +12,12 @@ type Props = {
   ) => Promise<MotorcycleFormState>;
 };
 
-export function ServiceInfoTab({
-  serviceInformation,
-  canEdit,
-  action,
-}: Props) {
+export function ServiceInfoTab({ serviceInformation, canEdit, action }: Props) {
   return (
     <section className="flex flex-col gap-3">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">
-          Service information
-        </h2>
-        <p className="mt-1 text-sm text-zinc-600">
+        <h2 className="text-lg font-semibold text-foreground">Service information</h2>
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
           {serviceInformation?.last_updated
             ? `Last updated ${formatDateTime(serviceInformation.last_updated)}`
             : "Not recorded yet."}

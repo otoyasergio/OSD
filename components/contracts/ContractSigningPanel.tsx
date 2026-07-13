@@ -43,7 +43,7 @@ export function ContractSigningPanel({
     return (
       <div className="card card-pad flex flex-col gap-3">
         <p className="font-semibold text-emerald-800">Drop-off agreement signed</p>
-        <p className="text-sm text-zinc-700">
+        <p className="text-sm text-foreground">
           Signed by <strong>{existing.signer_name}</strong> on{" "}
           {formatDateTime(existing.signed_at)} (template {existing.template_version})
         </p>
@@ -52,7 +52,7 @@ export function ContractSigningPanel({
           <img
             src={existing.signed_url}
             alt="Customer signature"
-            className="max-h-32 rounded border border-zinc-200 bg-white"
+            className="max-h-32 rounded border border-[var(--border)] bg-white"
           />
         ) : null}
         {continueHref ? (
@@ -106,7 +106,7 @@ export function ContractSigningPanel({
   return (
     <form onSubmit={submit} className="contract-signing-form flex flex-col gap-6">
       <div
-        className="contract-signing-prose prose prose-sm max-w-none rounded border border-zinc-200 bg-white p-4"
+        className="contract-signing-prose prose prose-sm max-w-none rounded border border-[var(--border)] bg-white p-4"
         dangerouslySetInnerHTML={{ __html: safeHtml }}
       />
 
@@ -121,7 +121,7 @@ export function ContractSigningPanel({
             onChange={(e) =>
               setInitials((prev) => ({ ...prev, [field]: e.target.value }))
             }
-            className="min-h-11 w-full rounded border border-zinc-300 px-3 text-lg uppercase tracking-widest"
+            className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3 text-lg uppercase tracking-widest"
             autoComplete="off"
           />
         </label>
@@ -134,7 +134,7 @@ export function ContractSigningPanel({
           required
           value={signerName}
           onChange={(e) => setSignerName(e.target.value)}
-          className="min-h-11 w-full rounded border border-zinc-300 px-3"
+          className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
         />
       </label>
 

@@ -37,9 +37,10 @@ export function SignatureCanvas({ onChange, height = 180 }: Props) {
     return () => observer.disconnect();
   }, [height]);
 
-  function pointerPos(
-    event: React.PointerEvent<HTMLCanvasElement>
-  ): { x: number; y: number } {
+  function pointerPos(event: React.PointerEvent<HTMLCanvasElement>): {
+    x: number;
+    y: number;
+  } {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     return {
@@ -95,7 +96,7 @@ export function SignatureCanvas({ onChange, height = 180 }: Props) {
     <div className="flex flex-col gap-2">
       <canvas
         ref={canvasRef}
-        className="w-full touch-none rounded border border-zinc-300 bg-white"
+        className="w-full touch-none rounded border border-[var(--border-strong)] bg-white"
         style={{ height }}
         aria-label="Signature pad"
         onPointerDown={onPointerDown}

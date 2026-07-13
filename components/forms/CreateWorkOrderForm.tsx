@@ -11,10 +11,7 @@ import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { getOutstandingRecommendationsAction } from "@/app/(app)/work_orders/recommendation-actions";
 import { listMotorcyclesForCustomerAction } from "@/app/(app)/motorcycles/actions";
 import type { Customer } from "@/lib/services/customers";
-import type {
-  Motorcycle,
-  MotorcycleWithCustomer,
-} from "@/lib/services/motorcycles";
+import type { Motorcycle, MotorcycleWithCustomer } from "@/lib/services/motorcycles";
 import type { OutstandingRecommendation } from "@/lib/services/recommendations";
 import {
   groupServicesByCategory,
@@ -52,10 +49,7 @@ import {
   suggestedPriceFromLabourHours,
 } from "@/lib/pricing/shopRate";
 import { toFormErrorMessage } from "@/lib/services/errors";
-import {
-  formatDateTime,
-  parseShopLocalDateTimeInput,
-} from "@/lib/datetime/format";
+import { formatDateTime, parseShopLocalDateTimeInput } from "@/lib/datetime/format";
 
 type Props = {
   customers: Customer[];
@@ -67,13 +61,12 @@ type Props = {
 };
 
 const SELECT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
+  "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
 const INPUT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
+  "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
-const NAV_BTN_CLASS =
-  "btn min-h-12 min-w-[8rem] px-6 text-base sm:min-h-14 sm:text-lg";
+const NAV_BTN_CLASS = "btn min-h-12 min-w-[8rem] px-6 text-base sm:min-h-14 sm:text-lg";
 
 const ALL_REQUIRED = CREATE_INTAKE_PHOTO_SLOTS.map((s) => s.category);
 
@@ -91,9 +84,9 @@ export function CreateWorkOrderForm({
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [clientError, setClientError] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<WorkOrderFormState | null>(null);
-  const [loadedMotorcycles, setLoadedMotorcycles] = useState<
-    MotorcycleWithCustomer[]
-  >([]);
+  const [loadedMotorcycles, setLoadedMotorcycles] = useState<MotorcycleWithCustomer[]>(
+    []
+  );
   const [, startBikeLoad] = useTransition();
 
   const motorcycleOptions = useMemo(() => {
@@ -105,14 +98,11 @@ export function CreateWorkOrderForm({
 
   const recoveryWorkOrderId = recovery?.workOrderId ?? null;
   const missingCategories = recovery?.missingCategories ?? [];
-  const isRecovery = Boolean(
-    recoveryWorkOrderId && missingCategories.length > 0
-  );
+  const isRecovery = Boolean(recoveryWorkOrderId && missingCategories.length > 0);
 
   const resolvedInitialCustomerId =
     initialCustomerId ||
-    motorcycles.find((bike) => bike.motorcycle_id === initialMotorcycleId)
-      ?.customer_id ||
+    motorcycles.find((bike) => bike.motorcycle_id === initialMotorcycleId)?.customer_id ||
     "";
 
   const [customerId, setCustomerId] = useState(resolvedInitialCustomerId);
@@ -121,9 +111,7 @@ export function CreateWorkOrderForm({
   const [estimatedCompletion, setEstimatedCompletion] = useState("");
   const [internalNotes, setInternalNotes] = useState("");
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
-  const [serviceLines, setServiceLines] = useState<
-    Record<string, ServiceLineDraft>
-  >({});
+  const [serviceLines, setServiceLines] = useState<Record<string, ServiceLineDraft>>({});
   const [primaryTechnicianId, setPrimaryTechnicianId] = useState("");
   const [outstandingFetch, setOutstandingFetch] = useState<{
     motorcycleId: string;
@@ -152,18 +140,13 @@ export function CreateWorkOrderForm({
     return motorcycleOptions.filter((bike) => bike.customer_id === customerId);
   }, [customerId, motorcycleOptions]);
 
-  const groupedServices = useMemo(
-    () => groupServicesByCategory(services),
-    [services]
-  );
+  const groupedServices = useMemo(() => groupServicesByCategory(services), [services]);
 
   const intakeComplete = allRequiredIntakeSelected(intakePhotos, ALL_REQUIRED);
   const stepId = CREATE_WORK_ORDER_WIZARD_STEPS[stepIndex].id;
   const isLastStep = stepId === "review";
 
-  const selectedCustomer = knownCustomers.find(
-    (c) => c.customer_id === customerId
-  );
+  const selectedCustomer = knownCustomers.find((c) => c.customer_id === customerId);
   const selectedBike = motorcycleOptions.find(
     (bike) => bike.motorcycle_id === motorcycleId
   );
@@ -189,10 +172,7 @@ export function CreateWorkOrderForm({
     });
   }
 
-  function handleCustomerChange(
-    nextCustomerId: string,
-    customer: Customer | null
-  ) {
+  function handleCustomerChange(nextCustomerId: string, customer: Customer | null) {
     setCustomerId(nextCustomerId);
     setMotorcycleId("");
     setMaxReachedIndex(0);
@@ -214,9 +194,7 @@ export function CreateWorkOrderForm({
       }
     });
   }
-  const selectedTech = technicians.find(
-    (tech) => tech.user_id === primaryTechnicianId
-  );
+  const selectedTech = technicians.find((tech) => tech.user_id === primaryTechnicianId);
   const selectedServices = services.filter((service) =>
     selectedServiceIds.includes(service.service_id)
   );
@@ -235,14 +213,10 @@ export function CreateWorkOrderForm({
     let cancelled = false;
     startBikeLoad(async () => {
       try {
-        const bikes = await listMotorcyclesForCustomerAction(
-          resolvedInitialCustomerId
-        );
+        const bikes = await listMotorcyclesForCustomerAction(resolvedInitialCustomerId);
         if (cancelled) return;
         const customer =
-          knownCustomers.find(
-            (c) => c.customer_id === resolvedInitialCustomerId
-          ) ?? null;
+          knownCustomers.find((c) => c.customer_id === resolvedInitialCustomerId) ?? null;
         mergeMotorcycleOptions(bikes, customer);
       } catch {
         // Deep-linked customer may still proceed once bikes are created.
@@ -270,10 +244,7 @@ export function CreateWorkOrderForm({
 
   function goNext() {
     if (!canProceed || isLastStep) return;
-    const next = Math.min(
-      stepIndex + 1,
-      CREATE_WORK_ORDER_WIZARD_STEPS.length - 1
-    );
+    const next = Math.min(stepIndex + 1, CREATE_WORK_ORDER_WIZARD_STEPS.length - 1);
     setStepIndex(next);
     setMaxReachedIndex((prev) => Math.max(prev, next));
     setClientError(null);
@@ -305,9 +276,7 @@ export function CreateWorkOrderForm({
 
       const created = await createWorkOrderOnlyAction({ error: null }, formData);
       if (created.error || !created.workOrderId) {
-        setClientError(
-          created.error ?? "Could not create the work order. Try again."
-        );
+        setClientError(created.error ?? "Could not create the work order. Try again.");
         return;
       }
 
@@ -336,9 +305,7 @@ export function CreateWorkOrderForm({
       }
 
       if (failed.length > 0) {
-        const labels = failed
-          .map((c) => PHOTO_CATEGORY_LABELS[c] ?? c)
-          .join(", ");
+        const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
         setRecovery({
           error: `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`,
           workOrderId: created.workOrderId,
@@ -419,17 +386,9 @@ export function CreateWorkOrderForm({
       {/* Persist values for submit regardless of which step is visible */}
       <input type="hidden" name="motorcycle_id" value={motorcycleId} />
       <input type="hidden" name="mileage" value={mileage} />
-      <input
-        type="hidden"
-        name="estimated_completion"
-        value={estimatedCompletion}
-      />
+      <input type="hidden" name="estimated_completion" value={estimatedCompletion} />
       <input type="hidden" name="internal_notes" value={internalNotes} />
-      <input
-        type="hidden"
-        name="primary_technician_id"
-        value={primaryTechnicianId}
-      />
+      <input type="hidden" name="primary_technician_id" value={primaryTechnicianId} />
       {selectedServiceIds.map((id) => (
         <input key={id} type="hidden" name="service_ids" value={id} />
       ))}
@@ -438,21 +397,9 @@ export function CreateWorkOrderForm({
         if (!line) return null;
         return (
           <span key={`line-${id}`}>
-            <input
-              type="hidden"
-              name={`service_note_${id}`}
-              value={line.note}
-            />
-            <input
-              type="hidden"
-              name={`service_labour_${id}`}
-              value={line.labourHours}
-            />
-            <input
-              type="hidden"
-              name={`service_price_${id}`}
-              value={line.price}
-            />
+            <input type="hidden" name={`service_note_${id}`} value={line.note} />
+            <input type="hidden" name={`service_labour_${id}`} value={line.labourHours} />
+            <input type="hidden" name={`service_price_${id}`} value={line.price} />
           </span>
         );
       })}
@@ -460,11 +407,9 @@ export function CreateWorkOrderForm({
       {stepId === "customer" ? (
         <section className="intake-wizard-panel">
           <h2 className="intake-wizard-panel-title">Customer</h2>
-          <p className="intake-wizard-panel-lede">
-            Who owns the bike for this visit?
-          </p>
+          <p className="intake-wizard-panel-lede">Who owns the bike for this visit?</p>
           <div className="block">
-            <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">
               Customer <span className="ml-1 text-red-600">*</span>
             </span>
             <CustomerSearchPicker
@@ -473,12 +418,9 @@ export function CreateWorkOrderForm({
               onChange={handleCustomerChange}
               required
             />
-            <span className="mt-1 block text-xs text-zinc-500">
+            <span className="mt-1 block text-xs text-[var(--status-neutral)]">
               Search by name, email, or phone. Need a new customer?{" "}
-              <Link
-                href="/customers/new"
-                className="underline underline-offset-2"
-              >
+              <Link href="/customers/new" className="underline underline-offset-2">
                 Create one first
               </Link>
               .
@@ -492,14 +434,14 @@ export function CreateWorkOrderForm({
           <h2 className="intake-wizard-panel-title">Motorcycle</h2>
           <p className="intake-wizard-panel-lede">
             Customer:{" "}
-            <span className="font-medium text-zinc-900">
+            <span className="font-medium text-foreground">
               {selectedCustomer
                 ? `${selectedCustomer.last_name}, ${selectedCustomer.first_name}`
                 : "—"}
             </span>
           </p>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">
               Motorcycle <span className="ml-1 text-red-600">*</span>
             </span>
             <select
@@ -525,7 +467,7 @@ export function CreateWorkOrderForm({
                 This customer has no motorcycles yet. Create one to continue.
               </span>
             ) : null}
-            <span className="mt-1 block text-xs text-zinc-500">
+            <span className="mt-1 block text-xs text-[var(--status-neutral)]">
               Need a new bike?{" "}
               <Link
                 href={
@@ -561,11 +503,10 @@ export function CreateWorkOrderForm({
               role="status"
               className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
             >
-              This motorcycle has {outstanding.length} outstanding
-              recommendation
-              {outstanding.length === 1 ? "" : "s"} from previous visits
-              (pending, deferred, or declined). Review them on the bike
-              profile after creating this work order.
+              This motorcycle has {outstanding.length} outstanding recommendation
+              {outstanding.length === 1 ? "" : "s"} from previous visits (pending,
+              deferred, or declined). Review them on the bike profile after creating this
+              work order.
             </p>
           ) : null}
         </section>
@@ -575,12 +516,12 @@ export function CreateWorkOrderForm({
         <section className="intake-wizard-panel">
           <h2 className="intake-wizard-panel-title">Visit details</h2>
           <p className="intake-wizard-panel-lede">
-            Mileage, services, and technician. Square invoicing is created
-            later from the work order Billing panel.
+            Mileage, services, and technician. Square invoicing is created later from the
+            work order Billing panel.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+              <span className="mb-1.5 block text-sm font-medium text-foreground">
                 Mileage <span className="ml-1 text-red-600">*</span>
               </span>
               <input
@@ -600,25 +541,23 @@ export function CreateWorkOrderForm({
               ) : null}
             </label>
             <label className="block sm:col-span-2">
-              <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+              <span className="mb-1.5 block text-sm font-medium text-foreground">
                 Estimated completion
               </span>
               <input
                 className={SELECT_CLASS}
                 type="datetime-local"
                 value={estimatedCompletion}
-                onChange={(event) =>
-                  setEstimatedCompletion(event.target.value)
-                }
+                onChange={(event) => setEstimatedCompletion(event.target.value)}
               />
             </label>
           </div>
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">
               Internal notes
             </span>
             <textarea
-              className="min-h-24 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10"
+              className="min-h-24 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]"
               rows={3}
               value={internalNotes}
               onChange={(event) => setInternalNotes(event.target.value)}
@@ -626,199 +565,191 @@ export function CreateWorkOrderForm({
           </label>
 
           <div className="flex flex-col gap-3">
-            <h3 className="text-base font-semibold text-zinc-900">Services</h3>
-            <p className="text-sm text-zinc-600">
-              Select work for this visit. Labour jobs: enter hours (price
-              defaults to × ${SHOP_HOURLY_RATE}/h). Storage is flat-rate — enter
-              price only. Notes are optional.
+            <h3 className="text-base font-semibold text-foreground">Services</h3>
+            <p className="text-sm text-[var(--status-neutral)]">
+              Select work for this visit. Labour jobs: enter hours (price defaults to × $
+              {SHOP_HOURLY_RATE}/h). Storage is flat-rate — enter price only. Notes are
+              optional.
             </p>
             {services.length === 0 ? (
-              <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-6 text-sm text-zinc-600">
+              <p className="rounded border border-dashed border-[var(--border-strong)] bg-white px-4 py-6 text-sm text-[var(--status-neutral)]">
                 No active services in the catalogue.
               </p>
             ) : (
               <div className="flex flex-col gap-4">
-                {groupedServices.map(
-                  ({ category, services: categoryServices }) => (
-                    <div key={category}>
-                      <h4 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-                        {category}
-                      </h4>
-                      <ul className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
-                        {categoryServices.map((service) => {
-                          const checked = selectedServiceIds.includes(
-                            service.service_id
-                          );
-                          const line = serviceLines[service.service_id];
-                          const flatRate = isFlatRateService(service);
-                          const fixedCataloguePrice =
-                            service.standard_price != null &&
-                            Number.isFinite(service.standard_price);
-                          const useHourlyRate = !flatRate && !fixedCataloguePrice;
-                          return (
-                            <li key={service.service_id} className="px-4 py-3">
-                              <label className="flex min-h-11 cursor-pointer items-start gap-3">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => {
-                                    setSelectedServiceIds((prev) => {
-                                      if (checked) {
-                                        setServiceLines((lines) => {
-                                          const next = { ...lines };
-                                          delete next[service.service_id];
-                                          return next;
-                                        });
-                                        return prev.filter(
-                                          (id) => id !== service.service_id
-                                        );
-                                      }
-                                      setServiceLines((lines) => ({
-                                        ...lines,
-                                        [service.service_id]: {
-                                          note: "",
-                                          labourHours: "",
-                                          price: fixedCataloguePrice
-                                            ? String(service.standard_price)
-                                            : "",
-                                        },
-                                      }));
-                                      return [...prev, service.service_id];
-                                    });
-                                  }}
-                                  className="mt-1 h-4 w-4"
-                                />
-                                <span>
-                                  <span className="block font-medium text-zinc-900">
-                                    {service.name}
-                                  </span>
-                                  {!checked ? (
-                                    <span className="block text-sm text-zinc-600">
-                                      {flatRate
-                                        ? "Flat rate — enter price"
-                                        : fixedCataloguePrice
-                                          ? `$${service.standard_price}`
-                                          : `$${SHOP_HOURLY_RATE}/h — enter hours for this bike`}
-                                    </span>
-                                  ) : null}
+                {groupedServices.map(({ category, services: categoryServices }) => (
+                  <div key={category}>
+                    <h4 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
+                      {category}
+                    </h4>
+                    <ul className="divide-y divide-[var(--border)] rounded border border-[var(--border)] bg-white">
+                      {categoryServices.map((service) => {
+                        const checked = selectedServiceIds.includes(service.service_id);
+                        const line = serviceLines[service.service_id];
+                        const flatRate = isFlatRateService(service);
+                        const fixedCataloguePrice =
+                          service.standard_price != null &&
+                          Number.isFinite(service.standard_price);
+                        const useHourlyRate = !flatRate && !fixedCataloguePrice;
+                        return (
+                          <li key={service.service_id} className="px-4 py-3">
+                            <label className="flex min-h-11 cursor-pointer items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  setSelectedServiceIds((prev) => {
+                                    if (checked) {
+                                      setServiceLines((lines) => {
+                                        const next = { ...lines };
+                                        delete next[service.service_id];
+                                        return next;
+                                      });
+                                      return prev.filter(
+                                        (id) => id !== service.service_id
+                                      );
+                                    }
+                                    setServiceLines((lines) => ({
+                                      ...lines,
+                                      [service.service_id]: {
+                                        note: "",
+                                        labourHours: "",
+                                        price: fixedCataloguePrice
+                                          ? String(service.standard_price)
+                                          : "",
+                                      },
+                                    }));
+                                    return [...prev, service.service_id];
+                                  });
+                                }}
+                                className="mt-1 h-4 w-4"
+                              />
+                              <span>
+                                <span className="block font-medium text-foreground">
+                                  {service.name}
                                 </span>
-                              </label>
-                              {checked && line ? (
-                                <div className="mt-3 ml-7 grid gap-3 sm:grid-cols-2">
-                                  {!flatRate ? (
-                                    <label className="block">
-                                      <span className="mb-1 block text-xs font-medium text-zinc-700">
-                                        Hours
-                                      </span>
-                                      <input
-                                        className={INPUT_CLASS}
-                                        type="number"
-                                        min={0}
-                                        step={0.1}
-                                        inputMode="decimal"
-                                        value={line.labourHours}
-                                        placeholder="Hours for this bike"
-                                        onChange={(event) => {
-                                          const value = event.target.value;
-                                          setServiceLines((prev) => ({
-                                            ...prev,
-                                            [service.service_id]: {
-                                              ...prev[service.service_id],
-                                              labourHours: value,
-                                              ...(useHourlyRate
-                                                ? {
-                                                    price:
-                                                      suggestedPriceFromLabourHours(
-                                                        value
-                                                      ),
-                                                  }
-                                                : {}),
-                                            },
-                                          }));
-                                        }}
-                                      />
-                                    </label>
-                                  ) : null}
-                                  <label
-                                    className={`block${flatRate ? " sm:col-span-2" : ""}`}
-                                  >
-                                    <span className="mb-1 block text-xs font-medium text-zinc-700">
-                                      Price
-                                      {useHourlyRate ? (
-                                        <span className="font-normal text-zinc-500">
-                                          {" "}
-                                          (${SHOP_HOURLY_RATE}/h)
-                                        </span>
-                                      ) : null}
+                                {!checked ? (
+                                  <span className="block text-sm text-[var(--status-neutral)]">
+                                    {flatRate
+                                      ? "Flat rate — enter price"
+                                      : fixedCataloguePrice
+                                        ? `$${service.standard_price}`
+                                        : `$${SHOP_HOURLY_RATE}/h — enter hours for this bike`}
+                                  </span>
+                                ) : null}
+                              </span>
+                            </label>
+                            {checked && line ? (
+                              <div className="mt-3 ml-7 grid gap-3 sm:grid-cols-2">
+                                {!flatRate ? (
+                                  <label className="block">
+                                    <span className="mb-1 block text-xs font-medium text-foreground">
+                                      Hours
                                     </span>
                                     <input
                                       className={INPUT_CLASS}
                                       type="number"
                                       min={0}
-                                      step={0.01}
+                                      step={0.1}
                                       inputMode="decimal"
-                                      value={line.price}
-                                      placeholder={
-                                        flatRate
-                                          ? "Flat storage price"
-                                          : "Price for this bike"
-                                      }
+                                      value={line.labourHours}
+                                      placeholder="Hours for this bike"
                                       onChange={(event) => {
                                         const value = event.target.value;
                                         setServiceLines((prev) => ({
                                           ...prev,
                                           [service.service_id]: {
                                             ...prev[service.service_id],
-                                            price: value,
+                                            labourHours: value,
+                                            ...(useHourlyRate
+                                              ? {
+                                                  price:
+                                                    suggestedPriceFromLabourHours(value),
+                                                }
+                                              : {}),
                                           },
                                         }));
                                       }}
                                     />
                                   </label>
-                                  <label className="block sm:col-span-2">
-                                    <span className="mb-1 block text-xs font-medium text-zinc-700">
-                                      Note
-                                    </span>
-                                    <textarea
-                                      className="min-h-20 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10"
-                                      rows={2}
-                                      value={line.note}
-                                      placeholder="Note for this service…"
-                                      onChange={(event) => {
-                                        const value = event.target.value;
-                                        setServiceLines((prev) => ({
-                                          ...prev,
-                                          [service.service_id]: {
-                                            ...prev[service.service_id],
-                                            note: value,
-                                          },
-                                        }));
-                                      }}
-                                    />
-                                  </label>
-                                </div>
-                              ) : null}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  )
-                )}
+                                ) : null}
+                                <label
+                                  className={`block${flatRate ? " sm:col-span-2" : ""}`}
+                                >
+                                  <span className="mb-1 block text-xs font-medium text-foreground">
+                                    Price
+                                    {useHourlyRate ? (
+                                      <span className="font-normal text-[var(--status-neutral)]">
+                                        {" "}
+                                        (${SHOP_HOURLY_RATE}/h)
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <input
+                                    className={INPUT_CLASS}
+                                    type="number"
+                                    min={0}
+                                    step={0.01}
+                                    inputMode="decimal"
+                                    value={line.price}
+                                    placeholder={
+                                      flatRate
+                                        ? "Flat storage price"
+                                        : "Price for this bike"
+                                    }
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      setServiceLines((prev) => ({
+                                        ...prev,
+                                        [service.service_id]: {
+                                          ...prev[service.service_id],
+                                          price: value,
+                                        },
+                                      }));
+                                    }}
+                                  />
+                                </label>
+                                <label className="block sm:col-span-2">
+                                  <span className="mb-1 block text-xs font-medium text-foreground">
+                                    Note
+                                  </span>
+                                  <textarea
+                                    className="min-h-20 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]"
+                                    rows={2}
+                                    value={line.note}
+                                    placeholder="Note for this service…"
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      setServiceLines((prev) => ({
+                                        ...prev,
+                                        [service.service_id]: {
+                                          ...prev[service.service_id],
+                                          note: value,
+                                        },
+                                      }));
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))}
               </div>
             )}
           </div>
 
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">
               Primary technician
             </span>
             <select
               className={SELECT_CLASS}
               value={primaryTechnicianId}
-              onChange={(event) =>
-                setPrimaryTechnicianId(event.target.value)
-              }
+              onChange={(event) => setPrimaryTechnicianId(event.target.value)}
             >
               <option value="">Unassigned</option>
               {technicians.map((tech) => (
@@ -833,9 +764,7 @@ export function CreateWorkOrderForm({
 
       {/* Keep file inputs mounted so Safari/FormData retain selected photos */}
       <section
-        className={
-          stepId === "photos" ? "intake-wizard-panel" : "sr-only"
-        }
+        className={stepId === "photos" ? "intake-wizard-panel" : "sr-only"}
         aria-hidden={stepId !== "photos"}
       >
         <div className="intake-photo-header">
@@ -844,21 +773,17 @@ export function CreateWorkOrderForm({
               Intake photos <span className="text-red-600">*</span>
             </h2>
             <p className="intake-wizard-panel-lede mt-1">
-              Capture all six angles before continuing. Tap a slot, then choose
-              Camera or Library (Safari on iPad and Mac supported).
+              Capture all six angles before continuing. Tap a slot, then choose Camera or
+              Library (Safari on iPad and Mac supported).
             </p>
           </div>
           {stepId === "photos" ? (
             <div
-              className={`intake-photo-progress${
-                intakeComplete ? " is-complete" : ""
-              }`}
+              className={`intake-photo-progress${intakeComplete ? " is-complete" : ""}`}
               role="status"
               aria-live="polite"
             >
-              <span className="intake-photo-progress-meter">
-                {selectedPhotoCount}/6
-              </span>
+              <span className="intake-photo-progress-meter">{selectedPhotoCount}/6</span>
               {intakeComplete ? "All set" : "photos selected"}
             </div>
           ) : null}
@@ -884,8 +809,7 @@ export function CreateWorkOrderForm({
         <section className="intake-wizard-panel">
           <h2 className="intake-wizard-panel-title">Review & create</h2>
           <p className="intake-wizard-panel-lede">
-            Confirm details, then create the work order and upload intake
-            photos.
+            Confirm details, then create the work order and upload intake photos.
           </p>
           <div className="intake-review-grid">
             <ReviewCard
@@ -909,9 +833,8 @@ export function CreateWorkOrderForm({
               label="Estimated completion"
               value={
                 estimatedCompletion
-                  ? formatDateTime(
-                      parseShopLocalDateTimeInput(estimatedCompletion)
-                    ) || estimatedCompletion
+                  ? formatDateTime(parseShopLocalDateTimeInput(estimatedCompletion)) ||
+                    estimatedCompletion
                   : "Not set"
               }
               muted={!estimatedCompletion}
@@ -952,11 +875,7 @@ export function CreateWorkOrderForm({
               wide
             />
             {internalNotes.trim() ? (
-              <ReviewCard
-                label="Internal notes"
-                value={internalNotes}
-                wide
-              />
+              <ReviewCard label="Internal notes" value={internalNotes} wide />
             ) : null}
           </div>
         </section>
@@ -1032,9 +951,7 @@ function WizardProgress({
               key={step.id}
               className={`intake-wizard-progress-item${
                 isCurrent ? " is-current" : ""
-              }${isComplete ? " is-complete" : ""}${
-                isUpcoming ? " is-upcoming" : ""
-              }`}
+              }${isComplete ? " is-complete" : ""}${isUpcoming ? " is-upcoming" : ""}`}
             >
               <button
                 type="button"

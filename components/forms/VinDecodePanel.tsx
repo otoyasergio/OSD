@@ -49,7 +49,7 @@ export function VinDecodePanel({ vin }: Props) {
   }
 
   if (isPending && !decode) {
-    return <p className="mt-2 text-sm text-zinc-500">Looking up VIN…</p>;
+    return <p className="mt-2 text-sm text-[var(--status-neutral)]">Looking up VIN…</p>;
   }
 
   if (!decode) return null;
@@ -73,21 +73,17 @@ export function VinDecodePanel({ vin }: Props) {
 
   return (
     <div
-      className="mt-3 rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-800"
+      className="mt-3 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-foreground"
       role="status"
     >
-      <p className="font-mono text-xs text-zinc-500">{decode.vin}</p>
-      {title ? <p className="font-medium text-zinc-900">{title}</p> : null}
-      <ul className="mt-1 space-y-0.5 text-zinc-600">
-        {decode.fields.vehicleType ? (
-          <li>Type: {decode.fields.vehicleType}</li>
-        ) : null}
+      <p className="font-mono text-xs text-[var(--status-neutral)]">{decode.vin}</p>
+      {title ? <p className="font-medium text-foreground">{title}</p> : null}
+      <ul className="mt-1 space-y-0.5 text-[var(--status-neutral)]">
+        {decode.fields.vehicleType ? <li>Type: {decode.fields.vehicleType}</li> : null}
         {decode.fields.bodyClass ? <li>Body: {decode.fields.bodyClass}</li> : null}
         {displacement ? <li>Engine: {displacement}</li> : null}
       </ul>
-      {decode.message ? (
-        <p className="mt-1 text-amber-800">{decode.message}</p>
-      ) : null}
+      {decode.message ? <p className="mt-1 text-amber-800">{decode.message}</p> : null}
     </div>
   );
 }

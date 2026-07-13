@@ -3,7 +3,7 @@ import type { AuditLogEntry, AuditFilterOption } from "@/lib/services/audit";
 import { formatDateTime } from "@/lib/datetime/format";
 
 const SELECT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
+  "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
 const INPUT_CLASS = SELECT_CLASS;
 
@@ -30,12 +30,10 @@ export function AuditLogTable({
     <div className="flex flex-col gap-4">
       <form
         method="get"
-        className="grid gap-3 rounded border border-zinc-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-3"
+        className="grid gap-3 rounded border border-[var(--border)] bg-white p-4 sm:grid-cols-2 lg:grid-cols-3"
       >
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-            From
-          </span>
+          <span className="mb-1.5 block text-sm font-medium text-foreground">From</span>
           <input
             className={INPUT_CLASS}
             type="date"
@@ -44,9 +42,7 @@ export function AuditLogTable({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-            To
-          </span>
+          <span className="mb-1.5 block text-sm font-medium text-foreground">To</span>
           <input
             className={INPUT_CLASS}
             type="date"
@@ -55,9 +51,7 @@ export function AuditLogTable({
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
-            Actor
-          </span>
+          <span className="mb-1.5 block text-sm font-medium text-foreground">Actor</span>
           <select
             className={SELECT_CLASS}
             name="actor_user_id"
@@ -72,7 +66,7 @@ export function AuditLogTable({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+          <span className="mb-1.5 block text-sm font-medium text-foreground">
             Location
           </span>
           <select
@@ -89,7 +83,7 @@ export function AuditLogTable({
           </select>
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+          <span className="mb-1.5 block text-sm font-medium text-foreground">
             Entity type
           </span>
           <select
@@ -108,13 +102,13 @@ export function AuditLogTable({
         <div className="flex items-end gap-2">
           <button
             type="submit"
-            className="min-h-11 rounded bg-zinc-900 px-4 text-sm font-medium text-white hover:bg-zinc-800"
+            className="min-h-11 rounded bg-[var(--chrome)] px-4 text-sm font-medium text-white hover:bg-[var(--chrome-elevated)]"
           >
             Apply filters
           </button>
           <Link
             href="/settings/audit"
-            className="inline-flex min-h-11 items-center rounded border border-zinc-300 px-4 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            className="inline-flex min-h-11 items-center rounded border border-[var(--border-strong)] px-4 text-sm font-medium text-foreground hover:bg-[var(--surface-muted)]"
           >
             Clear
           </Link>
@@ -122,13 +116,13 @@ export function AuditLogTable({
       </form>
 
       {entries.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
+        <p className="rounded border border-dashed border-[var(--border-strong)] bg-white px-4 py-10 text-center text-[var(--status-neutral)]">
           No audit log entries match these filters.
         </p>
       ) : (
         <div className="data-table-wrap">
           <table className="data-table min-w-[48rem] text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500">
+            <thead className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-xs uppercase tracking-wide text-[var(--status-neutral)]">
               <tr>
                 <th className="px-3 py-2 font-medium">When</th>
                 <th className="px-3 py-2 font-medium">Actor</th>
@@ -142,31 +136,31 @@ export function AuditLogTable({
               {entries.map((entry) => (
                 <tr
                   key={entry.audit_log_id}
-                  className="border-b border-zinc-100 align-top last:border-0"
+                  className="border-b border-[var(--border)] align-top last:border-0"
                 >
-                  <td className="whitespace-nowrap px-3 py-2 text-zinc-600">
+                  <td className="whitespace-nowrap px-3 py-2 text-[var(--status-neutral)]">
                     {formatDateTime(entry.created_at)}
                   </td>
-                  <td className="px-3 py-2 text-zinc-900">
+                  <td className="px-3 py-2 text-foreground">
                     {entry.actor
                       ? `${entry.actor.first_name} ${entry.actor.last_name}`
                       : "—"}
                   </td>
-                  <td className="px-3 py-2 text-zinc-700">
+                  <td className="px-3 py-2 text-foreground">
                     {entry.location?.name ?? "—"}
                   </td>
-                  <td className="px-3 py-2 font-medium text-zinc-900">
+                  <td className="px-3 py-2 font-medium text-foreground">
                     {entry.action}
                   </td>
-                  <td className="px-3 py-2 text-zinc-700">
+                  <td className="px-3 py-2 text-foreground">
                     <span className="block">{entry.entity_type}</span>
                     {entry.entity_id ? (
-                      <span className="font-mono text-xs text-zinc-500">
+                      <span className="font-mono text-xs text-[var(--status-neutral)]">
                         {entry.entity_id.slice(0, 8)}…
                       </span>
                     ) : null}
                   </td>
-                  <td className="max-w-md px-3 py-2 text-zinc-800">
+                  <td className="max-w-md px-3 py-2 text-foreground">
                     {entry.description}
                   </td>
                 </tr>

@@ -2,10 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { canManageTimesheets } from "@/lib/permissions";
-import {
-  getTimesheetWeek,
-  listTimesheetStaff,
-} from "@/lib/services/timeClock";
+import { getTimesheetWeek, listTimesheetStaff } from "@/lib/services/timeClock";
 import { TimesheetsPanel } from "@/components/timesheets/TimesheetsPanel";
 import { shopDateKey } from "@/lib/datetime/format";
 
@@ -35,16 +32,16 @@ export default async function TimesheetsPage({
       <div>
         <Link
           href="/settings"
-          className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+          className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
         >
           ← Settings
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
           Timesheets
         </h1>
-        <p className="mt-1 text-sm text-zinc-600">
-          Who is punched in, weekly hours, and corrections for missed punches.
-          Technician clock in/out stays on the Technician page.
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+          Who is punched in, weekly hours, and corrections for missed punches. Technician
+          clock in/out stays on the Technician page.
         </p>
       </div>
 

@@ -153,6 +153,70 @@ summary {
   color: var(--signal-teal-bright);
 }
 
+/* Role-shared board cards (parts / billing) — Track Day language */
+.td-board-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.td-board-card-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.td-board-card-sub {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--status-neutral);
+}
+
+.td-board-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.floor-queue-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.floor-queue-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--signal-teal);
+}
+
+.floor-queue-card--now::before {
+  background: var(--accent);
+}
+
+.floor-queue-card--flagged::before {
+  background: var(--status-danger);
+}
+
+.floor-queue-card--qc::before {
+  background: var(--accent);
+}
+
+.floor-queue-card--selected {
+  border-color: var(--signal-teal-bright);
+  box-shadow: inset 0 0 0 1px var(--signal-teal-bright);
+}
+
 .sidebar-nav {
   display: flex;
   flex: 1;
@@ -3403,9 +3467,9 @@ label.photo-source-sheet-action {
 }
 
 .floor-queue-card--selected {
-  border-color: var(--chrome);
-  background: var(--chrome);
-  color: var(--chrome-foreground);
+  border-color: var(--signal-teal);
+  background: var(--signal-teal);
+  color: #ecfdf5;
 }
 
 .floor-queue-card--now:not(.floor-queue-card--selected) {
@@ -3419,8 +3483,8 @@ label.photo-source-sheet-action {
 }
 
 .floor-queue-card--qc:not(.floor-queue-card--selected) {
-  border-color: rgb(245 158 11 / 0.45);
-  background: var(--status-warning-bg);
+  border-color: rgb(249 115 22 / 0.45);
+  background: var(--accent-muted);
 }
 
 .floor-now-badge {

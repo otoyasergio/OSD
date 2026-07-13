@@ -16,7 +16,7 @@ import type { Customer } from "@/lib/services/customers";
 const DEBOUNCE_MS = 250;
 
 const INPUT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
+  "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
 type Props = {
   value: string;
@@ -56,9 +56,7 @@ export function CustomerSearchPicker({
   const [results, setResults] = useState<Customer[]>(initialCustomers);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const [knownCustomers, setKnownCustomers] = useState<Customer[]>(
-    initialCustomers
-  );
+  const [knownCustomers, setKnownCustomers] = useState<Customer[]>(initialCustomers);
   const [pending, startTransition] = useTransition();
 
   const selected = useMemo(
@@ -138,18 +136,14 @@ export function CustomerSearchPicker({
       event.preventDefault();
       if (!results.length) return;
       setOpen(true);
-      setActiveIndex((current) =>
-        current < results.length - 1 ? current + 1 : 0
-      );
+      setActiveIndex((current) => (current < results.length - 1 ? current + 1 : 0));
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
       if (!results.length) return;
       setOpen(true);
-      setActiveIndex((current) =>
-        current <= 0 ? results.length - 1 : current - 1
-      );
+      setActiveIndex((current) => (current <= 0 ? results.length - 1 : current - 1));
       return;
     }
     if (event.key === "Enter") {
@@ -170,11 +164,11 @@ export function CustomerSearchPicker({
       <div className="customer-picker">
         <div className="customer-picker-selected">
           <div className="min-w-0 flex-1">
-            <div className="truncate font-medium text-zinc-900">
+            <div className="truncate font-medium text-foreground">
               {formatCustomerLabel(selected)}
             </div>
             {formatCustomerMeta(selected) ? (
-              <div className="truncate text-sm text-zinc-500">
+              <div className="truncate text-sm text-[var(--status-neutral)]">
                 {formatCustomerMeta(selected)}
               </div>
             ) : null}

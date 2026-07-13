@@ -8,8 +8,19 @@ import type { JobStatus } from "@/lib/database/types";
 import { APPROVAL_METHOD_OPTIONS } from "@/components/jobs/JobActions";
 import { FormError, SELECT_CLASS } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StageChip } from "@/components/ui/StageChip";
 import { formatLabourComparison } from "@/lib/services/labour";
+import { JOB_STATUS_LABELS } from "@/lib/status/labels";
+
+function jobStageTone(status: JobStatus): "teal" | "orange" | "muted" | "danger" {
+  if (status === "in_progress") return "orange";
+  if (status === "completed" || status === "cancelled" || status === "declined")
+    return "muted";
+  if (status === "waiting_for_approval" || status === "waiting_for_parts")
+    return "orange";
+  if (status === "approved" || status === "ready_to_start") return "teal";
+  return "muted";
+}
 
 type Action = (state: JobFormState, formData: FormData) => Promise<JobFormState>;
 
@@ -119,7 +130,10 @@ export function JobCard({
             {job.service_name_snapshot}
           </h3>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusBadge status={job.status} kind="job" />
+            <StageChip
+              label={JOB_STATUS_LABELS[job.status] ?? job.status}
+              tone={jobStageTone(job.status)}
+            />
             <span className="text-sm text-[var(--status-neutral)]">
               {job.assigned_technician
                 ? `${job.assigned_technician.first_name} ${job.assigned_technician.last_name}`

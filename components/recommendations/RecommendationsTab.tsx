@@ -74,7 +74,7 @@ export function RecommendationsTab({
         ) : null}
 
         {recommendations.length === 0 ? (
-          <p className="rounded border border-dashed border-zinc-300 bg-white px-4 py-10 text-center text-zinc-600">
+          <p className="rounded border border-dashed border-[var(--border-strong)] bg-white px-4 py-10 text-center text-[var(--status-neutral)]">
             No recommendations yet.
           </p>
         ) : (

@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { useCallback, useEffect, useId, useRef, useState, useTransition } from "react";
 import { searchPartsCanadaAction } from "@/app/(app)/work_orders/part-actions";
 import type { PartsCanadaSearchHit } from "@/lib/services/partsCanadaCatalog";
 
@@ -78,8 +71,8 @@ export function PartsCanadaFinder({ canViewCost, onSelect }: Props) {
 
   function pick(hit: PartsCanadaSearchHit) {
     onSelect({
-      part_name: [hit.brand, hit.description_en].filter(Boolean).join(" — ") ||
-        hit.part_number,
+      part_name:
+        [hit.brand, hit.description_en].filter(Boolean).join(" — ") || hit.part_number,
       part_number: hit.part_number,
       supplier: "Parts Canada",
       unit_price: hit.msrp != null ? String(hit.msrp) : "",
@@ -95,7 +88,7 @@ export function PartsCanadaFinder({ canViewCost, onSelect }: Props) {
   return (
     <div ref={rootRef} className="relative">
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+        <span className="mb-1.5 block text-sm font-medium text-foreground">
           Find Parts Canada part
         </span>
         <input
@@ -107,7 +100,7 @@ export function PartsCanadaFinder({ canViewCost, onSelect }: Props) {
           aria-controls={listboxId}
           aria-autocomplete="list"
           placeholder="Part #, brand, or description…"
-          className="min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10"
+          className="min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]"
           onChange={(event) => {
             const value = event.target.value;
             setQuery(value);
@@ -134,7 +127,7 @@ export function PartsCanadaFinder({ canViewCost, onSelect }: Props) {
           }}
         />
       </label>
-      <p className="mt-1 text-xs text-zinc-500">
+      <p className="mt-1 text-xs text-[var(--status-neutral)]">
         Searches the local Parts Canada catalog (synced daily).{" "}
         {pending ? "Searching…" : null}
       </p>
@@ -143,32 +136,31 @@ export function PartsCanadaFinder({ canViewCost, onSelect }: Props) {
         <ul
           id={listboxId}
           role="listbox"
-          className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded border border-zinc-200 bg-white shadow-lg"
+          className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded border border-[var(--border)] bg-white shadow-lg"
         >
           {results.length === 0 && !pending ? (
-            <li className="px-3 py-3 text-sm text-zinc-500">
-              No catalog matches. Sync the catalog from the Parts page if it is
-              empty.
+            <li className="px-3 py-3 text-sm text-[var(--status-neutral)]">
+              No catalog matches. Sync the catalog from the Parts page if it is empty.
             </li>
           ) : null}
           {results.map((hit, index) => (
             <li key={hit.part_number} role="option" aria-selected={index === activeIndex}>
               <button
                 type="button"
-                className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-zinc-100 ${
-                  index === activeIndex ? "bg-zinc-100" : ""
+                className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm hover:bg-[var(--surface-muted)] ${
+                  index === activeIndex ? "bg-[var(--surface-muted)]" : ""
                 }`}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => pick(hit)}
               >
-                <span className="font-semibold text-zinc-900">
+                <span className="font-semibold text-foreground">
                   {hit.part_number}
                   {hit.brand ? ` · ${hit.brand}` : ""}
                 </span>
-                <span className="text-zinc-600">
+                <span className="text-[var(--status-neutral)]">
                   {hit.description_en || "No description"}
                 </span>
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-[var(--status-neutral)]">
                   MSRP {money(hit.msrp)}
                   {canViewCost ? ` · Cost ${money(hit.dealer_price)}` : ""}
                   {hit.stock != null ? ` · Stock ${hit.stock}` : ""}

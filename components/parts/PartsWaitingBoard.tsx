@@ -17,46 +17,41 @@ function PartWaitingCard({ item }: { item: PartsWaitingItem }) {
   const price = moneyLabel(item.unit_price);
 
   return (
-    <article className="card">
-      <div className="card-body flex flex-col gap-2">
-        <div className="wo-card-hero">
-          <p className="wo-card-bike">{item.part_name}</p>
-          <p className="wo-card-customer">{item.customer_label}</p>
-        </div>
-        <p className="wo-card-meta">
-          {item.job_name}
-          {item.quantity > 1 ? ` · qty ${item.quantity}` : ""}
-          {price ? ` · ${price}` : ""}
+    <article className="td-board-card">
+      <p className="td-board-card-title">{item.part_name}</p>
+      <p className="td-board-card-sub">{item.customer_label}</p>
+      <p className="td-board-card-sub">
+        {item.job_name}
+        {item.quantity > 1 ? ` · qty ${item.quantity}` : ""}
+        {price ? ` · ${price}` : ""}
+      </p>
+      <p className="td-board-card-sub">{item.motorcycle_label}</p>
+      {item.assigned_technician_label ? (
+        <p className="td-board-card-sub">Tech: {item.assigned_technician_label}</p>
+      ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link href={item.href} className="wo-card-number data-table-link">
+          {item.work_order_number}
+        </Link>
+        <span className="stage-chip stage-chip--orange">
+          {daysLabel(item.days_waiting)}
+        </span>
+      </div>
+      {item.supplier || item.part_number || item.supplier_stock != null ? (
+        <p className="td-board-card-sub">
+          {[
+            item.part_number,
+            item.supplier,
+            item.supplier_stock != null ? `PC stock ${item.supplier_stock}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
-        <p className="wo-card-meta">{item.motorcycle_label}</p>
-        {item.assigned_technician_label ? (
-          <p className="wo-card-meta">Tech: {item.assigned_technician_label}</p>
-        ) : null}
-        <div className="wo-card-footer">
-          <div className="wo-card-id-row">
-            <Link href={item.href} className="wo-card-number data-table-link">
-              {item.work_order_number}
-            </Link>
-            <span className="badge bg-[var(--status-waiting-bg)] text-[var(--status-waiting-fg)]">
-              {daysLabel(item.days_waiting)}
-            </span>
-          </div>
-          {item.supplier || item.part_number || item.supplier_stock != null ? (
-            <p className="wo-card-next-action">
-              <span className="wo-card-next-label">
-                {[
-                  item.part_number,
-                  item.supplier,
-                  item.supplier_stock != null
-                    ? `PC stock ${item.supplier_stock}`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </span>
-            </p>
-          ) : null}
-        </div>
+      ) : null}
+      <div className="td-board-card-actions">
+        <Link href={item.href} className="btn btn-primary">
+          Open
+        </Link>
       </div>
     </article>
   );
@@ -81,9 +76,7 @@ function Column({
         {items.length === 0 ? (
           <EmptyState description={emptyDescription} />
         ) : (
-          items.map((item) => (
-            <PartWaitingCard key={item.part_id} item={item} />
-          ))
+          items.map((item) => <PartWaitingCard key={item.part_id} item={item} />)
         )}
       </div>
     </section>

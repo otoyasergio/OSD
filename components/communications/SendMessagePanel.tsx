@@ -44,14 +44,14 @@ export function SendMessagePanel({
     <div className="flex flex-col gap-4">
       {canSend && !readOnly ? (
         <div className="card card-pad flex flex-col gap-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-600">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
             Send customer message
           </h3>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="field-label">Template</span>
               <select
-                className="min-h-11 w-full rounded border border-zinc-300 px-3"
+                className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
                 value={templateKey}
                 onChange={(e) =>
                   setTemplateKey(e.target.value as (typeof TEMPLATES)[number]["key"])
@@ -67,7 +67,7 @@ export function SendMessagePanel({
             <label className="block">
               <span className="field-label">Channel</span>
               <select
-                className="min-h-11 w-full rounded border border-zinc-300 px-3"
+                className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
                 value={channel}
                 onChange={(e) => setChannel(e.target.value as "sms" | "email")}
               >
@@ -89,22 +89,24 @@ export function SendMessagePanel({
       ) : null}
 
       {logs.length > 0 ? (
-        <ul className="divide-y divide-zinc-200 rounded border border-zinc-200 bg-white text-sm">
+        <ul className="divide-y divide-[var(--border)] rounded border border-[var(--border)] bg-white text-sm">
           {logs.map((log) => (
             <li key={log.log_id} className="px-4 py-3">
-              <p className="font-medium capitalize text-zinc-900">
+              <p className="font-medium capitalize text-foreground">
                 {log.direction} {log.channel} · {log.status}
                 {log.template_key ? ` · ${log.template_key}` : ""}
               </p>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-[var(--status-neutral)]">
                 {formatDateTime(log.created_at)} → {log.to_address}
               </p>
-              <p className="mt-1 line-clamp-2 text-zinc-600">{log.body.replace(/<[^>]+>/g, " ")}</p>
+              <p className="mt-1 line-clamp-2 text-[var(--status-neutral)]">
+                {log.body.replace(/<[^>]+>/g, " ")}
+              </p>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-zinc-500">No messages logged yet.</p>
+        <p className="text-sm text-[var(--status-neutral)]">No messages logged yet.</p>
       )}
     </div>
   );
