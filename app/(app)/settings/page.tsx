@@ -6,6 +6,7 @@ import {
   canManageInspectionTemplate,
   canManageLocations,
   canManageServiceCatalogue,
+  canManageTimesheets,
   canManageUsers,
   canViewAuditLog,
 } from "@/lib/permissions";
@@ -19,6 +20,12 @@ export default async function SettingsPage() {
   if (!user) redirect("/login");
 
   const links = [
+    {
+      href: "/settings/timesheets",
+      label: "Timesheets",
+      description: "Who is punched in, weekly hours, and punch corrections.",
+      visible: canManageTimesheets(user.role),
+    },
     {
       href: "/settings/services",
       label: "Service catalogue",

@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import type { AgreementTemplate, AgreementTemplateSummary } from "@/lib/services/contracts";
 import type { ContractTemplateFormState } from "@/app/(app)/settings/contract_template/actions";
 import { FormError } from "@/components/forms/Field";
+import { formatDateTime } from "@/lib/datetime/format";
 
 type Props = {
   template: AgreementTemplate | null;
@@ -135,7 +136,7 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
                   ) : null}
                 </div>
                 <span className="text-zinc-500">
-                  {new Date(item.created_at).toLocaleString()}
+                  {formatDateTime(item.created_at)}
                 </span>
               </div>
             ))}

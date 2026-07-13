@@ -1,6 +1,7 @@
 import type { MotorcycleFormState } from "@/app/(app)/motorcycles/actions";
 import type { ServiceInformation } from "@/lib/services/motorcycles";
 import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
+import { formatDateTime } from "@/lib/datetime/format";
 
 type Props = {
   serviceInformation: ServiceInformation | null;
@@ -24,7 +25,7 @@ export function ServiceInfoTab({
         </h2>
         <p className="mt-1 text-sm text-zinc-600">
           {serviceInformation?.last_updated
-            ? `Last updated ${new Date(serviceInformation.last_updated).toLocaleString()}`
+            ? `Last updated ${formatDateTime(serviceInformation.last_updated)}`
             : "Not recorded yet."}
         </p>
       </div>

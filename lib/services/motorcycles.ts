@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
+import type { DbClient } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
@@ -11,6 +12,13 @@ import {
 import { motorcycleSchema } from "@/lib/validation/schemas";
 import { escapeSearchTerm } from "@/lib/services/customers";
 import { normalizeVin } from "@/lib/vin";
+import {
+  isServiceInfoEmpty,
+  mapFitmentToServiceInfo,
+  mergeServiceInfoFill,
+  pickBestFitmentVehicle,
+  type FitmentPayload,
+} from "@/lib/fitment/serviceInfoFromFitment";
 
 export type Motorcycle = {
   motorcycle_id: string;
@@ -325,6 +333,21 @@ export async function getServiceInformation(
   await requireUser();
   const supabase = await createClient();
 
+  let info = await loadServiceInformation(supabase, motorcycleId);
+  if (info && isServiceInfoEmpty(info)) {
+    const motorcycle = await getMotorcycleById(motorcycleId);
+    if (motorcycle) {
+      await fillServiceInformationFromFitment(supabase, motorcycle, info);
+      info = await loadServiceInformation(supabase, motorcycleId);
+    }
+  }
+  return info;
+}
+
+async function loadServiceInformation(
+  supabase: DbClient,
+  motorcycleId: string
+): Promise<ServiceInformation | null> {
   const { data, error } = await supabase
     .from("motorcycle_service_information")
     .select(SERVICE_INFORMATION_COLUMNS)
@@ -333,6 +356,61 @@ export async function getServiceInformation(
 
   if (error) throw error;
   return (data as ServiceInformation) ?? null;
+}
+
+async function fillServiceInformationFromFitment(
+  supabase: DbClient,
+  motorcycle: Pick<Motorcycle, "motorcycle_id" | "year" | "make" | "model">,
+  existing: ServiceInformation
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("fitment_vehicle")
+    .select("make, model, year_start, year_end, spec_data, part_data")
+    .ilike("make", motorcycle.make);
+
+  if (error) throw error;
+
+  const rows = (data ?? []).map((row) => ({
+    make: row.make as string,
+    model: row.model as string,
+    year_start: row.year_start as number,
+    year_end: row.year_end as number,
+    spec_data: (row.spec_data as Record<string, string>) ?? {},
+    part_data: (row.part_data as Record<string, string>) ?? {},
+  })) satisfies FitmentPayload[];
+
+  const match = pickBestFitmentVehicle(
+    rows,
+    motorcycle.year,
+    motorcycle.make,
+    motorcycle.model
+  );
+  if (!match) return 0;
+
+  const mapped = mapFitmentToServiceInfo(match);
+  const { next, filledCount } = mergeServiceInfoFill(existing, mapped);
+  if (filledCount === 0) return 0;
+
+  const { error: updateError } = await supabase
+    .from("motorcycle_service_information")
+    .update({
+      oil_filter: next.oil_filter,
+      oil_type: next.oil_type,
+      oil_capacity: next.oil_capacity ?? existing.oil_capacity,
+      air_filter: next.air_filter,
+      spark_plugs: next.spark_plugs,
+      front_brake_pads: next.front_brake_pads,
+      rear_brake_pads: next.rear_brake_pads,
+      front_tire_size: next.front_tire_size,
+      rear_tire_size: next.rear_tire_size,
+      chain: next.chain,
+      battery: next.battery,
+      last_updated: new Date().toISOString(),
+    })
+    .eq("motorcycle_id", motorcycle.motorcycle_id);
+
+  if (updateError) throw updateError;
+  return filledCount;
 }
 
 export async function createMotorcycle(
@@ -372,6 +450,14 @@ export async function createMotorcycle(
     .from("motorcycle_service_information")
     .insert({ motorcycle_id: motorcycle.motorcycle_id });
   if (serviceInfoError) throw serviceInfoError;
+
+  const emptyInfo = await loadServiceInformation(
+    supabase,
+    motorcycle.motorcycle_id
+  );
+  if (emptyInfo) {
+    await fillServiceInformationFromFitment(supabase, motorcycle, emptyInfo);
+  }
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,
@@ -523,7 +609,7 @@ export async function updateMotorcycleServiceInformation(
   if (!canUpdateServiceInformation(user.role)) throw new Error("FORBIDDEN");
 
   const supabase = await createClient();
-  const previous = await getServiceInformation(motorcycleId);
+  const previous = await loadServiceInformation(supabase, motorcycleId);
   if (!previous) throw new Error("MOTORCYCLE_NOT_FOUND");
 
   const patch: Record<string, string | null> = {};

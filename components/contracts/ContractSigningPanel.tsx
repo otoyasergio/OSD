@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import type { AgreementTemplate, DropOffAgreement } from "@/lib/services/contracts";
 import { SignatureCanvas } from "@/components/contracts/SignatureCanvas";
 import { FormError } from "@/components/forms/Field";
+import { formatDateTime } from "@/lib/datetime/format";
 
 type Props = {
   template: AgreementTemplate;
@@ -39,7 +40,7 @@ export function ContractSigningPanel({
         <p className="font-semibold text-emerald-800">Drop-off agreement signed</p>
         <p className="text-sm text-zinc-700">
           Signed by <strong>{existing.signer_name}</strong> on{" "}
-          {new Date(existing.signed_at).toLocaleString()} (template{" "}
+          {formatDateTime(existing.signed_at)} (template{" "}
           {existing.template_version})
         </p>
         {existing.signed_url ? (

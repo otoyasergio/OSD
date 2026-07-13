@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { AuditLogEntry, AuditFilterOption } from "@/lib/services/audit";
+import { formatDateTime } from "@/lib/datetime/format";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10";
@@ -144,7 +145,7 @@ export function AuditLogTable({
                   className="border-b border-zinc-100 align-top last:border-0"
                 >
                   <td className="whitespace-nowrap px-3 py-2 text-zinc-600">
-                    {new Date(entry.created_at).toLocaleString()}
+                    {formatDateTime(entry.created_at)}
                   </td>
                   <td className="px-3 py-2 text-zinc-900">
                     {entry.actor

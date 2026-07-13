@@ -116,6 +116,14 @@ const MESSAGES: Record<string, string> = {
   BOOKING_MOTORCYCLE_REQUIRED: "Could not match a motorcycle for this booking. Link the customer bike first.",
   WIX_NOT_CONFIGURED: "Wix is not configured.",
   FITMENT_IMPORT_FAILED: "Fitment import failed.",
+  ALREADY_CLOCKED_IN: "That person already has an open punch. Clock them out first.",
+  NOT_CLOCKED_IN: "Not clocked in.",
+  INVALID_CLOCK_IN: "Enter a valid clock-in date and time.",
+  INVALID_CLOCK_OUT: "Enter a valid clock-out date and time.",
+  CLOCK_OUT_BEFORE_IN: "Clock-out must be after clock-in.",
+  CORRECTION_REQUIRES_CLOCK_OUT:
+    "Missed punches need both clock-in and clock-out times.",
+  TIME_CLOCK_ENTRY_NOT_FOUND: "That time clock entry no longer exists.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

@@ -11,6 +11,7 @@ import {
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { formatDateTime } from "@/lib/datetime/format";
 
 type Action = (
   state: PhotoFormState,
@@ -277,7 +278,7 @@ export function PhotosTab({
                   {PHOTO_CATEGORY_LABELS[photo.category]}
                 </p>
                 <p className="text-zinc-500">
-                  {new Date(photo.created_at).toLocaleString()}
+                  {formatDateTime(photo.created_at)}
                   {photo.uploaded_by
                     ? ` · ${photo.uploaded_by.first_name} ${photo.uploaded_by.last_name}`
                     : ""}

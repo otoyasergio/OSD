@@ -9,14 +9,7 @@ import {
   uploadCustomerDocumentAction,
 } from "@/app/(app)/customers/document-actions";
 import { FormError } from "@/components/forms/Field";
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
+import { formatDate } from "@/lib/datetime/format";
 
 function sourceLabel(source: CustomerDocument["source"]) {
   return source === "drop_off_agreement" ? "Drop-off agreement" : "Upload";

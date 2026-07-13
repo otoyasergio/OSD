@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { TimelineEvent } from "@/lib/services/timeline";
+import { formatDateTime } from "@/lib/datetime/format";
 
 export function TimelineList({ events }: { events: TimelineEvent[] }) {
   const [oldestFirst, setOldestFirst] = useState(false);
@@ -55,7 +56,7 @@ export function TimelineList({ events }: { events: TimelineEvent[] }) {
                     dateTime={event.created_at}
                     className="text-xs text-zinc-500"
                   >
-                    {new Date(event.created_at).toLocaleString()}
+                    {formatDateTime(event.created_at)}
                   </time>
                 </div>
                 <p className="mt-1 text-sm text-zinc-700">{event.description}</p>

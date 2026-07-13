@@ -20,6 +20,7 @@ import {
   CREATE_INTAKE_PHOTO_SLOTS,
   PHOTO_CATEGORY_LABELS,
 } from "@/lib/status/labels";
+import { parseShopLocalDateTimeInput } from "@/lib/datetime/format";
 
 export type WorkOrderFormState = {
   error: string | null;
@@ -43,9 +44,9 @@ function readOptionalNumber(formData: FormData, key: string): number | null {
 function readEstimatedCompletion(formData: FormData): string | null {
   const raw = String(formData.get("estimated_completion") ?? "").trim();
   if (!raw) return null;
-  // datetime-local values lack timezone; treat as local and convert to ISO.
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return null;
+  // datetime-local lacks timezone; interpret as America/Toronto wall time.
+  const date = parseShopLocalDateTimeInput(raw);
+  if (!date) return null;
   return date.toISOString();
 }
 

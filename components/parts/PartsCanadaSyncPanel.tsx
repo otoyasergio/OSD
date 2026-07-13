@@ -8,12 +8,11 @@ import {
 import type { PartsCanadaSyncStatus } from "@/lib/services/partsCanadaCatalog";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { formatDateTime } from "@/lib/datetime/format";
 
 function formatWhen(iso: string | null | undefined): string {
   if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString();
+  return formatDateTime(iso) || "—";
 }
 
 export function PartsCanadaSyncPanel({

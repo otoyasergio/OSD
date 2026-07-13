@@ -10,6 +10,7 @@ import type { TimeClockEntry } from "@/lib/services/timeClock";
 import { formatElapsedMs } from "@/lib/services/timeClockShared";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { formatTime } from "@/lib/datetime/format";
 
 type Props = {
   openEntry: TimeClockEntry | null;
@@ -22,20 +23,17 @@ export function TimeClockWidget({ openEntry }: Props) {
   const [outState, outAction] = useActionState(clockOutAction, {
     error: null,
   } satisfies ClockFormState);
-  const [elapsed, setElapsed] = useState(
-    openEntry ? formatElapsedMs(openEntry.clock_in_at) : "0:00"
-  );
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!openEntry) {
-      setElapsed("0:00");
-      return;
-    }
-    const tick = () => setElapsed(formatElapsedMs(openEntry.clock_in_at));
-    tick();
-    const id = window.setInterval(tick, 1000);
+    if (!openEntry) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [openEntry]);
+
+  const elapsed = openEntry
+    ? formatElapsedMs(openEntry.clock_in_at, nowMs)
+    : "0:00";
 
   return (
     <section className="rounded-lg border border-[var(--chrome-border)] bg-[var(--surface)] p-4">
@@ -44,7 +42,7 @@ export function TimeClockWidget({ openEntry }: Props) {
           <h2 className="text-lg font-semibold text-foreground">Time clock</h2>
           <p className="text-sm text-[var(--status-neutral)]">
             {openEntry
-              ? `Clocked in since ${new Date(openEntry.clock_in_at).toLocaleTimeString()}`
+              ? `Clocked in since ${formatTime(openEntry.clock_in_at)}`
               : "Not clocked in"}
           </p>
         </div>

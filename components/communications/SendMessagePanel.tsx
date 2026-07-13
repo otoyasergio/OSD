@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { sendMessageAction } from "@/app/(app)/work_orders/communication-actions";
 import type { CommunicationLogEntry } from "@/lib/services/communications";
 import { FormError } from "@/components/forms/Field";
+import { formatDateTime } from "@/lib/datetime/format";
 
 const TEMPLATES = [
   { key: "approval_request", label: "Approval request" },
@@ -96,7 +97,7 @@ export function SendMessagePanel({
                 {log.template_key ? ` · ${log.template_key}` : ""}
               </p>
               <p className="text-xs text-zinc-500">
-                {new Date(log.created_at).toLocaleString()} → {log.to_address}
+                {formatDateTime(log.created_at)} → {log.to_address}
               </p>
               <p className="mt-1 line-clamp-2 text-zinc-600">{log.body.replace(/<[^>]+>/g, " ")}</p>
             </li>

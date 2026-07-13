@@ -8,6 +8,7 @@ import type { TechnicianNoteType } from "@/lib/database/types";
 import { TECHNICIAN_NOTE_TYPE_LABELS } from "@/lib/status/labels";
 import { FormError, TextAreaField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { formatDateTime } from "@/lib/datetime/format";
 
 type Action = (
   state: NoteFormState,
@@ -129,7 +130,7 @@ export function TechnicianNotes({
                   {TECHNICIAN_NOTE_TYPE_LABELS[note.note_type] ?? note.note_type}
                 </p>
                 <p className="text-xs text-zinc-500">
-                  {new Date(note.created_at).toLocaleString()}
+                  {formatDateTime(note.created_at)}
                   {note.created_by
                     ? ` · ${note.created_by.first_name} ${note.created_by.last_name}`
                     : ""}

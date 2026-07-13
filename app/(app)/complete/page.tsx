@@ -3,16 +3,13 @@ import { listCompletedWorkOrdersForActiveLocation } from "@/lib/services/filedWo
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { WorkOrderCard } from "@/components/work_orders/WorkOrderCard";
+import { formatDate } from "@/lib/datetime/format";
 
 export const dynamic = "force-dynamic";
 
 function formatCompletedAt(value: string | null) {
   if (!value) return null;
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatDate(value);
 }
 
 export default async function CompleteAndFiledPage({

@@ -52,6 +52,10 @@ import {
   suggestedPriceFromLabourHours,
 } from "@/lib/pricing/shopRate";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import {
+  formatDateTime,
+  parseShopLocalDateTimeInput,
+} from "@/lib/datetime/format";
 
 type Props = {
   customers: Customer[];
@@ -87,9 +91,17 @@ export function CreateWorkOrderForm({
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [clientError, setClientError] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<WorkOrderFormState | null>(null);
-  const [motorcycleOptions, setMotorcycleOptions] =
-    useState<MotorcycleWithCustomer[]>(motorcycles);
+  const [loadedMotorcycles, setLoadedMotorcycles] = useState<
+    MotorcycleWithCustomer[]
+  >([]);
   const [, startBikeLoad] = useTransition();
+
+  const motorcycleOptions = useMemo(() => {
+    const byId = new Map<string, MotorcycleWithCustomer>();
+    for (const bike of motorcycles) byId.set(bike.motorcycle_id, bike);
+    for (const bike of loadedMotorcycles) byId.set(bike.motorcycle_id, bike);
+    return [...byId.values()];
+  }, [motorcycles, loadedMotorcycles]);
 
   const recoveryWorkOrderId = recovery?.workOrderId ?? null;
   const missingCategories = recovery?.missingCategories ?? [];
@@ -157,7 +169,7 @@ export function CreateWorkOrderForm({
   );
 
   function mergeMotorcycleOptions(rows: Motorcycle[], customer: Customer | null) {
-    setMotorcycleOptions((prev) => {
+    setLoadedMotorcycles((prev) => {
       const byId = new Map(prev.map((bike) => [bike.motorcycle_id, bike]));
       for (const row of rows) {
         const existing = byId.get(row.motorcycle_id);
@@ -217,14 +229,6 @@ export function CreateWorkOrderForm({
   };
 
   const canProceed = canProceedFromWizardStep(stepId, stepData);
-
-  useEffect(() => {
-    setMotorcycleOptions((prev) => {
-      const byId = new Map(prev.map((bike) => [bike.motorcycle_id, bike]));
-      for (const bike of motorcycles) byId.set(bike.motorcycle_id, bike);
-      return [...byId.values()];
-    });
-  }, [motorcycles]);
 
   useEffect(() => {
     if (!resolvedInitialCustomerId) return;
@@ -905,7 +909,9 @@ export function CreateWorkOrderForm({
               label="Estimated completion"
               value={
                 estimatedCompletion
-                  ? new Date(estimatedCompletion).toLocaleString()
+                  ? formatDateTime(
+                      parseShopLocalDateTimeInput(estimatedCompletion)
+                    ) || estimatedCompletion
                   : "Not set"
               }
               muted={!estimatedCompletion}

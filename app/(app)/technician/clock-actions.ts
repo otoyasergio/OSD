@@ -22,8 +22,10 @@ export async function clockInAction(
 
 export async function clockOutAction(
   _prev: ClockFormState,
-  _formData: FormData
+  _formData: FormData // required by useActionState signature
 ): Promise<ClockFormState> {
+  void _prev;
+  void _formData;
   try {
     await clockOut();
   } catch (error) {

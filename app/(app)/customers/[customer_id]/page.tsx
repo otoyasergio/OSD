@@ -19,15 +19,7 @@ import {
   canUploadCustomerDocuments,
   canViewCustomerDocuments,
 } from "@/lib/permissions";
-
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
+import { formatDate } from "@/lib/datetime/format";
 
 function WorkOrderHistoryList({
   items,
@@ -81,8 +73,8 @@ function WorkOrderHistoryList({
                 <StatusBadge status={wo.status} />
                 <span className="text-xs text-zinc-500">
                   {showCompletedDate
-                    ? `Completed ${formatDate(wo.completed_at)}`
-                    : `Opened ${formatDate(wo.date_created)}`}
+                    ? `Completed ${formatDate(wo.completed_at) || "—"}`
+                    : `Opened ${formatDate(wo.date_created) || "—"}`}
                 </span>
               </div>
             </div>

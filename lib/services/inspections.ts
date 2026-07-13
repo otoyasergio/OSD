@@ -231,7 +231,7 @@ export async function getInspectionForWorkOrder(
   if (woError) throw woError;
   if (!workOrder) return null;
 
-  let { data: inspection, error } = await supabase
+  const firstLoad = await supabase
     .from("inspection")
     .select(
       `
@@ -248,7 +248,9 @@ export async function getInspectionForWorkOrder(
     .eq("work_order_id", workOrderId)
     .maybeSingle();
 
-  if (error) throw error;
+  if (firstLoad.error) throw firstLoad.error;
+
+  let inspection = firstLoad.data;
 
   if (!inspection) {
     await ensureInspectionSeeded(supabase, workOrderId);

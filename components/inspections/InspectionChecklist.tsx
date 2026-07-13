@@ -9,6 +9,7 @@ import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import type { PhotoCategory } from "@/lib/database/types";
+import { formatDate, formatDateTime } from "@/lib/datetime/format";
 
 const SECTION_PHOTO: Record<
   string,
@@ -23,9 +24,9 @@ const SECTION_PHOTO: Record<
   },
 };
 
-function formatDate(value: string | null) {
+function formatInspectionDate(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString();
+  return formatDate(value);
 }
 
 function sectionPhotoForCategory(
@@ -182,7 +183,7 @@ export function InspectionChecklist({
           </div>
           <div>
             <dt>Date</dt>
-            <dd>{formatDate(header.date_created)}</dd>
+            <dd>{formatInspectionDate(header.date_created)}</dd>
           </div>
         </dl>
       </header>
@@ -213,7 +214,7 @@ export function InspectionChecklist({
           ) : (
             <p className="text-sm font-medium text-emerald-800">
               Inspection completed{" "}
-              {new Date(inspection.completed_at).toLocaleString()}
+              {formatDateTime(inspection.completed_at)}
             </p>
           )}
           <div className="inspection-summary-chips" aria-label="Result totals">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   loadFitmentMakesAction,
   loadFitmentModelsAction,
@@ -44,50 +44,74 @@ export function YmmFitmentFilter({
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    loadFitmentYearsAction().then(setYears).catch(() => setYears([]));
+    let cancelled = false;
+    loadFitmentYearsAction()
+      .then((rows) => {
+        if (!cancelled) setYears(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setYears([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!year) {
-      setMakes([]);
-      return;
-    }
-    loadFitmentMakesAction(Number(year)).then(setMakes).catch(() => setMakes([]));
+    if (!year) return;
+    let cancelled = false;
+    loadFitmentMakesAction(Number(year))
+      .then((rows) => {
+        if (!cancelled) setMakes(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setMakes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [year]);
 
   useEffect(() => {
-    if (!year || !make) {
-      setModels([]);
-      return;
-    }
+    if (!year || !make) return;
+    let cancelled = false;
     loadFitmentModelsAction(Number(year), make)
-      .then(setModels)
-      .catch(() => setModels([]));
+      .then((rows) => {
+        if (!cancelled) setModels(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setModels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [year, make]);
 
-  const loadVehicle = useCallback(() => {
+  useEffect(() => {
     if (!year || !make || !model) return;
-    setError(null);
+    let cancelled = false;
     startTransition(async () => {
       try {
         const result = await loadFitmentPartsAction(Number(year), make, model);
+        if (cancelled) return;
         if (!result) {
           setSpecs([]);
           setParts([]);
           setError("No fitment data for this Year / Make / Model.");
           return;
         }
+        setError(null);
         setSpecs(result.specs);
         setParts(result.parts);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load fitment.");
       }
     });
+    return () => {
+      cancelled = true;
+    };
   }, [year, make, model]);
-
-  useEffect(() => {
-    if (year && make && model) loadVehicle();
-  }, [year, make, model, loadVehicle]);
 
   const filteredParts = parts.filter((part) => {
     if (!search.trim()) return true;
@@ -112,6 +136,11 @@ export function YmmFitmentFilter({
               setYear(e.target.value);
               setMake("");
               setModel("");
+              setMakes([]);
+              setModels([]);
+              setSpecs([]);
+              setParts([]);
+              setError(null);
             }}
           >
             <option value="">Select year</option>
@@ -131,6 +160,10 @@ export function YmmFitmentFilter({
             onChange={(e) => {
               setMake(e.target.value);
               setModel("");
+              setModels([]);
+              setSpecs([]);
+              setParts([]);
+              setError(null);
             }}
           >
             <option value="">Select make</option>

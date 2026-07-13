@@ -73,6 +73,11 @@ export function canManageLocations(role: UserRole) {
 export function canViewAuditLog(role: UserRole) {
   return OWNERS.includes(role);
 }
+
+/** Owner/manager timesheets: view, correct punches, export CSV. */
+export function canManageTimesheets(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
 export function canOverrideWorkOrderStatus(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }

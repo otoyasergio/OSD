@@ -23,6 +23,7 @@ import {
   updateServiceInformationAction,
   transferMotorcycleAction,
 } from "@/app/(app)/motorcycles/actions";
+import { formatDateTime } from "@/lib/datetime/format";
 
 export default async function MotorcycleDetailPage({
   params,
@@ -116,8 +117,10 @@ export default async function MotorcycleDetailPage({
         </h2>
         <p className="mt-1 text-sm text-zinc-600">
           {serviceInformation?.last_updated
-            ? `Last updated ${new Date(serviceInformation.last_updated).toLocaleString()}`
+            ? `Last updated ${formatDateTime(serviceInformation.last_updated)}`
             : "Not recorded yet."}
+          {" · "}
+          Part numbers fill from fitment when blank.
         </p>
         <div className="mt-3">
           <ServiceInformationForm

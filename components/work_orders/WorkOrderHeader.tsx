@@ -7,12 +7,13 @@ import { WorkOrderJobTodo } from "@/components/work_orders/WorkOrderJobTodo";
 import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
 import { WorkOrderPhotoStrip } from "@/components/work_orders/WorkOrderPhotoStrip";
 import { getWorkOrderNextAction } from "@/lib/status/pipeline";
+import { formatDateTime } from "@/lib/datetime/format";
 
 const INACTIVE_JOB_STATUSES = new Set(["cancelled", "declined", "completed"]);
 
 function formatDate(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleString();
+  return formatDateTime(value);
 }
 
 function sumActiveEstimatedHours(detail: WorkOrderDetail): number | null {
