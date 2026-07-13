@@ -4,9 +4,17 @@ import type { DbClient } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canCreateWorkOrder, canEditWorkOrder, canManageContractTemplate } from "@/lib/permissions";
+import {
+  canCreateWorkOrder,
+  canEditWorkOrder,
+  canManageContractTemplate,
+} from "@/lib/permissions";
 import { fileDropOffAgreementDocument } from "@/lib/services/customerDocuments";
-import { dropOffAgreementSchema, publishAgreementTemplateSchema } from "@/lib/validation/schemas";
+import {
+  dropOffAgreementSchema,
+  publishAgreementTemplateSchema,
+} from "@/lib/validation/schemas";
+import { sanitizeContractHtml } from "@/lib/security/sanitizeHtml";
 
 export type AgreementTemplate = {
   template_id: string;
@@ -129,7 +137,7 @@ export async function publishAgreementTemplate(input: {
     .insert({
       version,
       title: parsed.title,
-      body_html: parsed.body_html,
+      body_html: sanitizeContractHtml(parsed.body_html),
       initial_fields: parsed.initial_fields,
       active: true,
     })
@@ -315,9 +323,7 @@ export async function signDropOffAgreement(
   };
 }
 
-export async function hasSignedDropOffAgreement(
-  workOrderId: string
-): Promise<boolean> {
+export async function hasSignedDropOffAgreement(workOrderId: string): Promise<boolean> {
   await requireUser();
   const supabase = await createClient();
   const { data, error } = await supabase

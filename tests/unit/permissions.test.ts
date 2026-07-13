@@ -16,6 +16,7 @@ import {
   canViewCustomerDocuments,
   canUploadCustomerDocuments,
   canDeleteCustomerDocuments,
+  canViewReports,
 } from "@/lib/permissions/checks";
 
 describe("permissions", () => {
@@ -119,5 +120,12 @@ describe("permissions", () => {
     expect(canDeleteCustomerDocuments("service_advisor")).toBe(false);
     expect(canDeleteCustomerDocuments("admin")).toBe(false);
     expect(canDeleteCustomerDocuments("technician")).toBe(false);
+  });
+
+  it("owner and manager can view shop reports", () => {
+    expect(canViewReports("owner")).toBe(true);
+    expect(canViewReports("manager")).toBe(true);
+    expect(canViewReports("service_advisor")).toBe(false);
+    expect(canViewReports("technician")).toBe(false);
   });
 });

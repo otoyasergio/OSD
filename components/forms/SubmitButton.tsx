@@ -29,6 +29,8 @@ export function SubmitButton({
     <button
       type="submit"
       disabled={pending || disabled}
+      aria-busy={pending}
+      aria-disabled={pending || disabled}
       className={`btn ${variantClass} ${className}`.trim()}
     >
       {pending ? pendingLabel : label}

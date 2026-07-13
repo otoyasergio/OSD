@@ -3,11 +3,13 @@
 Use this after a live Supabase project is configured (see README **Getting started**).  
 Unit tests alone do **not** complete Task 35.
 
+**Status (2026-07-12 audit pass):** Automated gates (`npm test`, CI workflow, Playwright smoke) are in place. Remaining unchecked rows below still need a **human Safari Mac/iPad** walkthrough for photo intake, inspection auto-save, and QC/complete. Track that sign-off separately from engineering hardening.
+
 **Prerequisites**
 
-- [x] Migrations `001`–`007` applied _(verified via Supabase MCP `list_migrations` on `eofxprepuajpqyvlolhw`, 2026-07-09; later migrations also present)_
+- [x] Migrations `001`–`007` applied _(verified via Supabase MCP `list_migrations` on `eofxprepuajpqyvlolhw`, 2026-07-09; later migrations also present through `034`)_
 - [x] Bootstrap seed run (`supabase/seed/dev_bootstrap.sql`) + Auth user linked as `owner` _(owner/manager/advisor/tech auth users + `app_user` rows present)_
-- [x] `npm test` passes _(147 tests / 27 files, 2026-07-12)_
+- [x] `npm test` passes _(223+ tests, 2026-07-12)_
 - [x] Production app reachable for smoke _(https://v1-implementation-liart.vercel.app)_ — Safari Mac/iPad still recommended for final human sign-off
 
 ---
@@ -179,15 +181,15 @@ Unit tests alone do **not** complete Task 35.
 
 ## Sign-off
 
-| Item | Status |
-|------|--------|
-| Unit tests (`npm test`) | ☑ 214 pass (2026-07-12 evening smoke) |
-| Tests 1–2 | ☑ prod verified |
-| Tests 4, 8, 9 (partial), 15 (partial), 16 (UI) | ☑ prod / unit verified |
-| Tests 3, 5–7, 10–14, 17 | ☐ needs human Safari |
-| Design extras | ☑ audit gate; ☐ location switch + Ottawa WO-1001 |
-| Safari Mac smoke | ☐ needs human |
-| Safari iPad smoke (if available) | ☐ needs human |
+| Item                                           | Status                                           |
+| ---------------------------------------------- | ------------------------------------------------ |
+| Unit tests (`npm test`)                        | ☑ 214 pass (2026-07-12 evening smoke)            |
+| Tests 1–2                                      | ☑ prod verified                                  |
+| Tests 4, 8, 9 (partial), 15 (partial), 16 (UI) | ☑ prod / unit verified                           |
+| Tests 3, 5–7, 10–14, 17                        | ☐ needs human Safari                             |
+| Design extras                                  | ☑ audit gate; ☐ location switch + Ottawa WO-1001 |
+| Safari Mac smoke                               | ☐ needs human                                    |
+| Safari iPad smoke (if available)               | ☐ needs human                                    |
 
 **Do not mark Task 35 fully complete until remaining human Safari items above are walked.**  
 If gaps are found, fix them and commit with: `test: close V1 acceptance gaps from checklist`.

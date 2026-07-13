@@ -11,6 +11,7 @@ import {
   LocationSwitcher,
   type LocationOption,
 } from "@/components/layout/LocationSwitcher";
+import { SignOutButton } from "@/components/layout/SignOutButton";
 
 const ROLE_LABELS: Record<AppUser["role"], string> = {
   owner: "Owner",
@@ -63,6 +64,9 @@ export function AppShell({ user, locations, children }: Props) {
     <div
       className={`app-shell bg-background${mobileNavOpen ? " app-shell-nav-open" : ""}`}
     >
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
       <header className="mobile-header">
         <Link
           href="/dashboard"
@@ -112,10 +116,7 @@ export function AppShell({ user, locations, children }: Props) {
             priority
           />
         </Link>
-        <SidebarNav
-          role={user.role}
-          onNavigate={() => setMobileNavOpen(false)}
-        />
+        <SidebarNav role={user.role} onNavigate={() => setMobileNavOpen(false)} />
       </aside>
 
       <div className="main-content">
@@ -129,15 +130,16 @@ export function AppShell({ user, locations, children }: Props) {
               />
             ) : null}
             <div className="main-topbar-user rounded-md border border-chrome-border bg-chrome-elevated px-3 py-1.5 text-sm text-chrome-muted">
-              <span className="font-semibold text-chrome-foreground">
-                {displayName}
-              </span>
+              <span className="font-semibold text-chrome-foreground">{displayName}</span>
               <span className="mx-1.5 opacity-40">·</span>
               <span>{ROLE_LABELS[user.role]}</span>
             </div>
+            <SignOutButton />
           </div>
         </header>
-        <main className="main-body">{children}</main>
+        <main id="main-content" className="main-body" tabIndex={-1}>
+          {children}
+        </main>
       </div>
     </div>
   );

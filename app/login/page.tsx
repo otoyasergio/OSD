@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/database/supabase-browser";
+import { assertLoginAllowed } from "@/app/login/actions";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +19,12 @@ export default function LoginPage() {
     setPending(true);
 
     try {
+      const gate = await assertLoginAllowed();
+      if (gate.error) {
+        setError(gate.error);
+        return;
+      }
+
       const supabase = createClient();
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,

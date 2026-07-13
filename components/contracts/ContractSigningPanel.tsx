@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import type { AgreementTemplate, DropOffAgreement } from "@/lib/services/contracts";
 import { SignatureCanvas } from "@/components/contracts/SignatureCanvas";
 import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
+import { sanitizeContractHtml } from "@/lib/security/sanitizeHtml";
 
 type Props = {
   template: AgreementTemplate;
@@ -33,6 +34,10 @@ export function ContractSigningPanel({
   const [signature, setSignature] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const safeHtml = useMemo(
+    () => sanitizeContractHtml(template.body_html),
+    [template.body_html]
+  );
 
   if (existing) {
     return (
@@ -40,8 +45,7 @@ export function ContractSigningPanel({
         <p className="font-semibold text-emerald-800">Drop-off agreement signed</p>
         <p className="text-sm text-zinc-700">
           Signed by <strong>{existing.signer_name}</strong> on{" "}
-          {formatDateTime(existing.signed_at)} (template{" "}
-          {existing.template_version})
+          {formatDateTime(existing.signed_at)} (template {existing.template_version})
         </p>
         {existing.signed_url ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -64,7 +68,9 @@ export function ContractSigningPanel({
     return (
       <div className="empty-state">
         <p className="empty-state-title">No signed agreement</p>
-        <p className="empty-state-desc">Switch to this location to capture a signature.</p>
+        <p className="empty-state-desc">
+          Switch to this location to capture a signature.
+        </p>
       </div>
     );
   }
@@ -101,7 +107,7 @@ export function ContractSigningPanel({
     <form onSubmit={submit} className="contract-signing-form flex flex-col gap-6">
       <div
         className="contract-signing-prose prose prose-sm max-w-none rounded border border-zinc-200 bg-white p-4"
-        dangerouslySetInnerHTML={{ __html: template.body_html }}
+        dangerouslySetInnerHTML={{ __html: safeHtml }}
       />
 
       {template.initial_fields.map((field) => (

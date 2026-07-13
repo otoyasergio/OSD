@@ -74,6 +74,11 @@ export function canViewAuditLog(role: UserRole) {
   return OWNERS.includes(role);
 }
 
+/** Shop reporting dashboard (owner/manager). */
+export function canViewReports(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
+
 /** Owner/manager timesheets: view, correct punches, export CSV. */
 export function canManageTimesheets(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);

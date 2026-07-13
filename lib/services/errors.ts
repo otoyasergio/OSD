@@ -31,16 +31,14 @@ const MESSAGES: Record<string, string> = {
   INSPECTION_ALREADY_COMPLETE: "This inspection is already complete.",
   INSPECTION_INCOMPLETE:
     "Some checklist items are still incomplete. An owner or manager can force completion.",
-  INSPECTION_NOT_COMPLETED:
-    "Complete the inspection report before finishing jobs.",
+  INSPECTION_NOT_COMPLETED: "Complete the inspection report before finishing jobs.",
   INSPECTION_PHOTOS_REQUIRED:
     "Add required inspection photos (tires, brakes, forks, and any items marked needing work) before completing the report.",
   RECOMMENDATION_NOT_FOUND: "That recommendation no longer exists.",
   RECOMMENDATION_ALREADY_CONVERTED:
     "That recommendation has already been converted to a job.",
   PART_NOT_FOUND: "That part no longer exists.",
-  PARTS_ORDER_BEFORE_APPROVAL:
-    "Parts cannot be ordered before customer approval.",
+  PARTS_ORDER_BEFORE_APPROVAL: "Parts cannot be ordered before customer approval.",
   PART_INSTALL_REQUIRES_TECHNICIAN:
     "Assign a technician to the job before marking parts installed.",
   PARTS_CANADA_NOT_CONFIGURED:
@@ -49,8 +47,7 @@ const MESSAGES: Record<string, string> = {
     "Parts Canada sync needs SUPABASE_SERVICE_ROLE_KEY and Supabase URL.",
   PARTS_CANADA_FORBIDDEN:
     "Parts Canada denied access. Check the API key and account mode.",
-  PARTS_CANADA_INVENTORY_MISSING:
-    "Parts Canada inventory file is not available yet.",
+  PARTS_CANADA_INVENTORY_MISSING: "Parts Canada inventory file is not available yet.",
   PARTS_CANADA_INVENTORY_INVALID:
     "Parts Canada inventory download did not contain a CSV file.",
   PARTS_CANADA_RATE_LIMITED:
@@ -70,8 +67,7 @@ const MESSAGES: Record<string, string> = {
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
   QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
-  CONTRACT_REQUIRED:
-    "Sign the drop-off agreement before marking ready for technician.",
+  CONTRACT_REQUIRED: "Sign the drop-off agreement before marking ready for technician.",
   NOT_READY_FOR_PICKUP:
     "Mark the work order ready for pickup before completing, or ask an owner/manager to override.",
   HOLD_REASON_REQUIRED: "Enter a reason when placing a work order on hold.",
@@ -96,8 +92,10 @@ const MESSAGES: Record<string, string> = {
   DOCUMENT_TYPE_INVALID: "Use a PDF, JPEG, PNG, or WebP file.",
   DOCUMENT_UPLOAD_FAILED: "Could not upload the document. Try again.",
   DOCUMENT_NOT_FOUND: "That document no longer exists.",
-  SQUARE_NOT_CONFIGURED: "Square is not configured. Add SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID.",
-  SQUARE_INVOICE_NOT_READY: "Sync a draft and get approvals before publishing the Square invoice.",
+  SQUARE_NOT_CONFIGURED:
+    "Square is not configured. Add SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID.",
+  SQUARE_INVOICE_NOT_READY:
+    "Sync a draft and get approvals before publishing the Square invoice.",
   SQUARE_NO_BILLABLE_LINES: "No priced jobs or parts to put on the estimate/invoice.",
   SQUARE_INVOICE_ALREADY_PUBLISHED:
     "A Square invoice is already published. Cancel & recreate, or publish the balance after a deposit.",
@@ -113,7 +111,8 @@ const MESSAGES: Record<string, string> = {
   PORTAL_TOKEN_INVALID: "This link is invalid or has been revoked.",
   PORTAL_TOKEN_EXPIRED: "This link has expired. Ask the shop for a new one.",
   CREDIT_AMOUNT_INVALID: "Credit amount must be greater than zero.",
-  BOOKING_MOTORCYCLE_REQUIRED: "Could not match a motorcycle for this booking. Link the customer bike first.",
+  BOOKING_MOTORCYCLE_REQUIRED:
+    "Could not match a motorcycle for this booking. Link the customer bike first.",
   WIX_NOT_CONFIGURED: "Wix is not configured.",
   FITMENT_IMPORT_FAILED: "Fitment import failed.",
   ALREADY_CLOCKED_IN: "That person already has an open punch. Clock them out first.",
@@ -121,9 +120,10 @@ const MESSAGES: Record<string, string> = {
   INVALID_CLOCK_IN: "Enter a valid clock-in date and time.",
   INVALID_CLOCK_OUT: "Enter a valid clock-out date and time.",
   CLOCK_OUT_BEFORE_IN: "Clock-out must be after clock-in.",
-  CORRECTION_REQUIRES_CLOCK_OUT:
-    "Missed punches need both clock-in and clock-out times.",
+  CORRECTION_REQUIRES_CLOCK_OUT: "Missed punches need both clock-in and clock-out times.",
   TIME_CLOCK_ENTRY_NOT_FOUND: "That time clock entry no longer exists.",
+  RATE_LIMITED: "Too many requests. Please wait a moment and try again.",
+  INVALID_INITIALS: "Could not read initials. Refresh and try again.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

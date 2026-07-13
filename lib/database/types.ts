@@ -1,11 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export type UserRole =
-  | "owner"
-  | "manager"
-  | "service_advisor"
-  | "technician"
-  | "admin";
+export type UserRole = "owner" | "manager" | "service_advisor" | "technician" | "admin";
 
 export type UserStatus = "active" | "inactive" | "suspended";
 
@@ -35,29 +30,15 @@ export type JobStatus =
   | "cancelled";
 
 export type PartStatus =
-  | "needed"
-  | "in_stock"
-  | "ordered"
-  | "installed"
-  | "not_required"
-  | "cancelled";
+  "needed" | "in_stock" | "ordered" | "installed" | "not_required" | "cancelled";
 
-export type InspectionResultStatus =
-  | "ok"
-  | "future_attention"
-  | "immediate_attention";
+export type InspectionResultStatus = "ok" | "future_attention" | "immediate_attention";
 
 export type RecommendationSeverity =
-  | "future_attention"
-  | "immediate_attention"
-  | "safety_critical";
+  "future_attention" | "immediate_attention" | "safety_critical";
 
 export type RecommendationStatus =
-  | "pending"
-  | "approved"
-  | "declined"
-  | "converted_to_job"
-  | "deferred";
+  "pending" | "approved" | "declined" | "converted_to_job" | "deferred";
 
 export type PhotoCategory =
   | "front"
@@ -85,5 +66,7 @@ export type TechnicianNoteType =
   | "quality_check"
   | "internal_warning";
 
-/** Supabase client used by service helpers. Schema is untyped until generated types land. */
+export type { Database } from "@/lib/database/supabase.generated";
+
+/** Untyped until createClient is wired with generated Database generics. */
 export type DbClient = SupabaseClient;

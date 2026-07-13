@@ -1,10 +1,14 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import type { AgreementTemplate, AgreementTemplateSummary } from "@/lib/services/contracts";
+import type {
+  AgreementTemplate,
+  AgreementTemplateSummary,
+} from "@/lib/services/contracts";
 import type { ContractTemplateFormState } from "@/app/(app)/settings/contract_template/actions";
 import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
+import { sanitizeContractHtml } from "@/lib/security/sanitizeHtml";
 
 type Props = {
   template: AgreementTemplate | null;
@@ -50,12 +54,12 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
           <input
             type="text"
             name="version"
-            placeholder="Auto-generated from today&apos;s date if blank"
+            placeholder="Auto-generated from today's date if blank"
             className="min-h-11 w-full rounded border border-zinc-300 px-3"
           />
           <span className="mt-1 block text-xs text-zinc-500">
-            Leave blank to use today&apos;s date. A suffix is added if that version already
-            exists.
+            Leave blank to use today&apos;s date. A suffix is added if that version
+            already exists.
           </span>
         </label>
 
@@ -72,8 +76,8 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
           />
           <span className="mt-1 block text-xs text-zinc-500">
             Comma-separated keys. Each must match a{" "}
-            <code className="text-xs">data-initial=&quot;key&quot;</code> section in the HTML
-            below.
+            <code className="text-xs">data-initial=&quot;key&quot;</code> section in the
+            HTML below.
           </span>
         </label>
 
@@ -94,7 +98,7 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
             <span className="field-label">Preview</span>
             <div
               className="prose prose-sm max-h-[36rem] max-w-none overflow-y-auto rounded border border-zinc-200 bg-white p-4"
-              dangerouslySetInnerHTML={{ __html: bodyHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizeContractHtml(bodyHtml) }}
             />
           </div>
         </div>
@@ -135,9 +139,7 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
                     </span>
                   ) : null}
                 </div>
-                <span className="text-zinc-500">
-                  {formatDateTime(item.created_at)}
-                </span>
+                <span className="text-zinc-500">{formatDateTime(item.created_at)}</span>
               </div>
             ))}
           </div>

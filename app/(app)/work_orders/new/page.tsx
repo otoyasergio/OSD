@@ -2,17 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { canCreateWorkOrder } from "@/lib/permissions";
-import {
-  getCustomerById,
-  searchCustomers,
-} from "@/lib/services/customers";
-import {
-  getMotorcycleById,
-  searchMotorcycles,
-} from "@/lib/services/motorcycles";
+import { getCustomerById, searchCustomers } from "@/lib/services/customers";
+import { getMotorcycleById, searchMotorcycles } from "@/lib/services/motorcycles";
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
-import { CreateWorkOrderForm } from "@/components/forms/CreateWorkOrderForm";
+import { CreateWorkOrderFormLazy } from "@/components/forms/CreateWorkOrderFormLazy";
 
 export const dynamic = "force-dynamic";
 
@@ -36,19 +30,13 @@ export default async function NewWorkOrderPage({
 
   // search* caps at 50; deep links must still resolve the selected records.
   let customerOptions = customers;
-  if (
-    customer_id &&
-    !customers.some((c) => c.customer_id === customer_id)
-  ) {
+  if (customer_id && !customers.some((c) => c.customer_id === customer_id)) {
     const selected = await getCustomerById(customer_id);
     if (selected) customerOptions = [selected, ...customers];
   }
 
   let motorcycleOptions = motorcycles;
-  if (
-    motorcycle_id &&
-    !motorcycles.some((m) => m.motorcycle_id === motorcycle_id)
-  ) {
+  if (motorcycle_id && !motorcycles.some((m) => m.motorcycle_id === motorcycle_id)) {
     const selected = await getMotorcycleById(motorcycle_id);
     if (selected) motorcycleOptions = [selected, ...motorcycles];
   }
@@ -65,12 +53,12 @@ export default async function NewWorkOrderPage({
         New work order
       </h1>
       <p className="mt-1 max-w-2xl text-sm text-zinc-600">
-        Guided intake: customer, motorcycle, visit details, and all six photos —
-        then review and create under your active location.
+        Guided intake: customer, motorcycle, visit details, and all six photos — then
+        review and create under your active location.
       </p>
 
       <div className="mt-6">
-        <CreateWorkOrderForm
+        <CreateWorkOrderFormLazy
           customers={customerOptions}
           motorcycles={motorcycleOptions}
           services={services}

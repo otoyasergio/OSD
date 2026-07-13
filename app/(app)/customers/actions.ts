@@ -1,5 +1,6 @@
 "use server";
 
+import { ZodError } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import {
@@ -10,13 +11,15 @@ import {
   type CustomerAccountType,
 } from "@/lib/services/customers";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { zodFieldErrors } from "@/lib/validation/fieldErrors";
 
-export type CustomerFormState = { error: string | null };
+export type CustomerFormState = {
+  error: string | null;
+  fieldErrors?: Record<string, string>;
+};
 
 /** Typeahead search for intake and other customer pickers. */
-export async function searchCustomersAction(
-  query: string
-): Promise<Customer[]> {
+export async function searchCustomersAction(query: string): Promise<Customer[]> {
   return searchCustomers(query);
 }
 
@@ -32,6 +35,16 @@ function readCustomerInput(formData: FormData) {
   };
 }
 
+function toCustomerFormError(error: unknown): CustomerFormState {
+  if (error instanceof ZodError) {
+    return {
+      error: error.issues[0]?.message ?? "Please check the details and try again.",
+      fieldErrors: zodFieldErrors(error),
+    };
+  }
+  return { error: toFormErrorMessage(error) };
+}
+
 export async function createCustomerAction(
   _prevState: CustomerFormState,
   formData: FormData
@@ -42,7 +55,7 @@ export async function createCustomerAction(
     const customer = await createCustomer(readCustomerInput(formData));
     customerId = customer.customer_id;
   } catch (error) {
-    return { error: toFormErrorMessage(error) };
+    return toCustomerFormError(error);
   }
 
   revalidatePath("/customers");
@@ -57,7 +70,7 @@ export async function updateCustomerAction(
   try {
     await updateCustomer(customerId, readCustomerInput(formData));
   } catch (error) {
-    return { error: toFormErrorMessage(error) };
+    return toCustomerFormError(error);
   }
 
   revalidatePath("/customers");

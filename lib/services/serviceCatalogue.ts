@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
@@ -22,7 +23,7 @@ export type ServiceInput = {
 const SERVICE_COLUMNS =
   "service_id, name, category, standard_price, estimated_labour, active, created_at, updated_at";
 
-export async function listServices(
+async function listServicesUncached(
   options: { includeInactive?: boolean } = {}
 ): Promise<Service[]> {
   await requireUser();
@@ -37,6 +38,9 @@ export async function listServices(
   if (error) throw error;
   return (data ?? []) as Service[];
 }
+
+/** Request-scoped cache for the rarely changing service catalogue. */
+export const listServices = cache(listServicesUncached);
 
 async function requireCatalogueManager() {
   const user = await requireUser();

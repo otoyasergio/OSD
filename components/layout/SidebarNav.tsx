@@ -13,6 +13,7 @@ import {
   canViewAuditLog,
   canViewBillingArea,
   canViewPartsBoard,
+  canViewReports,
 } from "@/lib/permissions/checks";
 
 type NavLink = { href: string; label: string };
@@ -43,9 +44,7 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     shopFloorLinks.push({ href: "/parts", label: "Parts" });
   }
 
-  const staffingLinks: NavLink[] = [
-    { href: "/technician", label: "Technician" },
-  ];
+  const staffingLinks: NavLink[] = [{ href: "/technician", label: "Technician" }];
   if (canManageTimesheets(role)) {
     staffingLinks.push({ href: "/settings/timesheets", label: "Timesheets" });
   }
@@ -81,6 +80,9 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
   }
   if (canViewAuditLog(role)) {
     adminSettings.push({ href: "/settings/audit", label: "Audit log" });
+  }
+  if (canViewReports(role)) {
+    adminSettings.push({ href: "/settings/reports", label: "Reports" });
   }
 
   const settingsSubgroups: NavSubgroup[] = [
