@@ -30,4 +30,35 @@ describe("buildNavCategories", () => {
       "/technician",
     ]);
   });
+
+  it("hides Customers and Motorcycles for technicians", () => {
+    const tech = buildNavCategories("technician");
+    const hrefs = tech.flatMap((c) =>
+      c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+    );
+    expect(hrefs).not.toContain("/customers");
+    expect(hrefs).not.toContain("/motorcycles");
+
+    const owner = buildNavCategories("owner");
+    const ownerHrefs = owner.flatMap((c) =>
+      c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+    );
+    expect(ownerHrefs).toContain("/customers");
+    expect(ownerHrefs).toContain("/motorcycles");
+  });
+
+  it("exposes Password under Settings Account for every role including technician", () => {
+    for (const role of [
+      "owner",
+      "manager",
+      "service_advisor",
+      "technician",
+      "admin",
+    ] as const) {
+      const categories = buildNavCategories(role);
+      const settings = categories.find((c) => c.id === "settings");
+      const account = settings?.subgroups.find((g) => g.heading === "Account");
+      expect(account?.links.map((l) => l.href)).toEqual(["/settings/password"]);
+    }
+  });
 });

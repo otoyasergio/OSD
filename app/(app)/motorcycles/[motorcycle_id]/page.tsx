@@ -1,10 +1,14 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getMotorcycleById, getServiceInformation } from "@/lib/services/motorcycles";
 import { getCustomerById, searchCustomers } from "@/lib/services/customers";
 import { listOutstandingRecommendationsForMotorcycle } from "@/lib/services/recommendations";
 import { requireUser } from "@/lib/auth/session";
-import { canEditWorkOrder, canUpdateServiceInformation } from "@/lib/permissions";
+import {
+  canEditWorkOrder,
+  canUpdateServiceInformation,
+  canViewClients,
+} from "@/lib/permissions";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
 import { TransferMotorcycleForm } from "@/components/forms/TransferMotorcycleForm";
@@ -23,6 +27,7 @@ export default async function MotorcycleDetailPage({
 }) {
   const { motorcycle_id } = await params;
   const user = await requireUser();
+  if (!canViewClients(user.role)) redirect("/dashboard");
   const motorcycle = await getMotorcycleById(motorcycle_id);
   if (!motorcycle) notFound();
 

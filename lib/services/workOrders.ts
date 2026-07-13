@@ -4,7 +4,11 @@ import type { DbClient, JobStatus, WorkOrderStatus } from "@/lib/database/types"
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canAssignTechnician, canCreateWorkOrder } from "@/lib/permissions";
+import {
+  canAssignTechnician,
+  canCreateWorkOrder,
+  canViewClients,
+} from "@/lib/permissions";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
 import { resolveJobSnapshots } from "@/lib/forms/serviceLines";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
@@ -397,7 +401,9 @@ export async function getWorkOrderDetail(
 
   const row = data as Record<string, unknown>;
   const motorcycle = row.motorcycle as WorkOrderDetail["motorcycle"];
-  const customer = row.customer as WorkOrderDetail["customer"];
+  const customer = canViewClients(user.role)
+    ? (row.customer as WorkOrderDetail["customer"])
+    : null;
   const jobs = (row.job as WorkOrderJob[] | null) ?? [];
   const recommendations =
     (row.recommendation as Array<{ severity: string; status: string }> | null) ?? [];

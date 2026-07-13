@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth/session";
+import { canViewClients } from "@/lib/permissions";
 import { getCustomerById, searchCustomers } from "@/lib/services/customers";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { createMotorcycleAction } from "@/app/(app)/motorcycles/actions";
@@ -16,6 +19,9 @@ export default async function NewMotorcyclePage({
     return_to?: string;
   }>;
 }) {
+  const user = await requireUser();
+  if (!canViewClients(user.role)) redirect("/dashboard");
+
   const {
     customer_id,
     vin: vinRaw = "",

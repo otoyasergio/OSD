@@ -1,10 +1,8 @@
 import { requireUser } from "@/lib/auth/session";
+import { canViewClients } from "@/lib/permissions";
 import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, PhotoCategory, WorkOrderStatus } from "@/lib/database/types";
-import {
-  resolvePrimaryPhotoUrls,
-  type IntakePhotoRef,
-} from "@/lib/services/photos";
+import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
 
 export type FiledWorkOrderSearchFields = {
   work_order_number: string;
@@ -169,7 +167,8 @@ type RawFiledWo = {
 export async function listWorkOrdersForCustomer(
   customerId: string
 ): Promise<{ open: CustomerWorkOrderSummary[]; filed: CustomerWorkOrderSummary[] }> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -265,10 +264,7 @@ export async function listCompletedWorkOrdersForActiveLocation(
   for (const row of rawRows) {
     photosByWorkOrder.set(row.work_order_id, row.intake_photo ?? []);
   }
-  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(
-    supabase,
-    photosByWorkOrder
-  );
+  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(supabase, photosByWorkOrder);
 
   return rawRows
     .filter((row) => {

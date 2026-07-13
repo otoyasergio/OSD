@@ -18,6 +18,7 @@ import {
   canRunQualityCheck,
   canClearAdminFlag,
   canUpdateServiceInformation,
+  canViewClients,
   canViewPartCost,
 } from "@/lib/permissions";
 import {
@@ -177,6 +178,7 @@ export default async function WorkOrderDetailPage({
   const canConvert = canConvertRecommendation(user.role);
   const canManageParts = canOrderPart(user.role) || canEditWorkOrder(user.role);
   const canSeePartCost = canViewPartCost(user.role);
+  const canSeeClients = canViewClients(user.role);
   const canAdd = canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
   const canUploadPhotos =
     canEditWorkOrder(user.role) ||
@@ -240,7 +242,7 @@ export default async function WorkOrderDetailPage({
         </div>
       ) : null}
 
-      <WorkOrderHeader detail={detail} photos={photos} />
+      <WorkOrderHeader detail={detail} photos={photos} canViewClients={canSeeClients} />
       <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
 
       {activeTab === "overview" ? (

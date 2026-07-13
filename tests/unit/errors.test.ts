@@ -13,4 +13,16 @@ describe("toFormErrorMessage", () => {
       "Complete the quality check before marking ready for pickup."
     );
   });
+
+  it("maps password change validation errors", () => {
+    expect(toFormErrorMessage(new Error("CURRENT_PASSWORD_INVALID"))).toBe(
+      "Current password is incorrect."
+    );
+    expect(toFormErrorMessage(new Error("NEW_PASSWORD_TOO_SHORT"))).toBe(
+      "New password must be at least 8 characters."
+    );
+    expect(toFormErrorMessage(new Error("PASSWORD_CONFIRM_MISMATCH"))).toBe(
+      "New password and confirmation do not match."
+    );
+  });
 });

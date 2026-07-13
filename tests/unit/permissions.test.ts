@@ -18,10 +18,12 @@ import {
   canManageContractTemplate,
   canUpdateServiceInformation,
   canDeleteIntakePhoto,
+  canViewClients,
   canViewCustomerDocuments,
   canUploadCustomerDocuments,
   canDeleteCustomerDocuments,
   canViewReports,
+  canChangeOwnPassword,
 } from "@/lib/permissions/checks";
 
 describe("permissions", () => {
@@ -125,6 +127,13 @@ describe("permissions", () => {
     expect(canDeleteIntakePhoto("admin")).toBe(false);
   });
 
+  it("owner, manager, admin, and service advisor can view clients; technicians cannot", () => {
+    for (const role of ["owner", "manager", "admin", "service_advisor"] as const) {
+      expect(canViewClients(role)).toBe(true);
+    }
+    expect(canViewClients("technician")).toBe(false);
+  });
+
   it("owner, manager, admin, and service advisor can view and upload customer documents", () => {
     for (const role of ["owner", "manager", "admin", "service_advisor"] as const) {
       expect(canViewCustomerDocuments(role)).toBe(true);
@@ -147,5 +156,17 @@ describe("permissions", () => {
     expect(canViewReports("manager")).toBe(true);
     expect(canViewReports("service_advisor")).toBe(false);
     expect(canViewReports("technician")).toBe(false);
+  });
+
+  it("every active role can change their own password", () => {
+    for (const role of [
+      "owner",
+      "manager",
+      "service_advisor",
+      "technician",
+      "admin",
+    ] as const) {
+      expect(canChangeOwnPassword(role)).toBe(true);
+    }
   });
 });

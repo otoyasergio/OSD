@@ -28,11 +28,14 @@ function sumActiveEstimatedHours(detail: WorkOrderDetail): number | null {
 export function WorkOrderHeader({
   detail,
   photos = [],
+  canViewClients = true,
 }: {
   detail: WorkOrderDetail;
   photos?: IntakePhoto[];
+  /** When false, hide customer PII and CRM motorcycle links (technicians). */
+  canViewClients?: boolean;
 }) {
-  const customer = detail.customer;
+  const customer = canViewClients ? detail.customer : null;
   const bike = detail.motorcycle;
   const nextAction = getWorkOrderNextAction(detail.status, detail.flags);
   const estimatedLabourTotal = sumActiveEstimatedHours(detail);
@@ -168,7 +171,7 @@ export function WorkOrderHeader({
             {formatDate(detail.date_created)}
           </dd>
         </div>
-        {bike ? (
+        {bike && canViewClients ? (
           <div>
             <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
               Motorcycle profile

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getCustomerById } from "@/lib/services/customers";
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { listGarageForCustomer } from "@/lib/services/clientGarage";
@@ -19,6 +19,7 @@ import {
   canEditWorkOrder,
   canSyncWixContacts,
   canUploadCustomerDocuments,
+  canViewClients,
   canViewCustomerDocuments,
 } from "@/lib/permissions";
 import { isWixSyncAvailable } from "@/lib/services/wixContacts";
@@ -95,6 +96,7 @@ export default async function CustomerDetailPage({
 }) {
   const { customer_id } = await params;
   const user = await requireUser();
+  if (!canViewClients(user.role)) redirect("/dashboard");
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 

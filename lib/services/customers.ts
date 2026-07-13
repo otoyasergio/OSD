@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
-import { canAdminHelpCreateRecords } from "@/lib/permissions";
+import { canAdminHelpCreateRecords, canViewClients } from "@/lib/permissions";
 import { customerSchema } from "@/lib/validation/schemas";
 import type { CustomerAccountType } from "@/lib/services/customerShared";
 
@@ -70,7 +70,8 @@ function normalizeOptional(value: string | null | undefined): string | null {
 }
 
 export async function countCustomers(): Promise<number> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { count, error } = await supabase
@@ -85,7 +86,8 @@ export async function searchCustomers(
   term: string,
   options?: { account_type?: CustomerAccountType }
 ): Promise<Customer[]> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   let query = supabase.from("customer").select(CUSTOMER_COLUMNS);
@@ -104,7 +106,8 @@ export async function searchCustomers(
 }
 
 export async function getCustomerById(customerId: string): Promise<Customer | null> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { data, error } = await supabase

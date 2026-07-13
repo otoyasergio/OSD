@@ -700,11 +700,13 @@ export function TechnicianFloorShell({
                   </p>
                   <h2 className="floor-bike">{selected.motorcycle_label}</h2>
                   <p className="floor-muted">
-                    {selected.service_name
-                      ? `${selected.service_name} · ${selected.customer_label}`
-                      : selected.customer_label}
-                    {selected.labour_label ? ` · ${selected.labour_label}` : ""}
-                    {selected.labour_over ? " · over estimate" : ""}
+                    {[
+                      selected.service_name,
+                      selected.labour_label,
+                      selected.labour_over ? "over estimate" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </p>
                   {selected.flags.length > 0 ? (
                     <div className="floor-flag-banner" role="status">

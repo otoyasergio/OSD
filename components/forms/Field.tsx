@@ -2,12 +2,14 @@ type TextFieldProps = {
   label: string;
   name: string;
   id?: string;
-  type?: "text" | "email" | "tel" | "number" | "date";
+  type?: "text" | "email" | "tel" | "number" | "date" | "password";
   defaultValue?: string | number | null;
   required?: boolean;
   placeholder?: string;
   hint?: string;
   error?: string | null;
+  autoComplete?: string;
+  minLength?: number;
 };
 
 export function TextField({
@@ -20,6 +22,8 @@ export function TextField({
   placeholder,
   hint,
   error,
+  autoComplete,
+  minLength,
 }: TextFieldProps) {
   const inputId = id ?? name;
   const errorId = error ? `${inputId}-error` : undefined;
@@ -40,6 +44,8 @@ export function TextField({
         defaultValue={defaultValue ?? undefined}
         required={required}
         placeholder={placeholder}
+        autoComplete={autoComplete}
+        minLength={minLength}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
       />

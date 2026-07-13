@@ -21,9 +21,11 @@ import {
   Wallet,
   Archive,
   MessageSquare,
+  KeyRound,
 } from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
+  canChangeOwnPassword,
   canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
@@ -33,6 +35,7 @@ import {
   canUseMessenger,
   canViewAuditLog,
   canViewBillingArea,
+  canViewClients,
   canViewPartsBoard,
   canViewReports,
 } from "@/lib/permissions/checks";
@@ -48,6 +51,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/customers": Users,
   "/motorcycles": Bike,
   "/settings": Settings,
+  "/settings/password": KeyRound,
   "/settings/locations": MapPin,
   "/settings/inspection_template": FileCheck,
   "/settings/contract_template": ScrollText,
@@ -172,11 +176,23 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     });
   }
 
+  const accountSettings: NavLink[] = [];
+  if (canChangeOwnPassword(role)) {
+    accountSettings.push({
+      href: "/settings/password",
+      label: "Password",
+      icon: iconFor("/settings/password"),
+    });
+  }
+
   const settingsSubgroups: NavSubgroup[] = [
     {
       links: [{ href: "/settings", label: "Settings", icon: iconFor("/settings") }],
     },
   ];
+  if (accountSettings.length > 0) {
+    settingsSubgroups.push({ heading: "Account", links: accountSettings });
+  }
   if (shopSettings.length > 0) {
     settingsSubgroups.push({ heading: "Shop", links: shopSettings });
   }
@@ -196,6 +212,27 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     });
   }
 
+  const clientSubgroups: NavSubgroup[] = [
+    { heading: "Shop floor", links: shopFloorLinks },
+  ];
+  if (canViewClients(role)) {
+    clientSubgroups.push({
+      heading: "Records",
+      links: [
+        {
+          href: "/customers",
+          label: "Customers",
+          icon: iconFor("/customers"),
+        },
+        {
+          href: "/motorcycles",
+          label: "Motorcycles",
+          icon: iconFor("/motorcycles"),
+        },
+      ],
+    });
+  }
+
   const categories: NavCategory[] = [
     {
       id: "finances",
@@ -205,24 +242,7 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     {
       id: "clients",
       label: "Clients",
-      subgroups: [
-        { heading: "Shop floor", links: shopFloorLinks },
-        {
-          heading: "Records",
-          links: [
-            {
-              href: "/customers",
-              label: "Customers",
-              icon: iconFor("/customers"),
-            },
-            {
-              href: "/motorcycles",
-              label: "Motorcycles",
-              icon: iconFor("/motorcycles"),
-            },
-          ],
-        },
-      ],
+      subgroups: clientSubgroups,
     },
     {
       id: "communication",

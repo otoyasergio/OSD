@@ -39,10 +39,8 @@ export function WorkOrderCard({
   void _showPhoto;
   const customer = workOrder.motorcycle?.customer;
   const bike = workOrder.motorcycle;
-  const customerName = customer
-    ? `${customer.first_name} ${customer.last_name}`
-    : "Unknown customer";
   const bikeLabel = bike ? `${bike.year} ${bike.make} ${bike.model}` : "No motorcycle";
+  const customerName = customer ? `${customer.first_name} ${customer.last_name}` : null;
   const stage = getGalleryStageForStatus(workOrder.status);
   const flagged = workOrder.flags.length > 0;
 
@@ -51,7 +49,11 @@ export function WorkOrderCard({
       href={`/work_orders/${workOrder.work_order_id}`}
       photoUrl={workOrder.primary_photo_url}
       title={bikeLabel}
-      subtitle={`${customerName} · ${workOrder.work_order_number}`}
+      subtitle={
+        customerName
+          ? `${customerName} · ${workOrder.work_order_number}`
+          : workOrder.work_order_number
+      }
       stageLabel={stage.label}
       stageTone={stage.tone}
       primaryLabel="Open"

@@ -19,7 +19,9 @@ function PartWaitingCard({ item }: { item: PartsWaitingItem }) {
   return (
     <article className="td-board-card">
       <p className="td-board-card-title">{item.part_name}</p>
-      <p className="td-board-card-sub">{item.customer_label}</p>
+      {item.customer_label ? (
+        <p className="td-board-card-sub">{item.customer_label}</p>
+      ) : null}
       <p className="td-board-card-sub">
         {item.job_name}
         {item.quantity > 1 ? ` · qty ${item.quantity}` : ""}

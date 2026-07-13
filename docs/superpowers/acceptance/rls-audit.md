@@ -11,7 +11,7 @@ Authorization truth remains in `lib/permissions` + `lib/services/*`. RLS is defe
 | Table                            | SELECT          | INSERT    | UPDATE    | DELETE   | Notes                                       |
 | -------------------------------- | --------------- | --------- | --------- | -------- | ------------------------------------------- |
 | `app_user`                       | active app user | **owner** | **owner** | —        | Owner write policies added in 012           |
-| `customer`                       | active          | active    | active    | —        | App-layer role gates                        |
+| `customer`                       | FO+admin        | FO+admin  | FO+admin  | —        | Technicians denied (041)                    |
 | `motorcycle`                     | active          | active    | active    | —        |                                             |
 | `motorcycle_service_information` | active          | active    | active    | —        |                                             |
 | `service`                        | active          | active    | active    | —        | Catalogue; owner/manager in app             |
@@ -67,7 +67,8 @@ Re-ran Supabase security advisors after 012. Cleared: mutable search_path on min
 ## Known RLS design notes
 
 - As of migration `034_location_scoped_rls.sql`, **work_order**, **job**, **inspection**, **part**, **intake_photo**, **timeline_event**, and **time_clock_entry** are scoped to the staff member’s assigned locations (`user_location_ids()`). Cross-location reads via the Data API are denied.
-- Company-wide records (**customer**, **motorcycle**, **service**) remain readable by any active staff; role gates stay in the app layer.
+- Company-wide records (**motorcycle**, **service**) remain readable by any active staff; role gates stay in the app layer.
+- **`customer`** SELECT/INSERT/UPDATE is limited to owner, manager, service_advisor, and admin (migration `041_customer_rls_roles.sql`). Technicians have no Data API access to client rows.
 - No hard DELETE policies on most operational tables (matches soft-delete / status-cancel product rules).
 - Enable **leaked password protection** in Supabase Auth before production cutover (ops follow-up).
 

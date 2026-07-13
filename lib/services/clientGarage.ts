@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
+import { canViewClients } from "@/lib/permissions";
 import {
   pickPrimaryIntakePhoto,
   resolvePrimaryPhotoUrls,
@@ -82,14 +83,13 @@ type RawWorkOrderRow = {
 export async function listGarageForCustomer(
   customerId: string
 ): Promise<GarageBikeCard[]> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { data: motorcycleRows, error: motorcycleError } = await supabase
     .from("motorcycle")
-    .select(
-      "motorcycle_id, year, make, model, colour, vin"
-    )
+    .select("motorcycle_id, year, make, model, colour, vin")
     .eq("customer_id", customerId)
     .order("year", { ascending: false });
 
@@ -141,17 +141,11 @@ export async function listGarageForCustomer(
     motorcycleBySyntheticWo.set(syntheticId, bike.motorcycle_id);
   }
 
-  const signedBySynthetic = await resolvePrimaryPhotoUrls(
-    supabase,
-    photosBySyntheticWo
-  );
+  const signedBySynthetic = await resolvePrimaryPhotoUrls(supabase, photosBySyntheticWo);
 
   const photoUrlsByMotorcycleId = new Map<string, string | null>();
   for (const [syntheticId, motorcycleId] of motorcycleBySyntheticWo) {
-    photoUrlsByMotorcycleId.set(
-      motorcycleId,
-      signedBySynthetic.get(syntheticId) ?? null
-    );
+    photoUrlsByMotorcycleId.set(motorcycleId, signedBySynthetic.get(syntheticId) ?? null);
   }
 
   return toGarageBikeCards(bikes, photoUrlsByMotorcycleId);

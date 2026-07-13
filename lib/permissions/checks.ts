@@ -112,9 +112,14 @@ export function canDeleteIntakePhoto(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
 
+/** View client CRM (customers + motorcycles directory) and customer PII. */
+export function canViewClients(role: UserRole) {
+  return FRONT_OFFICE.includes(role) || role === "admin";
+}
+
 /** View customer profile documents (owner/manager/admin/service advisor). */
 export function canViewCustomerDocuments(role: UserRole) {
-  return FRONT_OFFICE.includes(role) || role === "admin";
+  return canViewClients(role);
 }
 
 /** Upload documents to a customer profile. */
@@ -169,6 +174,11 @@ const ACTIVE_STAFF_ROLES: UserRole[] = [
 
 /** Company messenger — every active role can use it. */
 export function canUseMessenger(role: UserRole) {
+  return ACTIVE_STAFF_ROLES.includes(role);
+}
+
+/** Self-service password change in Settings — every active role. */
+export function canChangeOwnPassword(role: UserRole) {
   return ACTIVE_STAFF_ROLES.includes(role);
 }
 

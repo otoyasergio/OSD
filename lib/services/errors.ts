@@ -164,6 +164,13 @@ const MESSAGES: Record<string, string> = {
     "Video calling is not configured. Add TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET.",
   CALL_NOT_FOUND: "That call no longer exists.",
   CALL_ALREADY_ENDED: "That call has already ended.",
+  CURRENT_PASSWORD_REQUIRED: "Enter your current password.",
+  CURRENT_PASSWORD_INVALID: "Current password is incorrect.",
+  NEW_PASSWORD_REQUIRED: "Enter a new password.",
+  NEW_PASSWORD_TOO_SHORT: "New password must be at least 8 characters.",
+  PASSWORD_CONFIRM_MISMATCH: "New password and confirmation do not match.",
+  PASSWORD_UNCHANGED: "Choose a new password that is different from your current one.",
+  PASSWORD_UPDATE_FAILED: "Could not update your password. Try again.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import {
+  canChangeOwnPassword,
   canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
@@ -20,6 +21,12 @@ export default async function SettingsPage() {
   if (!user) redirect("/login");
 
   const links = [
+    {
+      href: "/settings/password",
+      label: "Password",
+      description: "Change the password for your account.",
+      visible: canChangeOwnPassword(user.role),
+    },
     {
       href: "/settings/timesheets",
       label: "Timesheets",
@@ -68,7 +75,7 @@ export default async function SettingsPage() {
     <div className="page-stack">
       <PageHeader
         title="Settings"
-        subtitle="Configure catalogue, locations, users, and audit."
+        subtitle="Manage your account, catalogue, locations, users, and audit."
       />
 
       {links.length === 0 ? (
@@ -77,7 +84,10 @@ export default async function SettingsPage() {
         <ul className="grid gap-3 sm:grid-cols-2">
           {links.map((link) => (
             <li key={link.href}>
-              <Link href={link.href} className="card block transition-shadow active:shadow-md">
+              <Link
+                href={link.href}
+                className="card block transition-shadow active:shadow-md"
+              >
                 <div className="card-body">
                   <span className="font-semibold text-foreground">{link.label}</span>
                   <span className="mt-1 block text-sm text-[var(--status-neutral)]">

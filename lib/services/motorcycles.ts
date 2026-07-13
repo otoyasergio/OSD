@@ -8,6 +8,7 @@ import {
   canAdminHelpCreateRecords,
   canEditWorkOrder,
   canUpdateServiceInformation,
+  canViewClients,
 } from "@/lib/permissions";
 import { motorcycleSchema } from "@/lib/validation/schemas";
 import { escapeSearchTerm } from "@/lib/services/customers";
@@ -194,7 +195,8 @@ export function buildMotorcycleSearchOrFilter(
 }
 
 export async function countMotorcycles(): Promise<number> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { count, error } = await supabase
@@ -205,10 +207,9 @@ export async function countMotorcycles(): Promise<number> {
   return count ?? 0;
 }
 
-export async function searchMotorcycles(
-  term: string
-): Promise<MotorcycleWithCustomer[]> {
-  await requireUser();
+export async function searchMotorcycles(term: string): Promise<MotorcycleWithCustomer[]> {
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
   const cleaned = escapeSearchTerm(term);
 
@@ -220,18 +221,14 @@ export async function searchMotorcycles(
     const { data: customerRows } = await supabase
       .from("customer")
       .select("customer_id")
-      .or(
-        `first_name.ilike.%${cleaned}%,last_name.ilike.%${cleaned}%`
-      );
+      .or(`first_name.ilike.%${cleaned}%,last_name.ilike.%${cleaned}%`);
     const customerIds = (customerRows ?? []).map(
       (row: { customer_id: string }) => row.customer_id
     );
     query = query.or(buildMotorcycleSearchOrFilter(term, customerIds));
   }
 
-  const { data, error } = await query
-    .order("year", { ascending: false })
-    .limit(50);
+  const { data, error } = await query.order("year", { ascending: false }).limit(50);
 
   if (error) throw error;
   return (data ?? []) as unknown as MotorcycleWithCustomer[];
@@ -240,7 +237,8 @@ export async function searchMotorcycles(
 export async function listMotorcyclesForCustomer(
   customerId: string
 ): Promise<Motorcycle[]> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -256,7 +254,8 @@ export async function listMotorcyclesForCustomer(
 export async function getMotorcycleById(
   motorcycleId: string
 ): Promise<MotorcycleWithCustomer | null> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -318,10 +317,7 @@ async function assertVinAvailable(args: {
   if (!args.vin) return;
   const existing = await findMotorcycleByVin(args.vin);
   if (!existing) return;
-  if (
-    args.excludeMotorcycleId &&
-    existing.motorcycle_id === args.excludeMotorcycleId
-  ) {
+  if (args.excludeMotorcycleId && existing.motorcycle_id === args.excludeMotorcycleId) {
     return;
   }
   throw new Error("VIN_ALREADY_EXISTS");
@@ -413,9 +409,7 @@ async function fillServiceInformationFromFitment(
   return filledCount;
 }
 
-export async function createMotorcycle(
-  input: MotorcycleInput
-): Promise<Motorcycle> {
+export async function createMotorcycle(input: MotorcycleInput): Promise<Motorcycle> {
   const user = await requireUser();
   if (!canAdminHelpCreateRecords(user.role)) throw new Error("FORBIDDEN");
 
@@ -451,10 +445,7 @@ export async function createMotorcycle(
     .insert({ motorcycle_id: motorcycle.motorcycle_id });
   if (serviceInfoError) throw serviceInfoError;
 
-  const emptyInfo = await loadServiceInformation(
-    supabase,
-    motorcycle.motorcycle_id
-  );
+  const emptyInfo = await loadServiceInformation(supabase, motorcycle.motorcycle_id);
   if (emptyInfo) {
     await fillServiceInformationFromFitment(supabase, motorcycle, emptyInfo);
   }

@@ -83,9 +83,8 @@ function bikeCustomerLabel(
     motorcycle_label: motorcycle
       ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
       : "—",
-    customer_label: motorcycle?.customer
-      ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
-      : "—",
+    // Technicians must not see client PII on the floor.
+    customer_label: "",
   };
 }
 
@@ -219,7 +218,7 @@ export async function getTechnicianFloorOs(input: {
       work_order_id: wo.work_order_id,
       work_order_number: wo.work_order_number,
       title: `${labels.motorcycle_label} · ${row.service_name_snapshot}`,
-      subtitle: labels.customer_label,
+      subtitle: wo.work_order_number,
       status_label: JOB_STATUS_LABELS[row.status as JobStatus] ?? row.status,
       lane: "priority",
       is_active: row.status === "in_progress",
@@ -291,7 +290,7 @@ export async function getTechnicianFloorOs(input: {
       work_order_id: wo.work_order_id,
       work_order_number: wo.work_order_number,
       title: `${labels.motorcycle_label} · Peer QC`,
-      subtitle: labels.customer_label,
+      subtitle: wo.work_order_number,
       status_label: WORK_ORDER_STATUS_LABELS.quality_check,
       lane: "needs_qc",
       is_active: false,
