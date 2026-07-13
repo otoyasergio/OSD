@@ -1,15 +1,32 @@
 "use server";
 
+import { headers } from "next/headers";
 import { createAdminClient } from "@/lib/database/supabase-admin";
 import { applySmsConsent } from "@/lib/services/smsConsent";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { validateSmsSubscribeInput } from "@/lib/sms/subscribeValidation";
+import { rateLimit } from "@/lib/security/rateLimit";
 import { normalizePhoneE164 } from "@/lib/twilio/phone";
 
 export type SmsSubscribeState = {
   error: string | null;
   success: boolean;
 };
+
+async function assertSmsSubscribeRateLimit(): Promise<string | null> {
+  const h = await headers();
+  const forwarded = h.get("x-forwarded-for");
+  const ip = forwarded?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
+  const result = rateLimit({
+    key: `sms-subscribe:${ip}`,
+    limit: 10,
+    windowMs: 60 * 60_000,
+  });
+  if (!result.success) {
+    return "Too many attempts. Please try again later.";
+  }
+  return null;
+}
 
 function phoneLast10(phone: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -51,6 +68,11 @@ export async function subscribeSmsAction(
   _prevState: SmsSubscribeState,
   formData: FormData
 ): Promise<SmsSubscribeState> {
+  const rateLimitError = await assertSmsSubscribeRateLimit();
+  if (rateLimitError) {
+    return { error: rateLimitError, success: false };
+  }
+
   const phone = String(formData.get("phone") ?? "");
   const transactional = formData.get("sms_transactional") === "on";
   const marketing = formData.get("sms_marketing") === "on";
