@@ -3447,6 +3447,47 @@ label.photo-source-sheet-action {
   gap: 0.5rem;
 }
 
+.floor-docket-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.floor-docket-lane {
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.floor-docket-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+}
+
+.floor-docket-pos {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--chrome);
+  color: var(--surface);
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.125rem;
+}
+
+.floor-docket-body {
+  min-width: 0;
+  flex: 1;
+}
+
 .floor-queue-card {
   display: block;
   min-height: 3.25rem;

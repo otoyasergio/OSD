@@ -7,6 +7,8 @@ import type {
   FloorQueueItem,
   TechnicianFloorOs,
 } from "@/lib/services/technicianFloor";
+import type { DocketItem } from "@/lib/services/technicianDocket";
+import { TechnicianDocketList } from "@/components/technician/TechnicianDocketList";
 import { TimeClockWidget } from "@/components/technician/TimeClockWidget";
 import type { TimeClockEntry } from "@/lib/services/timeClock";
 import {
@@ -738,10 +740,12 @@ export function TechnicianFloorShell({
   floor,
   openClock,
   stage: stageProp,
+  docketItems = [],
 }: {
   floor: TechnicianFloorOs;
   openClock: TimeClockEntry | null;
   stage?: FloorStage | null;
+  docketItems?: DocketItem[];
 }) {
   const selected = floor.selected;
   const nowJobId = floor.priority.find((item) => item.is_active)?.job_id ?? null;
@@ -765,6 +769,17 @@ export function TechnicianFloorShell({
               `job-${selected.job_id}`)
             : null;
 
+  const docketSelectedKey =
+    selected == null
+      ? null
+      : selected.is_safety && !selected.job_id
+        ? `safety-${selected.work_order_id}`
+        : selected.is_qc && !selected.job_id
+          ? `qc-${selected.work_order_id}`
+          : selected.job_id
+            ? (docketItems.find((i) => i.job_id === selected.job_id)?.key ?? null)
+            : null;
+
   return (
     <div className="floor-shell">
       <header className="floor-header">
@@ -776,6 +791,14 @@ export function TechnicianFloorShell({
 
       <div className="floor-layout">
         <aside className="floor-queue">
+          <div className="floor-lane floor-docket-lane">
+            <p className="floor-lane-title">What&apos;s next</p>
+            <TechnicianDocketList
+              items={docketItems}
+              selectedKey={docketSelectedKey}
+              linkMode="floor"
+            />
+          </div>
           <QueueLane
             title="Priority"
             items={floor.priority}
@@ -794,7 +817,8 @@ export function TechnicianFloorShell({
           floor.readyToPull.length === 0 &&
           floor.needsQc.length === 0 &&
           floor.safeties.length === 0 &&
-          floor.flagged.length === 0 ? (
+          floor.flagged.length === 0 &&
+          docketItems.length === 0 ? (
             <p className="floor-muted">
               Queue empty — wait for assignment or pull ready work.
             </p>

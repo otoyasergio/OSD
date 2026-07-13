@@ -21,7 +21,11 @@ describe("buildNavCategories", () => {
     const owner = buildNavCategories("owner");
     const staffing = owner.find((c) => c.id === "staffing");
     expect(staffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
-      expect.arrayContaining(["/technician", "/settings/timesheets"])
+      expect.arrayContaining([
+        "/technician",
+        "/technician/docket",
+        "/settings/timesheets",
+      ])
     );
 
     const tech = buildNavCategories("technician");
@@ -29,6 +33,21 @@ describe("buildNavCategories", () => {
     expect(techStaffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
       "/technician",
     ]);
+  });
+
+  it("exposes Docket under Staffing for front office only", () => {
+    for (const role of ["owner", "manager", "service_advisor"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).toContain("/technician/docket");
+    }
+    for (const role of ["technician", "head_tech", "admin"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).not.toContain("/technician/docket");
+    }
   });
 
   it("hides Customers and Motorcycles for technicians", () => {

@@ -22,9 +22,11 @@ import {
   Archive,
   MessageSquare,
   KeyRound,
+  ListOrdered,
 } from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
+  canAssignTechnician,
   canChangeOwnPassword,
   canManageContractTemplate,
   canManageInspectionTemplate,
@@ -47,6 +49,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/work_orders": ClipboardList,
   "/parts": Package,
   "/technician": Wrench,
+  "/technician/docket": ListOrdered,
   "/settings/timesheets": Clock3,
   "/customers": Users,
   "/motorcycles": Bike,
@@ -113,6 +116,13 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
   const staffingLinks: NavLink[] = [
     { href: "/technician", label: "Technician", icon: iconFor("/technician") },
   ];
+  if (canAssignTechnician(role)) {
+    staffingLinks.push({
+      href: "/technician/docket",
+      label: "Docket",
+      icon: iconFor("/technician/docket"),
+    });
+  }
   if (canManageTimesheets(role)) {
     staffingLinks.push({
       href: "/settings/timesheets",

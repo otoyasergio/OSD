@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { getOpenTimeClockEntry } from "@/lib/services/timeClock";
 import { getTechnicianFloorOs, type FloorOsMode } from "@/lib/services/technicianFloor";
+import { getTechnicianDocket } from "@/lib/services/technicianDocket";
+import { isFloorTech } from "@/lib/permissions";
 import {
   TechnicianFloorShell,
   deriveDefaultStage,
@@ -52,17 +54,27 @@ export default async function TechnicianPage({
   const params = await searchParams;
   const requestedStage = stageFromParams(params);
 
-  const [floor, openClock] = await Promise.all([
+  const [floor, openClock, docket] = await Promise.all([
     getTechnicianFloorOs({
       jobId: params.job ?? null,
       workOrderId: params.wo ?? null,
       mode: modeForFetch(requestedStage),
     }),
     getOpenTimeClockEntry(user.user_id),
+    isFloorTech(user.role)
+      ? getTechnicianDocket(user.user_id).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const stage =
     requestedStage ?? (floor.selected ? deriveDefaultStage(floor.selected) : "work");
 
-  return <TechnicianFloorShell floor={floor} openClock={openClock} stage={stage} />;
+  return (
+    <TechnicianFloorShell
+      floor={floor}
+      openClock={openClock}
+      stage={stage}
+      docketItems={docket?.items ?? []}
+    />
+  );
 }

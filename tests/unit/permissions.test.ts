@@ -29,6 +29,7 @@ import {
   canCompleteInspection,
   canCompleteJob,
   canCreateRecommendation,
+  canViewTechnicianDocket,
 } from "@/lib/permissions/checks";
 
 describe("permissions", () => {
@@ -205,5 +206,16 @@ describe("permissions", () => {
     expect(canViewClients("head_tech")).toBe(false);
     expect(canRunQualityCheck("head_tech")).toBe(false);
     expect(canRecordCustomerApproval("head_tech")).toBe(false);
+  });
+
+  it("front office can view any tech docket; floor techs only their own", () => {
+    expect(canViewTechnicianDocket("owner", "tech-a", "tech-b")).toBe(true);
+    expect(canViewTechnicianDocket("manager", "tech-a", "tech-b")).toBe(true);
+    expect(canViewTechnicianDocket("service_advisor", "tech-a", "tech-b")).toBe(true);
+    expect(canViewTechnicianDocket("technician", "tech-a", "tech-a")).toBe(true);
+    expect(canViewTechnicianDocket("technician", "tech-a", "tech-b")).toBe(false);
+    expect(canViewTechnicianDocket("head_tech", "tech-a", "tech-a")).toBe(true);
+    expect(canViewTechnicianDocket("head_tech", "tech-a", "tech-b")).toBe(false);
+    expect(canViewTechnicianDocket("admin", "tech-a", "tech-b")).toBe(false);
   });
 });
