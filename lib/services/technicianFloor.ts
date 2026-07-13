@@ -227,17 +227,33 @@ export async function getTechnicianFloorOs(input: {
   }
   priority.sort((a, b) => Number(b.is_active) - Number(a.is_active));
 
-  const readyToPull: FloorQueueItem[] = [];
-  for (const row of pullJobs ?? []) {
+  const pullCandidates = (pullJobs ?? []).filter((row) => {
     const wo = unwrapWo(row.work_order);
-    if (!wo || wo.location_id !== locationId) continue;
-    if (
-      wo.status === "waiting_for_customer_approval" ||
-      wo.status === "cancelled" ||
-      wo.status === "completed"
-    ) {
-      continue;
+    if (!wo || wo.location_id !== locationId) return false;
+    return wo.status === "ready_for_technician" || wo.status === "in_progress";
+  });
+  const pullWoIds = [
+    ...new Set(
+      pullCandidates
+        .map((row) => unwrapWo(row.work_order)?.work_order_id)
+        .filter((id): id is string => Boolean(id))
+    ),
+  ];
+  const signedWoIds = new Set<string>();
+  if (pullWoIds.length > 0) {
+    const { data: agreements } = await supabase
+      .from("drop_off_agreement")
+      .select("work_order_id")
+      .in("work_order_id", pullWoIds);
+    for (const row of agreements ?? []) {
+      signedWoIds.add((row as { work_order_id: string }).work_order_id);
     }
+  }
+
+  const readyToPull: FloorQueueItem[] = [];
+  for (const row of pullCandidates) {
+    const wo = unwrapWo(row.work_order);
+    if (!wo || !signedWoIds.has(wo.work_order_id)) continue;
     const labels = bikeCustomerLabel(unwrapMoto(wo));
     readyToPull.push({
       key: `pull-${row.job_id}`,
@@ -350,6 +366,12 @@ export async function getTechnicianFloorOs(input: {
     }
   }
 
+  // Flagged / WO-only selection: prefer the tech's open job on that WO.
+  if (!selectedJobId && selectedWoId) {
+    const mine = priority.find((item) => item.work_order_id === selectedWoId);
+    if (mine?.job_id) selectedJobId = mine.job_id;
+  }
+
   if (needsQc.some((item) => item.work_order_id === selectedWoId) && !selectedJobId) {
     mode = input.mode ?? "qc";
   }
@@ -404,17 +426,27 @@ export async function getTechnicianFloorOs(input: {
         .eq("work_order_id", wo.work_order_id)
         .is("cleared_at", null);
 
+      const inspectionComplete = Boolean(wo.inspection?.[0]?.completed_at);
       const gate = evaluateJobCompleteGate({
         checklistItems: checklist,
         parts: (parts as Array<{ status: string }>) ?? [],
         proofPhotoCount: (proofs ?? []).length,
         hasProofException: (exceptions ?? []).length > 0,
+        inspectionComplete,
       });
       const labour = formatLabourComparison(
         job.estimated_labour_snapshot as number | null,
         job.started_at,
         job.completed_at
       );
+      const returnTo = encodeURIComponent(
+        `/technician?job=${job.job_id}&wo=${wo.work_order_id}`
+      );
+      const unassigned =
+        !job.assigned_technician_id &&
+        (job.status === "approved" || job.status === "ready_to_start");
+      const woPullable =
+        wo.status === "ready_for_technician" || wo.status === "in_progress";
 
       selected = {
         mode,
@@ -429,8 +461,8 @@ export async function getTechnicianFloorOs(input: {
         wo_status: wo.status,
         wo_status_label:
           WORK_ORDER_STATUS_LABELS[wo.status as WorkOrderStatus] ?? wo.status,
-        inspection_complete: Boolean(wo.inspection?.[0]?.completed_at),
-        inspection_href: `/work_orders/${wo.work_order_id}/inspection?returnTo=/technician`,
+        inspection_complete: inspectionComplete,
+        inspection_href: `/work_orders/${wo.work_order_id}/inspection?returnTo=${returnTo}`,
         overview_href: `/work_orders/${wo.work_order_id}`,
         started_at: job.started_at,
         completed_at: job.completed_at,
@@ -462,7 +494,8 @@ export async function getTechnicianFloorOs(input: {
           (job.status === "approved" || job.status === "ready_to_start"),
         can_complete:
           job.assigned_technician_id === user.user_id && job.status === "in_progress",
-        can_pull: false,
+        can_pull:
+          unassigned && woPullable && readyToPull.some((i) => i.job_id === job.job_id),
         is_qc: false,
         qc_assignee_is_me: false,
         flags: (openFlags as AdminFlag[]) ?? [],
@@ -499,6 +532,14 @@ export async function getTechnicianFloorOs(input: {
           : null
       );
       const pullItem = readyToPull.find((item) => item.work_order_id === selectedWoId);
+      const { data: openFlags } = await supabase
+        .from("admin_flag")
+        .select(
+          "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
+        )
+        .eq("work_order_id", wo.work_order_id)
+        .is("cleared_at", null);
+      const returnTo = encodeURIComponent(`/technician?wo=${wo.work_order_id}`);
       selected = {
         mode: mode === "job" && !pullItem ? "qc" : mode,
         job_id: pullItem?.job_id ?? null,
@@ -516,7 +557,7 @@ export async function getTechnicianFloorOs(input: {
           (wo.inspection as Array<{ completed_at: string | null }> | null)?.[0]
             ?.completed_at
         ),
-        inspection_href: `/work_orders/${wo.work_order_id}/inspection?returnTo=/technician`,
+        inspection_href: `/work_orders/${wo.work_order_id}/inspection?returnTo=${returnTo}`,
         overview_href: `/work_orders/${wo.work_order_id}`,
         started_at: null,
         completed_at: null,
@@ -534,7 +575,7 @@ export async function getTechnicianFloorOs(input: {
         can_pull: Boolean(pullItem),
         is_qc: wo.status === "quality_check",
         qc_assignee_is_me: wo.quality_check_assigned_to === user.user_id,
-        flags: [],
+        flags: (openFlags as AdminFlag[]) ?? [],
       };
     }
   }

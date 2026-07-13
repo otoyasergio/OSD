@@ -96,6 +96,7 @@ const FLAG_OPTIONS = [
   "Safety-critical",
   "Overdue",
   "On hold",
+  "Admin flag",
 ];
 
 type RawRow = {

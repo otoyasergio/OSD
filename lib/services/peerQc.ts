@@ -36,6 +36,54 @@ async function listClockedInTechnicianIds(
   return (techs ?? []).map((row: { user_id: string }) => row.user_id);
 }
 
+const UNASSIGNED_QC_NOTE =
+  "No peer QC assignee available — no eligible clocked-in technician.";
+
+async function flagUnassignedPeerQc(
+  supabase: DbClient,
+  workOrderId: string,
+  locationId: string,
+  actorUserId: string | null
+): Promise<void> {
+  const { data: existing, error: existingError } = await supabase
+    .from("admin_flag")
+    .select("admin_flag_id")
+    .eq("work_order_id", workOrderId)
+    .eq("reason", "quality")
+    .is("cleared_at", null)
+    .eq("note", UNASSIGNED_QC_NOTE)
+    .limit(1);
+  if (existingError) throw existingError;
+  if ((existing ?? []).length > 0) return;
+
+  const { error: insertError } = await supabase.from("admin_flag").insert({
+    work_order_id: workOrderId,
+    reason: "quality",
+    note: UNASSIGNED_QC_NOTE,
+    created_by_user_id: actorUserId,
+  });
+  if (insertError) throw insertError;
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: actorUserId,
+    event_type: TimelineEventType.WORK_ORDER_STATUS_CHANGED,
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: "Peer QC unassigned — admin flag raised",
+    new_value: { quality_check_assigned_to: null, andon: true },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: actorUserId,
+    location_id: locationId,
+    action: "peer_qc_unassigned_flag",
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: UNASSIGNED_QC_NOTE,
+  });
+}
+
 export async function autoAssignPeerQc(
   supabase: DbClient,
   workOrderId: string,
@@ -72,7 +120,10 @@ export async function autoAssignPeerQc(
   ];
 
   const clockedIn = await listClockedInTechnicianIds(supabase, locationId);
-  if (clockedIn.length === 0) return null;
+  if (clockedIn.length === 0) {
+    await flagUnassignedPeerQc(supabase, workOrderId, locationId, actorUserId);
+    return null;
+  }
 
   const { data: openJobs, error: openJobsError } = await supabase
     .from("job")
@@ -114,7 +165,10 @@ export async function autoAssignPeerQc(
     })),
   });
 
-  if (!assignee) return null;
+  if (!assignee) {
+    await flagUnassignedPeerQc(supabase, workOrderId, locationId, actorUserId);
+    return null;
+  }
 
   const { error: updateError } = await supabase
     .from("work_order")
@@ -175,6 +229,9 @@ export async function passPeerQualityCheck(
   if (workOrder.quality_check_assigned_to !== user.user_id) {
     throw new Error("QC_NOT_ASSIGNED_TO_YOU");
   }
+  if (workOrder.status !== "quality_check") {
+    throw new Error("INVALID_STATUS");
+  }
 
   const { data: jobs, error: jobsError } = await supabase
     .from("job")
@@ -213,6 +270,9 @@ export async function failPeerQualityCheck(
   if (workOrder.location_id !== user.active_location_id) {
     throw new Error("FOREIGN_LOCATION");
   }
+  if (workOrder.status !== "quality_check") {
+    throw new Error("INVALID_STATUS");
+  }
 
   const isFrontOffice = canRunQualityCheck(user.role);
   if (!isFrontOffice && workOrder.quality_check_assigned_to !== user.user_id) {
@@ -244,6 +304,7 @@ export async function failPeerQualityCheck(
       .update({
         status: "ready_to_start",
         completed_at: null,
+        started_at: null,
         updated_at: now,
       })
       .eq("job_id", (job as { job_id: string }).job_id);

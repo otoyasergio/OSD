@@ -440,8 +440,6 @@ function DoneStage({ surface }: { surface: FloorOsSurface }) {
 }
 
 function QcStage({ surface }: { surface: FloorOsSurface }) {
-  const [failState, failAction, failPending] = useActionState(failPeerQcAction, null);
-
   if (!surface.is_qc) {
     return <p className="floor-muted">No peer QC on this work order yet.</p>;
   }
@@ -452,23 +450,33 @@ function QcStage({ surface }: { surface: FloorOsSurface }) {
   return (
     <div className="floor-stage-body">
       <p className="floor-lead">
-        Confirm {surface.motorcycle_label} meets shop standard, then pass or fail.
+        Confirm {surface.motorcycle_label} meets shop standard, then pass or fail from the
+        dock.
       </p>
-      <form action={failAction} className="floor-qc-fail">
-        <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-        <textarea
-          name="reason"
-          required
-          rows={2}
-          placeholder="Fail reason (required)"
-          className="input"
-        />
-        <button className="btn btn-secondary floor-tap" disabled={failPending}>
-          {failPending ? "Failing…" : "Fail QC"}
-        </button>
-        <ActionMessage state={failState} />
-      </form>
-      <p className="floor-muted">Pass QC from the dock below.</p>
+      <ul className="floor-checklist">
+        <li className="floor-checklist-row">
+          <span className="floor-check floor-check--on" aria-hidden>
+            ✓
+          </span>
+          <span className="floor-checklist-label">Jobs completed as approved</span>
+        </li>
+        <li className="floor-checklist-row">
+          <span className="floor-check floor-check--on" aria-hidden>
+            ✓
+          </span>
+          <span className="floor-checklist-label">Proof photos / notes look right</span>
+        </li>
+        <li className="floor-checklist-row">
+          <span className="floor-check floor-check--on" aria-hidden>
+            ✓
+          </span>
+          <span className="floor-checklist-label">Bike is safe to return</span>
+        </li>
+      </ul>
+      <p className="floor-muted">
+        <Link href={surface.overview_href}>Open work order overview</Link> for full
+        detail. Pass or Fail from the dock below.
+      </p>
     </div>
   );
 }
@@ -485,10 +493,16 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
   const [pullState, pullAction, pullPending] = useActionState(pullJobAction, null);
   const [flagState, flagAction, flagPending] = useActionState(flagForAdminAction, null);
   const [passState, passAction, passPending] = useActionState(passPeerQcAction, null);
+  const [failState, failAction, failPending] = useActionState(failPeerQcAction, null);
 
   const showFlag = Boolean(surface.job_id) && !surface.can_pull && stage !== "qc";
+  const checklistOpen = surface.checklist.some((item) => !item.checked_at);
+  const partsOpen = surface.parts.some((part) => part.can_install);
+  const proofOk = surface.proof_count > 0 || surface.has_proof_exception;
+  const workReady = surface.inspection_complete && !checklistOpen && !partsOpen;
 
   let primary: ReactNode = null;
+  let secondary: ReactNode = null;
   let reason: string | null = null;
 
   if (surface.can_pull && surface.job_id) {
@@ -506,14 +520,45 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
     primary = (
       <form action={passAction} className="floor-dock-primary">
         <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-        <input type="hidden" name="notes" value="" />
+        <input type="hidden" name="notes" value="Peer QC checklist reviewed" />
         <button className="btn btn-primary floor-dock-btn" disabled={passPending}>
           {passPending ? "Passing…" : "Pass QC"}
         </button>
         <ActionMessage state={passState} />
       </form>
     );
-  } else if (surface.can_start && surface.job_id) {
+    secondary = (
+      <details className="floor-flag-details floor-dock-fail">
+        <summary className="floor-flag-summary">Fail QC</summary>
+        <form action={failAction} className="floor-flag-form">
+          <input type="hidden" name="work_order_id" value={surface.work_order_id} />
+          <textarea
+            name="reason"
+            required
+            rows={2}
+            placeholder="What failed?"
+            className="input"
+          />
+          <button className="btn btn-secondary floor-tap" disabled={failPending}>
+            {failPending ? "Failing…" : "Confirm fail"}
+          </button>
+          <ActionMessage state={failState} />
+        </form>
+      </details>
+    );
+  } else if (stage === "inspect" && !surface.inspection_complete) {
+    primary = (
+      <Link href={surface.inspection_href} className="btn btn-primary floor-dock-btn">
+        Open inspection
+      </Link>
+    );
+  } else if (stage === "inspect" && surface.inspection_complete) {
+    primary = (
+      <Link href={stageHref(surface, "work")} className="btn btn-primary floor-dock-btn">
+        Continue to Work →
+      </Link>
+    );
+  } else if (stage === "work" && surface.can_start && surface.job_id) {
     primary = (
       <form action={startAction} className="floor-dock-primary">
         <input type="hidden" name="job_id" value={surface.job_id} />
@@ -524,7 +569,23 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
         <ActionMessage state={startState} />
       </form>
     );
-  } else if (surface.can_complete && surface.job_id) {
+  } else if (stage === "work" && workReady) {
+    primary = (
+      <Link href={stageHref(surface, "proof")} className="btn btn-primary floor-dock-btn">
+        Continue to Proof →
+      </Link>
+    );
+  } else if (stage === "proof" && proofOk) {
+    primary = (
+      <Link href={stageHref(surface, "done")} className="btn btn-primary floor-dock-btn">
+        Continue to Done →
+      </Link>
+    );
+  } else if (
+    (stage === "done" || stage === "proof" || stage === "work") &&
+    surface.can_complete &&
+    surface.job_id
+  ) {
     reason = surface.complete_gate_ok ? null : surface.complete_gate_reason;
     primary = (
       <form action={completeAction} className="floor-dock-primary">
@@ -541,7 +602,7 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
     );
   }
 
-  if (!primary && !showFlag) return null;
+  if (!primary && !secondary && !showFlag) return null;
 
   return (
     <div className="floor-dock">
@@ -555,6 +616,7 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
             flagState={flagState}
           />
         ) : null}
+        {secondary}
         {primary}
       </div>
     </div>
@@ -644,6 +706,22 @@ export function TechnicianFloorShell({
                     {selected.labour_label ? ` · ${selected.labour_label}` : ""}
                     {selected.labour_over ? " · over estimate" : ""}
                   </p>
+                  {selected.flags.length > 0 ? (
+                    <div className="floor-flag-banner" role="status">
+                      <p className="floor-flag-banner-title">Admin flag open</p>
+                      <ul>
+                        {selected.flags.map((flag) => (
+                          <li key={flag.admin_flag_id}>
+                            {flag.reason}
+                            {flag.note ? ` — ${flag.note}` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                      <Link href={selected.overview_href} className="floor-muted">
+                        View on overview →
+                      </Link>
+                    </div>
+                  ) : null}
                 </div>
 
                 <StageRail surface={selected} stage={stage} />

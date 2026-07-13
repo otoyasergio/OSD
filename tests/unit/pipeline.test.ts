@@ -22,19 +22,19 @@ describe("getPipelineStageIndex", () => {
 
 describe("getWorkOrderNextAction", () => {
   it("prioritizes blocking flags over status", () => {
-    expect(
-      getWorkOrderNextAction("in_progress", ["Incomplete inspection"])
-    ).toContain("inspection");
-    expect(
-      getWorkOrderNextAction("ready_for_technician", ["Needs approval"])
-    ).toContain("approval");
-    expect(
-      getWorkOrderNextAction("open", ["Contract unsigned"])
-    ).toBe("Get drop-off agreement signed");
+    expect(getWorkOrderNextAction("in_progress", ["Incomplete inspection"])).toContain(
+      "inspection"
+    );
+    expect(getWorkOrderNextAction("ready_for_technician", ["Needs approval"])).toContain(
+      "approval"
+    );
+    expect(getWorkOrderNextAction("open", ["Contract unsigned"])).toBe(
+      "Get drop-off agreement signed"
+    );
   });
 
   it("returns status-specific hints when no flags", () => {
-    expect(getWorkOrderNextAction("quality_check", [])).toContain("quality");
+    expect(getWorkOrderNextAction("quality_check", [])).toMatch(/QC|quality/i);
     expect(getWorkOrderNextAction("waiting_for_parts", [])).toContain("parts");
     expect(getWorkOrderNextAction("open", [])).toBe("Start inspection");
     expect(getWorkOrderNextAction("open", ["No intake photos"])).toBe(

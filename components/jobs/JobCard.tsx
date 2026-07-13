@@ -11,10 +11,7 @@ import { SubmitButton } from "@/components/forms/SubmitButton";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatLabourComparison } from "@/lib/services/labour";
 
-type Action = (
-  state: JobFormState,
-  formData: FormData
-) => Promise<JobFormState>;
+type Action = (state: JobFormState, formData: FormData) => Promise<JobFormState>;
 
 function StatusButton({
   action,
@@ -106,9 +103,7 @@ export function JobCard({
     (canComplete || isTechnicianSelf) &&
     Boolean(job.assigned_technician_id) &&
     !inspectionBlocksComplete &&
-    (job.status === "in_progress" ||
-      job.status === "approved" ||
-      job.status === "ready_to_start");
+    job.status === "in_progress";
 
   const labour = formatLabourComparison(
     job.estimated_labour_snapshot,
@@ -160,10 +155,7 @@ export function JobCard({
       {!readOnly ? (
         <div className="mt-4 flex flex-col gap-4">
           {canEdit ? (
-            <form
-              action={assignFormAction}
-              className="flex flex-wrap items-end gap-2"
-            >
+            <form action={assignFormAction} className="flex flex-wrap items-end gap-2">
               <label className="min-w-[12rem] flex-1">
                 <span className="field-label">Assign technician</span>
                 <select
@@ -186,10 +178,7 @@ export function JobCard({
           ) : null}
 
           {canApprove && awaitingApproval ? (
-            <form
-              action={approveFormAction}
-              className="flex flex-wrap items-end gap-2"
-            >
+            <form action={approveFormAction} className="flex flex-wrap items-end gap-2">
               <label className="min-w-[12rem] flex-1">
                 <span className="field-label">Approval method</span>
                 <select
@@ -313,15 +302,9 @@ export function JobCard({
                 <form action={cancelFormAction} className="w-full flex flex-col gap-2">
                   <label className="block">
                     <span className="field-label">
-                      Cancel note{" "}
-                      <span className="text-[var(--status-danger)]">*</span>
+                      Cancel note <span className="text-[var(--status-danger)]">*</span>
                     </span>
-                    <textarea
-                      className="textarea"
-                      name="note"
-                      required
-                      rows={2}
-                    />
+                    <textarea className="textarea" name="note" required rows={2} />
                   </label>
                   <div className="flex flex-wrap gap-2">
                     <SubmitButton

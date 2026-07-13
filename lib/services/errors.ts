@@ -18,11 +18,12 @@ const MESSAGES: Record<string, string> = {
   FOREIGN_LOCATION:
     "This work order belongs to another location. Switch location to make changes.",
   WORK_ORDER_LOCKED: "This work order is completed or cancelled and cannot be changed.",
-  JOB_NOT_READY: "That job is not ready to start yet.",
+  JOB_NOT_READY: "That job is not ready to pull yet.",
   JOB_NOT_ASSIGNED: "Assign a technician before completing this job.",
   JOB_NOT_ASSIGNED_TO_YOU: "You can only start or complete jobs assigned to you.",
   JOB_ALREADY_ASSIGNED: "That job is already assigned.",
   OTHER_JOB_IN_PROGRESS: "Finish or flag your current job before starting another.",
+  INVALID_STATUS: "This work order is not in the right status for that action.",
   CHECKLIST_REQUIRED: "Complete the standard work checklist first.",
   CHECKLIST_INCOMPLETE: "Check all checklist items before completing.",
   PARTS_NOT_INSTALLED: "Install or clear all parts before completing.",
@@ -80,7 +81,8 @@ const MESSAGES: Record<string, string> = {
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
   QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
-  CONTRACT_REQUIRED: "Sign the drop-off agreement before marking ready for technician.",
+  CONTRACT_REQUIRED:
+    "Sign the drop-off agreement before pulling or marking ready for technician.",
   NOT_READY_FOR_PICKUP:
     "Mark the work order ready for pickup before completing, or ask an owner/manager to override.",
   HOLD_REASON_REQUIRED: "Enter a reason when placing a work order on hold.",

@@ -55,4 +55,16 @@ describe("evaluateJobCompleteGate", () => {
       }).ok
     ).toBe(true);
   });
+
+  it("blocks when inspection is incomplete", () => {
+    expect(
+      evaluateJobCompleteGate({
+        checklistItems: [{ checked_at: "2026-01-01" }],
+        parts: [{ status: "installed" }],
+        proofPhotoCount: 1,
+        hasProofException: false,
+        inspectionComplete: false,
+      })
+    ).toMatchObject({ ok: false, code: "INSPECTION_NOT_COMPLETED" });
+  });
 });

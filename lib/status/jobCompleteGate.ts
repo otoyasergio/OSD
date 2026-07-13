@@ -3,6 +3,8 @@ export type JobCompleteGateInput = {
   parts: Array<{ status: string }>;
   proofPhotoCount: number;
   hasProofException: boolean;
+  /** When false, block complete (matches server inspectionGate). */
+  inspectionComplete?: boolean;
 };
 
 export type JobCompleteGateResult =
@@ -13,6 +15,14 @@ const PARTS_OK = new Set(["installed", "not_required", "cancelled"]);
 export function evaluateJobCompleteGate(
   input: JobCompleteGateInput
 ): JobCompleteGateResult {
+  if (input.inspectionComplete === false) {
+    return {
+      ok: false,
+      code: "INSPECTION_NOT_COMPLETED",
+      reason: "Complete the inspection report first.",
+    };
+  }
+
   if (input.checklistItems.length === 0) {
     return {
       ok: false,

@@ -46,8 +46,7 @@ export const VISIT_PIPELINE_STAGES = [
   },
 ] as const;
 
-export type VisitPipelineStageId =
-  (typeof VISIT_PIPELINE_STAGES)[number]["id"];
+export type VisitPipelineStageId = (typeof VISIT_PIPELINE_STAGES)[number]["id"];
 
 /** Board columns for the dashboard shop-floor view. */
 export const SHOP_BOARD_COLUMNS = [
@@ -108,17 +107,14 @@ export function getPipelineStageIndex(status: WorkOrderStatus): number {
   return index >= 0 ? index : 0;
 }
 
-export function getWorkOrderNextAction(
-  status: WorkOrderStatus,
-  flags: string[]
-): string {
+export function getWorkOrderNextAction(status: WorkOrderStatus, flags: string[]): string {
   if (status === "cancelled") return "Work order cancelled";
   if (status === "on_hold") return "Resume when customer or parts are ready";
   if (status === "completed") return "Vehicle picked up — archive when done";
 
+  if (flags.includes("Admin flag")) return "Clear admin flag and unblock technician";
   if (flags.includes("No intake photos")) return "Capture intake photos";
-  if (flags.includes("Contract unsigned"))
-    return "Get drop-off agreement signed";
+  if (flags.includes("Contract unsigned")) return "Get drop-off agreement signed";
   if (flags.includes("Missing VIN")) return "Record VIN on motorcycle profile";
   if (flags.includes("Incomplete inspection")) return "Complete inspection checklist";
   if (flags.includes("Needs approval")) return "Record customer approval on jobs";
@@ -137,11 +133,11 @@ export function getWorkOrderNextAction(
     case "waiting_for_parts":
       return "Mark parts received when they arrive";
     case "ready_for_technician":
-      return "Assign technician and start jobs";
+      return "Pull on Tech floor or assign technician";
     case "in_progress":
       return "Complete assigned jobs";
     case "quality_check":
-      return "Run quality check";
+      return "Peer QC on Tech floor or complete QC on Overview";
     case "ready_for_pickup":
       return "Notify customer — ready for pickup";
     default:

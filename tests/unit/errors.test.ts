@@ -4,7 +4,7 @@ import { toFormErrorMessage } from "@/lib/services/errors";
 describe("toFormErrorMessage", () => {
   it("maps CONTRACT_REQUIRED to the technician-gate copy", () => {
     expect(toFormErrorMessage(new Error("CONTRACT_REQUIRED"))).toBe(
-      "Sign the drop-off agreement before marking ready for technician."
+      "Sign the drop-off agreement before pulling or marking ready for technician."
     );
   });
 

@@ -63,8 +63,35 @@ export async function completeJobFloorAction(
     const workOrderId = String(formData.get("work_order_id") ?? "");
     await updateJobStatus(jobId, "completed");
     revalidateFloor(workOrderId);
+
+    const { getTechnicianFloorOs } = await import("@/lib/services/technicianFloor");
+    const floor = await getTechnicianFloorOs({});
+    const next =
+      floor.priority.find((item) => item.is_active) ??
+      floor.priority[0] ??
+      floor.needsQc[0] ??
+      floor.readyToPull[0] ??
+      null;
+    if (next) {
+      const params = new URLSearchParams();
+      if (next.job_id) params.set("job", next.job_id);
+      params.set("wo", next.work_order_id);
+      if (next.kind === "qc") params.set("stage", "qc");
+      const { redirect } = await import("next/navigation");
+      redirect(`/technician?${params.toString()}`);
+    }
+
     return { success: "Job completed." };
   } catch (error) {
+    // redirect() throws a special NEXT_REDIRECT error — rethrow it.
+    if (
+      error &&
+      typeof error === "object" &&
+      "digest" in error &&
+      String((error as { digest?: string }).digest).startsWith("NEXT_REDIRECT")
+    ) {
+      throw error;
+    }
     return { error: toFormErrorMessage(error) };
   }
 }

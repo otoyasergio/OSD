@@ -207,11 +207,13 @@ export async function assignTechnicianToJob(
   });
 }
 
-export async function pullJob(jobId: string): Promise<void> {
+export async function pullJob(
+  jobId: string,
+  options: { andStart?: boolean } = {}
+): Promise<void> {
   const user = await requireUser();
   if (!canPullJob(user.role)) throw new Error("FORBIDDEN");
   if (user.role !== "technician") {
-    // Front office should use assignTechnicianToJob with an explicit tech id.
     throw new Error("FORBIDDEN");
   }
 
@@ -228,11 +230,48 @@ export async function pullJob(jobId: string): Promise<void> {
     throw new Error("JOB_ALREADY_ASSIGNED");
   }
 
+  if (
+    workOrder.status === "on_hold" ||
+    workOrder.status === "waiting_for_parts" ||
+    workOrder.status === "waiting_for_customer_approval" ||
+    workOrder.status === "cancelled" ||
+    workOrder.status === "completed"
+  ) {
+    throw new Error("JOB_NOT_READY");
+  }
+
+  if (workOrder.status !== "ready_for_technician" && workOrder.status !== "in_progress") {
+    throw new Error("JOB_NOT_READY");
+  }
+
+  const { data: agreement, error: agreementError } = await supabase
+    .from("drop_off_agreement")
+    .select("agreement_id")
+    .eq("work_order_id", job.work_order_id)
+    .maybeSingle();
+  if (agreementError) throw agreementError;
+  if (!agreement) throw new Error("CONTRACT_REQUIRED");
+
+  if (options.andStart) {
+    const { data: otherActive, error: activeError } = await supabase
+      .from("job")
+      .select("job_id")
+      .eq("assigned_technician_id", user.user_id)
+      .eq("status", "in_progress")
+      .limit(1);
+    if (activeError) throw activeError;
+    if ((otherActive ?? []).length > 0) {
+      throw new Error("OTHER_JOB_IN_PROGRESS");
+    }
+  }
+
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from("job")
     .update({
       assigned_technician_id: user.user_id,
-      updated_at: new Date().toISOString(),
+      ...(options.andStart ? { status: "in_progress", started_at: now } : {}),
+      updated_at: now,
     })
     .eq("job_id", jobId)
     .is("assigned_technician_id", null);
@@ -244,20 +283,29 @@ export async function pullJob(jobId: string): Promise<void> {
     event_type: TimelineEventType.JOB_ASSIGNED,
     entity_type: "job",
     entity_id: jobId,
-    description: `Job pulled by technician`,
+    description: options.andStart
+      ? `Job pulled and started by technician`
+      : `Job pulled by technician`,
     old_value: { assigned_technician_id: null },
-    new_value: { assigned_technician_id: user.user_id },
+    new_value: {
+      assigned_technician_id: user.user_id,
+      ...(options.andStart ? { status: "in_progress" } : {}),
+    },
   });
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,
     location_id: workOrder.location_id,
-    action: "job_pulled",
+    action: options.andStart ? "job_pulled_and_started" : "job_pulled",
     entity_type: "job",
     entity_id: jobId,
     description: `Job ${job.service_name_snapshot} pulled`,
     new_value: { assigned_technician_id: user.user_id },
   });
+
+  if (options.andStart) {
+    await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  }
 }
 
 function assertStatusTransition(
@@ -369,6 +417,7 @@ export async function updateJobStatus(
       parts: (parts as Array<{ status: string }>) ?? [],
       proofPhotoCount: (proofs ?? []).length,
       hasProofException: (exceptions ?? []).length > 0,
+      inspectionComplete: Boolean(inspection?.completed_at),
     });
     if (!gate.ok) {
       throw new Error(gate.code);
