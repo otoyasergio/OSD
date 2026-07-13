@@ -23,6 +23,8 @@ Copy from [`.env.local.example`](../../../.env.local.example). Do not commit `.e
 | `TWILIO_AUTH_TOKEN`                     | Vercel                | SMS API + inbound webhook signature                     |
 | `TWILIO_MESSAGING_SERVICE_SID`          | Vercel                | **Preferred** A2P sender pool (omit `From` when set)    |
 | `TWILIO_FROM_NUMBER`                    | Vercel                | Fallback if Messaging Service SID is not set            |
+| `NEXT_PUBLIC_PRIVACY_POLICY_URL`        | Vercel                | Live Privacy Policy on torontomoto.com (Wix)            |
+| `NEXT_PUBLIC_TERMS_URL`                 | Vercel                | Live Terms / SMS program terms on torontomoto.com       |
 | `WIX_WEBHOOK_SECRET`                    | Vercel                | **Required** if Wix bookings enabled (fail-closed)      |
 | `CRON_SECRET`                           | Vercel                | Bearer for Parts Canada cron                            |
 | `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Vercel                | Optional error tracking                                 |
@@ -80,6 +82,12 @@ After migrations, confirm Storage buckets: `intake-photos`, `contract-signatures
 - [ ] Twilio TrustHub: Business Profile approved → Brand → Campaign → Messaging Service (see §8)
 - [ ] `TWILIO_*` set on Vercel; inbound + status webhook URLs match `NEXT_PUBLIC_APP_URL`
 - [ ] Migration `037_customer_sms_opt_out` applied
+- [ ] Migration `038_sms_consent` applied (dual consent + audit log)
+- [ ] Wix Privacy Policy + Terms published from `docs/compliance/` drafts
+- [ ] `NEXT_PUBLIC_PRIVACY_POLICY_URL` and `NEXT_PUBLIC_TERMS_URL` set on Vercel
+- [ ] Public opt-in live at `https://service.torontomoto.com/sms` (disclosures + legal links)
+- [ ] Twilio campaign submitted using `docs/compliance/twilio-verification-paste-pack.md`
+- [ ] Messaging Service **Advanced Opt-Out** enabled
 - [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (daily schedules for Hobby)
 - [ ] `npm test` and `npm run build` green
 - [ ] Playwright smoke (`npm run test:e2e`) against staging when available
@@ -139,6 +147,14 @@ After migrations, confirm Storage buckets: `intake-photos`, `contract-signatures
 7. **Record for Vercel (not git):** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID` (preferred). Optionally keep `TWILIO_FROM_NUMBER` as documentation of the pool number.
 
 Brand approval is often fast; Campaign review can take **~10–15 days**. Treat **US** sends as blocked until the Campaign is approved and the number shows `REGISTERED`. CA traffic may work earlier depending on carrier filtering.
+
+### SMS compliance publish sequence
+
+1. **Publish Wix legal pages** — paste `docs/compliance/privacy-policy-wix.md` and `docs/compliance/sms-terms-wix.md` into torontomoto.com Privacy Policy and Terms.
+2. **Set env on Vercel** — `NEXT_PUBLIC_PRIVACY_POLICY_URL=https://www.torontomoto.com/privacy-policy` and `NEXT_PUBLIC_TERMS_URL=https://www.torontomoto.com/terms`; redeploy.
+3. **Verify `/sms` live** — open `https://service.torontomoto.com/sms`; confirm unchecked boxes, disclosures, Privacy/Terms links, and successful opt-in test.
+4. **Submit campaign** — use `docs/compliance/twilio-verification-paste-pack.md` in Trust Hub / A2P Console (use cases: CUSTOMER_CARE, ACCOUNT_NOTIFICATIONS, MARKETING).
+5. **Enable Advanced Opt-Out** on the Messaging Service before production SMS volume.
 
 ### App env
 
