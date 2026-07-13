@@ -43,6 +43,13 @@ test.describe("webhook security", () => {
     expect([401, 503]).toContain(response.status());
   });
 
+  test("Twilio status webhook rejects missing signature", async ({ request }) => {
+    const response = await request.post("/api/twilio/status", {
+      form: { MessageSid: "SMtest", MessageStatus: "delivered" },
+    });
+    expect([401, 503]).toContain(response.status());
+  });
+
   test("Wix webhook fails closed without secret or rejects bad auth", async ({
     request,
   }) => {

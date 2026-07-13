@@ -2,10 +2,7 @@ import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { canViewBillingArea } from "@/lib/permissions";
 import type { BillingStage } from "@/lib/billing/stages";
-import {
-  type BillingBucket,
-  classifyBillingBucket,
-} from "@/lib/billing/buckets";
+import { type BillingBucket, classifyBillingBucket } from "@/lib/billing/buckets";
 
 export type BillingBoardItem = {
   work_order_id: string;
@@ -23,6 +20,9 @@ export type BillingBoardItem = {
   estimate_sent_at: string | null;
   invoice_published_at: string | null;
   customer_label: string;
+  customer_phone: string | null;
+  customer_email: string | null;
+  sms_opted_out: boolean;
   motorcycle_label: string;
   href: string;
 };
@@ -64,7 +64,7 @@ export async function listBillingBoardForLocation(
       billing_amount_cents,
       estimate_sent_at,
       invoice_published_at,
-      customer:customer_id ( first_name, last_name ),
+      customer:customer_id ( first_name, last_name, phone, email, sms_opted_out_at ),
       motorcycle:motorcycle_id ( year, make, model ),
       job ( job_id, status, standard_price_snapshot )
     `
@@ -79,8 +79,7 @@ export async function listBillingBoardForLocation(
   const jobIds: string[] = [];
   const jobToWo = new Map<string, string>();
   for (const row of rows ?? []) {
-    const jobs =
-      (row.job as Array<{ job_id: string }> | null) ?? [];
+    const jobs = (row.job as Array<{ job_id: string }> | null) ?? [];
     for (const job of jobs) {
       jobIds.push(job.job_id);
       jobToWo.set(job.job_id, row.work_order_id);
@@ -109,8 +108,20 @@ export async function listBillingBoardForLocation(
   for (const row of rows ?? []) {
     const customer = unwrapOne(
       row.customer as
-        | { first_name: string; last_name: string }
-        | { first_name: string; last_name: string }[]
+        | {
+            first_name: string;
+            last_name: string;
+            phone: string | null;
+            email: string | null;
+            sms_opted_out_at: string | null;
+          }
+        | {
+            first_name: string;
+            last_name: string;
+            phone: string | null;
+            email: string | null;
+            sms_opted_out_at: string | null;
+          }[]
         | null
     );
     const motorcycle = unwrapOne(
@@ -160,9 +171,7 @@ export async function listBillingBoardForLocation(
       square_invoice_public_url: row.square_invoice_public_url,
       billing_collected_cents: collected,
       billing_amount_cents:
-        row.billing_amount_cents == null
-          ? null
-          : Number(row.billing_amount_cents),
+        row.billing_amount_cents == null ? null : Number(row.billing_amount_cents),
       estimate_cents,
       remaining_cents: Math.max(0, estimate_cents - collected),
       bucket,
@@ -171,6 +180,9 @@ export async function listBillingBoardForLocation(
       customer_label: customer
         ? `${customer.first_name} ${customer.last_name}`.trim()
         : "Customer",
+      customer_phone: customer?.phone ?? null,
+      customer_email: customer?.email ?? null,
+      sms_opted_out: Boolean(customer?.sms_opted_out_at),
       motorcycle_label: motorcycle
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : "Motorcycle",

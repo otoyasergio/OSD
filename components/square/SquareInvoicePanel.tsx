@@ -21,6 +21,9 @@ type Props = {
   estimateTotalCents: number;
   canManage: boolean;
   readOnly?: boolean;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  smsOptedOut?: boolean;
 };
 
 const STAGE_LABELS: Record<string, string> = {
@@ -42,6 +45,9 @@ export function SquareInvoicePanel({
   estimateTotalCents,
   canManage,
   readOnly = false,
+  customerPhone = null,
+  customerEmail = null,
+  smsOptedOut = false,
 }: Props) {
   const [publicUrl, setPublicUrl] = useState<string | null>(squareInvoicePublicUrl);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +55,9 @@ export function SquareInvoicePanel({
   const [depositPercent, setDepositPercent] = useState("50");
   const [customDollars, setCustomDollars] = useState("");
   const [pending, startTransition] = useTransition();
+  const [approvalChannel, setApprovalChannel] = useState<"sms" | "email">(() =>
+    customerPhone && !smsOptedOut ? "sms" : "email"
+  );
 
   const stage = billingStage || "none";
   const remainingCents = Math.max(0, estimateTotalCents - billingCollectedCents);
@@ -158,14 +167,37 @@ export function SquareInvoicePanel({
           onClick={() =>
             startTransition(async () => {
               setError(null);
-              const result = await sendEstimateApprovalAction(workOrderId, "email");
+              const result = await sendEstimateApprovalAction(
+                workOrderId,
+                approvalChannel
+              );
               if (result.error) setError(result.error);
             })
           }
         >
           Send for approval
         </button>
+        <label className="flex items-center gap-2 text-sm text-foreground">
+          <span className="text-[var(--status-neutral)]">via</span>
+          <select
+            className="min-h-11 rounded border border-[var(--border-strong)] px-2"
+            value={approvalChannel}
+            onChange={(e) => setApprovalChannel(e.target.value as "sms" | "email")}
+          >
+            <option value="sms" disabled={smsOptedOut || !customerPhone}>
+              SMS
+            </option>
+            <option value="email" disabled={!customerEmail}>
+              Email
+            </option>
+          </select>
+        </label>
       </div>
+      {smsOptedOut ? (
+        <p className="text-xs text-[var(--status-neutral)]">
+          Customer opted out of SMS — approval sends use email when available.
+        </p>
+      ) : null}
 
       {canPublish ? (
         <div className="flex flex-col gap-2 rounded border border-[var(--border)] p-3">

@@ -18,6 +18,8 @@ type Props = {
   logs: CommunicationLogEntry[];
   canSend: boolean;
   readOnly?: boolean;
+  customerPhone?: string | null;
+  smsOptedOut?: boolean;
 };
 
 export function SendMessagePanel({
@@ -25,10 +27,14 @@ export function SendMessagePanel({
   logs,
   canSend,
   readOnly = false,
+  customerPhone = null,
+  smsOptedOut = false,
 }: Props) {
   const [templateKey, setTemplateKey] =
     useState<(typeof TEMPLATES)[number]["key"]>("approval_request");
-  const [channel, setChannel] = useState<"sms" | "email">("sms");
+  const [channel, setChannel] = useState<"sms" | "email">(() =>
+    customerPhone && !smsOptedOut ? "sms" : "email"
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -47,6 +53,12 @@ export function SendMessagePanel({
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
             Send customer message
           </h3>
+          {smsOptedOut ? (
+            <p className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-foreground">
+              This customer opted out of SMS. Use email, or ask them to text START to the
+              shop number.
+            </p>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="field-label">Template</span>
@@ -71,7 +83,9 @@ export function SendMessagePanel({
                 value={channel}
                 onChange={(e) => setChannel(e.target.value as "sms" | "email")}
               >
-                <option value="sms">SMS</option>
+                <option value="sms" disabled={smsOptedOut || !customerPhone}>
+                  SMS
+                </option>
                 <option value="email">Email</option>
               </select>
             </label>
@@ -79,7 +93,7 @@ export function SendMessagePanel({
           <button
             type="button"
             className="btn btn-primary self-start"
-            disabled={pending}
+            disabled={pending || (channel === "sms" && (smsOptedOut || !customerPhone))}
             onClick={send}
           >
             {pending ? "Sending…" : "Send"}

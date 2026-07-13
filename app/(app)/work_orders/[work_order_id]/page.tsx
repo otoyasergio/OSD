@@ -277,6 +277,9 @@ export default async function WorkOrderDetailPage({
             estimateTotalCents={estimateTotalCents}
             canManage={canApprove}
             readOnly={detail.is_foreign_location}
+            customerPhone={detail.customer?.phone ?? null}
+            customerEmail={detail.customer?.email ?? null}
+            smsOptedOut={Boolean(detail.customer?.sms_opted_out_at)}
           />
         </>
       ) : null}
@@ -444,6 +447,8 @@ export default async function WorkOrderDetailPage({
           logs={communicationLogs}
           canSend={canApprove}
           readOnly={detail.is_foreign_location}
+          customerPhone={detail.customer?.phone ?? null}
+          smsOptedOut={Boolean(detail.customer?.sms_opted_out_at)}
         />
       ) : null}
     </div>

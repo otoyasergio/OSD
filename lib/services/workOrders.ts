@@ -157,7 +157,8 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
         first_name,
         last_name,
         phone,
-        email
+        email,
+        sms_opted_out_at
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,
@@ -259,6 +260,7 @@ export type WorkOrderDetail = WorkOrder & {
     last_name: string;
     phone: string | null;
     email: string | null;
+    sms_opted_out_at: string | null;
   } | null;
   motorcycle: {
     motorcycle_id: string;
@@ -329,7 +331,8 @@ export async function getWorkOrderDetail(
         first_name,
         last_name,
         phone,
-        email
+        email,
+        sms_opted_out_at
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,

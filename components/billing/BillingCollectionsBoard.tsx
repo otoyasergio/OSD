@@ -17,6 +17,11 @@ function money(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+function preferredChannel(item: BillingBoardItem): "sms" | "email" {
+  if (item.customer_phone && !item.sms_opted_out) return "sms";
+  return "email";
+}
+
 function BillingCard({
   item,
   showQuickActions,
@@ -25,6 +30,7 @@ function BillingCard({
   showQuickActions: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const channel = preferredChannel(item);
 
   return (
     <article className="td-board-card">
@@ -62,15 +68,20 @@ function BillingCard({
           type="button"
           className="btn btn-secondary"
           disabled={pending}
+          title={
+            item.sms_opted_out
+              ? "SMS opted out — will use email"
+              : `Remind via ${channel.toUpperCase()}`
+          }
           onClick={() =>
             startTransition(async () => {
               const reminder = await sendMessageAction(
                 item.work_order_id,
                 "payment_reminder",
-                "email"
+                channel
               );
               if (reminder.error) {
-                await sendEstimateApprovalAction(item.work_order_id, "email");
+                await sendEstimateApprovalAction(item.work_order_id, channel);
               }
             })
           }

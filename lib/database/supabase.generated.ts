@@ -71,6 +71,7 @@ export type Database = {
           phone: string | null;
           email: string | null;
           account_type: string;
+          sms_opted_out_at: string | null;
         };
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
