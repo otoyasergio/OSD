@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "64mb",
     },
   },
+  // Allow Playwright / automation hitting 127.0.0.1 while Next binds to localhost.
+  allowedDevOrigins: ["127.0.0.1"],
 };
 
 export default withBundleAnalyzer(nextConfig);

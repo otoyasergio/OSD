@@ -102,10 +102,17 @@ ALTER TABLE chat_attachment ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_reaction ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_call ENABLE ROW LEVEL SECURITY;
 
--- chat_conversation: any active staff member may create (DM/group); read only as a participant.
+-- chat_conversation: any active staff member may create (DM/group);
+-- read as participant, or as creator (needed for INSERT ... RETURNING before participants exist).
 CREATE POLICY chat_conversation_select ON chat_conversation
   FOR SELECT TO authenticated
-  USING (is_active_app_user() AND public.is_chat_participant(conversation_id));
+  USING (
+    is_active_app_user()
+    AND (
+      public.is_chat_participant(conversation_id)
+      OR created_by_user_id = current_app_user_id()
+    )
+  );
 
 CREATE POLICY chat_conversation_insert ON chat_conversation
   FOR INSERT TO authenticated
@@ -116,10 +123,17 @@ CREATE POLICY chat_conversation_update ON chat_conversation
   USING (is_active_app_user() AND public.is_chat_participant(conversation_id))
   WITH CHECK (is_active_app_user() AND public.is_chat_participant(conversation_id));
 
--- chat_participant: see co-participants of your own conversations; only touch your own row.
+-- chat_participant: see co-participants of your own conversations;
+-- always see your own row (needed while bootstrapping membership).
 CREATE POLICY chat_participant_select ON chat_participant
   FOR SELECT TO authenticated
-  USING (is_active_app_user() AND public.is_chat_participant(conversation_id));
+  USING (
+    is_active_app_user()
+    AND (
+      user_id = current_app_user_id()
+      OR public.is_chat_participant(conversation_id)
+    )
+  );
 
 CREATE POLICY chat_participant_insert ON chat_participant
   FOR INSERT TO authenticated
