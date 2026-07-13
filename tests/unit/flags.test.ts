@@ -24,6 +24,48 @@ describe("buildWorkOrderFlags", () => {
     ]);
   });
 
+  it("includes Contract unsigned when agreement is missing", () => {
+    const flags = buildWorkOrderFlags({
+      status: "open",
+      vin: "ABC",
+      estimated_completion: null,
+      jobs: [],
+      recommendations: [],
+      photoCount: 2,
+      hasSignedAgreement: false,
+    });
+
+    expect(flags).toContain("Contract unsigned");
+  });
+
+  it("omits Contract unsigned when agreement is signed", () => {
+    const flags = buildWorkOrderFlags({
+      status: "open",
+      vin: "ABC",
+      estimated_completion: null,
+      jobs: [],
+      recommendations: [],
+      photoCount: 2,
+      hasSignedAgreement: true,
+    });
+
+    expect(flags).not.toContain("Contract unsigned");
+  });
+
+  it("omits Contract unsigned on completed work orders", () => {
+    const flags = buildWorkOrderFlags({
+      status: "completed",
+      vin: "ABC",
+      estimated_completion: null,
+      jobs: [],
+      recommendations: [],
+      photoCount: 2,
+      hasSignedAgreement: false,
+    });
+
+    expect(flags).not.toContain("Contract unsigned");
+  });
+
   it("does not mark completed work orders overdue", () => {
     expect(
       isOverdue("2020-01-01T00:00:00.000Z", "completed", new Date())

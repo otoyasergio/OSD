@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { generatePortalToken, hashPortalToken } from "@/lib/portal/tokens";
+import { fileDropOffAgreementDocument } from "@/lib/services/customerDocuments";
 
 export type PortalTokenPurpose =
   | "full"
@@ -317,6 +318,15 @@ export async function portalSignContract(
 
   if (uploadError) throw new Error("SIGNATURE_UPLOAD_FAILED");
 
+  const { data: workOrder, error: woError } = await admin
+    .from("work_order")
+    .select("customer_id, work_order_number")
+    .eq("work_order_id", session.work_order_id)
+    .maybeSingle();
+
+  if (woError) throw woError;
+  if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+
   await admin.from("drop_off_agreement").insert({
     agreement_id: agreementId,
     work_order_id: session.work_order_id,
@@ -326,6 +336,15 @@ export async function portalSignContract(
     initials: input.initials,
     signature_storage_path: storagePath,
     signed_by_user_id: null,
+  });
+
+  await fileDropOffAgreementDocument(admin, {
+    customer_id: workOrder.customer_id,
+    work_order_id: session.work_order_id,
+    work_order_number: workOrder.work_order_number,
+    agreement_id: agreementId,
+    signature_storage_path: storagePath,
+    uploaded_by_user_id: null,
   });
 
   await addTimelineEvent(admin, {

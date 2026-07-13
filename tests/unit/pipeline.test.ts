@@ -28,6 +28,9 @@ describe("getWorkOrderNextAction", () => {
     expect(
       getWorkOrderNextAction("ready_for_technician", ["Needs approval"])
     ).toContain("approval");
+    expect(
+      getWorkOrderNextAction("open", ["Contract unsigned"])
+    ).toBe("Get drop-off agreement signed");
   });
 
   it("returns status-specific hints when no flags", () => {

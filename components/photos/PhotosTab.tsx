@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useId, useMemo, useRef, useState } from "react";
 import type { IntakePhoto } from "@/lib/services/photos";
 import type { PhotoCategory } from "@/lib/database/types";
 import type { PhotoFormState } from "@/app/(app)/work_orders/photo-actions";
@@ -10,6 +10,7 @@ import {
 } from "@/lib/status/labels";
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 
 type Action = (
   state: PhotoFormState,
@@ -25,17 +26,34 @@ export function PhotosTab({
   photos,
   readOnly,
   canUpload,
+  canDelete,
   uploadAction,
+  deleteAction,
 }: {
   photos: IntakePhoto[];
   readOnly: boolean;
   canUpload: boolean;
+  canDelete: boolean;
   uploadAction: Action;
+  deleteAction: Action;
 }) {
+  const titleId = useId();
+  const cameraInputId = useId();
+  const libraryInputId = useId();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadState, uploadFormAction] = useActionState(uploadAction, {
     error: null,
   });
+  const [deleteState, deleteFormAction, deletePending] = useActionState(
+    deleteAction,
+    { error: null }
+  );
   const [filter, setFilter] = useState<PhotoCategory | "all">("all");
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const [pendingFileName, setPendingFileName] = useState<string | null>(null);
+
+  const cameraProps = photoFileInputProps("camera");
+  const libraryProps = photoFileInputProps("library");
 
   const covered = useMemo(() => {
     const set = new Set(photos.map((p) => p.category));
@@ -48,6 +66,23 @@ export function PhotosTab({
 
   const visible =
     filter === "all" ? photos : photos.filter((p) => p.category === filter);
+
+  function applyPickedFile(input: HTMLInputElement) {
+    const file = input.files?.[0] ?? null;
+    const target = fileInputRef.current;
+    setChooserOpen(false);
+    if (!target) return;
+    if (!file) {
+      target.value = "";
+      setPendingFileName(null);
+      return;
+    }
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    target.files = transfer.files;
+    setPendingFileName(file.name);
+    input.value = "";
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -72,8 +107,14 @@ export function PhotosTab({
       {!readOnly && canUpload ? (
         <form
           action={uploadFormAction}
-          className="flex flex-col gap-3 rounded border border-zinc-200 bg-white p-4"
+          className="relative flex flex-col gap-3 rounded border border-zinc-200 bg-white p-4"
           encType="multipart/form-data"
+          onSubmit={(event) => {
+            if (!fileInputRef.current?.files?.length) {
+              event.preventDefault();
+              setChooserOpen(true);
+            }
+          }}
         >
           <h3 className="text-base font-semibold text-zinc-900">
             Upload intake photo
@@ -100,18 +141,60 @@ export function PhotosTab({
               ))}
             </select>
           </label>
-          <label className="block">
+          <div className="relative block">
             <span className="mb-1.5 block text-sm font-medium text-zinc-800">
               Photo <span className="text-red-600">*</span>
             </span>
+            {/* Form-submitted file field; populated from Camera / Library pickers. */}
             <input
-              className={SELECT_CLASS}
+              ref={fileInputRef}
+              className="photo-file-input"
               type="file"
               name="file"
-              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*"
-              required
+              accept={libraryProps.accept}
+              tabIndex={-1}
+              aria-label="Selected photo"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setPendingFileName(file?.name ?? null);
+              }}
             />
-          </label>
+            <input
+              id={cameraInputId}
+              className="photo-file-input"
+              type="file"
+              accept={cameraProps.accept}
+              capture={cameraProps.capture}
+              tabIndex={-1}
+              aria-label="Camera"
+              onChange={(event) => applyPickedFile(event.currentTarget)}
+            />
+            <input
+              id={libraryInputId}
+              className="photo-file-input"
+              type="file"
+              accept={libraryProps.accept}
+              tabIndex={-1}
+              aria-label="Photo library"
+              onChange={(event) => applyPickedFile(event.currentTarget)}
+            />
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                className="btn btn-secondary min-h-11 flex-1"
+                onClick={() => setChooserOpen(true)}
+              >
+                {pendingFileName ? "Change photo" : "Choose photo"}
+              </button>
+            </div>
+            {pendingFileName ? (
+              <p className="mt-1.5 text-sm text-zinc-600">{pendingFileName}</p>
+            ) : (
+              <p className="mt-1.5 text-sm text-zinc-500">
+                Camera or Library — required before upload.
+              </p>
+            )}
+          </div>
           <TextField label="Notes" name="notes" />
           <div>
             <SubmitButton label="Upload photo" pendingLabel="Uploading…" />
@@ -142,6 +225,8 @@ export function PhotosTab({
           {visible.length} photo{visible.length === 1 ? "" : "s"}
         </span>
       </div>
+
+      <FormError message={deleteState.error} />
 
       {visible.length === 0 ? (
         <div className="empty-state">
@@ -187,7 +272,7 @@ export function PhotosTab({
                   Preview unavailable
                 </div>
               )}
-              <div className="space-y-1 p-3 text-sm">
+              <div className="space-y-2 p-3 text-sm">
                 <p className="font-medium text-zinc-900">
                   {PHOTO_CATEGORY_LABELS[photo.category]}
                 </p>
@@ -200,11 +285,66 @@ export function PhotosTab({
                 {photo.notes ? (
                   <p className="text-zinc-700">{photo.notes}</p>
                 ) : null}
+                {!readOnly && canDelete ? (
+                  <form action={deleteFormAction}>
+                    <input type="hidden" name="photo_id" value={photo.photo_id} />
+                    <button
+                      type="submit"
+                      className="btn btn-ghost min-h-10 w-full text-red-700 hover:bg-red-50"
+                      disabled={deletePending}
+                      aria-label={`Remove ${PHOTO_CATEGORY_LABELS[photo.category]} photo`}
+                    >
+                      {deletePending ? "Removing…" : "Remove photo"}
+                    </button>
+                  </form>
+                ) : null}
               </div>
             </li>
           ))}
         </ul>
       )}
+
+      {chooserOpen ? (
+        <div
+          className="photo-source-sheet"
+          role="presentation"
+          onClick={() => setChooserOpen(false)}
+        >
+          <div
+            className="photo-source-sheet-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p id={titleId} className="photo-source-sheet-title">
+              Add photo
+            </p>
+            <p className="photo-source-sheet-lede">
+              Use the camera, or choose an existing photo from your library.
+            </p>
+            <label
+              htmlFor={cameraInputId}
+              className="btn btn-primary photo-source-sheet-action"
+            >
+              Camera
+            </label>
+            <label
+              htmlFor={libraryInputId}
+              className="btn btn-secondary photo-source-sheet-action"
+            >
+              Library
+            </label>
+            <button
+              type="button"
+              className="btn btn-ghost photo-source-sheet-cancel"
+              onClick={() => setChooserOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

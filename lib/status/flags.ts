@@ -8,6 +8,8 @@ export type WorkOrderFlagInput = {
   recommendations: Array<{ severity: string; status: string }>;
   photoCount: number;
   inspectionComplete?: boolean | null;
+  /** When false, emit Contract unsigned (skip completed/cancelled). Omit to leave unchecked. */
+  hasSignedAgreement?: boolean | null;
   now?: Date;
 };
 
@@ -29,6 +31,12 @@ export function buildWorkOrderFlags(input: WorkOrderFlagInput): string[] {
 
   if (!input.vin?.trim()) flags.push("Missing VIN");
   if (input.photoCount === 0) flags.push("No intake photos");
+  if (
+    input.hasSignedAgreement === false &&
+    !TERMINAL.includes(input.status)
+  ) {
+    flags.push("Contract unsigned");
+  }
   if (input.inspectionComplete === false) {
     flags.push("Incomplete inspection");
   }

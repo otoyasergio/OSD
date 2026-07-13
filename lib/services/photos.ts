@@ -4,7 +4,11 @@ import type { DbClient, PhotoCategory } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canEditWorkOrder, canCreateWorkOrder } from "@/lib/permissions";
+import {
+  canEditWorkOrder,
+  canCreateWorkOrder,
+  canDeleteIntakePhoto,
+} from "@/lib/permissions";
 import { intakePhotoSchema } from "@/lib/validation/schemas";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 
@@ -353,4 +357,85 @@ export async function uploadIntakePhoto(
 
   const [signed] = await signPaths(supabase, [photo]);
   return signed;
+}
+
+/**
+ * Owner/manager corrective delete — removes DB row and storage object.
+ * Allowed even on completed work orders so bad intake media can be cleaned up.
+ */
+export async function deleteIntakePhoto(
+  workOrderId: string,
+  photoId: string
+): Promise<void> {
+  const user = await requireUser();
+  if (!canDeleteIntakePhoto(user.role)) throw new Error("FORBIDDEN");
+
+  const supabase = await createClient();
+  const { data: workOrder, error: woError } = await supabase
+    .from("work_order")
+    .select("work_order_id, location_id, work_order_number, status")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (woError) throw woError;
+  if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+  if (workOrder.location_id !== user.active_location_id) {
+    throw new Error("FOREIGN_LOCATION");
+  }
+
+  const { data: photo, error: photoError } = await supabase
+    .from("intake_photo")
+    .select(COLUMNS)
+    .eq("photo_id", photoId)
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (photoError) throw photoError;
+  if (!photo) throw new Error("PHOTO_NOT_FOUND");
+
+  const row = photo as IntakePhoto;
+  const { error: deleteError } = await supabase
+    .from("intake_photo")
+    .delete()
+    .eq("photo_id", photoId)
+    .eq("work_order_id", workOrderId);
+
+  if (deleteError) throw new Error("PHOTO_DELETE_FAILED");
+
+  const { error: storageError } = await supabase.storage
+    .from(BUCKET)
+    .remove([row.storage_path]);
+  if (storageError) {
+    // Row is gone; storage orphan is preferable to failing the user action.
+    console.error("intake photo storage remove failed", storageError);
+  }
+
+  const categoryLabel =
+    PHOTO_CATEGORY_LABELS[row.category] ?? row.category;
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.INTAKE_PHOTO_DELETED,
+    entity_type: "intake_photo",
+    entity_id: photoId,
+    description: `Intake photo removed (${categoryLabel})`,
+    old_value: {
+      category: row.category,
+      storage_path: row.storage_path,
+    },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "intake_photo_deleted",
+    entity_type: "intake_photo",
+    entity_id: photoId,
+    description: `Intake photo (${categoryLabel}) removed from ${workOrder.work_order_number}`,
+    old_value: {
+      category: row.category,
+      storage_path: row.storage_path,
+    },
+  });
 }

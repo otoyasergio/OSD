@@ -5,6 +5,7 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canCreateWorkOrder, canEditWorkOrder, canManageContractTemplate } from "@/lib/permissions";
+import { fileDropOffAgreementDocument } from "@/lib/services/customerDocuments";
 import { dropOffAgreementSchema, publishAgreementTemplateSchema } from "@/lib/validation/schemas";
 
 export type AgreementTemplate = {
@@ -214,7 +215,7 @@ export async function signDropOffAgreement(
   const supabase = await createClient();
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
-    .select("work_order_id, location_id, work_order_number, status")
+    .select("work_order_id, customer_id, location_id, work_order_number, status")
     .eq("work_order_id", workOrderId)
     .maybeSingle();
 
@@ -293,6 +294,16 @@ export async function signDropOffAgreement(
     new_value: { signer_name: parsed.signer_name },
   });
 
+  await fileDropOffAgreementDocument(supabase, {
+    customer_id: workOrder.customer_id,
+    work_order_id: workOrderId,
+    work_order_number: workOrder.work_order_number,
+    agreement_id: agreementId,
+    signature_storage_path: storagePath,
+    signed_at: (data as DropOffAgreement).signed_at,
+    uploaded_by_user_id: user.user_id,
+  });
+
   const { data: signed } = await supabase.storage
     .from(BUCKET)
     .createSignedUrl(storagePath, 3600);
@@ -307,6 +318,14 @@ export async function signDropOffAgreement(
 export async function hasSignedDropOffAgreement(
   workOrderId: string
 ): Promise<boolean> {
-  const agreement = await getDropOffAgreement(workOrderId);
-  return agreement != null;
+  await requireUser();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("drop_off_agreement")
+    .select("agreement_id")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data != null;
 }

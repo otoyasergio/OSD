@@ -24,6 +24,8 @@ export type DeriveWorkOrderStatusInput = {
   parts: DerivePartInput[];
   inspectionComplete: boolean;
   qualityCheckComplete: boolean;
+  /** When false, do not auto-promote to ready_for_technician. Omit/undefined allows promote. */
+  hasSignedAgreement?: boolean;
 };
 
 function isActiveJob(status: string) {
@@ -61,6 +63,7 @@ export function deriveWorkOrderStatus(
     parts,
     inspectionComplete,
     qualityCheckComplete,
+    hasSignedAgreement,
   } = input;
 
   if (
@@ -106,6 +109,13 @@ export function deriveWorkOrderStatus(
     );
 
   if (allReadyForTechnician) {
+    if (hasSignedAgreement === false) {
+      // Do not auto-promote; demote only if already incorrectly on ready.
+      if (currentStatus === "ready_for_technician") {
+        return "open";
+      }
+      return currentStatus as WorkOrderStatus;
+    }
     return "ready_for_technician";
   }
 
@@ -160,6 +170,14 @@ export async function recalculateWorkOrderStatus(
 
   if (inspectionError) throw inspectionError;
 
+  const { data: agreement, error: agreementError } = await supabase
+    .from("drop_off_agreement")
+    .select("agreement_id")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (agreementError) throw agreementError;
+
   const nextStatus = deriveWorkOrderStatus({
     currentStatus: workOrder.status,
     jobs: jobs ?? [],
@@ -168,6 +186,7 @@ export async function recalculateWorkOrderStatus(
     qualityCheckComplete: Boolean(
       workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
     ),
+    hasSignedAgreement: Boolean(agreement),
   });
 
   if (nextStatus === workOrder.status) {

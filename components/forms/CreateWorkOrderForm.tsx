@@ -840,8 +840,8 @@ export function CreateWorkOrderForm({
               Intake photos <span className="text-red-600">*</span>
             </h2>
             <p className="intake-wizard-panel-lede mt-1">
-              Capture all six angles before continuing. On iPad, tap a slot to
-              use the camera.
+              Capture all six angles before continuing. Tap a slot, then choose
+              Camera or Library (Safari on iPad and Mac supported).
             </p>
           </div>
           {stepId === "photos" ? (

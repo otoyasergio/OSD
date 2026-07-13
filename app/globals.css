@@ -2156,6 +2156,7 @@ button.board-control-link {
 }
 
 .inspection-photo-slot-form {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
@@ -2466,11 +2467,14 @@ button.board-control-link {
 }
 
 /*
- * File inputs opened via programmatic click() — avoid clip/visibility tricks
- * that iOS Safari sometimes ignores for the camera/library picker.
+ * File inputs activated via <label htmlFor> / click() — keep them in-flow of a
+ * position:relative parent (not clipped/off-screen). iOS Safari often ignores
+ * pickers for display:none, sr-only clip, or overflow-clipped absolutes.
  */
 .photo-file-input {
   position: absolute;
+  left: 0;
+  top: 0;
   width: 1px;
   height: 1px;
   padding: 0;
@@ -2819,10 +2823,11 @@ button.board-control-link {
 }
 
 .intake-photo-slot {
+  position: relative;
   display: flex;
   min-height: 11rem;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
   border: 2px dashed var(--border-strong);
   border-radius: var(--radius-lg);
   background: linear-gradient(165deg, var(--surface) 0%, var(--surface-muted) 100%);
@@ -2942,6 +2947,8 @@ button.board-control-link {
   min-height: 7.5rem;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  border-radius: 0 0 calc(var(--radius-lg) - 2px) calc(var(--radius-lg) - 2px);
   padding: 1rem;
 }
 
@@ -3079,6 +3086,13 @@ button.board-control-link {
   gap: 0.75rem;
   padding-inline: 1.125rem;
   font-size: 1rem;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+label.photo-source-sheet-action {
+  display: inline-flex;
+  align-items: center;
 }
 
 .photo-source-sheet-action svg {

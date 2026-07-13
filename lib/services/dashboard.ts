@@ -94,6 +94,7 @@ const ACTIVE_STATUSES: WorkOrderStatus[] = [
 const FLAG_OPTIONS = [
   "Missing VIN",
   "No intake photos",
+  "Contract unsigned",
   "Incomplete inspection",
   "Needs approval",
   "Waiting for parts",
@@ -131,6 +132,7 @@ type RawRow = {
     assigned_technician_id: string | null;
   }> | null;
   recommendation: Array<{ severity: string; status: string }> | null;
+  drop_off_agreement: Array<{ agreement_id: string }> | null;
   intake_photo: Array<{
     photo_id: string;
     storage_path: string;
@@ -234,6 +236,7 @@ function toDashboardRow(
       recommendations,
       photoCount: photos.length,
       inspectionComplete: inspection ? Boolean(inspection.completed_at) : null,
+      hasSignedAgreement: (row.drop_off_agreement?.length ?? 0) > 0,
       now,
     }),
   };
@@ -284,7 +287,8 @@ export async function getDashboardData(
       job ( job_id, status, assigned_technician_id ),
       recommendation ( severity, status ),
       intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
-      inspection ( completed_at )
+      inspection ( completed_at ),
+      drop_off_agreement ( agreement_id )
     `
       )
       .eq("location_id", locationId)

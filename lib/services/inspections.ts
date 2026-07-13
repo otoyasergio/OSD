@@ -123,6 +123,79 @@ async function requireMutableInspectionAccess(
   };
 }
 
+/** Create inspection + checklist rows when a WO was created without them. */
+async function ensureInspectionSeeded(
+  supabase: DbClient,
+  workOrderId: string
+): Promise<string> {
+  const { data: existing, error: existingError } = await supabase
+    .from("inspection")
+    .select("inspection_id")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existing?.inspection_id) return existing.inspection_id as string;
+
+  const { data: inspection, error: inspectionError } = await supabase
+    .from("inspection")
+    .insert({ work_order_id: workOrderId })
+    .select("inspection_id")
+    .single();
+
+  if (inspectionError) {
+    // Race: another request created it first.
+    if (inspectionError.code === "23505") {
+      const { data: raced, error: racedError } = await supabase
+        .from("inspection")
+        .select("inspection_id")
+        .eq("work_order_id", workOrderId)
+        .maybeSingle();
+      if (racedError) throw racedError;
+      if (raced?.inspection_id) return raced.inspection_id as string;
+    }
+    throw inspectionError;
+  }
+
+  const inspectionId = inspection.inspection_id as string;
+
+  const { data: templateItems, error: templateError } = await supabase
+    .from("inspection_template_item")
+    .select(
+      "template_item_id, category, item_name, display_order, requires_measurement"
+    )
+    .eq("active", true)
+    .order("display_order");
+
+  if (templateError) throw templateError;
+
+  if ((templateItems ?? []).length > 0) {
+    const { error: resultsError } = await supabase
+      .from("inspection_result")
+      .insert(
+        (templateItems ?? []).map(
+          (item: {
+            template_item_id: string;
+            category: string;
+            item_name: string;
+            display_order: number;
+            requires_measurement: boolean;
+          }) => ({
+            inspection_id: inspectionId,
+            template_item_id: item.template_item_id,
+            category_snapshot: item.category,
+            item_name_snapshot: item.item_name,
+            display_order_snapshot: item.display_order,
+            requires_measurement_snapshot: item.requires_measurement,
+          })
+        )
+      );
+    if (resultsError) throw resultsError;
+  }
+
+  return inspectionId;
+}
+
 export async function getInspectionForWorkOrder(
   workOrderId: string
 ): Promise<InspectionDetail | null> {
@@ -158,7 +231,7 @@ export async function getInspectionForWorkOrder(
   if (woError) throw woError;
   if (!workOrder) return null;
 
-  const { data: inspection, error } = await supabase
+  let { data: inspection, error } = await supabase
     .from("inspection")
     .select(
       `
@@ -176,6 +249,29 @@ export async function getInspectionForWorkOrder(
     .maybeSingle();
 
   if (error) throw error;
+
+  if (!inspection) {
+    await ensureInspectionSeeded(supabase, workOrderId);
+    const reloaded = await supabase
+      .from("inspection")
+      .select(
+        `
+      inspection_id,
+      work_order_id,
+      started_at,
+      completed_at,
+      completed_by_user_id,
+      inspection_result (
+        ${RESULT_COLUMNS}
+      )
+    `
+      )
+      .eq("work_order_id", workOrderId)
+      .maybeSingle();
+    if (reloaded.error) throw reloaded.error;
+    inspection = reloaded.data;
+  }
+
   if (!inspection) return null;
 
   const results = (

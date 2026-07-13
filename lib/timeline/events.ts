@@ -3,6 +3,7 @@ export const TimelineEventType = {
   WORK_ORDER_STATUS_CHANGED: "Work Order Status Changed",
   EXTERNAL_INVOICE_NUMBER_ADDED: "Square Invoicing Reference Added",
   INTAKE_PHOTO_UPLOADED: "Intake Photo Uploaded",
+  INTAKE_PHOTO_DELETED: "Intake Photo Deleted",
   INSPECTION_CREATED: "Inspection Created",
   INSPECTION_STARTED: "Inspection Started",
   INSPECTION_RESULT_UPDATED: "Inspection Result Updated",

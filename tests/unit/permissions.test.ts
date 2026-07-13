@@ -12,6 +12,10 @@ import {
   canManageServiceCatalogue,
   canManageContractTemplate,
   canUpdateServiceInformation,
+  canDeleteIntakePhoto,
+  canViewCustomerDocuments,
+  canUploadCustomerDocuments,
+  canDeleteCustomerDocuments,
 } from "@/lib/permissions/checks";
 
 describe("permissions", () => {
@@ -90,5 +94,30 @@ describe("permissions", () => {
     expect(canUpdateServiceInformation("service_advisor")).toBe(true);
     expect(canUpdateServiceInformation("technician")).toBe(false);
     expect(canUpdateServiceInformation("admin")).toBe(false);
+  });
+
+  it("owner and manager can delete intake photos, not advisors or technicians", () => {
+    expect(canDeleteIntakePhoto("owner")).toBe(true);
+    expect(canDeleteIntakePhoto("manager")).toBe(true);
+    expect(canDeleteIntakePhoto("service_advisor")).toBe(false);
+    expect(canDeleteIntakePhoto("technician")).toBe(false);
+    expect(canDeleteIntakePhoto("admin")).toBe(false);
+  });
+
+  it("owner, manager, admin, and service advisor can view and upload customer documents", () => {
+    for (const role of ["owner", "manager", "admin", "service_advisor"] as const) {
+      expect(canViewCustomerDocuments(role)).toBe(true);
+      expect(canUploadCustomerDocuments(role)).toBe(true);
+    }
+    expect(canViewCustomerDocuments("technician")).toBe(false);
+    expect(canUploadCustomerDocuments("technician")).toBe(false);
+  });
+
+  it("only owner and manager can delete customer documents", () => {
+    expect(canDeleteCustomerDocuments("owner")).toBe(true);
+    expect(canDeleteCustomerDocuments("manager")).toBe(true);
+    expect(canDeleteCustomerDocuments("service_advisor")).toBe(false);
+    expect(canDeleteCustomerDocuments("admin")).toBe(false);
+    expect(canDeleteCustomerDocuments("technician")).toBe(false);
   });
 });

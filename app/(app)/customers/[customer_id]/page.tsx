@@ -4,14 +4,21 @@ import { getCustomerById } from "@/lib/services/customers";
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { listGarageForCustomer } from "@/lib/services/clientGarage";
 import { listWorkOrdersForCustomer } from "@/lib/services/filedWorkOrders";
+import { listCustomerDocuments } from "@/lib/services/customerDocuments";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { ClientGarage } from "@/components/customers/ClientGarage";
+import { CustomerDocuments } from "@/components/customers/CustomerDocuments";
 import { updateCustomerAction } from "@/app/(app)/customers/actions";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import type { CustomerWorkOrderSummary } from "@/lib/services/filedWorkOrders";
 import { requireUser } from "@/lib/auth/session";
-import { canEditWorkOrder } from "@/lib/permissions";
+import {
+  canDeleteCustomerDocuments,
+  canEditWorkOrder,
+  canUploadCustomerDocuments,
+  canViewCustomerDocuments,
+} from "@/lib/permissions";
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -96,12 +103,18 @@ export default async function CustomerDetailPage({
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 
-  const [garage, history] = await Promise.all([
+  const [garage, history, documents] = await Promise.all([
     listGarageForCustomer(customer_id),
     listWorkOrdersForCustomer(customer_id),
+    canViewCustomerDocuments(user.role)
+      ? listCustomerDocuments(customer_id)
+      : Promise.resolve([]),
   ]);
   const updateAction = updateCustomerAction.bind(null, customer_id);
   const canTransfer = canEditWorkOrder(user.role);
+  const canUploadDocs = canUploadCustomerDocuments(user.role);
+  const canDeleteDocs = canDeleteCustomerDocuments(user.role);
+  const canViewDocs = canViewCustomerDocuments(user.role);
 
   return (
     <div className="page-stack page-stack--narrow">
@@ -128,6 +141,15 @@ export default async function CustomerDetailPage({
         bikes={garage}
         canTransfer={canTransfer}
       />
+
+      {canViewDocs ? (
+        <CustomerDocuments
+          customerId={customer_id}
+          documents={documents}
+          canUpload={canUploadDocs}
+          canDelete={canDeleteDocs}
+        />
+      ) : null}
 
       <section>
         <h2 className="text-lg font-semibold text-zinc-900">Open work orders</h2>

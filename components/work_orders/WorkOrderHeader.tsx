@@ -90,10 +90,20 @@ export function WorkOrderHeader({
 
         <WorkOrderPhotoStrip photos={photos} />
 
-        <p className="mt-3 text-sm text-[var(--status-neutral)]">
-          <span className="font-semibold text-foreground">Next action:</span>{" "}
-          {nextAction}
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <p className="text-sm text-[var(--status-neutral)]">
+            <span className="font-semibold text-foreground">Next action:</span>{" "}
+            {nextAction}
+          </p>
+          {detail.flags.includes("Contract unsigned") ? (
+            <Link
+              href={`/work_orders/${detail.work_order_id}/contract`}
+              className="btn btn-primary min-h-10 text-sm"
+            >
+              Sign drop-off agreement
+            </Link>
+          ) : null}
+        </div>
       </div>
 
       <WorkOrderPipeline status={detail.status} />

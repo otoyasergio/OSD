@@ -82,7 +82,7 @@ export function IntakePhotoRecoveryForm({
         return;
       }
 
-      router.push(`/work_orders/${workOrderId}`);
+      router.push(`/work_orders/${workOrderId}/contract?from=intake`);
       router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));

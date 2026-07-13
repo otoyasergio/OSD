@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { AgreementTemplate, DropOffAgreement } from "@/lib/services/contracts";
 import { SignatureCanvas } from "@/components/contracts/SignatureCanvas";
@@ -10,6 +12,8 @@ type Props = {
   existing: DropOffAgreement | null;
   action: (formData: FormData) => Promise<{ error: string | null }>;
   readOnly?: boolean;
+  continueHref?: string;
+  continueLabel?: string;
 };
 
 export function ContractSigningPanel({
@@ -17,7 +21,10 @@ export function ContractSigningPanel({
   existing,
   action,
   readOnly = false,
+  continueHref,
+  continueLabel = "Continue to work order",
 }: Props) {
+  const router = useRouter();
   const [signerName, setSignerName] = useState(existing?.signer_name ?? "");
   const [initials, setInitials] = useState<Record<string, string>>(
     existing?.initials ?? {}
@@ -42,6 +49,11 @@ export function ContractSigningPanel({
             alt="Customer signature"
             className="max-h-32 rounded border border-zinc-200 bg-white"
           />
+        ) : null}
+        {continueHref ? (
+          <Link href={continueHref} className="btn btn-primary min-h-12 self-start">
+            {continueLabel}
+          </Link>
         ) : null}
       </div>
     );
@@ -71,7 +83,16 @@ export function ContractSigningPanel({
 
     startTransition(async () => {
       const result = await action(formData);
-      setError(result.error);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      if (continueHref) {
+        router.push(continueHref);
+        router.refresh();
+        return;
+      }
+      router.refresh();
     });
   }
 

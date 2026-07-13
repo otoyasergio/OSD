@@ -4,7 +4,6 @@ import {
   useEffect,
   useId,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -161,15 +160,17 @@ export function IntakePhotoSlots({
 }: Props) {
   const slots = slotsFor(categories);
   const titleId = useId();
+  const inputIdPrefix = useId();
   const [chooserCategory, setChooserCategory] = useState<PhotoCategory | null>(
     null
   );
-  const cameraRefs = useRef<Partial<Record<PhotoCategory, HTMLInputElement | null>>>(
-    {}
-  );
-  const libraryRefs = useRef<
-    Partial<Record<PhotoCategory, HTMLInputElement | null>>
-  >({});
+
+  function cameraInputId(category: PhotoCategory) {
+    return `${inputIdPrefix}-camera-${category}`;
+  }
+  function libraryInputId(category: PhotoCategory) {
+    return `${inputIdPrefix}-library-${category}`;
+  }
 
   const previews = useMemo(() => {
     const next: Partial<Record<PhotoCategory, string>> = {};
@@ -267,7 +268,7 @@ export function IntakePhotoSlots({
                         Tap to add photo
                       </span>
                       <span className="intake-photo-slot-subhint">
-                        Camera or photo library
+                        Camera or Library
                       </span>
                     </span>
                   )}
@@ -286,33 +287,33 @@ export function IntakePhotoSlots({
                 />
               ) : null}
               <input
-                ref={(el) => {
-                  cameraRefs.current[slot.category] = el;
-                }}
+                id={cameraInputId(slot.category)}
                 className="photo-file-input"
                 type="file"
                 accept={cameraProps.accept}
                 capture={cameraProps.capture}
                 tabIndex={-1}
                 disabled={disabled}
+                aria-label={`${slot.label} camera`}
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
                   onChange({ ...value, [slot.category]: file });
+                  setChooserCategory(null);
                   event.target.value = "";
                 }}
               />
               <input
-                ref={(el) => {
-                  libraryRefs.current[slot.category] = el;
-                }}
+                id={libraryInputId(slot.category)}
                 className="photo-file-input"
                 type="file"
                 accept={libraryProps.accept}
                 tabIndex={-1}
                 disabled={disabled}
+                aria-label={`${slot.label} photo library`}
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null;
                   onChange({ ...value, [slot.category]: file });
+                  setChooserCategory(null);
                   event.target.value = "";
                 }}
               />
@@ -338,31 +339,39 @@ export function IntakePhotoSlots({
               Add {chooserSlot.label} photo
             </p>
             <p className="photo-source-sheet-lede">
-              Take a new photo or choose one from your library.
+              Use the camera, or choose an existing photo from your library.
             </p>
-            <button
-              type="button"
+            {/*
+              Native <label htmlFor> activation is more reliable than input.click()
+              on Safari iPad/Mac (user-gesture + no clipped programmatic target).
+            */}
+            <label
+              htmlFor={cameraInputId(chooserSlot.category)}
               className="btn btn-primary photo-source-sheet-action"
-              onClick={() => {
-                // Must stay synchronous for iOS Safari user-gesture rules.
-                cameraRefs.current[chooserSlot.category]?.click();
-                setChooserCategory(null);
-              }}
             >
               <CameraIcon />
-              Take photo
-            </button>
-            <button
-              type="button"
+              Camera
+            </label>
+            <label
+              htmlFor={libraryInputId(chooserSlot.category)}
               className="btn btn-secondary photo-source-sheet-action"
-              onClick={() => {
-                libraryRefs.current[chooserSlot.category]?.click();
-                setChooserCategory(null);
-              }}
             >
               <LibraryIcon />
-              Upload from library
-            </button>
+              Library
+            </label>
+            {value[chooserSlot.category] instanceof File &&
+            (value[chooserSlot.category] as File).size > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost photo-source-sheet-action text-red-700"
+                onClick={() => {
+                  onChange({ ...value, [chooserSlot.category]: null });
+                  setChooserCategory(null);
+                }}
+              >
+                Clear photo
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn btn-ghost photo-source-sheet-cancel"

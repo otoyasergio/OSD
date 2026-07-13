@@ -374,7 +374,8 @@ export async function getWorkOrderDetail(
         )
       ),
       recommendation ( severity, status ),
-      intake_photo ( photo_id )
+      intake_photo ( photo_id ),
+      drop_off_agreement ( agreement_id )
     `
     )
     .eq("work_order_id", workOrderId)
@@ -393,6 +394,8 @@ export async function getWorkOrderDetail(
   const photos = (row.intake_photo as Array<{ photo_id: string }> | null) ?? [];
   const technicians =
     (row.work_order_technician as WorkOrderDetail["technicians"] | null) ?? [];
+  const agreements =
+    (row.drop_off_agreement as Array<{ agreement_id: string }> | null) ?? [];
 
   return {
     work_order_id: row.work_order_id as string,
@@ -443,6 +446,7 @@ export async function getWorkOrderDetail(
       jobs,
       recommendations,
       photoCount: photos.length,
+      hasSignedAgreement: agreements.length > 0,
     }),
     is_foreign_location: row.location_id !== user.active_location_id,
   };

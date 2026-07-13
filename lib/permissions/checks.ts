@@ -77,6 +77,26 @@ export function canOverrideWorkOrderStatus(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
 
+/** Remove intake / inspection photos from a work order (corrective). */
+export function canDeleteIntakePhoto(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
+
+/** View customer profile documents (owner/manager/admin/service advisor). */
+export function canViewCustomerDocuments(role: UserRole) {
+  return FRONT_OFFICE.includes(role) || role === "admin";
+}
+
+/** Upload documents to a customer profile. */
+export function canUploadCustomerDocuments(role: UserRole) {
+  return canViewCustomerDocuments(role);
+}
+
+/** Delete customer profile documents (owner/manager only). */
+export function canDeleteCustomerDocuments(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
+
 /** Billing area (/billing) — front office only; technicians excluded. */
 export function canViewBillingArea(role: UserRole) {
   return FRONT_OFFICE.includes(role);

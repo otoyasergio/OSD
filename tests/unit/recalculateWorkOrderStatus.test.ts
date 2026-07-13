@@ -130,4 +130,54 @@ describe("deriveWorkOrderStatus", () => {
       })
     ).toBe("ready_for_pickup");
   });
+
+  it("sets ready_for_technician when all jobs approved and contract signed", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "waiting_for_customer_approval",
+        jobs: [{ status: "approved" }, { status: "ready_to_start" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        hasSignedAgreement: true,
+      })
+    ).toBe("ready_for_technician");
+  });
+
+  it("does not promote to ready_for_technician while contract unsigned", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "open",
+        jobs: [{ status: "approved" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        hasSignedAgreement: false,
+      })
+    ).toBe("open");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "waiting_for_customer_approval",
+        jobs: [{ status: "approved" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        hasSignedAgreement: false,
+      })
+    ).toBe("waiting_for_customer_approval");
+  });
+
+  it("demotes ready_for_technician to open when contract becomes unsigned", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_technician",
+        jobs: [{ status: "approved" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        hasSignedAgreement: false,
+      })
+    ).toBe("open");
+  });
 });

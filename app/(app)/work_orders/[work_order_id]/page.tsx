@@ -9,6 +9,7 @@ import {
   canConvertRecommendation,
   canCreateRecommendation,
   canCreateWorkOrder,
+  canDeleteIntakePhoto,
   canEditWorkOrder,
   canMarkReadyForPickup,
   canOrderPart,
@@ -80,7 +81,10 @@ import {
   updatePartPriceAction,
   updatePartStatusAction,
 } from "@/app/(app)/work_orders/part-actions";
-import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
+import {
+  deleteIntakePhotoAction,
+  uploadIntakePhotoAction,
+} from "@/app/(app)/work_orders/photo-actions";
 import { addTechnicianNoteAction } from "@/app/(app)/work_orders/note-actions";
 import {
   cancelWorkOrderAction,
@@ -168,6 +172,7 @@ export default async function WorkOrderDetailPage({
     canEditWorkOrder(user.role) ||
     canCreateWorkOrder(user.role) ||
     user.role === "technician";
+  const canDeletePhotos = canDeleteIntakePhoto(user.role);
   const canAddNotes = canComplete || canEdit || canAdd;
   const canRunQc = canRunQualityCheck(user.role);
   const canMarkReady = canMarkReadyForPickup(user.role);
@@ -393,7 +398,12 @@ export default async function WorkOrderDetailPage({
           photos={photos}
           readOnly={detail.is_foreign_location}
           canUpload={canUploadPhotos}
+          canDelete={canDeletePhotos}
           uploadAction={uploadIntakePhotoAction.bind(
+            null,
+            detail.work_order_id
+          )}
+          deleteAction={deleteIntakePhotoAction.bind(
             null,
             detail.work_order_id
           )}
@@ -423,12 +433,27 @@ export default async function WorkOrderDetailPage({
       {activeTab === "contract" ? (
         agreementTemplate ? (
           <div className="flex flex-col gap-3">
-            <Link
-              href={`/work_orders/${detail.work_order_id}/contract`}
-              className="btn btn-primary min-h-12 self-start"
-            >
-              Open iPad signing screen
-            </Link>
+            {!agreement && !detail.is_foreign_location ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-muted px-4 py-3">
+                <p className="flex-1 text-sm text-[var(--status-neutral-fg)]">
+                  Drop-off agreement is unsigned. Sign before marking ready for
+                  technician.
+                </p>
+                <Link
+                  href={`/work_orders/${detail.work_order_id}/contract`}
+                  className="btn btn-primary min-h-11"
+                >
+                  Open signing screen
+                </Link>
+              </div>
+            ) : (
+              <Link
+                href={`/work_orders/${detail.work_order_id}/contract`}
+                className="btn btn-primary min-h-12 self-start"
+              >
+                Open iPad signing screen
+              </Link>
+            )}
             <ContractSigningPanel
               template={agreementTemplate}
               existing={agreement}

@@ -60,6 +60,7 @@ const MESSAGES: Record<string, string> = {
   PHOTO_TOO_LARGE: "Photos must be 10 MB or smaller.",
   PHOTO_TYPE_INVALID: "Use a JPEG, PNG, WebP, or HEIC image.",
   PHOTO_UPLOAD_FAILED: "Could not upload the photo. Try again.",
+  PHOTO_DELETE_FAILED: "Could not remove the photo. Try again.",
   PHOTO_NOT_FOUND: "That photo no longer exists.",
   INTAKE_PHOTOS_REQUIRED:
     "Add all six required intake photos before creating the work order.",
@@ -69,6 +70,8 @@ const MESSAGES: Record<string, string> = {
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
   QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
+  CONTRACT_REQUIRED:
+    "Sign the drop-off agreement before marking ready for technician.",
   NOT_READY_FOR_PICKUP:
     "Mark the work order ready for pickup before completing, or ask an owner/manager to override.",
   HOLD_REASON_REQUIRED: "Enter a reason when placing a work order on hold.",
@@ -87,6 +90,12 @@ const MESSAGES: Record<string, string> = {
   SIGNATURE_INVALID: "Could not read the signature image.",
   SIGNATURE_TOO_LARGE: "Signature image is too large.",
   SIGNATURE_UPLOAD_FAILED: "Could not save the signature. Try again.",
+  DOCUMENT_TITLE_REQUIRED: "Enter a title for this document.",
+  DOCUMENT_REQUIRED: "Choose a file to upload.",
+  DOCUMENT_TOO_LARGE: "Documents must be 10 MB or smaller.",
+  DOCUMENT_TYPE_INVALID: "Use a PDF, JPEG, PNG, or WebP file.",
+  DOCUMENT_UPLOAD_FAILED: "Could not upload the document. Try again.",
+  DOCUMENT_NOT_FOUND: "That document no longer exists.",
   SQUARE_NOT_CONFIGURED: "Square is not configured. Add SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID.",
   SQUARE_INVOICE_NOT_READY: "Sync a draft and get approvals before publishing the Square invoice.",
   SQUARE_NO_BILLABLE_LINES: "No priced jobs or parts to put on the estimate/invoice.",
