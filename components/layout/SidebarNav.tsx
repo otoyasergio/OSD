@@ -20,6 +20,7 @@ import {
   BarChart3,
   Wallet,
   Archive,
+  MessageSquare,
 } from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
@@ -29,6 +30,7 @@ import {
   canManageServiceCatalogue,
   canManageTimesheets,
   canManageUsers,
+  canUseMessenger,
   canViewAuditLog,
   canViewBillingArea,
   canViewPartsBoard,
@@ -55,6 +57,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/settings/reports": BarChart3,
   "/billing": Wallet,
   "/complete": Archive,
+  "/messages": MessageSquare,
 };
 
 function iconFor(href: string): LucideIcon {
@@ -184,6 +187,15 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     settingsSubgroups.push({ heading: "Admin", links: adminSettings });
   }
 
+  const communicationLinks: NavLink[] = [];
+  if (canUseMessenger(role)) {
+    communicationLinks.push({
+      href: "/messages",
+      label: "Messages",
+      icon: iconFor("/messages"),
+    });
+  }
+
   const categories: NavCategory[] = [
     {
       id: "finances",
@@ -215,8 +227,7 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     {
       id: "communication",
       label: "Communication",
-      // No standalone communications page yet — keep slot for when one ships.
-      subgroups: [],
+      subgroups: communicationLinks.length > 0 ? [{ links: communicationLinks }] : [],
     },
     {
       id: "staffing",

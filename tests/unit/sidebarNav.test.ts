@@ -2,15 +2,19 @@ import { describe, expect, it } from "vitest";
 import { buildNavCategories } from "@/components/layout/SidebarNav";
 
 describe("buildNavCategories", () => {
-  it("orders owner nav Finances → Clients → Staffing → Settings and omits empty Communication", () => {
+  it("orders owner nav Finances → Clients → Communication → Staffing → Settings", () => {
     const categories = buildNavCategories("owner");
     expect(categories.map((c) => c.id)).toEqual([
       "finances",
       "clients",
+      "communication",
       "staffing",
       "settings",
     ]);
-    expect(categories.find((c) => c.id === "communication")).toBeUndefined();
+    const communication = categories.find((c) => c.id === "communication");
+    expect(communication?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
+      "/messages",
+    ]);
   });
 
   it("puts Timesheets under Staffing for owner/manager", () => {
@@ -22,8 +26,8 @@ describe("buildNavCategories", () => {
 
     const tech = buildNavCategories("technician");
     const techStaffing = tech.find((c) => c.id === "staffing");
-    expect(
-      techStaffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)
-    ).toEqual(["/technician"]);
+    expect(techStaffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
+      "/technician",
+    ]);
   });
 });

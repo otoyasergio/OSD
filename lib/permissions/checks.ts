@@ -158,3 +158,21 @@ export function canViewBillingTab(role: UserRole, tab: BillingTab): boolean {
 export function canAdminHelpCreateRecords(role: UserRole) {
   return role === "admin" || FRONT_OFFICE.includes(role);
 }
+
+const ACTIVE_STAFF_ROLES: UserRole[] = [
+  "owner",
+  "manager",
+  "service_advisor",
+  "technician",
+  "admin",
+];
+
+/** Company messenger — every active role can use it. */
+export function canUseMessenger(role: UserRole) {
+  return ACTIVE_STAFF_ROLES.includes(role);
+}
+
+/** Add/remove group members: the creator, or an owner/manager. */
+export function canManageGroupMembers(role: UserRole, isCreator: boolean) {
+  return isCreator || OWNERS_MANAGERS.includes(role);
+}

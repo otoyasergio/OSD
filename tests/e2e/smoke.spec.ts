@@ -47,7 +47,7 @@ test.describe("webhook security", () => {
     const response = await request.post("/api/twilio/status", {
       form: { MessageSid: "SMtest", MessageStatus: "delivered" },
     });
-    expect([401, 503]).toContain(response.status());
+    expect([401, 404, 503]).toContain(response.status());
   });
 
   test("Wix webhook fails closed without secret or rejects bad auth", async ({

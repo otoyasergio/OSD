@@ -150,6 +150,20 @@ const MESSAGES: Record<string, string> = {
   TIME_CLOCK_ENTRY_NOT_FOUND: "That time clock entry no longer exists.",
   RATE_LIMITED: "Too many requests. Please wait a moment and try again.",
   INVALID_INITIALS: "Could not read initials. Refresh and try again.",
+  CONVERSATION_NOT_FOUND: "That conversation no longer exists.",
+  NOT_A_PARTICIPANT: "You're not part of this conversation.",
+  SELF_DM_NOT_ALLOWED: "You can't start a conversation with yourself.",
+  RECIPIENT_REQUIRED: "Choose at least one person to message.",
+  MESSAGE_NOT_FOUND: "That message no longer exists.",
+  NOT_MESSAGE_SENDER: "You can only change your own messages.",
+  UNSEND_WINDOW_EXPIRED: "This message is too old to unsend.",
+  ATTACHMENT_TOO_LARGE: "Attachments must be 25 MB or smaller.",
+  ATTACHMENT_TYPE_INVALID: "That file type isn't supported in Messages.",
+  ATTACHMENT_UPLOAD_FAILED: "Could not upload the attachment. Try again.",
+  TWILIO_VIDEO_NOT_CONFIGURED:
+    "Video calling is not configured. Add TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET.",
+  CALL_NOT_FOUND: "That call no longer exists.",
+  CALL_ALREADY_ENDED: "That call has already ended.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

@@ -11,6 +11,7 @@ const PROTECTED_PREFIXES = [
   "/settings",
   "/billing",
   "/complete",
+  "/messages",
 ];
 
 function isPublicPath(pathname: string) {
