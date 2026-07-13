@@ -175,8 +175,8 @@ Brand approval is often fast; Campaign review can take **~10–15 days**. Treat 
 
 ### Deploy + smoke
 
-1. Apply migration `037_customer_sms_opt_out.sql`.
-2. Set the Twilio env vars on Vercel (Production; Preview if you test SMS there).
+1. Apply migrations `037_customer_sms_opt_out.sql` and `038_sms_consent.sql`.
+2. Set the Twilio env vars on Vercel (Production; Preview if you test SMS there), plus `NEXT_PUBLIC_PRIVACY_POLICY_URL` and `NEXT_PUBLIC_TERMS_URL` after Wix publish.
 3. `vercel.json` crons are **daily** (`0 15 * * *` Parts Canada, `0 16 * * *` Wix contacts) so Hobby deploys succeed.
 4. Redeploy so webhooks and secrets are live.
 5. **CA:** From a work order, send an SMS template to a Canadian mobile; confirm delivery / status updates in `communication_log`.
