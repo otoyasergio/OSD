@@ -112,10 +112,6 @@ export async function portalUpdateSmsConsentAction(
   const transactional = formData.get("sms_transactional") === "on";
   const marketing = formData.get("sms_marketing") === "on";
 
-  if (!transactional && !marketing) {
-    return { error: "Choose at least one message type." };
-  }
-
   try {
     await assertPortalRateLimit(token);
     await portalUpdateSmsConsent(token, { transactional, marketing });
