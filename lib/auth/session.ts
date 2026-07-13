@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/database/supabase-server";
 import { cookies } from "next/headers";
 import { ACTIVE_LOCATION_COOKIE } from "@/lib/auth/location-cookie";
@@ -15,7 +16,8 @@ export type AppUser = {
   active_location_id: string | null;
 };
 
-export async function getCurrentAppUser(): Promise<AppUser | null> {
+/** Deduped per React request — layout, page, and services share one Auth+DB lookup. */
+export const getCurrentAppUser = cache(async (): Promise<AppUser | null> => {
   if (
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
     !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -55,7 +57,7 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
     location_ids,
     active_location_id,
   };
-}
+});
 
 export async function requireUser(): Promise<AppUser> {
   const user = await getCurrentAppUser();

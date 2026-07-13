@@ -8,10 +8,7 @@ import {
 } from "@/lib/services/dashboard";
 import { canCreateWorkOrder } from "@/lib/permissions";
 import {
-  getDashboardDensityPreference,
-  getDashboardViewModePreference,
-  getHiddenBoardColumnsPreference,
-  listSavedDashboardViews,
+  getDashboardShellPreferences,
   type DashboardViewMode,
 } from "@/lib/services/userPreferences";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -67,20 +64,27 @@ export default async function DashboardPage({
 
   const canCreate = canCreateWorkOrder(user.role);
   const params = await searchParams;
-  const [data, savedViews, savedDensity, savedViewMode, hiddenColumnIds] =
-    await Promise.all([
-      getDashboardData({
-        status: (params.status as WorkOrderStatus) || "",
-        technician_id: params.technician_id || "",
-        flag: params.flag || "",
-        q: params.q || "",
-        card: (params.card as DashboardCardKey) || "",
-      }),
-      listSavedDashboardViews().catch(() => []),
-      getDashboardDensityPreference().catch(() => null),
-      getDashboardViewModePreference().catch(() => null),
-      getHiddenBoardColumnsPreference().catch(() => [] as string[]),
-    ]);
+  const [data, prefs] = await Promise.all([
+    getDashboardData({
+      status: (params.status as WorkOrderStatus) || "",
+      technician_id: params.technician_id || "",
+      flag: params.flag || "",
+      q: params.q || "",
+      card: (params.card as DashboardCardKey) || "",
+    }),
+    getDashboardShellPreferences().catch(() => ({
+      savedViews: [],
+      density: null as "compact" | "comfortable" | null,
+      viewMode: null as DashboardViewMode | null,
+      hiddenColumnIds: [] as string[],
+    })),
+  ]);
+  const {
+    savedViews,
+    density: savedDensity,
+    viewMode: savedViewMode,
+    hiddenColumnIds,
+  } = prefs;
 
   const view = resolveView(params.view, savedViewMode);
   const hideEmpty = params.hide_empty === "1";

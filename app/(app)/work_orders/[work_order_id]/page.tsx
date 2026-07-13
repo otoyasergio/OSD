@@ -119,14 +119,27 @@ export default async function WorkOrderDetailPage({
   const detail = await getWorkOrderDetail(work_order_id);
   if (!detail) notFound();
 
+  const foreign = detail.is_foreign_location;
+  const needsTechs =
+    !foreign &&
+    (activeTab === "overview" || activeTab === "jobs");
+  const needsServices =
+    !foreign &&
+    (activeTab === "jobs" || activeTab === "recommendations");
+  const needsInspection =
+    activeTab === "inspection" ||
+    activeTab === "jobs" ||
+    (activeTab === "recommendations" && Boolean(fromResultId));
+  const needsParts = activeTab === "overview" || activeTab === "parts";
+
   const [
+    photos,
     technicians,
     services,
     inspection,
     recommendations,
     outstandingRecommendations,
     parts,
-    photos,
     notes,
     timeline,
     serviceInformation,
@@ -134,26 +147,44 @@ export default async function WorkOrderDetailPage({
     agreementTemplate,
     communicationLogs,
   ] = await Promise.all([
-    detail.is_foreign_location
-      ? Promise.resolve([])
-      : listTechniciansForActiveLocation(),
-    detail.is_foreign_location
-      ? Promise.resolve([])
-      : listServices({ includeInactive: false }),
-    getInspectionForWorkOrder(work_order_id),
-    listRecommendationsForWorkOrder(work_order_id),
-    listOutstandingRecommendationsForMotorcycle(
-      detail.motorcycle_id,
-      work_order_id
-    ),
-    listPartsForWorkOrder(work_order_id),
     listIntakePhotos(work_order_id),
-    listTechnicianNotes(work_order_id),
-    listTimelineEvents(work_order_id),
-    getServiceInformation(detail.motorcycle_id),
-    getDropOffAgreement(work_order_id),
-    getActiveAgreementTemplate(),
-    listCommunicationLog(work_order_id),
+    needsTechs
+      ? listTechniciansForActiveLocation()
+      : Promise.resolve([]),
+    needsServices
+      ? listServices({ includeInactive: false })
+      : Promise.resolve([]),
+    needsInspection
+      ? getInspectionForWorkOrder(work_order_id)
+      : Promise.resolve(null),
+    activeTab === "recommendations"
+      ? listRecommendationsForWorkOrder(work_order_id)
+      : Promise.resolve([]),
+    activeTab === "recommendations"
+      ? listOutstandingRecommendationsForMotorcycle(
+          detail.motorcycle_id,
+          work_order_id
+        )
+      : Promise.resolve([]),
+    needsParts ? listPartsForWorkOrder(work_order_id) : Promise.resolve([]),
+    activeTab === "notes"
+      ? listTechnicianNotes(work_order_id)
+      : Promise.resolve([]),
+    activeTab === "timeline"
+      ? listTimelineEvents(work_order_id)
+      : Promise.resolve([]),
+    activeTab === "service-info"
+      ? getServiceInformation(detail.motorcycle_id)
+      : Promise.resolve(null),
+    activeTab === "contract"
+      ? getDropOffAgreement(work_order_id)
+      : Promise.resolve(null),
+    activeTab === "contract"
+      ? getActiveAgreementTemplate()
+      : Promise.resolve(null),
+    activeTab === "messages"
+      ? listCommunicationLog(work_order_id)
+      : Promise.resolve([]),
   ]);
 
   const canAssign = canAssignTechnician(user.role);
