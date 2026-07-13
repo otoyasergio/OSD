@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { getPrivacyPolicyUrl, getTermsUrl } from "@/lib/sms/legalUrls";
-import { SmsSubscribeForm } from "@/components/sms/SmsConsentFields";
+import { SmsSubscribeForm } from "@/components/sms/SmsSubscribeForm";
 
 export default function SmsSubscribePage() {
   return (
