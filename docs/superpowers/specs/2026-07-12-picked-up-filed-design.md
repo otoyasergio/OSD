@@ -71,6 +71,10 @@ Keep QC and **Ready for pickup** forms. Replace the primary **Complete / release
 - Forbidden / foreign location / already completed / cancelled → clear mapped messages
 - Reuse existing quality/complete error mapping where applicable; drop obsolete “must mark ready first” messaging for normal completers once the gate is relaxed
 
+## Related
+
+Stage timers (`2026-07-12-work-order-stage-timers-design.md`): marking ready freezes the in-shop timer; completing / filing freezes the pickup-wait timer.
+
 ## Out of scope
 
 - New statuses (`picked_up` separate from `completed`)
