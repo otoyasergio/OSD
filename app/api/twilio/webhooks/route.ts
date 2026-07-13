@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleInboundSms } from "@/lib/services/communications";
+import { twimlMessageResponse } from "@/lib/twilio/twiml";
 import { isTwilioConfigured } from "@/lib/twilio/config";
 import {
   getPublicRequestUrl,
@@ -57,12 +58,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    await handleInboundSms({ from, body });
+    const reply = await handleInboundSms({ from, body });
     logger.info("Twilio inbound SMS processed", { requestId });
-    return new NextResponse(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      { headers: { "Content-Type": "text/xml" } }
-    );
+    return new NextResponse(twimlMessageResponse(reply), {
+      headers: { "Content-Type": "text/xml" },
+    });
   } catch (error) {
     captureException(error, { requestId, route: "twilio-webhook" });
     logger.error("Twilio webhook failed", {

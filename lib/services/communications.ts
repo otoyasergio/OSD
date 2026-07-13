@@ -6,6 +6,12 @@ import { TimelineEventType } from "@/lib/timeline/events";
 import { canRecordCustomerApproval } from "@/lib/permissions";
 import { sendSms, isTwilioConfigured } from "@/lib/twilio/client";
 import { normalizePhoneE164 } from "@/lib/twilio/phone";
+import {
+  canSendTransactionalSms,
+  classifyInboundSmsKeyword,
+  buildHelpReply,
+  buildOptOutReply,
+} from "@/lib/sms/consentPolicy";
 import { sendEmail, isEmailConfigured } from "@/lib/email/send";
 import { portalUrl } from "@/lib/portal/tokens";
 import { createPortalToken } from "@/lib/services/portal";
@@ -30,17 +36,6 @@ type TemplateContext = {
 
 /** CASL / A2P campaign alignment — Twilio Advanced Opt-Out still owns carrier STOP. */
 const SMS_OPT_OUT_FOOTER = "Reply STOP to opt out.";
-
-const OPT_OUT_KEYWORDS = new Set([
-  "STOP",
-  "STOPALL",
-  "UNSUBSCRIBE",
-  "CANCEL",
-  "END",
-  "QUIT",
-]);
-
-const OPT_IN_KEYWORDS = new Set(["START", "UNSTOP"]);
 
 function withSmsOptOut(body: string): string {
   return `${body.trim()} ${SMS_OPT_OUT_FOOTER}`;
@@ -129,7 +124,7 @@ export async function sendWorkOrderMessage(input: {
       work_order_id,
       work_order_number,
       location_id,
-      customer:customer_id ( customer_id, first_name, last_name, phone, email, sms_opted_out_at )
+      customer:customer_id ( customer_id, first_name, last_name, phone, email, sms_opted_out_at, sms_transactional_consent_at, sms_marketing_consent_at, sms_consent_source )
     `
     )
     .eq("work_order_id", input.work_order_id)
@@ -146,6 +141,9 @@ export async function sendWorkOrderMessage(input: {
     phone: string | null;
     email: string | null;
     sms_opted_out_at: string | null;
+    sms_transactional_consent_at: string | null;
+    sms_marketing_consent_at: string | null;
+    sms_consent_source: string | null;
   };
 
   const { token } = await createPortalToken({
@@ -170,7 +168,11 @@ export async function sendWorkOrderMessage(input: {
   try {
     if (input.channel === "sms") {
       if (!isTwilioConfigured()) throw new Error("TWILIO_NOT_CONFIGURED");
-      if (customer.sms_opted_out_at) throw new Error("SMS_OPTED_OUT");
+      if (!canSendTransactionalSms(customer)) {
+        throw new Error(
+          customer.sms_opted_out_at ? "SMS_OPTED_OUT" : "SMS_TRANSACTIONAL_NOT_CONSENTED"
+        );
+      }
       if (!customer.phone?.trim()) throw new Error("CUSTOMER_PHONE_REQUIRED");
       const e164 = normalizePhoneE164(customer.phone);
       if (!e164) throw new Error("INVALID_PHONE");
@@ -243,9 +245,10 @@ export async function sendWorkOrderMessage(input: {
 export async function handleInboundSms(input: {
   from: string;
   body: string;
-}): Promise<void> {
+}): Promise<string | null> {
   const admin = createAdminClient();
   const normalizedBody = input.body.trim().toUpperCase();
+  const keywordKind = classifyInboundSmsKeyword(input.body);
 
   const { data: customers } = await admin
     .from("customer")
@@ -268,14 +271,32 @@ export async function handleInboundSms(input: {
     status: "received",
   });
 
-  if (!customer) return;
+  if (!customer) return null;
 
-  if (OPT_OUT_KEYWORDS.has(normalizedBody)) {
+  if (keywordKind === "opt_out") {
     await admin
       .from("customer")
       .update({ sms_opted_out_at: new Date().toISOString() })
       .eq("customer_id", customer.customer_id);
-    return;
+    await admin.from("sms_consent_event").insert({
+      customer_id: customer.customer_id,
+      program: "all",
+      action: "opt_out",
+      method: "inbound_sms",
+    });
+    return buildOptOutReply();
+  }
+
+  if (keywordKind === "help") {
+    return buildHelpReply();
+  }
+
+  if (keywordKind === "opt_in_clear") {
+    await admin
+      .from("customer")
+      .update({ sms_opted_out_at: null })
+      .eq("customer_id", customer.customer_id);
+    return null;
   }
 
   const { data: openJobs } = await admin
@@ -294,24 +315,16 @@ export async function handleInboundSms(input: {
 
   const hasSingleApprovalJob = openJobs && openJobs.length === 1;
 
-  if (OPT_IN_KEYWORDS.has(normalizedBody)) {
-    await admin
-      .from("customer")
-      .update({ sms_opted_out_at: null })
-      .eq("customer_id", customer.customer_id);
-    return;
-  }
-
   // YES clears opt-out only when it is not an approval reply.
   if (normalizedBody === "YES" && !hasSingleApprovalJob) {
     await admin
       .from("customer")
       .update({ sms_opted_out_at: null })
       .eq("customer_id", customer.customer_id);
-    return;
+    return null;
   }
 
-  if (!hasSingleApprovalJob) return;
+  if (!hasSingleApprovalJob) return null;
 
   const job = openJobs[0];
   if (normalizedBody === "YES" || normalizedBody === "APPROVE") {
@@ -358,4 +371,6 @@ export async function handleInboundSms(input: {
       new_value: { approval_method: "text" },
     });
   }
+
+  return null;
 }
