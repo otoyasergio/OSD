@@ -5,13 +5,10 @@ import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { generatePortalToken, hashPortalToken } from "@/lib/portal/tokens";
 import { fileDropOffAgreementDocument } from "@/lib/services/customerDocuments";
+import { applySmsConsent } from "@/lib/services/smsConsent";
 
 export type PortalTokenPurpose =
-  | "full"
-  | "estimate"
-  | "payment"
-  | "inspection"
-  | "contract";
+  "full" | "estimate" | "payment" | "inspection" | "contract";
 
 export type PortalSession = {
   token_id: string;
@@ -24,7 +21,14 @@ export type PortalWorkOrderView = {
   work_order_id: string;
   work_order_number: string;
   status: string;
-  customer: { first_name: string; last_name: string };
+  customer: {
+    first_name: string;
+    last_name: string;
+    sms_transactional_consent_at: string | null;
+    sms_marketing_consent_at: string | null;
+    sms_opted_out_at: string | null;
+    sms_consent_source: string | null;
+  };
   motorcycle: { year: number; make: string; model: string };
   jobs: {
     job_id: string;
@@ -121,7 +125,14 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
       status,
       square_invoice_id,
       square_payment_status,
-      customer:customer_id ( first_name, last_name ),
+      customer:customer_id (
+        first_name,
+        last_name,
+        sms_transactional_consent_at,
+        sms_marketing_consent_at,
+        sms_opted_out_at,
+        sms_consent_source
+      ),
       motorcycle:motorcycle_id ( year, make, model )
     `
     )
@@ -159,8 +170,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
       part_name: p.part_name,
       quantity: p.quantity,
       unit_price: p.unit_price,
-      job_name:
-        jobs.find((j) => j.job_id === p.job_id)?.name_snapshot ?? "Job",
+      job_name: jobs.find((j) => j.job_id === p.job_id)?.name_snapshot ?? "Job",
     }));
   }
 
@@ -198,10 +208,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
   };
 }
 
-export async function portalApproveJob(
-  token: string,
-  jobId: string
-): Promise<void> {
+export async function portalApproveJob(token: string, jobId: string): Promise<void> {
   const session = await resolvePortalSession(token);
   const admin = createAdminClient();
 
@@ -355,6 +362,32 @@ export async function portalSignContract(
     entity_id: agreementId,
     description: `Drop-off agreement signed by ${input.signer_name} (portal)`,
     new_value: { signer_name: input.signer_name, via: "portal" },
+  });
+}
+
+export async function portalUpdateSmsConsent(
+  token: string,
+  input: { transactional: boolean; marketing: boolean }
+): Promise<void> {
+  const session = await resolvePortalSession(token);
+  const admin = createAdminClient();
+
+  const { data: wo, error } = await admin
+    .from("work_order")
+    .select("customer_id")
+    .eq("work_order_id", session.work_order_id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!wo) throw new Error("WORK_ORDER_NOT_FOUND");
+
+  await applySmsConsent({
+    customerId: wo.customer_id,
+    transactional: input.transactional,
+    marketing: input.marketing,
+    method: "portal",
+    sourcePath: `/c/${token}`,
+    sendWelcome: true,
   });
 }
 

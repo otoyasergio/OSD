@@ -7,6 +7,7 @@ import {
   portalApproveJob,
   portalDeclineJob,
   portalSignContract,
+  portalUpdateSmsConsent,
 } from "@/lib/services/portal";
 import { getActiveAgreementTemplate } from "@/lib/services/contracts";
 import { toFormErrorMessage } from "@/lib/services/errors";
@@ -97,6 +98,27 @@ export async function portalAckInspectionAction(
       signer_name: signerName,
       signature_data_url: signatureDataUrl,
     });
+    revalidatePath(`/c/${token}`);
+    return { error: null };
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+}
+
+export async function portalUpdateSmsConsentAction(
+  token: string,
+  formData: FormData
+): Promise<{ error: string | null }> {
+  const transactional = formData.get("sms_transactional") === "on";
+  const marketing = formData.get("sms_marketing") === "on";
+
+  if (!transactional && !marketing) {
+    return { error: "Choose at least one message type." };
+  }
+
+  try {
+    await assertPortalRateLimit(token);
+    await portalUpdateSmsConsent(token, { transactional, marketing });
     revalidatePath(`/c/${token}`);
     return { error: null };
   } catch (error) {

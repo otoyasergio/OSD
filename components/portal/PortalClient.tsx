@@ -11,6 +11,8 @@ import {
   portalSignContractAction,
 } from "@/app/c/[token]/actions";
 import { FormError } from "@/components/forms/Field";
+import { PortalSmsPrefs } from "@/components/portal/PortalSmsPrefs";
+import { getPrivacyPolicyUrl, getTermsUrl } from "@/lib/sms/legalUrls";
 
 type Props = {
   token: string;
@@ -46,9 +48,7 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
           <ContractSigningPanel
             template={contractTemplate}
             existing={null}
-            action={async (formData) =>
-              portalSignContractAction(token, formData)
-            }
+            action={async (formData) => portalSignContractAction(token, formData)}
           />
         </section>
       ) : null}
@@ -165,7 +165,9 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
           Total (est.): ${estimateTotal.toFixed(2)}
         </p>
         {view.square_payment_status === "paid" ? (
-          <p className="mt-3 text-center font-medium text-emerald-700">Paid — thank you!</p>
+          <p className="mt-3 text-center font-medium text-emerald-700">
+            Paid — thank you!
+          </p>
         ) : (
           <p className="mt-3 text-center text-sm text-zinc-600">
             Payment link will be sent when your bike is ready for pickup.
@@ -206,6 +208,13 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
       ) : view.has_inspection_ack ? (
         <p className="text-center text-sm text-emerald-700">Inspection acknowledged.</p>
       ) : null}
+
+      <PortalSmsPrefs
+        token={token}
+        customer={view.customer}
+        privacyUrl={getPrivacyPolicyUrl()}
+        termsUrl={getTermsUrl()}
+      />
 
       {error ? <FormError message={error} /> : null}
     </div>
