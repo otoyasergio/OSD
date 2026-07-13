@@ -6,6 +6,8 @@ import type { Customer } from "@/lib/services/customers";
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { SmsConsentFields } from "@/components/sms/SmsConsentFields";
+import { getPrivacyPolicyUrl, getTermsUrl } from "@/lib/sms/legalUrls";
 
 type Props = {
   action: (state: CustomerFormState, formData: FormData) => Promise<CustomerFormState>;
@@ -52,6 +54,13 @@ export function CustomerForm({ action, customer, submitLabel }: Props) {
           error={fieldErrors.email}
         />
       </div>
+
+      <SmsConsentFields
+        privacyUrl={getPrivacyPolicyUrl()}
+        termsUrl={getTermsUrl()}
+        defaultTransactional={Boolean(customer?.sms_transactional_consent_at)}
+        defaultMarketing={Boolean(customer?.sms_marketing_consent_at)}
+      />
 
       <label htmlFor="account_type" className="block">
         <span className="field-label">Account type</span>

@@ -17,6 +17,10 @@ export type Customer = {
   notes: string | null;
   account_type: CustomerAccountType;
   wix_contact_id: string | null;
+  sms_opted_out_at: string | null;
+  sms_transactional_consent_at: string | null;
+  sms_marketing_consent_at: string | null;
+  sms_consent_source: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -31,7 +35,7 @@ export type CustomerInput = {
 };
 
 const CUSTOMER_COLUMNS =
-  "customer_id, first_name, last_name, phone, email, notes, account_type, wix_contact_id, created_at, updated_at";
+  "customer_id, first_name, last_name, phone, email, notes, account_type, wix_contact_id, sms_opted_out_at, sms_transactional_consent_at, sms_marketing_consent_at, sms_consent_source, created_at, updated_at";
 
 /**
  * PostgREST `or()` uses commas and parentheses as syntax, so those characters are

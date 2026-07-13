@@ -3,6 +3,7 @@
 import { ZodError } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { requireUser } from "@/lib/auth/session";
 import {
   createCustomer,
   searchCustomers,
@@ -10,6 +11,7 @@ import {
   type Customer,
   type CustomerAccountType,
 } from "@/lib/services/customers";
+import { applySmsConsent } from "@/lib/services/smsConsent";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { zodFieldErrors } from "@/lib/validation/fieldErrors";
 import { syncCustomerToWixAfterSave } from "@/app/(app)/customers/wix-actions";
@@ -46,6 +48,22 @@ function toCustomerFormError(error: unknown): CustomerFormState {
   return { error: toFormErrorMessage(error) };
 }
 
+async function applyStaffCustomerFormConsent(
+  customerId: string,
+  formData: FormData
+): Promise<void> {
+  const user = await requireUser();
+  await applySmsConsent({
+    customerId,
+    transactional: formData.get("sms_transactional") === "on",
+    marketing: formData.get("sms_marketing") === "on",
+    method: "staff",
+    sourcePath: "staff:customer_form",
+    actorUserId: user.user_id,
+    sendWelcome: true,
+  });
+}
+
 export async function createCustomerAction(
   _prevState: CustomerFormState,
   formData: FormData
@@ -55,6 +73,7 @@ export async function createCustomerAction(
   try {
     const customer = await createCustomer(readCustomerInput(formData));
     customerId = customer.customer_id;
+    await applyStaffCustomerFormConsent(customerId, formData);
     await syncCustomerToWixAfterSave(customerId);
   } catch (error) {
     return toCustomerFormError(error);
@@ -71,6 +90,7 @@ export async function updateCustomerAction(
 ): Promise<CustomerFormState> {
   try {
     await updateCustomer(customerId, readCustomerInput(formData));
+    await applyStaffCustomerFormConsent(customerId, formData);
     await syncCustomerToWixAfterSave(customerId);
   } catch (error) {
     return toCustomerFormError(error);
