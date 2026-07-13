@@ -37,6 +37,8 @@ export async function applySmsConsent(input: ApplySmsConsentInput): Promise<void
   const hadMkt = Boolean(existing.sms_marketing_consent_at);
   const programsGained: SmsProgram[] = [];
 
+  const optingIn = input.transactional || input.marketing;
+
   const patch = {
     sms_consent_source: input.method,
     sms_transactional_consent_at: input.transactional
@@ -45,6 +47,7 @@ export async function applySmsConsent(input: ApplySmsConsentInput): Promise<void
     sms_marketing_consent_at: input.marketing
       ? (existing.sms_marketing_consent_at ?? now)
       : null,
+    ...(optingIn ? { sms_opted_out_at: null } : {}),
   };
 
   if (input.transactional && !hadTxn) programsGained.push("transactional");
@@ -58,12 +61,23 @@ export async function applySmsConsent(input: ApplySmsConsentInput): Promise<void
 
   const events: Array<{
     customer_id: string;
-    program: "transactional" | "marketing";
+    program: "transactional" | "marketing" | "all";
     action: "opt_in" | "opt_out";
     method: ConsentMethod;
     source_path: string | null;
     actor_user_id: string | null;
   }> = [];
+
+  if (existing.sms_opted_out_at && optingIn) {
+    events.push({
+      customer_id: input.customerId,
+      program: "all",
+      action: "opt_in",
+      method: input.method,
+      source_path: input.sourcePath ?? null,
+      actor_user_id: input.actorUserId ?? null,
+    });
+  }
 
   if (input.transactional && !hadTxn) {
     events.push({
@@ -110,11 +124,13 @@ export async function applySmsConsent(input: ApplySmsConsentInput): Promise<void
     if (evErr) throw evErr;
   }
 
+  const optedOut = Boolean(existing.sms_opted_out_at) && !optingIn;
+
   if (
     input.sendWelcome &&
     programsGained.length > 0 &&
     isTwilioConfigured() &&
-    !existing.sms_opted_out_at
+    !optedOut
   ) {
     const phone = normalizePhoneE164(input.phoneForWelcome ?? existing.phone ?? "");
     if (phone) {
