@@ -12,15 +12,11 @@ const FLAG_STYLES: Record<string, string> = {
   Overdue:
     "bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)] ring-1 ring-[var(--status-danger)]/25",
   "On hold": "bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]",
+  "Admin flag":
+    "bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)] ring-1 ring-[var(--status-danger)]/25",
 };
 
-export function FlagBadges({
-  flags,
-  empty = "—",
-}: {
-  flags: string[];
-  empty?: string;
-}) {
+export function FlagBadges({ flags, empty = "—" }: { flags: string[]; empty?: string }) {
   if (flags.length === 0) {
     return <span className="text-chrome-muted text-sm">{empty}</span>;
   }

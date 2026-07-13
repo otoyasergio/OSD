@@ -8,14 +8,14 @@ import {
   canCompleteJob,
   canCreateWorkOrder,
   canEditWorkOrder,
+  canPullJob,
   canRecordCustomerApproval,
 } from "@/lib/permissions";
-import {
-  addJobSchema,
-  approvalMethodSchema,
-} from "@/lib/validation/schemas";
+import { addJobSchema, approvalMethodSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
+import { seedDefaultJobChecklist } from "@/lib/services/jobChecklist";
+import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 
 type JobRow = {
   job_id: string;
@@ -35,10 +35,7 @@ type WorkOrderRow = {
   status: string;
 };
 
-async function loadJob(
-  supabase: DbClient,
-  jobId: string
-): Promise<JobRow | null> {
+async function loadJob(supabase: DbClient, jobId: string): Promise<JobRow | null> {
   const { data, error } = await supabase
     .from("job")
     .select(
@@ -73,10 +70,7 @@ async function requireMutableWorkOrder(
   if (workOrder.location_id !== user.active_location_id) {
     throw new Error("FOREIGN_LOCATION");
   }
-  if (
-    workOrder.status === "completed" ||
-    workOrder.status === "cancelled"
-  ) {
+  if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
   return { supabase, workOrder };
@@ -92,10 +86,7 @@ export async function addJobToWorkOrder(
   }
 
   const parsed = addJobSchema.parse(input);
-  const { supabase, workOrder } = await requireMutableWorkOrder(
-    user,
-    workOrderId
-  );
+  const { supabase, workOrder } = await requireMutableWorkOrder(user, workOrderId);
 
   const { data: service, error: serviceError } = await supabase
     .from("service")
@@ -106,9 +97,7 @@ export async function addJobToWorkOrder(
   if (serviceError) throw serviceError;
   if (!service || !service.active) throw new Error("SERVICE_NOT_FOUND");
 
-  const status: JobStatus = parsed.require_approval
-    ? "waiting_for_approval"
-    : "approved";
+  const status: JobStatus = parsed.require_approval ? "waiting_for_approval" : "approved";
 
   const { data: job, error } = await supabase
     .from("job")
@@ -132,6 +121,8 @@ export async function addJobToWorkOrder(
     .single();
 
   if (error) throw error;
+
+  await seedDefaultJobChecklist(supabase, job.job_id);
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,
@@ -216,6 +207,59 @@ export async function assignTechnicianToJob(
   });
 }
 
+export async function pullJob(jobId: string): Promise<void> {
+  const user = await requireUser();
+  if (!canPullJob(user.role)) throw new Error("FORBIDDEN");
+  if (user.role !== "technician") {
+    // Front office should use assignTechnicianToJob with an explicit tech id.
+    throw new Error("FORBIDDEN");
+  }
+
+  const supabase = await createClient();
+  const job = await loadJob(supabase, jobId);
+  if (!job) throw new Error("JOB_NOT_FOUND");
+
+  const { workOrder } = await requireMutableWorkOrder(user, job.work_order_id);
+
+  if (job.status !== "approved" && job.status !== "ready_to_start") {
+    throw new Error("JOB_NOT_READY");
+  }
+  if (job.assigned_technician_id) {
+    throw new Error("JOB_ALREADY_ASSIGNED");
+  }
+
+  const { error } = await supabase
+    .from("job")
+    .update({
+      assigned_technician_id: user.user_id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("job_id", jobId)
+    .is("assigned_technician_id", null);
+  if (error) throw error;
+
+  await addTimelineEvent(supabase, {
+    work_order_id: job.work_order_id,
+    user_id: user.user_id,
+    event_type: TimelineEventType.JOB_ASSIGNED,
+    entity_type: "job",
+    entity_id: jobId,
+    description: `Job pulled by technician`,
+    old_value: { assigned_technician_id: null },
+    new_value: { assigned_technician_id: user.user_id },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "job_pulled",
+    entity_type: "job",
+    entity_id: jobId,
+    description: `Job ${job.service_name_snapshot} pulled`,
+    new_value: { assigned_technician_id: user.user_id },
+  });
+}
+
 function assertStatusTransition(
   user: AppUser,
   job: JobRow,
@@ -265,6 +309,20 @@ export async function updateJobStatus(
   const { workOrder } = await requireMutableWorkOrder(user, job.work_order_id);
   assertStatusTransition(user, job, nextStatus, options.note);
 
+  if (nextStatus === "in_progress") {
+    const { data: otherActive, error: activeError } = await supabase
+      .from("job")
+      .select("job_id")
+      .eq("assigned_technician_id", user.user_id)
+      .eq("status", "in_progress")
+      .neq("job_id", jobId)
+      .limit(1);
+    if (activeError) throw activeError;
+    if ((otherActive ?? []).length > 0) {
+      throw new Error("OTHER_JOB_IN_PROGRESS");
+    }
+  }
+
   if (nextStatus === "completed") {
     const { data: inspection, error: inspectionError } = await supabase
       .from("inspection")
@@ -282,12 +340,38 @@ export async function updateJobStatus(
           action: "job_complete_blocked_inspection",
           entity_type: "job",
           entity_id: jobId,
-          description:
-            "Complete the inspection report before finishing jobs.",
+          description: "Complete the inspection report before finishing jobs.",
           new_value: { attempted_status: "completed" },
         });
       }
       throw error;
+    }
+
+    const [{ data: checklist }, { data: parts }, { data: proofs }, { data: exceptions }] =
+      await Promise.all([
+        supabase.from("job_checklist_item").select("checked_at").eq("job_id", jobId),
+        supabase.from("part").select("status").eq("job_id", jobId),
+        supabase
+          .from("intake_photo")
+          .select("photo_id")
+          .eq("job_id", jobId)
+          .eq("category", "job_proof"),
+        supabase
+          .from("technician_note")
+          .select("technician_note_id")
+          .eq("job_id", jobId)
+          .eq("note_type", "proof_exception")
+          .limit(1),
+      ]);
+
+    const gate = evaluateJobCompleteGate({
+      checklistItems: (checklist as Array<{ checked_at: string | null }>) ?? [],
+      parts: (parts as Array<{ status: string }>) ?? [],
+      proofPhotoCount: (proofs ?? []).length,
+      hasProofException: (exceptions ?? []).length > 0,
+    });
+    if (!gate.ok) {
+      throw new Error(gate.code);
     }
   }
 

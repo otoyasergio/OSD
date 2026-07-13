@@ -54,7 +54,8 @@ export type PhotoCategory =
   | "inspection_tires"
   | "inspection_brakes"
   | "inspection_forks"
-  | "inspection_item";
+  | "inspection_item"
+  | "job_proof";
 
 export type TechnicianNoteType =
   | "general"
@@ -64,7 +65,10 @@ export type TechnicianNoteType =
   | "parts_issue"
   | "road_test"
   | "quality_check"
-  | "internal_warning";
+  | "internal_warning"
+  | "proof_exception";
+
+export type AdminFlagReason = "parts" | "approval" | "tool" | "quality" | "other";
 
 export type { Database } from "@/lib/database/supabase.generated";
 

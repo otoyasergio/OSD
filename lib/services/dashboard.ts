@@ -1,15 +1,10 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import type { PhotoCategory, WorkOrderStatus } from "@/lib/database/types";
-import {
-  buildWorkOrderFlags,
-  isOverdue,
-} from "@/lib/status/flags";
+import { buildWorkOrderFlags, isOverdue } from "@/lib/status/flags";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
-import {
-  resolvePrimaryPhotoUrls,
-  type IntakePhotoRef,
-} from "@/lib/services/photos";
+import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import { listOpenAdminFlagsForWorkOrders } from "@/lib/services/adminFlags";
 
 export type DashboardCounts = {
   open: number;
@@ -190,9 +185,7 @@ function matchesCard(row: RawRow, card: DashboardCardKey, now: Date): boolean {
         !inspection?.completed_at
       );
     case "unassigned_jobs":
-      return jobs.some(
-        (job) => isActiveJob(job.status) && !job.assigned_technician_id
-      );
+      return jobs.some((job) => isActiveJob(job.status) && !job.assigned_technician_id);
     default:
       return true;
   }
@@ -201,7 +194,8 @@ function matchesCard(row: RawRow, card: DashboardCardKey, now: Date): boolean {
 function toDashboardRow(
   row: RawRow,
   now: Date,
-  primaryPhotoUrl: string | null = null
+  primaryPhotoUrl: string | null = null,
+  hasOpenAdminFlag = false
 ): DashboardRow {
   const jobs = row.job ?? [];
   const recommendations = row.recommendation ?? [];
@@ -237,6 +231,7 @@ function toDashboardRow(
       photoCount: photos.length,
       inspectionComplete: inspection ? Boolean(inspection.completed_at) : null,
       hasSignedAgreement: (row.drop_off_agreement?.length ?? 0) > 0,
+      hasOpenAdminFlag,
       now,
     }),
   };
@@ -295,10 +290,7 @@ export async function getDashboardData(
       .in("status", ACTIVE_STATUSES)
       .order("date_created", { ascending: false })
       .limit(300),
-    supabase
-      .from("user_location")
-      .select("user_id")
-      .eq("location_id", locationId),
+    supabase.from("user_location").select("user_id").eq("location_id", locationId),
   ]);
 
   if (woResult.error) throw woResult.error;
@@ -355,9 +347,11 @@ export async function getDashboardData(
   for (const row of filtered) {
     photosByWorkOrder.set(row.work_order_id, row.intake_photo ?? []);
   }
-  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(
+  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(supabase, photosByWorkOrder);
+
+  const openFlags = await listOpenAdminFlagsForWorkOrders(
     supabase,
-    photosByWorkOrder
+    filtered.map((row) => row.work_order_id)
   );
 
   const rows = filtered
@@ -365,7 +359,8 @@ export async function getDashboardData(
       toDashboardRow(
         row,
         now,
-        primaryPhotoUrls.get(row.work_order_id) ?? null
+        primaryPhotoUrls.get(row.work_order_id) ?? null,
+        (openFlags.get(row.work_order_id) ?? []).length > 0
       )
     )
     .filter((row) => {

@@ -38,6 +38,7 @@ export function OverviewTab({
   canHoldOrCancel,
   canResumeHold,
   canOverrideComplete,
+  canClearFlags = false,
   readOnly,
   assignAction,
   setPrimaryAction,
@@ -47,6 +48,7 @@ export function OverviewTab({
   cancelAction,
   holdAction,
   resumeAction,
+  clearFlagAction,
 }: {
   detail: WorkOrderDetail;
   technicians: TechnicianOption[];
@@ -57,6 +59,7 @@ export function OverviewTab({
   canHoldOrCancel: boolean;
   canResumeHold: boolean;
   canOverrideComplete: boolean;
+  canClearFlags?: boolean;
   readOnly: boolean;
   assignAction: Action;
   setPrimaryAction: Action;
@@ -66,6 +69,7 @@ export function OverviewTab({
   cancelAction: QualityAction;
   holdAction: QualityAction;
   resumeAction: QualityAction;
+  clearFlagAction?: QualityAction;
 }) {
   const [assignState, assignFormAction] = useActionState(assignAction, {
     error: null,
@@ -80,6 +84,10 @@ export function OverviewTab({
   const [completeState, completeFormAction] = useActionState(completeAction, {
     error: null,
   });
+  const [clearFlagState, clearFlagFormAction] = useActionState(
+    clearFlagAction ?? (async () => ({ error: null })),
+    { error: null }
+  );
   const [cancelState, cancelFormAction] = useActionState(cancelAction, {
     error: null,
   });
@@ -93,34 +101,24 @@ export function OverviewTab({
   const [confirmComplete, setConfirmComplete] = useState(false);
   const [confirmHold, setConfirmHold] = useState(false);
 
-  const assignedIds = new Set(
-    detail.technicians.map((row) => row.technician_id)
-  );
+  const assignedIds = new Set(detail.technicians.map((row) => row.technician_id));
 
-  const locked =
-    detail.status === "completed" || detail.status === "cancelled";
-  const qcDone = Boolean(
-    detail.quality_checked_at || detail.quality_checked_by_user_id
-  );
+  const locked = detail.status === "completed" || detail.status === "cancelled";
+  const qcDone = Boolean(detail.quality_checked_at || detail.quality_checked_by_user_id);
   const readyDone = Boolean(
     detail.ready_for_pickup_at || detail.status === "ready_for_pickup"
   );
   const showCompletion =
-    !readOnly &&
-    !locked &&
-    (canRunQc || canMarkReady || canComplete || canHoldOrCancel);
+    !readOnly && !locked && (canRunQc || canMarkReady || canComplete || canHoldOrCancel);
 
   return (
     <div className="flex flex-col gap-6">
       <section className="rounded border border-zinc-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-900">
-              Inspection report
-            </h2>
+            <h2 className="text-lg font-semibold text-zinc-900">Inspection report</h2>
             <p className="mt-1 text-sm text-zinc-600">
-              Visual Motorcycle Inspection Report — required before finishing
-              jobs.
+              Visual Motorcycle Inspection Report — required before finishing jobs.
             </p>
           </div>
           <Link
@@ -249,11 +247,54 @@ export function OverviewTab({
 
       <section className="rounded border border-zinc-200 bg-white p-4">
         <h2 className="text-lg font-semibold text-zinc-900">Completion</h2>
+        {detail.open_admin_flags.length > 0 ? (
+          <div className="mt-3 rounded border border-red-200 bg-red-50 p-3">
+            <h3 className="text-sm font-semibold text-red-900">Admin flags</h3>
+            <ul className="mt-2 space-y-2">
+              {detail.open_admin_flags.map((flag) => (
+                <li
+                  key={flag.admin_flag_id}
+                  className="flex flex-wrap items-start justify-between gap-2 text-sm"
+                >
+                  <div>
+                    <span className="font-medium capitalize">{flag.reason}</span>
+                    {flag.note ? (
+                      <span className="text-zinc-700"> — {flag.note}</span>
+                    ) : null}
+                  </div>
+                  {canClearFlags ? (
+                    <form action={clearFlagFormAction}>
+                      <input
+                        type="hidden"
+                        name="admin_flag_id"
+                        value={flag.admin_flag_id}
+                      />
+                      <button type="submit" className="btn btn-secondary text-xs">
+                        Clear
+                      </button>
+                    </form>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            <FormError message={clearFlagState.error} />
+          </div>
+        ) : null}
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-zinc-500">Quality check</dt>
             <dd className="font-medium text-zinc-900">
               {formatDate(detail.quality_checked_at) ?? "Not completed"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-zinc-500">QC assignee</dt>
+            <dd className="font-medium text-zinc-900">
+              {detail.quality_check_assignee
+                ? `${detail.quality_check_assignee.first_name} ${detail.quality_check_assignee.last_name}`
+                : detail.status === "quality_check"
+                  ? "Unassigned (no eligible peer clocked in)"
+                  : "—"}
             </dd>
           </div>
           <div>
@@ -299,10 +340,7 @@ export function OverviewTab({
                   rows={2}
                 />
                 <div>
-                  <SubmitButton
-                    label="Complete quality check"
-                    pendingLabel="Saving…"
-                  />
+                  <SubmitButton label="Complete quality check" pendingLabel="Saving…" />
                 </div>
               </form>
             ) : null}
@@ -318,10 +356,7 @@ export function OverviewTab({
                 </p>
                 <FormError message={readyState.error} />
                 <div>
-                  <SubmitButton
-                    label="Mark ready for pickup"
-                    pendingLabel="Saving…"
-                  />
+                  <SubmitButton label="Mark ready for pickup" pendingLabel="Saving…" />
                 </div>
               </form>
             ) : null}
@@ -343,14 +378,10 @@ export function OverviewTab({
                       rows={2}
                     />
                     <p className="text-sm text-zinc-700">
-                      Confirm release to the customer? This completes the work
-                      order.
+                      Confirm release to the customer? This completes the work order.
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      <SubmitButton
-                        label="Confirm complete"
-                        pendingLabel="Completing…"
-                      />
+                      <SubmitButton label="Confirm complete" pendingLabel="Completing…" />
                       <button
                         type="button"
                         className="min-h-11 rounded border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
@@ -381,8 +412,8 @@ export function OverviewTab({
                       <div className="flex flex-col gap-3">
                         <FormError message={resumeState.error} />
                         <p className="text-sm text-zinc-600">
-                          This work order is on hold. Resuming returns it to the
-                          active flow.
+                          This work order is on hold. Resuming returns it to the active
+                          flow.
                         </p>
                         <form action={resumeFormAction}>
                           <SubmitButton
@@ -395,10 +426,7 @@ export function OverviewTab({
                       <>
                         <FormError message={holdState.error} />
                         {confirmHold ? (
-                          <form
-                            action={holdFormAction}
-                            className="flex flex-col gap-3"
-                          >
+                          <form action={holdFormAction} className="flex flex-col gap-3">
                             <TextAreaField
                               label="Hold reason (optional)"
                               name="hold_reason"
@@ -433,10 +461,7 @@ export function OverviewTab({
                   <div>
                     <FormError message={cancelState.error} />
                     {confirmCancel ? (
-                      <form
-                        action={cancelFormAction}
-                        className="flex flex-col gap-3"
-                      >
+                      <form action={cancelFormAction} className="flex flex-col gap-3">
                         <TextAreaField
                           label="Cancel reason"
                           name="cancel_reason"

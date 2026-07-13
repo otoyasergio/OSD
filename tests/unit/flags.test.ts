@@ -66,9 +66,20 @@ describe("buildWorkOrderFlags", () => {
     expect(flags).not.toContain("Contract unsigned");
   });
 
+  it("includes Admin flag when open", () => {
+    const flags = buildWorkOrderFlags({
+      status: "in_progress",
+      vin: "ABC",
+      estimated_completion: null,
+      jobs: [],
+      recommendations: [],
+      photoCount: 1,
+      hasOpenAdminFlag: true,
+    });
+    expect(flags).toContain("Admin flag");
+  });
+
   it("does not mark completed work orders overdue", () => {
-    expect(
-      isOverdue("2020-01-01T00:00:00.000Z", "completed", new Date())
-    ).toBe(false);
+    expect(isOverdue("2020-01-01T00:00:00.000Z", "completed", new Date())).toBe(false);
   });
 });

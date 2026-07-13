@@ -1,7 +1,7 @@
 # Technician Floor OS design
 
 **Date:** 2026-07-12  
-**Status:** Draft — awaiting user review  
+**Status:** Approved — implemented  
 **Approach:** Single Floor OS on `/technician` (hybrid queue + work surface)
 
 ## Goal

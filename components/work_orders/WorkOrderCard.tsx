@@ -72,9 +72,7 @@ export function WorkOrderCard({
   const customerName = customer
     ? `${customer.first_name} ${customer.last_name}`
     : "Unknown customer";
-  const bikeLabel = bike
-    ? `${bike.year} ${bike.make} ${bike.model}`
-    : "No motorcycle";
+  const bikeLabel = bike ? `${bike.year} ${bike.make} ${bike.model}` : "No motorcycle";
   const photoUrl = workOrder.primary_photo_url ?? null;
   const showPhotoFrame = showPhoto || Boolean(photoUrl);
 
@@ -91,19 +89,18 @@ export function WorkOrderCard({
         .join(" ")}
     >
       <div
-        className={`wo-card-strip ${statusStripClass(workOrder.status)}`}
+        className={`wo-card-strip ${
+          workOrder.flags.includes("Admin flag")
+            ? "wo-card-strip-danger"
+            : statusStripClass(workOrder.status)
+        }`}
         aria-hidden
       />
       {showPhotoFrame ? (
         <div className="wo-card-photo-frame" aria-hidden={!photoUrl}>
           {photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-            <img
-              src={photoUrl}
-              alt=""
-              className="wo-card-photo-img"
-              loading="lazy"
-            />
+            <img src={photoUrl} alt="" className="wo-card-photo-img" loading="lazy" />
           ) : (
             <div className="wo-card-photo-placeholder">
               <svg
@@ -117,11 +114,7 @@ export function WorkOrderCard({
                   opacity="0.35"
                 />
                 <circle cx="16" cy="12" r="3" fill="currentColor" opacity="0.45" />
-                <path
-                  d="M6 24h36v2H6z"
-                  fill="currentColor"
-                  opacity="0.25"
-                />
+                <path d="M6 24h36v2H6z" fill="currentColor" opacity="0.25" />
               </svg>
             </div>
           )}
@@ -131,9 +124,7 @@ export function WorkOrderCard({
         <div className="wo-card-hero">
           <p className="wo-card-bike">{bikeLabel}</p>
           <p className="wo-card-customer">{customerName}</p>
-          {customer?.phone ? (
-            <p className="wo-card-meta">{customer.phone}</p>
-          ) : null}
+          {customer?.phone ? <p className="wo-card-meta">{customer.phone}</p> : null}
         </div>
 
         <div className="wo-card-footer">

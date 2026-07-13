@@ -50,6 +50,22 @@ export function canCompleteJob(role: UserRole) {
 export function canRunQualityCheck(role: UserRole) {
   return QC_ROLES.includes(role);
 }
+/** Technicians may run peer QC when assigned (enforced in service). */
+export function canPerformPeerQualityCheck(role: UserRole) {
+  return role === "technician" || QC_ROLES.includes(role);
+}
+/** Technicians may pull unassigned ready jobs onto themselves. */
+export function canPullJob(role: UserRole) {
+  return role === "technician" || FRONT_OFFICE.includes(role);
+}
+/** Front office clears admin andon flags. */
+export function canClearAdminFlag(role: UserRole) {
+  return FRONT_OFFICE.includes(role);
+}
+/** Any staff who can complete jobs may raise an admin flag. */
+export function canCreateAdminFlag(role: UserRole) {
+  return role === "technician" || FRONT_OFFICE.includes(role);
+}
 export function canMarkReadyForPickup(role: UserRole) {
   return FRONT_OFFICE.includes(role);
 }

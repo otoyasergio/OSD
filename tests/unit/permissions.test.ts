@@ -10,6 +10,10 @@ import {
   canSyncWixContacts,
   canCompleteWorkOrder,
   canRunQualityCheck,
+  canPullJob,
+  canPerformPeerQualityCheck,
+  canClearAdminFlag,
+  canCreateAdminFlag,
   canManageServiceCatalogue,
   canManageContractTemplate,
   canUpdateServiceInformation,
@@ -60,6 +64,14 @@ describe("permissions", () => {
   it("service_advisor can run quality check", () => {
     expect(canRunQualityCheck("service_advisor")).toBe(true);
     expect(canRunQualityCheck("technician")).toBe(false);
+  });
+
+  it("technician can pull jobs and perform peer QC", () => {
+    expect(canPullJob("technician")).toBe(true);
+    expect(canPerformPeerQualityCheck("technician")).toBe(true);
+    expect(canClearAdminFlag("technician")).toBe(false);
+    expect(canClearAdminFlag("service_advisor")).toBe(true);
+    expect(canCreateAdminFlag("technician")).toBe(true);
   });
 
   it("canOrderPart is true for front office roles", () => {

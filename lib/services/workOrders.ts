@@ -27,6 +27,7 @@ export type WorkOrder = {
   quality_checked_by_user_id: string | null;
   quality_checked_at: string | null;
   quality_check_notes: string | null;
+  quality_check_assigned_to: string | null;
   ready_for_pickup_at: string | null;
   completed_at: string | null;
   released_by_user_id: string | null;
@@ -102,16 +103,14 @@ export type TechnicianOption = {
 };
 
 const WORK_ORDER_COLUMNS =
-  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, square_invoice_id, square_payment_status, square_invoice_public_url, billing_stage, billing_amount_mode, billing_amount_cents, billing_collected_cents, estimate_sent_at, invoice_published_at, wix_booking_id, scheduled_at, source, created_at, updated_at";
+  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, quality_check_assigned_to, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, square_invoice_id, square_payment_status, square_invoice_public_url, billing_stage, billing_amount_mode, billing_amount_cents, billing_collected_cents, estimate_sent_at, invoice_published_at, wix_booking_id, scheduled_at, source, created_at, updated_at";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
 }
 
-export async function listTechniciansForActiveLocation(): Promise<
-  TechnicianOption[]
-> {
+export async function listTechniciansForActiveLocation(): Promise<TechnicianOption[]> {
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -122,9 +121,7 @@ export async function listTechniciansForActiveLocation(): Promise<
 
   if (membershipError) throw membershipError;
 
-  const userIds = (memberships ?? []).map(
-    (row: { user_id: string }) => row.user_id
-  );
+  const userIds = (memberships ?? []).map((row: { user_id: string }) => row.user_id);
   if (userIds.length === 0) return [];
 
   const { data, error } = await supabase
@@ -140,9 +137,7 @@ export async function listTechniciansForActiveLocation(): Promise<
   return (data ?? []) as TechnicianOption[];
 }
 
-export async function listWorkOrdersForActiveLocation(): Promise<
-  WorkOrderListItem[]
-> {
+export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListItem[]> {
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -203,8 +198,7 @@ export async function listWorkOrdersForActiveLocation(): Promise<
     } | null;
     const jobs = (row.job as Array<{ status: string }> | null) ?? [];
     const recommendations =
-      (row.recommendation as Array<{ severity: string; status: string }> | null) ??
-      [];
+      (row.recommendation as Array<{ severity: string; status: string }> | null) ?? [];
 
     return {
       work_order_id: row.work_order_id as string,
@@ -280,6 +274,17 @@ export type WorkOrderDetail = WorkOrder & {
     first_name: string;
     last_name: string;
   } | null;
+  quality_check_assignee: {
+    user_id: string;
+    first_name: string;
+    last_name: string;
+  } | null;
+  open_admin_flags: Array<{
+    admin_flag_id: string;
+    reason: string;
+    note: string | null;
+    created_at: string;
+  }>;
   technicians: Array<{
     technician_id: string;
     assigned_at: string;
@@ -294,9 +299,7 @@ export type WorkOrderDetail = WorkOrder & {
   is_foreign_location: boolean;
 };
 
-export async function getWorkOrderById(
-  workOrderId: string
-): Promise<WorkOrder | null> {
+export async function getWorkOrderById(workOrderId: string): Promise<WorkOrder | null> {
   await requireUser();
   const supabase = await createClient();
 
@@ -338,6 +341,11 @@ export async function getWorkOrderDetail(
         customer_id
       ),
       primary_technician:primary_technician_id (
+        user_id,
+        first_name,
+        last_name
+      ),
+      quality_check_assignee:quality_check_assigned_to (
         user_id,
         first_name,
         last_name
@@ -389,13 +397,20 @@ export async function getWorkOrderDetail(
   const customer = row.customer as WorkOrderDetail["customer"];
   const jobs = (row.job as WorkOrderJob[] | null) ?? [];
   const recommendations =
-    (row.recommendation as Array<{ severity: string; status: string }> | null) ??
-    [];
+    (row.recommendation as Array<{ severity: string; status: string }> | null) ?? [];
   const photos = (row.intake_photo as Array<{ photo_id: string }> | null) ?? [];
   const technicians =
     (row.work_order_technician as WorkOrderDetail["technicians"] | null) ?? [];
   const agreements =
     (row.drop_off_agreement as Array<{ agreement_id: string }> | null) ?? [];
+
+  const { data: openFlags, error: flagsError } = await supabase
+    .from("admin_flag")
+    .select("admin_flag_id, reason, note, created_at")
+    .eq("work_order_id", workOrderId)
+    .is("cleared_at", null)
+    .order("created_at", { ascending: false });
+  if (flagsError) throw flagsError;
 
   return {
     work_order_id: row.work_order_id as string,
@@ -414,6 +429,7 @@ export async function getWorkOrderDetail(
     quality_checked_by_user_id: row.quality_checked_by_user_id as string | null,
     quality_checked_at: row.quality_checked_at as string | null,
     quality_check_notes: row.quality_check_notes as string | null,
+    quality_check_assigned_to: row.quality_check_assigned_to as string | null,
     ready_for_pickup_at: row.ready_for_pickup_at as string | null,
     completed_at: row.completed_at as string | null,
     released_by_user_id: row.released_by_user_id as string | null,
@@ -435,8 +451,10 @@ export async function getWorkOrderDetail(
     updated_at: row.updated_at as string,
     customer,
     motorcycle,
-    primary_technician:
-      row.primary_technician as WorkOrderDetail["primary_technician"],
+    primary_technician: row.primary_technician as WorkOrderDetail["primary_technician"],
+    quality_check_assignee:
+      (row.quality_check_assignee as WorkOrderDetail["quality_check_assignee"]) ?? null,
+    open_admin_flags: (openFlags as WorkOrderDetail["open_admin_flags"]) ?? [],
     technicians,
     jobs,
     flags: buildWorkOrderFlags({
@@ -447,6 +465,7 @@ export async function getWorkOrderDetail(
       recommendations,
       photoCount: photos.length,
       hasSignedAgreement: agreements.length > 0,
+      hasOpenAdminFlag: (openFlags ?? []).length > 0,
     }),
     is_foreign_location: row.location_id !== user.active_location_id,
   };
@@ -535,17 +554,15 @@ export async function setPrimaryTechnician(
       throw new Error("TECHNICIAN_NOT_FOUND");
     }
 
-    const { error: assignError } = await supabase
-      .from("work_order_technician")
-      .upsert(
-        {
-          work_order_id: workOrderId,
-          technician_id: technicianId,
-          assigned_by_user_id: user.user_id,
-          assigned_at: new Date().toISOString(),
-        },
-        { onConflict: "work_order_id,technician_id" }
-      );
+    const { error: assignError } = await supabase.from("work_order_technician").upsert(
+      {
+        work_order_id: workOrderId,
+        technician_id: technicianId,
+        assigned_by_user_id: user.user_id,
+        assigned_at: new Date().toISOString(),
+      },
+      { onConflict: "work_order_id,technician_id" }
+    );
     if (assignError) throw assignError;
   }
 
@@ -676,12 +693,8 @@ export async function createWorkOrder(
     }
   }
 
-  const workOrderNumber = await mintWorkOrderNumber(
-    supabase,
-    parsed.location_id
-  );
-  const initialStatus: WorkOrderStatus =
-    services.length > 0 ? "open" : "draft";
+  const workOrderNumber = await mintWorkOrderNumber(supabase, parsed.location_id);
+  const initialStatus: WorkOrderStatus = services.length > 0 ? "open" : "draft";
 
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
@@ -706,13 +719,11 @@ export async function createWorkOrder(
   const workOrderId = workOrder.work_order_id as string;
 
   if (parsed.primary_technician_id) {
-    const { error: assignError } = await supabase
-      .from("work_order_technician")
-      .insert({
-        work_order_id: workOrderId,
-        technician_id: parsed.primary_technician_id,
-        assigned_by_user_id: user.user_id,
-      });
+    const { error: assignError } = await supabase.from("work_order_technician").insert({
+      work_order_id: workOrderId,
+      technician_id: parsed.primary_technician_id,
+      assigned_by_user_id: user.user_id,
+    });
     if (assignError) throw assignError;
   }
 
@@ -726,40 +737,35 @@ export async function createWorkOrder(
 
   const { data: templateItems, error: templateError } = await supabase
     .from("inspection_template_item")
-    .select(
-      "template_item_id, category, item_name, display_order, requires_measurement"
-    )
+    .select("template_item_id, category, item_name, display_order, requires_measurement")
     .eq("active", true)
     .order("display_order");
 
   if (templateError) throw templateError;
 
   if ((templateItems ?? []).length > 0) {
-    const { error: resultsError } = await supabase
-      .from("inspection_result")
-      .insert(
-        (templateItems ?? []).map(
-          (item: {
-            template_item_id: string;
-            category: string;
-            item_name: string;
-            display_order: number;
-            requires_measurement: boolean;
-          }) => ({
-            inspection_id: inspection.inspection_id,
-            template_item_id: item.template_item_id,
-            category_snapshot: item.category,
-            item_name_snapshot: item.item_name,
-            display_order_snapshot: item.display_order,
-            requires_measurement_snapshot: item.requires_measurement,
-          })
-        )
-      );
+    const { error: resultsError } = await supabase.from("inspection_result").insert(
+      (templateItems ?? []).map(
+        (item: {
+          template_item_id: string;
+          category: string;
+          item_name: string;
+          display_order: number;
+          requires_measurement: boolean;
+        }) => ({
+          inspection_id: inspection.inspection_id,
+          template_item_id: item.template_item_id,
+          category_snapshot: item.category,
+          item_name_snapshot: item.item_name,
+          display_order_snapshot: item.display_order,
+          requires_measurement_snapshot: item.requires_measurement,
+        })
+      )
+    );
     if (resultsError) throw resultsError;
   }
 
-  const createdJobs: Array<{ job_id: string; service_name_snapshot: string }> =
-    [];
+  const createdJobs: Array<{ job_id: string; service_name_snapshot: string }> = [];
 
   for (const service of services) {
     // Booked intake services are already customer-approved.

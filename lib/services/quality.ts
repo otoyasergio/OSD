@@ -54,10 +54,7 @@ function isActiveJob(status: string) {
   return status !== "cancelled" && status !== "declined";
 }
 
-async function assertAllActiveJobsCompleted(
-  supabase: DbClient,
-  workOrderId: string
-) {
+async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: string) {
   const { data: jobs, error } = await supabase
     .from("job")
     .select("job_id, status")
@@ -77,10 +74,16 @@ async function assertAllActiveJobsCompleted(
 
 export async function completeQualityCheck(
   workOrderId: string,
-  notes?: string | null
+  notes?: string | null,
+  options: { allowPeerTechnician?: boolean } = {}
 ): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
-  if (!canRunQualityCheck(user.role)) throw new Error("FORBIDDEN");
+  if (
+    !canRunQualityCheck(user.role) &&
+    !(options.allowPeerTechnician && user.role === "technician")
+  ) {
+    throw new Error("FORBIDDEN");
+  }
 
   await assertAllActiveJobsCompleted(supabase, workOrderId);
 
@@ -341,9 +344,7 @@ export async function placeWorkOrderOnHold(
   });
 }
 
-export async function resumeWorkOrderFromHold(
-  workOrderId: string
-): Promise<void> {
+export async function resumeWorkOrderFromHold(workOrderId: string): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canOverrideWorkOrderStatus(user.role)) throw new Error("FORBIDDEN");
   if (workOrder.status !== "on_hold") throw new Error("NOT_ON_HOLD");

@@ -42,23 +42,19 @@ export const INSPECTION_RESULT_LABELS: Record<InspectionResultStatus, string> = 
   immediate_attention: "Immediate Attention",
 };
 
-export const RECOMMENDATION_SEVERITY_LABELS: Record<
-  RecommendationSeverity,
-  string
-> = {
+export const RECOMMENDATION_SEVERITY_LABELS: Record<RecommendationSeverity, string> = {
   future_attention: "Future Attention",
   immediate_attention: "Immediate Attention",
   safety_critical: "Safety Critical",
 };
 
-export const RECOMMENDATION_STATUS_LABELS: Record<RecommendationStatus, string> =
-  {
-    pending: "Pending",
-    approved: "Approved",
-    declined: "Declined",
-    converted_to_job: "Converted To Job",
-    deferred: "Deferred",
-  };
+export const RECOMMENDATION_STATUS_LABELS: Record<RecommendationStatus, string> = {
+  pending: "Pending",
+  approved: "Approved",
+  declined: "Declined",
+  converted_to_job: "Converted To Job",
+  deferred: "Deferred",
+};
 
 export const PART_STATUS_LABELS: Record<PartStatus, string> = {
   needed: "Needed",
@@ -84,6 +80,7 @@ export const PHOTO_CATEGORY_LABELS: Record<PhotoCategory, string> = {
   inspection_brakes: "Inspection — Brakes",
   inspection_forks: "Inspection — Forks",
   inspection_item: "Inspection — Needs work",
+  job_proof: "Job proof",
 };
 
 /** Categories required at work-order create (also shown as missing on Photos tab). */
@@ -121,4 +118,5 @@ export const TECHNICIAN_NOTE_TYPE_LABELS: Record<TechnicianNoteType, string> = {
   road_test: "Road Test",
   quality_check: "Quality Check",
   internal_warning: "Internal Warning",
+  proof_exception: "Proof exception",
 };

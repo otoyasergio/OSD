@@ -10,6 +10,8 @@ export type WorkOrderFlagInput = {
   inspectionComplete?: boolean | null;
   /** When false, emit Contract unsigned (skip completed/cancelled). Omit to leave unchecked. */
   hasSignedAgreement?: boolean | null;
+  /** Open admin andon flags (Floor OS). */
+  hasOpenAdminFlag?: boolean | null;
   now?: Date;
 };
 
@@ -31,10 +33,7 @@ export function buildWorkOrderFlags(input: WorkOrderFlagInput): string[] {
 
   if (!input.vin?.trim()) flags.push("Missing VIN");
   if (input.photoCount === 0) flags.push("No intake photos");
-  if (
-    input.hasSignedAgreement === false &&
-    !TERMINAL.includes(input.status)
-  ) {
+  if (input.hasSignedAgreement === false && !TERMINAL.includes(input.status)) {
     flags.push("Contract unsigned");
   }
   if (input.inspectionComplete === false) {
@@ -60,6 +59,7 @@ export function buildWorkOrderFlags(input: WorkOrderFlagInput): string[] {
     flags.push("Overdue");
   }
   if (input.status === "on_hold") flags.push("On hold");
+  if (input.hasOpenAdminFlag) flags.push("Admin flag");
 
   return flags;
 }

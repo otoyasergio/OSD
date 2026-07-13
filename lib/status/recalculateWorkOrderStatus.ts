@@ -36,10 +36,7 @@ function isWaitingPartStatus(status: string) {
   return status === "needed" || status === "ordered";
 }
 
-function jobHasWaitingParts(
-  job: DeriveJobInput,
-  parts: DerivePartInput[]
-): boolean {
+function jobHasWaitingParts(job: DeriveJobInput, parts: DerivePartInput[]): boolean {
   if (!job.job_id) return false;
   if (
     job.status !== "approved" &&
@@ -91,8 +88,7 @@ export function deriveWorkOrderStatus(
 
   const activeJobs = jobs.filter((job) => isActiveJob(job.status));
   const allActiveCompleted =
-    activeJobs.length > 0 &&
-    activeJobs.every((job) => job.status === "completed");
+    activeJobs.length > 0 && activeJobs.every((job) => job.status === "completed");
 
   if (allActiveCompleted && !qualityCheckComplete) {
     return "quality_check";
@@ -221,6 +217,11 @@ export async function recalculateWorkOrderStatus(
     old_value: { status: workOrder.status },
     new_value: { status: nextStatus },
   });
+
+  if (nextStatus === "quality_check") {
+    const { autoAssignPeerQc } = await import("@/lib/services/peerQc");
+    await autoAssignPeerQc(supabase, workOrderId, workOrder.location_id, actorUserId);
+  }
 
   return nextStatus;
 }

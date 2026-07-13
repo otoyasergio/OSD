@@ -1,11 +1,7 @@
 import { z } from "zod";
 import { normalizeVin, validateOptionalVin } from "@/lib/vin/validate";
 
-export const customerAccountTypeSchema = z.enum([
-  "retail",
-  "fleet",
-  "commercial",
-]);
+export const customerAccountTypeSchema = z.enum(["retail", "fleet", "commercial"]);
 
 export const customerSchema = z
   .object({
@@ -96,21 +92,14 @@ export const inspectionTemplateItemSchema = z.object({
 });
 
 export const saveInspectionResultSchema = z.object({
-  status: z
-    .enum(["ok", "future_attention", "immediate_attention"])
-    .nullable()
-    .optional(),
+  status: z.enum(["ok", "future_attention", "immediate_attention"]).nullable().optional(),
   measurement: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
 export const recommendationSchema = z.object({
   description: z.string().min(1, "Description is required"),
-  severity: z.enum([
-    "future_attention",
-    "immediate_attention",
-    "safety_critical",
-  ]),
+  severity: z.enum(["future_attention", "immediate_attention", "safety_critical"]),
   notes: z.string().nullable().optional(),
   inspection_result_id: z.string().uuid().nullable().optional(),
 });
@@ -151,12 +140,14 @@ export const photoCategorySchema = z.enum([
   "inspection_brakes",
   "inspection_forks",
   "inspection_item",
+  "job_proof",
 ]);
 
 export const intakePhotoSchema = z.object({
   category: photoCategorySchema,
   notes: z.string().nullable().optional(),
   inspection_result_id: z.string().uuid().nullable().optional(),
+  job_id: z.string().uuid().nullable().optional(),
 });
 
 export const technicianNoteTypeSchema = z.enum([
@@ -168,6 +159,7 @@ export const technicianNoteTypeSchema = z.enum([
   "road_test",
   "quality_check",
   "internal_warning",
+  "proof_exception",
 ]);
 
 export const technicianNoteSchema = z.object({
@@ -187,7 +179,9 @@ export const dropOffAgreementSchema = z.object({
 export const publishAgreementTemplateSchema = z.object({
   title: z.string().min(1, "Title is required"),
   body_html: z.string().min(1, "Contract body is required"),
-  initial_fields: z.array(z.string().min(1)).min(1, "At least one initial field is required"),
+  initial_fields: z
+    .array(z.string().min(1))
+    .min(1, "At least one initial field is required"),
   version: z.string().min(1).optional(),
 });
 
@@ -229,13 +223,7 @@ export const appUserLinkSchema = z.object({
   last_name: z.string().min(1, "Last name is required"),
   email: z.string().email("Valid email is required"),
   phone: z.string().nullable().optional(),
-  role: z.enum([
-    "owner",
-    "manager",
-    "service_advisor",
-    "technician",
-    "admin",
-  ]),
+  role: z.enum(["owner", "manager", "service_advisor", "technician", "admin"]),
   location_ids: z.array(z.string().uuid()).min(1, "Assign at least one location"),
 });
 
@@ -244,13 +232,7 @@ export const appUserUpdateSchema = z.object({
   last_name: z.string().min(1, "Last name is required"),
   email: z.string().email("Valid email is required"),
   phone: z.string().nullable().optional(),
-  role: z.enum([
-    "owner",
-    "manager",
-    "service_advisor",
-    "technician",
-    "admin",
-  ]),
+  role: z.enum(["owner", "manager", "service_advisor", "technician", "admin"]),
   status: z.enum(["active", "inactive", "suspended"]),
   location_ids: z.array(z.string().uuid()).min(1, "Assign at least one location"),
 });
