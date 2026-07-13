@@ -1,7 +1,7 @@
 # Technician Floor OS UX polish design
 
 **Date:** 2026-07-13  
-**Status:** Draft — awaiting user review  
+**Status:** Approved — implemented  
 **Parent:** [2026-07-12-technician-floor-os-design.md](./2026-07-12-technician-floor-os-design.md)  
 **Approach:** Stage rail + sticky CTA (Approach A)
 

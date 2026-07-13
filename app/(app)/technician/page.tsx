@@ -2,33 +2,64 @@ import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { getOpenTimeClockEntry } from "@/lib/services/timeClock";
 import { getTechnicianFloorOs, type FloorOsMode } from "@/lib/services/technicianFloor";
-import { TechnicianFloorShell } from "@/components/technician/TechnicianFloorShell";
+import {
+  TechnicianFloorShell,
+  deriveDefaultStage,
+  type FloorStage,
+} from "@/components/technician/TechnicianFloorShell";
 
 export const dynamic = "force-dynamic";
+
+const STAGES = new Set<FloorStage>(["inspect", "work", "proof", "done", "qc"]);
+
+function stageFromParams(params: { stage?: string; mode?: string }): FloorStage | null {
+  if (params.stage && STAGES.has(params.stage as FloorStage)) {
+    return params.stage as FloorStage;
+  }
+  // Legacy mode → stage mapping
+  switch (params.mode) {
+    case "inspection":
+      return "inspect";
+    case "parts":
+    case "job":
+      return "work";
+    case "qc":
+      return "qc";
+    case "notes":
+      return "done";
+    default:
+      return null;
+  }
+}
+
+function modeForFetch(stage: FloorStage | null): FloorOsMode {
+  if (stage === "inspect") return "inspection";
+  if (stage === "qc") return "qc";
+  return "job";
+}
 
 export default async function TechnicianPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; wo?: string; mode?: string }>;
+  searchParams: Promise<{ job?: string; wo?: string; mode?: string; stage?: string }>;
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
   const params = await searchParams;
-  const mode = (
-    ["job", "inspection", "parts", "qc", "notes"].includes(params.mode ?? "")
-      ? params.mode
-      : "job"
-  ) as FloorOsMode;
+  const requestedStage = stageFromParams(params);
 
   const [floor, openClock] = await Promise.all([
     getTechnicianFloorOs({
       jobId: params.job ?? null,
       workOrderId: params.wo ?? null,
-      mode,
+      mode: modeForFetch(requestedStage),
     }),
     getOpenTimeClockEntry(user.user_id),
   ]);
 
-  return <TechnicianFloorShell floor={floor} openClock={openClock} />;
+  const stage =
+    requestedStage ?? (floor.selected ? deriveDefaultStage(floor.selected) : "work");
+
+  return <TechnicianFloorShell floor={floor} openClock={openClock} stage={stage} />;
 }
