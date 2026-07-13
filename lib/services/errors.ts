@@ -120,6 +120,8 @@ const MESSAGES: Record<string, string> = {
   SQUARE_BALANCE_NOT_READY: "Collect a deposit payment before publishing the balance.",
   TWILIO_NOT_CONFIGURED: "Twilio is not configured for SMS.",
   SMS_OPTED_OUT: "This customer has opted out of SMS. Use email or clear the opt-out.",
+  SMS_MARKETING_NOT_CONSENTED: "This customer has not opted in to marketing SMS.",
+  SMS_TRANSACTIONAL_NOT_CONSENTED: "This customer has not opted in to service SMS.",
   INVALID_PHONE: "Customer phone number is not a valid mobile number.",
   EMAIL_NOT_CONFIGURED: "Email is not configured. Add RESEND_API_KEY.",
   CUSTOMER_PHONE_REQUIRED: "Customer needs a phone number to send SMS.",
