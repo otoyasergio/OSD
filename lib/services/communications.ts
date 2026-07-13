@@ -278,12 +278,13 @@ export async function handleInboundSms(input: {
       .from("customer")
       .update({ sms_opted_out_at: new Date().toISOString() })
       .eq("customer_id", customer.customer_id);
-    await admin.from("sms_consent_event").insert({
+    const { error: evErr } = await admin.from("sms_consent_event").insert({
       customer_id: customer.customer_id,
       program: "all",
       action: "opt_out",
       method: "inbound_sms",
     });
+    if (evErr) throw evErr;
     return buildOptOutReply();
   }
 
