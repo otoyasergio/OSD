@@ -154,8 +154,7 @@ export function summarizeWeek(
     }));
     const total_ms = daily.reduce((sum, day) => sum + day.ms, 0);
     const display_name =
-      [bucket.first_name, bucket.last_name].filter(Boolean).join(" ") ||
-      user_id;
+      [bucket.first_name, bucket.last_name].filter(Boolean).join(" ") || user_id;
     summaries.push({
       user_id,
       display_name,
@@ -180,8 +179,7 @@ export function buildTimesheetCsv(
   entries: PunchForSummary[],
   nowMs = Date.now()
 ): string {
-  const header =
-    "employee,user_id,date,clock_in,clock_out,hours,notes,status";
+  const header = "employee,user_id,date,clock_in,clock_out,hours,notes,status";
   const lines = [header];
 
   const sorted = [...entries].sort((a, b) => {
@@ -194,9 +192,8 @@ export function buildTimesheetCsv(
 
   for (const entry of sorted) {
     const display =
-      [entry.first_name?.trim(), entry.last_name?.trim()]
-        .filter(Boolean)
-        .join(" ") || entry.user_id;
+      [entry.first_name?.trim(), entry.last_name?.trim()].filter(Boolean).join(" ") ||
+      entry.user_id;
     const date = shopDateKey(entry.clock_in_at);
     const hours = formatHoursDecimal(
       punchDurationMs(entry.clock_in_at, entry.clock_out_at, nowMs)
@@ -217,4 +214,134 @@ export function buildTimesheetCsv(
   }
 
   return `${lines.join("\n")}\n`;
+}
+
+export type ShiftCalendarDay = {
+  dateKey: string;
+  inMonth: boolean;
+  ms: number;
+  open: boolean;
+  entryCount: number;
+};
+
+export type ShiftMonthCalendar = {
+  monthKey: string;
+  prevMonthKey: string;
+  nextMonthKey: string;
+  label: string;
+  days: ShiftCalendarDay[];
+  total_ms: number;
+};
+
+function addDaysToDateKey(dateKey: string, days: number): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d + days));
+  return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, "0")}-${String(utc.getUTCDate()).padStart(2, "0")}`;
+}
+
+function weekdayIndexMondayBased(dateKey: string): number {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  // UTC noon avoids DST edge cases for calendar arithmetic
+  const weekday = new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay(); // 0=Sun
+  return weekday === 0 ? 6 : weekday - 1;
+}
+
+function shiftMonthKey(monthKey: string, delta: number): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(monthKey: string): string {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, 1, 12)).toLocaleDateString("en-CA", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Short hour label for calendar cells (e.g. "8h", "8.5h", "1m"). */
+export function shiftHoursLabel(ms: number): string {
+  if (ms <= 0) return "";
+  const hours = ms / (60 * 60 * 1000);
+  if (hours < 0.05) {
+    return `${Math.max(1, Math.round(ms / 60_000))}m`;
+  }
+  if (Number.isInteger(hours) || Math.abs(hours - Math.round(hours)) < 0.05) {
+    return `${Math.round(hours)}h`;
+  }
+  const rounded = Math.round(hours * 10) / 10;
+  return `${rounded}h`;
+}
+
+/**
+ * Mon–Sun month grid with hours allocated per shop day for the given punches.
+ */
+export function buildShiftMonthCalendar(
+  entries: Array<{
+    entry_id: string;
+    user_id?: string;
+    clock_in_at: string;
+    clock_out_at: string | null;
+  }>,
+  range: { monthKey: string; dateKeys: string[] },
+  nowMs = Date.now()
+): ShiftMonthCalendar {
+  const inMonth = new Set(range.dateKeys);
+  const dayMs = new Map<string, number>();
+  const openDays = new Set<string>();
+  const entryIdsByDay = new Map<string, Set<string>>();
+
+  for (const entry of entries) {
+    const isOpen = !entry.clock_out_at;
+    const allocated = allocatePunchMsByShopDay(
+      entry.clock_in_at,
+      entry.clock_out_at,
+      nowMs
+    );
+    for (const [dateKey, ms] of allocated) {
+      if (!inMonth.has(dateKey)) continue;
+      dayMs.set(dateKey, (dayMs.get(dateKey) ?? 0) + ms);
+      if (isOpen) openDays.add(dateKey);
+      let ids = entryIdsByDay.get(dateKey);
+      if (!ids) {
+        ids = new Set();
+        entryIdsByDay.set(dateKey, ids);
+      }
+      ids.add(entry.entry_id);
+    }
+  }
+
+  const firstOfMonth = range.dateKeys[0];
+  const padStart = firstOfMonth ? weekdayIndexMondayBased(firstOfMonth) : 0;
+  const gridStart = firstOfMonth
+    ? addDaysToDateKey(firstOfMonth, -padStart)
+    : range.monthKey + "-01";
+  const lastOfMonth = range.dateKeys[range.dateKeys.length - 1] ?? gridStart;
+  const padEnd = 6 - weekdayIndexMondayBased(lastOfMonth);
+  const totalDays = padStart + range.dateKeys.length + padEnd;
+
+  const days: ShiftCalendarDay[] = Array.from({ length: totalDays }, (_, i) => {
+    const dateKey = addDaysToDateKey(gridStart, i);
+    const belongs = inMonth.has(dateKey);
+    return {
+      dateKey,
+      inMonth: belongs,
+      ms: belongs ? (dayMs.get(dateKey) ?? 0) : 0,
+      open: belongs ? openDays.has(dateKey) : false,
+      entryCount: belongs ? (entryIdsByDay.get(dateKey)?.size ?? 0) : 0,
+    };
+  });
+
+  const total_ms = range.dateKeys.reduce((sum, key) => sum + (dayMs.get(key) ?? 0), 0);
+
+  return {
+    monthKey: range.monthKey,
+    prevMonthKey: shiftMonthKey(range.monthKey, -1),
+    nextMonthKey: shiftMonthKey(range.monthKey, 1),
+    label: monthLabel(range.monthKey),
+    days,
+    total_ms,
+  };
 }

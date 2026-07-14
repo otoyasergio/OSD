@@ -4,15 +4,20 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { canManageTimesheets } from "@/lib/permissions";
 import {
   getShopWeekRange,
+  getShopMonthRange,
   parseShopLocalDateTimeInput,
   shopDateKey,
   type ShopWeekRange,
+  type ShopMonthRange,
 } from "@/lib/datetime/format";
 import {
   buildTimesheetCsv,
+  buildShiftMonthCalendar,
   formatElapsedMs,
   summarizeWeek,
   type PunchForSummary,
+  type ShiftMonthCalendar,
+  type ShiftCalendarDay,
   type UserWeekSummary,
 } from "@/lib/services/timeClockShared";
 
@@ -37,8 +42,7 @@ export type TimesheetStaffOption = {
   role: string;
 };
 
-const COLUMNS =
-  "entry_id, user_id, location_id, clock_in_at, clock_out_at, notes";
+const COLUMNS = "entry_id, user_id, location_id, clock_in_at, clock_out_at, notes";
 
 async function requireTimesheetManager() {
   const user = await requireUser();
@@ -280,6 +284,80 @@ export async function getTimesheetWeek(
   };
 }
 
+export type MyShiftMonthView = {
+  range: ShopMonthRange;
+  entries: TimeClockEntry[];
+  calendar: ShiftMonthCalendar;
+};
+
+/**
+ * Logged-in user's own punches for a shop calendar month (plus open punch if any).
+ * Scoped to the current user only.
+ */
+export async function getMyShiftMonth(
+  monthAnchor?: string | null
+): Promise<MyShiftMonthView> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  let anchor: string | Date = new Date();
+  if (monthAnchor?.trim()) {
+    const key = monthAnchor.trim();
+    if (/^\d{4}-\d{2}$/.test(key)) {
+      anchor = key;
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(key)) {
+      const parsed = parseShopLocalDateTimeInput(`${key}T12:00:00`);
+      if (parsed) anchor = parsed;
+    } else {
+      anchor = key;
+    }
+  }
+
+  const range = getShopMonthRange(anchor);
+  // Pull a day before month start so overnight punches that begin prior still appear.
+  const queryStart = new Date(range.startUtc.getTime() - 24 * 60 * 60 * 1000);
+  const startIso = queryStart.toISOString();
+  const endIso = range.endUtc.toISOString();
+
+  const [monthRes, openRes] = await Promise.all([
+    supabase
+      .from("time_clock_entry")
+      .select(COLUMNS)
+      .eq("user_id", user.user_id)
+      .gte("clock_in_at", startIso)
+      .lt("clock_in_at", endIso)
+      .order("clock_in_at", { ascending: true }),
+    supabase
+      .from("time_clock_entry")
+      .select(COLUMNS)
+      .eq("user_id", user.user_id)
+      .is("clock_out_at", null)
+      .maybeSingle(),
+  ]);
+
+  if (monthRes.error) throw monthRes.error;
+  if (openRes.error) throw openRes.error;
+
+  const byId = new Map<string, TimeClockEntry>();
+  for (const row of monthRes.data ?? []) {
+    byId.set(row.entry_id, row as TimeClockEntry);
+  }
+  if (openRes.data) {
+    const open = openRes.data as TimeClockEntry;
+    byId.set(open.entry_id, open);
+  }
+
+  const entries = [...byId.values()].sort((a, b) =>
+    a.clock_in_at.localeCompare(b.clock_in_at)
+  );
+
+  return {
+    range,
+    entries,
+    calendar: buildShiftMonthCalendar(entries, range),
+  };
+}
+
 export async function exportTimesheetWeekCsv(
   weekAnchor?: string | null
 ): Promise<{ filename: string; csv: string }> {
@@ -298,10 +376,10 @@ export async function exportTimesheetWeekCsv(
   return { filename, csv };
 }
 
-function parsePunchTimes(input: {
-  clock_in_at: string;
-  clock_out_at?: string | null;
-}): { clockIn: Date; clockOut: Date | null } {
+function parsePunchTimes(input: { clock_in_at: string; clock_out_at?: string | null }): {
+  clockIn: Date;
+  clockOut: Date | null;
+} {
   const clockIn = parseShopLocalDateTimeInput(input.clock_in_at);
   if (!clockIn) throw new Error("INVALID_CLOCK_IN");
 
@@ -423,9 +501,7 @@ export async function updateTimeClockCorrection(input: {
   return entry;
 }
 
-export async function deleteTimeClockCorrection(
-  entryId: string
-): Promise<void> {
+export async function deleteTimeClockCorrection(entryId: string): Promise<void> {
   const actor = await requireTimesheetManager();
   const loc = actor.active_location_id;
   if (!loc) throw new Error("NO_LOCATION");
@@ -456,5 +532,6 @@ export async function deleteTimeClockCorrection(
   });
 }
 
-export { formatElapsedMs, shopDateKey };
-export type { ShopWeekRange, UserWeekSummary };
+export { formatElapsedMs, shopDateKey, getShopMonthRange };
+export type { ShopWeekRange, ShopMonthRange, UserWeekSummary };
+export type { ShiftMonthCalendar, ShiftCalendarDay };

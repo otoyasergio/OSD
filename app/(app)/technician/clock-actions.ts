@@ -17,6 +17,7 @@ export async function clockInAction(
     return { error: toFormErrorMessage(error) };
   }
   revalidatePath("/technician");
+  revalidatePath("/technician/clock");
   return { error: null };
 }
 
@@ -32,5 +33,6 @@ export async function clockOutAction(
     return { error: toFormErrorMessage(error) };
   }
   revalidatePath("/technician");
+  revalidatePath("/technician/clock");
   return { error: null };
 }

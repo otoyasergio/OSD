@@ -29,9 +29,7 @@ function toDate(value: string | Date | null | undefined): Date | null {
 }
 
 /** Full date + time in America/Toronto (e.g. "Jul 12, 2026, 2:30 p.m."). */
-export function formatDateTime(
-  value: string | Date | null | undefined
-): string {
+export function formatDateTime(value: string | Date | null | undefined): string {
   const date = toDate(value);
   if (!date) return "";
   return date.toLocaleString(LOCALE, DATE_TIME_OPTS);
@@ -59,9 +57,7 @@ export function parseShopLocalDateTimeInput(raw: string): Date | null {
   const trimmed = raw.trim();
   if (!trimmed) return null;
 
-  const match = trimmed.match(
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/
-  );
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
   if (!match) {
     const fallback = new Date(trimmed);
     return Number.isNaN(fallback.getTime()) ? null : fallback;
@@ -74,15 +70,7 @@ export function parseShopLocalDateTimeInput(raw: string): Date | null {
   const minute = Number(match[5]);
   const second = Number(match[6] ?? "0");
 
-  return zonedWallTimeToUtc(
-    year,
-    month,
-    day,
-    hour,
-    minute,
-    second,
-    SHOP_TIMEZONE
-  );
+  return zonedWallTimeToUtc(year, month, day, hour, minute, second, SHOP_TIMEZONE);
 }
 
 /** Convert a wall-clock time in `timeZone` to a UTC Date. */
@@ -221,9 +209,7 @@ function shopMidnightFromDateKey(dateKey: string): Date {
  * Monday–Sunday week containing `anchor`, in America/Toronto.
  * `endUtc` is exclusive (next Monday midnight).
  */
-export function getShopWeekRange(
-  anchor: string | Date = new Date()
-): ShopWeekRange {
+export function getShopWeekRange(anchor: string | Date = new Date()): ShopWeekRange {
   const date = toDate(anchor) ?? new Date();
   const anchorKey = shopDateKey(date);
   const weekday = shopWeekdayIndex(date);
@@ -232,12 +218,82 @@ export function getShopWeekRange(
   const startDateKey = addDaysToDateKey(anchorKey, -daysFromMonday);
   const endDateKey = addDaysToDateKey(startDateKey, 6);
   const nextMondayKey = addDaysToDateKey(startDateKey, 7);
-  const dateKeys = Array.from({ length: 7 }, (_, i) =>
-    addDaysToDateKey(startDateKey, i)
-  );
+  const dateKeys = Array.from({ length: 7 }, (_, i) => addDaysToDateKey(startDateKey, i));
   return {
     startUtc: shopMidnightFromDateKey(startDateKey),
     endUtc: shopMidnightFromDateKey(nextMondayKey),
+    startDateKey,
+    endDateKey,
+    dateKeys,
+  };
+}
+
+export type ShopMonthRange = {
+  /** First day of month 00:00:00.000 America/Toronto as UTC Date. */
+  startUtc: Date;
+  /** Exclusive end: first day of next month 00:00:00.000 America/Toronto. */
+  endUtc: Date;
+  monthKey: string;
+  startDateKey: string;
+  endDateKey: string;
+  dateKeys: string[];
+};
+
+function parseMonthKey(value: string): { year: number; month: number } | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  return { year, month };
+}
+
+/**
+ * Calendar month containing `anchor`, in America/Toronto.
+ * Accepts a Date/ISO string or a `YYYY-MM` month key.
+ * `endUtc` is exclusive (first of next month midnight).
+ */
+export function getShopMonthRange(anchor: string | Date = new Date()): ShopMonthRange {
+  let year: number;
+  let month: number;
+
+  if (typeof anchor === "string") {
+    const fromKey = parseMonthKey(anchor);
+    if (fromKey) {
+      year = fromKey.year;
+      month = fromKey.month;
+    } else {
+      const date = toDate(anchor) ?? new Date();
+      const key = shopDateKey(date);
+      const [y, m] = key.split("-").map(Number);
+      year = y;
+      month = m;
+    }
+  } else {
+    const date = toDate(anchor) ?? new Date();
+    const key = shopDateKey(date);
+    const [y, m] = key.split("-").map(Number);
+    year = y;
+    month = m;
+  }
+
+  const monthKey = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`;
+  const startDateKey = `${monthKey}-01`;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextStartKey = `${String(nextYear).padStart(4, "0")}-${String(nextMonth).padStart(2, "0")}-01`;
+  const endDateKey = addDaysToDateKey(nextStartKey, -1);
+  const dayCount =
+    (Date.UTC(nextYear, nextMonth - 1, 1) - Date.UTC(year, month - 1, 1)) /
+    (24 * 60 * 60 * 1000);
+  const dateKeys = Array.from({ length: dayCount }, (_, i) =>
+    addDaysToDateKey(startDateKey, i)
+  );
+
+  return {
+    startUtc: shopMidnightFromDateKey(startDateKey),
+    endUtc: shopMidnightFromDateKey(nextStartKey),
+    monthKey,
     startDateKey,
     endDateKey,
     dateKeys,
