@@ -1,4 +1,3 @@
-import { canViewClients } from "@/lib/permissions";
 import { searchCustomers } from "@/lib/services/customers";
 import { getDashboardData } from "@/lib/services/dashboard";
 import { searchMotorcycles } from "@/lib/services/motorcycles";
