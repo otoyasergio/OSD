@@ -8,6 +8,7 @@ import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 import type { AdminFlag } from "@/lib/services/adminFlags";
 import { canPerformSafetyCheck } from "@/lib/permissions";
 import { canViewerAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
+import { sortByDocketPosition } from "@/lib/technician/docketOrder";
 
 export type FloorOsMode = "job" | "inspection" | "parts" | "qc" | "notes" | "safety";
 
@@ -117,7 +118,7 @@ export async function getTechnicianFloorOs(input: {
       .select(
         `
         job_id, service_name_snapshot, status, started_at, completed_at,
-        estimated_labour_snapshot, assigned_technician_id,
+        estimated_labour_snapshot, assigned_technician_id, docket_position,
         work_order:work_order_id (
           work_order_id, work_order_number, status, location_id,
           motorcycle:motorcycle_id (
@@ -214,8 +215,17 @@ export async function getTechnicianFloorOs(input: {
     return { ...m, customer };
   };
 
+  // Advisor-set docket order; the stable is_active sort below keeps that
+  // order within the active and queued groups.
+  const orderedMyJobs = sortByDocketPosition(
+    (myJobs ?? []).map((row) => ({
+      ...row,
+      docket_position: (row.docket_position as number | null) ?? null,
+    }))
+  );
+
   const priority: FloorQueueItem[] = [];
-  for (const row of myJobs ?? []) {
+  for (const row of orderedMyJobs) {
     const wo = unwrapWo(row.work_order);
     if (!wo || wo.location_id !== locationId) continue;
     const labels = bikeCustomerLabel(unwrapMoto(wo));

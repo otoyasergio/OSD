@@ -3584,6 +3584,21 @@ label.photo-source-sheet-action {
   flex: 1;
 }
 
+.floor-docket-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.floor-docket-reorder {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.floor-docket-reorder .btn {
+  flex: 1;
+}
+
 .floor-queue-card {
   display: block;
   min-height: 3.25rem;

@@ -17,6 +17,7 @@ import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderSta
 import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
 import { seedDefaultJobChecklist } from "@/lib/services/jobChecklist";
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
+import { nextDocketPosition } from "@/lib/technician/docketOrder";
 
 type JobRow = {
   job_id: string;
@@ -25,6 +26,7 @@ type JobRow = {
   service_name_snapshot: string;
   status: JobStatus;
   assigned_technician_id: string | null;
+  docket_position: number | null;
   notes: string | null;
   started_at: string | null;
 };
@@ -40,7 +42,7 @@ async function loadJob(supabase: DbClient, jobId: string): Promise<JobRow | null
   const { data, error } = await supabase
     .from("job")
     .select(
-      "job_id, work_order_id, service_id, service_name_snapshot, status, assigned_technician_id, notes, started_at"
+      "job_id, work_order_id, service_id, service_name_snapshot, status, assigned_technician_id, docket_position, notes, started_at"
     )
     .eq("job_id", jobId)
     .maybeSingle();
@@ -175,10 +177,28 @@ export async function assignTechnicianToJob(
     throw new Error("TECHNICIAN_NOT_FOUND");
   }
 
+  // New assignments land at the end of the tech's docket; re-saving the same
+  // tech keeps the advisor-set position.
+  let docketPosition = job.docket_position;
+  if (job.assigned_technician_id !== technicianId || docketPosition == null) {
+    const { data: docketRows, error: docketError } = await supabase
+      .from("job")
+      .select("docket_position")
+      .eq("assigned_technician_id", technicianId)
+      .not("status", "in", '("completed","cancelled","declined")');
+    if (docketError) throw docketError;
+    docketPosition = nextDocketPosition(
+      (docketRows ?? []).map(
+        (row: { docket_position: number | null }) => row.docket_position
+      )
+    );
+  }
+
   const { error } = await supabase
     .from("job")
     .update({
       assigned_technician_id: technicianId,
+      docket_position: docketPosition,
       updated_at: new Date().toISOString(),
     })
     .eq("job_id", jobId);

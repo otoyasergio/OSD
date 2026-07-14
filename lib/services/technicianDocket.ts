@@ -2,11 +2,17 @@ import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, UserRole, WorkOrderStatus } from "@/lib/database/types";
 import {
+  canAssignTechnician,
   canPerformSafetyCheck,
   canViewTechnicianDocket,
   isFloorTech,
 } from "@/lib/permissions";
 import { JOB_STATUS_LABELS, WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
+import {
+  moveDocketJob,
+  sortByDocketPosition,
+  type DocketMoveDirection,
+} from "@/lib/technician/docketOrder";
 
 export type DocketItemKind = "now" | "assigned" | "qc" | "safety" | "flag";
 
@@ -14,6 +20,10 @@ export type DocketItem = {
   position: number;
   kind: DocketItemKind;
   key: string;
+  /** Primary scan signal — year/make/model. */
+  motorcycle_label: string;
+  /** Supporting line — service / Peer QC / Safety / flag reason. */
+  service_label: string;
   title: string;
   subtitle: string;
   status_label: string;
@@ -41,6 +51,8 @@ export type DocketAssignedJobInput = {
   motorcycle_label: string;
   status: string;
   status_label: string;
+  /** Advisor-set order within this tech's docket; unpositioned jobs sort last. */
+  docket_position?: number | null;
 };
 
 export type DocketQcInput = {
@@ -98,13 +110,21 @@ export function buildTechnicianDocketItems(input: {
 }): DocketItem[] {
   const items: Omit<DocketItem, "position">[] = [];
 
-  const nowJobs = input.assignedJobs.filter((job) => job.status === "in_progress");
-  const otherJobs = input.assignedJobs.filter((job) => job.status !== "in_progress");
+  const orderedJobs = sortByDocketPosition(
+    input.assignedJobs.map((job) => ({
+      ...job,
+      docket_position: job.docket_position ?? null,
+    }))
+  );
+  const nowJobs = orderedJobs.filter((job) => job.status === "in_progress");
+  const otherJobs = orderedJobs.filter((job) => job.status !== "in_progress");
 
   for (const job of nowJobs) {
     items.push({
       kind: "now",
       key: `now-${job.job_id}`,
+      motorcycle_label: job.motorcycle_label,
+      service_label: job.service_name,
       title: `${job.motorcycle_label} · ${job.service_name}`,
       subtitle: job.work_order_number,
       status_label: job.status_label,
@@ -119,6 +139,8 @@ export function buildTechnicianDocketItems(input: {
     items.push({
       kind: "assigned",
       key: `job-${job.job_id}`,
+      motorcycle_label: job.motorcycle_label,
+      service_label: job.service_name,
       title: `${job.motorcycle_label} · ${job.service_name}`,
       subtitle: job.work_order_number,
       status_label: job.status_label,
@@ -133,6 +155,8 @@ export function buildTechnicianDocketItems(input: {
     items.push({
       kind: "qc",
       key: `qc-${qc.work_order_id}`,
+      motorcycle_label: qc.motorcycle_label,
+      service_label: "Peer QC",
       title: `${qc.motorcycle_label} · Peer QC`,
       subtitle: qc.work_order_number,
       status_label: WORK_ORDER_STATUS_LABELS.quality_check,
@@ -148,6 +172,8 @@ export function buildTechnicianDocketItems(input: {
       items.push({
         kind: "safety",
         key: `safety-${safety.work_order_id}`,
+        motorcycle_label: safety.motorcycle_label,
+        service_label: "Safety",
         title: `${safety.motorcycle_label} · Safety`,
         subtitle: safety.work_order_number,
         status_label: WORK_ORDER_STATUS_LABELS.safety_check,
@@ -163,6 +189,8 @@ export function buildTechnicianDocketItems(input: {
     items.push({
       kind: "flag",
       key: `flag-${flag.admin_flag_id}`,
+      motorcycle_label: flag.motorcycle_label,
+      service_label: flag.reason,
       title: `${flag.motorcycle_label} · ${flag.reason}`,
       subtitle: flag.note?.trim() || flag.work_order_number,
       status_label: "Admin flag",
@@ -219,7 +247,7 @@ export async function getTechnicianDocket(
       .from("job")
       .select(
         `
-        job_id, service_name_snapshot, status,
+        job_id, service_name_snapshot, status, docket_position,
         work_order:work_order_id (
           work_order_id, work_order_number, status, location_id,
           motorcycle:motorcycle_id ( year, make, model )
@@ -297,6 +325,7 @@ export async function getTechnicianDocket(
       motorcycle_label: motorcycleLabel(unwrapMoto(wo)),
       status: row.status,
       status_label: JOB_STATUS_LABELS[row.status as JobStatus] ?? row.status,
+      docket_position: (row.docket_position as number | null) ?? null,
     });
   }
 
@@ -376,6 +405,77 @@ export async function getTechnicianDocket(
     },
     items,
   };
+}
+
+/**
+ * Advisor-set reorder of one job within its tech's docket.
+ * Renumbers the whole open docket 1..n so positions stay dense.
+ */
+export async function moveJobInDocket(
+  jobId: string,
+  direction: DocketMoveDirection
+): Promise<void> {
+  const user = await requireUser();
+  if (!canAssignTechnician(user.role)) throw new Error("FORBIDDEN");
+
+  const supabase = await createClient();
+  const locationId = user.active_location_id!;
+
+  const { data: jobRow, error: jobError } = await supabase
+    .from("job")
+    .select("job_id, assigned_technician_id, work_order:work_order_id ( location_id )")
+    .eq("job_id", jobId)
+    .maybeSingle();
+  if (jobError) throw jobError;
+  const jobWo = jobRow
+    ? ((Array.isArray(jobRow.work_order) ? jobRow.work_order[0] : jobRow.work_order) as {
+        location_id: string;
+      } | null)
+    : null;
+  if (!jobRow?.assigned_technician_id || jobWo?.location_id !== locationId) {
+    throw new Error("JOB_NOT_FOUND");
+  }
+
+  const { data: rows, error } = await supabase
+    .from("job")
+    .select(
+      "job_id, docket_position, created_at, work_order:work_order_id ( location_id )"
+    )
+    .eq("assigned_technician_id", jobRow.assigned_technician_id)
+    .not("status", "in", '("completed","cancelled","declined")')
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  const docket = (rows ?? [])
+    .filter((row) => {
+      const wo = (Array.isArray(row.work_order) ? row.work_order[0] : row.work_order) as {
+        location_id: string;
+      } | null;
+      return wo?.location_id === locationId;
+    })
+    .map((row) => ({
+      job_id: row.job_id as string,
+      docket_position: (row.docket_position as number | null) ?? null,
+    }));
+
+  const updates = moveDocketJob(docket, jobId, direction);
+  if (updates.length === 0) return;
+
+  const timestamp = new Date().toISOString();
+  const results = await Promise.all(
+    updates.map((update) =>
+      supabase
+        .from("job")
+        .update({
+          docket_position: update.docket_position,
+          updated_at: timestamp,
+        })
+        .eq("job_id", update.job_id)
+    )
+  );
+  for (const result of results) {
+    if (result.error) throw result.error;
+  }
 }
 
 /** Prefer first clocked-in tech among candidates; otherwise first candidate. */

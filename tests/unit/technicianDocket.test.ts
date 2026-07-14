@@ -61,6 +61,8 @@ describe("buildTechnicianDocketItems", () => {
     ]);
     expect(items.map((item) => item.position)).toEqual([1, 2, 3, 4, 5]);
     expect(items[0].job_id).toBe("j1");
+    expect(items[0].motorcycle_label).toBe("Yamaha R3");
+    expect(items[0].service_label).toBe("Brakes");
     expect(items[0].href).toContain("job=j1");
     expect(items[0].href).toContain("wo=w1");
   });
@@ -80,6 +82,101 @@ describe("buildTechnicianDocketItems", () => {
       includeSafeties: false,
     });
     expect(items).toEqual([]);
+  });
+
+  it("orders assigned jobs by advisor-set docket position, unpositioned last", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j-unpositioned",
+          work_order_id: "w1",
+          work_order_number: "WO-1",
+          service_name: "Chain",
+          motorcycle_label: "KTM Duke",
+          status: "approved",
+          status_label: "Approved",
+        },
+        {
+          job_id: "j-second",
+          work_order_id: "w2",
+          work_order_number: "WO-2",
+          service_name: "Oil",
+          motorcycle_label: "Honda CBR",
+          status: "approved",
+          status_label: "Approved",
+          docket_position: 2,
+        },
+        {
+          job_id: "j-first",
+          work_order_id: "w3",
+          work_order_number: "WO-3",
+          service_name: "Brakes",
+          motorcycle_label: "Yamaha R3",
+          status: "approved",
+          status_label: "Approved",
+          docket_position: 1,
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+
+    expect(items.map((item) => item.job_id)).toEqual([
+      "j-first",
+      "j-second",
+      "j-unpositioned",
+    ]);
+    expect(items.map((item) => item.position)).toEqual([1, 2, 3]);
+  });
+
+  it("keeps docket order within NOW and queued groups", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j-queued-first",
+          work_order_id: "w1",
+          work_order_number: "WO-1",
+          service_name: "Chain",
+          motorcycle_label: "KTM Duke",
+          status: "approved",
+          status_label: "Approved",
+          docket_position: 2,
+        },
+        {
+          job_id: "j-now",
+          work_order_id: "w2",
+          work_order_number: "WO-2",
+          service_name: "Oil",
+          motorcycle_label: "Honda CBR",
+          status: "in_progress",
+          status_label: "In Progress",
+          docket_position: 3,
+        },
+        {
+          job_id: "j-queued-second",
+          work_order_id: "w3",
+          work_order_number: "WO-3",
+          service_name: "Brakes",
+          motorcycle_label: "Yamaha R3",
+          status: "approved",
+          status_label: "Approved",
+          docket_position: 4,
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+
+    // NOW job leads regardless of position; queued jobs keep advisor order.
+    expect(items.map((item) => item.job_id)).toEqual([
+      "j-now",
+      "j-queued-first",
+      "j-queued-second",
+    ]);
   });
 
   it("never includes customer PII in titles", () => {

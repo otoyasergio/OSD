@@ -8,6 +8,7 @@ import {
   resolveDefaultDocketTechnicianId,
 } from "@/lib/services/technicianDocket";
 import { TechnicianDocketList } from "@/components/technician/TechnicianDocketList";
+import { reorderDocketJobAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +80,11 @@ export default async function TechnicianDocketPage({
                   {docket.items.length} item{docket.items.length === 1 ? "" : "s"}
                 </p>
               </div>
-              <TechnicianDocketList items={docket.items} linkMode="overview" />
+              <TechnicianDocketList
+                items={docket.items}
+                linkMode="overview"
+                reorderAction={reorderDocketJobAction}
+              />
               <p className="mt-4 text-sm text-[var(--status-neutral)]">
                 <Link href="/technician" className="underline">
                   Open Tech floor
