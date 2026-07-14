@@ -13,6 +13,7 @@ import {
   sortByDocketPosition,
   type DocketMoveDirection,
 } from "@/lib/technician/docketOrder";
+import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 
 export type DocketItemKind = "now" | "assigned" | "qc" | "safety" | "flag";
 
@@ -237,25 +238,59 @@ export async function getTechnicianDocket(
   if (membershipError) throw membershipError;
   if (!membership) throw new Error("TECHNICIAN_NOT_FOUND");
 
-  const [
-    { data: myJobs, error: myJobsError },
-    { data: qcRows, error: qcError },
-    { data: safetyRows, error: safetyError },
-    { data: myFlags, error: flagsError },
-  ] = await Promise.all([
-    supabase
-      .from("job")
-      .select(
-        `
-        job_id, service_name_snapshot, status, docket_position,
+  const jobDocketSelectWithPosition = `
+        job_id, service_name_snapshot, status, created_at, docket_position,
         work_order:work_order_id (
           work_order_id, work_order_number, status, location_id,
           motorcycle:motorcycle_id ( year, make, model )
         )
-      `
-      )
+      `;
+  const jobDocketSelectWithoutPosition = `
+        job_id, service_name_snapshot, status, created_at,
+        work_order:work_order_id (
+          work_order_id, work_order_number, status, location_id,
+          motorcycle:motorcycle_id ( year, make, model )
+        )
+      `;
+
+  type DocketJobRow = {
+    job_id: string;
+    service_name_snapshot: string;
+    status: string;
+    created_at: string;
+    docket_position?: number | null;
+    work_order: unknown;
+  };
+
+  let myJobsRaw: unknown[] | null = null;
+  {
+    const withPosition = await supabase
+      .from("job")
+      .select(jobDocketSelectWithPosition)
       .eq("assigned_technician_id", technicianUserId)
-      .not("status", "in", '("completed","cancelled","declined")'),
+      .not("status", "in", '("completed","cancelled","declined")')
+      .order("created_at", { ascending: true });
+    if (isUndefinedColumnError(withPosition.error, "docket_position")) {
+      // Migration 043_job_docket_position not applied yet — fall back to created_at order.
+      const withoutPosition = await supabase
+        .from("job")
+        .select(jobDocketSelectWithoutPosition)
+        .eq("assigned_technician_id", technicianUserId)
+        .not("status", "in", '("completed","cancelled","declined")')
+        .order("created_at", { ascending: true });
+      if (withoutPosition.error) throw withoutPosition.error;
+      myJobsRaw = withoutPosition.data;
+    } else {
+      if (withPosition.error) throw withPosition.error;
+      myJobsRaw = withPosition.data;
+    }
+  }
+
+  const [
+    { data: qcRows, error: qcError },
+    { data: safetyRows, error: safetyError },
+    { data: myFlags, error: flagsError },
+  ] = await Promise.all([
     supabase
       .from("work_order")
       .select(
@@ -288,10 +323,11 @@ export async function getTechnicianDocket(
       .is("cleared_at", null),
   ]);
 
-  if (myJobsError) throw myJobsError;
   if (qcError) throw qcError;
   if (safetyError) throw safetyError;
   if (flagsError) throw flagsError;
+
+  const myJobs = (myJobsRaw ?? []) as DocketJobRow[];
 
   type NestedWo = {
     work_order_id: string;
@@ -314,7 +350,7 @@ export async function getTechnicianDocket(
   };
 
   const assignedJobs: DocketAssignedJobInput[] = [];
-  for (const row of myJobs ?? []) {
+  for (const row of myJobs) {
     const wo = unwrapWo(row.work_order);
     if (!wo || wo.location_id !== locationId) continue;
     assignedJobs.push({
@@ -323,9 +359,9 @@ export async function getTechnicianDocket(
       work_order_number: wo.work_order_number,
       service_name: row.service_name_snapshot,
       motorcycle_label: motorcycleLabel(unwrapMoto(wo)),
-      status: row.status,
+      status: row.status as JobStatus,
       status_label: JOB_STATUS_LABELS[row.status as JobStatus] ?? row.status,
-      docket_position: (row.docket_position as number | null) ?? null,
+      docket_position: row.docket_position ?? null,
     });
   }
 
@@ -444,6 +480,10 @@ export async function moveJobInDocket(
     .eq("assigned_technician_id", jobRow.assigned_technician_id)
     .not("status", "in", '("completed","cancelled","declined")')
     .order("created_at", { ascending: true });
+  if (isUndefinedColumnError(error, "docket_position")) {
+    // Reorder persists only after migration 043; no-op until then.
+    return;
+  }
   if (error) throw error;
 
   const docket = (rows ?? [])
@@ -474,6 +514,7 @@ export async function moveJobInDocket(
     )
   );
   for (const result of results) {
+    if (isUndefinedColumnError(result.error, "docket_position")) return;
     if (result.error) throw result.error;
   }
 }

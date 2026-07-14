@@ -9,6 +9,7 @@ import type { AdminFlag } from "@/lib/services/adminFlags";
 import { canPerformSafetyCheck } from "@/lib/permissions";
 import { canViewerAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
 import { sortByDocketPosition } from "@/lib/technician/docketOrder";
+import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 
 export type FloorOsMode = "job" | "inspection" | "parts" | "qc" | "notes" | "safety";
 
@@ -107,18 +108,9 @@ export async function getTechnicianFloorOs(input: {
   const supabase = await createClient();
   const locationId = user.active_location_id!;
 
-  const [
-    { data: myJobs, error: myJobsError },
-    { data: qcRows, error: qcError },
-    { data: safetyRows, error: safetyError },
-    { data: myFlags, error: flagsError },
-  ] = await Promise.all([
-    supabase
-      .from("job")
-      .select(
-        `
+  const jobFloorSelectWithPosition = `
         job_id, service_name_snapshot, status, started_at, completed_at,
-        estimated_labour_snapshot, assigned_technician_id, docket_position,
+        estimated_labour_snapshot, assigned_technician_id, created_at, docket_position,
         work_order:work_order_id (
           work_order_id, work_order_number, status, location_id,
           motorcycle:motorcycle_id (
@@ -127,10 +119,62 @@ export async function getTechnicianFloorOs(input: {
           ),
           inspection ( completed_at )
         )
-      `
-      )
+      `;
+  const jobFloorSelectWithoutPosition = `
+        job_id, service_name_snapshot, status, started_at, completed_at,
+        estimated_labour_snapshot, assigned_technician_id, created_at,
+        work_order:work_order_id (
+          work_order_id, work_order_number, status, location_id,
+          motorcycle:motorcycle_id (
+            year, make, model,
+            customer:customer_id ( first_name, last_name )
+          ),
+          inspection ( completed_at )
+        )
+      `;
+
+  type FloorJobRow = {
+    job_id: string;
+    service_name_snapshot: string;
+    status: string;
+    started_at: string | null;
+    completed_at: string | null;
+    estimated_labour_snapshot: number | null;
+    assigned_technician_id: string | null;
+    created_at: string;
+    docket_position?: number | null;
+    work_order: unknown;
+  };
+
+  let myJobsRaw: unknown[] | null = null;
+  {
+    const withPosition = await supabase
+      .from("job")
+      .select(jobFloorSelectWithPosition)
       .eq("assigned_technician_id", user.user_id)
-      .not("status", "in", '("completed","cancelled","declined")'),
+      .not("status", "in", '("completed","cancelled","declined")')
+      .order("created_at", { ascending: true });
+    if (isUndefinedColumnError(withPosition.error, "docket_position")) {
+      // Migration 043_job_docket_position not applied yet — fall back to created_at order.
+      const withoutPosition = await supabase
+        .from("job")
+        .select(jobFloorSelectWithoutPosition)
+        .eq("assigned_technician_id", user.user_id)
+        .not("status", "in", '("completed","cancelled","declined")')
+        .order("created_at", { ascending: true });
+      if (withoutPosition.error) throw withoutPosition.error;
+      myJobsRaw = withoutPosition.data;
+    } else {
+      if (withPosition.error) throw withPosition.error;
+      myJobsRaw = withPosition.data;
+    }
+  }
+
+  const [
+    { data: qcRows, error: qcError },
+    { data: safetyRows, error: safetyError },
+    { data: myFlags, error: flagsError },
+  ] = await Promise.all([
     supabase
       .from("work_order")
       .select(
@@ -169,10 +213,11 @@ export async function getTechnicianFloorOs(input: {
       .is("cleared_at", null),
   ]);
 
-  if (myJobsError) throw myJobsError;
   if (qcError) throw qcError;
   if (safetyError) throw safetyError;
   if (flagsError) throw flagsError;
+
+  const myJobs = (myJobsRaw ?? []) as FloorJobRow[];
 
   type NestedWo = {
     work_order_id: string;
@@ -218,9 +263,9 @@ export async function getTechnicianFloorOs(input: {
   // Advisor-set docket order; the stable is_active sort below keeps that
   // order within the active and queued groups.
   const orderedMyJobs = sortByDocketPosition(
-    (myJobs ?? []).map((row) => ({
+    myJobs.map((row) => ({
       ...row,
-      docket_position: (row.docket_position as number | null) ?? null,
+      docket_position: row.docket_position ?? null,
     }))
   );
 
@@ -229,7 +274,7 @@ export async function getTechnicianFloorOs(input: {
     const wo = unwrapWo(row.work_order);
     if (!wo || wo.location_id !== locationId) continue;
     const labels = bikeCustomerLabel(unwrapMoto(wo));
-    const serviceLabel = row.service_name_snapshot as string;
+    const serviceLabel = row.service_name_snapshot;
     priority.push({
       key: `job-${row.job_id}`,
       kind: "job",

@@ -18,6 +18,7 @@ import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspection
 import { seedDefaultJobChecklist } from "@/lib/services/jobChecklist";
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 import { nextDocketPosition } from "@/lib/technician/docketOrder";
+import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 
 type JobRow = {
   job_id: string;
@@ -39,15 +40,31 @@ type WorkOrderRow = {
 };
 
 async function loadJob(supabase: DbClient, jobId: string): Promise<JobRow | null> {
-  const { data, error } = await supabase
+  const selectWithPosition =
+    "job_id, work_order_id, service_id, service_name_snapshot, status, assigned_technician_id, docket_position, notes, started_at";
+  const selectWithoutPosition =
+    "job_id, work_order_id, service_id, service_name_snapshot, status, assigned_technician_id, notes, started_at";
+
+  let result = await supabase
     .from("job")
-    .select(
-      "job_id, work_order_id, service_id, service_name_snapshot, status, assigned_technician_id, docket_position, notes, started_at"
-    )
+    .select(selectWithPosition)
     .eq("job_id", jobId)
     .maybeSingle();
-  if (error) throw error;
-  return (data as JobRow) ?? null;
+  if (isUndefinedColumnError(result.error, "docket_position")) {
+    result = await supabase
+      .from("job")
+      .select(selectWithoutPosition)
+      .eq("job_id", jobId)
+      .maybeSingle();
+  }
+  if (result.error) throw result.error;
+  const data = result.data as
+    | (Omit<JobRow, "docket_position"> & {
+        docket_position?: number | null;
+      })
+    | null;
+  if (!data) return null;
+  return { ...data, docket_position: data.docket_position ?? null };
 }
 
 async function loadWorkOrder(
@@ -178,30 +195,37 @@ export async function assignTechnicianToJob(
   }
 
   // New assignments land at the end of the tech's docket; re-saving the same
-  // tech keeps the advisor-set position.
-  let docketPosition = job.docket_position;
+  // tech keeps the advisor-set position. Skipped when migration 043 is absent.
+  let docketPosition: number | null | undefined = job.docket_position;
+  let docketColumnAvailable = true;
   if (job.assigned_technician_id !== technicianId || docketPosition == null) {
     const { data: docketRows, error: docketError } = await supabase
       .from("job")
       .select("docket_position")
       .eq("assigned_technician_id", technicianId)
       .not("status", "in", '("completed","cancelled","declined")');
-    if (docketError) throw docketError;
-    docketPosition = nextDocketPosition(
-      (docketRows ?? []).map(
-        (row: { docket_position: number | null }) => row.docket_position
-      )
-    );
+    if (isUndefinedColumnError(docketError, "docket_position")) {
+      docketColumnAvailable = false;
+      docketPosition = undefined;
+    } else {
+      if (docketError) throw docketError;
+      docketPosition = nextDocketPosition(
+        (docketRows ?? []).map(
+          (row: { docket_position: number | null }) => row.docket_position
+        )
+      );
+    }
   }
 
-  const { error } = await supabase
-    .from("job")
-    .update({
-      assigned_technician_id: technicianId,
-      docket_position: docketPosition,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("job_id", jobId);
+  const updatePayload: Record<string, unknown> = {
+    assigned_technician_id: technicianId,
+    updated_at: new Date().toISOString(),
+  };
+  if (docketColumnAvailable && docketPosition != null) {
+    updatePayload.docket_position = docketPosition;
+  }
+
+  const { error } = await supabase.from("job").update(updatePayload).eq("job_id", jobId);
 
   if (error) throw error;
 

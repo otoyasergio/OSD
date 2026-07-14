@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useMemo, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useActionState, useEffect, useMemo, type ReactNode } from "react";
 import type {
   FloorOsSurface,
   FloorQueueItem,
@@ -31,6 +32,8 @@ import { deriveDefaultStage, type FloorStage } from "@/lib/technician/floorStage
 
 export type { FloorStage };
 export { deriveDefaultStage };
+
+const FLOOR_REFRESH_MS = 60_000;
 
 function hrefForItem(item: FloorQueueItem, stage?: FloorStage): string {
   const params = new URLSearchParams();
@@ -737,8 +740,18 @@ export function TechnicianFloorShell({
   stage?: FloorStage | null;
   docketItems?: DocketItem[];
 }) {
+  const router = useRouter();
   const selected = floor.selected;
   const nowJobId = floor.priority.find((item) => item.is_active)?.job_id ?? null;
+
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "hidden") return;
+      router.refresh();
+    };
+    const id = window.setInterval(tick, FLOOR_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [router]);
 
   const stage = useMemo(() => {
     if (!selected) return "work" as FloorStage;
