@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, PartStatus, WorkOrderStatus } from "@/lib/database/types";
-import { canViewClients, canViewPartsBoard } from "@/lib/permissions";
+import { canViewClients, canViewPartsBoard, isFloorTech } from "@/lib/permissions";
 import { PART_STATUS_LABELS } from "@/lib/status/labels";
 
 export type PartsBoardBucket = "to_order" | "in_stock" | "ordered";
@@ -157,7 +157,9 @@ export async function listPartsWaitingForLocation(
   if (error) throw error;
 
   const now = new Date();
-  const technicianFilter = options?.technicianId?.trim() || "";
+  const technicianFilter = isFloorTech(user.role)
+    ? user.user_id
+    : options?.technicianId?.trim() || "";
   const showClients = canViewClients(user.role);
   const items: PartsWaitingItem[] = [];
 

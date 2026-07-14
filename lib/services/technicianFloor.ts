@@ -7,6 +7,7 @@ import { listJobChecklist, type JobChecklistItem } from "@/lib/services/jobCheck
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 import type { AdminFlag } from "@/lib/services/adminFlags";
 import { canPerformSafetyCheck } from "@/lib/permissions";
+import { canViewerAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
 
 export type FloorOsMode = "job" | "inspection" | "parts" | "qc" | "notes" | "safety";
 
@@ -16,6 +17,10 @@ export type FloorQueueItem = {
   job_id: string | null;
   work_order_id: string;
   work_order_number: string;
+  /** Primary scan signal on floor cards. */
+  motorcycle_label: string;
+  /** Supporting line (service / Peer QC / Safety / flag reason). */
+  service_label: string;
   title: string;
   subtitle: string;
   status_label: string;
@@ -103,7 +108,6 @@ export async function getTechnicianFloorOs(input: {
 
   const [
     { data: myJobs, error: myJobsError },
-    { data: pullJobs, error: pullError },
     { data: qcRows, error: qcError },
     { data: safetyRows, error: safetyError },
     { data: myFlags, error: flagsError },
@@ -126,22 +130,6 @@ export async function getTechnicianFloorOs(input: {
       )
       .eq("assigned_technician_id", user.user_id)
       .not("status", "in", '("completed","cancelled","declined")'),
-    supabase
-      .from("job")
-      .select(
-        `
-        job_id, service_name_snapshot, status,
-        work_order:work_order_id (
-          work_order_id, work_order_number, status, location_id,
-          motorcycle:motorcycle_id (
-            year, make, model,
-            customer:customer_id ( first_name, last_name )
-          )
-        )
-      `
-      )
-      .is("assigned_technician_id", null)
-      .in("status", ["approved", "ready_to_start"]),
     supabase
       .from("work_order")
       .select(
@@ -181,7 +169,6 @@ export async function getTechnicianFloorOs(input: {
   ]);
 
   if (myJobsError) throw myJobsError;
-  if (pullError) throw pullError;
   if (qcError) throw qcError;
   if (safetyError) throw safetyError;
   if (flagsError) throw flagsError;
@@ -232,13 +219,16 @@ export async function getTechnicianFloorOs(input: {
     const wo = unwrapWo(row.work_order);
     if (!wo || wo.location_id !== locationId) continue;
     const labels = bikeCustomerLabel(unwrapMoto(wo));
+    const serviceLabel = row.service_name_snapshot as string;
     priority.push({
       key: `job-${row.job_id}`,
       kind: "job",
       job_id: row.job_id,
       work_order_id: wo.work_order_id,
       work_order_number: wo.work_order_number,
-      title: `${labels.motorcycle_label} · ${row.service_name_snapshot}`,
+      motorcycle_label: labels.motorcycle_label,
+      service_label: serviceLabel,
+      title: `${labels.motorcycle_label} · ${serviceLabel}`,
       subtitle: wo.work_order_number,
       status_label: JOB_STATUS_LABELS[row.status as JobStatus] ?? row.status,
       lane: "priority",
@@ -247,47 +237,8 @@ export async function getTechnicianFloorOs(input: {
   }
   priority.sort((a, b) => Number(b.is_active) - Number(a.is_active));
 
-  const pullCandidates = (pullJobs ?? []).filter((row) => {
-    const wo = unwrapWo(row.work_order);
-    if (!wo || wo.location_id !== locationId) return false;
-    return wo.status === "ready_for_technician" || wo.status === "in_progress";
-  });
-  const pullWoIds = [
-    ...new Set(
-      pullCandidates
-        .map((row) => unwrapWo(row.work_order)?.work_order_id)
-        .filter((id): id is string => Boolean(id))
-    ),
-  ];
-  const signedWoIds = new Set<string>();
-  if (pullWoIds.length > 0) {
-    const { data: agreements } = await supabase
-      .from("drop_off_agreement")
-      .select("work_order_id")
-      .in("work_order_id", pullWoIds);
-    for (const row of agreements ?? []) {
-      signedWoIds.add((row as { work_order_id: string }).work_order_id);
-    }
-  }
-
+  /** Unassigned self-pull queue removed — techs only see assigned work. */
   const readyToPull: FloorQueueItem[] = [];
-  for (const row of pullCandidates) {
-    const wo = unwrapWo(row.work_order);
-    if (!wo || !signedWoIds.has(wo.work_order_id)) continue;
-    const labels = bikeCustomerLabel(unwrapMoto(wo));
-    readyToPull.push({
-      key: `pull-${row.job_id}`,
-      kind: "job",
-      job_id: row.job_id,
-      work_order_id: wo.work_order_id,
-      work_order_number: wo.work_order_number,
-      title: `${labels.motorcycle_label} · ${row.service_name_snapshot}`,
-      subtitle: "Ready to pull",
-      status_label: JOB_STATUS_LABELS[row.status as JobStatus] ?? row.status,
-      lane: "ready_to_pull",
-      is_active: false,
-    });
-  }
 
   const needsQc: FloorQueueItem[] = [];
   for (const wo of qcRows ?? []) {
@@ -310,6 +261,8 @@ export async function getTechnicianFloorOs(input: {
       job_id: null,
       work_order_id: wo.work_order_id,
       work_order_number: wo.work_order_number,
+      motorcycle_label: labels.motorcycle_label,
+      service_label: "Peer QC",
       title: `${labels.motorcycle_label} · Peer QC`,
       subtitle: wo.work_order_number,
       status_label: WORK_ORDER_STATUS_LABELS.quality_check,
@@ -345,6 +298,8 @@ export async function getTechnicianFloorOs(input: {
       job_id: null,
       work_order_id: row.work_order_id,
       work_order_number: row.work_order_number,
+      motorcycle_label: labels.motorcycle_label,
+      service_label: "Safety",
       title: `${labels.motorcycle_label} · Safety`,
       subtitle: row.work_order_number,
       status_label: WORK_ORDER_STATUS_LABELS.safety_check,
@@ -393,6 +348,8 @@ export async function getTechnicianFloorOs(input: {
         job_id: flag.job_id,
         work_order_id: flag.work_order_id,
         work_order_number: wo.work_order_number,
+        motorcycle_label: labels.motorcycle_label,
+        service_label: flag.reason,
         title: `${labels.motorcycle_label} · ${flag.reason}`,
         subtitle: flag.note ?? "Flagged for admin",
         status_label: "Admin flag",
@@ -459,7 +416,12 @@ export async function getTechnicianFloorOs(input: {
       .maybeSingle();
     if (jobError) throw jobError;
     const wo = unwrapWo(job?.work_order);
-    if (job && wo && wo.location_id === locationId) {
+    if (
+      job &&
+      wo &&
+      wo.location_id === locationId &&
+      job.assigned_technician_id === user.user_id
+    ) {
       const labels = bikeCustomerLabel(unwrapMoto(wo));
       const checklist = await listJobChecklist(job.job_id);
       const { data: parts } = await supabase
@@ -501,11 +463,6 @@ export async function getTechnicianFloorOs(input: {
       const returnTo = encodeURIComponent(
         `/technician?job=${job.job_id}&wo=${wo.work_order_id}`
       );
-      const unassigned =
-        !job.assigned_technician_id &&
-        (job.status === "approved" || job.status === "ready_to_start");
-      const woPullable =
-        wo.status === "ready_for_technician" || wo.status === "in_progress";
 
       selected = {
         mode,
@@ -553,8 +510,7 @@ export async function getTechnicianFloorOs(input: {
           (job.status === "approved" || job.status === "ready_to_start"),
         can_complete:
           job.assigned_technician_id === user.user_id && job.status === "in_progress",
-        can_pull:
-          unassigned && woPullable && readyToPull.some((i) => i.job_id === job.job_id),
+        can_pull: false,
         is_qc: false,
         qc_assignee_is_me: false,
         is_safety: wo.status === "safety_check",
@@ -567,18 +523,33 @@ export async function getTechnicianFloorOs(input: {
       .from("work_order")
       .select(
         `
-        work_order_id, work_order_number, status, location_id, quality_check_assigned_to,
+        work_order_id, work_order_number, status, location_id,
+        primary_technician_id, quality_check_assigned_to,
         motorcycle:motorcycle_id (
           year, make, model,
           customer:customer_id ( first_name, last_name )
         ),
-        inspection ( completed_at )
+        inspection ( completed_at ),
+        job ( assigned_technician_id )
       `
       )
       .eq("work_order_id", selectedWoId)
       .maybeSingle();
     if (woError) throw woError;
-    if (wo && wo.location_id === locationId) {
+    if (
+      wo &&
+      wo.location_id === locationId &&
+      canViewerAccessWorkOrder(
+        {
+          primary_technician_id: wo.primary_technician_id,
+          quality_check_assigned_to: wo.quality_check_assigned_to,
+          status: wo.status,
+          jobs: (wo.job as Array<{ assigned_technician_id: string | null }> | null) ?? [],
+        },
+        user.role,
+        user.user_id
+      )
+    ) {
       const moto = Array.isArray(wo.motorcycle) ? wo.motorcycle[0] : wo.motorcycle;
       const customerRaw = moto?.customer;
       const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw;
@@ -592,7 +563,6 @@ export async function getTechnicianFloorOs(input: {
             }
           : null
       );
-      const pullItem = readyToPull.find((item) => item.work_order_id === selectedWoId);
       const { data: openFlags } = await supabase
         .from("admin_flag")
         .select(
@@ -603,8 +573,8 @@ export async function getTechnicianFloorOs(input: {
       const returnTo = encodeURIComponent(`/technician?wo=${wo.work_order_id}`);
       const isSafety = wo.status === "safety_check";
       selected = {
-        mode: mode === "job" && !pullItem ? (isSafety ? "safety" : "qc") : mode,
-        job_id: pullItem?.job_id ?? null,
+        mode: mode === "job" ? (isSafety ? "safety" : "qc") : mode,
+        job_id: null,
         work_order_id: wo.work_order_id,
         work_order_number: wo.work_order_number,
         service_name: null,
@@ -634,7 +604,7 @@ export async function getTechnicianFloorOs(input: {
         complete_gate_reason: null,
         can_start: false,
         can_complete: false,
-        can_pull: Boolean(pullItem),
+        can_pull: false,
         is_qc: wo.status === "quality_check",
         qc_assignee_is_me: wo.quality_check_assigned_to === user.user_id,
         is_safety: isSafety,

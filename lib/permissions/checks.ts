@@ -52,6 +52,22 @@ export function canViewPartsBoard(role: UserRole) {
 export function canViewPartCost(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "admin";
 }
+/** Job sell prices, part MSRP/sell price, invoice totals — not for floor techs. */
+export function canViewPricing(role: UserRole) {
+  return FRONT_OFFICE.includes(role) || role === "admin";
+}
+/** Complete and filed archive (/complete) — front office only. */
+export function canViewFiledArchive(role: UserRole) {
+  return FRONT_OFFICE.includes(role);
+}
+/** Shop-floor dashboard board — front office (+ admin); floor techs use /technician. */
+export function canViewDashboard(role: UserRole) {
+  return !isFloorTech(role);
+}
+/** Post-login / home redirect target by role. */
+export function staffHomePath(role: UserRole) {
+  return isFloorTech(role) ? "/technician" : "/dashboard";
+}
 /** Manual Parts Canada inventory sync (owner/manager). */
 export function canSyncPartsCanadaCatalog(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
@@ -70,9 +86,9 @@ export function canRunQualityCheck(role: UserRole) {
 export function canPerformPeerQualityCheck(role: UserRole) {
   return isFloorTech(role) || QC_ROLES.includes(role);
 }
-/** Floor techs may pull unassigned ready jobs onto themselves. */
-export function canPullJob(role: UserRole) {
-  return isFloorTech(role) || FRONT_OFFICE.includes(role);
+/** Self-pull of unassigned jobs is disabled; advisors assign techs instead. */
+export function canPullJob(_role: UserRole) {
+  return false;
 }
 /** Front office clears admin andon flags. */
 export function canClearAdminFlag(role: UserRole) {

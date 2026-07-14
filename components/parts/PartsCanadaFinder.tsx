@@ -16,6 +16,7 @@ export type PartsCanadaSelection = {
 
 type Props = {
   canViewCost: boolean;
+  canViewPricing?: boolean;
   onSelect: (selection: PartsCanadaSelection) => void;
 };
 
@@ -24,7 +25,11 @@ function money(value: number | null): string {
   return `$${value.toFixed(2)}`;
 }
 
-export function PartsCanadaFinder({ canViewCost, onSelect }: Props) {
+export function PartsCanadaFinder({
+  canViewCost,
+  canViewPricing = true,
+  onSelect,
+}: Props) {
   const listboxId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -161,8 +166,12 @@ export function PartsCanadaFinder({ canViewCost, onSelect }: Props) {
                   {hit.description_en || "No description"}
                 </span>
                 <span className="text-xs text-[var(--status-neutral)]">
-                  MSRP {money(hit.msrp)}
-                  {canViewCost ? ` · Cost ${money(hit.dealer_price)}` : ""}
+                  {canViewPricing ? `MSRP ${money(hit.msrp)}` : null}
+                  {canViewPricing && canViewCost
+                    ? ` · Cost ${money(hit.dealer_price)}`
+                    : canViewCost
+                      ? `Cost ${money(hit.dealer_price)}`
+                      : ""}
                   {hit.stock != null ? ` · Stock ${hit.stock}` : ""}
                 </span>
               </button>

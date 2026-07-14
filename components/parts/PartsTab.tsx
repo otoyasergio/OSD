@@ -59,6 +59,7 @@ export function PartsTab({
   canManage,
   canInstall,
   canViewCost,
+  canViewPricing = true,
   addAction,
   statusActionFor,
   priceActionFor,
@@ -69,6 +70,7 @@ export function PartsTab({
   canManage: boolean;
   canInstall: boolean;
   canViewCost: boolean;
+  canViewPricing?: boolean;
   addAction: Action;
   statusActionFor: PartAction;
   priceActionFor: PartAction;
@@ -110,7 +112,11 @@ export function PartsTab({
           <h3 className="text-base font-semibold text-foreground">Add part</h3>
           <FormError message={addState.error} />
 
-          <PartsCanadaFinder canViewCost={canViewCost} onSelect={applyCatalogSelection} />
+          <PartsCanadaFinder
+            canViewCost={canViewCost}
+            canViewPricing={canViewPricing}
+            onSelect={applyCatalogSelection}
+          />
 
           <input type="hidden" name="catalog_source" value={catalog.catalog_source} />
           <input type="hidden" name="unit_cost" value={catalog.unit_cost} />
@@ -151,13 +157,17 @@ export function PartsTab({
               defaultValue={catalog.supplier}
             />
             <TextField label="Quantity" name="quantity" type="number" defaultValue={1} />
-            <TextField
-              label="Sell price (MSRP)"
-              name="unit_price"
-              type="number"
-              key={`price-${catalog.part_number}-${catalog.unit_price}`}
-              defaultValue={catalog.unit_price}
-            />
+            {canViewPricing ? (
+              <TextField
+                label="Sell price (MSRP)"
+                name="unit_price"
+                type="number"
+                key={`price-${catalog.part_number}-${catalog.unit_price}`}
+                defaultValue={catalog.unit_price}
+              />
+            ) : (
+              <input type="hidden" name="unit_price" value={catalog.unit_price} />
+            )}
             {canViewCost && catalog.unit_cost ? (
               <p className="self-end text-sm text-[var(--status-neutral)]">
                 Dealer cost: {moneyLabel(Number(catalog.unit_cost))}
@@ -194,6 +204,7 @@ export function PartsTab({
               canManage={canManage}
               canInstall={canInstall}
               canViewCost={canViewCost}
+              canViewPricing={canViewPricing}
               statusAction={statusActionFor.bind(null, part.part_id)}
               priceAction={priceActionFor.bind(null, part.part_id)}
             />
@@ -210,6 +221,7 @@ function PartCard({
   canManage,
   canInstall,
   canViewCost,
+  canViewPricing = true,
   statusAction,
   priceAction,
 }: {
@@ -218,6 +230,7 @@ function PartCard({
   canManage: boolean;
   canInstall: boolean;
   canViewCost: boolean;
+  canViewPricing?: boolean;
   statusAction: Action;
   priceAction: Action;
 }) {
@@ -244,8 +257,12 @@ function PartCard({
               "No part # / supplier"}
           </p>
           <p className="mt-1 text-sm text-foreground">
-            Sell {moneyLabel(part.unit_price)}
-            {canViewCost ? ` · Cost ${moneyLabel(part.unit_cost)}` : ""}
+            {canViewPricing ? `Sell ${moneyLabel(part.unit_price)}` : null}
+            {canViewPricing && canViewCost
+              ? ` · Cost ${moneyLabel(part.unit_cost)}`
+              : !canViewPricing && canViewCost
+                ? `Cost ${moneyLabel(part.unit_cost)}`
+                : ""}
             {part.supplier_stock != null ? ` · PC stock ${part.supplier_stock}` : ""}
           </p>
           {part.notes ? (
@@ -254,7 +271,7 @@ function PartCard({
         </div>
       </div>
 
-      {!readOnly && canManage ? (
+      {!readOnly && canManage && canViewPricing ? (
         <form action={priceFormAction} className="mt-3 flex flex-wrap items-end gap-2">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-foreground">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveDefaultStage } from "@/components/technician/TechnicianFloorShell";
+import { deriveDefaultStage } from "@/lib/technician/floorStage";
 import type { FloorOsSurface } from "@/lib/services/technicianFloor";
 
 function base(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface {

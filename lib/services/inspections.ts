@@ -9,6 +9,7 @@ import {
   canOverrideWorkOrderStatus,
   canViewClients,
 } from "@/lib/permissions";
+import { assertViewerCanAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
 import { saveInspectionResultSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import {
@@ -203,6 +204,8 @@ export async function getInspectionForWorkOrder(
       status,
       mileage,
       date_created,
+      primary_technician_id,
+      quality_check_assigned_to,
       motorcycle:motorcycle_id (
         year,
         make,
@@ -213,7 +216,8 @@ export async function getInspectionForWorkOrder(
       primary_technician:primary_technician_id (
         first_name,
         last_name
-      )
+      ),
+      job ( assigned_technician_id )
     `
     )
     .eq("work_order_id", workOrderId)
@@ -221,6 +225,18 @@ export async function getInspectionForWorkOrder(
 
   if (woError) throw woError;
   if (!workOrder) return null;
+
+  assertViewerCanAccessWorkOrder(
+    {
+      primary_technician_id: workOrder.primary_technician_id as string | null,
+      quality_check_assigned_to: workOrder.quality_check_assigned_to as string | null,
+      status: workOrder.status as string,
+      jobs:
+        (workOrder.job as Array<{ assigned_technician_id: string | null }> | null) ?? [],
+    },
+    user.role,
+    user.user_id
+  );
 
   const firstLoad = await supabase
     .from("inspection")

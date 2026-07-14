@@ -6,6 +6,10 @@ import {
   canOrderPart,
   canViewPartsBoard,
   canViewPartCost,
+  canViewPricing,
+  canViewFiledArchive,
+  canViewDashboard,
+  staffHomePath,
   canSyncPartsCanadaCatalog,
   canSyncWixContacts,
   canCompleteWorkOrder,
@@ -74,8 +78,8 @@ describe("permissions", () => {
     expect(canRunQualityCheck("technician")).toBe(false);
   });
 
-  it("technician can pull jobs and perform peer QC", () => {
-    expect(canPullJob("technician")).toBe(true);
+  it("technician cannot self-pull unassigned jobs but can peer QC", () => {
+    expect(canPullJob("technician")).toBe(false);
     expect(canPerformPeerQualityCheck("technician")).toBe(true);
     expect(canClearAdminFlag("technician")).toBe(false);
     expect(canClearAdminFlag("service_advisor")).toBe(true);
@@ -101,6 +105,40 @@ describe("permissions", () => {
     expect(canViewPartCost("service_advisor")).toBe(true);
     expect(canViewPartCost("admin")).toBe(true);
     expect(canViewPartCost("technician")).toBe(false);
+  });
+
+  it("canViewPricing allows front office and admin, not floor techs", () => {
+    expect(canViewPricing("owner")).toBe(true);
+    expect(canViewPricing("manager")).toBe(true);
+    expect(canViewPricing("service_advisor")).toBe(true);
+    expect(canViewPricing("admin")).toBe(true);
+    expect(canViewPricing("technician")).toBe(false);
+    expect(canViewPricing("head_tech")).toBe(false);
+  });
+
+  it("canViewFiledArchive is front office only", () => {
+    expect(canViewFiledArchive("owner")).toBe(true);
+    expect(canViewFiledArchive("manager")).toBe(true);
+    expect(canViewFiledArchive("service_advisor")).toBe(true);
+    expect(canViewFiledArchive("technician")).toBe(false);
+    expect(canViewFiledArchive("head_tech")).toBe(false);
+    expect(canViewFiledArchive("admin")).toBe(false);
+  });
+
+  it("canViewDashboard is false for floor techs", () => {
+    expect(canViewDashboard("technician")).toBe(false);
+    expect(canViewDashboard("head_tech")).toBe(false);
+    expect(canViewDashboard("owner")).toBe(true);
+    expect(canViewDashboard("manager")).toBe(true);
+    expect(canViewDashboard("service_advisor")).toBe(true);
+    expect(canViewDashboard("admin")).toBe(true);
+  });
+
+  it("staffHomePath sends floor techs to the tech floor", () => {
+    expect(staffHomePath("technician")).toBe("/technician");
+    expect(staffHomePath("head_tech")).toBe("/technician");
+    expect(staffHomePath("owner")).toBe("/dashboard");
+    expect(staffHomePath("service_advisor")).toBe("/dashboard");
   });
 
   it("canSyncPartsCanadaCatalog is owner/manager only", () => {
@@ -196,7 +234,7 @@ describe("permissions", () => {
   });
 
   it("head_tech inherits technician floor permissions without client CRM", () => {
-    expect(canPullJob("head_tech")).toBe(true);
+    expect(canPullJob("head_tech")).toBe(false);
     expect(canPerformPeerQualityCheck("head_tech")).toBe(true);
     expect(canCompleteJob("head_tech")).toBe(true);
     expect(canCompleteInspection("head_tech")).toBe(true);

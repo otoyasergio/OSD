@@ -21,7 +21,9 @@ import {
   canUpdateServiceInformation,
   canViewClients,
   canViewPartCost,
+  canViewPricing,
   isFloorTech,
+  staffHomePath,
 } from "@/lib/permissions";
 import {
   getWorkOrderDetail,
@@ -122,7 +124,12 @@ export default async function WorkOrderDetailPage({
   const { tab: tabParam, from_result: fromResultId } = await searchParams;
   const activeTab: WorkOrderTabId = isTabId(tabParam) ? tabParam : "overview";
 
-  const detail = await getWorkOrderDetail(work_order_id);
+  const detail = await getWorkOrderDetail(work_order_id).catch((error: unknown) => {
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      redirect(staffHomePath(user.role));
+    }
+    throw error;
+  });
   if (!detail) notFound();
 
   const foreign = detail.is_foreign_location;
@@ -181,6 +188,7 @@ export default async function WorkOrderDetailPage({
   const canConvert = canConvertRecommendation(user.role);
   const canManageParts = canOrderPart(user.role) || canEditWorkOrder(user.role);
   const canSeePartCost = canViewPartCost(user.role);
+  const canSeePricing = canViewPricing(user.role);
   const canSeeClients = canViewClients(user.role);
   const canAdd = canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
   const canUploadPhotos =
@@ -230,10 +238,10 @@ export default async function WorkOrderDetailPage({
   return (
     <div className="page-stack page-stack--narrow">
       <Link
-        href="/work_orders"
+        href={isFloorTech(user.role) ? "/technician" : "/work_orders"}
         className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
       >
-        ← Work orders
+        {isFloorTech(user.role) ? "← Tech floor" : "← Work orders"}
       </Link>
 
       {detail.is_foreign_location ? (
@@ -246,7 +254,12 @@ export default async function WorkOrderDetailPage({
         </div>
       ) : null}
 
-      <WorkOrderHeader detail={detail} photos={photos} canViewClients={canSeeClients} />
+      <WorkOrderHeader
+        detail={detail}
+        photos={photos}
+        canViewClients={canSeeClients}
+        canViewPricing={canSeePricing}
+      />
       <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
 
       {activeTab === "overview" ? (
@@ -278,20 +291,22 @@ export default async function WorkOrderDetailPage({
               detail.work_order_id
             )}
           />
-          <SquareInvoicePanel
-            workOrderId={detail.work_order_id}
-            squareInvoiceId={detail.square_invoice_id}
-            squarePaymentStatus={detail.square_payment_status}
-            squareInvoicePublicUrl={detail.square_invoice_public_url}
-            billingStage={detail.billing_stage}
-            billingCollectedCents={detail.billing_collected_cents}
-            estimateTotalCents={estimateTotalCents}
-            canManage={canApprove}
-            readOnly={detail.is_foreign_location}
-            customerPhone={detail.customer?.phone ?? null}
-            customerEmail={detail.customer?.email ?? null}
-            smsOptedOut={Boolean(detail.customer?.sms_opted_out_at)}
-          />
+          {canSeePricing ? (
+            <SquareInvoicePanel
+              workOrderId={detail.work_order_id}
+              squareInvoiceId={detail.square_invoice_id}
+              squarePaymentStatus={detail.square_payment_status}
+              squareInvoicePublicUrl={detail.square_invoice_public_url}
+              billingStage={detail.billing_stage}
+              billingCollectedCents={detail.billing_collected_cents}
+              estimateTotalCents={estimateTotalCents}
+              canManage={canApprove}
+              readOnly={detail.is_foreign_location}
+              customerPhone={detail.customer?.phone ?? null}
+              customerEmail={detail.customer?.email ?? null}
+              smsOptedOut={Boolean(detail.customer?.sms_opted_out_at)}
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -305,6 +320,7 @@ export default async function WorkOrderDetailPage({
           canApprove={canApprove}
           canEdit={canEdit}
           canComplete={canComplete}
+          canViewPricing={canSeePricing}
           currentUserId={user.user_id}
           inspectionComplete={Boolean(inspection?.completed_at)}
           inspectionHref={`/work_orders/${detail.work_order_id}/inspection`}
@@ -381,6 +397,7 @@ export default async function WorkOrderDetailPage({
           canManage={canManageParts}
           canInstall={canComplete}
           canViewCost={canSeePartCost}
+          canViewPricing={canSeePricing}
           addAction={addPartAction.bind(null, detail.work_order_id)}
           statusActionFor={updatePartStatusAction.bind(null, detail.work_order_id)}
           priceActionFor={updatePartPriceAction.bind(null, detail.work_order_id)}

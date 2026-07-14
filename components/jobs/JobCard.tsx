@@ -61,6 +61,7 @@ export function JobCard({
   canApprove,
   canEdit,
   canComplete,
+  canViewPricing = true,
   isTechnicianSelf,
   inspectionComplete,
   inspectionHref,
@@ -76,6 +77,7 @@ export function JobCard({
   canApprove: boolean;
   canEdit: boolean;
   canComplete: boolean;
+  canViewPricing?: boolean;
   isTechnicianSelf: boolean;
   inspectionComplete?: boolean;
   inspectionHref?: string;
@@ -141,12 +143,16 @@ export function JobCard({
             </span>
           </div>
           <p className="mt-1 text-sm text-[var(--status-neutral)]">
-            {job.standard_price_snapshot != null
-              ? `$${job.standard_price_snapshot}`
-              : "No price"}
-            {!labour && job.estimated_labour_snapshot != null
+            {canViewPricing
+              ? job.standard_price_snapshot != null
+                ? `$${job.standard_price_snapshot}`
+                : "No price"
+              : null}
+            {canViewPricing && !labour && job.estimated_labour_snapshot != null
               ? ` · ${job.estimated_labour_snapshot} h`
-              : ""}
+              : !canViewPricing && !labour && job.estimated_labour_snapshot != null
+                ? `${job.estimated_labour_snapshot} h`
+                : ""}
           </p>
           {labour ? (
             <p

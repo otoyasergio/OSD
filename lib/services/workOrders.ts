@@ -10,6 +10,10 @@ import {
   canViewClients,
   isFloorTech,
 } from "@/lib/permissions";
+import {
+  assertViewerCanAccessWorkOrder,
+  scopeWorkOrdersForViewer,
+} from "@/lib/workOrders/assignmentVisibility";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
 import { resolveJobSnapshots } from "@/lib/forms/serviceLines";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
@@ -162,6 +166,8 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
       mileage,
       date_created,
       estimated_completion,
+      primary_technician_id,
+      quality_check_assigned_to,
       customer:customer_id (
         customer_id,
         first_name,
@@ -182,7 +188,7 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
         first_name,
         last_name
       ),
-      job ( status ),
+      job ( status, assigned_technician_id ),
       recommendation ( severity, status )
     `
     )
@@ -192,7 +198,7 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
 
   if (error) throw error;
 
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+  const mapped = ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
     const bike = row.motorcycle as {
       motorcycle_id: string;
       year: number;
@@ -207,7 +213,11 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
       phone: string | null;
       email: string | null;
     } | null;
-    const jobs = (row.job as Array<{ status: string }> | null) ?? [];
+    const jobs =
+      (row.job as Array<{
+        status: string;
+        assigned_technician_id: string | null;
+      }> | null) ?? [];
     const recommendations =
       (row.recommendation as Array<{ severity: string; status: string }> | null) ?? [];
 
@@ -219,6 +229,9 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
       mileage: row.mileage as number | null,
       date_created: row.date_created as string,
       estimated_completion: row.estimated_completion as string | null,
+      primary_technician_id: (row.primary_technician_id as string | null) ?? null,
+      quality_check_assigned_to: (row.quality_check_assigned_to as string | null) ?? null,
+      jobs,
       motorcycle: bike
         ? {
             ...bike,
@@ -237,6 +250,15 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
       }).filter((flag) => flag !== "No intake photos"),
     };
   });
+
+  return scopeWorkOrdersForViewer(mapped, user.role, user.user_id).map(
+    ({
+      primary_technician_id: _p,
+      quality_check_assigned_to: _q,
+      jobs: _jobs,
+      ...item
+    }) => item
+  );
 }
 
 export type WorkOrderJob = {
@@ -427,7 +449,7 @@ export async function getWorkOrderDetail(
     .order("created_at", { ascending: false });
   if (flagsError) throw flagsError;
 
-  return {
+  const detail = {
     work_order_id: row.work_order_id as string,
     motorcycle_id: row.motorcycle_id as string,
     customer_id: row.customer_id as string,
@@ -489,6 +511,19 @@ export async function getWorkOrderDetail(
     }),
     is_foreign_location: row.location_id !== user.active_location_id,
   };
+
+  assertViewerCanAccessWorkOrder(
+    {
+      primary_technician_id: detail.primary_technician_id,
+      quality_check_assigned_to: detail.quality_check_assigned_to,
+      status: detail.status,
+      jobs: detail.jobs,
+    },
+    user.role,
+    user.user_id
+  );
+
+  return detail;
 }
 
 async function assertCanMutateWorkOrder(

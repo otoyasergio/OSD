@@ -6,7 +6,7 @@ import {
   getDashboardData,
   type DashboardCardKey,
 } from "@/lib/services/dashboard";
-import { canCreateWorkOrder } from "@/lib/permissions";
+import { canCreateWorkOrder, canViewDashboard, staffHomePath } from "@/lib/permissions";
 import {
   getDashboardShellPreferences,
   type DashboardViewMode,
@@ -62,6 +62,7 @@ export default async function DashboardPage({
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
+  if (!canViewDashboard(user.role)) redirect(staffHomePath(user.role));
 
   const canCreate = canCreateWorkOrder(user.role);
   const params = await searchParams;

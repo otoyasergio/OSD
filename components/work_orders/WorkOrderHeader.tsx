@@ -29,11 +29,14 @@ export function WorkOrderHeader({
   detail,
   photos = [],
   canViewClients = true,
+  canViewPricing = true,
 }: {
   detail: WorkOrderDetail;
   photos?: IntakePhoto[];
   /** When false, hide customer PII and CRM motorcycle links (technicians). */
   canViewClients?: boolean;
+  /** When false, hide Square invoice references (technicians). */
+  canViewPricing?: boolean;
 }) {
   const customer = canViewClients ? detail.customer : null;
   const bike = detail.motorcycle;
@@ -55,7 +58,7 @@ export function WorkOrderHeader({
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               {detail.work_order_number}
             </h1>
-            {detail.external_invoice_number ? (
+            {canViewPricing && detail.external_invoice_number ? (
               <p className="mt-1 text-sm text-[var(--status-neutral)]">
                 Square invoicing {detail.external_invoice_number}
               </p>

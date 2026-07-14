@@ -12,10 +12,7 @@ import { FormError, SELECT_CLASS } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
-type Action = (
-  state: JobFormState,
-  formData: FormData
-) => Promise<JobFormState>;
+type Action = (state: JobFormState, formData: FormData) => Promise<JobFormState>;
 
 // Server action curried with work_order_id; jobId is bound client-side so no
 // function factory has to cross the RSC boundary.
@@ -34,6 +31,7 @@ export function JobsTab({
   canApprove,
   canEdit,
   canComplete,
+  canViewPricing = true,
   currentUserId,
   inspectionComplete,
   inspectionHref,
@@ -52,6 +50,7 @@ export function JobsTab({
   canApprove: boolean;
   canEdit: boolean;
   canComplete: boolean;
+  canViewPricing?: boolean;
   currentUserId: string;
   inspectionComplete?: boolean;
   inspectionHref?: string;
@@ -103,10 +102,7 @@ export function JobsTab({
       ) : null}
 
       {jobs.length === 0 ? (
-        <EmptyState
-          variant="jobs"
-          description="No jobs on this work order yet."
-        />
+        <EmptyState variant="jobs" description="No jobs on this work order yet." />
       ) : (
         <div className="flex flex-col gap-3">
           {jobs.map((job) => (
@@ -118,6 +114,7 @@ export function JobsTab({
               canApprove={canApprove}
               canEdit={canEdit}
               canComplete={canComplete}
+              canViewPricing={canViewPricing}
               isTechnicianSelf={job.assigned_technician_id === currentUserId}
               inspectionComplete={inspectionComplete}
               inspectionHref={inspectionHref}

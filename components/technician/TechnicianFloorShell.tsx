@@ -9,8 +9,6 @@ import type {
 } from "@/lib/services/technicianFloor";
 import type { DocketItem } from "@/lib/services/technicianDocket";
 import { TechnicianDocketList } from "@/components/technician/TechnicianDocketList";
-import { TimeClockWidget } from "@/components/technician/TimeClockWidget";
-import type { TimeClockEntry } from "@/lib/services/timeClock";
 import {
   addProofExceptionAction,
   completeJobFloorAction,
@@ -29,20 +27,10 @@ import {
   passSafetyCheckAction,
   type SafetyFormState,
 } from "@/app/(app)/work_orders/safety-actions";
+import { deriveDefaultStage, type FloorStage } from "@/lib/technician/floorStage";
 
-export type FloorStage = "inspect" | "work" | "proof" | "done" | "qc" | "safety";
-
-export function deriveDefaultStage(surface: FloorOsSurface): FloorStage {
-  if (surface.is_safety && surface.can_safety) return "safety";
-  if (surface.is_qc && surface.qc_assignee_is_me && !surface.job_id) return "qc";
-  if (surface.can_pull) return "work";
-  if (!surface.inspection_complete) return "inspect";
-  const checklistOpen = surface.checklist.some((item) => !item.checked_at);
-  const partsOpen = surface.parts.some((part) => part.can_install);
-  if (checklistOpen || partsOpen) return "work";
-  if (surface.proof_count < 1 && !surface.has_proof_exception) return "proof";
-  return "done";
-}
+export type { FloorStage };
+export { deriveDefaultStage };
 
 function hrefForItem(item: FloorQueueItem, stage?: FloorStage): string {
   const params = new URLSearchParams();
@@ -90,7 +78,7 @@ function QueueLane({
   return (
     <div className="floor-lane">
       <p className="floor-lane-title">{title}</p>
-      <ul className="floor-lane-list">
+      <ul className="floor-bike-card-grid floor-lane-list">
         {items.map((item) => {
           const selected = item.key === selectedKey;
           const isNow = Boolean(nowJobId && item.job_id === nowJobId);
@@ -99,21 +87,25 @@ function QueueLane({
               <Link
                 href={hrefForItem(item)}
                 className={[
-                  "floor-queue-card",
-                  selected ? "floor-queue-card--selected" : "",
-                  isNow && !selected ? "floor-queue-card--now" : "",
-                  item.lane === "flagged" ? "floor-queue-card--flagged" : "",
-                  item.lane === "needs_qc" ? "floor-queue-card--qc" : "",
-                  item.lane === "safeties" ? "floor-queue-card--qc" : "",
+                  "floor-bike-card",
+                  selected ? "floor-bike-card--selected" : "",
+                  isNow && !selected ? "floor-bike-card--now" : "",
+                  item.lane === "flagged" ? "floor-bike-card--flagged" : "",
+                  item.lane === "needs_qc" || item.lane === "safeties"
+                    ? "floor-bike-card--qc"
+                    : "",
                 ]
                   .filter(Boolean)
                   .join(" ")}
               >
                 {isNow ? <span className="floor-now-badge">NOW</span> : null}
-                <div className="floor-queue-card-title">{item.title}</div>
-                <div className="floor-queue-card-meta">
-                  {item.subtitle} · {item.status_label}
-                </div>
+                <p className="floor-bike-card-bike">{item.motorcycle_label}</p>
+                <p className="floor-bike-card-wo">{item.work_order_number}</p>
+                <p className="floor-bike-card-meta">
+                  {item.service_label}
+                  <span aria-hidden> · </span>
+                  {item.status_label}
+                </p>
               </Link>
             </li>
           );
@@ -738,12 +730,10 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
 
 export function TechnicianFloorShell({
   floor,
-  openClock,
   stage: stageProp,
   docketItems = [],
 }: {
   floor: TechnicianFloorOs;
-  openClock: TimeClockEntry | null;
   stage?: FloorStage | null;
   docketItems?: DocketItem[];
 }) {
@@ -765,7 +755,6 @@ export function TechnicianFloorShell({
           ? `qc-${selected.work_order_id}`
           : selected.job_id
             ? (floor.priority.find((i) => i.job_id === selected.job_id)?.key ??
-              floor.readyToPull.find((i) => i.job_id === selected.job_id)?.key ??
               `job-${selected.job_id}`)
             : null;
 
@@ -784,9 +773,9 @@ export function TechnicianFloorShell({
     <div className="floor-shell">
       <header className="floor-header">
         <h1 className="floor-title">Tech floor</h1>
-        <div className="floor-clock">
-          <TimeClockWidget openEntry={openClock} />
-        </div>
+        <Link href="/technician/clock" className="btn btn-secondary text-sm">
+          Time clock
+        </Link>
       </header>
 
       <div className="floor-layout">
@@ -805,22 +794,16 @@ export function TechnicianFloorShell({
             selectedKey={selectedKey}
             nowJobId={nowJobId}
           />
-          <QueueLane
-            title="Ready to pull"
-            items={floor.readyToPull}
-            selectedKey={selectedKey}
-          />
           <QueueLane title="Needs QC" items={floor.needsQc} selectedKey={selectedKey} />
           <QueueLane title="Safeties" items={floor.safeties} selectedKey={selectedKey} />
           <QueueLane title="Flagged" items={floor.flagged} selectedKey={selectedKey} />
           {floor.priority.length === 0 &&
-          floor.readyToPull.length === 0 &&
           floor.needsQc.length === 0 &&
           floor.safeties.length === 0 &&
           floor.flagged.length === 0 &&
           docketItems.length === 0 ? (
             <p className="floor-muted">
-              Queue empty — wait for assignment or pull ready work.
+              Queue empty — wait for a job assignment from the front office.
             </p>
           ) : null}
         </aside>

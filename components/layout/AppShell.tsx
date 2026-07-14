@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { AppUser } from "@/lib/auth/session";
+import { staffHomePath } from "@/lib/permissions/checks";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { SidebarNav } from "@/components/layout/SidebarNav";
 import {
@@ -37,6 +38,7 @@ export function AppShell({ user, locations, children }: Props) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const hideChrome = isInspectionFullscreenPath(pathname);
   const displayName = `${user.first_name} ${user.last_name}`.trim();
+  const homeHref = staffHomePath(user.role);
 
   useEffect(() => {
     // Close drawer when navigating (e.g. back button) without leaving it open over new page.
@@ -70,7 +72,7 @@ export function AppShell({ user, locations, children }: Props) {
       </a>
       <header className="mobile-header">
         <Link
-          href="/dashboard"
+          href={homeHref}
           className="mobile-header-brand"
           aria-label="OTOMOTO Toronto Moto home"
         >
@@ -104,7 +106,7 @@ export function AppShell({ user, locations, children }: Props) {
 
       <aside id="app-sidebar-nav" className="sidebar">
         <Link
-          href="/dashboard"
+          href={homeHref}
           className="sidebar-brand sidebar-brand-desktop"
           aria-label="OTOMOTO Toronto Moto home"
         >

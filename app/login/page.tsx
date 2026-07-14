@@ -36,7 +36,8 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace("/dashboard");
+      // Land on / so app/page.tsx can resolve role-aware home after cookies settle.
+      router.replace("/");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in");

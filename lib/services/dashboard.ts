@@ -5,6 +5,8 @@ import { buildWorkOrderFlags, isOverdue } from "@/lib/status/flags";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
 import { listOpenAdminFlagsForWorkOrders } from "@/lib/services/adminFlags";
+import { isFloorTech } from "@/lib/permissions";
+import { scopeWorkOrdersForViewer } from "@/lib/workOrders/assignmentVisibility";
 
 export type DashboardCounts = {
   open: number;
@@ -109,6 +111,7 @@ type RawRow = {
   date_created: string;
   estimated_completion: string | null;
   primary_technician_id: string | null;
+  quality_check_assigned_to: string | null;
   customer: {
     customer_id: string;
     first_name: string;
@@ -266,6 +269,7 @@ export async function getDashboardData(
       date_created,
       estimated_completion,
       primary_technician_id,
+      quality_check_assigned_to,
       customer:customer_id (
         customer_id,
         first_name,
@@ -302,7 +306,15 @@ export async function getDashboardData(
   if (woResult.error) throw woResult.error;
   if (membershipResult.error) throw membershipResult.error;
 
-  const rawRows = (woResult.data ?? []) as unknown as RawRow[];
+  const rawRows = scopeWorkOrdersForViewer(
+    ((woResult.data ?? []) as unknown as RawRow[]).map((row) => ({
+      ...row,
+      jobs: row.job,
+    })),
+    user.role,
+    user.user_id
+  ) as unknown as RawRow[];
+
   const counts = emptyCounts();
 
   for (const row of rawRows) {
@@ -329,7 +341,9 @@ export async function getDashboardData(
   }
 
   const statusFilter = filters.status?.trim() || "";
-  const technicianId = filters.technician_id?.trim() || "";
+  const technicianId = isFloorTech(user.role)
+    ? user.user_id
+    : filters.technician_id?.trim() || "";
   const flagFilter = filters.flag?.trim() || "";
   const query = filters.q?.trim().toLowerCase() || "";
   const card = (filters.card?.trim() || "") as DashboardCardKey | "";

@@ -5,6 +5,8 @@ import {
   canCompleteInspection,
   canCreateRecommendation,
   canOverrideWorkOrderStatus,
+  isFloorTech,
+  staffHomePath,
 } from "@/lib/permissions";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
@@ -42,7 +44,14 @@ export default async function InspectionPage({
   const backHref = floorReturn ?? `/work_orders/${work_order_id}?tab=inspection`;
   const backLabel = floorReturn ? "← Back to Tech floor" : "← Back";
 
-  const inspection = await getInspectionForWorkOrder(work_order_id);
+  const inspection = await getInspectionForWorkOrder(work_order_id).catch(
+    (error: unknown) => {
+      if (error instanceof Error && error.message === "FORBIDDEN") {
+        redirect(isFloorTech(user.role) ? staffHomePath(user.role) : "/dashboard");
+      }
+      throw error;
+    }
+  );
   if (!inspection) notFound();
 
   const canEdit = canCompleteInspection(user.role);

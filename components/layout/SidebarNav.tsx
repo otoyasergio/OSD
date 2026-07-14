@@ -21,13 +21,11 @@ import {
   Wallet,
   Archive,
   MessageSquare,
-  KeyRound,
   ListOrdered,
 } from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
   canAssignTechnician,
-  canChangeOwnPassword,
   canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
@@ -38,8 +36,11 @@ import {
   canViewAuditLog,
   canViewBillingArea,
   canViewClients,
+  canViewDashboard,
+  canViewFiledArchive,
   canViewPartsBoard,
   canViewReports,
+  isFloorTech,
 } from "@/lib/permissions/checks";
 
 type NavLink = { href: string; label: string; icon: LucideIcon };
@@ -49,12 +50,12 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/work_orders": ClipboardList,
   "/parts": Package,
   "/technician": Wrench,
+  "/technician/clock": Clock3,
   "/technician/docket": ListOrdered,
   "/settings/timesheets": Clock3,
   "/customers": Users,
   "/motorcycles": Bike,
   "/settings": Settings,
-  "/settings/password": KeyRound,
   "/settings/locations": MapPin,
   "/settings/inspection_template": FileCheck,
   "/settings/contract_template": ScrollText,
@@ -91,20 +92,29 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
       icon: iconFor("/billing"),
     });
   }
-  financesLinks.push({
-    href: "/complete",
-    label: "Complete and filed",
-    icon: iconFor("/complete"),
-  });
+  if (canViewFiledArchive(role)) {
+    financesLinks.push({
+      href: "/complete",
+      label: "Complete and filed",
+      icon: iconFor("/complete"),
+    });
+  }
 
-  const shopFloorLinks: NavLink[] = [
-    { href: "/dashboard", label: "Dashboard", icon: iconFor("/dashboard") },
-    {
+  const shopFloorLinks: NavLink[] = [];
+  if (canViewDashboard(role)) {
+    shopFloorLinks.push({
+      href: "/dashboard",
+      label: "Dashboard",
+      icon: iconFor("/dashboard"),
+    });
+  }
+  if (!isFloorTech(role)) {
+    shopFloorLinks.push({
       href: "/work_orders",
       label: "Work Orders",
       icon: iconFor("/work_orders"),
-    },
-  ];
+    });
+  }
   if (canViewPartsBoard(role)) {
     shopFloorLinks.push({
       href: "/parts",
@@ -116,6 +126,13 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
   const staffingLinks: NavLink[] = [
     { href: "/technician", label: "Technician", icon: iconFor("/technician") },
   ];
+  if (isFloorTech(role)) {
+    staffingLinks.push({
+      href: "/technician/clock",
+      label: "Time clock",
+      icon: iconFor("/technician/clock"),
+    });
+  }
   if (canAssignTechnician(role)) {
     staffingLinks.push({
       href: "/technician/docket",
@@ -186,23 +203,11 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     });
   }
 
-  const accountSettings: NavLink[] = [];
-  if (canChangeOwnPassword(role)) {
-    accountSettings.push({
-      href: "/settings/password",
-      label: "Password",
-      icon: iconFor("/settings/password"),
-    });
-  }
-
   const settingsSubgroups: NavSubgroup[] = [
     {
       links: [{ href: "/settings", label: "Settings", icon: iconFor("/settings") }],
     },
   ];
-  if (accountSettings.length > 0) {
-    settingsSubgroups.push({ heading: "Account", links: accountSettings });
-  }
   if (shopSettings.length > 0) {
     settingsSubgroups.push({ heading: "Shop", links: shopSettings });
   }

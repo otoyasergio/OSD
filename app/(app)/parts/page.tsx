@@ -5,6 +5,7 @@ import {
   canOrderPart,
   canSyncPartsCanadaCatalog,
   canViewPartsBoard,
+  canViewPricing,
 } from "@/lib/permissions";
 import { listPartsWaitingForLocation } from "@/lib/services/partsBoard";
 import { getPartsCanadaSyncStatus } from "@/lib/services/partsCanadaCatalog";
@@ -116,7 +117,7 @@ export default async function PartsWaitingPage({
         </div>
       </form>
 
-      <PartsWaitingBoard items={items} />
+      <PartsWaitingBoard items={items} canViewPricing={canViewPricing(user.role)} />
     </div>
   );
 }

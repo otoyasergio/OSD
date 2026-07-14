@@ -13,8 +13,14 @@ function moneyLabel(value: number | null): string | null {
   return `$${Number(value).toFixed(2)}`;
 }
 
-function PartWaitingCard({ item }: { item: PartsWaitingItem }) {
-  const price = moneyLabel(item.unit_price);
+function PartWaitingCard({
+  item,
+  canViewPricing,
+}: {
+  item: PartsWaitingItem;
+  canViewPricing: boolean;
+}) {
+  const price = canViewPricing ? moneyLabel(item.unit_price) : null;
 
   return (
     <article className="td-board-card">
@@ -63,10 +69,12 @@ function Column({
   title,
   items,
   emptyDescription,
+  canViewPricing,
 }: {
   title: string;
   items: PartsWaitingItem[];
   emptyDescription: string;
+  canViewPricing: boolean;
 }) {
   return (
     <section className="shop-board-column" aria-label={title}>
@@ -78,14 +86,26 @@ function Column({
         {items.length === 0 ? (
           <EmptyState description={emptyDescription} />
         ) : (
-          items.map((item) => <PartWaitingCard key={item.part_id} item={item} />)
+          items.map((item) => (
+            <PartWaitingCard
+              key={item.part_id}
+              item={item}
+              canViewPricing={canViewPricing}
+            />
+          ))
         )}
       </div>
     </section>
   );
 }
 
-export function PartsWaitingBoard({ items }: { items: PartsWaitingItem[] }) {
+export function PartsWaitingBoard({
+  items,
+  canViewPricing = true,
+}: {
+  items: PartsWaitingItem[];
+  canViewPricing?: boolean;
+}) {
   const toOrder = items.filter((item) => item.bucket === "to_order");
   const inStock = items.filter((item) => item.bucket === "in_stock");
   const ordered = items.filter((item) => item.bucket === "ordered");
@@ -106,16 +126,19 @@ export function PartsWaitingBoard({ items }: { items: PartsWaitingItem[] }) {
         title="To order"
         items={toOrder}
         emptyDescription="No approved parts still need ordering."
+        canViewPricing={canViewPricing}
       />
       <Column
         title="In stock"
         items={inStock}
         emptyDescription="No parts marked in stock on open work orders."
+        canViewPricing={canViewPricing}
       />
       <Column
         title="Ordered"
         items={ordered}
         emptyDescription="No parts currently on order."
+        canViewPricing={canViewPricing}
       />
     </div>
   );

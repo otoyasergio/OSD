@@ -32,6 +32,7 @@ describe("buildNavCategories", () => {
     const techStaffing = tech.find((c) => c.id === "staffing");
     expect(techStaffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
       "/technician",
+      "/technician/clock",
     ]);
   });
 
@@ -73,7 +74,72 @@ describe("buildNavCategories", () => {
     expect(ownerHrefs).toContain("/motorcycles");
   });
 
-  it("exposes Password under Settings Account for every role including technician", () => {
+  it("hides Finances (Billing and Complete and filed) from floor techs", () => {
+    for (const role of ["technician", "head_tech"] as const) {
+      const categories = buildNavCategories(role);
+      expect(categories.map((c) => c.id)).not.toContain("finances");
+      const hrefs = categories.flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).not.toContain("/billing");
+      expect(hrefs).not.toContain("/complete");
+    }
+
+    const owner = buildNavCategories("owner");
+    expect(owner.map((c) => c.id)).toContain("finances");
+    const ownerHrefs = owner.flatMap((c) =>
+      c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+    );
+    expect(ownerHrefs).toContain("/billing");
+    expect(ownerHrefs).toContain("/complete");
+  });
+
+  it("hides Dashboard from floor techs and keeps it for front office", () => {
+    for (const role of ["technician", "head_tech"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).not.toContain("/dashboard");
+    }
+    for (const role of ["owner", "manager", "service_advisor"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).toContain("/dashboard");
+    }
+  });
+
+  it("hides Work Orders from floor techs and keeps it for front office", () => {
+    for (const role of ["technician", "head_tech"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).not.toContain("/work_orders");
+    }
+    for (const role of ["owner", "manager", "service_advisor", "admin"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).toContain("/work_orders");
+    }
+  });
+
+  it("exposes Time clock under Staffing for floor techs", () => {
+    for (const role of ["technician", "head_tech"] as const) {
+      const staffing = buildNavCategories(role).find((c) => c.id === "staffing");
+      expect(staffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
+        expect.arrayContaining(["/technician", "/technician/clock"])
+      );
+    }
+    const owner = buildNavCategories("owner");
+    const ownerStaffing = owner.find((c) => c.id === "staffing");
+    const ownerHrefs = ownerStaffing?.subgroups
+      .flatMap((g) => g.links)
+      .map((l) => l.href);
+    expect(ownerHrefs).not.toContain("/technician/clock");
+  });
+
+  it("does not expose Password as a sidebar nav item for any role", () => {
     for (const role of [
       "owner",
       "manager",
@@ -84,8 +150,14 @@ describe("buildNavCategories", () => {
     ] as const) {
       const categories = buildNavCategories(role);
       const settings = categories.find((c) => c.id === "settings");
-      const account = settings?.subgroups.find((g) => g.heading === "Account");
-      expect(account?.links.map((l) => l.href)).toEqual(["/settings/password"]);
+      const hrefs = categories.flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).not.toContain("/settings/password");
+      expect(settings?.subgroups.find((g) => g.heading === "Account")).toBeUndefined();
+      expect(settings?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toContain(
+        "/settings"
+      );
     }
   });
 });
