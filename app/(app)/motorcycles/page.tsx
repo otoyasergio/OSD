@@ -24,7 +24,7 @@ export default async function MotorcyclesPage({
     <div className="page-stack">
       <PageHeader
         title="Motorcycles"
-        subtitle="Search by customer, year, make, model, or VIN."
+        subtitle="Search by customer, year, make, model, VIN, or plate."
         actions={
           <Link href="/motorcycles/new" className="btn btn-primary">
             New motorcycle
@@ -52,7 +52,7 @@ export default async function MotorcyclesPage({
             type="search"
             name="q"
             defaultValue={q}
-            placeholder="Customer, year, make, model, or VIN"
+            placeholder="Customer, year, make, model, VIN, or plate"
             aria-label="Search motorcycles"
             className="input"
           />
@@ -91,6 +91,7 @@ export default async function MotorcyclesPage({
               <tr>
                 <th>Motorcycle</th>
                 <th>Customer</th>
+                <th>Plate</th>
                 <th>VIN</th>
               </tr>
             </thead>
@@ -109,6 +110,9 @@ export default async function MotorcyclesPage({
                     {motorcycle.customer
                       ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
                       : "—"}
+                  </td>
+                  <td className="text-[var(--status-neutral-fg)]">
+                    {motorcycle.plate_number ?? "—"}
                   </td>
                   <td className="text-[var(--status-neutral-fg)]">
                     {motorcycle.vin ?? (

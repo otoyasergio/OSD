@@ -58,6 +58,7 @@ function readMotorcycleInput(formData: FormData) {
     model: String(formData.get("model") ?? ""),
     vin: String(formData.get("vin") ?? ""),
     colour: String(formData.get("colour") ?? ""),
+    plate_number: String(formData.get("plate_number") ?? ""),
     notes: String(formData.get("notes") ?? ""),
   };
 }

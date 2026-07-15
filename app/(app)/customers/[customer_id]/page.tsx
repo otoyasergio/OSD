@@ -145,6 +145,8 @@ export default async function CustomerDetailPage({
       </div>
 
       <CustomerInformationReminder
+        phone={customer.phone}
+        email={customer.email}
         address={customer.address}
         dateOfBirth={customer.date_of_birth}
         editHref="#edit-customer"

@@ -76,7 +76,9 @@ export default async function NewMotorcyclePage({
               model: model || undefined,
             }}
             returnTo={returnTo}
-            submitLabel="Create motorcycle"
+            submitLabel={
+              returnTo ? "Create motorcycle & start work order" : "Create motorcycle"
+            }
           />
         </div>
       )}

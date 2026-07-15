@@ -78,6 +78,7 @@ export default async function MotorcycleDetailPage({
             {ownerName}
           </Link>
           {motorcycle.colour ? ` · ${motorcycle.colour}` : null}
+          {motorcycle.plate_number ? ` · Plate ${motorcycle.plate_number}` : null}
           {canTransfer ? (
             <>
               {" · "}

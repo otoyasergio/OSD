@@ -113,6 +113,19 @@ describe("motorcycleSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("normalizes an optional plate number to uppercase", () => {
+    const result = motorcycleSchema.safeParse({
+      customer_id: "00000000-0000-4000-8000-000000000001",
+      year: 2022,
+      make: "Honda",
+      model: "CBR600RR",
+      plate_number: "  ab 123  ",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.plate_number).toBe("AB 123");
+  });
 });
 
 describe("serviceSchema", () => {

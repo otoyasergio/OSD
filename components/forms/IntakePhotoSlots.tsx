@@ -133,7 +133,7 @@ function CheckIcon() {
   );
 }
 
-function LibraryIcon() {
+export function LibraryIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -386,7 +386,7 @@ export function IntakePhotoSlots({
   );
 }
 
-function CameraIcon(): ReactNode {
+export function CameraIcon(): ReactNode {
   return (
     <svg
       viewBox="0 0 24 24"

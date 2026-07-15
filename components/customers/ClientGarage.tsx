@@ -25,6 +25,7 @@ export function GarageBikeCardView({
   const label = `${bike.year} ${bike.make} ${bike.model}`;
   const colour = bike.colour?.trim() || "Colour not set";
   const vinLabel = bike.vin?.trim() || null;
+  const plateLabel = bike.plate_number?.trim() || null;
   const transferHref = `/motorcycles/${bike.motorcycle_id}#transfer-ownership`;
 
   return (
@@ -49,7 +50,10 @@ export function GarageBikeCardView({
         <div className="wo-card-body">
           <div className="wo-card-hero">
             <p className="wo-card-bike">{label}</p>
-            <p className="wo-card-meta">{colour}</p>
+            <p className="wo-card-meta">
+              {colour}
+              {plateLabel ? ` · Plate ${plateLabel}` : ""}
+            </p>
           </div>
           <div className="wo-card-footer">
             {bike.missing_vin ? (

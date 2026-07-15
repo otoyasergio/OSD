@@ -26,19 +26,19 @@ export type WorkOrderFormState = {
 
 const REQUIRED_INTAKE_CATEGORIES = CREATE_INTAKE_PHOTO_SLOTS.map((slot) => slot.category);
 
-function readOptionalNumber(formData: FormData, key: string): number | null {
+function readRequiredMileage(formData: FormData): number {
+  const key = "mileage";
   const raw = String(formData.get(key) ?? "").trim();
-  if (!raw) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
+  if (!raw || !/^\d+$/.test(raw)) return Number.NaN;
+  return Number(raw);
 }
 
-function readEstimatedCompletion(formData: FormData): string | null {
+function readEstimatedCompletion(formData: FormData): string {
   const raw = String(formData.get("estimated_completion") ?? "").trim();
-  if (!raw) return null;
+  if (!raw) return "";
   // datetime-local lacks timezone; interpret as America/Toronto wall time.
   const date = parseShopLocalDateTimeInput(raw);
-  if (!date) return null;
+  if (!date) return "";
   return date.toISOString();
 }
 
@@ -114,7 +114,7 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
     location_id: user.active_location_id!,
     // Square assigns invoice_number when staff sync/publish from Billing
     external_invoice_number: null,
-    mileage: readOptionalNumber(formData, "mileage"),
+    mileage: readRequiredMileage(formData),
     estimated_completion: readEstimatedCompletion(formData),
     internal_notes: String(formData.get("internal_notes") ?? ""),
     primary_technician_id: primaryTech || null,

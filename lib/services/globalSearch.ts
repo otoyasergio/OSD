@@ -141,7 +141,9 @@ export async function searchAll(
           id: bike.motorcycle_id,
           label: `${bike.year} ${bike.make} ${bike.model}`,
           href: `/motorcycles/${bike.motorcycle_id}`,
-          meta: owner || bike.vin || "Motorcycle",
+          meta: [owner, bike.plate_number ? `Plate ${bike.plate_number}` : null, bike.vin]
+            .filter(Boolean)
+            .join(" · ") || "Motorcycle",
         };
       })
     );

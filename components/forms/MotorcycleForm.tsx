@@ -220,7 +220,18 @@ export function MotorcycleForm({
         </label>
       </div>
 
-      <TextField label="Colour" name="colour" defaultValue={motorcycle?.colour} />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextField label="Colour" name="colour" defaultValue={motorcycle?.colour} />
+        <TextField
+          label="Plate number (optional)"
+          name="plate_number"
+          defaultValue={motorcycle?.plate_number}
+          maxLength={20}
+          autoCapitalize="characters"
+          autoComplete="off"
+          hint="Saved in uppercase."
+        />
+      </div>
 
       <TextAreaField
         label="Internal notes"

@@ -29,6 +29,7 @@ export type Motorcycle = {
   model: string;
   vin: string | null;
   colour: string | null;
+  plate_number: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -64,6 +65,7 @@ export type MotorcycleInput = {
   model: string;
   vin?: string | null;
   colour?: string | null;
+  plate_number?: string | null;
   notes?: string | null;
 };
 
@@ -157,7 +159,7 @@ export type ServiceInformationInput = Partial<
 >;
 
 const MOTORCYCLE_COLUMNS =
-  "motorcycle_id, customer_id, year, make, model, vin, colour, notes, created_at, updated_at";
+  "motorcycle_id, customer_id, year, make, model, vin, colour, plate_number, notes, created_at, updated_at";
 
 const SERVICE_INFORMATION_COLUMNS =
   "service_information_id, motorcycle_id, oil_filter, oil_type, oil_capacity, air_filter, spark_plugs, front_brake_pads, rear_brake_pads, front_tire_size, rear_tire_size, chain, battery, notes, last_updated, last_updated_by_user_id";
@@ -181,6 +183,7 @@ export function buildMotorcycleSearchOrFilter(
     `make.ilike.${pattern}`,
     `model.ilike.${pattern}`,
     `vin.ilike.${pattern}`,
+    `plate_number.ilike.${pattern}`,
   ];
 
   if (isYear(cleaned)) {
@@ -417,6 +420,7 @@ export async function createMotorcycle(input: MotorcycleInput): Promise<Motorcyc
     ...input,
     vin: normalizeOptional(input.vin),
     colour: normalizeOptional(input.colour),
+    plate_number: normalizeOptional(input.plate_number),
     notes: normalizeOptional(input.notes),
   });
 
@@ -432,6 +436,7 @@ export async function createMotorcycle(input: MotorcycleInput): Promise<Motorcyc
       model: parsed.model,
       vin: normalizeOptional(parsed.vin),
       colour: normalizeOptional(parsed.colour),
+      plate_number: normalizeOptional(parsed.plate_number),
       notes: normalizeOptional(parsed.notes),
     })
     .select(MOTORCYCLE_COLUMNS)
@@ -474,6 +479,7 @@ export async function updateMotorcycle(
     ...input,
     vin: normalizeOptional(input.vin),
     colour: normalizeOptional(input.colour),
+    plate_number: normalizeOptional(input.plate_number),
     notes: normalizeOptional(input.notes),
   });
 
@@ -495,6 +501,7 @@ export async function updateMotorcycle(
       model: parsed.model,
       vin: normalizeOptional(parsed.vin),
       colour: normalizeOptional(parsed.colour),
+      plate_number: normalizeOptional(parsed.plate_number),
       notes: normalizeOptional(parsed.notes),
       updated_at: new Date().toISOString(),
     })

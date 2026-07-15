@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import type { PhotoCategory } from "@/lib/database/types";
 import { FormError } from "@/components/forms/Field";
 import {
@@ -11,7 +10,11 @@ import {
   allRequiredIntakeSelected,
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
-import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
+import {
+  intakeContractHref,
+  uploadOptionalIntakePhotos,
+  uploadSelectedIntakePhoto,
+} from "@/components/forms/intakePhotoUploadClient";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 
@@ -20,11 +23,13 @@ export function IntakePhotoRecoveryForm({
   workOrderNumber,
   missingCategories,
   initialError,
+  optionalPhotos = [],
 }: {
   workOrderId: string;
   workOrderNumber?: string | null;
   missingCategories: PhotoCategory[];
   initialError?: string | null;
+  optionalPhotos?: File[];
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -51,20 +56,12 @@ export function IntakePhotoRecoveryForm({
           continue;
         }
 
-        try {
-          const file = await compressImageForUpload(original);
-          const photoData = new FormData();
-          photoData.set("file", file);
-          photoData.set("category", category);
-          const uploaded = await uploadIntakePhotoAction(
-            workOrderId,
-            { error: null },
-            photoData
-          );
-          if (uploaded.error) failed.push(category);
-        } catch {
-          failed.push(category);
-        }
+        const uploaded = await uploadSelectedIntakePhoto(
+          workOrderId,
+          original,
+          category
+        );
+        if (!uploaded) failed.push(category);
       }
 
       if (failed.length > 0) {
@@ -77,7 +74,11 @@ export function IntakePhotoRecoveryForm({
         return;
       }
 
-      router.push(`/work_orders/${workOrderId}/contract?from=intake`);
+      const optionalFailures = await uploadOptionalIntakePhotos(
+        workOrderId,
+        optionalPhotos
+      );
+      router.push(intakeContractHref(workOrderId, optionalFailures));
       router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));

@@ -7,7 +7,6 @@ import {
   createWorkOrderOnlyAction,
   type WorkOrderFormState,
 } from "@/app/(app)/work_orders/actions";
-import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { getOutstandingRecommendationsAction } from "@/app/(app)/work_orders/recommendation-actions";
 import { listMotorcyclesForCustomerAction } from "@/app/(app)/motorcycles/actions";
 import type { Customer } from "@/lib/services/customers";
@@ -26,6 +25,12 @@ import {
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
 import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
+import { OptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
+import {
+  intakeContractHref,
+  uploadOptionalIntakePhotos,
+  uploadSelectedIntakePhoto,
+} from "@/components/forms/intakePhotoUploadClient";
 import { CustomerSearchPicker } from "@/components/forms/CustomerSearchPicker";
 import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
 import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
@@ -38,7 +43,6 @@ import {
   canProceedFromWizardStep,
   canSubmitCreateWorkOrderWizard,
 } from "@/lib/forms/createWorkOrderWizard";
-import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
 import { stripIntakePhotoFields } from "@/lib/forms/intakeFormData";
 import {
   formatServiceLineSummary,
@@ -83,6 +87,7 @@ export function CreateWorkOrderForm({
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
+  const [optionalIntakePhotos, setOptionalIntakePhotos] = useState<File[]>([]);
   const [clientError, setClientError] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<WorkOrderFormState | null>(null);
   const [loadedMotorcycles, setLoadedMotorcycles] = useState<MotorcycleWithCustomer[]>(
@@ -204,6 +209,8 @@ export function CreateWorkOrderForm({
     customerId,
     motorcycleId,
     mileage,
+    estimatedCompletion,
+    selectedServiceIds,
     intakeComplete,
   };
 
@@ -289,20 +296,12 @@ export function CreateWorkOrderForm({
           continue;
         }
 
-        try {
-          const file = await compressImageForUpload(original);
-          const photoData = new FormData();
-          photoData.set("file", file);
-          photoData.set("category", category);
-          const uploaded = await uploadIntakePhotoAction(
-            created.workOrderId,
-            { error: null },
-            photoData
-          );
-          if (uploaded.error) failed.push(category);
-        } catch {
-          failed.push(category);
-        }
+        const uploaded = await uploadSelectedIntakePhoto(
+          created.workOrderId,
+          original,
+          category
+        );
+        if (!uploaded) failed.push(category);
       }
 
       if (failed.length > 0) {
@@ -316,7 +315,11 @@ export function CreateWorkOrderForm({
         return;
       }
 
-      router.push(`/work_orders/${created.workOrderId}/contract?from=intake`);
+      const optionalFailures = await uploadOptionalIntakePhotos(
+        created.workOrderId,
+        optionalIntakePhotos
+      );
+      router.push(intakeContractHref(created.workOrderId, optionalFailures));
       router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));
@@ -333,6 +336,7 @@ export function CreateWorkOrderForm({
         workOrderNumber={recovery?.workOrderNumber}
         missingCategories={missingCategories}
         initialError={recovery?.error}
+        optionalPhotos={optionalIntakePhotos}
       />
     );
   }
@@ -361,6 +365,8 @@ export function CreateWorkOrderForm({
           customerId,
           motorcycleId,
           mileage,
+          estimatedCompletion,
+          selectedServiceIds,
           intakeComplete,
         });
         if (!ok) {
@@ -428,6 +434,8 @@ export function CreateWorkOrderForm({
             </span>
             {selectedCustomer ? (
               <CustomerInformationReminder
+                phone={selectedCustomer.phone}
+                email={selectedCustomer.email}
                 address={selectedCustomer.address}
                 dateOfBirth={selectedCustomer.date_of_birth}
                 editHref={`/customers/${selectedCustomer.customer_id}#edit-customer`}
@@ -452,6 +460,8 @@ export function CreateWorkOrderForm({
           </p>
           {selectedCustomer ? (
             <CustomerInformationReminder
+              phone={selectedCustomer.phone}
+              email={selectedCustomer.email}
               address={selectedCustomer.address}
               dateOfBirth={selectedCustomer.date_of_birth}
               editHref={`/customers/${selectedCustomer.customer_id}#edit-customer`}
@@ -561,13 +571,14 @@ export function CreateWorkOrderForm({
             </label>
             <label className="block sm:col-span-2">
               <span className="mb-1.5 block text-sm font-medium text-foreground">
-                Estimated completion
+                Estimated completion <span className="ml-1 text-red-600">*</span>
               </span>
               <input
                 className={SELECT_CLASS}
                 type="datetime-local"
                 value={estimatedCompletion}
                 onChange={(event) => setEstimatedCompletion(event.target.value)}
+                required
               />
             </label>
           </div>
@@ -584,11 +595,13 @@ export function CreateWorkOrderForm({
           </label>
 
           <div className="flex flex-col gap-3">
-            <h3 className="text-base font-semibold text-foreground">Services</h3>
+            <h3 className="text-base font-semibold text-foreground">
+              Services <span className="ml-1 text-red-600">*</span>
+            </h3>
             <p className="text-sm text-[var(--status-neutral)]">
-              Select work for this visit. Labour jobs: enter hours (price defaults to × $
-              {SHOP_HOURLY_RATE}/h). Storage is flat-rate — enter price only. Notes are
-              optional.
+              Select at least one service for this visit. Labour jobs: enter hours (price
+              defaults to × ${SHOP_HOURLY_RATE}/h). Storage is flat-rate — enter price
+              only. Notes are optional.
             </p>
             {services.length === 0 ? (
               <p className="rounded border border-dashed border-[var(--border-strong)] bg-white px-4 py-6 text-sm text-[var(--status-neutral)]">
@@ -792,8 +805,8 @@ export function CreateWorkOrderForm({
               Intake photos <span className="text-red-600">*</span>
             </h2>
             <p className="intake-wizard-panel-lede mt-1">
-              Capture all six angles before continuing. Tap a slot, then choose Camera or
-              Library (Safari on iPad and Mac supported).
+              Capture all six required photos before continuing. Add any extra photos
+              below if they help document the motorcycle.
             </p>
           </div>
           {stepId === "photos" ? (
@@ -810,6 +823,7 @@ export function CreateWorkOrderForm({
         <IntakePhotoSlots
           value={intakePhotos}
           htmlRequired={false}
+          disabled={stepId !== "photos" || submitting}
           onChange={(next) => {
             // Ignore changes while off the photos step so hidden inputs
             // stay in the form for submit (disabled inputs are omitted).
@@ -820,6 +834,15 @@ export function CreateWorkOrderForm({
               setMaxReachedIndex((prev) => Math.min(prev, 3));
               setStepIndex((prev) => Math.min(prev, 3));
             }
+          }}
+        />
+        <OptionalIntakePhotos
+          value={optionalIntakePhotos}
+          disabled={stepId !== "photos" || submitting}
+          onChange={(next) => {
+            if (stepId !== "photos") return;
+            setOptionalIntakePhotos(next);
+            setClientError(null);
           }}
         />
       </section>
@@ -889,7 +912,15 @@ export function CreateWorkOrderForm({
             />
             <ReviewCard
               label="Intake photos"
-              value={intakeComplete ? "All 6 ready" : "Incomplete"}
+              value={
+                intakeComplete
+                  ? `All 6 required ready${
+                      optionalIntakePhotos.length > 0
+                        ? ` + ${optionalIntakePhotos.length} extra`
+                        : ""
+                    }`
+                  : "Incomplete"
+              }
               ok={intakeComplete}
               wide
             />
@@ -932,6 +963,8 @@ export function CreateWorkOrderForm({
                   customerId,
                   motorcycleId,
                   mileage,
+                  estimatedCompletion,
+                  selectedServiceIds,
                   intakeComplete,
                 })
               }

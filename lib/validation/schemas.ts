@@ -77,6 +77,13 @@ export const motorcycleSchema = z.object({
       }
     }),
   colour: z.string().optional().nullable(),
+  plate_number: z
+    .string()
+    .trim()
+    .max(20, "Plate number is too long")
+    .optional()
+    .nullable()
+    .transform((value) => (value ? value.toUpperCase() : null)),
   notes: z.string().optional().nullable(),
 });
 
@@ -92,11 +99,13 @@ export const createWorkOrderSchema = z.object({
   motorcycle_id: z.string().uuid(),
   location_id: z.string().uuid(),
   external_invoice_number: z.string().optional().nullable(),
-  mileage: z.number().int().nonnegative().optional().nullable(),
-  estimated_completion: z.string().datetime().optional().nullable(),
+  mileage: z.number().int().nonnegative(),
+  estimated_completion: z.string().datetime(),
   internal_notes: z.string().optional().nullable(),
   primary_technician_id: z.string().uuid().optional().nullable(),
-  service_ids: z.array(z.string().uuid()).default([]),
+  service_ids: z
+    .array(z.string().uuid())
+    .min(1, "Select at least one service"),
   service_lines: z
     .array(
       z.object({

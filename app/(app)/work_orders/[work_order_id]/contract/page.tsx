@@ -15,14 +15,18 @@ export default async function WorkOrderContractPage({
   searchParams,
 }: {
   params: Promise<{ work_order_id: string }>;
-  searchParams: Promise<{ from?: string }>;
+  searchParams: Promise<{ from?: string; extra_photo_failures?: string }>;
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
   const { work_order_id } = await params;
-  const { from } = await searchParams;
+  const { from, extra_photo_failures: extraPhotoFailuresRaw } = await searchParams;
   const fromIntake = from === "intake";
+  const parsedExtraPhotoFailures = Number.parseInt(extraPhotoFailuresRaw ?? "0", 10);
+  const extraPhotoFailures = Number.isFinite(parsedExtraPhotoFailures)
+    ? Math.max(0, parsedExtraPhotoFailures)
+    : 0;
   const workOrderHref = `/work_orders/${work_order_id}`;
 
   const [template, agreement] = await Promise.all([
@@ -53,8 +57,19 @@ export default async function WorkOrderContractPage({
 
       {fromIntake && !agreement ? (
         <p className="rounded-lg border border-border bg-surface-muted px-4 py-3 text-sm text-[var(--status-neutral-fg)]">
-          Intake photos are saved. Sign the drop-off agreement next, then continue
-          to the work order.
+          {extraPhotoFailures > 0 ? (
+            <>
+              All 6 required intake photos are saved. {extraPhotoFailures} optional
+              extra {extraPhotoFailures === 1 ? "photo" : "photos"} could not upload;
+              you can add {extraPhotoFailures === 1 ? "it" : "them"} from the work
+              order Photos tab afterward.
+            </>
+          ) : (
+            <>
+              Intake photos are saved. Sign the drop-off agreement next, then continue
+              to the work order.
+            </>
+          )}
         </p>
       ) : null}
 

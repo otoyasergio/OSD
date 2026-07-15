@@ -11,6 +11,8 @@ type TextFieldProps = {
   autoComplete?: string;
   autoFocus?: boolean;
   minLength?: number;
+  maxLength?: number;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
 };
 
 export function TextField({
@@ -26,6 +28,8 @@ export function TextField({
   autoComplete,
   autoFocus,
   minLength,
+  maxLength,
+  autoCapitalize,
 }: TextFieldProps) {
   const inputId = id ?? name;
   const errorId = error ? `${inputId}-error` : undefined;
@@ -49,6 +53,8 @@ export function TextField({
         autoComplete={autoComplete}
         autoFocus={autoFocus}
         minLength={minLength}
+        maxLength={maxLength}
+        autoCapitalize={autoCapitalize}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
       />

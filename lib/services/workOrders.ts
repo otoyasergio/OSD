@@ -98,11 +98,11 @@ export type CreateWorkOrderInput = {
   motorcycle_id: string;
   location_id: string;
   external_invoice_number?: string | null;
-  mileage?: number | null;
-  estimated_completion?: string | null;
+  mileage: number;
+  estimated_completion: string;
   internal_notes?: string | null;
   primary_technician_id?: string | null;
-  service_ids?: string[];
+  service_ids: string[];
   service_lines?: Array<{
     service_id: string;
     note?: string | null;
@@ -691,7 +691,7 @@ export async function createWorkOrder(
     internal_notes: normalizeOptional(input.internal_notes),
     primary_technician_id: normalizeOptional(input.primary_technician_id),
     estimated_completion: normalizeOptional(input.estimated_completion),
-    service_ids: input.service_ids ?? [],
+    service_ids: input.service_ids,
     service_lines: input.service_lines ?? [],
   });
 
@@ -772,7 +772,7 @@ export async function createWorkOrder(
       primary_technician_id: parsed.primary_technician_id ?? null,
       created_by_user_id: user.user_id,
       mileage: parsed.mileage ?? null,
-      estimated_completion: parsed.estimated_completion ?? null,
+      estimated_completion: parsed.estimated_completion,
       internal_notes: parsed.internal_notes ?? null,
     })
     .select("work_order_id, work_order_number, location_id, status")

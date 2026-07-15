@@ -131,8 +131,37 @@ describe("createWorkOrderSchema service_lines", () => {
   const base = {
     motorcycle_id: MOTO,
     location_id: LOC,
+    mileage: 12000,
+    estimated_completion: "2026-07-20T20:00:00.000Z",
     service_ids: [SERVICE_A],
   };
+
+  it("requires a whole, non-negative mileage reading", () => {
+    expect(createWorkOrderSchema.safeParse({ ...base, mileage: undefined }).success).toBe(
+      false
+    );
+    expect(createWorkOrderSchema.safeParse({ ...base, mileage: -1 }).success).toBe(false);
+    expect(createWorkOrderSchema.safeParse({ ...base, mileage: 12.5 }).success).toBe(false);
+    expect(createWorkOrderSchema.safeParse({ ...base, mileage: 0 }).success).toBe(true);
+  });
+
+  it("requires a valid estimated completion time", () => {
+    expect(
+      createWorkOrderSchema.safeParse({ ...base, estimated_completion: undefined }).success
+    ).toBe(false);
+    expect(
+      createWorkOrderSchema.safeParse({ ...base, estimated_completion: "not-a-date" })
+        .success
+    ).toBe(false);
+    expect(createWorkOrderSchema.safeParse(base).success).toBe(true);
+  });
+
+  it("requires at least one selected service", () => {
+    expect(createWorkOrderSchema.safeParse({ ...base, service_ids: [] }).success).toBe(
+      false
+    );
+    expect(createWorkOrderSchema.safeParse(base).success).toBe(true);
+  });
 
   it("accepts valid service line overrides", () => {
     const parsed = createWorkOrderSchema.parse({

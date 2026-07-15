@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 type Props = {
+  phone: string | null;
+  email: string | null;
   address: string | null;
   dateOfBirth: string | null;
   editHref: string;
@@ -9,29 +11,34 @@ type Props = {
 };
 
 export function CustomerInformationReminder({
+  phone,
+  email,
   address,
   dateOfBirth,
   editHref,
   openInNewTab = false,
   className = "",
 }: Props) {
-  const needsAddress = !address?.trim();
-  const needsBirthday = !dateOfBirth;
+  const missingItems = [
+    !phone?.trim() ? { label: "phone number", title: "Customer phone number needed" } : null,
+    !email?.trim() ? { label: "email address", title: "Customer email needed" } : null,
+    !address?.trim()
+      ? { label: "full address and postal code", title: "Customer address needed" }
+      : null,
+    !dateOfBirth ? { label: "birthday", title: "Customer birthday needed" } : null,
+  ].filter((item): item is { label: string; title: string } => item !== null);
 
-  if (!needsAddress && !needsBirthday) return null;
+  if (missingItems.length === 0) return null;
 
   const title =
-    needsAddress && needsBirthday
-      ? "Customer information needed"
-      : needsAddress
-        ? "Customer address needed"
-        : "Customer birthday needed";
+    missingItems.length === 1 ? missingItems[0].title : "Customer information needed";
+  const labels = missingItems.map((item) => item.label);
   const requestedInformation =
-    needsAddress && needsBirthday
-      ? "their full address, postal code, and birthday"
-      : needsAddress
-        ? "their full address and postal code"
-        : "their birthday";
+    labels.length === 1
+      ? labels[0]
+      : labels.length === 2
+        ? `${labels[0]} and ${labels[1]}`
+        : `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`;
 
   return (
     <div
@@ -40,7 +47,7 @@ export function CustomerInformationReminder({
     >
       <p className="font-semibold text-foreground">{title}</p>
       <p className="mt-1 text-[var(--status-warning-fg)]">
-        Ask the customer for {requestedInformation}. Then{" "}
+        Ask the customer for their {requestedInformation}. Then{" "}
         <Link
           href={editHref}
           target={openInNewTab ? "_blank" : undefined}

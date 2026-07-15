@@ -1,3 +1,5 @@
+import { parseShopLocalDateTimeInput } from "@/lib/datetime/format";
+
 export const CREATE_WORK_ORDER_WIZARD_STEPS = [
   { id: "customer", label: "Customer" },
   { id: "motorcycle", label: "Motorcycle" },
@@ -17,13 +19,21 @@ export function canProceedFromMotorcycleStep(motorcycleId: string): boolean {
   return motorcycleId.trim().length > 0;
 }
 
-export function canProceedFromVisitStep(data: { mileage: string }): boolean {
+export function canProceedFromVisitStep(data: {
+  mileage: string;
+  estimatedCompletion: string;
+  selectedServiceIds: string[];
+}): boolean {
   const trimmed = data.mileage.trim();
   if (!trimmed) return false;
   // Reject decimals / scientific notation — server schema requires a nonnegative int.
   if (!/^\d+$/.test(trimmed)) return false;
   const value = Number(trimmed);
-  return Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) return false;
+
+  if (parseShopLocalDateTimeInput(data.estimatedCompletion) === null) return false;
+
+  return data.selectedServiceIds.some((serviceId) => serviceId.trim().length > 0);
 }
 
 export function canProceedFromPhotosStep(intakeComplete: boolean): boolean {
@@ -46,6 +56,8 @@ type StepCompleteInput = {
   customerId?: string;
   motorcycleId?: string;
   mileage?: string;
+  estimatedCompletion?: string;
+  selectedServiceIds?: string[];
   intakeComplete?: boolean;
 };
 
@@ -61,6 +73,8 @@ export function isWizardStepComplete(
     case "visit":
       return canProceedFromVisitStep({
         mileage: data.mileage ?? "",
+        estimatedCompletion: data.estimatedCompletion ?? "",
+        selectedServiceIds: data.selectedServiceIds ?? [],
       });
     case "photos":
       return canProceedFromPhotosStep(Boolean(data.intakeComplete));
@@ -77,13 +91,19 @@ export function canSubmitCreateWorkOrderWizard(data: {
   customerId: string;
   motorcycleId: string;
   mileage: string;
+  estimatedCompletion: string;
+  selectedServiceIds: string[];
   intakeComplete: boolean;
 }): boolean {
   if (data.stepId !== "review") return false;
   return (
     canProceedFromCustomerStep(data.customerId) &&
     canProceedFromMotorcycleStep(data.motorcycleId) &&
-    canProceedFromVisitStep({ mileage: data.mileage }) &&
+    canProceedFromVisitStep({
+      mileage: data.mileage,
+      estimatedCompletion: data.estimatedCompletion,
+      selectedServiceIds: data.selectedServiceIds,
+    }) &&
     canProceedFromPhotosStep(data.intakeComplete)
   );
 }

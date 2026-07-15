@@ -21,7 +21,10 @@ export default async function NewCustomerPage() {
         New customer
       </h1>
       <div className="mt-5">
-        <CustomerForm action={createCustomerAction} submitLabel="Create customer" />
+        <CustomerForm
+          action={createCustomerAction}
+          submitLabel="Create customer & add motorcycle"
+        />
       </div>
     </div>
   );

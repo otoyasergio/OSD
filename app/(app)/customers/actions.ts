@@ -63,7 +63,10 @@ export async function createCustomerAction(
   }
 
   revalidatePath("/customers");
-  redirect(`/customers/${customerId}`);
+  const workOrderPath = `/work_orders/new?customer_id=${encodeURIComponent(customerId)}`;
+  redirect(
+    `/motorcycles/new?customer_id=${encodeURIComponent(customerId)}&return_to=${encodeURIComponent(workOrderPath)}`
+  );
 }
 
 export async function updateCustomerAction(

@@ -19,6 +19,7 @@ export type GarageBikeInput = {
   model: string;
   colour: string | null;
   vin: string | null;
+  plate_number: string | null;
 };
 
 export type GarageBikeCard = {
@@ -28,6 +29,7 @@ export type GarageBikeCard = {
   model: string;
   colour: string | null;
   vin: string | null;
+  plate_number: string | null;
   missing_vin: boolean;
   primary_photo_url: string | null;
   href: string;
@@ -63,6 +65,7 @@ export function toGarageBikeCards(
     model: bike.model,
     colour: bike.colour,
     vin: bike.vin,
+    plate_number: bike.plate_number,
     missing_vin: !bike.vin,
     primary_photo_url: photoUrlsByMotorcycleId.get(bike.motorcycle_id) ?? null,
     href: `/motorcycles/${bike.motorcycle_id}`,
@@ -89,7 +92,7 @@ export async function listGarageForCustomer(
 
   const { data: motorcycleRows, error: motorcycleError } = await supabase
     .from("motorcycle")
-    .select("motorcycle_id, year, make, model, colour, vin")
+    .select("motorcycle_id, year, make, model, colour, vin, plate_number")
     .eq("customer_id", customerId)
     .order("year", { ascending: false });
 

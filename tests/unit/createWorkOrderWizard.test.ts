@@ -41,14 +41,44 @@ describe("create work order wizard steps", () => {
     expect(canProceedFromMotorcycleStep("bike-1")).toBe(true);
   });
 
-  it("requires mileage on visit details", () => {
-    expect(canProceedFromVisitStep({ mileage: "" })).toBe(false);
-    expect(canProceedFromVisitStep({ mileage: "abc" })).toBe(false);
-    expect(canProceedFromVisitStep({ mileage: "-1" })).toBe(false);
-    expect(canProceedFromVisitStep({ mileage: "12.5" })).toBe(false);
-    expect(canProceedFromVisitStep({ mileage: "12e3" })).toBe(false);
-    expect(canProceedFromVisitStep({ mileage: "12000" })).toBe(true);
-    expect(canProceedFromVisitStep({ mileage: "0" })).toBe(true);
+  it("requires mileage and estimated completion on visit details", () => {
+    const estimatedCompletion = "2026-07-20T16:00";
+    const selectedServiceIds = ["service-1"];
+    expect(
+      canProceedFromVisitStep({ mileage: "", estimatedCompletion, selectedServiceIds })
+    ).toBe(false);
+    expect(
+      canProceedFromVisitStep({ mileage: "abc", estimatedCompletion, selectedServiceIds })
+    ).toBe(false);
+    expect(
+      canProceedFromVisitStep({ mileage: "-1", estimatedCompletion, selectedServiceIds })
+    ).toBe(false);
+    expect(
+      canProceedFromVisitStep({ mileage: "12.5", estimatedCompletion, selectedServiceIds })
+    ).toBe(false);
+    expect(
+      canProceedFromVisitStep({ mileage: "12e3", estimatedCompletion, selectedServiceIds })
+    ).toBe(false);
+    expect(
+      canProceedFromVisitStep({
+        mileage: "12000",
+        estimatedCompletion: "",
+        selectedServiceIds,
+      })
+    ).toBe(false);
+    expect(
+      canProceedFromVisitStep({
+        mileage: "12000",
+        estimatedCompletion,
+        selectedServiceIds: [],
+      })
+    ).toBe(false);
+    expect(
+      canProceedFromVisitStep({ mileage: "12000", estimatedCompletion, selectedServiceIds })
+    ).toBe(true);
+    expect(
+      canProceedFromVisitStep({ mileage: "0", estimatedCompletion, selectedServiceIds })
+    ).toBe(true);
   });
 
   it("requires all six intake photos before continuing", () => {
@@ -85,6 +115,8 @@ describe("create work order wizard steps", () => {
     expect(
       isWizardStepComplete("visit", {
         mileage: "100",
+        estimatedCompletion: "2026-07-20T16:00",
+        selectedServiceIds: ["service-1"],
       })
     ).toBe(true);
     expect(isWizardStepComplete("photos", { intakeComplete: false })).toBe(
@@ -101,6 +133,8 @@ describe("create work order wizard steps", () => {
       customerId: "c1",
       motorcycleId: "m1",
       mileage: "5000",
+      estimatedCompletion: "2026-07-20T16:00",
+      selectedServiceIds: ["service-1"],
       intakeComplete: true,
     };
     expect(canSubmitCreateWorkOrderWizard(ready)).toBe(true);
@@ -112,6 +146,9 @@ describe("create work order wizard steps", () => {
     ).toBe(false);
     expect(
       canSubmitCreateWorkOrderWizard({ ...ready, motorcycleId: "" })
+    ).toBe(false);
+    expect(
+      canSubmitCreateWorkOrderWizard({ ...ready, selectedServiceIds: [] })
     ).toBe(false);
   });
 });
