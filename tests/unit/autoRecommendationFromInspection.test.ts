@@ -24,6 +24,10 @@ describe("autoRecommendationFromInspection", () => {
     expect(shouldAutoCreateRecommendation("ok")).toBe(false);
   });
 
+  it("does not create for not_applicable", () => {
+    expect(shouldAutoCreateRecommendation("not_applicable")).toBe(false);
+  });
+
   it("does not create for null / incomplete", () => {
     expect(shouldAutoCreateRecommendation(null)).toBe(false);
     expect(shouldAutoCreateRecommendation(undefined)).toBe(false);

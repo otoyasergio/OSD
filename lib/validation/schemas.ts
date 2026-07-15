@@ -92,9 +92,19 @@ export const inspectionTemplateItemSchema = z.object({
 });
 
 export const saveInspectionResultSchema = z.object({
-  status: z.enum(["ok", "future_attention", "immediate_attention"]).nullable().optional(),
+  status: z
+    .enum(["ok", "future_attention", "immediate_attention", "not_applicable"])
+    .nullable()
+    .optional(),
   measurement: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+});
+
+export const completeInspectionSignatureSchema = z.object({
+  technician_signer_name: z.string().min(1, "Signer name is required"),
+  signature_data_url: z
+    .string()
+    .regex(/^data:image\/(png|jpeg);base64,/, "Invalid signature image"),
 });
 
 export const recommendationSchema = z.object({

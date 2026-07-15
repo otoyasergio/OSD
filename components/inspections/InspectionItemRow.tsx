@@ -33,6 +33,12 @@ const STATUS_OPTIONS: Array<{
     long: "Requires immediate attention",
     className: "inspection-status-immediate",
   },
+  {
+    value: "not_applicable",
+    short: "N/A",
+    long: "Not applicable",
+    className: "inspection-status-na",
+  },
 ];
 
 function measurementHint(itemName: string): string | null {

@@ -34,7 +34,11 @@ export type JobStatus =
 export type PartStatus =
   "needed" | "in_stock" | "ordered" | "installed" | "not_required" | "cancelled";
 
-export type InspectionResultStatus = "ok" | "future_attention" | "immediate_attention";
+export type InspectionResultStatus =
+  | "ok"
+  | "future_attention"
+  | "immediate_attention"
+  | "not_applicable";
 
 export type RecommendationSeverity =
   "future_attention" | "immediate_attention" | "safety_critical";

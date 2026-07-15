@@ -73,6 +73,7 @@ Open [http://localhost:3000](http://localhost:3000) and sign in with one of the 
 
 - Prefer **Safari on Mac** for front-office flows and **Safari on iPad** for technician / floor flows.
 - Confirm login, location switcher, create work order (six required intake photos: front, rear, left, right, VIN, dash/odometer), inspection auto-save, extra photo upload from Photos tab / camera roll, approval, parts order block, QC, and complete.
+- **Inspection + contract:** use large tap targets (≥44px), `100dvh` / `env(safe-area-inset-*)` for the iOS home indicator, and `touch-action: none` on signature canvases so drawing does not scroll the page. Optional driver-license / ownership scan uses the same Safari-safe camera + library file inputs as intake photos — not the File System Access API.
 - If cookies or auth redirects misbehave, confirm `.env.local` URL matches the project and that you are not mixing `localhost` with a different host.
 
 ### 7. Acceptance (Task 35)

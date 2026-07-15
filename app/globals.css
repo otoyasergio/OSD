@@ -2047,8 +2047,8 @@ button.board-control-link {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 1rem;
-  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
-  scroll-padding-bottom: 12rem;
+  padding-bottom: max(10rem, calc(2rem + env(safe-area-inset-bottom)));
+  scroll-padding-bottom: 14rem;
 }
 
 .inspection-fullscreen-hint {
@@ -2064,18 +2064,24 @@ button.board-control-link {
 }
 
 .inspection-checklist-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 15;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 1rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.75rem;
+  background: var(--background);
 }
 
 .inspection-report {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.5rem;
 }
 
 .inspection-report-header {
@@ -2435,6 +2441,57 @@ button.board-control-link {
   border-color: #b91c1c;
 }
 
+.inspection-status-na {
+  background: #94a3b8;
+  border-color: #64748b;
+}
+
+.inspection-timer {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.inspection-timer--overtime {
+  border-color: #d97706;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.inspection-timer-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.inspection-timer-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.inspection-complete-panel {
+  width: 100%;
+  max-width: 28rem;
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+.inspection-section {
+  scroll-margin-top: 6rem;
+}
+
 .inspection-status-btn {
   min-height: 3rem;
   min-width: 3rem;
@@ -2559,6 +2616,12 @@ button.board-control-link {
   border-color: #b91c1c33;
   background: #fef2f2;
   color: #991b1b;
+}
+
+.inspection-summary-chip--na {
+  border-color: #64748b33;
+  background: #f1f5f9;
+  color: #334155;
 }
 
 .inspection-status-chip {

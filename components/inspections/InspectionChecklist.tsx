@@ -4,6 +4,8 @@ import { useActionState, useMemo, useState } from "react";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
 import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
+import { InspectionTimer } from "@/components/inspections/InspectionTimer";
+import { SignatureCanvas } from "@/components/contracts/SignatureCanvas";
 import { completeInspectionAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
 import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { FormError } from "@/components/forms/Field";
@@ -54,6 +56,8 @@ export function InspectionChecklist({
     { error: null }
   );
   const [forceConfirm, setForceConfirm] = useState(false);
+  const [signerName, setSignerName] = useState("");
+  const [signature, setSignature] = useState<string | null>(null);
   const readOnly = isInspectionReadOnly({
     is_foreign_location: inspection.is_foreign_location,
     completed_at: inspection.completed_at,
@@ -100,12 +104,14 @@ export function InspectionChecklist({
     let ok = 0;
     let future = 0;
     let immediate = 0;
+    let na = 0;
     for (const r of inspection.results) {
       if (r.status === "ok") ok += 1;
       else if (r.status === "future_attention") future += 1;
       else if (r.status === "immediate_attention") immediate += 1;
+      else if (r.status === "not_applicable") na += 1;
     }
-    return { ok, future, immediate };
+    return { ok, future, immediate, na };
   }, [inspection.results]);
   const brakeSkipped = inspection.results.some(
     (r) =>
@@ -147,6 +153,10 @@ export function InspectionChecklist({
             <span className="inspection-status-swatch inspection-status-immediate is-selected" />
             Requires immediate attention
           </span>
+          <span className="inspection-legend-item">
+            <span className="inspection-status-swatch inspection-status-na is-selected" />
+            Not applicable
+          </span>
         </div>
 
         <dl className="inspection-report-meta">
@@ -184,6 +194,9 @@ export function InspectionChecklist({
       </header>
 
       <div className="inspection-checklist-toolbar">
+        {inspection.started_at && !inspection.completed_at ? (
+          <InspectionTimer startedAt={inspection.started_at} />
+        ) : null}
         <div className="inspection-progress">
           {!inspection.completed_at ? (
             <>
@@ -209,6 +222,9 @@ export function InspectionChecklist({
           ) : (
             <p className="text-sm font-medium text-emerald-800">
               Inspection completed {formatDateTime(inspection.completed_at)}
+              {inspection.technician_signer_name
+                ? ` · Signed by ${inspection.technician_signer_name}`
+                : ""}
             </p>
           )}
           <div className="inspection-summary-chips" aria-label="Result totals">
@@ -221,6 +237,9 @@ export function InspectionChecklist({
             <span className="inspection-summary-chip inspection-summary-chip--immediate">
               {statusTotals.immediate} immediate
             </span>
+            <span className="inspection-summary-chip inspection-summary-chip--na">
+              {statusTotals.na} N/A
+            </span>
           </div>
           {missingPhotoLabels.length > 0 ? (
             <p className="text-sm font-medium text-amber-900">
@@ -231,19 +250,49 @@ export function InspectionChecklist({
         </div>
 
         {!readOnly ? (
-          <div className="flex flex-col items-end gap-2">
+          <div className="inspection-complete-panel flex flex-col items-stretch gap-3 sm:items-end">
+            <label className="block w-full max-w-md" htmlFor="tech-signer-name">
+              <span className="field-label">Technician name</span>
+              <input
+                id="tech-signer-name"
+                name="technician_signer_name"
+                form="inspection-complete-form"
+                required
+                value={signerName}
+                onChange={(e) => setSignerName(e.target.value)}
+                className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
+                autoComplete="name"
+              />
+            </label>
+            <div className="w-full max-w-md">
+              <span className="field-label">Technician signature</span>
+              <SignatureCanvas onChange={setSignature} height={160} />
+              <input
+                type="hidden"
+                name="signature_data_url"
+                form="inspection-complete-form"
+                value={signature ?? ""}
+              />
+            </div>
             {inspection.incomplete_count > 0 && canForceComplete ? (
               !forceConfirm ? (
                 <button
                   type="button"
                   onClick={() => setForceConfirm(true)}
                   className="btn btn-secondary min-h-12 border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100"
+                  disabled={!signature || !signerName.trim()}
                 >
                   Force complete ({inspection.incomplete_count} incomplete)…
                 </button>
               ) : (
-                <form action={completeAction} className="flex flex-wrap gap-2">
+                <form
+                  id="inspection-complete-form"
+                  action={completeAction}
+                  className="flex flex-wrap gap-2"
+                >
                   <input type="hidden" name="force" value="true" />
+                  <input type="hidden" name="technician_signer_name" value={signerName} />
+                  <input type="hidden" name="signature_data_url" value={signature ?? ""} />
                   <SubmitButton
                     label="Confirm force complete"
                     pendingLabel="Completing…"
@@ -258,11 +307,32 @@ export function InspectionChecklist({
                 </form>
               )
             ) : (
-              <form action={completeAction}>
-                <SubmitButton label="Complete inspection" pendingLabel="Completing…" />
+              <form id="inspection-complete-form" action={completeAction}>
+                <input type="hidden" name="technician_signer_name" value={signerName} />
+                <input type="hidden" name="signature_data_url" value={signature ?? ""} />
+                <SubmitButton
+                  label="Complete inspection"
+                  pendingLabel="Completing…"
+                  disabled={!signature || !signerName.trim()}
+                />
               </form>
             )}
             <FormError message={completeState.error} />
+          </div>
+        ) : inspection.technician_signature_url ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-[var(--status-neutral)]">
+              Signed by {inspection.technician_signer_name ?? "technician"}
+              {inspection.technician_signed_at
+                ? ` · ${formatDateTime(inspection.technician_signed_at)}`
+                : ""}
+            </p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={inspection.technician_signature_url}
+              alt="Technician signature"
+              className="max-h-28 rounded border border-[var(--border)] bg-white"
+            />
           </div>
         ) : null}
       </div>

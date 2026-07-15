@@ -8,7 +8,7 @@ import {
   isFloorTech,
   staffHomePath,
 } from "@/lib/permissions";
-import { getInspectionForWorkOrder } from "@/lib/services/inspections";
+import { getInspectionForWorkOrder, ensureInspectionStarted } from "@/lib/services/inspections";
 import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 
@@ -55,6 +55,13 @@ export default async function InspectionPage({
   if (!inspection) notFound();
 
   const canEdit = canCompleteInspection(user.role);
+  if (canEdit && !inspection.completed_at && !inspection.is_foreign_location) {
+    const startedAt = await ensureInspectionStarted(work_order_id).catch(() => null);
+    if (startedAt && !inspection.started_at) {
+      inspection.started_at = startedAt;
+    }
+  }
+
   const canForce = canOverrideWorkOrderStatus(user.role);
   const canRecommend = canCreateRecommendation(user.role);
   const readOnly = isInspectionReadOnly({
@@ -81,9 +88,10 @@ export default async function InspectionPage({
       <div className="inspection-fullscreen-body">
         {!readOnly ? (
           <p className="inspection-fullscreen-hint">
-            Tap green / yellow / red to mark each item. Status saves immediately. Add
-            required photos for tires, brakes, forks, and anything marked needing work
-            before completing the report.
+            Tap OK / Future / Now / N/A to mark each item. Status saves immediately.
+            Yellow and red items create recommendations automatically. Add required
+            photos for tires, brakes, forks, and anything marked needing work. Sign
+            when finished — the timer counts down from 20 minutes.
           </p>
         ) : null}
 

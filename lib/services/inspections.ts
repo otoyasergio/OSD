@@ -10,7 +10,7 @@ import {
   canViewClients,
 } from "@/lib/permissions";
 import { assertViewerCanAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
-import { saveInspectionResultSchema } from "@/lib/validation/schemas";
+import { saveInspectionResultSchema, completeInspectionSignatureSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import {
   assertInspectionPhotosComplete,
@@ -53,6 +53,9 @@ export type InspectionDetail = {
   started_at: string | null;
   completed_at: string | null;
   completed_by_user_id: string | null;
+  technician_signer_name: string | null;
+  technician_signed_at: string | null;
+  technician_signature_url: string | null;
   location_id: string;
   work_order_number: string;
   work_order_status: string;
@@ -87,6 +90,9 @@ type ResultWithInspection = InspectionResultRow & {
 
 const RESULT_COLUMNS =
   "inspection_result_id, inspection_id, template_item_id, category_snapshot, item_name_snapshot, display_order_snapshot, requires_measurement_snapshot, status, measurement, notes, updated_by_user_id, updated_at";
+
+const INSPECTION_SIGNATURE_BUCKET = "inspection-signatures";
+const SIGNATURE_MAX_BYTES = 2 * 1024 * 1024;
 
 function countIncomplete(results: InspectionResultRow[]): number {
   return countIncompleteInspectionResults(results);
@@ -251,6 +257,10 @@ export async function getInspectionForWorkOrder(
       started_at,
       completed_at,
       completed_by_user_id,
+      technician_signature_storage_path,
+      technician_signed_at,
+      technician_signer_name,
+      technician_signed_by_user_id,
       inspection_result (
         ${RESULT_COLUMNS}
       )
@@ -274,6 +284,10 @@ export async function getInspectionForWorkOrder(
       started_at,
       completed_at,
       completed_by_user_id,
+      technician_signature_storage_path,
+      technician_signed_at,
+      technician_signer_name,
+      technician_signed_by_user_id,
       inspection_result (
         ${RESULT_COLUMNS}
       )
@@ -378,12 +392,29 @@ export async function getInspectionForWorkOrder(
     signed_url: signedByPath.get(p.storage_path) ?? p.photo_url,
   }));
 
+  let technicianSignatureUrl: string | null = null;
+  const sigPath = (
+    inspection as { technician_signature_storage_path?: string | null }
+  ).technician_signature_storage_path;
+  if (sigPath) {
+    const { data: signedSig } = await supabase.storage
+      .from(INSPECTION_SIGNATURE_BUCKET)
+      .createSignedUrl(sigPath, 60 * 60);
+    technicianSignatureUrl = signedSig?.signedUrl ?? null;
+  }
+
   return {
     inspection_id: inspection.inspection_id,
     work_order_id: inspection.work_order_id,
     started_at: inspection.started_at,
     completed_at: inspection.completed_at,
     completed_by_user_id: inspection.completed_by_user_id,
+    technician_signer_name:
+      (inspection as { technician_signer_name?: string | null }).technician_signer_name ??
+      null,
+    technician_signed_at:
+      (inspection as { technician_signed_at?: string | null }).technician_signed_at ?? null,
+    technician_signature_url: technicianSignatureUrl,
     location_id: workOrder.location_id,
     work_order_number: workOrder.work_order_number,
     work_order_status: workOrder.status,
@@ -585,12 +616,69 @@ export async function saveInspectionResult(
   return result;
 }
 
+export async function ensureInspectionStarted(workOrderId: string): Promise<string> {
+  const user = await requireUser();
+  if (!canCompleteInspection(user.role)) throw new Error("FORBIDDEN");
+
+  const { supabase } = await requireMutableInspectionAccess(user, workOrderId);
+
+  const { data: inspection, error } = await supabase
+    .from("inspection")
+    .select("inspection_id, started_at, completed_at")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!inspection) {
+    await ensureInspectionSeeded(supabase, workOrderId);
+    const { data: seeded, error: seedError } = await supabase
+      .from("inspection")
+      .select("inspection_id, started_at, completed_at")
+      .eq("work_order_id", workOrderId)
+      .maybeSingle();
+    if (seedError) throw seedError;
+    if (!seeded) throw new Error("INSPECTION_NOT_FOUND");
+    if (seeded.started_at) return seeded.started_at as string;
+    const now = new Date().toISOString();
+    await supabase
+      .from("inspection")
+      .update({ started_at: now, updated_at: now })
+      .eq("inspection_id", seeded.inspection_id);
+    return now;
+  }
+
+  if (inspection.started_at) return inspection.started_at as string;
+  if (inspection.completed_at) {
+    return (inspection.started_at as string | null) ?? (inspection.completed_at as string);
+  }
+
+  const now = new Date().toISOString();
+  await supabase
+    .from("inspection")
+    .update({ started_at: now, updated_at: now })
+    .eq("inspection_id", inspection.inspection_id);
+  return now;
+}
+
 export async function completeInspection(
   workOrderId: string,
-  options: { force?: boolean } = {}
+  options: {
+    force?: boolean;
+    technician_signer_name?: string;
+    signature_data_url?: string;
+  } = {}
 ): Promise<void> {
   const user = await requireUser();
   if (!canCompleteInspection(user.role)) throw new Error("FORBIDDEN");
+
+  if (!options.technician_signer_name?.trim() || !options.signature_data_url) {
+    throw new Error("INSPECTION_SIGNATURE_REQUIRED");
+  }
+
+  const parsedSig = completeInspectionSignatureSchema.parse({
+    technician_signer_name: options.technician_signer_name,
+    signature_data_url: options.signature_data_url,
+  });
 
   const { supabase, locationId, workOrderNumber } = await requireMutableInspectionAccess(
     user,
@@ -654,6 +742,23 @@ export async function completeInspection(
     }>
   );
 
+  const match = parsedSig.signature_data_url.match(
+    /^data:image\/(png|jpeg);base64,(.+)$/
+  );
+  if (!match) throw new Error("SIGNATURE_INVALID");
+  const ext = match[1] === "jpeg" ? "jpg" : "png";
+  const bytes = Buffer.from(match[2], "base64");
+  if (bytes.length > SIGNATURE_MAX_BYTES) throw new Error("SIGNATURE_TOO_LARGE");
+
+  const storagePath = `${workOrderId}/${inspection.inspection_id}.${ext}`;
+  const { error: uploadError } = await supabase.storage
+    .from(INSPECTION_SIGNATURE_BUCKET)
+    .upload(storagePath, bytes, {
+      contentType: `image/${match[1]}`,
+      upsert: true,
+    });
+  if (uploadError) throw new Error("SIGNATURE_UPLOAD_FAILED");
+
   const now = new Date().toISOString();
   const { error: updateError } = await supabase
     .from("inspection")
@@ -661,6 +766,10 @@ export async function completeInspection(
       completed_at: now,
       completed_by_user_id: user.user_id,
       updated_at: now,
+      technician_signature_storage_path: storagePath,
+      technician_signed_at: now,
+      technician_signer_name: parsedSig.technician_signer_name.trim(),
+      technician_signed_by_user_id: user.user_id,
       ...(inspection.started_at ? {} : { started_at: now }),
     })
     .eq("inspection_id", inspection.inspection_id);
@@ -680,6 +789,7 @@ export async function completeInspection(
     new_value: {
       incomplete_count: incompleteCount,
       forced: Boolean(options.force && incompleteCount > 0),
+      technician_signer_name: parsedSig.technician_signer_name.trim(),
     },
   });
 
@@ -693,6 +803,7 @@ export async function completeInspection(
     new_value: {
       incomplete_count: incompleteCount,
       forced: Boolean(options.force && incompleteCount > 0),
+      technician_signer_name: parsedSig.technician_signer_name.trim(),
     },
   });
 
