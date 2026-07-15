@@ -6,7 +6,7 @@ import {
 } from "@/lib/validation/schemas";
 
 describe("customerSchema", () => {
-  it("requires phone and email", () => {
+  it("requires phone, email, and address", () => {
     const result = customerSchema.safeParse({
       first_name: "Ada",
       last_name: "Lovelace",
@@ -19,22 +19,38 @@ describe("customerSchema", () => {
       first_name: "Ada",
       last_name: "Lovelace",
       phone: "4165551212",
+      address: "123 Queen St W, Toronto, ON M5H 2M9",
     });
     const emailOnly = customerSchema.safeParse({
       first_name: "Ada",
       last_name: "Lovelace",
       email: "ada@example.com",
+      address: "123 Queen St W, Toronto, ON M5H 2M9",
     });
     expect(phoneOnly.success).toBe(false);
     expect(emailOnly.success).toBe(false);
   });
 
-  it("accepts phone and email", () => {
+  it("rejects a customer without an address", () => {
     const result = customerSchema.safeParse({
       first_name: "Ada",
       last_name: "Lovelace",
       phone: "4165551212",
       email: "ada@example.com",
+    });
+    expect(result.success).toBe(false);
+    expect(
+      result.success ? [] : result.error.issues.map((issue) => issue.message)
+    ).toContain("Address is required");
+  });
+
+  it("accepts the required contact and address fields", () => {
+    const result = customerSchema.safeParse({
+      first_name: "Ada",
+      last_name: "Lovelace",
+      phone: "4165551212",
+      email: "ada@example.com",
+      address: "123 Queen St W, Toronto, ON M5H 2M9",
     });
     expect(result.success).toBe(true);
     expect(result.success && result.data.account_type).toBe("retail");
@@ -46,13 +62,14 @@ describe("customerSchema", () => {
       last_name: "Co",
       phone: "4165550199",
       email: "service@fleet.example",
+      address: "100 King St W, Toronto, ON M5X 1A9",
       account_type: "fleet",
     });
     expect(result.success).toBe(true);
     expect(result.success && result.data.account_type).toBe("fleet");
   });
 
-  it("accepts an optional address and birthday", () => {
+  it("accepts a birthday with the required address", () => {
     const result = customerSchema.safeParse({
       first_name: "Ada",
       last_name: "Lovelace",
@@ -70,6 +87,7 @@ describe("customerSchema", () => {
       last_name: "Lovelace",
       phone: "4165551212",
       email: "ada@example.com",
+      address: "123 Queen St W, Toronto, ON M5H 2M9",
       date_of_birth: "1990-02-30",
     });
     const future = customerSchema.safeParse({
@@ -77,6 +95,7 @@ describe("customerSchema", () => {
       last_name: "Lovelace",
       phone: "4165551212",
       email: "ada@example.com",
+      address: "123 Queen St W, Toronto, ON M5H 2M9",
       date_of_birth: "2999-01-01",
     });
     expect(invalid.success).toBe(false);

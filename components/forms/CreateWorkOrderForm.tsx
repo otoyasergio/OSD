@@ -27,6 +27,7 @@ import {
 } from "@/components/forms/IntakePhotoSlots";
 import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
 import { CustomerSearchPicker } from "@/components/forms/CustomerSearchPicker";
+import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
 import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
 import { FindMotorcycleByVin } from "@/components/forms/FindMotorcycleByVin";
 
@@ -425,6 +426,15 @@ export function CreateWorkOrderForm({
               </Link>
               .
             </span>
+            {selectedCustomer ? (
+              <CustomerInformationReminder
+                address={selectedCustomer.address}
+                dateOfBirth={selectedCustomer.date_of_birth}
+                editHref={`/customers/${selectedCustomer.customer_id}#edit-customer`}
+                openInNewTab
+                className="mt-3"
+              />
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -440,6 +450,15 @@ export function CreateWorkOrderForm({
                 : "—"}
             </span>
           </p>
+          {selectedCustomer ? (
+            <CustomerInformationReminder
+              address={selectedCustomer.address}
+              dateOfBirth={selectedCustomer.date_of_birth}
+              editHref={`/customers/${selectedCustomer.customer_id}#edit-customer`}
+              openInNewTab
+              className="mb-4"
+            />
+          ) : null}
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-foreground">
               Motorcycle <span className="ml-1 text-red-600">*</span>

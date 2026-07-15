@@ -4,6 +4,7 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { canAdminHelpCreateRecords, canViewClients } from "@/lib/permissions";
 import { customerSchema } from "@/lib/validation/schemas";
 import type { CustomerAccountType } from "@/lib/services/customerShared";
+import { normalizeEmailInput } from "@/lib/email/normalize";
 
 export type { CustomerAccountType } from "@/lib/services/customerShared";
 export { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
@@ -131,7 +132,7 @@ export async function createCustomer(input: CustomerInput): Promise<Customer> {
   const parsed = customerSchema.parse({
     ...input,
     phone: normalizeOptional(input.phone),
-    email: normalizeOptional(input.email),
+    email: normalizeOptional(normalizeEmailInput(input.email)),
     address: normalizeOptional(input.address),
     date_of_birth: normalizeOptional(input.date_of_birth),
     notes: normalizeOptional(input.notes),
@@ -179,7 +180,7 @@ export async function updateCustomer(
   const parsed = customerSchema.parse({
     ...input,
     phone: normalizeOptional(input.phone),
-    email: normalizeOptional(input.email),
+    email: normalizeOptional(normalizeEmailInput(input.email)),
     address: normalizeOptional(input.address),
     date_of_birth: normalizeOptional(input.date_of_birth),
     notes: normalizeOptional(input.notes),

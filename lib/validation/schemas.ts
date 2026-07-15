@@ -44,7 +44,14 @@ export const customerSchema = z.object({
     .email("Enter a valid email")
     .nullable()
     .refine((value) => Boolean(value), "Email is required"),
-  address: z.string().max(500, "Address is too long").optional().nullable(),
+  address: z.preprocess(
+    (value) => value ?? "",
+    z
+      .string()
+      .trim()
+      .min(1, "Address is required")
+      .max(500, "Address is too long")
+  ),
   date_of_birth: dateOfBirthSchema,
   notes: z.string().optional().nullable(),
   account_type: customerAccountTypeSchema.default("retail"),

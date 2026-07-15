@@ -116,6 +116,7 @@ export function AddressAutocomplete({ defaultValue, error }: Props) {
     <div ref={rootRef} className="customer-picker block">
       <label htmlFor={inputId} className="field-label">
         Address
+        <span className="ml-1 text-[var(--status-danger)]">*</span>
       </label>
       <input
         id={inputId}
@@ -124,6 +125,7 @@ export function AddressAutocomplete({ defaultValue, error }: Props) {
         type="text"
         role="combobox"
         value={value}
+        required
         autoComplete="street-address"
         aria-autocomplete="list"
         aria-expanded={showDropdown}

@@ -8,6 +8,7 @@ import { listCustomerDocuments } from "@/lib/services/customerDocuments";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { ClientGarage } from "@/components/customers/ClientGarage";
 import { CustomerDocuments } from "@/components/customers/CustomerDocuments";
+import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
 import { WixCustomerSyncPanel } from "@/components/customers/WixCustomerSyncPanel";
 import { updateCustomerAction } from "@/app/(app)/customers/actions";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -143,6 +144,12 @@ export default async function CustomerDetailPage({
         ) : null}
       </div>
 
+      <CustomerInformationReminder
+        address={customer.address}
+        dateOfBirth={customer.date_of_birth}
+        editHref="#edit-customer"
+      />
+
       <WixCustomerSyncPanel
         customerId={customer_id}
         wixContactId={customer.wix_contact_id}
@@ -191,7 +198,7 @@ export default async function CustomerDetailPage({
         />
       </section>
 
-      <section>
+      <section id="edit-customer" className="scroll-mt-6">
         <h2 className="text-lg font-semibold text-foreground">Edit customer</h2>
         <div className="mt-3">
           <CustomerForm

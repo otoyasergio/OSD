@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { CustomerFormState } from "@/app/(app)/customers/actions";
 import type { Customer } from "@/lib/services/customers";
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
@@ -8,6 +8,8 @@ import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { AddressAutocomplete } from "@/components/forms/AddressAutocomplete";
 import { PhoneField } from "@/components/forms/PhoneField";
+import { EmailField } from "@/components/forms/EmailField";
+import { CustomerDuplicateWarning } from "@/components/forms/CustomerDuplicateWarning";
 
 type Props = {
   action: (state: CustomerFormState, formData: FormData) => Promise<CustomerFormState>;
@@ -20,6 +22,8 @@ export function CustomerForm({ action, customer, submitLabel }: Props) {
   const fieldErrors = state.fieldErrors ?? {};
   const accountType = customer?.account_type ?? "retail";
   const hasExistingNotes = Boolean(customer?.notes?.trim());
+  const [phoneValue, setPhoneValue] = useState(customer?.phone ?? "");
+  const [emailValue, setEmailValue] = useState(customer?.email ?? "");
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-4">
@@ -46,15 +50,17 @@ export function CustomerForm({ action, customer, submitLabel }: Props) {
         <PhoneField
           defaultValue={customer?.phone}
           error={fieldErrors.phone}
+          onValueChange={setPhoneValue}
         />
-        <TextField
-          label="Email"
-          name="email"
-          type="email"
-          required
-          autoComplete="email"
+        <EmailField
           defaultValue={customer?.email}
           error={fieldErrors.email}
+          onValueChange={setEmailValue}
+        />
+        <CustomerDuplicateWarning
+          phone={phoneValue}
+          email={emailValue}
+          excludeCustomerId={customer?.customer_id}
         />
         <div className="sm:col-span-2">
           <AddressAutocomplete
