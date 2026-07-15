@@ -85,7 +85,12 @@ Photo upload must use the durable prepare/compress path (`preparePhotoFileForUpl
 
 ### Notes mode (fuller list)
 
-Revive Floor Notes as an in-shell surface for the **active job** (not only a deep link to the WO Notes tab):
+Floor UX polish treats Notes as a **secondary** entry (not on the Inspect→Work→Proof→Done rail). Revive it as an in-shell surface for the **active job**, opened via:
+
+- Work journal summary chip (`N photos · M notes`)
+- Existing secondary Notes control on the floor shell
+
+Not only a deep link to the WO Notes tab.
 
 - Chronological timeline mixing:
   - `job_work` photos (thumbnail + caption + time + author)
