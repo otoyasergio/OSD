@@ -5,6 +5,7 @@ import {
   canOrderPart,
   canSyncPartsCanadaCatalog,
   canViewPartsBoard,
+  canViewPricing,
 } from "@/lib/permissions";
 import { listPartsWaitingForLocation } from "@/lib/services/partsBoard";
 import { getPartsCanadaSyncStatus } from "@/lib/services/partsCanadaCatalog";
@@ -54,15 +55,13 @@ export default async function PartsWaitingPage({
         subtitle="To order (after customer approval), in stock, and ordered — across open work orders at this location."
       />
 
-      {syncStatus ? (
-        <PartsCanadaSyncPanel status={syncStatus} canSync={canSync} />
-      ) : null}
+      {syncStatus ? <PartsCanadaSyncPanel status={syncStatus} canSync={canSync} /> : null}
 
       <div className="card card-pad flex flex-col gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-600">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
           YMM fitment finder
         </h2>
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-[var(--status-neutral)]">
           {fitmentStatus.vehicle_count > 0
             ? `${fitmentStatus.vehicle_count.toLocaleString()} vehicles in catalogue.`
             : "Import fitment data with scripts/import-fitment.ts to enable Year / Make / Model lookup."}
@@ -118,7 +117,7 @@ export default async function PartsWaitingPage({
         </div>
       </form>
 
-      <PartsWaitingBoard items={items} />
+      <PartsWaitingBoard items={items} canViewPricing={canViewPricing(user.role)} />
     </div>
   );
 }

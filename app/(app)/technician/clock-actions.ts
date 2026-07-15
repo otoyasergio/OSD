@@ -17,18 +17,22 @@ export async function clockInAction(
     return { error: toFormErrorMessage(error) };
   }
   revalidatePath("/technician");
+  revalidatePath("/technician/clock");
   return { error: null };
 }
 
 export async function clockOutAction(
   _prev: ClockFormState,
-  _formData: FormData
+  _formData: FormData // required by useActionState signature
 ): Promise<ClockFormState> {
+  void _prev;
+  void _formData;
   try {
     await clockOut();
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
   revalidatePath("/technician");
+  revalidatePath("/technician/clock");
   return { error: null };
 }

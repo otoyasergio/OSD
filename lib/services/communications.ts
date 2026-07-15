@@ -5,6 +5,7 @@ import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canRecordCustomerApproval } from "@/lib/permissions";
 import { sendSms, isTwilioConfigured } from "@/lib/twilio/client";
+import { normalizePhoneE164 } from "@/lib/twilio/phone";
 import { sendEmail, isEmailConfigured } from "@/lib/email/send";
 import { portalUrl } from "@/lib/portal/tokens";
 import { createPortalToken } from "@/lib/services/portal";
@@ -27,34 +28,64 @@ type TemplateContext = {
   shopName?: string;
 };
 
+/** CASL / A2P campaign alignment — Twilio Advanced Opt-Out still owns carrier STOP. */
+const SMS_OPT_OUT_FOOTER = "Reply STOP to opt out.";
+
+const OPT_OUT_KEYWORDS = new Set([
+  "STOP",
+  "STOPALL",
+  "UNSUBSCRIBE",
+  "CANCEL",
+  "END",
+  "QUIT",
+]);
+
+const OPT_IN_KEYWORDS = new Set(["START", "UNSTOP"]);
+
+function withSmsOptOut(body: string): string {
+  return `${body.trim()} ${SMS_OPT_OUT_FOOTER}`;
+}
+
 const TEMPLATES: Record<
   string,
-  { sms: (ctx: TemplateContext) => string; emailSubject: (ctx: TemplateContext) => string; emailHtml: (ctx: TemplateContext) => string }
+  {
+    sms: (ctx: TemplateContext) => string;
+    emailSubject: (ctx: TemplateContext) => string;
+    emailHtml: (ctx: TemplateContext) => string;
+  }
 > = {
   approval_request: {
     sms: (ctx) =>
-      `Hi ${ctx.customerName}, Toronto Moto needs your approval for work on ${ctx.workOrderNumber}. Review & approve: ${ctx.portalLink ?? ""}`,
+      withSmsOptOut(
+        `Hi ${ctx.customerName}, Toronto Moto needs your approval for work on ${ctx.workOrderNumber}. Review & approve: ${ctx.portalLink ?? ""}`
+      ),
     emailSubject: (ctx) => `Approval needed — ${ctx.workOrderNumber}`,
     emailHtml: (ctx) =>
       `<p>Hi ${ctx.customerName},</p><p>We need your approval for recommended work on <strong>${ctx.workOrderNumber}</strong>.</p><p><a href="${ctx.portalLink}">Review and approve online</a></p><p>— Toronto Moto</p>`,
   },
   ready_for_pickup: {
     sms: (ctx) =>
-      `${ctx.workOrderNumber} is ready for pickup at Toronto Moto. Pay online: ${ctx.portalLink ?? "call us to arrange pickup"}`,
+      withSmsOptOut(
+        `${ctx.workOrderNumber} is ready for pickup at Toronto Moto. Pay online: ${ctx.portalLink ?? "call us to arrange pickup"}`
+      ),
     emailSubject: (ctx) => `Ready for pickup — ${ctx.workOrderNumber}`,
     emailHtml: (ctx) =>
       `<p>Hi ${ctx.customerName},</p><p>Your motorcycle (${ctx.workOrderNumber}) is ready for pickup.</p><p><a href="${ctx.portalLink}">Pay online</a></p><p>— Toronto Moto</p>`,
   },
   contract_link: {
     sms: (ctx) =>
-      `Please review and sign the drop-off agreement for ${ctx.workOrderNumber}: ${ctx.portalLink ?? ""}`,
+      withSmsOptOut(
+        `Please review and sign the drop-off agreement for ${ctx.workOrderNumber}: ${ctx.portalLink ?? ""}`
+      ),
     emailSubject: (ctx) => `Sign drop-off agreement — ${ctx.workOrderNumber}`,
     emailHtml: (ctx) =>
       `<p>Hi ${ctx.customerName},</p><p>Please sign the drop-off agreement for <strong>${ctx.workOrderNumber}</strong>.</p><p><a href="${ctx.portalLink}">Sign agreement</a></p>`,
   },
   payment_reminder: {
     sms: (ctx) =>
-      `Reminder: invoice for ${ctx.workOrderNumber} is outstanding. Pay here: ${ctx.portalLink ?? ""}`,
+      withSmsOptOut(
+        `Reminder: invoice for ${ctx.workOrderNumber} is outstanding. Pay here: ${ctx.portalLink ?? ""}`
+      ),
     emailSubject: (ctx) => `Payment reminder — ${ctx.workOrderNumber}`,
     emailHtml: (ctx) =>
       `<p>Hi ${ctx.customerName},</p><p>Your invoice for ${ctx.workOrderNumber} is still outstanding.</p><p><a href="${ctx.portalLink}">Pay now</a></p>`,
@@ -68,7 +99,9 @@ export async function listCommunicationLog(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("communication_log")
-    .select("log_id, channel, direction, to_address, body, status, template_key, created_at")
+    .select(
+      "log_id, channel, direction, to_address, body, status, template_key, created_at"
+    )
     .eq("work_order_id", workOrderId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -96,7 +129,7 @@ export async function sendWorkOrderMessage(input: {
       work_order_id,
       work_order_number,
       location_id,
-      customer:customer_id ( customer_id, first_name, last_name, phone, email )
+      customer:customer_id ( customer_id, first_name, last_name, phone, email, sms_opted_out_at )
     `
     )
     .eq("work_order_id", input.work_order_id)
@@ -112,6 +145,7 @@ export async function sendWorkOrderMessage(input: {
     last_name: string;
     phone: string | null;
     email: string | null;
+    sms_opted_out_at: string | null;
   };
 
   const { token } = await createPortalToken({
@@ -136,8 +170,11 @@ export async function sendWorkOrderMessage(input: {
   try {
     if (input.channel === "sms") {
       if (!isTwilioConfigured()) throw new Error("TWILIO_NOT_CONFIGURED");
+      if (customer.sms_opted_out_at) throw new Error("SMS_OPTED_OUT");
       if (!customer.phone?.trim()) throw new Error("CUSTOMER_PHONE_REQUIRED");
-      toAddress = customer.phone.trim();
+      const e164 = normalizePhoneE164(customer.phone);
+      if (!e164) throw new Error("INVALID_PHONE");
+      toAddress = e164;
       body = template.sms(ctx);
       const result = await sendSms({ to: toAddress, body });
       externalId = result.sid;
@@ -160,7 +197,7 @@ export async function sendWorkOrderMessage(input: {
     body = template.sms(ctx);
     toAddress =
       input.channel === "sms"
-        ? (customer.phone ?? "")
+        ? (normalizePhoneE164(customer.phone) ?? customer.phone ?? "")
         : (customer.email ?? "");
   }
 
@@ -179,7 +216,9 @@ export async function sendWorkOrderMessage(input: {
       error_message: errorMessage,
       sent_by_user_id: user.user_id,
     })
-    .select("log_id, channel, direction, to_address, body, status, template_key, created_at")
+    .select(
+      "log_id, channel, direction, to_address, body, status, template_key, created_at"
+    )
     .single();
 
   if (logError) throw logError;
@@ -210,7 +249,7 @@ export async function handleInboundSms(input: {
 
   const { data: customers } = await admin
     .from("customer")
-    .select("customer_id, phone")
+    .select("customer_id, phone, sms_opted_out_at")
     .not("phone", "is", null);
 
   const customer = (customers ?? []).find((c) => {
@@ -231,6 +270,14 @@ export async function handleInboundSms(input: {
 
   if (!customer) return;
 
+  if (OPT_OUT_KEYWORDS.has(normalizedBody)) {
+    await admin
+      .from("customer")
+      .update({ sms_opted_out_at: new Date().toISOString() })
+      .eq("customer_id", customer.customer_id);
+    return;
+  }
+
   const { data: openJobs } = await admin
     .from("job")
     .select("job_id, work_order_id, status")
@@ -245,51 +292,70 @@ export async function handleInboundSms(input: {
       ).data?.map((w) => w.work_order_id) ?? []
     );
 
-  if (openJobs && openJobs.length === 1) {
-    const job = openJobs[0];
-    if (normalizedBody === "YES" || normalizedBody === "APPROVE") {
-      const approvedAt = new Date().toISOString();
-      await admin
-        .from("job")
-        .update({
-          status: "approved",
-          approval_method: "text",
-          approved_by_customer_at: approvedAt,
-          updated_at: approvedAt,
-        })
-        .eq("job_id", job.job_id);
+  const hasSingleApprovalJob = openJobs && openJobs.length === 1;
 
-      await addTimelineEvent(admin, {
-        work_order_id: job.work_order_id,
-        user_id: null,
-        event_type: TimelineEventType.CUSTOMER_APPROVAL_RECORDED,
-        entity_type: "job",
-        entity_id: job.job_id,
-        description: "Customer approved via SMS reply",
-        new_value: { approval_method: "text" },
-      });
-    } else if (normalizedBody === "NO" || normalizedBody === "DECLINE") {
-      const declinedAt = new Date().toISOString();
-      await admin
-        .from("job")
-        .update({
-          status: "declined",
-          approval_method: "text",
-          declined_at: declinedAt,
-          decline_reason: "Declined via SMS",
-          updated_at: declinedAt,
-        })
-        .eq("job_id", job.job_id);
+  if (OPT_IN_KEYWORDS.has(normalizedBody)) {
+    await admin
+      .from("customer")
+      .update({ sms_opted_out_at: null })
+      .eq("customer_id", customer.customer_id);
+    return;
+  }
 
-      await addTimelineEvent(admin, {
-        work_order_id: job.work_order_id,
-        user_id: null,
-        event_type: TimelineEventType.CUSTOMER_DECLINE_RECORDED,
-        entity_type: "job",
-        entity_id: job.job_id,
-        description: "Customer declined via SMS reply",
-        new_value: { approval_method: "text" },
-      });
-    }
+  // YES clears opt-out only when it is not an approval reply.
+  if (normalizedBody === "YES" && !hasSingleApprovalJob) {
+    await admin
+      .from("customer")
+      .update({ sms_opted_out_at: null })
+      .eq("customer_id", customer.customer_id);
+    return;
+  }
+
+  if (!hasSingleApprovalJob) return;
+
+  const job = openJobs[0];
+  if (normalizedBody === "YES" || normalizedBody === "APPROVE") {
+    const approvedAt = new Date().toISOString();
+    await admin
+      .from("job")
+      .update({
+        status: "approved",
+        approval_method: "text",
+        approved_by_customer_at: approvedAt,
+        updated_at: approvedAt,
+      })
+      .eq("job_id", job.job_id);
+
+    await addTimelineEvent(admin, {
+      work_order_id: job.work_order_id,
+      user_id: null,
+      event_type: TimelineEventType.CUSTOMER_APPROVAL_RECORDED,
+      entity_type: "job",
+      entity_id: job.job_id,
+      description: "Customer approved via SMS reply",
+      new_value: { approval_method: "text" },
+    });
+  } else if (normalizedBody === "NO" || normalizedBody === "DECLINE") {
+    const declinedAt = new Date().toISOString();
+    await admin
+      .from("job")
+      .update({
+        status: "declined",
+        approval_method: "text",
+        declined_at: declinedAt,
+        decline_reason: "Declined via SMS",
+        updated_at: declinedAt,
+      })
+      .eq("job_id", job.job_id);
+
+    await addTimelineEvent(admin, {
+      work_order_id: job.work_order_id,
+      user_id: null,
+      event_type: TimelineEventType.CUSTOMER_DECLINE_RECORDED,
+      entity_type: "job",
+      entity_id: job.job_id,
+      description: "Customer declined via SMS reply",
+      new_value: { approval_method: "text" },
+    });
   }
 }

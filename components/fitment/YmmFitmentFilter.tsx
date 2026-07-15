@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import {
   loadFitmentMakesAction,
   loadFitmentModelsAction,
@@ -11,7 +11,7 @@ import type { FitmentPartMatch } from "@/lib/services/fitment";
 import { FormError } from "@/components/forms/Field";
 
 const SELECT_CLASS =
-  "min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base";
+  "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base";
 
 type Props = {
   initialYear?: number;
@@ -37,57 +37,83 @@ export function YmmFitmentFilter({
   const [year, setYear] = useState(String(initialYear ?? ""));
   const [make, setMake] = useState(initialMake ?? "");
   const [model, setModel] = useState(initialModel ?? "");
-  const [specs, setSpecs] = useState<{ field: string; label: string; value: string }[]>([]);
+  const [specs, setSpecs] = useState<{ field: string; label: string; value: string }[]>(
+    []
+  );
   const [parts, setParts] = useState<FitmentPartMatch[]>([]);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
-    loadFitmentYearsAction().then(setYears).catch(() => setYears([]));
+    let cancelled = false;
+    loadFitmentYearsAction()
+      .then((rows) => {
+        if (!cancelled) setYears(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setYears([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!year) {
-      setMakes([]);
-      return;
-    }
-    loadFitmentMakesAction(Number(year)).then(setMakes).catch(() => setMakes([]));
+    if (!year) return;
+    let cancelled = false;
+    loadFitmentMakesAction(Number(year))
+      .then((rows) => {
+        if (!cancelled) setMakes(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setMakes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [year]);
 
   useEffect(() => {
-    if (!year || !make) {
-      setModels([]);
-      return;
-    }
+    if (!year || !make) return;
+    let cancelled = false;
     loadFitmentModelsAction(Number(year), make)
-      .then(setModels)
-      .catch(() => setModels([]));
+      .then((rows) => {
+        if (!cancelled) setModels(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setModels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [year, make]);
 
-  const loadVehicle = useCallback(() => {
+  useEffect(() => {
     if (!year || !make || !model) return;
-    setError(null);
+    let cancelled = false;
     startTransition(async () => {
       try {
         const result = await loadFitmentPartsAction(Number(year), make, model);
+        if (cancelled) return;
         if (!result) {
           setSpecs([]);
           setParts([]);
           setError("No fitment data for this Year / Make / Model.");
           return;
         }
+        setError(null);
         setSpecs(result.specs);
         setParts(result.parts);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load fitment.");
       }
     });
+    return () => {
+      cancelled = true;
+    };
   }, [year, make, model]);
-
-  useEffect(() => {
-    if (year && make && model) loadVehicle();
-  }, [year, make, model, loadVehicle]);
 
   const filteredParts = parts.filter((part) => {
     if (!search.trim()) return true;
@@ -112,6 +138,11 @@ export function YmmFitmentFilter({
               setYear(e.target.value);
               setMake("");
               setModel("");
+              setMakes([]);
+              setModels([]);
+              setSpecs([]);
+              setParts([]);
+              setError(null);
             }}
           >
             <option value="">Select year</option>
@@ -131,6 +162,10 @@ export function YmmFitmentFilter({
             onChange={(e) => {
               setMake(e.target.value);
               setModel("");
+              setModels([]);
+              setSpecs([]);
+              setParts([]);
+              setError(null);
             }}
           >
             <option value="">Select make</option>
@@ -159,19 +194,21 @@ export function YmmFitmentFilter({
         </label>
       </div>
 
-      {pending ? <p className="text-sm text-zinc-500">Loading fitment…</p> : null}
+      {pending ? (
+        <p className="text-sm text-[var(--status-neutral)]">Loading fitment…</p>
+      ) : null}
       {error ? <FormError message={error} /> : null}
 
       {specs.length > 0 ? (
-        <div className="rounded border border-zinc-200 bg-zinc-50 p-4">
-          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-600">
+        <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-4">
+          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
             Vehicle specs
           </h3>
           <dl className="grid gap-1 sm:grid-cols-2">
             {specs.map((spec) => (
               <div key={spec.field} className="text-sm">
-                <dt className="text-zinc-500">{spec.label}</dt>
-                <dd className="font-medium text-zinc-900">{spec.value}</dd>
+                <dt className="text-[var(--status-neutral)]">{spec.label}</dt>
+                <dd className="font-medium text-foreground">{spec.value}</dd>
               </div>
             ))}
           </dl>
@@ -190,17 +227,17 @@ export function YmmFitmentFilter({
               className={SELECT_CLASS}
             />
           </label>
-          <ul className="divide-y divide-zinc-200 rounded border border-zinc-200 bg-white">
+          <ul className="divide-y divide-[var(--border)] rounded border border-[var(--border)] bg-white">
             {filteredParts.map((part) => (
               <li
                 key={part.field}
                 className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div>
-                  <p className="font-medium text-zinc-900">{part.label}</p>
-                  <p className="text-sm text-zinc-600">{part.value}</p>
+                  <p className="font-medium text-foreground">{part.label}</p>
+                  <p className="text-sm text-[var(--status-neutral)]">{part.value}</p>
                   {part.catalog_hit ? (
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-[var(--status-neutral)]">
                       PC {part.catalog_hit.part_number}
                       {part.catalog_hit.msrp != null
                         ? ` · MSRP $${part.catalog_hit.msrp.toFixed(2)}`

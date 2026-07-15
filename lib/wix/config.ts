@@ -1,3 +1,15 @@
+/**
+ * Shared Wix env helpers for Bookings intake and Contacts CRM sync.
+ * Billing stays on Square — this module does not create Wix payment links.
+ */
+
+export type WixContactsConfig = {
+  apiKey: string;
+  siteId: string;
+  accountId: string | null;
+  currency: string;
+};
+
 export function getWixConfig(): {
   apiKey: string;
   siteId: string;
@@ -13,9 +25,35 @@ export function getWixConfig(): {
 }
 
 export function isWixConfigured(): boolean {
-  return Boolean(
-    process.env.WIX_API_KEY?.trim() && process.env.WIX_SITE_ID?.trim()
-  );
+  return Boolean(process.env.WIX_API_KEY?.trim() && process.env.WIX_SITE_ID?.trim());
+}
+
+/** Alias used by contact sync — same credentials as Bookings API access. */
+export function isWixContactsConfigured(): boolean {
+  return isWixConfigured();
+}
+
+export function isWixWebhookConfigured(): boolean {
+  return Boolean(process.env.WIX_WEBHOOK_SECRET?.trim());
+}
+
+export function getWixContactsConfig(): WixContactsConfig {
+  const apiKey = process.env.WIX_API_KEY?.trim() ?? "";
+  const siteId = process.env.WIX_SITE_ID?.trim() ?? "";
+  const accountId = process.env.WIX_ACCOUNT_ID?.trim() || null;
+  const currency = (process.env.WIX_CURRENCY?.trim() || "CAD").toUpperCase();
+
+  if (!apiKey || !siteId) {
+    throw new Error("WIX_NOT_CONFIGURED");
+  }
+
+  return { apiKey, siteId, accountId, currency };
+}
+
+export function getWixWebhookSecret(): string {
+  const secret = process.env.WIX_WEBHOOK_SECRET?.trim() ?? "";
+  if (!secret) throw new Error("WIX_WEBHOOK_NOT_CONFIGURED");
+  return secret;
 }
 
 async function wixFetch<T>(path: string, init?: RequestInit): Promise<T> {

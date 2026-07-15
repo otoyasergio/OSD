@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, PartStatus, WorkOrderStatus } from "@/lib/database/types";
-import { canViewPartsBoard } from "@/lib/permissions";
+import { canViewClients, canViewPartsBoard, isFloorTech } from "@/lib/permissions";
 import { PART_STATUS_LABELS } from "@/lib/status/labels";
 
 export type PartsBoardBucket = "to_order" | "in_stock" | "ordered";
@@ -34,9 +34,11 @@ export type PartsWaitingItem = {
   href: string;
 };
 
-const BOARD_STATUSES: Array<
-  Extract<PartStatus, "needed" | "in_stock" | "ordered">
-> = ["needed", "in_stock", "ordered"];
+const BOARD_STATUSES: Array<Extract<PartStatus, "needed" | "in_stock" | "ordered">> = [
+  "needed",
+  "in_stock",
+  "ordered",
+];
 
 const ORDERABLE_JOB_STATUSES: JobStatus[] = [
   "approved",
@@ -155,7 +157,10 @@ export async function listPartsWaitingForLocation(
   if (error) throw error;
 
   const now = new Date();
-  const technicianFilter = options?.technicianId?.trim() || "";
+  const technicianFilter = isFloorTech(user.role)
+    ? user.user_id
+    : options?.technicianId?.trim() || "";
+  const showClients = canViewClients(user.role);
   const items: PartsWaitingItem[] = [];
 
   for (const row of (data ?? []) as unknown as Array<{
@@ -175,16 +180,10 @@ export async function listPartsWaitingForLocation(
     const workOrder = unwrapOne(job?.work_order);
     if (!job || !workOrder) continue;
     if (workOrder.location_id !== locationId) continue;
-    if (
-      workOrder.status === "completed" ||
-      workOrder.status === "cancelled"
-    ) {
+    if (workOrder.status === "completed" || workOrder.status === "cancelled") {
       continue;
     }
-    if (
-      technicianFilter &&
-      job.assigned_technician_id !== technicianFilter
-    ) {
+    if (technicianFilter && job.assigned_technician_id !== technicianFilter) {
       continue;
     }
 
@@ -195,9 +194,7 @@ export async function listPartsWaitingForLocation(
     const customer = unwrapOne(motorcycle?.customer);
     const technician = unwrapOne(job.assigned_technician);
     const waitingSince =
-      row.status === "ordered" && row.ordered_at
-        ? row.ordered_at
-        : row.created_at;
+      row.status === "ordered" && row.ordered_at ? row.ordered_at : row.created_at;
 
     items.push({
       part_id: row.part_id,
@@ -224,9 +221,8 @@ export async function listPartsWaitingForLocation(
       work_order_id: workOrder.work_order_id,
       work_order_number: workOrder.work_order_number,
       work_order_status: workOrder.status,
-      customer_label: customer
-        ? `${customer.first_name} ${customer.last_name}`
-        : "Unknown customer",
+      customer_label:
+        showClients && customer ? `${customer.first_name} ${customer.last_name}` : "",
       motorcycle_label: motorcycle
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : "Unknown motorcycle",

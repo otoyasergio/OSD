@@ -1,7 +1,9 @@
+import { cache } from "react";
 import { createClient } from "@/lib/database/supabase-server";
 import { cookies } from "next/headers";
 import { ACTIVE_LOCATION_COOKIE } from "@/lib/auth/location-cookie";
 import type { UserRole, UserStatus } from "@/lib/database/types";
+import { getSupabasePublicConfig } from "@/lib/database/config";
 
 export type AppUser = {
   user_id: string;
@@ -9,28 +11,28 @@ export type AppUser = {
   first_name: string;
   last_name: string;
   email: string;
+  profile_photo_path: string | null;
   role: UserRole;
   status: UserStatus;
   location_ids: string[];
   active_location_id: string | null;
 };
 
-export async function getCurrentAppUser(): Promise<AppUser | null> {
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  ) {
-    return null;
-  }
+/** Deduped per React request — layout, page, and services share one Auth+DB lookup. */
+export const getCurrentAppUser = cache(async (): Promise<AppUser | null> => {
+  if (!getSupabasePublicConfig()) return null;
 
   const supabase = await createClient();
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return null;
+  const { data: auth } = await supabase.auth.getClaims();
+  const authUserId = auth?.claims.sub;
+  if (!authUserId) return null;
 
   const { data: user } = await supabase
     .from("app_user")
-    .select("user_id, auth_user_id, first_name, last_name, email, role, status")
-    .eq("auth_user_id", auth.user.id)
+    .select(
+      "user_id, auth_user_id, first_name, last_name, email, profile_photo_path, role, status"
+    )
+    .eq("auth_user_id", authUserId)
     .maybeSingle();
 
   if (!user || user.status !== "active") return null;
@@ -44,9 +46,7 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
   const cookieStore = await cookies();
   const cookieLoc = cookieStore.get(ACTIVE_LOCATION_COOKIE)?.value ?? null;
   const active_location_id =
-    cookieLoc && location_ids.includes(cookieLoc)
-      ? cookieLoc
-      : (location_ids[0] ?? null);
+    cookieLoc && location_ids.includes(cookieLoc) ? cookieLoc : (location_ids[0] ?? null);
 
   return {
     ...user,
@@ -55,7 +55,7 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
     location_ids,
     active_location_id,
   };
-}
+});
 
 export async function requireUser(): Promise<AppUser> {
   const user = await getCurrentAppUser();

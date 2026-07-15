@@ -17,6 +17,11 @@ function money(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+function preferredChannel(item: BillingBoardItem): "sms" | "email" {
+  if (item.customer_phone && !item.sms_opted_out) return "sms";
+  return "email";
+}
+
 function BillingCard({
   item,
   showQuickActions,
@@ -25,113 +30,110 @@ function BillingCard({
   showQuickActions: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const channel = preferredChannel(item);
 
   return (
-    <article className="card">
-      <div className="card-body flex flex-col gap-2">
-        <div className="wo-card-hero">
-          <p className="wo-card-bike">{item.motorcycle_label}</p>
-          <p className="wo-card-customer">{item.customer_label}</p>
-        </div>
-        <p className="wo-card-meta">
-          {BILLING_BUCKET_LABELS[item.bucket]}
-          {item.square_payment_status ? ` · ${item.square_payment_status}` : ""}
-        </p>
-        <p className="wo-card-meta">
-          Est {money(item.estimate_cents)} · Collected{" "}
-          {money(item.billing_collected_cents)} · Due{" "}
-          {money(item.remaining_cents)}
-        </p>
-        <div className="wo-card-footer">
-          <div className="wo-card-id-row">
-            <Link href={item.href} className="wo-card-number data-table-link">
-              {item.work_order_number}
-            </Link>
-            <span className="badge bg-[var(--status-waiting-bg)] text-[var(--status-waiting-fg)]">
-              {item.billing_stage}
-            </span>
-          </div>
-        </div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {item.square_invoice_public_url ? (
-            <a
-              href={item.square_invoice_public_url}
-              target="_blank"
-              rel="noreferrer"
-              className="btn btn-secondary"
-            >
-              Payment link
-            </a>
-          ) : null}
-          <Link href={item.href} className="btn btn-secondary">
-            Open WO
-          </Link>
-          <button
-            type="button"
+    <article className="td-board-card">
+      <p className="td-board-card-title">{item.motorcycle_label}</p>
+      <p className="td-board-card-sub">{item.customer_label}</p>
+      <p className="td-board-card-sub">
+        {BILLING_BUCKET_LABELS[item.bucket]}
+        {item.square_payment_status ? ` · ${item.square_payment_status}` : ""}
+      </p>
+      <p className="td-board-card-sub">
+        Est {money(item.estimate_cents)} incl. HST · Collected{" "}
+        {money(item.billing_collected_cents)} · Due {money(item.remaining_cents)}
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link href={item.href} className="wo-card-number data-table-link">
+          {item.work_order_number}
+        </Link>
+        <span className="stage-chip stage-chip--teal">{item.billing_stage}</span>
+      </div>
+      <div className="td-board-card-actions">
+        {item.square_invoice_public_url ? (
+          <a
+            href={item.square_invoice_public_url}
+            target="_blank"
+            rel="noreferrer"
             className="btn btn-secondary"
-            disabled={pending}
-            onClick={() =>
-              startTransition(async () => {
-                const reminder = await sendMessageAction(
-                  item.work_order_id,
-                  "payment_reminder",
-                  "email"
-                );
-                if (reminder.error) {
-                  await sendEstimateApprovalAction(item.work_order_id, "email");
-                }
-              })
-            }
           >
-            Remind / approve
-          </button>
-          {showQuickActions ? (
-            <>
+            Payment link
+          </a>
+        ) : null}
+        <Link href={item.href} className="btn btn-primary">
+          Open
+        </Link>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={pending}
+          title={
+            item.sms_opted_out
+              ? "SMS opted out — will use email"
+              : `Remind via ${channel.toUpperCase()}`
+          }
+          onClick={() =>
+            startTransition(async () => {
+              const reminder = await sendMessageAction(
+                item.work_order_id,
+                "payment_reminder",
+                channel
+              );
+              if (reminder.error) {
+                await sendEstimateApprovalAction(item.work_order_id, channel);
+              }
+            })
+          }
+        >
+          Remind / approve
+        </button>
+        {showQuickActions ? (
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={pending}
+              onClick={() =>
+                startTransition(async () => {
+                  await syncSquareDraftAction(item.work_order_id);
+                })
+              }
+            >
+              Sync draft
+            </button>
+            {item.bucket === "ready_to_invoice" || item.bucket === "unpaid" ? (
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn btn-primary"
                 disabled={pending}
                 onClick={() =>
                   startTransition(async () => {
-                    await syncSquareDraftAction(item.work_order_id);
+                    await publishSquareInvoiceAction(item.work_order_id, {
+                      mode: "full",
+                    });
                   })
                 }
               >
-                Sync draft
+                Publish full
               </button>
-              {item.bucket === "ready_to_invoice" || item.bucket === "unpaid" ? (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={pending}
-                  onClick={() =>
-                    startTransition(async () => {
-                      await publishSquareInvoiceAction(item.work_order_id, {
-                        mode: "full",
-                      });
-                    })
-                  }
-                >
-                  Publish full
-                </button>
-              ) : null}
-              {item.bucket === "balance_due" ? (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={pending}
-                  onClick={() =>
-                    startTransition(async () => {
-                      await publishSquareBalanceAction(item.work_order_id);
-                    })
-                  }
-                >
-                  Publish balance
-                </button>
-              ) : null}
-            </>
-          ) : null}
-        </div>
+            ) : null}
+            {item.bucket === "balance_due" ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={pending}
+                onClick={() =>
+                  startTransition(async () => {
+                    await publishSquareBalanceAction(item.work_order_id);
+                  })
+                }
+              >
+                Publish balance
+              </button>
+            ) : null}
+          </>
+        ) : null}
       </div>
     </article>
   );
@@ -172,9 +174,7 @@ export function BillingCollectionsBoard({
         return (
           <section key={bucket} className="shop-board-column" aria-label={bucket}>
             <header className="shop-board-column-header">
-              <h2 className="shop-board-column-title">
-                {BILLING_BUCKET_LABELS[bucket]}
-              </h2>
+              <h2 className="shop-board-column-title">{BILLING_BUCKET_LABELS[bucket]}</h2>
               <span className="shop-board-column-count">{column.length}</span>
             </header>
             <div className="shop-board-column-body flex flex-col gap-3">

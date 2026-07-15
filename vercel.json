@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/parts-canada-sync",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/wix-contacts-sync",
+      "schedule": "30 15 * * *"
     }
   ]
 }

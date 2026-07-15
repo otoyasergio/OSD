@@ -12,7 +12,26 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated coverage report.
+    "coverage/**",
+    // Local Codex/Claude worktrees can contain their own source and build output.
+    ".worktrees/**",
   ]),
+  {
+    rules: {
+      // Allow intentionally-unused `_`-prefixed names and rest-sibling omission
+      // (`const { omitted: _o, ...rest } = row`).
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

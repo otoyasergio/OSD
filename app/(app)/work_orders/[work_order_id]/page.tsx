@@ -9,14 +9,21 @@ import {
   canConvertRecommendation,
   canCreateRecommendation,
   canCreateWorkOrder,
+  canDeleteIntakePhoto,
   canEditWorkOrder,
   canMarkReadyForPickup,
   canOrderPart,
   canOverrideWorkOrderStatus,
   canRecordCustomerApproval,
   canRunQualityCheck,
+  canClearAdminFlag,
+  canOverrideSafetyRequirement,
   canUpdateServiceInformation,
+  canViewClients,
   canViewPartCost,
+  canViewPricing,
+  isFloorTech,
+  staffHomePath,
 } from "@/lib/permissions";
 import {
   getWorkOrderDetail,
@@ -39,6 +46,8 @@ import {
   getDropOffAgreement,
 } from "@/lib/services/contracts";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
+import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
+import { AgreementFollowUpNotice } from "@/components/work_orders/AgreementFollowUpNotice";
 import {
   ComingSoonPanel,
   WORK_ORDER_TABS,
@@ -50,6 +59,7 @@ import { ServiceInfoTab } from "@/components/work_orders/ServiceInfoTab";
 import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
 import { SendMessagePanel } from "@/components/communications/SendMessagePanel";
 import { SquareInvoicePanel } from "@/components/square/SquareInvoicePanel";
+import { estimateTotalsWithHst } from "@/lib/pricing/hst";
 import { JobsTab } from "@/components/jobs/JobsTab";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 import { RecommendationsTab } from "@/components/recommendations/RecommendationsTab";
@@ -80,17 +90,26 @@ import {
   updatePartPriceAction,
   updatePartStatusAction,
 } from "@/app/(app)/work_orders/part-actions";
-import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
+import {
+  deleteIntakePhotoAction,
+  uploadIntakePhotoAction,
+} from "@/app/(app)/work_orders/photo-actions";
 import { addTechnicianNoteAction } from "@/app/(app)/work_orders/note-actions";
 import {
   cancelWorkOrderAction,
+  clearAdminFlagAction,
   completeQualityCheckAction,
   completeWorkOrderAction,
   markReadyForPickupAction,
   placeWorkOrderOnHoldAction,
   resumeWorkOrderFromHoldAction,
 } from "@/app/(app)/work_orders/quality-actions";
-import { signDropOffAgreementAction } from "@/app/(app)/work_orders/contract-actions";
+import { overrideSafetyRequirementAction } from "@/app/(app)/work_orders/safety-actions";
+import {
+  signDropOffAgreementAction,
+  uploadPaperAgreementCopyAction,
+} from "@/app/(app)/work_orders/contract-actions";
+import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
 
 export const dynamic = "force-dynamic";
 
@@ -103,26 +122,55 @@ export default async function WorkOrderDetailPage({
   searchParams,
 }: {
   params: Promise<{ work_order_id: string }>;
-  searchParams: Promise<{ tab?: string; from_result?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    from_result?: string;
+    intake?: string;
+    follow_up?: string;
+  }>;
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
   const { work_order_id } = await params;
-  const { tab: tabParam, from_result: fromResultId } = await searchParams;
+  const {
+    tab: tabParam,
+    from_result: fromResultId,
+    intake,
+    follow_up: followUpParam,
+  } = await searchParams;
   const activeTab: WorkOrderTabId = isTabId(tabParam) ? tabParam : "overview";
+  const intakeFollowUp: IntakeFollowUp | undefined =
+    followUpParam === "signature" || followUpParam === "paper_copy"
+      ? followUpParam
+      : undefined;
 
-  const detail = await getWorkOrderDetail(work_order_id);
+  const detail = await getWorkOrderDetail(work_order_id).catch((error: unknown) => {
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      redirect(staffHomePath(user.role));
+    }
+    throw error;
+  });
   if (!detail) notFound();
 
+  const foreign = detail.is_foreign_location;
+  const needsTechs = !foreign && (activeTab === "overview" || activeTab === "jobs");
+  const needsServices =
+    !foreign && (activeTab === "jobs" || activeTab === "recommendations");
+  const needsInspection =
+    activeTab === "inspection" ||
+    activeTab === "jobs" ||
+    (activeTab === "recommendations" && Boolean(fromResultId));
+  const needsParts = activeTab === "overview" || activeTab === "parts";
+
   const [
+    photos,
     technicians,
     services,
     inspection,
     recommendations,
     outstandingRecommendations,
     parts,
-    photos,
     notes,
     timeline,
     serviceInformation,
@@ -130,26 +178,25 @@ export default async function WorkOrderDetailPage({
     agreementTemplate,
     communicationLogs,
   ] = await Promise.all([
-    detail.is_foreign_location
-      ? Promise.resolve([])
-      : listTechniciansForActiveLocation(),
-    detail.is_foreign_location
-      ? Promise.resolve([])
-      : listServices({ includeInactive: false }),
-    getInspectionForWorkOrder(work_order_id),
-    listRecommendationsForWorkOrder(work_order_id),
-    listOutstandingRecommendationsForMotorcycle(
-      detail.motorcycle_id,
-      work_order_id
-    ),
-    listPartsForWorkOrder(work_order_id),
     listIntakePhotos(work_order_id),
-    listTechnicianNotes(work_order_id),
-    listTimelineEvents(work_order_id),
-    getServiceInformation(detail.motorcycle_id),
-    getDropOffAgreement(work_order_id),
-    getActiveAgreementTemplate(),
-    listCommunicationLog(work_order_id),
+    needsTechs ? listTechniciansForActiveLocation() : Promise.resolve([]),
+    needsServices ? listServices({ includeInactive: false }) : Promise.resolve([]),
+    needsInspection ? getInspectionForWorkOrder(work_order_id) : Promise.resolve(null),
+    activeTab === "recommendations"
+      ? listRecommendationsForWorkOrder(work_order_id)
+      : Promise.resolve([]),
+    activeTab === "recommendations"
+      ? listOutstandingRecommendationsForMotorcycle(detail.motorcycle_id, work_order_id)
+      : Promise.resolve([]),
+    needsParts ? listPartsForWorkOrder(work_order_id) : Promise.resolve([]),
+    activeTab === "notes" ? listTechnicianNotes(work_order_id) : Promise.resolve([]),
+    activeTab === "timeline" ? listTimelineEvents(work_order_id) : Promise.resolve([]),
+    activeTab === "service-info"
+      ? getServiceInformation(detail.motorcycle_id)
+      : Promise.resolve(null),
+    activeTab === "contract" ? getDropOffAgreement(work_order_id) : Promise.resolve(null),
+    activeTab === "contract" ? getActiveAgreementTemplate() : Promise.resolve(null),
+    activeTab === "messages" ? listCommunicationLog(work_order_id) : Promise.resolve([]),
   ]);
 
   const canAssign = canAssignTechnician(user.role);
@@ -162,14 +209,18 @@ export default async function WorkOrderDetailPage({
   const canConvert = canConvertRecommendation(user.role);
   const canManageParts = canOrderPart(user.role) || canEditWorkOrder(user.role);
   const canSeePartCost = canViewPartCost(user.role);
-  const canAdd =
-    canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
+  const canSeePricing = canViewPricing(user.role);
+  const canSeeClients = canViewClients(user.role);
+  const canAdd = canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
   const canUploadPhotos =
     canEditWorkOrder(user.role) ||
     canCreateWorkOrder(user.role) ||
-    user.role === "technician";
+    isFloorTech(user.role);
+  const canDeletePhotos = canDeleteIntakePhoto(user.role);
   const canAddNotes = canComplete || canEdit || canAdd;
   const canRunQc = canRunQualityCheck(user.role);
+  const canClearFlags = canClearAdminFlag(user.role);
+  const canOverrideSafety = canOverrideSafetyRequirement(user.role);
   const canMarkReady = canMarkReadyForPickup(user.role);
   const canCompleteWo = canCompleteWorkOrder(user.role);
   const canHoldOrCancel =
@@ -179,22 +230,21 @@ export default async function WorkOrderDetailPage({
   const canEditServiceInfo =
     !detail.is_foreign_location && canUpdateServiceInformation(user.role);
 
-  const estimateTotalCents = Math.round(
-    (detail.jobs
+  const merchandiseDollars =
+    detail.jobs
       .filter((job) => job.status !== "cancelled" && job.status !== "declined")
       .reduce((sum, job) => sum + Number(job.standard_price_snapshot ?? 0), 0) +
-      parts
-        .filter(
-          (part) =>
-            part.status !== "cancelled" && part.status !== "not_required"
-        )
-        .reduce(
-          (sum, part) =>
-            sum + Number(part.unit_price ?? 0) * Number(part.quantity ?? 0),
-          0
-        )) *
-      100
-  );
+    parts
+      .filter((part) => part.status !== "cancelled" && part.status !== "not_required")
+      .reduce(
+        (sum, part) => sum + Number(part.unit_price ?? 0) * Number(part.quantity ?? 0),
+        0
+      );
+  const {
+    subtotalCents: estimateSubtotalCents,
+    hstCents: estimateHstCents,
+    totalCents: estimateTotalCents,
+  } = estimateTotalsWithHst(merchandiseDollars);
 
   const fromResult = fromResultId
     ? inspection?.results.find((r) => r.inspection_result_id === fromResultId)
@@ -212,70 +262,90 @@ export default async function WorkOrderDetailPage({
   return (
     <div className="page-stack page-stack--narrow">
       <Link
-        href="/work_orders"
-        className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+        href={isFloorTech(user.role) ? "/technician" : "/work_orders"}
+        className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
       >
-        ← Work orders
+        {isFloorTech(user.role) ? "← Tech floor" : "← Work orders"}
       </Link>
+
+      {intake === "complete" ? <IntakeCompleteNotice followUp={intakeFollowUp} /> : null}
 
       {detail.is_foreign_location ? (
         <div
           role="status"
           className="rounded border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
         >
-          This work order belongs to another location. You can view it for
-          history, but switch location to make changes.
+          This work order belongs to another location. You can view it for history, but
+          switch location to make changes.
         </div>
       ) : null}
 
-      <WorkOrderHeader detail={detail} photos={photos} />
+      <WorkOrderHeader
+        detail={detail}
+        photos={photos}
+        canViewClients={canSeeClients}
+        canViewPricing={canSeePricing}
+        showContractAction={activeTab !== "overview"}
+      />
       <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
+
+      {activeTab === "overview" &&
+      canSeeClients &&
+      !detail.is_foreign_location &&
+      detail.agreement_follow_up ? (
+        <AgreementFollowUpNotice
+          workOrderId={detail.work_order_id}
+          followUp={detail.agreement_follow_up}
+        />
+      ) : null}
 
       {activeTab === "overview" ? (
         <>
           <OverviewTab
-          detail={detail}
-          technicians={technicians}
-          canAssign={canAssign}
-          canRunQc={canRunQc}
-          canMarkReady={canMarkReady}
-          canComplete={canCompleteWo}
-          canHoldOrCancel={canHoldOrCancel}
-          canResumeHold={canResumeHold}
-          canOverrideComplete={canOverrideComplete}
-          readOnly={detail.is_foreign_location}
-          assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
-          setPrimaryAction={setPrimaryTechnicianAction.bind(
-            null,
-            detail.work_order_id
-          )}
-          qcAction={completeQualityCheckAction.bind(null, detail.work_order_id)}
-          readyAction={markReadyForPickupAction.bind(null, detail.work_order_id)}
-          completeAction={completeWorkOrderAction.bind(
-            null,
-            detail.work_order_id
-          )}
-          cancelAction={cancelWorkOrderAction.bind(null, detail.work_order_id)}
-          holdAction={placeWorkOrderOnHoldAction.bind(
-            null,
-            detail.work_order_id
-          )}
-          resumeAction={resumeWorkOrderFromHoldAction.bind(
-            null,
-            detail.work_order_id
-          )}
-        />
-          <SquareInvoicePanel
-            workOrderId={detail.work_order_id}
-            squareInvoiceId={detail.square_invoice_id}
-            squarePaymentStatus={detail.square_payment_status}
-            squareInvoicePublicUrl={detail.square_invoice_public_url}
-            billingStage={detail.billing_stage}
-            billingCollectedCents={detail.billing_collected_cents}
-            estimateTotalCents={estimateTotalCents}
-            canManage={canApprove}
+            detail={detail}
+            technicians={technicians}
+            canAssign={canAssign}
+            canRunQc={canRunQc}
+            canMarkReady={canMarkReady}
+            canComplete={canCompleteWo}
+            canHoldOrCancel={canHoldOrCancel}
+            canResumeHold={canResumeHold}
+            canOverrideComplete={canOverrideComplete}
+            canClearFlags={canClearFlags}
+            canOverrideSafety={canOverrideSafety}
             readOnly={detail.is_foreign_location}
+            assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
+            setPrimaryAction={setPrimaryTechnicianAction.bind(null, detail.work_order_id)}
+            qcAction={completeQualityCheckAction.bind(null, detail.work_order_id)}
+            clearFlagAction={clearAdminFlagAction.bind(null, detail.work_order_id)}
+            readyAction={markReadyForPickupAction.bind(null, detail.work_order_id)}
+            completeAction={completeWorkOrderAction.bind(null, detail.work_order_id)}
+            cancelAction={cancelWorkOrderAction.bind(null, detail.work_order_id)}
+            holdAction={placeWorkOrderOnHoldAction.bind(null, detail.work_order_id)}
+            resumeAction={resumeWorkOrderFromHoldAction.bind(null, detail.work_order_id)}
+            safetyOverrideAction={overrideSafetyRequirementAction.bind(
+              null,
+              detail.work_order_id
+            )}
           />
+          {canSeePricing ? (
+            <SquareInvoicePanel
+              workOrderId={detail.work_order_id}
+              squareInvoiceId={detail.square_invoice_id}
+              squarePaymentStatus={detail.square_payment_status}
+              squareInvoicePublicUrl={detail.square_invoice_public_url}
+              billingStage={detail.billing_stage}
+              billingCollectedCents={detail.billing_collected_cents}
+              estimateSubtotalCents={estimateSubtotalCents}
+              estimateHstCents={estimateHstCents}
+              estimateTotalCents={estimateTotalCents}
+              canManage={canApprove}
+              readOnly={detail.is_foreign_location}
+              customerPhone={detail.customer?.phone ?? null}
+              customerEmail={detail.customer?.email ?? null}
+              smsOptedOut={Boolean(detail.customer?.sms_opted_out_at)}
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -289,18 +359,13 @@ export default async function WorkOrderDetailPage({
           canApprove={canApprove}
           canEdit={canEdit}
           canComplete={canComplete}
+          canViewPricing={canSeePricing}
           currentUserId={user.user_id}
           inspectionComplete={Boolean(inspection?.completed_at)}
           inspectionHref={`/work_orders/${detail.work_order_id}/inspection`}
           addAction={addJobAction.bind(null, detail.work_order_id)}
-          assignActionFor={assignJobTechnicianAction.bind(
-            null,
-            detail.work_order_id
-          )}
-          statusActionFor={updateJobStatusAction.bind(
-            null,
-            detail.work_order_id
-          )}
+          assignActionFor={assignJobTechnicianAction.bind(null, detail.work_order_id)}
+          statusActionFor={updateJobStatusAction.bind(null, detail.work_order_id)}
           approveActionFor={approveJobAction.bind(null, detail.work_order_id)}
           declineActionFor={declineJobAction.bind(null, detail.work_order_id)}
           cancelActionFor={cancelJobAction.bind(null, detail.work_order_id)}
@@ -352,18 +417,12 @@ export default async function WorkOrderDetailPage({
           canCreate={canRecommend}
           canUpdateStatus={canApprove || canRecommend}
           canConvert={canConvert}
-          createAction={createRecommendationAction.bind(
-            null,
-            detail.work_order_id
-          )}
+          createAction={createRecommendationAction.bind(null, detail.work_order_id)}
           statusActionFor={updateRecommendationStatusAction.bind(
             null,
             detail.work_order_id
           )}
-          convertActionFor={convertRecommendationAction.bind(
-            null,
-            detail.work_order_id
-          )}
+          convertActionFor={convertRecommendationAction.bind(null, detail.work_order_id)}
           fromResultId={fromResultId ?? null}
           fromResultDefaults={fromResultDefaults}
         />
@@ -377,15 +436,10 @@ export default async function WorkOrderDetailPage({
           canManage={canManageParts}
           canInstall={canComplete}
           canViewCost={canSeePartCost}
+          canViewPricing={canSeePricing}
           addAction={addPartAction.bind(null, detail.work_order_id)}
-          statusActionFor={updatePartStatusAction.bind(
-            null,
-            detail.work_order_id
-          )}
-          priceActionFor={updatePartPriceAction.bind(
-            null,
-            detail.work_order_id
-          )}
+          statusActionFor={updatePartStatusAction.bind(null, detail.work_order_id)}
+          priceActionFor={updatePartPriceAction.bind(null, detail.work_order_id)}
         />
       ) : null}
       {activeTab === "photos" ? (
@@ -393,10 +447,9 @@ export default async function WorkOrderDetailPage({
           photos={photos}
           readOnly={detail.is_foreign_location}
           canUpload={canUploadPhotos}
-          uploadAction={uploadIntakePhotoAction.bind(
-            null,
-            detail.work_order_id
-          )}
+          canDelete={canDeletePhotos}
+          uploadAction={uploadIntakePhotoAction.bind(null, detail.work_order_id)}
+          deleteAction={deleteIntakePhotoAction.bind(null, detail.work_order_id)}
         />
       ) : null}
       {activeTab === "notes" ? (
@@ -423,17 +476,37 @@ export default async function WorkOrderDetailPage({
       {activeTab === "contract" ? (
         agreementTemplate ? (
           <div className="flex flex-col gap-3">
-            <Link
-              href={`/work_orders/${detail.work_order_id}/contract`}
-              className="btn btn-primary min-h-12 self-start"
-            >
-              Open iPad signing screen
-            </Link>
+            {!agreement && !detail.is_foreign_location ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-muted px-4 py-3">
+                <p className="flex-1 text-sm text-[var(--status-neutral-fg)]">
+                  Drop-off agreement is unsigned. The signature is optional and can be
+                  collected at any time.
+                </p>
+                <Link
+                  href={`/work_orders/${detail.work_order_id}/contract`}
+                  className="btn btn-primary min-h-11"
+                >
+                  Open signing screen
+                </Link>
+              </div>
+            ) : (
+              <Link
+                href={`/work_orders/${detail.work_order_id}/contract`}
+                className="btn btn-primary min-h-12 self-start"
+              >
+                Open iPad signing screen
+              </Link>
+            )}
             <ContractSigningPanel
               template={agreementTemplate}
               existing={agreement}
               readOnly={detail.is_foreign_location}
               action={signDropOffAgreementAction.bind(null, detail.work_order_id)}
+              allowPaperSignature
+              paperCopyAction={uploadPaperAgreementCopyAction.bind(
+                null,
+                detail.work_order_id
+              )}
             />
           </div>
         ) : (
@@ -446,6 +519,8 @@ export default async function WorkOrderDetailPage({
           logs={communicationLogs}
           canSend={canApprove}
           readOnly={detail.is_foreign_location}
+          customerPhone={detail.customer?.phone ?? null}
+          smsOptedOut={Boolean(detail.customer?.sms_opted_out_at)}
         />
       ) : null}
     </div>

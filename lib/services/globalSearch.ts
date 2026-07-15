@@ -11,6 +11,8 @@ export type SearchResult =
 export type SearchAllOptions = {
   locationId: string;
   limit?: number;
+  /** When false, skip customer/motorcycle CRM hits and omit customer PII from WO meta. */
+  includeClients?: boolean;
 };
 
 function normalizeQuery(query: string): string {
@@ -48,10 +50,7 @@ export function rankSearchResults(
     const label = result.label.toLowerCase();
     const meta = result.meta.toLowerCase();
 
-    if (
-      result.type === "work_order" &&
-      isWoNumberPrefixMatch(query, result.label)
-    ) {
+    if (result.type === "work_order" && isWoNumberPrefixMatch(query, result.label)) {
       return 0;
     }
 
@@ -93,9 +92,11 @@ export async function searchAll(
   const limit = options.limit ?? 8;
   if (!trimmed || !options.locationId) return [];
 
+  const includeClients = options.includeClients !== false;
+
   const [customers, motorcycles, dashboard] = await Promise.all([
-    searchCustomers(trimmed),
-    searchMotorcycles(trimmed),
+    includeClients ? searchCustomers(trimmed) : Promise.resolve([]),
+    includeClients ? searchMotorcycles(trimmed) : Promise.resolve([]),
     getDashboardData({ q: trimmed }),
   ]);
 
@@ -105,9 +106,10 @@ export async function searchAll(
       const bike = row.motorcycle
         ? `${row.motorcycle.year} ${row.motorcycle.make} ${row.motorcycle.model}`
         : null;
-      const customerName = customer
-        ? `${customer.first_name} ${customer.last_name}`.trim()
-        : null;
+      const customerName =
+        includeClients && customer
+          ? `${customer.first_name} ${customer.last_name}`.trim()
+          : null;
       const statusLabel = WORK_ORDER_STATUS_LABELS[row.status] ?? row.status;
       const metaParts = [customerName, bike, statusLabel].filter(Boolean);
 
@@ -119,26 +121,34 @@ export async function searchAll(
         meta: metaParts.join(" · "),
       };
     }),
-    ...customers.map((customer) => ({
-      type: "customer" as const,
-      id: customer.customer_id,
-      label: `${customer.first_name} ${customer.last_name}`.trim(),
-      href: `/customers/${customer.customer_id}`,
-      meta: customerMeta(customer.phone, customer.email),
-    })),
-    ...motorcycles.map((bike) => {
-      const owner = bike.customer
-        ? `${bike.customer.first_name} ${bike.customer.last_name}`.trim()
-        : null;
-      return {
-        type: "motorcycle" as const,
-        id: bike.motorcycle_id,
-        label: `${bike.year} ${bike.make} ${bike.model}`,
-        href: `/motorcycles/${bike.motorcycle_id}`,
-        meta: owner || bike.vin || "Motorcycle",
-      };
-    }),
   ];
+
+  if (includeClients) {
+    results.push(
+      ...customers.map((customer) => ({
+        type: "customer" as const,
+        id: customer.customer_id,
+        label: `${customer.first_name} ${customer.last_name}`.trim(),
+        href: `/customers/${customer.customer_id}`,
+        meta: customerMeta(customer.phone, customer.email),
+      })),
+      ...motorcycles.map((bike) => {
+        const owner = bike.customer
+          ? `${bike.customer.first_name} ${bike.customer.last_name}`.trim()
+          : null;
+        return {
+          type: "motorcycle" as const,
+          id: bike.motorcycle_id,
+          label: `${bike.year} ${bike.make} ${bike.model}`,
+          href: `/motorcycles/${bike.motorcycle_id}`,
+          meta:
+            [owner, bike.plate_number ? `Plate ${bike.plate_number}` : null, bike.vin]
+              .filter(Boolean)
+              .join(" · ") || "Motorcycle",
+        };
+      })
+    );
+  }
 
   return rankSearchResults(trimmed, results).slice(0, limit);
 }

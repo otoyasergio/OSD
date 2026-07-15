@@ -3,17 +3,22 @@
 import { revalidatePath } from "next/cache";
 import { sendWorkOrderMessage } from "@/lib/services/communications";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { sendMessageSchema } from "@/lib/validation/schemas";
 
 export async function sendMessageAction(
   workOrderId: string,
-  templateKey: "approval_request" | "ready_for_pickup" | "contract_link" | "payment_reminder",
-  channel: "sms" | "email"
+  templateKey: string,
+  channel: string
 ): Promise<{ error: string | null }> {
   try {
-    await sendWorkOrderMessage({
-      work_order_id: workOrderId,
+    const parsed = sendMessageSchema.parse({
       template_key: templateKey,
       channel,
+    });
+    await sendWorkOrderMessage({
+      work_order_id: workOrderId,
+      template_key: parsed.template_key,
+      channel: parsed.channel,
     });
   } catch (error) {
     return { error: toFormErrorMessage(error) };

@@ -37,14 +37,14 @@ export default async function InspectionTemplatePage() {
       <div>
         <Link
           href="/settings"
-          className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+          className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
         >
           ← Settings
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
           Inspection template
         </h1>
-        <p className="mt-1 text-sm text-zinc-600">
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
           Changes apply to new inspections only. Existing work orders keep their
           snapshots. Items are never deleted.
         </p>
@@ -58,39 +58,36 @@ export default async function InspectionTemplatePage() {
       <div className="flex flex-col gap-6">
         {Object.entries(byCategory).map(([category, categoryItems]) => (
           <section key={category}>
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
               {category}
             </h2>
-            <div className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
+            <div className="divide-y divide-[var(--border)] rounded border border-[var(--border)] bg-white">
               {categoryItems.map((item, index) => {
                 const prev = categoryItems[index - 1];
                 const next = categoryItems[index + 1];
                 return (
                   <details key={item.template_item_id} className="px-4 py-3">
                     <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3">
-                      <span className="font-medium text-zinc-900">
+                      <span className="font-medium text-foreground">
                         {item.item_name}
                         {item.active ? null : (
-                          <span className="ml-2 rounded bg-zinc-200 px-2 py-0.5 text-xs font-semibold text-zinc-700">
+                          <span className="ml-2 rounded bg-[var(--border)] px-2 py-0.5 text-xs font-semibold text-foreground">
                             Inactive
                           </span>
                         )}
                         {item.requires_measurement ? (
-                          <span className="ml-2 text-xs font-normal text-zinc-500">
+                          <span className="ml-2 text-xs font-normal text-[var(--status-neutral)]">
                             measurement
                           </span>
                         ) : null}
                       </span>
-                      <span className="text-sm text-zinc-600">
+                      <span className="text-sm text-[var(--status-neutral)]">
                         order {item.display_order}
                       </span>
                     </summary>
 
                     <InspectionTemplateEditForm
-                      action={updateTemplateItemAction.bind(
-                        null,
-                        item.template_item_id
-                      )}
+                      action={updateTemplateItemAction.bind(null, item.template_item_id)}
                       item={item}
                     />
 
@@ -105,7 +102,7 @@ export default async function InspectionTemplatePage() {
                         >
                           <button
                             type="submit"
-                            className="min-h-11 rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
+                            className="min-h-11 rounded border border-[var(--border-strong)] bg-white px-4 py-2 text-sm font-semibold text-foreground hover:bg-[var(--surface-muted)]"
                           >
                             Move up
                           </button>
@@ -121,7 +118,7 @@ export default async function InspectionTemplatePage() {
                         >
                           <button
                             type="submit"
-                            className="min-h-11 rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
+                            className="min-h-11 rounded border border-[var(--border-strong)] bg-white px-4 py-2 text-sm font-semibold text-foreground hover:bg-[var(--surface-muted)]"
                           >
                             Move down
                           </button>
@@ -136,7 +133,7 @@ export default async function InspectionTemplatePage() {
                       >
                         <button
                           type="submit"
-                          className="min-h-11 rounded border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-100"
+                          className="min-h-11 rounded border border-[var(--border-strong)] bg-white px-4 py-2 text-sm font-semibold text-foreground hover:bg-[var(--surface-muted)]"
                         >
                           {item.active ? "Deactivate" : "Reactivate"}
                         </button>

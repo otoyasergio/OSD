@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import type { AgreementTemplate } from "@/lib/services/contracts";
 import type { PortalWorkOrderView } from "@/lib/services/portal";
+import { withHst, HST_PERCENT } from "@/lib/pricing/hst";
 import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
 import {
   portalAckInspectionAction,
@@ -28,7 +29,7 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
   const [pending, startTransition] = useTransition();
 
   const pendingJobs = view.jobs.filter((j) => j.status === "waiting_for_approval");
-  const estimateTotal = [...view.jobs, ...view.parts.map((p) => p)].reduce(
+  const merchandiseSubtotal = [...view.jobs, ...view.parts.map((p) => p)].reduce(
     (sum, item) => {
       if ("standard_price_snapshot" in item) {
         return sum + Number(item.standard_price_snapshot ?? 0);
@@ -37,6 +38,7 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
     },
     0
   );
+  const { subtotal, hst, total: estimateTotal } = withHst(merchandiseSubtotal);
 
   return (
     <div className="flex flex-col gap-6">
@@ -46,9 +48,7 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
           <ContractSigningPanel
             template={contractTemplate}
             existing={null}
-            action={async (formData) =>
-              portalSignContractAction(token, formData)
-            }
+            action={async (formData) => portalSignContractAction(token, formData)}
           />
         </section>
       ) : null}
@@ -161,11 +161,17 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
             </li>
           ))}
         </ul>
-        <p className="text-right font-semibold">
-          Total (est.): ${estimateTotal.toFixed(2)}
-        </p>
+        <div className="space-y-1 text-right text-sm">
+          <p>Subtotal: ${subtotal.toFixed(2)}</p>
+          <p>
+            HST ({HST_PERCENT}%): ${hst.toFixed(2)}
+          </p>
+          <p className="font-semibold">Total (est.): ${estimateTotal.toFixed(2)}</p>
+        </div>
         {view.square_payment_status === "paid" ? (
-          <p className="mt-3 text-center font-medium text-emerald-700">Paid — thank you!</p>
+          <p className="mt-3 text-center font-medium text-emerald-700">
+            Paid — thank you!
+          </p>
         ) : (
           <p className="mt-3 text-center text-sm text-zinc-600">
             Payment link will be sent when your bike is ready for pickup.

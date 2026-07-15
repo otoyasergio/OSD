@@ -29,20 +29,18 @@ type Props = {
   canEdit: boolean;
 };
 
-export function ServiceInformationForm({
-  action,
-  serviceInformation,
-  canEdit,
-}: Props) {
+export function ServiceInformationForm({ action, serviceInformation, canEdit }: Props) {
   const [state, formAction] = useActionState(action, { error: null });
 
   if (!canEdit) {
     return (
-      <dl className="grid gap-3 rounded border border-zinc-200 bg-white p-4 sm:grid-cols-3">
+      <dl className="grid gap-3 rounded border border-[var(--border)] bg-white p-4 sm:grid-cols-3">
         {FIELDS.map((field) => (
           <div key={field.name}>
-            <dt className="text-xs font-medium text-zinc-500">{field.label}</dt>
-            <dd className="text-sm text-zinc-900">
+            <dt className="text-xs font-medium text-[var(--status-neutral)]">
+              {field.label}
+            </dt>
+            <dd className="text-sm text-foreground">
               {serviceInformation?.[field.name] ?? "—"}
             </dd>
           </div>

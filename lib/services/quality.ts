@@ -9,6 +9,7 @@ import {
   canMarkReadyForPickup,
   canOverrideWorkOrderStatus,
   canRunQualityCheck,
+  isFloorTech,
 } from "@/lib/permissions";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 
@@ -54,10 +55,7 @@ function isActiveJob(status: string) {
   return status !== "cancelled" && status !== "declined";
 }
 
-async function assertAllActiveJobsCompleted(
-  supabase: DbClient,
-  workOrderId: string
-) {
+async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: string) {
   const { data: jobs, error } = await supabase
     .from("job")
     .select("job_id, status")
@@ -77,10 +75,16 @@ async function assertAllActiveJobsCompleted(
 
 export async function completeQualityCheck(
   workOrderId: string,
-  notes?: string | null
+  notes?: string | null,
+  options: { allowPeerTechnician?: boolean } = {}
 ): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
-  if (!canRunQualityCheck(user.role)) throw new Error("FORBIDDEN");
+  if (
+    !canRunQualityCheck(user.role) &&
+    !(options.allowPeerTechnician && isFloorTech(user.role))
+  ) {
+    throw new Error("FORBIDDEN");
+  }
 
   await assertAllActiveJobsCompleted(supabase, workOrderId);
 
@@ -143,6 +147,19 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
 
   if (!workOrder.quality_checked_at && !workOrder.quality_checked_by_user_id) {
     throw new Error("QC_REQUIRED");
+  }
+
+  // Load safety fields — markReady still used by front office; block if safety pending.
+  const { data: safetyRow, error: safetyError } = await supabase
+    .from("work_order")
+    .select(
+      "safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived, status"
+    )
+    .eq("work_order_id", workOrderId)
+    .single();
+  if (safetyError) throw safetyError;
+  if (safetyRow?.status === "safety_check") {
+    throw new Error("INVALID_STATUS");
   }
 
   const now = new Date().toISOString();
@@ -341,9 +358,7 @@ export async function placeWorkOrderOnHold(
   });
 }
 
-export async function resumeWorkOrderFromHold(
-  workOrderId: string
-): Promise<void> {
+export async function resumeWorkOrderFromHold(workOrderId: string): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canOverrideWorkOrderStatus(user.role)) throw new Error("FORBIDDEN");
   if (workOrder.status !== "on_hold") throw new Error("NOT_ON_HOLD");

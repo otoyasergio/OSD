@@ -6,12 +6,9 @@ import {
   getDashboardData,
   type DashboardCardKey,
 } from "@/lib/services/dashboard";
-import { canCreateWorkOrder } from "@/lib/permissions";
+import { canCreateWorkOrder, canViewDashboard, staffHomePath } from "@/lib/permissions";
 import {
-  getDashboardDensityPreference,
-  getDashboardViewModePreference,
-  getHiddenBoardColumnsPreference,
-  listSavedDashboardViews,
+  getDashboardShellPreferences,
   type DashboardViewMode,
 } from "@/lib/services/userPreferences";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -23,6 +20,7 @@ import { DashboardFilterChips } from "@/components/work_orders/DashboardFilterCh
 import { SavedViewsBar } from "@/components/work_orders/SavedViewsBar";
 import { BoardPrefsControls } from "@/components/work_orders/BoardPrefsControls";
 import { DashboardViewToggle } from "@/components/work_orders/DashboardViewToggle";
+import { DashboardMorePanel } from "@/components/work_orders/DashboardMorePanel";
 import { SELECT_CLASS } from "@/components/forms/Field";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
@@ -64,23 +62,31 @@ export default async function DashboardPage({
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
+  if (!canViewDashboard(user.role)) redirect(staffHomePath(user.role));
 
   const canCreate = canCreateWorkOrder(user.role);
   const params = await searchParams;
-  const [data, savedViews, savedDensity, savedViewMode, hiddenColumnIds] =
-    await Promise.all([
-      getDashboardData({
-        status: (params.status as WorkOrderStatus) || "",
-        technician_id: params.technician_id || "",
-        flag: params.flag || "",
-        q: params.q || "",
-        card: (params.card as DashboardCardKey) || "",
-      }),
-      listSavedDashboardViews().catch(() => []),
-      getDashboardDensityPreference().catch(() => null),
-      getDashboardViewModePreference().catch(() => null),
-      getHiddenBoardColumnsPreference().catch(() => [] as string[]),
-    ]);
+  const [data, prefs] = await Promise.all([
+    getDashboardData({
+      status: (params.status as WorkOrderStatus) || "",
+      technician_id: params.technician_id || "",
+      flag: params.flag || "",
+      q: params.q || "",
+      card: (params.card as DashboardCardKey) || "",
+    }),
+    getDashboardShellPreferences().catch(() => ({
+      savedViews: [],
+      density: null as "compact" | "comfortable" | null,
+      viewMode: null as DashboardViewMode | null,
+      hiddenColumnIds: [] as string[],
+    })),
+  ]);
+  const {
+    savedViews,
+    density: savedDensity,
+    viewMode: savedViewMode,
+    hiddenColumnIds,
+  } = prefs;
 
   const view = resolveView(params.view, savedViewMode);
   const hideEmpty = params.hide_empty === "1";
@@ -106,16 +112,13 @@ export default async function DashboardPage({
     <div className="page-stack page-stack--wide">
       <PageHeader
         title="Dashboard"
-        subtitle="Shop-floor command center for the active location."
+        subtitle="Shop floor at a glance — bike, stage, next move."
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            {canCreate ? (
-              <Link href="/work_orders/new" className="btn btn-primary">
-                New work order
-              </Link>
-            ) : null}
-            <DashboardViewToggle view={view} filterBase={filterBase} />
-          </div>
+          canCreate ? (
+            <Link href="/work_orders/new" className="btn btn-primary">
+              New work order
+            </Link>
+          ) : null
         }
       />
 
@@ -139,97 +142,103 @@ export default async function DashboardPage({
         })}
       </div>
 
-      <form method="get" className="filter-panel">
-        <input type="hidden" name="view" value={view} />
-        {hideEmpty ? <input type="hidden" name="hide_empty" value="1" /> : null}
-        {density === "comfortable" ? (
-          <input type="hidden" name="density" value="comfortable" />
-        ) : null}
-        {data.filters.card ? (
-          <input type="hidden" name="card" value={data.filters.card} />
-        ) : null}
-        <label className="block lg:col-span-2">
-          <span className="field-label">Search</span>
-          <input
-            className="input"
-            name="q"
-            type="search"
-            defaultValue={data.filters.q ?? ""}
-            placeholder="WO #, customer, bike, VIN…"
-          />
-        </label>
-        <label className="block">
-          <span className="field-label">Status</span>
-          <select
-            className={SELECT_CLASS}
-            name="status"
-            defaultValue={data.filters.status ?? ""}
-          >
-            <option value="">All statuses</option>
-            {data.statusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="field-label">Technician</span>
-          <select
-            className={SELECT_CLASS}
-            name="technician_id"
-            defaultValue={data.filters.technician_id ?? ""}
-          >
-            <option value="">All technicians</option>
-            {data.technicians.map((tech) => (
-              <option key={tech.user_id} value={tech.user_id}>
-                {tech.first_name} {tech.last_name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="field-label">Flag</span>
-          <select
-            className={SELECT_CLASS}
-            name="flag"
-            defaultValue={data.filters.flag ?? ""}
-          >
-            <option value="">All flags</option>
-            {data.flagOptions.map((flag) => (
-              <option key={flag} value={flag}>
-                {flag}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-5">
-          <button type="submit" className="btn btn-primary">
-            Apply filters
-          </button>
-          <Link href={`/dashboard?view=${view}`} className="btn btn-secondary">
-            Clear
-          </Link>
+      <DashboardMorePanel>
+        <form method="get" className="filter-panel">
+          <input type="hidden" name="view" value={view} />
+          {hideEmpty ? <input type="hidden" name="hide_empty" value="1" /> : null}
+          {density === "comfortable" ? (
+            <input type="hidden" name="density" value="comfortable" />
+          ) : null}
+          {data.filters.card ? (
+            <input type="hidden" name="card" value={data.filters.card} />
+          ) : null}
+          <label className="block lg:col-span-2">
+            <span className="field-label">Search</span>
+            <input
+              className="input"
+              name="q"
+              type="search"
+              defaultValue={data.filters.q ?? ""}
+              placeholder="WO #, customer, bike, VIN…"
+            />
+          </label>
+          <label className="block">
+            <span className="field-label">Status</span>
+            <select
+              className={SELECT_CLASS}
+              name="status"
+              defaultValue={data.filters.status ?? ""}
+            >
+              <option value="">All statuses</option>
+              {data.statusOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="field-label">Technician</span>
+            <select
+              className={SELECT_CLASS}
+              name="technician_id"
+              defaultValue={data.filters.technician_id ?? ""}
+            >
+              <option value="">All technicians</option>
+              {data.technicians.map((tech) => (
+                <option key={tech.user_id} value={tech.user_id}>
+                  {tech.first_name} {tech.last_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className="field-label">Flag</span>
+            <select
+              className={SELECT_CLASS}
+              name="flag"
+              defaultValue={data.filters.flag ?? ""}
+            >
+              <option value="">All flags</option>
+              {data.flagOptions.map((flag) => (
+                <option key={flag} value={flag}>
+                  {flag}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-5">
+            <button type="submit" className="btn btn-primary">
+              Apply filters
+            </button>
+            <Link href={`/dashboard?view=${view}`} className="btn btn-secondary">
+              Clear
+            </Link>
+          </div>
+        </form>
+
+        <DashboardFilterChips
+          filters={data.filters}
+          technicians={data.technicians}
+          view={view}
+          hideEmpty={hideEmpty}
+          density={density}
+        />
+
+        <SavedViewsBar views={savedViews} currentParams={filterBase} />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <DashboardViewToggle view={view} filterBase={filterBase} />
         </div>
-      </form>
 
-      <DashboardFilterChips
-        filters={data.filters}
-        technicians={data.technicians}
-        view={view}
-        hideEmpty={hideEmpty}
-        density={density}
-      />
-
-      <SavedViewsBar views={savedViews} currentParams={filterBase} />
-
-      <BoardPrefsControls
-        filterBase={filterBase}
-        density={density}
-        hideEmpty={hideEmpty}
-        hiddenColumnIds={hiddenColumnIds}
-        mode={view}
-      />
+        <BoardPrefsControls
+          filterBase={filterBase}
+          density={density}
+          hideEmpty={hideEmpty}
+          hiddenColumnIds={hiddenColumnIds}
+          mode={view}
+        />
+      </DashboardMorePanel>
 
       {data.rows.length === 0 ? (
         <EmptyState
@@ -246,6 +255,7 @@ export default async function DashboardPage({
           hiddenColumnIds={hiddenColumnIds}
           role={user.role}
           isForeignLocation={false}
+          variant="gallery"
         />
       ) : view === "cards" ? (
         <WorkOrderCardsView rows={data.rows} />

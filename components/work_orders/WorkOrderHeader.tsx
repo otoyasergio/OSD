@@ -2,17 +2,19 @@ import Link from "next/link";
 import type { WorkOrderDetail } from "@/lib/services/workOrders";
 import type { IntakePhoto } from "@/lib/services/photos";
 import { FlagBadges } from "@/components/status/FlagBadges";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StageChip } from "@/components/ui/StageChip";
 import { WorkOrderJobTodo } from "@/components/work_orders/WorkOrderJobTodo";
 import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
 import { WorkOrderPhotoStrip } from "@/components/work_orders/WorkOrderPhotoStrip";
-import { getWorkOrderNextAction } from "@/lib/status/pipeline";
+import { getGalleryStageForStatus, getWorkOrderNextAction } from "@/lib/status/pipeline";
+import { formatDateTime } from "@/lib/datetime/format";
+import { formatMileage } from "@/lib/mileage/format";
 
 const INACTIVE_JOB_STATUSES = new Set(["cancelled", "declined", "completed"]);
 
 function formatDate(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleString();
+  return formatDateTime(value);
 }
 
 function sumActiveEstimatedHours(detail: WorkOrderDetail): number | null {
@@ -27,34 +29,46 @@ function sumActiveEstimatedHours(detail: WorkOrderDetail): number | null {
 export function WorkOrderHeader({
   detail,
   photos = [],
+  canViewClients = true,
+  canViewPricing = true,
+  showContractAction = true,
 }: {
   detail: WorkOrderDetail;
   photos?: IntakePhoto[];
+  /** When false, hide customer PII and CRM motorcycle links (technicians). */
+  canViewClients?: boolean;
+  /** When false, hide Square invoice references (technicians). */
+  canViewPricing?: boolean;
+  /** Overview renders a larger intake follow-up notice instead. */
+  showContractAction?: boolean;
 }) {
-  const customer = detail.customer;
+  const customer = canViewClients ? detail.customer : null;
   const bike = detail.motorcycle;
   const nextAction = getWorkOrderNextAction(detail.status, detail.flags);
   const estimatedLabourTotal = sumActiveEstimatedHours(detail);
+  const galleryStage = getGalleryStageForStatus(detail.status);
 
   return (
     <header className="card overflow-hidden">
       <div className="border-b border-border bg-surface-muted px-4 py-4 sm:px-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--status-neutral)]">
-              Work order
-            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--status-neutral)]">
+                Work order
+              </p>
+              <StageChip label={galleryStage.label} tone={galleryStage.tone} />
+            </div>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               {detail.work_order_number}
             </h1>
-            {detail.external_invoice_number ? (
+            {canViewPricing && detail.external_invoice_number ? (
               <p className="mt-1 text-sm text-[var(--status-neutral)]">
-                Invoice {detail.external_invoice_number}
+                Square invoicing {detail.external_invoice_number}
               </p>
             ) : null}
           </div>
           <div className="flex flex-col items-end gap-2">
-            <StatusBadge status={detail.status} size="large" />
             {detail.flags.length > 0 ? (
               <FlagBadges flags={detail.flags} empty="" />
             ) : null}
@@ -90,10 +104,20 @@ export function WorkOrderHeader({
 
         <WorkOrderPhotoStrip photos={photos} />
 
-        <p className="mt-3 text-sm text-[var(--status-neutral)]">
-          <span className="font-semibold text-foreground">Next action:</span>{" "}
-          {nextAction}
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <p className="text-sm text-[var(--status-neutral)]">
+            <span className="font-semibold text-foreground">Next action:</span>{" "}
+            {nextAction}
+          </p>
+          {showContractAction && detail.flags.includes("Contract unsigned") ? (
+            <Link
+              href={`/work_orders/${detail.work_order_id}/contract`}
+              className="btn btn-secondary min-h-10 text-sm"
+            >
+              Collect signature
+            </Link>
+          ) : null}
+        </div>
       </div>
 
       <WorkOrderPipeline status={detail.status} />
@@ -112,7 +136,7 @@ export function WorkOrderHeader({
             Mileage
           </dt>
           <dd className="mt-0.5 font-semibold tabular-nums text-foreground">
-            {detail.mileage != null ? detail.mileage.toLocaleString() : "—"}
+            {formatMileage(detail.mileage, detail.mileage_unit)}
           </dd>
         </div>
         <div>
@@ -154,7 +178,7 @@ export function WorkOrderHeader({
             {formatDate(detail.date_created)}
           </dd>
         </div>
-        {bike ? (
+        {bike && canViewClients ? (
           <div>
             <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
               Motorcycle profile

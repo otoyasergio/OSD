@@ -90,6 +90,7 @@ describe("client garage", () => {
           model: "CBR600RR",
           colour: "Red",
           vin: null,
+          plate_number: null,
         },
         {
           motorcycle_id: "bike-2",
@@ -98,6 +99,7 @@ describe("client garage", () => {
           model: "MT-07",
           colour: "Blue",
           vin: "JYARN06E0KA000001",
+          plate_number: "AB123",
         },
       ],
       new Map([
@@ -114,6 +116,7 @@ describe("client garage", () => {
         model: "CBR600RR",
         colour: "Red",
         vin: null,
+        plate_number: null,
         missing_vin: true,
         primary_photo_url: "https://signed.example/front.jpg",
         href: "/motorcycles/bike-1",
@@ -125,6 +128,7 @@ describe("client garage", () => {
         model: "MT-07",
         colour: "Blue",
         vin: "JYARN06E0KA000001",
+        plate_number: "AB123",
         missing_vin: false,
         primary_photo_url: null,
         href: "/motorcycles/bike-2",

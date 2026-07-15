@@ -1,9 +1,14 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import type { AgreementTemplate, AgreementTemplateSummary } from "@/lib/services/contracts";
+import type {
+  AgreementTemplate,
+  AgreementTemplateSummary,
+} from "@/lib/services/contracts";
 import type { ContractTemplateFormState } from "@/app/(app)/settings/contract_template/actions";
 import { FormError } from "@/components/forms/Field";
+import { formatDateTime } from "@/lib/datetime/format";
+import { sanitizeContractHtml } from "@/lib/security/sanitizeHtml";
 
 type Props = {
   template: AgreementTemplate | null;
@@ -26,7 +31,7 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
 
   return (
     <div className="flex flex-col gap-8">
-      <p className="text-sm text-zinc-600">
+      <p className="text-sm text-[var(--status-neutral)]">
         Saving publishes a new version. Signed contracts keep the text from the version
         they were signed under.
       </p>
@@ -40,7 +45,7 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
             required
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="min-h-11 w-full rounded border border-zinc-300 px-3"
+            className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
           />
         </label>
 
@@ -49,12 +54,12 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
           <input
             type="text"
             name="version"
-            placeholder="Auto-generated from today&apos;s date if blank"
-            className="min-h-11 w-full rounded border border-zinc-300 px-3"
+            placeholder="Auto-generated from today's date if blank"
+            className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
           />
-          <span className="mt-1 block text-xs text-zinc-500">
-            Leave blank to use today&apos;s date. A suffix is added if that version already
-            exists.
+          <span className="mt-1 block text-xs text-[var(--status-neutral)]">
+            Leave blank to use today&apos;s date. A suffix is added if that version
+            already exists.
           </span>
         </label>
 
@@ -67,12 +72,12 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
             value={initialFields}
             onChange={(e) => setInitialFields(e.target.value)}
             placeholder="liability, authorization, parts, condition, pickup"
-            className="min-h-11 w-full rounded border border-zinc-300 px-3"
+            className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
           />
-          <span className="mt-1 block text-xs text-zinc-500">
+          <span className="mt-1 block text-xs text-[var(--status-neutral)]">
             Comma-separated keys. Each must match a{" "}
-            <code className="text-xs">data-initial=&quot;key&quot;</code> section in the HTML
-            below.
+            <code className="text-xs">data-initial=&quot;key&quot;</code> section in the
+            HTML below.
           </span>
         </label>
 
@@ -85,15 +90,15 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
               rows={24}
               value={bodyHtml}
               onChange={(e) => setBodyHtml(e.target.value)}
-              className="w-full rounded border border-zinc-300 px-3 py-2 font-mono text-sm"
+              className="w-full rounded border border-[var(--border-strong)] px-3 py-2 font-mono text-sm"
             />
           </label>
 
           <div>
             <span className="field-label">Preview</span>
             <div
-              className="prose prose-sm max-h-[36rem] max-w-none overflow-y-auto rounded border border-zinc-200 bg-white p-4"
-              dangerouslySetInnerHTML={{ __html: bodyHtml }}
+              className="prose prose-sm max-h-[36rem] max-w-none overflow-y-auto rounded border border-[var(--border)] bg-white p-4"
+              dangerouslySetInnerHTML={{ __html: sanitizeContractHtml(bodyHtml) }}
             />
           </div>
         </div>
@@ -116,26 +121,28 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
 
       {history.length > 0 ? (
         <section>
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
             Version history
           </h2>
-          <div className="divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
+          <div className="divide-y divide-[var(--border)] rounded border border-[var(--border)] bg-white">
             {history.map((item) => (
               <div
                 key={item.template_id}
                 className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
               >
                 <div>
-                  <span className="font-medium text-zinc-900">{item.title}</span>
-                  <span className="ml-2 text-zinc-600">v{item.version}</span>
+                  <span className="font-medium text-foreground">{item.title}</span>
+                  <span className="ml-2 text-[var(--status-neutral)]">
+                    v{item.version}
+                  </span>
                   {item.active ? (
                     <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
                       Active
                     </span>
                   ) : null}
                 </div>
-                <span className="text-zinc-500">
-                  {new Date(item.created_at).toLocaleString()}
+                <span className="text-[var(--status-neutral)]">
+                  {formatDateTime(item.created_at)}
                 </span>
               </div>
             ))}

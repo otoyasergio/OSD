@@ -3,11 +3,13 @@
 Use this after a live Supabase project is configured (see README **Getting started**).  
 Unit tests alone do **not** complete Task 35.
 
+**Status (2026-07-12 audit pass):** Automated gates (`npm test`, CI workflow, Playwright smoke) are in place. Remaining unchecked rows below still need a **human Safari Mac/iPad** walkthrough for photo intake, inspection auto-save, and QC/complete. Track that sign-off separately from engineering hardening.
+
 **Prerequisites**
 
-- [x] Migrations `001`–`007` applied _(verified via Supabase MCP `list_migrations` on `eofxprepuajpqyvlolhw`, 2026-07-09; later migrations also present)_
+- [x] Migrations `001`–`007` applied _(verified via Supabase MCP `list_migrations` on `eofxprepuajpqyvlolhw`, 2026-07-09; later migrations also present through `034`)_
 - [x] Bootstrap seed run (`supabase/seed/dev_bootstrap.sql`) + Auth user linked as `owner` _(owner/manager/advisor/tech auth users + `app_user` rows present)_
-- [x] `npm test` passes _(147 tests / 27 files, 2026-07-12)_
+- [x] `npm test` passes _(223+ tests, 2026-07-12)_
 - [x] Production app reachable for smoke _(https://v1-implementation-liart.vercel.app)_ — Safari Mac/iPad still recommended for final human sign-off
 
 ---
@@ -179,24 +181,30 @@ Unit tests alone do **not** complete Task 35.
 
 ## Sign-off
 
-| Item | Status |
-|------|--------|
-| Unit tests (`npm test`) | ☑ 147 pass (2026-07-12) |
-| Tests 1–2 | ☑ prod verified |
-| Tests 4, 8, 9 (partial), 15 (partial), 16 (UI) | ☑ prod / unit verified |
-| Tests 3, 5–7, 10–14, 17 | ☐ needs human Safari |
-| Design extras | ☑ audit gate; ☐ location switch + Ottawa WO-1001 |
-| Safari Mac smoke | ☐ needs human |
-| Safari iPad smoke (if available) | ☐ needs human |
+| Item                                           | Status                                           |
+| ---------------------------------------------- | ------------------------------------------------ |
+| Unit tests (`npm test`)                        | ☑ 214 pass (2026-07-12 evening smoke)            |
+| Tests 1–2                                      | ☑ prod verified                                  |
+| Tests 4, 8, 9 (partial), 15 (partial), 16 (UI) | ☑ prod / unit verified                           |
+| Tests 3, 5–7, 10–14, 17                        | ☐ needs human Safari                             |
+| Design extras                                  | ☑ audit gate; ☐ location switch + Ottawa WO-1001 |
+| Safari Mac smoke                               | ☐ needs human                                    |
+| Safari iPad smoke (if available)               | ☐ needs human                                    |
 
 **Do not mark Task 35 fully complete until remaining human Safari items above are walked.**  
 If gaps are found, fix them and commit with: `test: close V1 acceptance gaps from checklist`.
 
-### Automated prod smoke notes (2026-07-12)
+### Automated prod smoke notes (2026-07-12 evening)
 
-- Production: https://v1-implementation-liart.vercel.app
-- Owner: create customer + motorcycle (no VIN warning) → **PASS**
-- Owner: audit log filters → **PASS**
-- Tech: blocked from users/audit/create WO; technician board shows assigned job → **PASS**
-- WO-E2E-0712: jobs, activity timeline, recommendations UI → **PASS** (partial workflow)
-- Full photo intake wizard + QC/complete + template rename → **still need Safari human**
+- Production: https://service.torontomoto.com (aliased deploy `dpl_8Nmaon37iHT8Y3mmohor9PKeVZFV`)
+- Local gate: `npm test` 214 pass, `npm run build` green, `npm run lint` clean
+- Migrations: customer documents (031), time clock manager RLS (032), customer document role RLS (033) applied; buckets `intake-photos`, `customer-documents` present (private)
+- HTTP: `/login` 200; core app routes 307 → login when unauthenticated; portal `/c/[token]` responds
+- Supabase API logs (owner session): dashboard, work orders, audit, services, contract template → 200s
+- Nav (unit): Finances → Clients → Staffing → Settings; Timesheets under Staffing for owner; Communication omitted when empty
+- Documents: WO-E2E-0712 drop-off agreement auto-filed on customer profile; RLS now matches view/upload/delete roles
+- Fitment → service info: 2019 BMW R 1250 GS filled (oil filter/type, tires, plugs, battery, etc.)
+- Inspection seed: all open WOs have inspection rows (including WO-E2E-0712)
+- Timesheets / datetime / contract gate: code + unit coverage green; timesheet route shipped at `/settings/timesheets`
+- Prior notes (same day): create customer + motorcycle, audit filters, tech board gating → **PASS**
+- Full photo intake wizard + QC/complete + Safari Mac/iPad walkthrough → **still need human Safari**

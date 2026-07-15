@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth/session";
+import { canViewClients } from "@/lib/permissions";
 import {
   countCustomers,
   searchCustomers,
@@ -20,6 +23,9 @@ export default async function CustomersPage({
 }: {
   searchParams: Promise<{ q?: string; tag?: string }>;
 }) {
+  const user = await requireUser();
+  if (!canViewClients(user.role)) redirect("/dashboard");
+
   const { q = "", tag = "" } = await searchParams;
   const accountType = ACCOUNT_FILTERS.includes(tag as CustomerAccountType | "")
     ? (tag as CustomerAccountType | "")
@@ -44,18 +50,12 @@ export default async function CustomersPage({
       />
 
       <div className="grid gap-2 sm:grid-cols-2 lg:max-w-md">
-        <div
-          className="stat-card"
-          aria-label={`${totalCustomers} customers on file`}
-        >
+        <div className="stat-card" aria-label={`${totalCustomers} customers on file`}>
           <span className="stat-card-label">Customers on file</span>
           <span className="stat-card-value">{totalCustomers}</span>
         </div>
         {q || accountType ? (
-          <div
-            className="stat-card"
-            aria-label={`${customers.length} search matches`}
-          >
+          <div className="stat-card" aria-label={`${customers.length} search matches`}>
             <span className="stat-card-label">Matches</span>
             <span className="stat-card-value">{customers.length}</span>
           </div>
@@ -78,13 +78,13 @@ export default async function CustomersPage({
           <span className="field-label">Account type</span>
           <select name="tag" defaultValue={accountType} className="input">
             <option value="">All types</option>
-            {(
-              Object.keys(CUSTOMER_ACCOUNT_TYPE_LABELS) as CustomerAccountType[]
-            ).map((value) => (
-              <option key={value} value={value}>
-                {CUSTOMER_ACCOUNT_TYPE_LABELS[value]}
-              </option>
-            ))}
+            {(Object.keys(CUSTOMER_ACCOUNT_TYPE_LABELS) as CustomerAccountType[]).map(
+              (value) => (
+                <option key={value} value={value}>
+                  {CUSTOMER_ACCOUNT_TYPE_LABELS[value]}
+                </option>
+              )
+            )}
           </select>
         </label>
         <div className="flex items-end gap-2">
@@ -138,8 +138,7 @@ export default async function CustomersPage({
                   </td>
                   <td>
                     <span className="status-badge status-badge--neutral">
-                      {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ??
-                        "Retail"}
+                      {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
                     </span>
                   </td>
                   <td className="text-[var(--status-neutral-fg)]">

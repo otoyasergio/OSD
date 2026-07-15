@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import type { PhotoCategory } from "@/lib/database/types";
 import { FormError } from "@/components/forms/Field";
 import {
@@ -11,7 +10,11 @@ import {
   allRequiredIntakeSelected,
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
-import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
+import {
+  intakeContractHref,
+  uploadOptionalIntakePhotos,
+  uploadSelectedIntakePhoto,
+} from "@/components/forms/intakePhotoUploadClient";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 
@@ -20,20 +23,19 @@ export function IntakePhotoRecoveryForm({
   workOrderNumber,
   missingCategories,
   initialError,
+  optionalPhotos = [],
 }: {
   workOrderId: string;
   workOrderNumber?: string | null;
   missingCategories: PhotoCategory[];
   initialError?: string | null;
+  optionalPhotos?: File[];
 }) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
-  const [clientError, setClientError] = useState<string | null>(
-    initialError ?? null
-  );
-  const [remaining, setRemaining] =
-    useState<PhotoCategory[]>(missingCategories);
+  const [clientError, setClientError] = useState<string | null>(initialError ?? null);
+  const [remaining, setRemaining] = useState<PhotoCategory[]>(missingCategories);
 
   const selectedCount = Object.values(intakePhotos).filter(
     (file) => file instanceof File && file.size > 0
@@ -54,27 +56,13 @@ export function IntakePhotoRecoveryForm({
           continue;
         }
 
-        try {
-          const file = await compressImageForUpload(original);
-          const photoData = new FormData();
-          photoData.set("file", file);
-          photoData.set("category", category);
-          const uploaded = await uploadIntakePhotoAction(
-            workOrderId,
-            { error: null },
-            photoData
-          );
-          if (uploaded.error) failed.push(category);
-        } catch {
-          failed.push(category);
-        }
+        const uploaded = await uploadSelectedIntakePhoto(workOrderId, original, category);
+        if (!uploaded) failed.push(category);
       }
 
       if (failed.length > 0) {
         setRemaining(failed);
-        const labels = failed
-          .map((c) => PHOTO_CATEGORY_LABELS[c] ?? c)
-          .join(", ");
+        const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
         setClientError(
           `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`
         );
@@ -82,7 +70,11 @@ export function IntakePhotoRecoveryForm({
         return;
       }
 
-      router.push(`/work_orders/${workOrderId}`);
+      const optionalFailures = await uploadOptionalIntakePhotos(
+        workOrderId,
+        optionalPhotos
+      );
+      router.push(intakeContractHref(workOrderId, optionalFailures));
       router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));
@@ -112,11 +104,9 @@ export function IntakePhotoRecoveryForm({
             <h2 className="intake-recovery-title">Finish intake photos</h2>
             <p className="intake-recovery-body mt-1">
               Work order{" "}
-              <span className="font-medium">
-                {workOrderNumber || workOrderId}
-              </span>{" "}
-              was created, but some required photos did not upload. Add the
-              missing photos below to continue.
+              <span className="font-medium">{workOrderNumber || workOrderId}</span> was
+              created, but some required photos did not upload. Add the missing photos
+              below to continue.
             </p>
           </div>
           <div
@@ -150,7 +140,7 @@ export function IntakePhotoRecoveryForm({
         </button>
         <Link
           href={`/work_orders/${workOrderId}?tab=photos`}
-          className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+          className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
         >
           Open work order Photos tab
         </Link>

@@ -5,9 +5,9 @@ const CUSTOMER_A = "11111111-1111-4111-8111-111111111111";
 const CUSTOMER_B = "22222222-2222-4222-8222-222222222222";
 
 describe("buildMotorcycleSearchOrFilter", () => {
-  it("searches make, model, and vin", () => {
+  it("searches make, model, vin, and plate number", () => {
     expect(buildMotorcycleSearchOrFilter("honda", [])).toBe(
-      "make.ilike.%honda%,model.ilike.%honda%,vin.ilike.%honda%"
+      "make.ilike.%honda%,model.ilike.%honda%,vin.ilike.%honda%,plate_number.ilike.%honda%"
     );
   });
 

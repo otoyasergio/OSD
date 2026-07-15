@@ -17,6 +17,7 @@ export async function setActiveLocation(locationId: string) {
   cookieStore.set(ACTIVE_LOCATION_COOKIE, locationId, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
   });
 

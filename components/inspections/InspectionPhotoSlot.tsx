@@ -27,8 +27,8 @@ export function InspectionPhotoSlot({
   readOnly?: boolean;
 }) {
   const titleId = useId();
-  const cameraRef = useRef<HTMLInputElement>(null);
-  const libraryRef = useRef<HTMLInputElement>(null);
+  const cameraInputId = useId();
+  const libraryInputId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const [chooserOpen, setChooserOpen] = useState(false);
   const [state, formAction, pending] = useActionState(
@@ -49,6 +49,7 @@ export function InspectionPhotoSlot({
 
   function uploadFromInput(input: HTMLInputElement) {
     const file = input.files?.[0];
+    setChooserOpen(false);
     if (!file || !formRef.current) return;
     const formData = new FormData(formRef.current);
     formData.set("file", file);
@@ -75,11 +76,7 @@ export function InspectionPhotoSlot({
       <div className="inspection-photo-slot-meta">
         <p className="inspection-photo-slot-label">{label}</p>
         {!readOnly ? (
-          <form
-            ref={formRef}
-            action={formAction}
-            className="inspection-photo-slot-form"
-          >
+          <form ref={formRef} action={formAction} className="inspection-photo-slot-form">
             <input type="hidden" name="category" value={category} />
             {inspectionResultId ? (
               <input
@@ -89,20 +86,22 @@ export function InspectionPhotoSlot({
               />
             ) : null}
             <input
-              ref={cameraRef}
+              id={cameraInputId}
               type="file"
               accept={cameraProps.accept}
               capture={cameraProps.capture}
               className="photo-file-input"
               tabIndex={-1}
+              aria-label={`${label} camera`}
               onChange={(e) => uploadFromInput(e.currentTarget)}
             />
             <input
-              ref={libraryRef}
+              id={libraryInputId}
               type="file"
               accept={libraryProps.accept}
               className="photo-file-input"
               tabIndex={-1}
+              aria-label={`${label} photo library`}
               onChange={(e) => uploadFromInput(e.currentTarget)}
             />
             <button
@@ -111,11 +110,7 @@ export function InspectionPhotoSlot({
               className="btn btn-secondary min-h-12 w-full"
               onClick={() => setChooserOpen(true)}
             >
-              {pending
-                ? "Uploading…"
-                : existingUrl
-                  ? "Replace photo"
-                  : "Add photo"}
+              {pending ? "Uploading…" : existingUrl ? "Replace photo" : "Add photo"}
             </button>
             <FormError message={state.error} />
           </form>
@@ -139,28 +134,20 @@ export function InspectionPhotoSlot({
               {existingUrl ? `Replace ${label}` : `Add ${label}`}
             </p>
             <p className="photo-source-sheet-lede">
-              Take a new photo or choose one from your library.
+              Use the camera, or choose an existing photo from your library.
             </p>
-            <button
-              type="button"
+            <label
+              htmlFor={cameraInputId}
               className="btn btn-primary photo-source-sheet-action"
-              onClick={() => {
-                cameraRef.current?.click();
-                setChooserOpen(false);
-              }}
             >
-              Take photo
-            </button>
-            <button
-              type="button"
+              Camera
+            </label>
+            <label
+              htmlFor={libraryInputId}
               className="btn btn-secondary photo-source-sheet-action"
-              onClick={() => {
-                libraryRef.current?.click();
-                setChooserOpen(false);
-              }}
             >
-              Upload from library
-            </button>
+              Library
+            </label>
             <button
               type="button"
               className="btn btn-ghost photo-source-sheet-cancel"

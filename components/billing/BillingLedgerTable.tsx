@@ -18,16 +18,16 @@ export function BillingLedgerTable({ items }: { items: BillingBoardItem[] }) {
   }
 
   return (
-    <div className="overflow-x-auto rounded border border-zinc-200 bg-white">
+    <div className="overflow-x-auto rounded border border-[var(--border)] bg-white">
       <table className="min-w-full text-left text-sm">
-        <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-600">
+        <thead className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-xs uppercase tracking-wide text-[var(--status-neutral)]">
           <tr>
             <th className="px-3 py-3 font-semibold">WO</th>
             <th className="px-3 py-3 font-semibold">Customer</th>
             <th className="px-3 py-3 font-semibold">Bike</th>
             <th className="px-3 py-3 font-semibold">Stage</th>
             <th className="px-3 py-3 font-semibold">Payment</th>
-            <th className="px-3 py-3 font-semibold">Estimate</th>
+            <th className="px-3 py-3 font-semibold">Estimate (incl. HST)</th>
             <th className="px-3 py-3 font-semibold">Collected</th>
             <th className="px-3 py-3 font-semibold">Remaining</th>
             <th className="px-3 py-3 font-semibold">Square</th>
@@ -35,7 +35,7 @@ export function BillingLedgerTable({ items }: { items: BillingBoardItem[] }) {
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={item.work_order_id} className="border-b border-zinc-100">
+            <tr key={item.work_order_id} className="border-b border-[var(--border)]">
               <td className="px-3 py-3">
                 <Link href={item.href} className="data-table-link font-semibold">
                   {item.work_order_number}
@@ -45,7 +45,7 @@ export function BillingLedgerTable({ items }: { items: BillingBoardItem[] }) {
               <td className="px-3 py-3">{item.motorcycle_label}</td>
               <td className="px-3 py-3">
                 {BILLING_BUCKET_LABELS[item.bucket]}
-                <span className="block text-xs text-zinc-500">
+                <span className="block text-xs text-[var(--status-neutral)]">
                   {item.billing_stage}
                 </span>
               </td>

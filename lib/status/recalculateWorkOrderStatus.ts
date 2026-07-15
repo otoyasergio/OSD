@@ -7,10 +7,12 @@ import type {
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
+import { isSafetyRequired } from "@/lib/status/safetyRequired";
 
 export type DeriveJobInput = {
   status: JobStatus | string;
   job_id?: string;
+  service_name_snapshot?: string | null;
 };
 
 export type DerivePartInput = {
@@ -24,6 +26,11 @@ export type DeriveWorkOrderStatusInput = {
   parts: DerivePartInput[];
   inspectionComplete: boolean;
   qualityCheckComplete: boolean;
+  /** When false, do not auto-promote to ready_for_technician. Omit/undefined allows promote. */
+  hasSignedAgreement?: boolean;
+  /** When true, visit must pass Head Tech safety after QC. */
+  safetyRequired?: boolean;
+  safetyCheckComplete?: boolean;
 };
 
 function isActiveJob(status: string) {
@@ -34,10 +41,7 @@ function isWaitingPartStatus(status: string) {
   return status === "needed" || status === "ordered";
 }
 
-function jobHasWaitingParts(
-  job: DeriveJobInput,
-  parts: DerivePartInput[]
-): boolean {
+function jobHasWaitingParts(job: DeriveJobInput, parts: DerivePartInput[]): boolean {
   if (!job.job_id) return false;
   if (
     job.status !== "approved" &&
@@ -61,6 +65,9 @@ export function deriveWorkOrderStatus(
     parts,
     inspectionComplete,
     qualityCheckComplete,
+    hasSignedAgreement,
+    safetyRequired = false,
+    safetyCheckComplete = false,
   } = input;
 
   if (
@@ -88,14 +95,16 @@ export function deriveWorkOrderStatus(
 
   const activeJobs = jobs.filter((job) => isActiveJob(job.status));
   const allActiveCompleted =
-    activeJobs.length > 0 &&
-    activeJobs.every((job) => job.status === "completed");
+    activeJobs.length > 0 && activeJobs.every((job) => job.status === "completed");
 
   if (allActiveCompleted && !qualityCheckComplete) {
     return "quality_check";
   }
 
   if (allActiveCompleted && qualityCheckComplete) {
+    if (safetyRequired && !safetyCheckComplete) {
+      return "safety_check";
+    }
     return "ready_for_pickup";
   }
 
@@ -106,6 +115,13 @@ export function deriveWorkOrderStatus(
     );
 
   if (allReadyForTechnician) {
+    if (hasSignedAgreement === false) {
+      // Do not auto-promote; demote only if already incorrectly on ready.
+      if (currentStatus === "ready_for_technician") {
+        return "open";
+      }
+      return currentStatus as WorkOrderStatus;
+    }
     return "ready_for_technician";
   }
 
@@ -124,7 +140,7 @@ export async function recalculateWorkOrderStatus(
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
     .select(
-      "work_order_id, status, location_id, quality_checked_at, quality_checked_by_user_id"
+      "work_order_id, status, location_id, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived"
     )
     .eq("work_order_id", workOrderId)
     .single();
@@ -134,7 +150,7 @@ export async function recalculateWorkOrderStatus(
 
   const { data: jobs, error: jobsError } = await supabase
     .from("job")
-    .select("job_id, status")
+    .select("job_id, status, service_name_snapshot")
     .eq("work_order_id", workOrderId);
 
   if (jobsError) throw jobsError;
@@ -160,6 +176,20 @@ export async function recalculateWorkOrderStatus(
 
   if (inspectionError) throw inspectionError;
 
+  const { data: agreement, error: agreementError } = await supabase
+    .from("drop_off_agreement")
+    .select("agreement_id")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (agreementError) throw agreementError;
+
+  const safetyRequired = isSafetyRequired({
+    safety_required: (workOrder.safety_required as boolean | null) ?? null,
+    safety_waived: Boolean(workOrder.safety_waived),
+    jobs: jobs ?? [],
+  });
+
   const nextStatus = deriveWorkOrderStatus({
     currentStatus: workOrder.status,
     jobs: jobs ?? [],
@@ -167,6 +197,11 @@ export async function recalculateWorkOrderStatus(
     inspectionComplete: Boolean(inspection?.completed_at),
     qualityCheckComplete: Boolean(
       workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
+    ),
+    hasSignedAgreement: Boolean(agreement),
+    safetyRequired,
+    safetyCheckComplete: Boolean(
+      workOrder.safety_checked_at || workOrder.safety_checked_by_user_id
     ),
   });
 
@@ -202,6 +237,11 @@ export async function recalculateWorkOrderStatus(
     old_value: { status: workOrder.status },
     new_value: { status: nextStatus },
   });
+
+  if (nextStatus === "quality_check") {
+    const { autoAssignPeerQc } = await import("@/lib/services/peerQc");
+    await autoAssignPeerQc(supabase, workOrderId, workOrder.location_id, actorUserId);
+  }
 
   return nextStatus;
 }

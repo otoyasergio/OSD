@@ -1,4 +1,11 @@
 import { getTwilioConfig, isTwilioConfigured } from "@/lib/twilio/config";
+import { normalizePhoneE164 } from "@/lib/twilio/phone";
+
+function statusCallbackUrl(): string | null {
+  const base = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");
+  if (!base) return null;
+  return `${base}/api/twilio/status`;
+}
 
 export async function sendSms(input: {
   to: string;
@@ -6,12 +13,27 @@ export async function sendSms(input: {
 }): Promise<{ sid: string }> {
   if (!isTwilioConfigured()) throw new Error("TWILIO_NOT_CONFIGURED");
 
+  const to = normalizePhoneE164(input.to);
+  if (!to) throw new Error("INVALID_PHONE");
+
   const config = getTwilioConfig();
   const params = new URLSearchParams({
-    To: input.to,
-    From: config.fromNumber,
+    To: to,
     Body: input.body,
   });
+
+  // Prefer Messaging Service (A2P campaign pool); fall back to a fixed From number.
+  if (config.messagingServiceSid) {
+    params.set("MessagingServiceSid", config.messagingServiceSid);
+  } else {
+    params.set("From", config.fromNumber);
+  }
+
+  const callback = statusCallbackUrl();
+  if (callback) {
+    params.set("StatusCallback", callback);
+    params.set("StatusCallbackMethod", "POST");
+  }
 
   const response = await fetch(
     `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Messages.json`,

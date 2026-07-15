@@ -8,13 +8,21 @@ import type { JobStatus } from "@/lib/database/types";
 import { APPROVAL_METHOD_OPTIONS } from "@/components/jobs/JobActions";
 import { FormError, SELECT_CLASS } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StageChip } from "@/components/ui/StageChip";
 import { formatLabourComparison } from "@/lib/services/labour";
+import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 
-type Action = (
-  state: JobFormState,
-  formData: FormData
-) => Promise<JobFormState>;
+function jobStageTone(status: JobStatus): "teal" | "orange" | "muted" | "danger" {
+  if (status === "in_progress") return "orange";
+  if (status === "completed" || status === "cancelled" || status === "declined")
+    return "muted";
+  if (status === "waiting_for_approval" || status === "waiting_for_parts")
+    return "orange";
+  if (status === "approved" || status === "ready_to_start") return "teal";
+  return "muted";
+}
+
+type Action = (state: JobFormState, formData: FormData) => Promise<JobFormState>;
 
 function StatusButton({
   action,
@@ -53,6 +61,7 @@ export function JobCard({
   canApprove,
   canEdit,
   canComplete,
+  canViewPricing = true,
   isTechnicianSelf,
   inspectionComplete,
   inspectionHref,
@@ -68,6 +77,7 @@ export function JobCard({
   canApprove: boolean;
   canEdit: boolean;
   canComplete: boolean;
+  canViewPricing?: boolean;
   isTechnicianSelf: boolean;
   inspectionComplete?: boolean;
   inspectionHref?: string;
@@ -106,9 +116,7 @@ export function JobCard({
     (canComplete || isTechnicianSelf) &&
     Boolean(job.assigned_technician_id) &&
     !inspectionBlocksComplete &&
-    (job.status === "in_progress" ||
-      job.status === "approved" ||
-      job.status === "ready_to_start");
+    job.status === "in_progress";
 
   const labour = formatLabourComparison(
     job.estimated_labour_snapshot,
@@ -124,7 +132,10 @@ export function JobCard({
             {job.service_name_snapshot}
           </h3>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StatusBadge status={job.status} kind="job" />
+            <StageChip
+              label={JOB_STATUS_LABELS[job.status] ?? job.status}
+              tone={jobStageTone(job.status)}
+            />
             <span className="text-sm text-[var(--status-neutral)]">
               {job.assigned_technician
                 ? `${job.assigned_technician.first_name} ${job.assigned_technician.last_name}`
@@ -132,12 +143,16 @@ export function JobCard({
             </span>
           </div>
           <p className="mt-1 text-sm text-[var(--status-neutral)]">
-            {job.standard_price_snapshot != null
-              ? `$${job.standard_price_snapshot}`
-              : "No price"}
-            {!labour && job.estimated_labour_snapshot != null
+            {canViewPricing
+              ? job.standard_price_snapshot != null
+                ? `$${job.standard_price_snapshot}`
+                : "No price"
+              : null}
+            {canViewPricing && !labour && job.estimated_labour_snapshot != null
               ? ` · ${job.estimated_labour_snapshot} h`
-              : ""}
+              : !canViewPricing && !labour && job.estimated_labour_snapshot != null
+                ? `${job.estimated_labour_snapshot} h`
+                : ""}
           </p>
           {labour ? (
             <p
@@ -160,10 +175,7 @@ export function JobCard({
       {!readOnly ? (
         <div className="mt-4 flex flex-col gap-4">
           {canEdit ? (
-            <form
-              action={assignFormAction}
-              className="flex flex-wrap items-end gap-2"
-            >
+            <form action={assignFormAction} className="flex flex-wrap items-end gap-2">
               <label className="min-w-[12rem] flex-1">
                 <span className="field-label">Assign technician</span>
                 <select
@@ -186,10 +198,7 @@ export function JobCard({
           ) : null}
 
           {canApprove && awaitingApproval ? (
-            <form
-              action={approveFormAction}
-              className="flex flex-wrap items-end gap-2"
-            >
+            <form action={approveFormAction} className="flex flex-wrap items-end gap-2">
               <label className="min-w-[12rem] flex-1">
                 <span className="field-label">Approval method</span>
                 <select
@@ -313,15 +322,9 @@ export function JobCard({
                 <form action={cancelFormAction} className="w-full flex flex-col gap-2">
                   <label className="block">
                     <span className="field-label">
-                      Cancel note{" "}
-                      <span className="text-[var(--status-danger)]">*</span>
+                      Cancel note <span className="text-[var(--status-danger)]">*</span>
                     </span>
-                    <textarea
-                      className="textarea"
-                      name="note"
-                      required
-                      rows={2}
-                    />
+                    <textarea className="textarea" name="note" required rows={2} />
                   </label>
                   <div className="flex flex-wrap gap-2">
                     <SubmitButton

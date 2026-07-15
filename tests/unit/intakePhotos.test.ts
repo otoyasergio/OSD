@@ -4,6 +4,7 @@ import {
   REQUIRED_PHOTO_CATEGORIES,
 } from "@/lib/status/labels";
 import { allRequiredIntakeSelected } from "@/components/forms/IntakePhotoSlots";
+import { mergeOptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
 import { pickPrimaryIntakePhoto } from "@/lib/services/photos";
 
 describe("required intake photo slots", () => {
@@ -23,9 +24,7 @@ describe("required intake photo slots", () => {
   });
 
   it("uses human-readable dash/odometer label", () => {
-    const odometer = CREATE_INTAKE_PHOTO_SLOTS.find(
-      (s) => s.category === "odometer"
-    );
+    const odometer = CREATE_INTAKE_PHOTO_SLOTS.find((s) => s.category === "odometer");
     expect(odometer?.label).toMatch(/dash/i);
     expect(odometer?.label).toMatch(/mileage/i);
   });
@@ -44,6 +43,34 @@ describe("required intake photo slots", () => {
 
     const missingVin = { ...files, vin: null };
     expect(allRequiredIntakeSelected(missingVin)).toBe(false);
+  });
+
+  it("never lets optional photos satisfy one of the six required slots", () => {
+    const onlyOptional = {
+      other: new File(["x"], "damage.jpg", { type: "image/jpeg" }),
+    };
+    expect(allRequiredIntakeSelected(onlyOptional)).toBe(false);
+  });
+
+  it("adds multiple optional photos and filters empty or duplicate picks", () => {
+    const first = new File(["front"], "extra-1.jpg", {
+      type: "image/jpeg",
+      lastModified: 1,
+    });
+    const duplicate = new File(["front"], "extra-1.jpg", {
+      type: "image/jpeg",
+      lastModified: 1,
+    });
+    const second = new File(["rear"], "extra-2.jpg", {
+      type: "image/jpeg",
+      lastModified: 2,
+    });
+    const empty = new File([], "empty.jpg", { type: "image/jpeg" });
+
+    expect(mergeOptionalIntakePhotos([first], [duplicate, second, empty])).toEqual([
+      first,
+      second,
+    ]);
   });
 
   it("pickPrimaryIntakePhoto prefers front over other angles", () => {

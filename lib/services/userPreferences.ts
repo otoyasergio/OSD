@@ -52,15 +52,11 @@ function parseDashboardViews(value: unknown): SavedDashboardView[] {
         view: typeof params.view === "string" ? params.view : undefined,
         status: typeof params.status === "string" ? params.status : undefined,
         technician_id:
-          typeof params.technician_id === "string"
-            ? params.technician_id
-            : undefined,
+          typeof params.technician_id === "string" ? params.technician_id : undefined,
         flag: typeof params.flag === "string" ? params.flag : undefined,
         q: typeof params.q === "string" ? params.q : undefined,
-        hide_empty:
-          typeof params.hide_empty === "string" ? params.hide_empty : undefined,
-        density:
-          typeof params.density === "string" ? params.density : undefined,
+        hide_empty: typeof params.hide_empty === "string" ? params.hide_empty : undefined,
+        density: typeof params.density === "string" ? params.density : undefined,
         card: typeof params.card === "string" ? params.card : undefined,
       },
     });
@@ -79,6 +75,69 @@ async function getPreference(prefKey: string): Promise<unknown | null> {
     .maybeSingle();
   if (error) throw error;
   return data?.pref_value ?? null;
+}
+
+/** One round-trip for all dashboard preference keys used on /dashboard. */
+export async function getDashboardShellPreferences(): Promise<{
+  savedViews: SavedDashboardView[];
+  density: "compact" | "comfortable" | null;
+  viewMode: DashboardViewMode | null;
+  hiddenColumnIds: string[];
+}> {
+  const user = await requirePreferenceUser();
+  const supabase = await createClient();
+  const keys = [
+    DASHBOARD_VIEWS_KEY,
+    DASHBOARD_DENSITY_KEY,
+    DASHBOARD_VIEW_MODE_KEY,
+    DASHBOARD_HIDDEN_COLUMNS_KEY,
+  ];
+  const { data, error } = await supabase
+    .from("user_preference")
+    .select("pref_key, pref_value")
+    .eq("user_id", user.user_id)
+    .in("pref_key", keys);
+  if (error) throw error;
+
+  const byKey = new Map(
+    (data ?? []).map((row) => [row.pref_key as string, row.pref_value])
+  );
+
+  return {
+    savedViews: parseDashboardViews(byKey.get(DASHBOARD_VIEWS_KEY) ?? null),
+    density: parseDensity(byKey.get(DASHBOARD_DENSITY_KEY) ?? null),
+    viewMode: parseViewMode(byKey.get(DASHBOARD_VIEW_MODE_KEY) ?? null),
+    hiddenColumnIds: parseHiddenColumns(byKey.get(DASHBOARD_HIDDEN_COLUMNS_KEY) ?? null),
+  };
+}
+
+function parseDensity(value: unknown): "compact" | "comfortable" | null {
+  if (value === "comfortable" || value === "compact") return value;
+  const obj = asObject(value);
+  if (obj?.density === "comfortable" || obj?.density === "compact") {
+    return obj.density;
+  }
+  return null;
+}
+
+function parseViewMode(value: unknown): DashboardViewMode | null {
+  if (value === "board" || value === "list" || value === "cards") return value;
+  const obj = asObject(value);
+  if (obj?.view === "board" || obj?.view === "list" || obj?.view === "cards") {
+    return obj.view;
+  }
+  return null;
+}
+
+function parseHiddenColumns(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((id): id is string => typeof id === "string");
+  }
+  const obj = asObject(value);
+  if (Array.isArray(obj?.columns)) {
+    return obj.columns.filter((id): id is string => typeof id === "string");
+  }
+  return [];
 }
 
 async function setPreference(prefKey: string, prefValue: unknown): Promise<void> {
@@ -131,13 +190,7 @@ export async function deleteDashboardView(viewId: string): Promise<void> {
 export async function getDashboardDensityPreference(): Promise<
   "compact" | "comfortable" | null
 > {
-  const value = await getPreference(DASHBOARD_DENSITY_KEY);
-  if (value === "comfortable" || value === "compact") return value;
-  const obj = asObject(value);
-  if (obj?.density === "comfortable" || obj?.density === "compact") {
-    return obj.density;
-  }
-  return null;
+  return parseDensity(await getPreference(DASHBOARD_DENSITY_KEY));
 }
 
 export async function setDashboardDensityPreference(
@@ -147,17 +200,7 @@ export async function setDashboardDensityPreference(
 }
 
 export async function getDashboardViewModePreference(): Promise<DashboardViewMode | null> {
-  const value = await getPreference(DASHBOARD_VIEW_MODE_KEY);
-  if (value === "board" || value === "list" || value === "cards") return value;
-  const obj = asObject(value);
-  if (
-    obj?.view === "board" ||
-    obj?.view === "list" ||
-    obj?.view === "cards"
-  ) {
-    return obj.view;
-  }
-  return null;
+  return parseViewMode(await getPreference(DASHBOARD_VIEW_MODE_KEY));
 }
 
 export async function setDashboardViewModePreference(
@@ -167,15 +210,7 @@ export async function setDashboardViewModePreference(
 }
 
 export async function getHiddenBoardColumnsPreference(): Promise<string[]> {
-  const value = await getPreference(DASHBOARD_HIDDEN_COLUMNS_KEY);
-  if (Array.isArray(value)) {
-    return value.filter((id): id is string => typeof id === "string");
-  }
-  const obj = asObject(value);
-  if (Array.isArray(obj?.columns)) {
-    return obj.columns.filter((id): id is string => typeof id === "string");
-  }
-  return [];
+  return parseHiddenColumns(await getPreference(DASHBOARD_HIDDEN_COLUMNS_KEY));
 }
 
 export async function setHiddenBoardColumnsPreference(

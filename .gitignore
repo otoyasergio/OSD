@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/blob-report/
 
 # next.js
 /.next/
@@ -24,6 +27,7 @@
 .DS_Store
 *.pem
 .superpowers/
+.worktrees/
 
 # debug
 npm-debug.log*

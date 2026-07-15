@@ -39,6 +39,12 @@ export const VISIT_PIPELINE_STAGES = [
     statuses: ["quality_check"] as WorkOrderStatus[],
   },
   {
+    id: "safety",
+    label: "Safety",
+    shortLabel: "Safety",
+    statuses: ["safety_check"] as WorkOrderStatus[],
+  },
+  {
     id: "pickup",
     label: "Pickup",
     shortLabel: "Pickup",
@@ -46,10 +52,9 @@ export const VISIT_PIPELINE_STAGES = [
   },
 ] as const;
 
-export type VisitPipelineStageId =
-  (typeof VISIT_PIPELINE_STAGES)[number]["id"];
+export type VisitPipelineStageId = (typeof VISIT_PIPELINE_STAGES)[number]["id"];
 
-/** Board columns for the dashboard shop-floor view. */
+/** Board columns for the dashboard shop-floor view (detailed). */
 export const SHOP_BOARD_COLUMNS = [
   {
     id: "intake",
@@ -87,6 +92,11 @@ export const SHOP_BOARD_COLUMNS = [
     statuses: ["quality_check"] as WorkOrderStatus[],
   },
   {
+    id: "safety",
+    label: "Safety",
+    statuses: ["safety_check"] as WorkOrderStatus[],
+  },
+  {
     id: "pickup",
     label: "Ready pickup",
     statuses: ["ready_for_pickup"] as WorkOrderStatus[],
@@ -98,6 +108,65 @@ export const SHOP_BOARD_COLUMNS = [
   },
 ] as const;
 
+/** Calm Track Day gallery — fewer wide stage columns (default board). */
+export const GALLERY_BOARD_COLUMNS = [
+  {
+    id: "gallery_intake",
+    label: "Intake",
+    statuses: [
+      "draft",
+      "open",
+      "inspection_in_progress",
+      "waiting_for_customer_approval",
+    ] as WorkOrderStatus[],
+  },
+  {
+    id: "gallery_in_bay",
+    label: "In bay",
+    statuses: [
+      "waiting_for_parts",
+      "ready_for_technician",
+      "in_progress",
+      "on_hold",
+    ] as WorkOrderStatus[],
+  },
+  {
+    id: "gallery_qc",
+    label: "QC",
+    statuses: ["quality_check"] as WorkOrderStatus[],
+  },
+  {
+    id: "gallery_safety",
+    label: "Safety",
+    statuses: ["safety_check"] as WorkOrderStatus[],
+  },
+  {
+    id: "gallery_ready",
+    label: "Ready",
+    statuses: ["ready_for_pickup", "completed"] as WorkOrderStatus[],
+  },
+] as const;
+
+export function getGalleryStageForStatus(status: WorkOrderStatus): {
+  label: string;
+  tone: "teal" | "orange" | "muted" | "danger";
+} {
+  if (status === "cancelled") return { label: "Cancelled", tone: "danger" };
+  if (status === "on_hold") return { label: "On hold", tone: "danger" };
+  for (const column of GALLERY_BOARD_COLUMNS) {
+    if ((column.statuses as readonly WorkOrderStatus[]).includes(status)) {
+      if (column.id === "gallery_in_bay" && status === "in_progress") {
+        return { label: column.label, tone: "orange" };
+      }
+      if (column.id === "gallery_qc") return { label: column.label, tone: "orange" };
+      if (column.id === "gallery_safety") return { label: column.label, tone: "orange" };
+      if (column.id === "gallery_ready") return { label: column.label, tone: "muted" };
+      return { label: column.label, tone: "teal" };
+    }
+  }
+  return { label: status, tone: "muted" };
+}
+
 export function getPipelineStageIndex(status: WorkOrderStatus): number {
   if (status === "cancelled") return -1;
   if (status === "on_hold") return -2;
@@ -108,14 +177,12 @@ export function getPipelineStageIndex(status: WorkOrderStatus): number {
   return index >= 0 ? index : 0;
 }
 
-export function getWorkOrderNextAction(
-  status: WorkOrderStatus,
-  flags: string[]
-): string {
+export function getWorkOrderNextAction(status: WorkOrderStatus, flags: string[]): string {
   if (status === "cancelled") return "Work order cancelled";
   if (status === "on_hold") return "Resume when customer or parts are ready";
   if (status === "completed") return "Vehicle picked up — archive when done";
 
+  if (flags.includes("Admin flag")) return "Clear admin flag and unblock technician";
   if (flags.includes("No intake photos")) return "Capture intake photos";
   if (flags.includes("Missing VIN")) return "Record VIN on motorcycle profile";
   if (flags.includes("Incomplete inspection")) return "Complete inspection checklist";
@@ -135,11 +202,13 @@ export function getWorkOrderNextAction(
     case "waiting_for_parts":
       return "Mark parts received when they arrive";
     case "ready_for_technician":
-      return "Assign technician and start jobs";
+      return "Pull on Tech floor or assign technician";
     case "in_progress":
       return "Complete assigned jobs";
     case "quality_check":
-      return "Run quality check";
+      return "Peer QC on Tech floor or complete QC on Overview";
+    case "safety_check":
+      return "Head Tech safety pass on Tech floor";
     case "ready_for_pickup":
       return "Notify customer — ready for pickup";
     default:

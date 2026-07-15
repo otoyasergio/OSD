@@ -11,7 +11,10 @@ import {
   findMotorcycleByVin,
   lookupVinOwnershipConflict,
   buildVinOwnershipConflict,
+  listMotorcyclesForCustomer,
   SERVICE_INFORMATION_FIELDS,
+  type Motorcycle,
+  type MotorcycleInput,
   type ServiceInformationInput,
   type VinOwnershipConflict,
 } from "@/lib/services/motorcycles";
@@ -20,15 +23,44 @@ import { validateOptionalVin } from "@/lib/vin";
 
 export type MotorcycleFormState = { error: string | null };
 
-function readMotorcycleInput(formData: FormData) {
+/** Load bikes for a selected customer during intake / forms. */
+export async function listMotorcyclesForCustomerAction(
+  customerId: string
+): Promise<Motorcycle[]> {
+  if (!customerId.trim()) return [];
+  return listMotorcyclesForCustomer(customerId);
+}
+
+function safeReturnTo(
+  raw: string,
+  motorcycleId: string,
+  customerId: string
+): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
+  try {
+    const url = new URL(trimmed, "https://example.invalid");
+    url.searchParams.set("motorcycle_id", motorcycleId);
+    if (customerId && !url.searchParams.get("customer_id")) {
+      url.searchParams.set("customer_id", customerId);
+    }
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return null;
+  }
+}
+
+function readMotorcycleInput(formData: FormData): MotorcycleInput {
   const yearRaw = String(formData.get("year") ?? "").trim();
   return {
     customer_id: String(formData.get("customer_id") ?? ""),
     year: yearRaw ? Number(yearRaw) : Number.NaN,
     make: String(formData.get("make") ?? ""),
     model: String(formData.get("model") ?? ""),
+    odometer_unit: formData.get("odometer_unit") === "mi" ? "mi" : "km",
     vin: String(formData.get("vin") ?? ""),
     colour: String(formData.get("colour") ?? ""),
+    plate_number: String(formData.get("plate_number") ?? ""),
     notes: String(formData.get("notes") ?? ""),
   };
 }
@@ -52,7 +84,13 @@ export async function createMotorcycleAction(
 
   revalidatePath("/motorcycles");
   revalidatePath(`/customers/${input.customer_id}`);
-  redirect(`/motorcycles/${motorcycleId}`);
+
+  const returnTo = safeReturnTo(
+    String(formData.get("return_to") ?? ""),
+    motorcycleId,
+    input.customer_id
+  );
+  redirect(returnTo ?? `/motorcycles/${motorcycleId}`);
 }
 
 export async function updateMotorcycleAction(

@@ -1,19 +1,30 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useSyncExternalStore } from "react";
 import type { ClockFormState } from "@/app/(app)/technician/clock-actions";
-import {
-  clockInAction,
-  clockOutAction,
-} from "@/app/(app)/technician/clock-actions";
+import { clockInAction, clockOutAction } from "@/app/(app)/technician/clock-actions";
 import type { TimeClockEntry } from "@/lib/services/timeClock";
 import { formatElapsedMs } from "@/lib/services/timeClockShared";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { formatTime } from "@/lib/datetime/format";
 
 type Props = {
   openEntry: TimeClockEntry | null;
 };
+
+function subscribeClock(onStoreChange: () => void) {
+  const id = window.setInterval(onStoreChange, 1000);
+  return () => window.clearInterval(id);
+}
+
+function getClockNow() {
+  return Date.now();
+}
+
+function getServerClockNow() {
+  return 0;
+}
 
 export function TimeClockWidget({ openEntry }: Props) {
   const [inState, inAction] = useActionState(clockInAction, {
@@ -22,20 +33,18 @@ export function TimeClockWidget({ openEntry }: Props) {
   const [outState, outAction] = useActionState(clockOutAction, {
     error: null,
   } satisfies ClockFormState);
-  const [elapsed, setElapsed] = useState(
-    openEntry ? formatElapsedMs(openEntry.clock_in_at) : "0:00"
+  // Client-only clock via getServerSnapshot — avoids SSR Date.now() hydration drift.
+  const nowMs = useSyncExternalStore(
+    openEntry ? subscribeClock : () => () => {},
+    getClockNow,
+    getServerClockNow
   );
 
-  useEffect(() => {
-    if (!openEntry) {
-      setElapsed("0:00");
-      return;
-    }
-    const tick = () => setElapsed(formatElapsedMs(openEntry.clock_in_at));
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, [openEntry]);
+  const elapsed = openEntry
+    ? nowMs > 0
+      ? formatElapsedMs(openEntry.clock_in_at, nowMs)
+      : "…"
+    : "0:00";
 
   return (
     <section className="rounded-lg border border-[var(--chrome-border)] bg-[var(--surface)] p-4">
@@ -44,7 +53,7 @@ export function TimeClockWidget({ openEntry }: Props) {
           <h2 className="text-lg font-semibold text-foreground">Time clock</h2>
           <p className="text-sm text-[var(--status-neutral)]">
             {openEntry
-              ? `Clocked in since ${new Date(openEntry.clock_in_at).toLocaleTimeString()}`
+              ? `Clocked in since ${formatTime(openEntry.clock_in_at)}`
               : "Not clocked in"}
           </p>
         </div>
@@ -65,7 +74,10 @@ export function TimeClockWidget({ openEntry }: Props) {
           <SubmitButton label="Clock out" pendingLabel="Clocking out…" />
         </form>
       ) : (
-        <form action={inAction} className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <form
+          action={inAction}
+          className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end"
+        >
           <label className="block flex-1">
             <span className="field-label">Notes (optional)</span>
             <input name="notes" className="input" placeholder="Shift note" />
