@@ -72,10 +72,10 @@ Field notes:
 
 `created: false` means an existing app customer was updated (matched by `wix_contact_id`, then email, then phone).
 
-## Related: hourly reconcile cron
+## Related: daily reconcile cron
 
-If Automations miss an event, the app also pulls all Wix contacts hourly:
+If Automations miss an event, the app also pulls all Wix contacts daily at 11:30 America/Toronto (15:30 UTC):
 
 - Path: `GET` or `POST` `/api/cron/wix-contacts-sync`
 - Auth: `Authorization: Bearer <CRON_SECRET>` only (no query-string secret)
-- Vercel schedule: `0 * * * *` (see `vercel.json`)
+- Vercel schedule: `30 15 * * *` (see `vercel.json`)

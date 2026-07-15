@@ -173,25 +173,29 @@ type WixContactsQueryResponse = {
   };
 };
 
+/**
+ * Wix Contacts Query requires filter/paging under `query`.
+ * Top-level `paging` is ignored (always page 0), which would infinite-loop a reconcile.
+ */
 async function queryWixContactsPage(
-  body: Record<string, unknown>
+  query: Record<string, unknown>
 ): Promise<WixContactsQueryResponse> {
   const response = await wixFetch("/contacts/v4/contacts/query", {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({ query }),
   });
   if (!response.ok) throw new Error(await readWixError(response));
   return (await response.json()) as WixContactsQueryResponse;
 }
 
-async function queryWixContacts(body: Record<string, unknown>): Promise<WixContact[]> {
-  const data = await queryWixContactsPage(body);
+async function queryWixContacts(query: Record<string, unknown>): Promise<WixContact[]> {
+  const data = await queryWixContactsPage(query);
   return data.contacts ?? [];
 }
 
 const LIST_PAGE_SIZE = 100;
 
-/** Page through all site contacts (offset paging). */
+/** Page through all site contacts (offset paging under `query`). */
 export async function listAllWixContacts(): Promise<WixContact[]> {
   const contacts: WixContact[] = [];
   let offset = 0;
@@ -203,6 +207,9 @@ export async function listAllWixContacts(): Promise<WixContact[]> {
     const batch = page.contacts ?? [];
     if (!batch.length) break;
     contacts.push(...batch);
+    const meta = page.pagingMetadata;
+    if (meta?.hasNext === false) break;
+    if (typeof meta?.total === "number" && contacts.length >= meta.total) break;
     if (batch.length < LIST_PAGE_SIZE) break;
     offset += batch.length;
   }

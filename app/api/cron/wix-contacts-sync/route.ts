@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
- * Hourly Wix Contacts → app customer reconciliation.
+ * Daily Wix Contacts → app customer reconciliation (11:30 America/Toronto → 15:30 UTC).
  * Protect with CRON_SECRET via Authorization: Bearer <secret> only.
  */
 export async function GET(request: Request) {
