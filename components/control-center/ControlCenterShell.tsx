@@ -85,10 +85,12 @@ function PoolBikeCard({
   bike,
   now,
   dragging,
+  onOpenWork,
 }: {
   bike: ControlCenterBike;
   now: number;
   dragging: boolean;
+  onOpenWork: (workOrderId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: bike.work_order_id,
@@ -106,8 +108,10 @@ function PoolBikeCard({
       ]
         .filter(Boolean)
         .join(" ")}
+      aria-label={`Open work order ${bike.work_order_number} for ${bike.bike_title}`}
       {...listeners}
       {...attributes}
+      onClick={() => onOpenWork(bike.work_order_id)}
     >
       <BikeMedia bike={bike} now={now} />
       <div className="cc-bike-body">
@@ -137,13 +141,15 @@ function MiniBikeCard({
   bike,
   now,
   canOpen,
-  onOpen,
+  onStartWork,
+  onOpenWork,
   dragging,
 }: {
   bike: ControlCenterBike;
   now: number;
   canOpen: boolean;
-  onOpen: (workOrderId: string) => void;
+  onStartWork: (workOrderId: string) => void;
+  onOpenWork: (workOrderId: string) => void;
   dragging: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -157,11 +163,21 @@ function MiniBikeCard({
   return (
     <div
       ref={setNodeRef}
+      role="button"
+      tabIndex={0}
       className={["cc-mini-bike", isDragging || dragging ? "cc-mini-bike--dragging" : ""]
         .filter(Boolean)
         .join(" ")}
+      aria-label={`Open work order ${bike.work_order_number} for ${bike.bike_title}`}
       {...listeners}
       {...attributes}
+      onClick={() => onOpenWork(bike.work_order_id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpenWork(bike.work_order_id);
+        }
+      }}
     >
       <span className={`cc-mini-dot cc-mini-dot--${bike.status_dot}`} />
       <div className="cc-mini-main">
@@ -181,10 +197,11 @@ function MiniBikeCard({
           type="button"
           className="cc-open-btn"
           disabled={!canOpen}
+          aria-label={`Start work timer for ${bike.work_order_number}`}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
-            onOpen(bike.work_order_id);
+            onStartWork(bike.work_order_id);
           }}
         >
           <Play size={11} strokeWidth={2.5} fill="currentColor" />
@@ -199,13 +216,15 @@ function TechCard({
   tech,
   now,
   canAssign,
-  onOpen,
+  onStartWork,
+  onOpenWork,
   activeId,
 }: {
   tech: ControlCenterTech;
   now: number;
   canAssign: boolean;
-  onOpen: (workOrderId: string) => void;
+  onStartWork: (workOrderId: string) => void;
+  onOpenWork: (workOrderId: string) => void;
   activeId: string | null;
 }) {
   const { setNodeRef, isOver } = useDroppable({
@@ -265,7 +284,8 @@ function TechCard({
               bike={bike}
               now={now}
               canOpen={canAssign}
-              onOpen={onOpen}
+              onStartWork={onStartWork}
+              onOpenWork={onOpenWork}
               dragging={activeId === bike.work_order_id}
             />
           ))
@@ -285,6 +305,7 @@ export function ControlCenterShell({
   const router = useRouter();
   const now = useNowTick(true);
   const carouselRef = useRef<HTMLDivElement>(null);
+  const suppressNextBikeClick = useRef(false);
   const [pool, setPool] = useState(data.pool);
   const [techs, setTechs] = useState(data.techs);
   const [kpis, setKpis] = useState(data.kpis);
@@ -411,13 +432,30 @@ export function ControlCenterShell({
     return previous;
   }
 
+  function releaseSuppressBikeClick() {
+    // Clear after the post-drag click (if any) so the next real click still works.
+    window.setTimeout(() => {
+      suppressNextBikeClick.current = false;
+    }, 50);
+  }
+
   function handleDragStart(event: DragStartEvent) {
+    suppressNextBikeClick.current = true;
     setErrorMessage(null);
     setActiveId(String(event.active.id));
   }
 
+  function handleOpenWork(workOrderId: string) {
+    if (suppressNextBikeClick.current) {
+      suppressNextBikeClick.current = false;
+      return;
+    }
+    router.push(`/work_orders/${workOrderId}`);
+  }
+
   function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
+    releaseSuppressBikeClick();
     const { active, over } = event;
     if (!over || !canAssign) return;
 
@@ -442,7 +480,7 @@ export function ControlCenterShell({
     });
   }
 
-  function handleOpen(workOrderId: string) {
+  function handleStartWork(workOrderId: string) {
     setErrorMessage(null);
     const openedAt = new Date().toISOString();
     const previousPool = pool;
@@ -541,7 +579,10 @@ export function ControlCenterShell({
         sensors={sensors}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        onDragCancel={() => setActiveId(null)}
+        onDragCancel={() => {
+          setActiveId(null);
+          releaseSuppressBikeClick();
+        }}
       >
         <section
           ref={setPoolRef}
@@ -588,6 +629,7 @@ export function ControlCenterShell({
                   bike={bike}
                   now={now}
                   dragging={activeId === bike.work_order_id}
+                  onOpenWork={handleOpenWork}
                 />
               ))
             )}
@@ -601,7 +643,8 @@ export function ControlCenterShell({
               tech={tech}
               now={now}
               canAssign={canAssign}
-              onOpen={handleOpen}
+              onStartWork={handleStartWork}
+              onOpenWork={handleOpenWork}
               activeId={activeId}
             />
           ))}

@@ -9,7 +9,9 @@ import type {
   TechnicianFloorOs,
 } from "@/lib/services/technicianFloor";
 import type { DocketItem } from "@/lib/services/technicianDocket";
+import type { ReadyForPickupItem } from "@/lib/services/readyForPickup";
 import { TechnicianDocketList } from "@/components/technician/TechnicianDocketList";
+import { ReadyForPickupCarousel } from "@/components/technician/ReadyForPickupCarousel";
 import {
   addProofExceptionAction,
   completeJobFloorAction,
@@ -735,10 +737,12 @@ export function TechnicianFloorShell({
   floor,
   stage: stageProp,
   docketItems = [],
+  readyForPickup = [],
 }: {
   floor: TechnicianFloorOs;
   stage?: FloorStage | null;
   docketItems?: DocketItem[];
+  readyForPickup?: ReadyForPickupItem[];
 }) {
   const router = useRouter();
   const routerRef = useRef(router);
@@ -801,6 +805,8 @@ export function TechnicianFloorShell({
           Time clock
         </Link>
       </header>
+
+      <ReadyForPickupCarousel items={readyForPickup} />
 
       <div className="floor-layout">
         <aside className="floor-queue">

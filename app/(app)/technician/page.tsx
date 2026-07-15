@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { getTechnicianFloorOs, type FloorOsMode } from "@/lib/services/technicianFloor";
 import { getTechnicianDocket } from "@/lib/services/technicianDocket";
+import { listReadyForPickup } from "@/lib/services/readyForPickup";
 import { isFloorTech } from "@/lib/permissions";
 import { TechnicianFloorShell } from "@/components/technician/TechnicianFloorShell";
 import { deriveDefaultStage, type FloorStage } from "@/lib/technician/floorStage";
@@ -50,7 +51,7 @@ export default async function TechnicianPage({
   const params = await searchParams;
   const requestedStage = stageFromParams(params);
 
-  const [floor, docket] = await Promise.all([
+  const [floor, docket, readyForPickup] = await Promise.all([
     getTechnicianFloorOs({
       jobId: params.job ?? null,
       workOrderId: params.wo ?? null,
@@ -59,12 +60,18 @@ export default async function TechnicianPage({
     isFloorTech(user.role)
       ? getTechnicianDocket(user.user_id).catch(() => null)
       : Promise.resolve(null),
+    listReadyForPickup().catch(() => []),
   ]);
 
   const stage =
     requestedStage ?? (floor.selected ? deriveDefaultStage(floor.selected) : "work");
 
   return (
-    <TechnicianFloorShell floor={floor} stage={stage} docketItems={docket?.items ?? []} />
+    <TechnicianFloorShell
+      floor={floor}
+      stage={stage}
+      docketItems={docket?.items ?? []}
+      readyForPickup={readyForPickup}
+    />
   );
 }
