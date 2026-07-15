@@ -69,9 +69,7 @@ export function InspectionItemRow({
   onRecommend?: (result: InspectionResultRow) => void;
   compact?: boolean;
 }) {
-  const [status, setStatus] = useState<InspectionResultStatus | null>(
-    result.status
-  );
+  const [status, setStatus] = useState<InspectionResultStatus | null>(result.status);
   const [measurement, setMeasurement] = useState(result.measurement ?? "");
   const [notes, setNotes] = useState(result.notes ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -185,7 +183,7 @@ export function InspectionItemRow({
                 saveState === "error"
                   ? "text-red-700"
                   : saveState === "saving"
-                    ? "text-zinc-500"
+                    ? "text-[var(--status-neutral)]"
                     : saveState === "saved"
                       ? "text-emerald-700"
                       : "text-transparent"

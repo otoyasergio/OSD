@@ -4,10 +4,23 @@ import type { DbClient, JobStatus, WorkOrderStatus } from "@/lib/database/types"
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canAssignTechnician, canCreateWorkOrder } from "@/lib/permissions";
+import {
+  canAssignTechnician,
+  canCreateWorkOrder,
+  canViewClients,
+  isFloorTech,
+} from "@/lib/permissions";
+import {
+  assertViewerCanAccessWorkOrder,
+  scopeWorkOrdersForViewer,
+} from "@/lib/workOrders/assignmentVisibility";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
+import { resolveJobSnapshots } from "@/lib/forms/serviceLines";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { buildWorkOrderFlags } from "@/lib/status/flags";
+import { getAgreementFollowUp } from "@/lib/status/agreementFollowUp";
+import { assignUnassignedJobsOnWorkOrderToTechnician } from "@/lib/services/jobs";
+import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
 
 export type WorkOrder = {
   work_order_id: string;
@@ -22,14 +35,33 @@ export type WorkOrder = {
   date_created: string;
   estimated_completion: string | null;
   mileage: number | null;
+  mileage_unit: MileageUnit;
   internal_notes: string | null;
   quality_checked_by_user_id: string | null;
   quality_checked_at: string | null;
   quality_check_notes: string | null;
+  quality_check_assigned_to: string | null;
+  safety_checked_by_user_id: string | null;
+  safety_checked_at: string | null;
+  safety_check_notes: string | null;
+  safety_required: boolean | null;
+  safety_waived: boolean;
   ready_for_pickup_at: string | null;
   completed_at: string | null;
   released_by_user_id: string | null;
   pickup_notes: string | null;
+  square_invoice_id: string | null;
+  square_payment_status: string | null;
+  square_invoice_public_url: string | null;
+  billing_stage: string;
+  billing_amount_mode: string | null;
+  billing_amount_cents: number | null;
+  billing_collected_cents: number;
+  estimate_sent_at: string | null;
+  invoice_published_at: string | null;
+  wix_booking_id: string | null;
+  scheduled_at: string | null;
+  source: string;
   created_at: string;
   updated_at: string;
 };
@@ -40,6 +72,7 @@ export type WorkOrderListItem = {
   external_invoice_number: string | null;
   status: WorkOrderStatus;
   mileage: number | null;
+  mileage_unit: MileageUnit;
   date_created: string;
   estimated_completion: string | null;
   motorcycle: {
@@ -63,17 +96,32 @@ export type WorkOrderListItem = {
     last_name: string;
   } | null;
   flags: string[];
+  agreement_follow_up: "signature" | "paper_copy" | null;
 };
 
 export type CreateWorkOrderInput = {
   motorcycle_id: string;
   location_id: string;
   external_invoice_number?: string | null;
-  mileage?: number | null;
-  estimated_completion?: string | null;
+  mileage: number;
+  mileage_unit?: MileageUnit;
+  estimated_completion: string;
   internal_notes?: string | null;
   primary_technician_id?: string | null;
-  service_ids?: string[];
+  service_ids: string[];
+  service_lines?: Array<{
+    service_id: string;
+    note?: string | null;
+    estimated_labour?: number | null;
+    standard_price?: number | null;
+  }>;
+};
+
+export type LastRecordedMileage = {
+  mileage: number;
+  mileage_unit: MileageUnit;
+  date_created: string;
+  work_order_number: string;
 };
 
 export type TechnicianOption = {
@@ -83,16 +131,75 @@ export type TechnicianOption = {
 };
 
 const WORK_ORDER_COLUMNS =
-  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, created_at, updated_at";
+  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, mileage_unit, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, quality_check_assigned_to, safety_checked_by_user_id, safety_checked_at, safety_check_notes, safety_required, safety_waived, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, square_invoice_id, square_payment_status, square_invoice_public_url, billing_stage, billing_amount_mode, billing_amount_cents, billing_collected_cents, estimate_sent_at, invoice_published_at, wix_booking_id, scheduled_at, source, created_at, updated_at";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
 }
 
-export async function listTechniciansForActiveLocation(): Promise<
-  TechnicianOption[]
-> {
+export async function getLastRecordedMileageForMotorcycle(
+  motorcycleId: string
+): Promise<LastRecordedMileage | null> {
+  const user = await requireUser();
+  if (!canCreateWorkOrder(user.role)) throw new Error("FORBIDDEN");
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("work_order")
+    .select("mileage, mileage_unit, date_created, work_order_number")
+    .eq("motorcycle_id", motorcycleId)
+    .not("mileage", "is", null)
+    .order("date_created", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data || data.mileage == null) return null;
+
+  return {
+    mileage: Number(data.mileage),
+    mileage_unit: normalizeMileageUnit(data.mileage_unit),
+    date_created: String(data.date_created),
+    work_order_number: String(data.work_order_number),
+  };
+}
+
+type AgreementRelationRow = {
+  agreement_id: string;
+  signature_method: "digital" | "paper";
+  customer_document: { document_id: string } | Array<{ document_id: string }> | null;
+};
+
+function getAgreementRelationState(value: unknown): {
+  hasSignedAgreement: boolean;
+  agreement: {
+    signature_method: "digital" | "paper";
+    has_paper_copy: boolean;
+  } | null;
+} {
+  const relation = value as AgreementRelationRow | AgreementRelationRow[] | null;
+  const rows = Array.isArray(relation) ? relation : relation ? [relation] : [];
+  const agreement = rows[0] ?? null;
+  if (!agreement) {
+    return { hasSignedAgreement: false, agreement: null };
+  }
+
+  const documents = agreement.customer_document;
+  const hasPaperCopy = Array.isArray(documents)
+    ? documents.length > 0
+    : Boolean(documents);
+
+  return {
+    hasSignedAgreement: true,
+    agreement: {
+      signature_method: agreement.signature_method,
+      has_paper_copy: hasPaperCopy,
+    },
+  };
+}
+
+export async function listTechniciansForActiveLocation(): Promise<TechnicianOption[]> {
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -103,15 +210,13 @@ export async function listTechniciansForActiveLocation(): Promise<
 
   if (membershipError) throw membershipError;
 
-  const userIds = (memberships ?? []).map(
-    (row: { user_id: string }) => row.user_id
-  );
+  const userIds = (memberships ?? []).map((row: { user_id: string }) => row.user_id);
   if (userIds.length === 0) return [];
 
   const { data, error } = await supabase
     .from("app_user")
     .select("user_id, first_name, last_name")
-    .eq("role", "technician")
+    .in("role", ["technician", "head_tech"])
     .eq("status", "active")
     .in("user_id", userIds)
     .order("last_name")
@@ -121,9 +226,7 @@ export async function listTechniciansForActiveLocation(): Promise<
   return (data ?? []) as TechnicianOption[];
 }
 
-export async function listWorkOrdersForActiveLocation(): Promise<
-  WorkOrderListItem[]
-> {
+export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListItem[]> {
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -136,14 +239,18 @@ export async function listWorkOrdersForActiveLocation(): Promise<
       external_invoice_number,
       status,
       mileage,
+      mileage_unit,
       date_created,
       estimated_completion,
+      primary_technician_id,
+      quality_check_assigned_to,
       customer:customer_id (
         customer_id,
         first_name,
         last_name,
         phone,
-        email
+        email,
+        sms_opted_out_at
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,
@@ -157,8 +264,13 @@ export async function listWorkOrdersForActiveLocation(): Promise<
         first_name,
         last_name
       ),
-      job ( status ),
-      recommendation ( severity, status )
+      job ( status, assigned_technician_id ),
+      recommendation ( severity, status ),
+      drop_off_agreement (
+        agreement_id,
+        signature_method,
+        customer_document ( document_id )
+      )
     `
     )
     .eq("location_id", user.active_location_id!)
@@ -167,7 +279,7 @@ export async function listWorkOrdersForActiveLocation(): Promise<
 
   if (error) throw error;
 
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+  const mapped = ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
     const bike = row.motorcycle as {
       motorcycle_id: string;
       year: number;
@@ -182,19 +294,28 @@ export async function listWorkOrdersForActiveLocation(): Promise<
       phone: string | null;
       email: string | null;
     } | null;
-    const jobs = (row.job as Array<{ status: string }> | null) ?? [];
+    const jobs =
+      (row.job as Array<{
+        status: string;
+        assigned_technician_id: string | null;
+      }> | null) ?? [];
     const recommendations =
-      (row.recommendation as Array<{ severity: string; status: string }> | null) ??
-      [];
+      (row.recommendation as Array<{ severity: string; status: string }> | null) ?? [];
+    const status = row.status as WorkOrderStatus;
+    const agreementState = getAgreementRelationState(row.drop_off_agreement);
 
     return {
       work_order_id: row.work_order_id as string,
       work_order_number: row.work_order_number as string,
       external_invoice_number: row.external_invoice_number as string | null,
-      status: row.status as WorkOrderStatus,
+      status,
       mileage: row.mileage as number | null,
+      mileage_unit: normalizeMileageUnit(row.mileage_unit),
       date_created: row.date_created as string,
       estimated_completion: row.estimated_completion as string | null,
+      primary_technician_id: (row.primary_technician_id as string | null) ?? null,
+      quality_check_assigned_to: (row.quality_check_assigned_to as string | null) ?? null,
+      jobs,
       motorcycle: bike
         ? {
             ...bike,
@@ -204,16 +325,26 @@ export async function listWorkOrdersForActiveLocation(): Promise<
       primary_technician:
         row.primary_technician as WorkOrderListItem["primary_technician"],
       flags: buildWorkOrderFlags({
-        status: row.status as WorkOrderStatus,
+        status,
         vin: bike?.vin,
-        external_invoice_number: row.external_invoice_number as string | null,
         estimated_completion: row.estimated_completion as string | null,
         jobs,
         recommendations,
         photoCount: 1, // list view skips photo query; flag only on detail
+        hasSignedAgreement: agreementState.hasSignedAgreement,
       }).filter((flag) => flag !== "No intake photos"),
+      agreement_follow_up: getAgreementFollowUp(status, agreementState.agreement),
     };
   });
+
+  return scopeWorkOrdersForViewer(mapped, user.role, user.user_id).map(
+    ({
+      primary_technician_id: _p,
+      quality_check_assigned_to: _q,
+      jobs: _jobs,
+      ...item
+    }) => item
+  );
 }
 
 export type WorkOrderJob = {
@@ -247,6 +378,7 @@ export type WorkOrderDetail = WorkOrder & {
     last_name: string;
     phone: string | null;
     email: string | null;
+    sms_opted_out_at: string | null;
   } | null;
   motorcycle: {
     motorcycle_id: string;
@@ -262,6 +394,17 @@ export type WorkOrderDetail = WorkOrder & {
     first_name: string;
     last_name: string;
   } | null;
+  quality_check_assignee: {
+    user_id: string;
+    first_name: string;
+    last_name: string;
+  } | null;
+  open_admin_flags: Array<{
+    admin_flag_id: string;
+    reason: string;
+    note: string | null;
+    created_at: string;
+  }>;
   technicians: Array<{
     technician_id: string;
     assigned_at: string;
@@ -273,12 +416,11 @@ export type WorkOrderDetail = WorkOrder & {
   }>;
   jobs: WorkOrderJob[];
   flags: string[];
+  agreement_follow_up: "signature" | "paper_copy" | null;
   is_foreign_location: boolean;
 };
 
-export async function getWorkOrderById(
-  workOrderId: string
-): Promise<WorkOrder | null> {
+export async function getWorkOrderById(workOrderId: string): Promise<WorkOrder | null> {
   await requireUser();
   const supabase = await createClient();
 
@@ -308,7 +450,8 @@ export async function getWorkOrderDetail(
         first_name,
         last_name,
         phone,
-        email
+        email,
+        sms_opted_out_at
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,
@@ -320,6 +463,11 @@ export async function getWorkOrderDetail(
         customer_id
       ),
       primary_technician:primary_technician_id (
+        user_id,
+        first_name,
+        last_name
+      ),
+      quality_check_assignee:quality_check_assigned_to (
         user_id,
         first_name,
         last_name
@@ -356,7 +504,12 @@ export async function getWorkOrderDetail(
         )
       ),
       recommendation ( severity, status ),
-      intake_photo ( photo_id )
+      intake_photo ( photo_id ),
+      drop_off_agreement (
+        agreement_id,
+        signature_method,
+        customer_document ( document_id )
+      )
     `
     )
     .eq("work_order_id", workOrderId)
@@ -367,16 +520,26 @@ export async function getWorkOrderDetail(
 
   const row = data as Record<string, unknown>;
   const motorcycle = row.motorcycle as WorkOrderDetail["motorcycle"];
-  const customer = row.customer as WorkOrderDetail["customer"];
+  const customer = canViewClients(user.role)
+    ? (row.customer as WorkOrderDetail["customer"])
+    : null;
   const jobs = (row.job as WorkOrderJob[] | null) ?? [];
   const recommendations =
-    (row.recommendation as Array<{ severity: string; status: string }> | null) ??
-    [];
+    (row.recommendation as Array<{ severity: string; status: string }> | null) ?? [];
   const photos = (row.intake_photo as Array<{ photo_id: string }> | null) ?? [];
   const technicians =
     (row.work_order_technician as WorkOrderDetail["technicians"] | null) ?? [];
+  const agreementState = getAgreementRelationState(row.drop_off_agreement);
 
-  return {
+  const { data: openFlags, error: flagsError } = await supabase
+    .from("admin_flag")
+    .select("admin_flag_id, reason, note, created_at")
+    .eq("work_order_id", workOrderId)
+    .is("cleared_at", null)
+    .order("created_at", { ascending: false });
+  if (flagsError) throw flagsError;
+
+  const detail = {
     work_order_id: row.work_order_id as string,
     motorcycle_id: row.motorcycle_id as string,
     customer_id: row.customer_id as string,
@@ -389,33 +552,73 @@ export async function getWorkOrderDetail(
     date_created: row.date_created as string,
     estimated_completion: row.estimated_completion as string | null,
     mileage: row.mileage as number | null,
+    mileage_unit: normalizeMileageUnit(row.mileage_unit),
     internal_notes: row.internal_notes as string | null,
     quality_checked_by_user_id: row.quality_checked_by_user_id as string | null,
     quality_checked_at: row.quality_checked_at as string | null,
     quality_check_notes: row.quality_check_notes as string | null,
+    quality_check_assigned_to: row.quality_check_assigned_to as string | null,
+    safety_checked_by_user_id: row.safety_checked_by_user_id as string | null,
+    safety_checked_at: row.safety_checked_at as string | null,
+    safety_check_notes: row.safety_check_notes as string | null,
+    safety_required: (row.safety_required as boolean | null) ?? null,
+    safety_waived: Boolean(row.safety_waived),
     ready_for_pickup_at: row.ready_for_pickup_at as string | null,
     completed_at: row.completed_at as string | null,
     released_by_user_id: row.released_by_user_id as string | null,
     pickup_notes: row.pickup_notes as string | null,
+    square_invoice_id: row.square_invoice_id as string | null,
+    square_payment_status: row.square_payment_status as string | null,
+    square_invoice_public_url: (row.square_invoice_public_url as string | null) ?? null,
+    billing_stage: (row.billing_stage as string) ?? "none",
+    billing_amount_mode: (row.billing_amount_mode as string | null) ?? null,
+    billing_amount_cents:
+      row.billing_amount_cents == null ? null : Number(row.billing_amount_cents),
+    billing_collected_cents: Number(row.billing_collected_cents ?? 0),
+    estimate_sent_at: (row.estimate_sent_at as string | null) ?? null,
+    invoice_published_at: (row.invoice_published_at as string | null) ?? null,
+    wix_booking_id: row.wix_booking_id as string | null,
+    scheduled_at: row.scheduled_at as string | null,
+    source: (row.source as string) ?? "walk_in",
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
     customer,
     motorcycle,
-    primary_technician:
-      row.primary_technician as WorkOrderDetail["primary_technician"],
+    primary_technician: row.primary_technician as WorkOrderDetail["primary_technician"],
+    quality_check_assignee:
+      (row.quality_check_assignee as WorkOrderDetail["quality_check_assignee"]) ?? null,
+    open_admin_flags: (openFlags as WorkOrderDetail["open_admin_flags"]) ?? [],
     technicians,
     jobs,
     flags: buildWorkOrderFlags({
       status: row.status as WorkOrderStatus,
       vin: motorcycle?.vin,
-      external_invoice_number: row.external_invoice_number as string | null,
       estimated_completion: row.estimated_completion as string | null,
       jobs,
       recommendations,
       photoCount: photos.length,
+      hasSignedAgreement: agreementState.hasSignedAgreement,
+      hasOpenAdminFlag: (openFlags ?? []).length > 0,
     }),
+    agreement_follow_up: getAgreementFollowUp(
+      row.status as WorkOrderStatus,
+      agreementState.agreement
+    ),
     is_foreign_location: row.location_id !== user.active_location_id,
   };
+
+  assertViewerCanAccessWorkOrder(
+    {
+      primary_technician_id: detail.primary_technician_id,
+      quality_check_assigned_to: detail.quality_check_assigned_to,
+      status: detail.status,
+      jobs: detail.jobs,
+    },
+    user.role,
+    user.user_id
+  );
+
+  return detail;
 }
 
 async function assertCanMutateWorkOrder(
@@ -446,7 +649,7 @@ export async function assignTechnicianToWorkOrder(
     .maybeSingle();
 
   if (techError) throw techError;
-  if (!tech || tech.role !== "technician" || tech.status !== "active") {
+  if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
     throw new Error("TECHNICIAN_NOT_FOUND");
   }
 
@@ -480,6 +683,9 @@ export async function assignTechnicianToWorkOrder(
     description: `Technician ${tech.first_name} ${tech.last_name} assigned to ${workOrder.work_order_number}`,
     new_value: { technician_id: technicianId },
   });
+
+  // Put unassigned open jobs on this tech's docket so they can work them.
+  await assignUnassignedJobsOnWorkOrderToTechnician(workOrderId, technicianId);
 }
 
 export async function setPrimaryTechnician(
@@ -497,21 +703,19 @@ export async function setPrimaryTechnician(
       .maybeSingle();
 
     if (techError) throw techError;
-    if (!tech || tech.role !== "technician" || tech.status !== "active") {
+    if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
       throw new Error("TECHNICIAN_NOT_FOUND");
     }
 
-    const { error: assignError } = await supabase
-      .from("work_order_technician")
-      .upsert(
-        {
-          work_order_id: workOrderId,
-          technician_id: technicianId,
-          assigned_by_user_id: user.user_id,
-          assigned_at: new Date().toISOString(),
-        },
-        { onConflict: "work_order_id,technician_id" }
-      );
+    const { error: assignError } = await supabase.from("work_order_technician").upsert(
+      {
+        work_order_id: workOrderId,
+        technician_id: technicianId,
+        assigned_by_user_id: user.user_id,
+        assigned_at: new Date().toISOString(),
+      },
+      { onConflict: "work_order_id,technician_id" }
+    );
     if (assignError) throw assignError;
   }
 
@@ -548,6 +752,11 @@ export async function setPrimaryTechnician(
     old_value: { primary_technician_id: workOrder.primary_technician_id },
     new_value: { primary_technician_id: technicianId },
   });
+
+  if (technicianId) {
+    // Primary owns unassigned open jobs — they must appear on the tech docket.
+    await assignUnassignedJobsOnWorkOrderToTechnician(workOrderId, technicianId);
+  }
 }
 
 async function mintWorkOrderNumber(
@@ -576,8 +785,21 @@ export async function createWorkOrder(
     internal_notes: normalizeOptional(input.internal_notes),
     primary_technician_id: normalizeOptional(input.primary_technician_id),
     estimated_completion: normalizeOptional(input.estimated_completion),
-    service_ids: input.service_ids ?? [],
+    service_ids: input.service_ids,
+    service_lines: input.service_lines ?? [],
   });
+
+  const serviceLineById = new Map(
+    parsed.service_lines.map((line) => [
+      line.service_id,
+      {
+        service_id: line.service_id,
+        note: line.note?.trim() ? line.note.trim() : null,
+        estimated_labour: line.estimated_labour ?? null,
+        standard_price: line.standard_price ?? null,
+      },
+    ])
+  );
 
   if (parsed.location_id !== user.active_location_id) {
     throw new Error("LOCATION_MISMATCH");
@@ -587,7 +809,7 @@ export async function createWorkOrder(
 
   const { data: motorcycle, error: motorcycleError } = await supabase
     .from("motorcycle")
-    .select("motorcycle_id, customer_id, year, make, model")
+    .select("motorcycle_id, customer_id, year, make, model, odometer_unit")
     .eq("motorcycle_id", parsed.motorcycle_id)
     .maybeSingle();
 
@@ -624,17 +846,25 @@ export async function createWorkOrder(
       .maybeSingle();
 
     if (techError) throw techError;
-    if (!tech || tech.role !== "technician" || tech.status !== "active") {
+    if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
       throw new Error("TECHNICIAN_NOT_FOUND");
     }
   }
 
-  const workOrderNumber = await mintWorkOrderNumber(
-    supabase,
-    parsed.location_id
-  );
-  const initialStatus: WorkOrderStatus =
-    services.length > 0 ? "open" : "draft";
+  if (motorcycle.odometer_unit !== parsed.mileage_unit) {
+    const { error: unitPreferenceError } = await supabase
+      .from("motorcycle")
+      .update({
+        odometer_unit: parsed.mileage_unit,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("motorcycle_id", parsed.motorcycle_id);
+
+    if (unitPreferenceError) throw unitPreferenceError;
+  }
+
+  const workOrderNumber = await mintWorkOrderNumber(supabase, parsed.location_id);
+  const initialStatus: WorkOrderStatus = services.length > 0 ? "open" : "draft";
 
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
@@ -648,7 +878,8 @@ export async function createWorkOrder(
       primary_technician_id: parsed.primary_technician_id ?? null,
       created_by_user_id: user.user_id,
       mileage: parsed.mileage ?? null,
-      estimated_completion: parsed.estimated_completion ?? null,
+      mileage_unit: parsed.mileage_unit,
+      estimated_completion: parsed.estimated_completion,
       internal_notes: parsed.internal_notes ?? null,
     })
     .select("work_order_id, work_order_number, location_id, status")
@@ -659,13 +890,11 @@ export async function createWorkOrder(
   const workOrderId = workOrder.work_order_id as string;
 
   if (parsed.primary_technician_id) {
-    const { error: assignError } = await supabase
-      .from("work_order_technician")
-      .insert({
-        work_order_id: workOrderId,
-        technician_id: parsed.primary_technician_id,
-        assigned_by_user_id: user.user_id,
-      });
+    const { error: assignError } = await supabase.from("work_order_technician").insert({
+      work_order_id: workOrderId,
+      technician_id: parsed.primary_technician_id,
+      assigned_by_user_id: user.user_id,
+    });
     if (assignError) throw assignError;
   }
 
@@ -679,52 +908,53 @@ export async function createWorkOrder(
 
   const { data: templateItems, error: templateError } = await supabase
     .from("inspection_template_item")
-    .select(
-      "template_item_id, category, item_name, display_order, requires_measurement"
-    )
+    .select("template_item_id, category, item_name, display_order, requires_measurement")
     .eq("active", true)
     .order("display_order");
 
   if (templateError) throw templateError;
 
   if ((templateItems ?? []).length > 0) {
-    const { error: resultsError } = await supabase
-      .from("inspection_result")
-      .insert(
-        (templateItems ?? []).map(
-          (item: {
-            template_item_id: string;
-            category: string;
-            item_name: string;
-            display_order: number;
-            requires_measurement: boolean;
-          }) => ({
-            inspection_id: inspection.inspection_id,
-            template_item_id: item.template_item_id,
-            category_snapshot: item.category,
-            item_name_snapshot: item.item_name,
-            display_order_snapshot: item.display_order,
-            requires_measurement_snapshot: item.requires_measurement,
-          })
-        )
-      );
+    const { error: resultsError } = await supabase.from("inspection_result").insert(
+      (templateItems ?? []).map(
+        (item: {
+          template_item_id: string;
+          category: string;
+          item_name: string;
+          display_order: number;
+          requires_measurement: boolean;
+        }) => ({
+          inspection_id: inspection.inspection_id,
+          template_item_id: item.template_item_id,
+          category_snapshot: item.category,
+          item_name_snapshot: item.item_name,
+          display_order_snapshot: item.display_order,
+          requires_measurement_snapshot: item.requires_measurement,
+        })
+      )
+    );
     if (resultsError) throw resultsError;
   }
 
-  const createdJobs: Array<{ job_id: string; service_name_snapshot: string }> =
-    [];
+  const createdJobs: Array<{ job_id: string; service_name_snapshot: string }> = [];
 
   for (const service of services) {
     // Booked intake services are already customer-approved.
     const jobStatus: JobStatus = "approved";
+    const snapshots = resolveJobSnapshots({
+      catalogueLabour: service.estimated_labour,
+      cataloguePrice: service.standard_price,
+      line: serviceLineById.get(service.service_id),
+    });
     const { data: job, error: jobError } = await supabase
       .from("job")
       .insert({
         work_order_id: workOrderId,
         service_id: service.service_id,
         service_name_snapshot: service.name,
-        standard_price_snapshot: service.standard_price,
-        estimated_labour_snapshot: service.estimated_labour,
+        standard_price_snapshot: snapshots.standard_price_snapshot,
+        estimated_labour_snapshot: snapshots.estimated_labour_snapshot,
+        notes: snapshots.notes,
         status: jobStatus,
         created_by_user_id: user.user_id,
         approved_by_customer_at: new Date().toISOString(),
@@ -736,6 +966,13 @@ export async function createWorkOrder(
 
     if (jobError) throw jobError;
     createdJobs.push(job);
+  }
+
+  if (parsed.primary_technician_id && createdJobs.length > 0) {
+    await assignUnassignedJobsOnWorkOrderToTechnician(
+      workOrderId,
+      parsed.primary_technician_id
+    );
   }
 
   await addTimelineEvent(supabase, {

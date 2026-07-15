@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { listWorkOrdersForActiveLocation } from "@/lib/services/workOrders";
-import { canCreateWorkOrder } from "@/lib/permissions";
+import { canCreateWorkOrder, isFloorTech, staffHomePath } from "@/lib/permissions";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 export default async function WorkOrdersPage() {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
+  if (isFloorTech(user.role)) redirect(staffHomePath(user.role));
 
   const workOrders = await listWorkOrdersForActiveLocation();
   const canCreate = canCreateWorkOrder(user.role);

@@ -4,6 +4,8 @@ import { FormEvent, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/database/supabase-browser";
+import { assertLoginAllowed } from "@/app/login/actions";
+import { safeNextPath } from "@/lib/auth/routes";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -18,6 +20,12 @@ export default function LoginPage() {
     setPending(true);
 
     try {
+      const gate = await assertLoginAllowed();
+      if (gate.error) {
+        setError(gate.error);
+        return;
+      }
+
       const supabase = createClient();
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
@@ -29,7 +37,10 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace("/dashboard");
+      const nextPath = safeNextPath(
+        new URLSearchParams(window.location.search).get("next")
+      );
+      router.replace(nextPath);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in");
@@ -64,7 +75,7 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <form onSubmit={onSubmit} className="space-y-4">
+            <form onSubmit={onSubmit} method="post" className="space-y-4">
               <div>
                 <label htmlFor="email" className="field-label text-chrome-foreground">
                   Email

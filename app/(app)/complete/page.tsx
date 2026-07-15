@@ -1,18 +1,18 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { getCurrentAppUser } from "@/lib/auth/session";
+import { canViewFiledArchive, staffHomePath } from "@/lib/permissions";
 import { listCompletedWorkOrdersForActiveLocation } from "@/lib/services/filedWorkOrders";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { WorkOrderCard } from "@/components/work_orders/WorkOrderCard";
+import { formatDate } from "@/lib/datetime/format";
 
 export const dynamic = "force-dynamic";
 
 function formatCompletedAt(value: string | null) {
   if (!value) return null;
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatDate(value);
 }
 
 export default async function CompleteAndFiledPage({
@@ -20,6 +20,10 @@ export default async function CompleteAndFiledPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const user = await getCurrentAppUser();
+  if (!user) redirect("/login");
+  if (!canViewFiledArchive(user.role)) redirect(staffHomePath(user.role));
+
   const { q = "" } = await searchParams;
   const workOrders = await listCompletedWorkOrdersForActiveLocation(q);
 

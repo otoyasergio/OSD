@@ -1,8 +1,13 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
-import { canAdminHelpCreateRecords } from "@/lib/permissions";
+import { canAdminHelpCreateRecords, canViewClients } from "@/lib/permissions";
 import { customerSchema } from "@/lib/validation/schemas";
+import type { CustomerAccountType } from "@/lib/services/customerShared";
+import { normalizeEmailInput } from "@/lib/email/normalize";
+
+export type { CustomerAccountType } from "@/lib/services/customerShared";
+export { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 
 export type Customer = {
   customer_id: string;
@@ -10,7 +15,11 @@ export type Customer = {
   last_name: string;
   phone: string | null;
   email: string | null;
+  address: string | null;
+  date_of_birth: string | null;
   notes: string | null;
+  account_type: CustomerAccountType;
+  wix_contact_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -20,11 +29,14 @@ export type CustomerInput = {
   last_name: string;
   phone?: string | null;
   email?: string | null;
+  address?: string | null;
+  date_of_birth?: string | null;
   notes?: string | null;
+  account_type?: CustomerAccountType;
 };
 
 const CUSTOMER_COLUMNS =
-  "customer_id, first_name, last_name, phone, email, notes, created_at, updated_at";
+  "customer_id, first_name, last_name, phone, email, address, date_of_birth, notes, account_type, wix_contact_id, created_at, updated_at";
 
 /**
  * PostgREST `or()` uses commas and parentheses as syntax, so those characters are
@@ -39,13 +51,22 @@ export function escapeSearchTerm(term: string): string {
 }
 
 export function buildCustomerSearchOrFilter(term: string): string {
-  const pattern = `%${escapeSearchTerm(term)}%`;
-  return [
+  const escaped = escapeSearchTerm(term);
+  const pattern = `%${escaped}%`;
+  const filters = [
     `first_name.ilike.${pattern}`,
     `last_name.ilike.${pattern}`,
     `phone.ilike.${pattern}`,
     `email.ilike.${pattern}`,
-  ].join(",");
+  ];
+
+  // Allow "416-751-6488" / "(416) 751 6488" to match digit-only stored phones.
+  const digits = term.replace(/\D/g, "");
+  if (digits.length >= 3 && digits !== escaped) {
+    filters.push(`phone.ilike.%${digits}%`);
+  }
+
+  return filters.join(",");
 }
 
 function normalizeOptional(value: string | null | undefined): string | null {
@@ -54,7 +75,8 @@ function normalizeOptional(value: string | null | undefined): string | null {
 }
 
 export async function countCustomers(): Promise<number> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { count, error } = await supabase
@@ -65,8 +87,12 @@ export async function countCustomers(): Promise<number> {
   return count ?? 0;
 }
 
-export async function searchCustomers(term: string): Promise<Customer[]> {
-  await requireUser();
+export async function searchCustomers(
+  term: string,
+  options?: { account_type?: CustomerAccountType }
+): Promise<Customer[]> {
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   let query = supabase.from("customer").select(CUSTOMER_COLUMNS);
@@ -74,20 +100,19 @@ export async function searchCustomers(term: string): Promise<Customer[]> {
   if (cleaned) {
     query = query.or(buildCustomerSearchOrFilter(term));
   }
+  if (options?.account_type) {
+    query = query.eq("account_type", options.account_type);
+  }
 
-  const { data, error } = await query
-    .order("last_name")
-    .order("first_name")
-    .limit(50);
+  const { data, error } = await query.order("last_name").order("first_name").limit(50);
 
   if (error) throw error;
   return (data ?? []) as Customer[];
 }
 
-export async function getCustomerById(
-  customerId: string
-): Promise<Customer | null> {
-  await requireUser();
+export async function getCustomerById(customerId: string): Promise<Customer | null> {
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -107,7 +132,9 @@ export async function createCustomer(input: CustomerInput): Promise<Customer> {
   const parsed = customerSchema.parse({
     ...input,
     phone: normalizeOptional(input.phone),
-    email: normalizeOptional(input.email),
+    email: normalizeOptional(normalizeEmailInput(input.email)),
+    address: normalizeOptional(input.address),
+    date_of_birth: normalizeOptional(input.date_of_birth),
     notes: normalizeOptional(input.notes),
   });
 
@@ -119,7 +146,10 @@ export async function createCustomer(input: CustomerInput): Promise<Customer> {
       last_name: parsed.last_name,
       phone: normalizeOptional(parsed.phone),
       email: normalizeOptional(parsed.email),
+      address: normalizeOptional(parsed.address),
+      date_of_birth: normalizeOptional(parsed.date_of_birth),
       notes: normalizeOptional(parsed.notes),
+      account_type: parsed.account_type,
     })
     .select(CUSTOMER_COLUMNS)
     .single();
@@ -150,7 +180,9 @@ export async function updateCustomer(
   const parsed = customerSchema.parse({
     ...input,
     phone: normalizeOptional(input.phone),
-    email: normalizeOptional(input.email),
+    email: normalizeOptional(normalizeEmailInput(input.email)),
+    address: normalizeOptional(input.address),
+    date_of_birth: normalizeOptional(input.date_of_birth),
     notes: normalizeOptional(input.notes),
   });
 
@@ -165,7 +197,10 @@ export async function updateCustomer(
       last_name: parsed.last_name,
       phone: normalizeOptional(parsed.phone),
       email: normalizeOptional(parsed.email),
+      address: normalizeOptional(parsed.address),
+      date_of_birth: normalizeOptional(parsed.date_of_birth),
       notes: normalizeOptional(parsed.notes),
+      account_type: parsed.account_type,
       updated_at: new Date().toISOString(),
     })
     .eq("customer_id", customerId)

@@ -1,16 +1,39 @@
 import Link from "next/link";
-import { countCustomers, searchCustomers } from "@/lib/services/customers";
+import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth/session";
+import { canViewClients } from "@/lib/permissions";
+import {
+  countCustomers,
+  searchCustomers,
+  type CustomerAccountType,
+} from "@/lib/services/customers";
+import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+
+const ACCOUNT_FILTERS: Array<CustomerAccountType | ""> = [
+  "",
+  "retail",
+  "fleet",
+  "commercial",
+];
 
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; tag?: string }>;
 }) {
-  const { q = "" } = await searchParams;
+  const user = await requireUser();
+  if (!canViewClients(user.role)) redirect("/dashboard");
+
+  const { q = "", tag = "" } = await searchParams;
+  const accountType = ACCOUNT_FILTERS.includes(tag as CustomerAccountType | "")
+    ? (tag as CustomerAccountType | "")
+    : "";
   const [customers, totalCustomers] = await Promise.all([
-    searchCustomers(q),
+    searchCustomers(q, {
+      account_type: accountType || undefined,
+    }),
     countCustomers(),
   ]);
 
@@ -31,15 +54,15 @@ export default async function CustomersPage({
           <span className="stat-card-label">Customers on file</span>
           <span className="stat-card-value">{totalCustomers}</span>
         </div>
-        {q ? (
+        {q || accountType ? (
           <div className="stat-card" aria-label={`${customers.length} search matches`}>
-            <span className="stat-card-label">Search matches</span>
+            <span className="stat-card-label">Matches</span>
             <span className="stat-card-value">{customers.length}</span>
           </div>
         ) : null}
       </div>
 
-      <form method="get" className="filter-panel sm:grid-cols-1 lg:grid-cols-2">
+      <form method="get" className="filter-panel sm:grid-cols-1 lg:grid-cols-3">
         <label className="block sm:col-span-2 lg:col-span-1">
           <span className="field-label">Search</span>
           <input
@@ -51,11 +74,24 @@ export default async function CustomersPage({
             className="input"
           />
         </label>
+        <label className="block">
+          <span className="field-label">Account type</span>
+          <select name="tag" defaultValue={accountType} className="input">
+            <option value="">All types</option>
+            {(Object.keys(CUSTOMER_ACCOUNT_TYPE_LABELS) as CustomerAccountType[]).map(
+              (value) => (
+                <option key={value} value={value}>
+                  {CUSTOMER_ACCOUNT_TYPE_LABELS[value]}
+                </option>
+              )
+            )}
+          </select>
+        </label>
         <div className="flex items-end gap-2">
           <button type="submit" className="btn btn-primary">
             Search
           </button>
-          {q ? (
+          {q || accountType ? (
             <Link href="/customers" className="btn btn-secondary">
               Clear
             </Link>
@@ -65,15 +101,15 @@ export default async function CustomersPage({
 
       {customers.length === 0 ? (
         <EmptyState
-          variant={q ? "search" : "default"}
-          title={q ? "No matches" : "No customers yet"}
+          variant={q || accountType ? "search" : "default"}
+          title={q || accountType ? "No matches" : "No customers yet"}
           description={
-            q
-              ? `No customers match “${q}”. Try a different search or add a new customer.`
+            q || accountType
+              ? "No customers match this search. Try a different filter or add a new customer."
               : "Add your first customer to start creating work orders."
           }
           action={
-            q
+            q || accountType
               ? { href: "/customers/new", label: "New customer" }
               : { href: "/customers/new", label: "Add customer" }
           }
@@ -84,6 +120,7 @@ export default async function CustomersPage({
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Type</th>
                 <th>Phone</th>
                 <th>Email</th>
               </tr>
@@ -98,6 +135,11 @@ export default async function CustomersPage({
                     >
                       {customer.first_name} {customer.last_name}
                     </Link>
+                  </td>
+                  <td>
+                    <span className="status-badge status-badge--neutral">
+                      {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
+                    </span>
                   </td>
                   <td className="text-[var(--status-neutral-fg)]">
                     {customer.phone ?? "—"}

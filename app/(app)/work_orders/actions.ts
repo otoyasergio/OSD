@@ -6,19 +6,17 @@ import { revalidatePath } from "next/cache";
 import {
   assignTechnicianToWorkOrder,
   createWorkOrder,
+  getLastRecordedMileageForMotorcycle,
   setPrimaryTechnician,
+  type LastRecordedMileage,
 } from "@/lib/services/workOrders";
-import {
-  listIntakePhotos,
-  uploadIntakePhoto,
-} from "@/lib/services/photos";
+import { listIntakePhotos, uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { requireUser } from "@/lib/auth/session";
 import type { PhotoCategory } from "@/lib/database/types";
-import {
-  CREATE_INTAKE_PHOTO_SLOTS,
-  PHOTO_CATEGORY_LABELS,
-} from "@/lib/status/labels";
+import { readServiceLinesFromFormData } from "@/lib/forms/serviceLines";
+import { CREATE_INTAKE_PHOTO_SLOTS, PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
+import { parseShopLocalDateTimeInput } from "@/lib/datetime/format";
 
 export type WorkOrderFormState = {
   error: string | null;
@@ -28,30 +26,32 @@ export type WorkOrderFormState = {
   missingCategories?: PhotoCategory[];
 };
 
-const REQUIRED_INTAKE_CATEGORIES = CREATE_INTAKE_PHOTO_SLOTS.map(
-  (slot) => slot.category
-);
+const REQUIRED_INTAKE_CATEGORIES = CREATE_INTAKE_PHOTO_SLOTS.map((slot) => slot.category);
 
-function readOptionalNumber(formData: FormData, key: string): number | null {
-  const raw = String(formData.get(key) ?? "").trim();
-  if (!raw) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : null;
+export async function getLastRecordedMileageAction(
+  motorcycleId: string
+): Promise<LastRecordedMileage | null> {
+  if (!motorcycleId.trim()) return null;
+  return getLastRecordedMileageForMotorcycle(motorcycleId);
 }
 
-function readEstimatedCompletion(formData: FormData): string | null {
+function readRequiredMileage(formData: FormData): number {
+  const key = "mileage";
+  const raw = String(formData.get(key) ?? "").trim();
+  if (!raw || !/^\d+$/.test(raw)) return Number.NaN;
+  return Number(raw);
+}
+
+function readEstimatedCompletion(formData: FormData): string {
   const raw = String(formData.get("estimated_completion") ?? "").trim();
-  if (!raw) return null;
-  // datetime-local values lack timezone; treat as local and convert to ISO.
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return null;
+  if (!raw) return "";
+  // datetime-local lacks timezone; interpret as America/Toronto wall time.
+  const date = parseShopLocalDateTimeInput(raw);
+  if (!date) return "";
   return date.toISOString();
 }
 
-function readIntakeFile(
-  formData: FormData,
-  category: PhotoCategory
-): File | null {
+function readIntakeFile(formData: FormData, category: PhotoCategory): File | null {
   const file = formData.get(`intake_${category}`);
   if (!(file instanceof File) || file.size === 0) return null;
   return file;
@@ -95,9 +95,7 @@ function intakePartialError(
   workOrderNumber: string,
   missing: PhotoCategory[]
 ): WorkOrderFormState {
-  const labels = missing
-    .map((c) => PHOTO_CATEGORY_LABELS[c] ?? c)
-    .join(", ");
+  const labels = missing.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
   return {
     error: `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`,
     workOrderId,
@@ -116,21 +114,25 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
     .map((value) => String(value))
     .filter(Boolean);
 
-  const primaryTech = String(
-    formData.get("primary_technician_id") ?? ""
-  ).trim();
+  const primaryTech = String(formData.get("primary_technician_id") ?? "").trim();
+
+  const serviceLines = readServiceLinesFromFormData(formData, serviceIds);
+  if (serviceLines.some((line) => line.standard_price === null)) {
+    throw new Error("SERVICE_PRICE_REQUIRED");
+  }
 
   return createWorkOrder({
     motorcycle_id: String(formData.get("motorcycle_id") ?? ""),
     location_id: user.active_location_id!,
-    external_invoice_number: String(
-      formData.get("external_invoice_number") ?? ""
-    ),
-    mileage: readOptionalNumber(formData, "mileage"),
+    // Square assigns invoice_number when staff sync/publish from Billing
+    external_invoice_number: null,
+    mileage: readRequiredMileage(formData),
+    mileage_unit: formData.get("mileage_unit") === "mi" ? "mi" : "km",
     estimated_completion: readEstimatedCompletion(formData),
     internal_notes: String(formData.get("internal_notes") ?? ""),
     primary_technician_id: primaryTech || null,
     service_ids: serviceIds,
+    service_lines: serviceLines,
   });
 }
 
@@ -242,10 +244,7 @@ export async function completeIntakePhotosAction(
       redirect(`/work_orders/${workOrderId}`);
     }
 
-    const { files, missing } = collectRequiredIntakeFiles(
-      formData,
-      stillMissing
-    );
+    const { files, missing } = collectRequiredIntakeFiles(formData, stillMissing);
     if (missing.length > 0) {
       return {
         error: toFormErrorMessage(new Error("INTAKE_PHOTOS_REQUIRED")),
@@ -298,6 +297,8 @@ export async function assignTechnicianAction(
   }
 
   revalidatePath(`/work_orders/${workOrderId}`);
+  revalidatePath("/technician");
+  revalidatePath("/technician/docket");
   return { error: null };
 }
 
@@ -314,5 +315,7 @@ export async function setPrimaryTechnicianAction(
   }
 
   revalidatePath(`/work_orders/${workOrderId}`);
+  revalidatePath("/technician");
+  revalidatePath("/technician/docket");
   return { error: null };
 }

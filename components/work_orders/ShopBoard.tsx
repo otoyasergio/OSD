@@ -12,7 +12,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
-import { SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
+import { SHOP_BOARD_COLUMNS, GALLERY_BOARD_COLUMNS } from "@/lib/status/pipeline";
 import {
   canDragWorkOrderOnBoard,
   canDropInColumn,
@@ -65,9 +65,7 @@ function BoardColumn({
               key={wo.work_order_id}
               workOrder={wo}
               compact={compact}
-              disabled={
-                !canDragWorkOrderOnBoard(role, wo.status, isForeignLocation)
-              }
+              disabled={!canDragWorkOrderOnBoard(role, wo.status, isForeignLocation)}
             />
           ))
         )}
@@ -83,6 +81,7 @@ export function ShopBoard({
   hiddenColumnIds = [],
   role,
   isForeignLocation = false,
+  variant = "gallery",
 }: {
   rows: WorkOrderCardData[];
   hideEmpty?: boolean;
@@ -90,20 +89,18 @@ export function ShopBoard({
   hiddenColumnIds?: string[];
   role: UserRole;
   isForeignLocation?: boolean;
+  /** gallery = Track Day 4-wide stages; detailed = classic many columns */
+  variant?: "gallery" | "detailed";
 }) {
-  const hiddenSet = useMemo(
-    () => new Set(hiddenColumnIds),
-    [hiddenColumnIds]
-  );
+  const columns = variant === "gallery" ? GALLERY_BOARD_COLUMNS : SHOP_BOARD_COLUMNS;
+  const hiddenSet = useMemo(() => new Set(hiddenColumnIds), [hiddenColumnIds]);
   const [boardRows, setBoardRows] = useState(rows);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // Sync when server revalidates with new props
-  const rowsKey = rows
-    .map((r) => `${r.work_order_id}:${r.status}`)
-    .join("|");
+  const rowsKey = rows.map((r) => `${r.work_order_id}:${r.status}`).join("|");
   const [prevRowsKey, setPrevRowsKey] = useState(rowsKey);
   if (rowsKey !== prevRowsKey) {
     setPrevRowsKey(rowsKey);
@@ -126,9 +123,7 @@ export function ShopBoard({
     return map;
   }, [boardRows]);
 
-  const visibleColumns = SHOP_BOARD_COLUMNS.filter(
-    (column) => !hiddenSet.has(column.id)
-  );
+  const visibleColumns = columns.filter((column) => !hiddenSet.has(column.id));
   const columnCounts = visibleColumns.map((column) => ({
     id: column.id,
     count: column.statuses.reduce(
@@ -139,7 +134,7 @@ export function ShopBoard({
   const activeColumns = columnCounts.filter((column) => column.count > 0).length;
 
   const activeCard = activeId
-    ? boardRows.find((row) => row.work_order_id === activeId) ?? null
+    ? (boardRows.find((row) => row.work_order_id === activeId) ?? null)
     : null;
 
   function handleDragStart(event: DragStartEvent) {
@@ -159,9 +154,7 @@ export function ShopBoard({
 
     const targetStatus = getTargetStatusForColumn(targetColumnId);
     if (targetStatus === null) {
-      setErrorMessage(
-        "Use the work order detail page to place on hold or cancel."
-      );
+      setErrorMessage("Use the work order detail page to place on hold or cancel.");
       return;
     }
 
@@ -175,18 +168,13 @@ export function ShopBoard({
     const previousRows = boardRows;
     setBoardRows((current) =>
       current.map((row) =>
-        row.work_order_id === workOrderId
-          ? { ...row, status: targetStatus }
-          : row
+        row.work_order_id === workOrderId ? { ...row, status: targetStatus } : row
       )
     );
     setErrorMessage(null);
 
     startTransition(async () => {
-      const result = await moveWorkOrderOnBoardAction(
-        workOrderId,
-        targetColumnId
-      );
+      const result = await moveWorkOrderOnBoardAction(workOrderId, targetColumnId);
       if (result.error) {
         setBoardRows(previousRows);
         setErrorMessage(result.error);
@@ -217,17 +205,18 @@ export function ShopBoard({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="shop-board">
+        <div
+          className={
+            variant === "gallery" ? "shop-board shop-board--gallery" : "shop-board"
+          }
+        >
           {visibleColumns.map((column) => {
-            const cards = column.statuses.flatMap(
-              (status) => byStatus.get(status) ?? []
-            );
+            const cards = column.statuses.flatMap((status) => byStatus.get(status) ?? []);
 
             if (hideEmpty && cards.length === 0) return null;
 
             const dropDisabled =
-              getTargetStatusForColumn(column.id) === null ||
-              isForeignLocation;
+              getTargetStatusForColumn(column.id) === null || isForeignLocation;
 
             return (
               <BoardColumn

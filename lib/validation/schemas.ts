@@ -1,24 +1,64 @@
 import { z } from "zod";
 import { normalizeVin, validateOptionalVin } from "@/lib/vin/validate";
 
-export const customerSchema = z
-  .object({
-    first_name: z.string().min(1),
-    last_name: z.string().min(1),
-    phone: z.string().optional().nullable(),
-    email: z.string().email().optional().nullable().or(z.literal("")),
-    notes: z.string().optional().nullable(),
-  })
-  .refine((v) => Boolean(v.phone?.trim() || v.email?.trim()), {
-    message: "Phone or email is required",
-    path: ["phone"],
-  });
+export const customerAccountTypeSchema = z.enum(["retail", "fleet", "commercial"]);
+
+function isCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+const dateOfBirthSchema = z
+  .string()
+  .refine(isCalendarDate, "Enter a valid birthday")
+  .refine(
+    (value) => value <= new Date().toISOString().slice(0, 10),
+    "Birthday cannot be in the future"
+  )
+  .optional()
+  .nullable();
+
+export const customerSchema = z.object({
+  first_name: z.string().min(1),
+  last_name: z.string().min(1),
+  phone: z
+    .string()
+    .trim()
+    .min(1, "Phone is required")
+    .nullable()
+    .refine((value) => Boolean(value), "Phone is required"),
+  email: z
+    .string()
+    .trim()
+    .email("Enter a valid email")
+    .nullable()
+    .refine((value) => Boolean(value), "Email is required"),
+  address: z.preprocess(
+    (value) => value ?? "",
+    z.string().trim().min(1, "Address is required").max(500, "Address is too long")
+  ),
+  date_of_birth: dateOfBirthSchema,
+  notes: z.string().optional().nullable(),
+  account_type: customerAccountTypeSchema.default("retail"),
+});
 
 export const motorcycleSchema = z.object({
   customer_id: z.string().uuid(),
   year: z.number().int().min(1900).max(2100),
   make: z.string().min(1),
   model: z.string().min(1),
+  odometer_unit: z.enum(["km", "mi"]).default("km"),
   vin: z
     .string()
     .optional()
@@ -34,6 +74,13 @@ export const motorcycleSchema = z.object({
       }
     }),
   colour: z.string().optional().nullable(),
+  plate_number: z
+    .string()
+    .trim()
+    .max(20, "Plate number is too long")
+    .optional()
+    .nullable()
+    .transform((value) => (value ? value.toUpperCase() : null)),
   notes: z.string().optional().nullable(),
 });
 
@@ -45,15 +92,37 @@ export const serviceSchema = z.object({
   active: z.boolean().default(true),
 });
 
+export const shopClosureSchema = z.object({
+  closure_date: z.string().refine(isCalendarDate, "Enter a valid closure date"),
+  reason: z
+    .string()
+    .trim()
+    .max(120, "Reason must be 120 characters or less")
+    .optional()
+    .nullable()
+    .transform((value) => value || null),
+});
+
 export const createWorkOrderSchema = z.object({
   motorcycle_id: z.string().uuid(),
   location_id: z.string().uuid(),
   external_invoice_number: z.string().optional().nullable(),
-  mileage: z.number().int().nonnegative().optional().nullable(),
-  estimated_completion: z.string().datetime().optional().nullable(),
+  mileage: z.number().int().nonnegative(),
+  mileage_unit: z.enum(["km", "mi"]).default("km"),
+  estimated_completion: z.string().datetime(),
   internal_notes: z.string().optional().nullable(),
   primary_technician_id: z.string().uuid().optional().nullable(),
-  service_ids: z.array(z.string().uuid()).default([]),
+  service_ids: z.array(z.string().uuid()).min(1, "Select at least one service"),
+  service_lines: z
+    .array(
+      z.object({
+        service_id: z.string().uuid(),
+        note: z.string().nullable().optional(),
+        estimated_labour: z.number().nonnegative().nullable().optional(),
+        standard_price: z.number().nonnegative().nullable().optional(),
+      })
+    )
+    .default([]),
 });
 
 export const approvalMethodSchema = z.enum([
@@ -79,21 +148,14 @@ export const inspectionTemplateItemSchema = z.object({
 });
 
 export const saveInspectionResultSchema = z.object({
-  status: z
-    .enum(["ok", "future_attention", "immediate_attention"])
-    .nullable()
-    .optional(),
+  status: z.enum(["ok", "future_attention", "immediate_attention"]).nullable().optional(),
   measurement: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
 export const recommendationSchema = z.object({
   description: z.string().min(1, "Description is required"),
-  severity: z.enum([
-    "future_attention",
-    "immediate_attention",
-    "safety_critical",
-  ]),
+  severity: z.enum(["future_attention", "immediate_attention", "safety_critical"]),
   notes: z.string().nullable().optional(),
   inspection_result_id: z.string().uuid().nullable().optional(),
 });
@@ -134,12 +196,14 @@ export const photoCategorySchema = z.enum([
   "inspection_brakes",
   "inspection_forks",
   "inspection_item",
+  "job_proof",
 ]);
 
 export const intakePhotoSchema = z.object({
   category: photoCategorySchema,
   notes: z.string().nullable().optional(),
   inspection_result_id: z.string().uuid().nullable().optional(),
+  job_id: z.string().uuid().nullable().optional(),
 });
 
 export const technicianNoteTypeSchema = z.enum([
@@ -151,12 +215,52 @@ export const technicianNoteTypeSchema = z.enum([
   "road_test",
   "quality_check",
   "internal_warning",
+  "proof_exception",
 ]);
 
 export const technicianNoteSchema = z.object({
   note: z.string().min(1, "Note is required"),
   note_type: technicianNoteTypeSchema.default("general"),
   job_id: z.string().uuid().nullable().optional(),
+});
+
+export const dropOffAgreementSchema = z.object({
+  signer_name: z.string().min(1, "Signer name is required"),
+  initials: z.record(z.string(), z.string()),
+  signature_data_url: z.string().min(1, "Signature is required"),
+  ip_address: z.string().nullable().optional(),
+  user_agent: z.string().nullable().optional(),
+});
+
+export const publishAgreementTemplateSchema = z.object({
+  title: z.string().min(1, "Title is required"),
+  body_html: z.string().min(1, "Contract body is required"),
+  initial_fields: z
+    .array(z.string().min(1))
+    .min(1, "At least one initial field is required"),
+  version: z.string().min(1).optional(),
+});
+
+export const customerCreditSchema = z.object({
+  customer_id: z.string().uuid(),
+  amount: z.number().positive(),
+  reason: z.string().min(1),
+  source_work_order_id: z.string().uuid().nullable().optional(),
+});
+
+export const sendMessageSchema = z.object({
+  template_key: z.enum([
+    "approval_request",
+    "ready_for_pickup",
+    "contract_link",
+    "payment_reminder",
+  ]),
+  channel: z.enum(["sms", "email"]),
+});
+
+export const portalAcknowledgementSchema = z.object({
+  signer_name: z.string().min(1),
+  signature_data_url: z.string().optional(),
 });
 
 export const locationSchema = z.object({
@@ -180,6 +284,7 @@ export const appUserLinkSchema = z.object({
     "manager",
     "service_advisor",
     "technician",
+    "head_tech",
     "admin",
   ]),
   location_ids: z.array(z.string().uuid()).min(1, "Assign at least one location"),
@@ -195,6 +300,7 @@ export const appUserUpdateSchema = z.object({
     "manager",
     "service_advisor",
     "technician",
+    "head_tech",
     "admin",
   ]),
   status: z.enum(["active", "inactive", "suspended"]),

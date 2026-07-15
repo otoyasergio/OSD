@@ -9,6 +9,8 @@ import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import type { PhotoCategory } from "@/lib/database/types";
+import { formatDate, formatDateTime } from "@/lib/datetime/format";
+import { formatMileage } from "@/lib/mileage/format";
 
 const SECTION_PHOTO: Record<
   string,
@@ -23,9 +25,9 @@ const SECTION_PHOTO: Record<
   },
 };
 
-function formatDate(value: string | null) {
+function formatInspectionDate(value: string | null) {
   if (!value) return "—";
-  return new Date(value).toLocaleDateString();
+  return formatDate(value);
 }
 
 function sectionPhotoForCategory(
@@ -108,22 +110,19 @@ export function InspectionChecklist({
   }, [inspection.results]);
   const brakeSkipped = inspection.results.some(
     (r) =>
-      r.item_name_snapshot ===
-        "Brake Inspection Not Performed This Visit" && r.status === "ok"
+      r.item_name_snapshot === "Brake Inspection Not Performed This Visit" &&
+      r.status === "ok"
   );
   const showTireBrakePhotos =
     !brakeSkipped &&
     (inspection.photos.some(
-      (p) =>
-        p.category === "inspection_tires" ||
-        p.category === "inspection_brakes"
+      (p) => p.category === "inspection_tires" || p.category === "inspection_brakes"
     ) ||
       inspection.results.some(
         (r) =>
           r.status != null &&
           r.category_snapshot.startsWith("Brakes & Tires") &&
-          r.item_name_snapshot !==
-            "Brake Inspection Not Performed This Visit"
+          r.item_name_snapshot !== "Brake Inspection Not Performed This Visit"
       ));
 
   const header = inspection.header;
@@ -132,9 +131,7 @@ export function InspectionChecklist({
     <div className="inspection-report">
       <header className="inspection-report-header">
         <div className="inspection-report-brand">
-          <h1 className="inspection-report-title">
-            Visual Motorcycle Inspection Report
-          </h1>
+          <h1 className="inspection-report-title">Visual Motorcycle Inspection Report</h1>
           <p className="inspection-report-wo">{inspection.work_order_number}</p>
         </div>
 
@@ -154,10 +151,12 @@ export function InspectionChecklist({
         </div>
 
         <dl className="inspection-report-meta">
-          <div>
-            <dt>Customer</dt>
-            <dd>{header.customer_name ?? "—"}</dd>
-          </div>
+          {header.customer_name ? (
+            <div>
+              <dt>Customer</dt>
+              <dd>{header.customer_name}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Yr / Make / Model</dt>
             <dd>{header.motorcycle_label ?? "—"}</dd>
@@ -168,9 +167,7 @@ export function InspectionChecklist({
           </div>
           <div>
             <dt>Mileage</dt>
-            <dd>
-              {header.mileage != null ? header.mileage.toLocaleString() : "—"}
-            </dd>
+            <dd>{formatMileage(header.mileage, header.mileage_unit)}</dd>
           </div>
           <div>
             <dt>RO #</dt>
@@ -182,7 +179,7 @@ export function InspectionChecklist({
           </div>
           <div>
             <dt>Date</dt>
-            <dd>{formatDate(header.date_created)}</dd>
+            <dd>{formatInspectionDate(header.date_created)}</dd>
           </div>
         </dl>
       </header>
@@ -212,8 +209,7 @@ export function InspectionChecklist({
             </>
           ) : (
             <p className="text-sm font-medium text-emerald-800">
-              Inspection completed{" "}
-              {new Date(inspection.completed_at).toLocaleString()}
+              Inspection completed {formatDateTime(inspection.completed_at)}
             </p>
           )}
           <div className="inspection-summary-chips" aria-label="Result totals">
@@ -264,10 +260,7 @@ export function InspectionChecklist({
               )
             ) : (
               <form action={completeAction}>
-                <SubmitButton
-                  label="Complete inspection"
-                  pendingLabel="Completing…"
-                />
+                <SubmitButton label="Complete inspection" pendingLabel="Completing…" />
               </form>
             )}
             <FormError message={completeState.error} />
@@ -311,13 +304,10 @@ export function InspectionChecklist({
           const sectionPhoto = sectionPhotoForCategory(category);
           const forksNeeded =
             sectionPhoto?.category === "inspection_forks" &&
-            (inspection.missing_photos.some(
-              (p) => p.category === "inspection_forks"
-            ) ||
+            (inspection.missing_photos.some((p) => p.category === "inspection_forks") ||
               sectionPhotoUrl.has("inspection_forks") ||
               results.some(
-                (r) =>
-                  r.status != null && /front forks/i.test(r.item_name_snapshot)
+                (r) => r.status != null && /front forks/i.test(r.item_name_snapshot)
               ));
 
           const sectionChecked = results.filter((r) => r.status != null).length;
@@ -339,9 +329,7 @@ export function InspectionChecklist({
           return (
             <section key={category} className="inspection-section">
               <h2 className="inspection-section-header">
-                <span className="inspection-section-header-title">
-                  {category}
-                </span>
+                <span className="inspection-section-header-title">{category}</span>
                 <span
                   className={`inspection-section-count ${countClass}`}
                   aria-label={`${sectionChecked} of ${results.length} items checked${
@@ -381,8 +369,7 @@ export function InspectionChecklist({
                     }
                     photoUrl={photosByResult.get(result.inspection_result_id)}
                     photoRequired={inspection.missing_photos.some(
-                      (p) =>
-                        p.inspection_result_id === result.inspection_result_id
+                      (p) => p.inspection_result_id === result.inspection_result_id
                     )}
                     onRecommend={
                       canRecommend

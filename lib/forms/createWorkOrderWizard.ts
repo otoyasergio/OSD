@@ -1,3 +1,5 @@
+import { parseShopLocalDateTimeInput } from "@/lib/datetime/format";
+
 export const CREATE_WORK_ORDER_WIZARD_STEPS = [
   { id: "customer", label: "Customer" },
   { id: "motorcycle", label: "Motorcycle" },
@@ -19,14 +21,23 @@ export function canProceedFromMotorcycleStep(motorcycleId: string): boolean {
 
 export function canProceedFromVisitStep(data: {
   mileage: string;
-  externalInvoiceNumber: string;
+  estimatedCompletion: string;
+  selectedServiceIds: string[];
+  servicePricingComplete: boolean;
 }): boolean {
   const trimmed = data.mileage.trim();
   if (!trimmed) return false;
   // Reject decimals / scientific notation — server schema requires a nonnegative int.
   if (!/^\d+$/.test(trimmed)) return false;
   const value = Number(trimmed);
-  return Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) return false;
+
+  if (parseShopLocalDateTimeInput(data.estimatedCompletion) === null) return false;
+
+  return (
+    data.selectedServiceIds.some((serviceId) => serviceId.trim().length > 0) &&
+    data.servicePricingComplete
+  );
 }
 
 export function canProceedFromPhotosStep(intakeComplete: boolean): boolean {
@@ -39,9 +50,7 @@ export function canNavigateToWizardStep(
   maxReachedIndex: number
 ): boolean {
   return (
-    Number.isInteger(targetIndex) &&
-    targetIndex >= 0 &&
-    targetIndex <= maxReachedIndex
+    Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex <= maxReachedIndex
   );
 }
 
@@ -49,7 +58,9 @@ type StepCompleteInput = {
   customerId?: string;
   motorcycleId?: string;
   mileage?: string;
-  externalInvoiceNumber?: string;
+  estimatedCompletion?: string;
+  selectedServiceIds?: string[];
+  servicePricingComplete?: boolean;
   intakeComplete?: boolean;
 };
 
@@ -65,7 +76,9 @@ export function isWizardStepComplete(
     case "visit":
       return canProceedFromVisitStep({
         mileage: data.mileage ?? "",
-        externalInvoiceNumber: data.externalInvoiceNumber ?? "",
+        estimatedCompletion: data.estimatedCompletion ?? "",
+        selectedServiceIds: data.selectedServiceIds ?? [],
+        servicePricingComplete: Boolean(data.servicePricingComplete),
       });
     case "photos":
       return canProceedFromPhotosStep(Boolean(data.intakeComplete));
@@ -82,6 +95,9 @@ export function canSubmitCreateWorkOrderWizard(data: {
   customerId: string;
   motorcycleId: string;
   mileage: string;
+  estimatedCompletion: string;
+  selectedServiceIds: string[];
+  servicePricingComplete: boolean;
   intakeComplete: boolean;
 }): boolean {
   if (data.stepId !== "review") return false;
@@ -90,7 +106,9 @@ export function canSubmitCreateWorkOrderWizard(data: {
     canProceedFromMotorcycleStep(data.motorcycleId) &&
     canProceedFromVisitStep({
       mileage: data.mileage,
-      externalInvoiceNumber: "",
+      estimatedCompletion: data.estimatedCompletion,
+      selectedServiceIds: data.selectedServiceIds,
+      servicePricingComplete: data.servicePricingComplete,
     }) &&
     canProceedFromPhotosStep(data.intakeComplete)
   );

@@ -1,6 +1,8 @@
 # OTOMOTO Workshop Management App
 
-Workshop management application for OTOMOTO service operations—customers, bikes, location-scoped work orders, inspections, recommendations, parts, QC, and pickup—in one place. No invoicing in V1.
+Workshop management for OTOMOTO service operations—customers, bikes, location-scoped work orders, inspections, recommendations, parts, QC, pickup, Square billing, customer portal, and shop reports.
+
+See [`SECURITY.md`](./SECURITY.md) for webhook auth and secrets, and [`docs/superpowers/acceptance/production-checklist.md`](./docs/superpowers/acceptance/production-checklist.md) for go-live.
 
 ## Target platforms
 
@@ -13,9 +15,9 @@ You need a **live Supabase project**. Do not invent credentials; copy them from 
 ### 1. Create a Supabase project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **Project Settings → API** and note:
+2. Open the project's **Connect** dialog and note:
    - Project URL
-   - `anon` (public) key
+   - Publishable (`sb_publishable_...`) key; the legacy `anon` key remains a fallback
    - `service_role` key (server-only; never expose in the browser)
 
 ### 2. Configure environment
@@ -24,41 +26,25 @@ You need a **live Supabase project**. Do not invent credentials; copy them from 
 cp .env.local.example .env.local
 ```
 
-Fill in `.env.local` with your real project URL and keys:
+Fill in `.env.local` from [`.env.local.example`](./.env.local.example) (Supabase, Square, Twilio, Wix, cron, Sentry, Parts Canada).
+
+Supabase Auth uses cookie-backed SSR sessions. `proxy.ts` verifies/refreshes the
+session and protects every app page except `/login`, customer portal links under
+`/c/*`, and API handlers. The `(app)` layout then requires an active `app_user`
+record and assigned location before rendering staff tools.
+
+### 3. Apply migrations
+
+Migrations live in `supabase/migrations/` (`001`–`034`, with 010/011 reserved). Apply **in numeric order**:
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-```
-
-### 3. Apply migrations (001 → 013 in order)
-
-Migrations live in `supabase/migrations/`. Apply them **in numeric order** (skip reserved 010/011 unless those optional features ship):
-
-| Order | File |
-|------:|------|
-| 1 | `001_initial_schema.sql` |
-| 2 | `002_locations_and_wo_numbers.sql` |
-| 3 | `003_audit_log.sql` |
-| 4 | `004_seed_services.sql` |
-| 5 | `005_seed_inspection_template.sql` |
-| 6 | `006_rls_policies.sql` (also creates the private `intake-photos` storage bucket) |
-| 7 | `007_mint_work_order_number.sql` |
-| 8 | `008_job_time_and_service_categories.sql` |
-| 9 | `009_user_preferences.sql` |
-| 10 | `012_rls_hardening.sql` |
-| 11 | `013_performance_indexes.sql` |
-
-**Option A — Supabase CLI** (after `npx supabase link`):
-
-```bash
+npx supabase link
 npx supabase db push
 ```
 
-**Option B — SQL editor:** paste and run each file in the Supabase SQL Editor, one after another.
+Or paste each file in the Supabase SQL Editor in order.
 
-**Authorization note:** Role checks in `lib/permissions` (server actions) are the source of truth. RLS policies are defense in depth. Full matrix: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md).
+**Authorization note:** Role checks in `lib/permissions` (server actions) are the source of truth. RLS is defense in depth (location-scoped for WO tables as of `034`). Full matrix: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md).
 
 ### 4. Create Auth users and bootstrap data
 
@@ -66,15 +52,16 @@ npx supabase db push
 2. In the SQL Editor, run `supabase/seed/dev_bootstrap.sql` (creates Toronto / `TOR` + `work_order_sequence`).
 3. Uncomment and edit the Auth → `app_user` → `user_location` block at the bottom of that file (replace each `<…_AUTH_USER_UUID>`), then run it.
 4. Optional: uncomment the second location block in the same file for multi-location / WO-number acceptance tests.
+5. Enable **leaked password protection** in Auth → Password security before production.
 
 **Demo staff accounts** (dev / acceptance only — **change passwords after first login**):
 
-| Role | Email | Temp password |
-|------|-------|---------------|
-| owner | `owner@otomoto.local` | `Otomoto2026!` |
-| manager | `manager@otomoto.local` | `Otomoto2026!` |
+| Role            | Email                   | Temp password  |
+| --------------- | ----------------------- | -------------- |
+| owner           | `owner@otomoto.local`   | `Otomoto2026!` |
+| manager         | `manager@otomoto.local` | `Otomoto2026!` |
 | service_advisor | `advisor@otomoto.local` | `Otomoto2026!` |
-| technician | `tech@otomoto.local` | `Otomoto2026!` |
+| technician      | `tech@otomoto.local`    | `Otomoto2026!` |
 
 Do not commit `service_role` keys.
 
@@ -104,19 +91,19 @@ Dashboard board load uses one nested `work_order` query (jobs, recommendations, 
 ## Tests
 
 ```bash
-npm test
+npm test                 # unit (Vitest)
+npm run test:coverage    # coverage thresholds on core libs
+npm run test:e2e         # Playwright smoke (login, middleware, webhooks)
+npm run typecheck
+npm run lint
 ```
 
-Watch mode:
-
-```bash
-npm run test:watch
-```
+Watch mode: `npm run test:watch`
 
 ## Build
 
 ```bash
-npm run build
+npm run build            # webpack (Turbopack has a Zod datetime bundling bug)
 ```
 
 ## Production
@@ -125,6 +112,8 @@ See the production runbook: [`docs/superpowers/acceptance/production-checklist.m
 
 ## Documentation
 
+- Security: [`SECURITY.md`](./SECURITY.md)
+- Changelog: [`CHANGELOG.md`](./CHANGELOG.md)
 - Design: [`docs/superpowers/specs/`](./docs/superpowers/specs/)
 - Implementation plan: [`docs/superpowers/plans/`](./docs/superpowers/plans/)
 - V1 acceptance checklist: [`docs/superpowers/acceptance/v1-checklist.md`](./docs/superpowers/acceptance/v1-checklist.md)

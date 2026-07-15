@@ -1,11 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type UserRole =
-  | "owner"
-  | "manager"
-  | "service_advisor"
-  | "technician"
-  | "admin";
+  "owner" | "manager" | "service_advisor" | "technician" | "head_tech" | "admin";
 
 export type UserStatus = "active" | "inactive" | "suspended";
 
@@ -18,6 +14,7 @@ export type WorkOrderStatus =
   | "ready_for_technician"
   | "in_progress"
   | "quality_check"
+  | "safety_check"
   | "ready_for_pickup"
   | "completed"
   | "cancelled"
@@ -35,29 +32,15 @@ export type JobStatus =
   | "cancelled";
 
 export type PartStatus =
-  | "needed"
-  | "in_stock"
-  | "ordered"
-  | "installed"
-  | "not_required"
-  | "cancelled";
+  "needed" | "in_stock" | "ordered" | "installed" | "not_required" | "cancelled";
 
-export type InspectionResultStatus =
-  | "ok"
-  | "future_attention"
-  | "immediate_attention";
+export type InspectionResultStatus = "ok" | "future_attention" | "immediate_attention";
 
 export type RecommendationSeverity =
-  | "future_attention"
-  | "immediate_attention"
-  | "safety_critical";
+  "future_attention" | "immediate_attention" | "safety_critical";
 
 export type RecommendationStatus =
-  | "pending"
-  | "approved"
-  | "declined"
-  | "converted_to_job"
-  | "deferred";
+  "pending" | "approved" | "declined" | "converted_to_job" | "deferred";
 
 export type PhotoCategory =
   | "front"
@@ -73,7 +56,8 @@ export type PhotoCategory =
   | "inspection_tires"
   | "inspection_brakes"
   | "inspection_forks"
-  | "inspection_item";
+  | "inspection_item"
+  | "job_proof";
 
 export type TechnicianNoteType =
   | "general"
@@ -83,7 +67,12 @@ export type TechnicianNoteType =
   | "parts_issue"
   | "road_test"
   | "quality_check"
-  | "internal_warning";
+  | "internal_warning"
+  | "proof_exception";
 
-/** Supabase client used by service helpers. Schema is untyped until generated types land. */
+export type AdminFlagReason = "parts" | "approval" | "tool" | "quality" | "other";
+
+export type { Database } from "@/lib/database/supabase.generated";
+
+/** Untyped until createClient is wired with generated Database generics. */
 export type DbClient = SupabaseClient;

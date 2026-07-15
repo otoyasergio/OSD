@@ -17,6 +17,7 @@ export async function moveWorkOrderOnBoardAction(
   }
 
   revalidatePath("/dashboard");
+  revalidatePath("/control-center");
   revalidatePath("/work_orders");
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath("/technician");

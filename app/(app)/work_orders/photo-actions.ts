@@ -1,7 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { uploadIntakePhoto } from "@/lib/services/photos";
+import {
+  deleteIntakePhoto,
+  uploadIntakePhoto,
+} from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import type { PhotoCategory } from "@/lib/database/types";
 
@@ -33,6 +36,25 @@ export async function uploadIntakePhotoAction(
       inspection_result_id: resultId || null,
       file,
     });
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+
+  revalidatePhotos(workOrderId);
+  return { error: null };
+}
+
+export async function deleteIntakePhotoAction(
+  workOrderId: string,
+  _prevState: PhotoFormState,
+  formData: FormData
+): Promise<PhotoFormState> {
+  try {
+    const photoId = String(formData.get("photo_id") ?? "").trim();
+    if (!photoId) {
+      return { error: toFormErrorMessage(new Error("PHOTO_NOT_FOUND")) };
+    }
+    await deleteIntakePhoto(workOrderId, photoId);
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

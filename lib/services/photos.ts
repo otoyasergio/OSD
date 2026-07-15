@@ -4,7 +4,12 @@ import type { DbClient, PhotoCategory } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canEditWorkOrder, canCreateWorkOrder } from "@/lib/permissions";
+import {
+  canEditWorkOrder,
+  canCreateWorkOrder,
+  canDeleteIntakePhoto,
+  isFloorTech,
+} from "@/lib/permissions";
 import { intakePhotoSchema } from "@/lib/validation/schemas";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 
@@ -40,11 +45,7 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 function canUploadPhotos(role: AppUser["role"]) {
-  return (
-    canEditWorkOrder(role) ||
-    canCreateWorkOrder(role) ||
-    role === "technician"
-  );
+  return canEditWorkOrder(role) || canCreateWorkOrder(role) || isFloorTech(role);
 }
 
 async function requireMutableWorkOrder(
@@ -67,10 +68,7 @@ async function requireMutableWorkOrder(
   if (workOrder.location_id !== user.active_location_id) {
     throw new Error("FOREIGN_LOCATION");
   }
-  if (
-    workOrder.status === "completed" ||
-    workOrder.status === "cancelled"
-  ) {
+  if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
 
@@ -107,9 +105,7 @@ const PRIMARY_PHOTO_CATEGORY_RANK: Record<string, number> = {
 };
 
 /** Prefer front, then other bike angles, then oldest remaining photo. */
-export function pickPrimaryIntakePhoto<T extends IntakePhotoRef>(
-  photos: T[]
-): T | null {
+export function pickPrimaryIntakePhoto<T extends IntakePhotoRef>(photos: T[]): T | null {
   if (photos.length === 0) return null;
   return [...photos].sort((a, b) => {
     const rankA =
@@ -240,6 +236,7 @@ export async function uploadIntakePhoto(
     category: PhotoCategory;
     notes?: string | null;
     inspection_result_id?: string | null;
+    job_id?: string | null;
     file: File;
   }
 ): Promise<IntakePhoto> {
@@ -250,13 +247,15 @@ export async function uploadIntakePhoto(
     category: input.category,
     notes: input.notes,
     inspection_result_id: input.inspection_result_id,
+    job_id: input.job_id,
   });
 
-  if (
-    parsed.category === "inspection_item" &&
-    !parsed.inspection_result_id
-  ) {
+  if (parsed.category === "inspection_item" && !parsed.inspection_result_id) {
     throw new Error("INSPECTION_RESULT_NOT_FOUND");
+  }
+
+  if (parsed.category === "job_proof" && !parsed.job_id) {
+    throw new Error("JOB_NOT_FOUND");
   }
 
   const file = input.file;
@@ -266,8 +265,25 @@ export async function uploadIntakePhoto(
     throw new Error("PHOTO_TYPE_INVALID");
   }
 
-  const { supabase, locationId, workOrderNumber } =
-    await requireMutableWorkOrder(user, workOrderId);
+  const { supabase, locationId, workOrderNumber } = await requireMutableWorkOrder(
+    user,
+    workOrderId
+  );
+
+  if (parsed.job_id) {
+    const { data: jobRow, error: jobError } = await supabase
+      .from("job")
+      .select("job_id, work_order_id, assigned_technician_id")
+      .eq("job_id", parsed.job_id)
+      .maybeSingle();
+    if (jobError) throw jobError;
+    if (!jobRow || jobRow.work_order_id !== workOrderId) {
+      throw new Error("JOB_NOT_FOUND");
+    }
+    if (isFloorTech(user.role) && jobRow.assigned_technician_id !== user.user_id) {
+      throw new Error("JOB_NOT_ASSIGNED_TO_YOU");
+    }
+  }
 
   if (parsed.inspection_result_id) {
     const { data: resultRow, error: resultError } = await supabase
@@ -315,6 +331,7 @@ export async function uploadIntakePhoto(
       category: parsed.category,
       notes: parsed.notes ?? null,
       inspection_result_id: parsed.inspection_result_id ?? null,
+      job_id: parsed.job_id ?? null,
     })
     .select(COLUMNS)
     .single();
@@ -325,8 +342,7 @@ export async function uploadIntakePhoto(
   }
 
   const photo = data as IntakePhoto;
-  const categoryLabel =
-    PHOTO_CATEGORY_LABELS[photo.category] ?? photo.category;
+  const categoryLabel = PHOTO_CATEGORY_LABELS[photo.category] ?? photo.category;
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,
@@ -353,4 +369,84 @@ export async function uploadIntakePhoto(
 
   const [signed] = await signPaths(supabase, [photo]);
   return signed;
+}
+
+/**
+ * Owner/manager corrective delete — removes DB row and storage object.
+ * Allowed even on completed work orders so bad intake media can be cleaned up.
+ */
+export async function deleteIntakePhoto(
+  workOrderId: string,
+  photoId: string
+): Promise<void> {
+  const user = await requireUser();
+  if (!canDeleteIntakePhoto(user.role)) throw new Error("FORBIDDEN");
+
+  const supabase = await createClient();
+  const { data: workOrder, error: woError } = await supabase
+    .from("work_order")
+    .select("work_order_id, location_id, work_order_number, status")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (woError) throw woError;
+  if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+  if (workOrder.location_id !== user.active_location_id) {
+    throw new Error("FOREIGN_LOCATION");
+  }
+
+  const { data: photo, error: photoError } = await supabase
+    .from("intake_photo")
+    .select(COLUMNS)
+    .eq("photo_id", photoId)
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (photoError) throw photoError;
+  if (!photo) throw new Error("PHOTO_NOT_FOUND");
+
+  const row = photo as IntakePhoto;
+  const { error: deleteError } = await supabase
+    .from("intake_photo")
+    .delete()
+    .eq("photo_id", photoId)
+    .eq("work_order_id", workOrderId);
+
+  if (deleteError) throw new Error("PHOTO_DELETE_FAILED");
+
+  const { error: storageError } = await supabase.storage
+    .from(BUCKET)
+    .remove([row.storage_path]);
+  if (storageError) {
+    // Row is gone; storage orphan is preferable to failing the user action.
+    console.error("intake photo storage remove failed", storageError);
+  }
+
+  const categoryLabel = PHOTO_CATEGORY_LABELS[row.category] ?? row.category;
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.INTAKE_PHOTO_DELETED,
+    entity_type: "intake_photo",
+    entity_id: photoId,
+    description: `Intake photo removed (${categoryLabel})`,
+    old_value: {
+      category: row.category,
+      storage_path: row.storage_path,
+    },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "intake_photo_deleted",
+    entity_type: "intake_photo",
+    entity_id: photoId,
+    description: `Intake photo (${categoryLabel}) removed from ${workOrder.work_order_number}`,
+    old_value: {
+      category: row.category,
+      storage_path: row.storage_path,
+    },
+  });
 }

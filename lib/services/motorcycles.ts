@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
+import type { DbClient } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
@@ -7,10 +8,19 @@ import {
   canAdminHelpCreateRecords,
   canEditWorkOrder,
   canUpdateServiceInformation,
+  canViewClients,
 } from "@/lib/permissions";
 import { motorcycleSchema } from "@/lib/validation/schemas";
 import { escapeSearchTerm } from "@/lib/services/customers";
 import { normalizeVin } from "@/lib/vin";
+import type { MileageUnit } from "@/lib/mileage/format";
+import {
+  isServiceInfoEmpty,
+  mapFitmentToServiceInfo,
+  mergeServiceInfoFill,
+  pickBestFitmentVehicle,
+  type FitmentPayload,
+} from "@/lib/fitment/serviceInfoFromFitment";
 
 export type Motorcycle = {
   motorcycle_id: string;
@@ -18,8 +28,10 @@ export type Motorcycle = {
   year: number;
   make: string;
   model: string;
+  odometer_unit: MileageUnit;
   vin: string | null;
   colour: string | null;
+  plate_number: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -53,8 +65,10 @@ export type MotorcycleInput = {
   year: number;
   make: string;
   model: string;
+  odometer_unit: MileageUnit;
   vin?: string | null;
   colour?: string | null;
+  plate_number?: string | null;
   notes?: string | null;
 };
 
@@ -148,7 +162,7 @@ export type ServiceInformationInput = Partial<
 >;
 
 const MOTORCYCLE_COLUMNS =
-  "motorcycle_id, customer_id, year, make, model, vin, colour, notes, created_at, updated_at";
+  "motorcycle_id, customer_id, year, make, model, odometer_unit, vin, colour, plate_number, notes, created_at, updated_at";
 
 const SERVICE_INFORMATION_COLUMNS =
   "service_information_id, motorcycle_id, oil_filter, oil_type, oil_capacity, air_filter, spark_plugs, front_brake_pads, rear_brake_pads, front_tire_size, rear_tire_size, chain, battery, notes, last_updated, last_updated_by_user_id";
@@ -172,6 +186,7 @@ export function buildMotorcycleSearchOrFilter(
     `make.ilike.${pattern}`,
     `model.ilike.${pattern}`,
     `vin.ilike.${pattern}`,
+    `plate_number.ilike.${pattern}`,
   ];
 
   if (isYear(cleaned)) {
@@ -186,7 +201,8 @@ export function buildMotorcycleSearchOrFilter(
 }
 
 export async function countMotorcycles(): Promise<number> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { count, error } = await supabase
@@ -197,10 +213,9 @@ export async function countMotorcycles(): Promise<number> {
   return count ?? 0;
 }
 
-export async function searchMotorcycles(
-  term: string
-): Promise<MotorcycleWithCustomer[]> {
-  await requireUser();
+export async function searchMotorcycles(term: string): Promise<MotorcycleWithCustomer[]> {
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
   const cleaned = escapeSearchTerm(term);
 
@@ -212,18 +227,14 @@ export async function searchMotorcycles(
     const { data: customerRows } = await supabase
       .from("customer")
       .select("customer_id")
-      .or(
-        `first_name.ilike.%${cleaned}%,last_name.ilike.%${cleaned}%`
-      );
+      .or(`first_name.ilike.%${cleaned}%,last_name.ilike.%${cleaned}%`);
     const customerIds = (customerRows ?? []).map(
       (row: { customer_id: string }) => row.customer_id
     );
     query = query.or(buildMotorcycleSearchOrFilter(term, customerIds));
   }
 
-  const { data, error } = await query
-    .order("year", { ascending: false })
-    .limit(50);
+  const { data, error } = await query.order("year", { ascending: false }).limit(50);
 
   if (error) throw error;
   return (data ?? []) as unknown as MotorcycleWithCustomer[];
@@ -232,7 +243,8 @@ export async function searchMotorcycles(
 export async function listMotorcyclesForCustomer(
   customerId: string
 ): Promise<Motorcycle[]> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -248,7 +260,8 @@ export async function listMotorcyclesForCustomer(
 export async function getMotorcycleById(
   motorcycleId: string
 ): Promise<MotorcycleWithCustomer | null> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -310,10 +323,7 @@ async function assertVinAvailable(args: {
   if (!args.vin) return;
   const existing = await findMotorcycleByVin(args.vin);
   if (!existing) return;
-  if (
-    args.excludeMotorcycleId &&
-    existing.motorcycle_id === args.excludeMotorcycleId
-  ) {
+  if (args.excludeMotorcycleId && existing.motorcycle_id === args.excludeMotorcycleId) {
     return;
   }
   throw new Error("VIN_ALREADY_EXISTS");
@@ -325,6 +335,21 @@ export async function getServiceInformation(
   await requireUser();
   const supabase = await createClient();
 
+  let info = await loadServiceInformation(supabase, motorcycleId);
+  if (info && isServiceInfoEmpty(info)) {
+    const motorcycle = await getMotorcycleById(motorcycleId);
+    if (motorcycle) {
+      await fillServiceInformationFromFitment(supabase, motorcycle, info);
+      info = await loadServiceInformation(supabase, motorcycleId);
+    }
+  }
+  return info;
+}
+
+async function loadServiceInformation(
+  supabase: DbClient,
+  motorcycleId: string
+): Promise<ServiceInformation | null> {
   const { data, error } = await supabase
     .from("motorcycle_service_information")
     .select(SERVICE_INFORMATION_COLUMNS)
@@ -335,9 +360,62 @@ export async function getServiceInformation(
   return (data as ServiceInformation) ?? null;
 }
 
-export async function createMotorcycle(
-  input: MotorcycleInput
-): Promise<Motorcycle> {
+async function fillServiceInformationFromFitment(
+  supabase: DbClient,
+  motorcycle: Pick<Motorcycle, "motorcycle_id" | "year" | "make" | "model">,
+  existing: ServiceInformation
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("fitment_vehicle")
+    .select("make, model, year_start, year_end, spec_data, part_data")
+    .ilike("make", motorcycle.make);
+
+  if (error) throw error;
+
+  const rows = (data ?? []).map((row) => ({
+    make: row.make as string,
+    model: row.model as string,
+    year_start: row.year_start as number,
+    year_end: row.year_end as number,
+    spec_data: (row.spec_data as Record<string, string>) ?? {},
+    part_data: (row.part_data as Record<string, string>) ?? {},
+  })) satisfies FitmentPayload[];
+
+  const match = pickBestFitmentVehicle(
+    rows,
+    motorcycle.year,
+    motorcycle.make,
+    motorcycle.model
+  );
+  if (!match) return 0;
+
+  const mapped = mapFitmentToServiceInfo(match);
+  const { next, filledCount } = mergeServiceInfoFill(existing, mapped);
+  if (filledCount === 0) return 0;
+
+  const { error: updateError } = await supabase
+    .from("motorcycle_service_information")
+    .update({
+      oil_filter: next.oil_filter,
+      oil_type: next.oil_type,
+      oil_capacity: next.oil_capacity ?? existing.oil_capacity,
+      air_filter: next.air_filter,
+      spark_plugs: next.spark_plugs,
+      front_brake_pads: next.front_brake_pads,
+      rear_brake_pads: next.rear_brake_pads,
+      front_tire_size: next.front_tire_size,
+      rear_tire_size: next.rear_tire_size,
+      chain: next.chain,
+      battery: next.battery,
+      last_updated: new Date().toISOString(),
+    })
+    .eq("motorcycle_id", motorcycle.motorcycle_id);
+
+  if (updateError) throw updateError;
+  return filledCount;
+}
+
+export async function createMotorcycle(input: MotorcycleInput): Promise<Motorcycle> {
   const user = await requireUser();
   if (!canAdminHelpCreateRecords(user.role)) throw new Error("FORBIDDEN");
 
@@ -345,6 +423,7 @@ export async function createMotorcycle(
     ...input,
     vin: normalizeOptional(input.vin),
     colour: normalizeOptional(input.colour),
+    plate_number: normalizeOptional(input.plate_number),
     notes: normalizeOptional(input.notes),
   });
 
@@ -358,8 +437,10 @@ export async function createMotorcycle(
       year: parsed.year,
       make: parsed.make,
       model: parsed.model,
+      odometer_unit: parsed.odometer_unit,
       vin: normalizeOptional(parsed.vin),
       colour: normalizeOptional(parsed.colour),
+      plate_number: normalizeOptional(parsed.plate_number),
       notes: normalizeOptional(parsed.notes),
     })
     .select(MOTORCYCLE_COLUMNS)
@@ -372,6 +453,11 @@ export async function createMotorcycle(
     .from("motorcycle_service_information")
     .insert({ motorcycle_id: motorcycle.motorcycle_id });
   if (serviceInfoError) throw serviceInfoError;
+
+  const emptyInfo = await loadServiceInformation(supabase, motorcycle.motorcycle_id);
+  if (emptyInfo) {
+    await fillServiceInformationFromFitment(supabase, motorcycle, emptyInfo);
+  }
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,
@@ -397,6 +483,7 @@ export async function updateMotorcycle(
     ...input,
     vin: normalizeOptional(input.vin),
     colour: normalizeOptional(input.colour),
+    plate_number: normalizeOptional(input.plate_number),
     notes: normalizeOptional(input.notes),
   });
 
@@ -416,8 +503,10 @@ export async function updateMotorcycle(
       year: parsed.year,
       make: parsed.make,
       model: parsed.model,
+      odometer_unit: parsed.odometer_unit,
       vin: normalizeOptional(parsed.vin),
       colour: normalizeOptional(parsed.colour),
+      plate_number: normalizeOptional(parsed.plate_number),
       notes: normalizeOptional(parsed.notes),
       updated_at: new Date().toISOString(),
     })
@@ -523,7 +612,7 @@ export async function updateMotorcycleServiceInformation(
   if (!canUpdateServiceInformation(user.role)) throw new Error("FORBIDDEN");
 
   const supabase = await createClient();
-  const previous = await getServiceInformation(motorcycleId);
+  const previous = await loadServiceInformation(supabase, motorcycleId);
   if (!previous) throw new Error("MOTORCYCLE_NOT_FOUND");
 
   const patch: Record<string, string | null> = {};

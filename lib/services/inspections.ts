@@ -1,16 +1,15 @@
 import { requireUser, type AppUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type {
-  DbClient,
-  InspectionResultStatus,
-} from "@/lib/database/types";
+import type { DbClient, InspectionResultStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import {
   canCompleteInspection,
   canOverrideWorkOrderStatus,
+  canViewClients,
 } from "@/lib/permissions";
+import { assertViewerCanAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
 import { saveInspectionResultSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import {
@@ -19,6 +18,7 @@ import {
   getMissingInspectionPhotos,
   type InspectionPhotoRequirement,
 } from "@/lib/services/inspectionGate";
+import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
 
 export type InspectionResultRow = {
   inspection_result_id: string;
@@ -40,6 +40,7 @@ export type InspectionHeader = {
   motorcycle_label: string | null;
   vin: string | null;
   mileage: number | null;
+  mileage_unit: MileageUnit;
   technician_name: string | null;
   date_created: string | null;
 };
@@ -109,10 +110,7 @@ async function requireMutableInspectionAccess(
   if (workOrder.location_id !== user.active_location_id) {
     throw new Error("FOREIGN_LOCATION");
   }
-  if (
-    workOrder.status === "completed" ||
-    workOrder.status === "cancelled"
-  ) {
+  if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
 
@@ -121,6 +119,75 @@ async function requireMutableInspectionAccess(
     locationId: workOrder.location_id,
     workOrderNumber: workOrder.work_order_number,
   };
+}
+
+/** Create inspection + checklist rows when a WO was created without them. */
+async function ensureInspectionSeeded(
+  supabase: DbClient,
+  workOrderId: string
+): Promise<string> {
+  const { data: existing, error: existingError } = await supabase
+    .from("inspection")
+    .select("inspection_id")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existing?.inspection_id) return existing.inspection_id as string;
+
+  const { data: inspection, error: inspectionError } = await supabase
+    .from("inspection")
+    .insert({ work_order_id: workOrderId })
+    .select("inspection_id")
+    .single();
+
+  if (inspectionError) {
+    // Race: another request created it first.
+    if (inspectionError.code === "23505") {
+      const { data: raced, error: racedError } = await supabase
+        .from("inspection")
+        .select("inspection_id")
+        .eq("work_order_id", workOrderId)
+        .maybeSingle();
+      if (racedError) throw racedError;
+      if (raced?.inspection_id) return raced.inspection_id as string;
+    }
+    throw inspectionError;
+  }
+
+  const inspectionId = inspection.inspection_id as string;
+
+  const { data: templateItems, error: templateError } = await supabase
+    .from("inspection_template_item")
+    .select("template_item_id, category, item_name, display_order, requires_measurement")
+    .eq("active", true)
+    .order("display_order");
+
+  if (templateError) throw templateError;
+
+  if ((templateItems ?? []).length > 0) {
+    const { error: resultsError } = await supabase.from("inspection_result").insert(
+      (templateItems ?? []).map(
+        (item: {
+          template_item_id: string;
+          category: string;
+          item_name: string;
+          display_order: number;
+          requires_measurement: boolean;
+        }) => ({
+          inspection_id: inspectionId,
+          template_item_id: item.template_item_id,
+          category_snapshot: item.category,
+          item_name_snapshot: item.item_name,
+          display_order_snapshot: item.display_order,
+          requires_measurement_snapshot: item.requires_measurement,
+        })
+      )
+    );
+    if (resultsError) throw resultsError;
+  }
+
+  return inspectionId;
 }
 
 export async function getInspectionForWorkOrder(
@@ -138,7 +205,10 @@ export async function getInspectionForWorkOrder(
       work_order_number,
       status,
       mileage,
+      mileage_unit,
       date_created,
+      primary_technician_id,
+      quality_check_assigned_to,
       motorcycle:motorcycle_id (
         year,
         make,
@@ -149,7 +219,8 @@ export async function getInspectionForWorkOrder(
       primary_technician:primary_technician_id (
         first_name,
         last_name
-      )
+      ),
+      job ( assigned_technician_id )
     `
     )
     .eq("work_order_id", workOrderId)
@@ -158,7 +229,19 @@ export async function getInspectionForWorkOrder(
   if (woError) throw woError;
   if (!workOrder) return null;
 
-  const { data: inspection, error } = await supabase
+  assertViewerCanAccessWorkOrder(
+    {
+      primary_technician_id: workOrder.primary_technician_id as string | null,
+      quality_check_assigned_to: workOrder.quality_check_assigned_to as string | null,
+      status: workOrder.status as string,
+      jobs:
+        (workOrder.job as Array<{ assigned_technician_id: string | null }> | null) ?? [],
+    },
+    user.role,
+    user.user_id
+  );
+
+  const firstLoad = await supabase
     .from("inspection")
     .select(
       `
@@ -175,14 +258,37 @@ export async function getInspectionForWorkOrder(
     .eq("work_order_id", workOrderId)
     .maybeSingle();
 
-  if (error) throw error;
+  if (firstLoad.error) throw firstLoad.error;
+
+  let inspection = firstLoad.data;
+
+  if (!inspection) {
+    await ensureInspectionSeeded(supabase, workOrderId);
+    const reloaded = await supabase
+      .from("inspection")
+      .select(
+        `
+      inspection_id,
+      work_order_id,
+      started_at,
+      completed_at,
+      completed_by_user_id,
+      inspection_result (
+        ${RESULT_COLUMNS}
+      )
+    `
+      )
+      .eq("work_order_id", workOrderId)
+      .maybeSingle();
+    if (reloaded.error) throw reloaded.error;
+    inspection = reloaded.data;
+  }
+
   if (!inspection) return null;
 
-  const results = (
-    (inspection.inspection_result as InspectionResultRow[] | null) ?? []
-  ).slice().sort(
-    (a, b) => a.display_order_snapshot - b.display_order_snapshot
-  );
+  const results = ((inspection.inspection_result as InspectionResultRow[] | null) ?? [])
+    .slice()
+    .sort((a, b) => a.display_order_snapshot - b.display_order_snapshot);
 
   type NestedCustomer = { first_name: string; last_name: string };
   type NestedMotorcycle = {
@@ -195,18 +301,11 @@ export async function getInspectionForWorkOrder(
   type NestedTech = { first_name: string; last_name: string };
 
   const motorcycleRaw = workOrder.motorcycle as
-    | NestedMotorcycle
-    | NestedMotorcycle[]
-    | null;
-  const motorcycle = Array.isArray(motorcycleRaw)
-    ? motorcycleRaw[0]
-    : motorcycleRaw;
+    NestedMotorcycle | NestedMotorcycle[] | null;
+  const motorcycle = Array.isArray(motorcycleRaw) ? motorcycleRaw[0] : motorcycleRaw;
   const customerRaw = motorcycle?.customer;
   const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw;
-  const techRaw = workOrder.primary_technician as
-    | NestedTech
-    | NestedTech[]
-    | null;
+  const techRaw = workOrder.primary_technician as NestedTech | NestedTech[] | null;
   const tech = Array.isArray(techRaw) ? techRaw[0] : techRaw;
 
   const { data: photoRows, error: photoError } = await supabase
@@ -265,17 +364,17 @@ export async function getInspectionForWorkOrder(
     work_order_status: workOrder.status,
     is_foreign_location: workOrder.location_id !== user.active_location_id,
     header: {
-      customer_name: customer
-        ? `${customer.first_name} ${customer.last_name}`
-        : null,
+      customer_name:
+        canViewClients(user.role) && customer
+          ? `${customer.first_name} ${customer.last_name}`
+          : null,
       motorcycle_label: motorcycle
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : null,
       vin: motorcycle?.vin ?? null,
       mileage: (workOrder.mileage as number | null) ?? null,
-      technician_name: tech
-        ? `${tech.first_name} ${tech.last_name}`
-        : null,
+      mileage_unit: normalizeMileageUnit(workOrder.mileage_unit),
+      technician_name: tech ? `${tech.first_name} ${tech.last_name}` : null,
       date_created: (workOrder.date_created as string | null) ?? null,
     },
     results,
@@ -331,18 +430,14 @@ export async function saveInspectionResult(
   if (workOrder.location_id !== user.active_location_id) {
     throw new Error("FOREIGN_LOCATION");
   }
-  if (
-    workOrder.status === "completed" ||
-    workOrder.status === "cancelled"
-  ) {
+  if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
   if (inspection.completed_at) {
     throw new Error("INSPECTION_ALREADY_COMPLETE");
   }
 
-  const nextStatus =
-    parsed.status !== undefined ? parsed.status : row.status;
+  const nextStatus = parsed.status !== undefined ? parsed.status : row.status;
   const nextMeasurement =
     parsed.measurement !== undefined ? parsed.measurement : row.measurement;
   const nextNotes = parsed.notes !== undefined ? parsed.notes : row.notes;
@@ -460,8 +555,10 @@ export async function completeInspection(
   const user = await requireUser();
   if (!canCompleteInspection(user.role)) throw new Error("FORBIDDEN");
 
-  const { supabase, locationId, workOrderNumber } =
-    await requireMutableInspectionAccess(user, workOrderId);
+  const { supabase, locationId, workOrderNumber } = await requireMutableInspectionAccess(
+    user,
+    workOrderId
+  );
 
   const { data: inspection, error } = await supabase
     .from("inspection")

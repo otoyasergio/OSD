@@ -1,8 +1,8 @@
 import Link from "next/link";
-import {
-  countMotorcycles,
-  searchMotorcycles,
-} from "@/lib/services/motorcycles";
+import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth/session";
+import { canViewClients } from "@/lib/permissions";
+import { countMotorcycles, searchMotorcycles } from "@/lib/services/motorcycles";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -11,6 +11,9 @@ export default async function MotorcyclesPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const user = await requireUser();
+  if (!canViewClients(user.role)) redirect("/dashboard");
+
   const { q = "" } = await searchParams;
   const [motorcycles, totalMotorcycles] = await Promise.all([
     searchMotorcycles(q),
@@ -21,7 +24,7 @@ export default async function MotorcyclesPage({
     <div className="page-stack">
       <PageHeader
         title="Motorcycles"
-        subtitle="Search by customer, year, make, model, or VIN."
+        subtitle="Search by customer, year, make, model, VIN, or plate."
         actions={
           <Link href="/motorcycles/new" className="btn btn-primary">
             New motorcycle
@@ -30,18 +33,12 @@ export default async function MotorcyclesPage({
       />
 
       <div className="grid gap-2 sm:grid-cols-2 lg:max-w-md">
-        <div
-          className="stat-card"
-          aria-label={`${totalMotorcycles} motorcycles on file`}
-        >
+        <div className="stat-card" aria-label={`${totalMotorcycles} motorcycles on file`}>
           <span className="stat-card-label">Motorcycles on file</span>
           <span className="stat-card-value">{totalMotorcycles}</span>
         </div>
         {q ? (
-          <div
-            className="stat-card"
-            aria-label={`${motorcycles.length} search matches`}
-          >
+          <div className="stat-card" aria-label={`${motorcycles.length} search matches`}>
             <span className="stat-card-label">Search matches</span>
             <span className="stat-card-value">{motorcycles.length}</span>
           </div>
@@ -55,7 +52,7 @@ export default async function MotorcyclesPage({
             type="search"
             name="q"
             defaultValue={q}
-            placeholder="Customer, year, make, model, or VIN"
+            placeholder="Customer, year, make, model, VIN, or plate"
             aria-label="Search motorcycles"
             className="input"
           />
@@ -94,6 +91,7 @@ export default async function MotorcyclesPage({
               <tr>
                 <th>Motorcycle</th>
                 <th>Customer</th>
+                <th>Plate</th>
                 <th>VIN</th>
               </tr>
             </thead>
@@ -112,6 +110,9 @@ export default async function MotorcyclesPage({
                     {motorcycle.customer
                       ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
                       : "—"}
+                  </td>
+                  <td className="text-[var(--status-neutral-fg)]">
+                    {motorcycle.plate_number ?? "—"}
                   </td>
                   <td className="text-[var(--status-neutral-fg)]">
                     {motorcycle.vin ?? (

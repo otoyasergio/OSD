@@ -35,22 +35,20 @@ export function TransferMotorcycleForm({
   );
 
   const selected = candidates.find((c) => c.customer_id === selectedId);
-  const selectedName = selected
-    ? `${selected.first_name} ${selected.last_name}`
-    : "";
+  const selectedName = selected ? `${selected.first_name} ${selected.last_name}` : "";
 
   return (
     <form action={formAction} className="flex max-w-2xl flex-col gap-4">
       <FormError message={state.error} />
 
-      <p className="text-sm text-zinc-600">
-        Move this motorcycle to another customer&apos;s garage. The bike keeps
-        the same ID, VIN, service information, and work-order history. Past work
-        orders stay with the visit customer who owned the bike at the time.
+      <p className="text-sm text-[var(--status-neutral)]">
+        Move this motorcycle to another customer&apos;s garage. The bike keeps the same
+        ID, VIN, service information, and work-order history. Past work orders stay with
+        the visit customer who owned the bike at the time.
       </p>
 
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-zinc-800">
+        <span className="mb-1.5 block text-sm font-medium text-foreground">
           New owner<span className="ml-1 text-red-600">*</span>
         </span>
         <select
@@ -61,7 +59,7 @@ export function TransferMotorcycleForm({
             setSelectedId(event.target.value);
             setConfirmed(false);
           }}
-          className="min-h-11 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-base text-zinc-900 outline-none focus:border-zinc-900"
+          className="min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)]"
         >
           <option value="" disabled>
             Select a customer
@@ -77,7 +75,10 @@ export function TransferMotorcycleForm({
       {candidates.length === 0 ? (
         <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           No other customers on file.{" "}
-          <Link href="/customers/new" className="font-semibold underline-offset-2 hover:underline">
+          <Link
+            href="/customers/new"
+            className="font-semibold underline-offset-2 hover:underline"
+          >
             Create a customer
           </Link>{" "}
           first, then transfer.
@@ -85,7 +86,7 @@ export function TransferMotorcycleForm({
       ) : null}
 
       {selected ? (
-        <label className="flex items-start gap-3 rounded border border-zinc-200 bg-zinc-50 px-3 py-3 text-sm text-zinc-800">
+        <label className="flex items-start gap-3 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-3 text-sm text-foreground">
           <input
             type="checkbox"
             className="mt-1"
@@ -95,9 +96,8 @@ export function TransferMotorcycleForm({
           />
           <span>
             Transfer <strong>{bikeLabel}</strong> from{" "}
-            <strong>{currentCustomerName}</strong> to{" "}
-            <strong>{selectedName}</strong>? Past work orders stay with the visit
-            history.
+            <strong>{currentCustomerName}</strong> to <strong>{selectedName}</strong>?
+            Past work orders stay with the visit history.
           </span>
         </label>
       ) : null}

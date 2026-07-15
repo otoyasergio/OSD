@@ -2,9 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import {
+  canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
   canManageServiceCatalogue,
+  canManageShopClosures,
+  canManageTimesheets,
   canManageUsers,
   canViewAuditLog,
 } from "@/lib/permissions";
@@ -19,6 +22,18 @@ export default async function SettingsPage() {
 
   const links = [
     {
+      href: "/account",
+      label: "My account",
+      description: "Manage your profile photo and password.",
+      visible: true,
+    },
+    {
+      href: "/settings/timesheets",
+      label: "Timesheets",
+      description: "Who is punched in, weekly hours, and punch corrections.",
+      visible: canManageTimesheets(user.role),
+    },
+    {
       href: "/settings/services",
       label: "Service catalogue",
       description: "Manage the services jobs are created from.",
@@ -29,6 +44,18 @@ export default async function SettingsPage() {
       label: "Inspection template",
       description: "Edit the checklist used for new inspections.",
       visible: canManageInspectionTemplate(user.role),
+    },
+    {
+      href: "/settings/contract_template",
+      label: "Drop-off contract",
+      description: "Edit the agreement customers sign at intake.",
+      visible: canManageContractTemplate(user.role),
+    },
+    {
+      href: "/settings/closures",
+      label: "Shop closures",
+      description: "Set holidays and special closed dates used by intake.",
+      visible: canManageShopClosures(user.role),
     },
     {
       href: "/settings/locations",
@@ -54,7 +81,7 @@ export default async function SettingsPage() {
     <div className="page-stack">
       <PageHeader
         title="Settings"
-        subtitle="Configure catalogue, locations, users, and audit."
+        subtitle="Manage your account, catalogue, locations, users, and audit."
       />
 
       {links.length === 0 ? (
@@ -63,7 +90,10 @@ export default async function SettingsPage() {
         <ul className="grid gap-3 sm:grid-cols-2">
           {links.map((link) => (
             <li key={link.href}>
-              <Link href={link.href} className="card block transition-shadow active:shadow-md">
+              <Link
+                href={link.href}
+                className="card block transition-shadow active:shadow-md"
+              >
                 <div className="card-body">
                   <span className="font-semibold text-foreground">{link.label}</span>
                   <span className="mt-1 block text-sm text-[var(--status-neutral)]">

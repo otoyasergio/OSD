@@ -3,12 +3,15 @@ import type { WorkOrderStatus } from "@/lib/database/types";
 export type WorkOrderFlagInput = {
   status: WorkOrderStatus;
   vin?: string | null;
-  external_invoice_number?: string | null;
   estimated_completion?: string | null;
   jobs: Array<{ status: string; assigned_technician_id?: string | null }>;
   recommendations: Array<{ severity: string; status: string }>;
   photoCount: number;
   inspectionComplete?: boolean | null;
+  /** When false, emit Contract unsigned (skip completed/cancelled). Omit to leave unchecked. */
+  hasSignedAgreement?: boolean | null;
+  /** Open admin andon flags (Floor OS). */
+  hasOpenAdminFlag?: boolean | null;
   now?: Date;
 };
 
@@ -29,10 +32,10 @@ export function buildWorkOrderFlags(input: WorkOrderFlagInput): string[] {
   const flags: string[] = [];
 
   if (!input.vin?.trim()) flags.push("Missing VIN");
-  if (!input.external_invoice_number?.trim()) {
-    flags.push("Missing invoice #");
-  }
   if (input.photoCount === 0) flags.push("No intake photos");
+  if (input.hasSignedAgreement === false && !TERMINAL.includes(input.status)) {
+    flags.push("Contract unsigned");
+  }
   if (input.inspectionComplete === false) {
     flags.push("Incomplete inspection");
   }
@@ -56,6 +59,7 @@ export function buildWorkOrderFlags(input: WorkOrderFlagInput): string[] {
     flags.push("Overdue");
   }
   if (input.status === "on_hold") flags.push("On hold");
+  if (input.hasOpenAdminFlag) flags.push("Admin flag");
 
   return flags;
 }

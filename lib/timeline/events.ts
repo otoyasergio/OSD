@@ -1,8 +1,9 @@
 export const TimelineEventType = {
   WORK_ORDER_CREATED: "Work Order Created",
   WORK_ORDER_STATUS_CHANGED: "Work Order Status Changed",
-  EXTERNAL_INVOICE_NUMBER_ADDED: "External Invoice Number Added",
+  EXTERNAL_INVOICE_NUMBER_ADDED: "Square Invoicing Reference Added",
   INTAKE_PHOTO_UPLOADED: "Intake Photo Uploaded",
+  INTAKE_PHOTO_DELETED: "Intake Photo Deleted",
   INSPECTION_CREATED: "Inspection Created",
   INSPECTION_STARTED: "Inspection Started",
   INSPECTION_RESULT_UPDATED: "Inspection Result Updated",
@@ -22,10 +23,22 @@ export const TimelineEventType = {
   TECHNICIAN_NOTE_ADDED: "Technician Note Added",
   SERVICE_INFORMATION_UPDATED: "Service Information Updated",
   QUALITY_CHECK_COMPLETED: "Quality Check Completed",
+  SAFETY_CHECK_PASSED: "Safety Check Passed",
+  SAFETY_CHECK_FAILED: "Safety Check Failed",
   READY_FOR_PICKUP: "Ready For Pickup",
   WORK_ORDER_COMPLETED: "Work Order Completed",
   WORK_ORDER_CANCELLED: "Work Order Cancelled",
   WORK_ORDER_PLACED_ON_HOLD: "Work Order Placed On Hold",
+  DROP_OFF_AGREEMENT_SIGNED: "Drop-Off Agreement Signed",
+  DROP_OFF_AGREEMENT_COPY_UPLOADED: "Drop-Off Agreement Copy Uploaded",
+  SQUARE_INVOICE_CREATED: "Square Invoice Created",
+  SQUARE_INVOICE_DRAFT_SYNCED: "Square Invoice Draft Synced",
+  SQUARE_INVOICE_PUBLISHED: "Square Invoice Published",
+  SQUARE_INVOICE_CANCELLED: "Square Invoice Cancelled",
+  ESTIMATE_SENT: "Estimate Sent",
+  SQUARE_PAYMENT_UPDATED: "Square Payment Updated",
+  MESSAGE_SENT: "Message Sent",
+  INSPECTION_ACKNOWLEDGED: "Inspection Acknowledged",
 } as const;
 
 export type TimelineEventTypeValue =

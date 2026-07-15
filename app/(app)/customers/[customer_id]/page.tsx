@@ -1,25 +1,30 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getCustomerById } from "@/lib/services/customers";
+import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { listGarageForCustomer } from "@/lib/services/clientGarage";
 import { listWorkOrdersForCustomer } from "@/lib/services/filedWorkOrders";
+import { listCustomerDocuments } from "@/lib/services/customerDocuments";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { ClientGarage } from "@/components/customers/ClientGarage";
+import { CustomerDocuments } from "@/components/customers/CustomerDocuments";
+import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
+import { WixCustomerSyncPanel } from "@/components/customers/WixCustomerSyncPanel";
 import { updateCustomerAction } from "@/app/(app)/customers/actions";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import type { CustomerWorkOrderSummary } from "@/lib/services/filedWorkOrders";
 import { requireUser } from "@/lib/auth/session";
-import { canEditWorkOrder } from "@/lib/permissions";
-
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
+import {
+  canDeleteCustomerDocuments,
+  canEditWorkOrder,
+  canSyncWixContacts,
+  canUploadCustomerDocuments,
+  canViewClients,
+  canViewCustomerDocuments,
+} from "@/lib/permissions";
+import { isWixSyncAvailable } from "@/lib/services/wixContacts";
+import { formatCalendarDate, formatDate } from "@/lib/datetime/format";
 
 function WorkOrderHistoryList({
   items,
@@ -32,14 +37,14 @@ function WorkOrderHistoryList({
 }) {
   if (items.length === 0) {
     return (
-      <p className="mt-3 rounded border border-dashed border-zinc-300 bg-white px-4 py-8 text-center text-sm text-zinc-600">
+      <p className="mt-3 rounded border border-dashed border-[var(--border-strong)] bg-white px-4 py-8 text-center text-sm text-[var(--status-neutral)]">
         {emptyMessage}
       </p>
     );
   }
 
   return (
-    <ul className="mt-3 divide-y divide-zinc-100 rounded border border-zinc-200 bg-white">
+    <ul className="mt-3 divide-y divide-[var(--border)] rounded border border-[var(--border)] bg-white">
       {items.map((wo) => {
         const jobSummary =
           wo.jobs.length === 0
@@ -57,24 +62,24 @@ function WorkOrderHistoryList({
               <div>
                 <Link
                   href={`/work_orders/${wo.work_order_id}`}
-                  className="font-medium text-zinc-900 underline-offset-2 hover:underline"
+                  className="font-medium text-foreground underline-offset-2 hover:underline"
                 >
                   {wo.work_order_number}
                 </Link>
-                <p className="mt-0.5 text-sm text-zinc-600">
+                <p className="mt-0.5 text-sm text-[var(--status-neutral)]">
                   {wo.motorcycle_label}
                   {" · "}
                   {wo.location_name}
                   {wo.location_code ? ` (${wo.location_code})` : null}
                 </p>
-                <p className="mt-1 text-xs text-zinc-500">{jobSummary}</p>
+                <p className="mt-1 text-xs text-[var(--status-neutral)]">{jobSummary}</p>
               </div>
               <div className="flex flex-col items-end gap-1">
                 <StatusBadge status={wo.status} />
-                <span className="text-xs text-zinc-500">
+                <span className="text-xs text-[var(--status-neutral)]">
                   {showCompletedDate
-                    ? `Completed ${formatDate(wo.completed_at)}`
-                    : `Opened ${formatDate(wo.date_created)}`}
+                    ? `Completed ${formatDate(wo.completed_at) || "—"}`
+                    : `Opened ${formatDate(wo.date_created) || "—"}`}
                 </span>
               </div>
             </div>
@@ -92,42 +97,82 @@ export default async function CustomerDetailPage({
 }) {
   const { customer_id } = await params;
   const user = await requireUser();
+  if (!canViewClients(user.role)) redirect("/dashboard");
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 
-  const [garage, history] = await Promise.all([
+  const [garage, history, documents] = await Promise.all([
     listGarageForCustomer(customer_id),
     listWorkOrdersForCustomer(customer_id),
+    canViewCustomerDocuments(user.role)
+      ? listCustomerDocuments(customer_id)
+      : Promise.resolve([]),
   ]);
   const updateAction = updateCustomerAction.bind(null, customer_id);
   const canTransfer = canEditWorkOrder(user.role);
+  const canUploadDocs = canUploadCustomerDocuments(user.role);
+  const canDeleteDocs = canDeleteCustomerDocuments(user.role);
+  const canViewDocs = canViewCustomerDocuments(user.role);
+  const canSyncWix = canSyncWixContacts(user.role);
+  const wixConfigured = isWixSyncAvailable();
 
   return (
     <div className="page-stack page-stack--narrow">
       <div>
         <Link
           href="/customers"
-          className="text-sm text-zinc-600 underline-offset-2 hover:underline"
+          className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
         >
           ← Customers
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-900">
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
           {customer.first_name} {customer.last_name}
         </h1>
-        <p className="mt-1 text-sm text-zinc-600">
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+          <span className="badge mr-2 bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]">
+            {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
+          </span>
           {customer.phone ?? "No phone"} · {customer.email ?? "No email"}
         </p>
+        {customer.address || customer.date_of_birth ? (
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
+            {customer.address ?? "No address"}
+            {customer.date_of_birth
+              ? ` · Birthday ${formatCalendarDate(customer.date_of_birth)}`
+              : ""}
+          </p>
+        ) : null}
       </div>
 
-      <ClientGarage
-        customerId={customer_id}
-        bikes={garage}
-        canTransfer={canTransfer}
+      <CustomerInformationReminder
+        phone={customer.phone}
+        email={customer.email}
+        address={customer.address}
+        dateOfBirth={customer.date_of_birth}
+        editHref="#edit-customer"
       />
 
+      <WixCustomerSyncPanel
+        customerId={customer_id}
+        wixContactId={customer.wix_contact_id}
+        configured={wixConfigured}
+        canSync={canSyncWix}
+      />
+
+      <ClientGarage customerId={customer_id} bikes={garage} canTransfer={canTransfer} />
+
+      {canViewDocs ? (
+        <CustomerDocuments
+          customerId={customer_id}
+          documents={documents}
+          canUpload={canUploadDocs}
+          canDelete={canDeleteDocs}
+        />
+      ) : null}
+
       <section>
-        <h2 className="text-lg font-semibold text-zinc-900">Open work orders</h2>
-        <p className="mt-1 text-sm text-zinc-600">
+        <h2 className="text-lg font-semibold text-foreground">Open work orders</h2>
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
           Active visits across all locations.
         </p>
         <WorkOrderHistoryList
@@ -137,12 +182,12 @@ export default async function CustomerDetailPage({
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold text-zinc-900">
+        <h2 className="text-lg font-semibold text-foreground">
           Completed / filed work orders
         </h2>
-        <p className="mt-1 text-sm text-zinc-600">
-          Released visits (status Completed), with jobs from each work order.
-          Browse all filed work at this location in{" "}
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+          Released visits (status Completed), with jobs from each work order. Browse all
+          filed work at this location in{" "}
           <Link href="/complete" className="underline-offset-2 hover:underline">
             Complete and filed
           </Link>
@@ -155,8 +200,8 @@ export default async function CustomerDetailPage({
         />
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold text-zinc-900">Edit customer</h2>
+      <section id="edit-customer" className="scroll-mt-6">
+        <h2 className="text-lg font-semibold text-foreground">Edit customer</h2>
         <div className="mt-3">
           <CustomerForm
             action={updateAction}

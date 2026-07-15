@@ -20,6 +20,22 @@ function revalidateWorkOrder(workOrderId: string) {
   revalidatePath("/technician");
 }
 
+export async function clearAdminFlagAction(
+  workOrderId: string,
+  _prevState: QualityFormState,
+  formData: FormData
+): Promise<QualityFormState> {
+  try {
+    const { clearAdminFlag } = await import("@/lib/services/adminFlags");
+    await clearAdminFlag(String(formData.get("admin_flag_id") ?? ""));
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+  revalidateWorkOrder(workOrderId);
+  revalidatePath("/technician");
+  return { error: null };
+}
+
 export async function completeQualityCheckAction(
   workOrderId: string,
   _prevState: QualityFormState,
@@ -55,10 +71,7 @@ export async function completeWorkOrderAction(
   formData: FormData
 ): Promise<QualityFormState> {
   try {
-    await completeWorkOrder(
-      workOrderId,
-      String(formData.get("pickup_notes") ?? "")
-    );
+    await completeWorkOrder(workOrderId, String(formData.get("pickup_notes") ?? ""));
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -72,10 +85,7 @@ export async function cancelWorkOrderAction(
   formData: FormData
 ): Promise<QualityFormState> {
   try {
-    await cancelWorkOrder(
-      workOrderId,
-      String(formData.get("cancel_reason") ?? "")
-    );
+    await cancelWorkOrder(workOrderId, String(formData.get("cancel_reason") ?? ""));
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -101,10 +111,7 @@ export async function placeWorkOrderOnHoldAction(
   formData: FormData
 ): Promise<QualityFormState> {
   try {
-    await placeWorkOrderOnHold(
-      workOrderId,
-      String(formData.get("hold_reason") ?? "")
-    );
+    await placeWorkOrderOnHold(workOrderId, String(formData.get("hold_reason") ?? ""));
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

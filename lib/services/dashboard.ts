@@ -1,15 +1,12 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import type { PhotoCategory, WorkOrderStatus } from "@/lib/database/types";
-import {
-  buildWorkOrderFlags,
-  isOverdue,
-} from "@/lib/status/flags";
+import { buildWorkOrderFlags, isOverdue } from "@/lib/status/flags";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
-import {
-  resolvePrimaryPhotoUrls,
-  type IntakePhotoRef,
-} from "@/lib/services/photos";
+import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import { listOpenAdminFlagsForWorkOrders } from "@/lib/services/adminFlags";
+import { isFloorTech } from "@/lib/permissions";
+import { scopeWorkOrdersForViewer } from "@/lib/workOrders/assignmentVisibility";
 
 export type DashboardCounts = {
   open: number;
@@ -18,6 +15,7 @@ export type DashboardCounts = {
   ready_for_technician: number;
   in_progress: number;
   quality_check: number;
+  safety_check: number;
   ready_for_pickup: number;
   overdue: number;
   incomplete_inspections: number;
@@ -87,20 +85,22 @@ const ACTIVE_STATUSES: WorkOrderStatus[] = [
   "ready_for_technician",
   "in_progress",
   "quality_check",
+  "safety_check",
   "ready_for_pickup",
   "on_hold",
 ];
 
 const FLAG_OPTIONS = [
   "Missing VIN",
-  "Missing invoice #",
   "No intake photos",
+  "Contract unsigned",
   "Incomplete inspection",
   "Needs approval",
   "Waiting for parts",
   "Safety-critical",
   "Overdue",
   "On hold",
+  "Admin flag",
 ];
 
 type RawRow = {
@@ -111,6 +111,7 @@ type RawRow = {
   date_created: string;
   estimated_completion: string | null;
   primary_technician_id: string | null;
+  quality_check_assigned_to: string | null;
   customer: {
     customer_id: string;
     first_name: string;
@@ -132,6 +133,7 @@ type RawRow = {
     assigned_technician_id: string | null;
   }> | null;
   recommendation: Array<{ severity: string; status: string }> | null;
+  drop_off_agreement: Array<{ agreement_id: string }> | null;
   intake_photo: Array<{
     photo_id: string;
     storage_path: string;
@@ -150,6 +152,7 @@ function emptyCounts(): DashboardCounts {
     ready_for_technician: 0,
     in_progress: 0,
     quality_check: 0,
+    safety_check: 0,
     ready_for_pickup: 0,
     overdue: 0,
     incomplete_inspections: 0,
@@ -178,6 +181,8 @@ function matchesCard(row: RawRow, card: DashboardCardKey, now: Date): boolean {
       return row.status === "in_progress";
     case "quality_check":
       return row.status === "quality_check";
+    case "safety_check":
+      return row.status === "safety_check";
     case "ready_for_pickup":
       return row.status === "ready_for_pickup";
     case "overdue":
@@ -189,9 +194,7 @@ function matchesCard(row: RawRow, card: DashboardCardKey, now: Date): boolean {
         !inspection?.completed_at
       );
     case "unassigned_jobs":
-      return jobs.some(
-        (job) => isActiveJob(job.status) && !job.assigned_technician_id
-      );
+      return jobs.some((job) => isActiveJob(job.status) && !job.assigned_technician_id);
     default:
       return true;
   }
@@ -200,7 +203,8 @@ function matchesCard(row: RawRow, card: DashboardCardKey, now: Date): boolean {
 function toDashboardRow(
   row: RawRow,
   now: Date,
-  primaryPhotoUrl: string | null = null
+  primaryPhotoUrl: string | null = null,
+  hasOpenAdminFlag = false
 ): DashboardRow {
   const jobs = row.job ?? [];
   const recommendations = row.recommendation ?? [];
@@ -230,12 +234,13 @@ function toDashboardRow(
     flags: buildWorkOrderFlags({
       status: row.status,
       vin: bike?.vin,
-      external_invoice_number: row.external_invoice_number,
       estimated_completion: row.estimated_completion,
       jobs,
       recommendations,
       photoCount: photos.length,
       inspectionComplete: inspection ? Boolean(inspection.completed_at) : null,
+      hasSignedAgreement: (row.drop_off_agreement?.length ?? 0) > 0,
+      hasOpenAdminFlag,
       now,
     }),
   };
@@ -264,6 +269,7 @@ export async function getDashboardData(
       date_created,
       estimated_completion,
       primary_technician_id,
+      quality_check_assigned_to,
       customer:customer_id (
         customer_id,
         first_name,
@@ -286,23 +292,29 @@ export async function getDashboardData(
       job ( job_id, status, assigned_technician_id ),
       recommendation ( severity, status ),
       intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
-      inspection ( completed_at )
+      inspection ( completed_at ),
+      drop_off_agreement ( agreement_id )
     `
       )
       .eq("location_id", locationId)
       .in("status", ACTIVE_STATUSES)
       .order("date_created", { ascending: false })
       .limit(300),
-    supabase
-      .from("user_location")
-      .select("user_id")
-      .eq("location_id", locationId),
+    supabase.from("user_location").select("user_id").eq("location_id", locationId),
   ]);
 
   if (woResult.error) throw woResult.error;
   if (membershipResult.error) throw membershipResult.error;
 
-  const rawRows = (woResult.data ?? []) as unknown as RawRow[];
+  const rawRows = scopeWorkOrdersForViewer(
+    ((woResult.data ?? []) as unknown as RawRow[]).map((row) => ({
+      ...row,
+      jobs: row.job,
+    })),
+    user.role,
+    user.user_id
+  ) as unknown as RawRow[];
+
   const counts = emptyCounts();
 
   for (const row of rawRows) {
@@ -312,6 +324,7 @@ export async function getDashboardData(
     if (row.status === "ready_for_technician") counts.ready_for_technician += 1;
     if (row.status === "in_progress") counts.in_progress += 1;
     if (row.status === "quality_check") counts.quality_check += 1;
+    if (row.status === "safety_check") counts.safety_check += 1;
     if (row.status === "ready_for_pickup") counts.ready_for_pickup += 1;
     if (isOverdue(row.estimated_completion, row.status, now)) counts.overdue += 1;
 
@@ -328,7 +341,9 @@ export async function getDashboardData(
   }
 
   const statusFilter = filters.status?.trim() || "";
-  const technicianId = filters.technician_id?.trim() || "";
+  const technicianId = isFloorTech(user.role)
+    ? user.user_id
+    : filters.technician_id?.trim() || "";
   const flagFilter = filters.flag?.trim() || "";
   const query = filters.q?.trim().toLowerCase() || "";
   const card = (filters.card?.trim() || "") as DashboardCardKey | "";
@@ -353,9 +368,11 @@ export async function getDashboardData(
   for (const row of filtered) {
     photosByWorkOrder.set(row.work_order_id, row.intake_photo ?? []);
   }
-  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(
+  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(supabase, photosByWorkOrder);
+
+  const openFlags = await listOpenAdminFlagsForWorkOrders(
     supabase,
-    photosByWorkOrder
+    filtered.map((row) => row.work_order_id)
   );
 
   const rows = filtered
@@ -363,7 +380,8 @@ export async function getDashboardData(
       toDashboardRow(
         row,
         now,
-        primaryPhotoUrls.get(row.work_order_id) ?? null
+        primaryPhotoUrls.get(row.work_order_id) ?? null,
+        (openFlags.get(row.work_order_id) ?? []).length > 0
       )
     )
     .filter((row) => {
@@ -398,7 +416,7 @@ export async function getDashboardData(
     const { data: techRows, error: techError } = await supabase
       .from("app_user")
       .select("user_id, first_name, last_name")
-      .eq("role", "technician")
+      .in("role", ["technician", "head_tech"])
       .eq("status", "active")
       .in("user_id", userIds)
       .order("last_name")
@@ -435,6 +453,7 @@ export const DASHBOARD_CARDS: Array<{
   { key: "ready_for_technician", label: "Ready for tech" },
   { key: "in_progress", label: "In progress" },
   { key: "quality_check", label: "Quality check" },
+  { key: "safety_check", label: "Safety" },
   { key: "ready_for_pickup", label: "Ready pickup" },
   { key: "overdue", label: "Overdue" },
   { key: "incomplete_inspections", label: "Incomplete inspections" },
