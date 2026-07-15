@@ -165,7 +165,65 @@ export async function addJobToWorkOrder(
   });
 
   await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+
+  // New jobs inherit the WO primary tech so they appear on that tech's docket.
+  const { data: woTech } = await supabase
+    .from("work_order")
+    .select("primary_technician_id")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+  if (woTech?.primary_technician_id) {
+    await assignTechnicianToJob(job.job_id, woTech.primary_technician_id as string);
+  }
+
   return { job_id: job.job_id };
+}
+
+/**
+ * Assign every unassigned open job on a work order to a technician so the
+ * jobs appear on that tech's floor docket. Jobs already assigned to someone
+ * else are left alone.
+ */
+export async function assignUnassignedJobsOnWorkOrderToTechnician(
+  workOrderId: string,
+  technicianId: string
+): Promise<{ assigned_count: number }> {
+  const user = await requireUser();
+  if (
+    !canEditWorkOrder(user.role) &&
+    !canCreateWorkOrder(user.role) &&
+    user.role !== "admin"
+  ) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const { supabase } = await requireMutableWorkOrder(user, workOrderId);
+
+  const { data: tech, error: techError } = await supabase
+    .from("app_user")
+    .select("user_id, role, status")
+    .eq("user_id", technicianId)
+    .maybeSingle();
+  if (techError) throw techError;
+  if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
+    throw new Error("TECHNICIAN_NOT_FOUND");
+  }
+
+  const { data: jobs, error } = await supabase
+    .from("job")
+    .select("job_id")
+    .eq("work_order_id", workOrderId)
+    .is("assigned_technician_id", null)
+    .not("status", "in", '("completed","cancelled","declined")')
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  let assigned_count = 0;
+  for (const row of jobs ?? []) {
+    await assignTechnicianToJob(row.job_id as string, technicianId);
+    assigned_count += 1;
+  }
+  return { assigned_count };
 }
 
 export async function assignTechnicianToJob(

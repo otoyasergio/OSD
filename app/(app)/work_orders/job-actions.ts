@@ -18,6 +18,7 @@ function revalidateWorkOrder(workOrderId: string) {
   revalidatePath("/work_orders");
   revalidatePath("/dashboard");
   revalidatePath("/technician");
+  revalidatePath("/technician/docket");
 }
 
 export async function addJobAction(
@@ -45,10 +46,7 @@ export async function assignJobTechnicianAction(
   formData: FormData
 ): Promise<JobFormState> {
   try {
-    await assignTechnicianToJob(
-      jobId,
-      String(formData.get("technician_id") ?? "")
-    );
+    await assignTechnicianToJob(jobId, String(formData.get("technician_id") ?? ""));
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -82,10 +80,7 @@ export async function approveJobAction(
   formData: FormData
 ): Promise<JobFormState> {
   try {
-    await recordCustomerApproval(
-      jobId,
-      String(formData.get("approval_method") ?? "")
-    );
+    await recordCustomerApproval(jobId, String(formData.get("approval_method") ?? ""));
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -101,10 +96,7 @@ export async function declineJobAction(
   formData: FormData
 ): Promise<JobFormState> {
   try {
-    await recordCustomerDecline(
-      jobId,
-      String(formData.get("decline_reason") ?? "")
-    );
+    await recordCustomerDecline(jobId, String(formData.get("decline_reason") ?? ""));
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

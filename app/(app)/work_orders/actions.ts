@@ -8,18 +8,12 @@ import {
   createWorkOrder,
   setPrimaryTechnician,
 } from "@/lib/services/workOrders";
-import {
-  listIntakePhotos,
-  uploadIntakePhoto,
-} from "@/lib/services/photos";
+import { listIntakePhotos, uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { requireUser } from "@/lib/auth/session";
 import type { PhotoCategory } from "@/lib/database/types";
 import { readServiceLinesFromFormData } from "@/lib/forms/serviceLines";
-import {
-  CREATE_INTAKE_PHOTO_SLOTS,
-  PHOTO_CATEGORY_LABELS,
-} from "@/lib/status/labels";
+import { CREATE_INTAKE_PHOTO_SLOTS, PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { parseShopLocalDateTimeInput } from "@/lib/datetime/format";
 
 export type WorkOrderFormState = {
@@ -30,9 +24,7 @@ export type WorkOrderFormState = {
   missingCategories?: PhotoCategory[];
 };
 
-const REQUIRED_INTAKE_CATEGORIES = CREATE_INTAKE_PHOTO_SLOTS.map(
-  (slot) => slot.category
-);
+const REQUIRED_INTAKE_CATEGORIES = CREATE_INTAKE_PHOTO_SLOTS.map((slot) => slot.category);
 
 function readOptionalNumber(formData: FormData, key: string): number | null {
   const raw = String(formData.get(key) ?? "").trim();
@@ -50,10 +42,7 @@ function readEstimatedCompletion(formData: FormData): string | null {
   return date.toISOString();
 }
 
-function readIntakeFile(
-  formData: FormData,
-  category: PhotoCategory
-): File | null {
+function readIntakeFile(formData: FormData, category: PhotoCategory): File | null {
   const file = formData.get(`intake_${category}`);
   if (!(file instanceof File) || file.size === 0) return null;
   return file;
@@ -97,9 +86,7 @@ function intakePartialError(
   workOrderNumber: string,
   missing: PhotoCategory[]
 ): WorkOrderFormState {
-  const labels = missing
-    .map((c) => PHOTO_CATEGORY_LABELS[c] ?? c)
-    .join(", ");
+  const labels = missing.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
   return {
     error: `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`,
     workOrderId,
@@ -118,9 +105,7 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
     .map((value) => String(value))
     .filter(Boolean);
 
-  const primaryTech = String(
-    formData.get("primary_technician_id") ?? ""
-  ).trim();
+  const primaryTech = String(formData.get("primary_technician_id") ?? "").trim();
 
   const serviceLines = readServiceLinesFromFormData(formData, serviceIds);
 
@@ -246,10 +231,7 @@ export async function completeIntakePhotosAction(
       redirect(`/work_orders/${workOrderId}`);
     }
 
-    const { files, missing } = collectRequiredIntakeFiles(
-      formData,
-      stillMissing
-    );
+    const { files, missing } = collectRequiredIntakeFiles(formData, stillMissing);
     if (missing.length > 0) {
       return {
         error: toFormErrorMessage(new Error("INTAKE_PHOTOS_REQUIRED")),
@@ -302,6 +284,8 @@ export async function assignTechnicianAction(
   }
 
   revalidatePath(`/work_orders/${workOrderId}`);
+  revalidatePath("/technician");
+  revalidatePath("/technician/docket");
   return { error: null };
 }
 
@@ -318,5 +302,7 @@ export async function setPrimaryTechnicianAction(
   }
 
   revalidatePath(`/work_orders/${workOrderId}`);
+  revalidatePath("/technician");
+  revalidatePath("/technician/docket");
   return { error: null };
 }

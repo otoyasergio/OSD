@@ -17,6 +17,7 @@ import {
 } from "@/lib/permissions";
 import { recommendationSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { assignTechnicianToJob } from "@/lib/services/jobs";
 
 export type Recommendation = {
   recommendation_id: string;
@@ -45,11 +46,7 @@ export type OutstandingRecommendation = Recommendation & {
   };
 };
 
-const OUTSTANDING_STATUSES: RecommendationStatus[] = [
-  "pending",
-  "deferred",
-  "declined",
-];
+const OUTSTANDING_STATUSES: RecommendationStatus[] = ["pending", "deferred", "declined"];
 
 const COLUMNS =
   "recommendation_id, work_order_id, inspection_result_id, created_by_user_id, description, severity, status, converted_job_id, notes, created_at, resolved_at";
@@ -81,10 +78,7 @@ async function requireMutableWorkOrder(
   if (workOrder.location_id !== user.active_location_id) {
     throw new Error("FOREIGN_LOCATION");
   }
-  if (
-    workOrder.status === "completed" ||
-    workOrder.status === "cancelled"
-  ) {
+  if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
 
@@ -182,8 +176,10 @@ export async function createRecommendation(
   if (!canCreateRecommendation(user.role)) throw new Error("FORBIDDEN");
 
   const parsed = recommendationSchema.parse(input);
-  const { supabase, locationId, workOrderNumber } =
-    await requireMutableWorkOrder(user, workOrderId);
+  const { supabase, locationId, workOrderNumber } = await requireMutableWorkOrder(
+    user,
+    workOrderId
+  );
 
   if (parsed.inspection_result_id) {
     const { data: result, error: resultError } = await supabase
@@ -305,10 +301,7 @@ export async function updateRecommendationStatus(
   notes?: string | null
 ): Promise<Recommendation> {
   const user = await requireUser();
-  if (
-    !canRecordCustomerApproval(user.role) &&
-    !canCreateRecommendation(user.role)
-  ) {
+  if (!canRecordCustomerApproval(user.role) && !canCreateRecommendation(user.role)) {
     throw new Error("FORBIDDEN");
   }
 
@@ -409,9 +402,7 @@ export async function convertRecommendationToJob(
 
   const alreadyApproved =
     Boolean(input.already_approved) || existing.status === "approved";
-  const jobStatus: JobStatus = alreadyApproved
-    ? "approved"
-    : "waiting_for_approval";
+  const jobStatus: JobStatus = alreadyApproved ? "approved" : "waiting_for_approval";
 
   const { data: job, error: jobError } = await supabase
     .from("job")
@@ -483,11 +474,16 @@ export async function convertRecommendationToJob(
     },
   });
 
-  await recalculateWorkOrderStatus(
-    supabase,
-    existing.work_order_id,
-    user.user_id
-  );
+  await recalculateWorkOrderStatus(supabase, existing.work_order_id, user.user_id);
+
+  const { data: woPrimary } = await supabase
+    .from("work_order")
+    .select("primary_technician_id")
+    .eq("work_order_id", existing.work_order_id)
+    .maybeSingle();
+  if (woPrimary?.primary_technician_id) {
+    await assignTechnicianToJob(job.job_id, woPrimary.primary_technician_id as string);
+  }
 
   return {
     job_id: job.job_id,

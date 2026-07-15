@@ -18,6 +18,7 @@ import { createWorkOrderSchema } from "@/lib/validation/schemas";
 import { resolveJobSnapshots } from "@/lib/forms/serviceLines";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { buildWorkOrderFlags } from "@/lib/status/flags";
+import { assignUnassignedJobsOnWorkOrderToTechnician } from "@/lib/services/jobs";
 
 export type WorkOrder = {
   work_order_id: string;
@@ -588,6 +589,9 @@ export async function assignTechnicianToWorkOrder(
     description: `Technician ${tech.first_name} ${tech.last_name} assigned to ${workOrder.work_order_number}`,
     new_value: { technician_id: technicianId },
   });
+
+  // Put unassigned open jobs on this tech's docket so they can work them.
+  await assignUnassignedJobsOnWorkOrderToTechnician(workOrderId, technicianId);
 }
 
 export async function setPrimaryTechnician(
@@ -654,6 +658,11 @@ export async function setPrimaryTechnician(
     old_value: { primary_technician_id: workOrder.primary_technician_id },
     new_value: { primary_technician_id: technicianId },
   });
+
+  if (technicianId) {
+    // Primary owns unassigned open jobs — they must appear on the tech docket.
+    await assignUnassignedJobsOnWorkOrderToTechnician(workOrderId, technicianId);
+  }
 }
 
 async function mintWorkOrderNumber(
@@ -850,6 +859,13 @@ export async function createWorkOrder(
 
     if (jobError) throw jobError;
     createdJobs.push(job);
+  }
+
+  if (parsed.primary_technician_id && createdJobs.length > 0) {
+    await assignUnassignedJobsOnWorkOrderToTechnician(
+      workOrderId,
+      parsed.primary_technician_id
+    );
   }
 
   await addTimelineEvent(supabase, {

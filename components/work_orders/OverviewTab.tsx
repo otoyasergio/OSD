@@ -194,6 +194,9 @@ export function OverviewTab({
             className="flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
           >
             <h3 className="font-semibold text-foreground">Assign technician</h3>
+            <p className="text-sm text-[var(--status-neutral)]">
+              Adds the tech to this visit and puts any unassigned jobs on their docket.
+            </p>
             <FormError message={assignState.error} />
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-foreground">
@@ -225,6 +228,9 @@ export function OverviewTab({
             className="flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
           >
             <h3 className="font-semibold text-foreground">Set primary technician</h3>
+            <p className="text-sm text-[var(--status-neutral)]">
+              Primary tech receives unassigned jobs on their floor docket.
+            </p>
             <FormError message={primaryState.error} />
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-foreground">
