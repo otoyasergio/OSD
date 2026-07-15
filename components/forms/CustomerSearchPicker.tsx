@@ -12,7 +12,7 @@ import {
 } from "react";
 import { searchCustomersAction } from "@/app/(app)/customers/actions";
 import type { Customer } from "@/lib/services/customers";
-import { filterKnownCustomerMatches } from "@/lib/forms/customerSearch";
+import { customerPickerInterimResults } from "@/lib/forms/customerSearch";
 
 const DEBOUNCE_MS = 200;
 
@@ -77,7 +77,9 @@ export function CustomerSearchPicker({
   }, []);
 
   const runSearch = useCallback(
-    (term: string, requestId: number) => {
+    (term: string) => {
+      const requestId = ++requestIdRef.current;
+      setSearching(true);
       startTransition(async () => {
         try {
           const next = await searchCustomersAction(term);
@@ -99,9 +101,8 @@ export function CustomerSearchPicker({
 
   function scheduleSearch(term: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    const requestId = ++requestIdRef.current;
     setSearching(true);
-    debounceRef.current = setTimeout(() => runSearch(term, requestId), DEBOUNCE_MS);
+    debounceRef.current = setTimeout(() => runSearch(term), DEBOUNCE_MS);
   }
 
   function cancelPendingSearch() {
@@ -164,6 +165,7 @@ export function CustomerSearchPicker({
     }
     if (event.key === "Enter") {
       event.preventDefault();
+      event.stopPropagation();
       const choice = results[activeIndex] ?? results[0];
       if (choice) selectCustomer(choice);
       return;
@@ -229,19 +231,17 @@ export function CustomerSearchPicker({
         value={query}
         onChange={(event) => {
           const next = event.target.value;
-          const localMatches = filterKnownCustomerMatches(knownCustomers, next);
+          const interim = customerPickerInterimResults(knownCustomers, next);
           setQuery(next);
-          setResults(localMatches);
-          setActiveIndex(localMatches.length > 0 ? 0 : -1);
+          setResults(interim);
+          setActiveIndex(interim.length > 0 ? 0 : -1);
           setOpen(true);
           scheduleSearch(next);
         }}
         onFocus={() => {
           setOpen(true);
           if (!query.trim() && results.length === 0) {
-            const requestId = ++requestIdRef.current;
-            setSearching(true);
-            runSearch("", requestId);
+            runSearch("");
           }
         }}
         onKeyDown={onInputKeyDown}

@@ -41,6 +41,8 @@ const CUSTOMER_COLUMNS =
 /**
  * PostgREST `or()` uses commas and parentheses as syntax, so those characters are
  * removed rather than escaped. Wildcards are escaped so a literal `%` stays literal.
+ * Callers must still JSON-quote the final ilike pattern (see `ilikeFilter`) so dots in
+ * emails/phones are not treated as PostgREST separators.
  */
 export function escapeSearchTerm(term: string): string {
   return term
@@ -50,20 +52,46 @@ export function escapeSearchTerm(term: string): string {
     .replace(/[%_]/g, (char) => `\\${char}`);
 }
 
+function ilikeFilter(column: string, pattern: string): string {
+  // Quote the pattern so dots in emails/phones do not break PostgREST `or()` parsing.
+  return `${column}.ilike.${JSON.stringify(pattern)}`;
+}
+
+function nameTokenFilters(token: string): string {
+  const pattern = `%${escapeSearchTerm(token)}%`;
+  return `or(${ilikeFilter("first_name", pattern)},${ilikeFilter("last_name", pattern)})`;
+}
+
+/**
+ * Build a PostgREST `or()` / `and()` filter for intake customer typeahead.
+ * Patterns are JSON-quoted so values like `avery@example.com` stay intact.
+ */
 export function buildCustomerSearchOrFilter(term: string): string {
   const escaped = escapeSearchTerm(term);
   const pattern = `%${escaped}%`;
   const filters = [
-    `first_name.ilike.${pattern}`,
-    `last_name.ilike.${pattern}`,
-    `phone.ilike.${pattern}`,
-    `email.ilike.${pattern}`,
+    ilikeFilter("first_name", pattern),
+    ilikeFilter("last_name", pattern),
+    ilikeFilter("phone", pattern),
+    ilikeFilter("email", pattern),
   ];
 
   // Allow "416-751-6488" / "(416) 751 6488" to match digit-only stored phones.
   const digits = term.replace(/\D/g, "");
   if (digits.length >= 3 && digits !== escaped) {
-    filters.push(`phone.ilike.%${digits}%`);
+    filters.push(ilikeFilter("phone", `%${digits}%`));
+  }
+
+  const tokens = term
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => escapeSearchTerm(token).length > 0);
+
+  // "Avery Rider" should match first+last even though neither column contains the full string.
+  // Passed to `.or()`, so nested `and(...)` sits alongside the per-field filters.
+  if (tokens.length >= 2) {
+    return `${filters.join(",")},and(${tokens.map(nameTokenFilters).join(",")})`;
   }
 
   return filters.join(",");
