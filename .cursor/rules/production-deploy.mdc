@@ -1,0 +1,14 @@
+---
+description: Prevent rolling production back by deploying from the wrong git branch
+alwaysApply: true
+---
+
+# Production deploy (Vercel)
+
+Live site: https://service.torontomoto.com
+
+- **Production ships from `main` only.** Never run `vercel --prod` (or equivalent) while checked out on `feature/*`, including `feature/v1-implementation`.
+- To go live: `git checkout main && git pull --ff-only origin main`, then `npm run deploy:production` (uses `scripts/guard-prod-deploy.mjs`).
+- Do not change the GitHub default branch away from `main`.
+- Do not point Vercel Production branch tracking at a feature branch.
+- If features suddenly disappear on the live site, check whether production was redeployed from an old branch; restore by deploying current `main`.
