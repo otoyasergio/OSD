@@ -18,6 +18,7 @@ import {
   getMissingInspectionPhotos,
   type InspectionPhotoRequirement,
 } from "@/lib/services/inspectionGate";
+import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
 
 export type InspectionResultRow = {
   inspection_result_id: string;
@@ -39,6 +40,7 @@ export type InspectionHeader = {
   motorcycle_label: string | null;
   vin: string | null;
   mileage: number | null;
+  mileage_unit: MileageUnit;
   technician_name: string | null;
   date_created: string | null;
 };
@@ -203,6 +205,7 @@ export async function getInspectionForWorkOrder(
       work_order_number,
       status,
       mileage,
+      mileage_unit,
       date_created,
       primary_technician_id,
       quality_check_assigned_to,
@@ -370,6 +373,7 @@ export async function getInspectionForWorkOrder(
         : null,
       vin: motorcycle?.vin ?? null,
       mileage: (workOrder.mileage as number | null) ?? null,
+      mileage_unit: normalizeMileageUnit(workOrder.mileage_unit),
       technician_name: tech ? `${tech.first_name} ${tech.last_name}` : null,
       date_created: (workOrder.date_created as string | null) ?? null,
     },

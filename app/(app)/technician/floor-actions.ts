@@ -10,6 +10,7 @@ import { uploadIntakePhoto } from "@/lib/services/photos";
 import { addTechnicianNote } from "@/lib/services/notes";
 import { updatePartStatus } from "@/lib/services/parts";
 import type { AdminFlagReason } from "@/lib/database/types";
+import { chooseNextFloorItem } from "@/lib/technician/nextFloorItem";
 
 export type FloorActionState = {
   error?: string;
@@ -66,12 +67,7 @@ export async function completeJobFloorAction(
 
     const { getTechnicianFloorOs } = await import("@/lib/services/technicianFloor");
     const floor = await getTechnicianFloorOs({});
-    const next =
-      floor.priority.find((item) => item.is_active) ??
-      floor.priority[0] ??
-      floor.needsQc[0] ??
-      floor.readyToPull[0] ??
-      null;
+    const next = chooseNextFloorItem(floor, workOrderId);
     if (next) {
       const params = new URLSearchParams();
       if (next.job_id) params.set("job", next.job_id);

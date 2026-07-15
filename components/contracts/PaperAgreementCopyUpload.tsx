@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { CameraIcon, LibraryIcon } from "@/components/forms/IntakePhotoSlots";
 import { FormError } from "@/components/forms/Field";
 import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
+import { withIntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 
 type Props = {
@@ -109,7 +110,10 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
           </button>
         ) : null}
         {continueHref ? (
-          <Link href={continueHref} className="btn btn-secondary min-h-12">
+          <Link
+            href={withIntakeFollowUp(continueHref, "paper_copy")}
+            className="btn btn-secondary min-h-12"
+          >
             Skip for now
           </Link>
         ) : null}

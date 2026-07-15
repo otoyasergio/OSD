@@ -79,6 +79,7 @@ export default async function MotorcycleDetailPage({
           </Link>
           {motorcycle.colour ? ` · ${motorcycle.colour}` : null}
           {motorcycle.plate_number ? ` · Plate ${motorcycle.plate_number}` : null}
+          {` · Odometer ${motorcycle.odometer_unit}`}
           {canTransfer ? (
             <>
               {" · "}
@@ -125,7 +126,7 @@ export default async function MotorcycleDetailPage({
         </div>
       </section>
 
-      <section>
+      <section id="edit-motorcycle">
         <h2 className="text-lg font-semibold text-foreground">Edit motorcycle</h2>
         <div className="mt-3">
           <MotorcycleForm

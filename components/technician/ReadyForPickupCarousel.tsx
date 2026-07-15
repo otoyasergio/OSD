@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useSyncExternalStore } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { WaitingStageBike } from "@/lib/services/readyForPickup";
@@ -26,14 +26,25 @@ function waitTone(
   return "ok";
 }
 
+function subscribeNowTick(onStoreChange: () => void) {
+  const id = window.setInterval(onStoreChange, 1000);
+  return () => window.clearInterval(id);
+}
+
+function getNowTick() {
+  return Date.now();
+}
+
+function getServerNowTick() {
+  return 0;
+}
+
 function useNowTick(enabled: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!enabled) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [enabled]);
-  return now;
+  return useSyncExternalStore(
+    enabled ? subscribeNowTick : () => () => {},
+    enabled ? getNowTick : getServerNowTick,
+    getServerNowTick
+  );
 }
 
 export type WaitingBikeCarouselDnd = {

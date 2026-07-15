@@ -31,6 +31,7 @@ export default async function WorkOrderContractPage({
     ? Math.max(0, parsedExtraPhotoFailures)
     : 0;
   const workOrderHref = `/work_orders/${work_order_id}`;
+  const intakeCompleteHref = `${workOrderHref}?intake=complete`;
 
   const [template, agreement] = await Promise.all([
     getActiveAgreementTemplate(),
@@ -49,10 +50,7 @@ export default async function WorkOrderContractPage({
   return (
     <div className="inspection-fullscreen page-stack">
       <div className="flex items-center justify-between gap-4">
-        <Link
-          href={workOrderHref}
-          className="text-sm underline-offset-2 hover:underline"
-        >
+        <Link href={workOrderHref} className="text-sm underline-offset-2 hover:underline">
           ← Work order
         </Link>
         <h1 className="text-lg font-semibold">Drop-off agreement</h1>
@@ -62,10 +60,10 @@ export default async function WorkOrderContractPage({
         <p className="rounded-lg border border-border bg-surface-muted px-4 py-3 text-sm text-[var(--status-neutral-fg)]">
           {extraPhotoFailures > 0 ? (
             <>
-              All 6 required intake photos are saved. {extraPhotoFailures} optional
-              extra {extraPhotoFailures === 1 ? "photo" : "photos"} could not upload;
-              you can add {extraPhotoFailures === 1 ? "it" : "them"} from the work
-              order Photos tab afterward. The agreement can be signed now or later.
+              All 6 required intake photos are saved. {extraPhotoFailures} optional extra{" "}
+              {extraPhotoFailures === 1 ? "photo" : "photos"} could not upload; you can
+              add {extraPhotoFailures === 1 ? "it" : "them"} from the work order Photos
+              tab afterward. The agreement can be signed now or later.
             </>
           ) : (
             <>
@@ -80,7 +78,7 @@ export default async function WorkOrderContractPage({
         template={template}
         existing={agreement}
         action={signDropOffAgreementAction.bind(null, work_order_id)}
-        continueHref={fromIntake ? workOrderHref : undefined}
+        continueHref={fromIntake ? intakeCompleteHref : undefined}
         continueLabel="Continue to work order"
         allowPaperSignature
         paperCopyAction={uploadPaperAgreementCopyAction.bind(null, work_order_id)}

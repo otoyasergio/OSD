@@ -9,6 +9,11 @@ import type { AdminFlag } from "@/lib/services/adminFlags";
 import { canPerformSafetyCheck } from "@/lib/permissions";
 import { canViewerAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
 import { sortByDocketPosition } from "@/lib/technician/docketOrder";
+import { groupAssignedJobsByWorkOrder } from "@/lib/technician/groupAssignedWorkOrders";
+import {
+  hasCompletedInspection,
+  type InspectionCompletionRelation,
+} from "@/lib/technician/inspectionState";
 import {
   getOptionalColumnSupport,
   isUndefinedColumnError,
@@ -42,6 +47,15 @@ export type FloorPartRow = {
   can_install: boolean;
 };
 
+export type FloorJobSummary = {
+  job_id: string;
+  service_name: string;
+  status: JobStatus;
+  status_label: string;
+  assigned_to_me: boolean;
+  is_selected: boolean;
+};
+
 export type FloorOsSurface = {
   mode: FloorOsMode;
   job_id: string | null;
@@ -62,6 +76,8 @@ export type FloorOsSurface = {
   estimated_labour: number | null;
   labour_label: string | null;
   labour_over: boolean;
+  /** Every non-cancelled service, including manager exceptions assigned elsewhere. */
+  jobs: FloorJobSummary[];
   checklist: JobChecklistItem[];
   parts: FloorPartRow[];
   proof_count: number;
@@ -270,7 +286,7 @@ export async function getTechnicianFloorOs(input: {
             | null;
         }>
       | null;
-    inspection?: Array<{ completed_at: string | null }> | null;
+    inspection?: InspectionCompletionRelation;
   };
 
   const unwrapWo = (raw: unknown) => {
@@ -286,8 +302,7 @@ export async function getTechnicianFloorOs(input: {
     return { ...m, customer };
   };
 
-  // Advisor-set docket order; the stable is_active sort below keeps that
-  // order within the active and queued groups.
+  // Advisor-set docket order is preserved within active and queued motorcycles.
   const orderedMyJobs = sortByDocketPosition(
     myJobs.map((row) => ({
       ...row,
@@ -295,14 +310,22 @@ export async function getTechnicianFloorOs(input: {
     }))
   );
 
-  const priority: FloorQueueItem[] = [];
-  for (const row of orderedMyJobs) {
+  const assignedJobs = orderedMyJobs.flatMap((row) => {
     const wo = unwrapWo(row.work_order);
-    if (!wo || wo.location_id !== locationId) continue;
+    if (!wo || wo.location_id !== locationId) return [];
+    return [{ ...row, work_order_id: wo.work_order_id, work_order: wo }];
+  });
+
+  const priority: FloorQueueItem[] = [];
+  for (const group of groupAssignedJobsByWorkOrder(assignedJobs)) {
+    const row = group.representative;
+    const wo = row.work_order;
     const labels = bikeCustomerLabel(unwrapMoto(wo));
-    const serviceLabel = row.service_name_snapshot;
+    const serviceNames = [...new Set(group.jobs.map((job) => job.service_name_snapshot))];
+    const serviceLabel = serviceNames.join(" · ");
+    const statusLabel = JOB_STATUS_LABELS[row.status as JobStatus] ?? row.status;
     priority.push({
-      key: `job-${row.job_id}`,
+      key: `work-order-${wo.work_order_id}`,
       kind: "job",
       job_id: row.job_id,
       work_order_id: wo.work_order_id,
@@ -311,12 +334,14 @@ export async function getTechnicianFloorOs(input: {
       service_label: serviceLabel,
       title: `${labels.motorcycle_label} · ${serviceLabel}`,
       subtitle: wo.work_order_number,
-      status_label: JOB_STATUS_LABELS[row.status as JobStatus] ?? row.status,
+      status_label:
+        group.jobs.length === 1
+          ? statusLabel
+          : `${group.jobs.length} services · ${statusLabel}`,
       lane: "priority",
-      is_active: row.status === "in_progress",
+      is_active: group.is_active,
     });
   }
-  priority.sort((a, b) => Number(b.is_active) - Number(a.is_active));
 
   /** Unassigned self-pull queue removed — techs only see assigned work. */
   const readyToPull: FloorQueueItem[] = [];
@@ -504,35 +529,50 @@ export async function getTechnicianFloorOs(input: {
       job.assigned_technician_id === user.user_id
     ) {
       const labels = bikeCustomerLabel(unwrapMoto(wo));
-      const [checklist, partsResult, proofsResult, exceptionsResult, openFlagsResult] =
-        await Promise.all([
-          listJobChecklist(job.job_id, supabase),
-          supabase.from("part").select("part_id, name, status").eq("job_id", job.job_id),
-          supabase
-            .from("intake_photo")
-            .select("photo_id")
-            .eq("job_id", job.job_id)
-            .eq("category", "job_proof"),
-          supabase
-            .from("technician_note")
-            .select("technician_note_id")
-            .eq("job_id", job.job_id)
-            .eq("note_type", "proof_exception")
-            .limit(1),
-          supabase
-            .from("admin_flag")
-            .select(
-              "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
-            )
-            .eq("work_order_id", wo.work_order_id)
-            .is("cleared_at", null),
-        ]);
+      const [
+        checklist,
+        partsResult,
+        proofsResult,
+        exceptionsResult,
+        openFlagsResult,
+        workOrderJobsResult,
+      ] = await Promise.all([
+        listJobChecklist(job.job_id, supabase),
+        supabase.from("part").select("part_id, name, status").eq("job_id", job.job_id),
+        supabase
+          .from("intake_photo")
+          .select("photo_id")
+          .eq("job_id", job.job_id)
+          .eq("category", "job_proof"),
+        supabase
+          .from("technician_note")
+          .select("technician_note_id")
+          .eq("job_id", job.job_id)
+          .eq("note_type", "proof_exception")
+          .limit(1),
+        supabase
+          .from("admin_flag")
+          .select(
+            "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
+          )
+          .eq("work_order_id", wo.work_order_id)
+          .is("cleared_at", null),
+        supabase
+          .from("job")
+          .select(
+            "job_id, service_name_snapshot, status, assigned_technician_id, created_at"
+          )
+          .eq("work_order_id", wo.work_order_id)
+          .not("status", "in", '("cancelled","declined")')
+          .order("created_at", { ascending: true }),
+      ]);
       const { data: parts } = partsResult;
       const { data: proofs } = proofsResult;
       const { data: exceptions } = exceptionsResult;
       const { data: openFlags } = openFlagsResult;
+      const { data: workOrderJobs } = workOrderJobsResult;
 
-      const inspectionComplete = Boolean(wo.inspection?.[0]?.completed_at);
+      const inspectionComplete = hasCompletedInspection(wo.inspection);
       const gate = evaluateJobCompleteGate({
         checklistItems: checklist,
         parts: (parts as Array<{ status: string }>) ?? [],
@@ -570,6 +610,15 @@ export async function getTechnicianFloorOs(input: {
         estimated_labour: job.estimated_labour_snapshot as number | null,
         labour_label: labour?.label ?? null,
         labour_over: labour?.overEstimate ?? false,
+        jobs: (workOrderJobs ?? []).map((workOrderJob) => ({
+          job_id: workOrderJob.job_id,
+          service_name: workOrderJob.service_name_snapshot,
+          status: workOrderJob.status as JobStatus,
+          status_label:
+            JOB_STATUS_LABELS[workOrderJob.status as JobStatus] ?? workOrderJob.status,
+          assigned_to_me: workOrderJob.assigned_technician_id === user.user_id,
+          is_selected: workOrderJob.job_id === job.job_id,
+        })),
         checklist,
         parts: (
           (parts as Array<{
@@ -615,7 +664,9 @@ export async function getTechnicianFloorOs(input: {
           customer:customer_id ( first_name, last_name )
         ),
         inspection ( completed_at ),
-        job ( assigned_technician_id )
+        job (
+          job_id, service_name_snapshot, status, assigned_technician_id, created_at
+        )
       `
       )
       .eq("work_order_id", selectedWoId)
@@ -670,9 +721,8 @@ export async function getTechnicianFloorOs(input: {
         wo_status: wo.status,
         wo_status_label:
           WORK_ORDER_STATUS_LABELS[wo.status as WorkOrderStatus] ?? wo.status,
-        inspection_complete: Boolean(
-          (wo.inspection as Array<{ completed_at: string | null }> | null)?.[0]
-            ?.completed_at
+        inspection_complete: hasCompletedInspection(
+          wo.inspection as InspectionCompletionRelation
         ),
         inspection_href: `/work_orders/${wo.work_order_id}/inspection?returnTo=${returnTo}`,
         overview_href: `/work_orders/${wo.work_order_id}`,
@@ -681,6 +731,27 @@ export async function getTechnicianFloorOs(input: {
         estimated_labour: null,
         labour_label: null,
         labour_over: false,
+        jobs: (
+          (wo.job as Array<{
+            job_id: string;
+            service_name_snapshot: string;
+            status: JobStatus;
+            assigned_technician_id: string | null;
+            created_at: string;
+          }> | null) ?? []
+        )
+          .filter(
+            (workOrderJob) => !["cancelled", "declined"].includes(workOrderJob.status)
+          )
+          .sort((a, b) => a.created_at.localeCompare(b.created_at))
+          .map((workOrderJob) => ({
+            job_id: workOrderJob.job_id,
+            service_name: workOrderJob.service_name_snapshot,
+            status: workOrderJob.status,
+            status_label: JOB_STATUS_LABELS[workOrderJob.status] ?? workOrderJob.status,
+            assigned_to_me: workOrderJob.assigned_technician_id === user.user_id,
+            is_selected: false,
+          })),
         checklist: [],
         parts: [],
         proof_count: 0,

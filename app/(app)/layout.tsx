@@ -1,9 +1,14 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { AppShell } from "@/components/layout/AppShell";
 import type { LocationOption } from "@/components/layout/LocationSwitcher";
 import { getSupabasePublicConfig } from "@/lib/database/config";
+import { createProfilePhotoSignedUrl } from "@/lib/profilePhotos/storage";
+import { SignOutButton } from "@/components/layout/SignOutButton";
+import { isFloorTech } from "@/lib/permissions/checks";
+import { listUnreadStaffNotifications } from "@/lib/services/staffNotifications";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentAppUser();
@@ -19,6 +24,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <p className="page-subtitle mt-3">
             Contact owner to assign a location before using the workshop app.
           </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <Link href="/account" className="btn btn-primary">
+              Manage my account
+            </Link>
+            <SignOutButton />
+          </div>
         </div>
       </div>
     );
@@ -36,8 +47,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     locations = (data ?? []) as LocationOption[];
   }
 
+  const supabase = await createClient();
+  const [profilePhotoUrl, initialNotifications] = await Promise.all([
+    createProfilePhotoSignedUrl(supabase, user.profile_photo_path),
+    isFloorTech(user.role) ? listUnreadStaffNotifications() : Promise.resolve([]),
+  ]);
+
   return (
-    <AppShell user={user} locations={locations}>
+    <AppShell
+      user={user}
+      locations={locations}
+      profilePhotoUrl={profilePhotoUrl}
+      initialNotifications={initialNotifications}
+    >
       {children}
     </AppShell>
   );

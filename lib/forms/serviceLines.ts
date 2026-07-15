@@ -1,3 +1,5 @@
+import { suggestedPriceFromLabourHours } from "@/lib/pricing/shopRate";
+
 export type ServiceLineInput = {
   service_id: string;
   note: string | null;
@@ -10,6 +12,60 @@ export type ServiceLineDraft = {
   labourHours: string;
   price: string;
 };
+
+function isDiagnosticService(name: string): boolean {
+  return /^(diagnostic|diagnostics)$/i.test(name.trim());
+}
+
+/**
+ * Create the editable intake line for a selected service.
+ * Diagnostic starts at one labour hour; all prices remain pre-tax.
+ */
+export function createIntakeServiceLineDraft(args: {
+  name: string;
+  estimatedLabour: number | null;
+  standardPrice: number | null;
+}): ServiceLineDraft {
+  const diagnostic = isDiagnosticService(args.name);
+  const estimatedLabour =
+    args.estimatedLabour != null &&
+    Number.isFinite(args.estimatedLabour) &&
+    args.estimatedLabour >= 0
+      ? args.estimatedLabour
+      : 1;
+  const labourHours = diagnostic ? String(estimatedLabour) : "";
+
+  return {
+    note: "",
+    labourHours,
+    price:
+      args.standardPrice != null && Number.isFinite(args.standardPrice)
+        ? String(args.standardPrice)
+        : diagnostic
+          ? suggestedPriceFromLabourHours(labourHours)
+          : "",
+  };
+}
+
+/** Total the selected, editable pre-tax service prices without floating-point drift. */
+export function serviceLineSubtotalDollars(
+  lines: ReadonlyArray<ServiceLineDraft | undefined>
+): number {
+  const cents = lines.reduce((sum, line) => {
+    const price = Number(line?.price.trim() ?? "");
+    if (!Number.isFinite(price) || price < 0) return sum;
+    return sum + Math.round(price * 100);
+  }, 0);
+  return cents / 100;
+}
+
+/** A selected intake service is priced when it has a finite, non-negative amount. */
+export function hasValidServiceLinePrice(line: ServiceLineDraft | undefined): boolean {
+  const raw = line?.price.trim() ?? "";
+  if (!raw) return false;
+  const price = Number(raw);
+  return Number.isFinite(price) && price >= 0;
+}
 
 function parseOptionalNonNegative(raw: string): number | null {
   const trimmed = raw.trim();
@@ -31,9 +87,7 @@ export function readServiceLinesFromFormData(
 ): ServiceLineInput[] {
   return serviceIds.map((serviceId) => ({
     service_id: serviceId,
-    note: parseOptionalNote(
-      String(formData.get(`service_note_${serviceId}`) ?? "")
-    ),
+    note: parseOptionalNote(String(formData.get(`service_note_${serviceId}`) ?? "")),
     estimated_labour: parseOptionalNonNegative(
       String(formData.get(`service_labour_${serviceId}`) ?? "")
     ),
@@ -55,8 +109,7 @@ export function resolveJobSnapshots(args: {
   const line = args.line;
   return {
     notes: line?.note ?? null,
-    estimated_labour_snapshot:
-      line?.estimated_labour ?? args.catalogueLabour,
+    estimated_labour_snapshot: line?.estimated_labour ?? args.catalogueLabour,
     standard_price_snapshot: line?.standard_price ?? args.cataloguePrice,
   };
 }

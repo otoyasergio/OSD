@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { DirectoryStaff } from "@/lib/services/directory";
 import { startDirectMessageAction } from "@/app/(app)/messages/actions";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 
 const ROLE_LABELS: Record<string, string> = {
   owner: "Owner",
@@ -82,10 +83,11 @@ export function DirectoryList({
                       {checked ? "✓" : ""}
                     </span>
                   ) : (
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--surface-muted)] text-sm font-semibold">
-                      {person.first_name.slice(0, 1)}
-                      {person.last_name.slice(0, 1)}
-                    </span>
+                    <UserAvatar
+                      firstName={person.first_name}
+                      lastName={person.last_name}
+                      photoUrl={person.profile_photo_url}
+                    />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">

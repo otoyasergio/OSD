@@ -46,11 +46,7 @@ export const customerSchema = z.object({
     .refine((value) => Boolean(value), "Email is required"),
   address: z.preprocess(
     (value) => value ?? "",
-    z
-      .string()
-      .trim()
-      .min(1, "Address is required")
-      .max(500, "Address is too long")
+    z.string().trim().min(1, "Address is required").max(500, "Address is too long")
   ),
   date_of_birth: dateOfBirthSchema,
   notes: z.string().optional().nullable(),
@@ -62,6 +58,7 @@ export const motorcycleSchema = z.object({
   year: z.number().int().min(1900).max(2100),
   make: z.string().min(1),
   model: z.string().min(1),
+  odometer_unit: z.enum(["km", "mi"]).default("km"),
   vin: z
     .string()
     .optional()
@@ -95,17 +92,27 @@ export const serviceSchema = z.object({
   active: z.boolean().default(true),
 });
 
+export const shopClosureSchema = z.object({
+  closure_date: z.string().refine(isCalendarDate, "Enter a valid closure date"),
+  reason: z
+    .string()
+    .trim()
+    .max(120, "Reason must be 120 characters or less")
+    .optional()
+    .nullable()
+    .transform((value) => value || null),
+});
+
 export const createWorkOrderSchema = z.object({
   motorcycle_id: z.string().uuid(),
   location_id: z.string().uuid(),
   external_invoice_number: z.string().optional().nullable(),
   mileage: z.number().int().nonnegative(),
+  mileage_unit: z.enum(["km", "mi"]).default("km"),
   estimated_completion: z.string().datetime(),
   internal_notes: z.string().optional().nullable(),
   primary_technician_id: z.string().uuid().optional().nullable(),
-  service_ids: z
-    .array(z.string().uuid())
-    .min(1, "Select at least one service"),
+  service_ids: z.array(z.string().uuid()).min(1, "Select at least one service"),
   service_lines: z
     .array(
       z.object({

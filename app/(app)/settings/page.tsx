@@ -2,11 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import {
-  canChangeOwnPassword,
   canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
   canManageServiceCatalogue,
+  canManageShopClosures,
   canManageTimesheets,
   canManageUsers,
   canViewAuditLog,
@@ -22,10 +22,10 @@ export default async function SettingsPage() {
 
   const links = [
     {
-      href: "/settings/password",
-      label: "Password",
-      description: "Change the password for your account.",
-      visible: canChangeOwnPassword(user.role),
+      href: "/account",
+      label: "My account",
+      description: "Manage your profile photo and password.",
+      visible: true,
     },
     {
       href: "/settings/timesheets",
@@ -50,6 +50,12 @@ export default async function SettingsPage() {
       label: "Drop-off contract",
       description: "Edit the agreement customers sign at intake.",
       visible: canManageContractTemplate(user.role),
+    },
+    {
+      href: "/settings/closures",
+      label: "Shop closures",
+      description: "Set holidays and special closed dates used by intake.",
+      visible: canManageShopClosures(user.role),
     },
     {
       href: "/settings/locations",

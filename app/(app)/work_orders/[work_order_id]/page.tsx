@@ -46,6 +46,8 @@ import {
   getDropOffAgreement,
 } from "@/lib/services/contracts";
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
+import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
+import { AgreementFollowUpNotice } from "@/components/work_orders/AgreementFollowUpNotice";
 import {
   ComingSoonPanel,
   WORK_ORDER_TABS,
@@ -107,6 +109,7 @@ import {
   signDropOffAgreementAction,
   uploadPaperAgreementCopyAction,
 } from "@/app/(app)/work_orders/contract-actions";
+import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
 
 export const dynamic = "force-dynamic";
 
@@ -119,14 +122,28 @@ export default async function WorkOrderDetailPage({
   searchParams,
 }: {
   params: Promise<{ work_order_id: string }>;
-  searchParams: Promise<{ tab?: string; from_result?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    from_result?: string;
+    intake?: string;
+    follow_up?: string;
+  }>;
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
   const { work_order_id } = await params;
-  const { tab: tabParam, from_result: fromResultId } = await searchParams;
+  const {
+    tab: tabParam,
+    from_result: fromResultId,
+    intake,
+    follow_up: followUpParam,
+  } = await searchParams;
   const activeTab: WorkOrderTabId = isTabId(tabParam) ? tabParam : "overview";
+  const intakeFollowUp: IntakeFollowUp | undefined =
+    followUpParam === "signature" || followUpParam === "paper_copy"
+      ? followUpParam
+      : undefined;
 
   const detail = await getWorkOrderDetail(work_order_id).catch((error: unknown) => {
     if (error instanceof Error && error.message === "FORBIDDEN") {
@@ -251,6 +268,8 @@ export default async function WorkOrderDetailPage({
         {isFloorTech(user.role) ? "← Tech floor" : "← Work orders"}
       </Link>
 
+      {intake === "complete" ? <IntakeCompleteNotice followUp={intakeFollowUp} /> : null}
+
       {detail.is_foreign_location ? (
         <div
           role="status"
@@ -266,8 +285,19 @@ export default async function WorkOrderDetailPage({
         photos={photos}
         canViewClients={canSeeClients}
         canViewPricing={canSeePricing}
+        showContractAction={activeTab !== "overview"}
       />
       <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
+
+      {activeTab === "overview" &&
+      canSeeClients &&
+      !detail.is_foreign_location &&
+      detail.agreement_follow_up ? (
+        <AgreementFollowUpNotice
+          workOrderId={detail.work_order_id}
+          followUp={detail.agreement_follow_up}
+        />
+      ) : null}
 
       {activeTab === "overview" ? (
         <>

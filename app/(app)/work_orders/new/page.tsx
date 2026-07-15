@@ -6,6 +6,7 @@ import { getCustomerById, searchCustomers } from "@/lib/services/customers";
 import { getMotorcycleById, searchMotorcycles } from "@/lib/services/motorcycles";
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
+import { listUpcomingShopClosureDates } from "@/lib/services/shopClosures";
 import { CreateWorkOrderFormLazy } from "@/components/forms/CreateWorkOrderFormLazy";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +22,15 @@ export default async function NewWorkOrderPage({
 
   const { customer_id = "", motorcycle_id = "" } = await searchParams;
 
-  const [customers, motorcycles, services, technicians] = await Promise.all([
-    searchCustomers(""),
-    searchMotorcycles(""),
-    listServices({ includeInactive: false }),
-    listTechniciansForActiveLocation(),
-  ]);
+  const [customers, motorcycles, services, technicians, closureDates] = await Promise.all(
+    [
+      searchCustomers(""),
+      searchMotorcycles(""),
+      listServices({ includeInactive: false }),
+      listTechniciansForActiveLocation(),
+      listUpcomingShopClosureDates(),
+    ]
+  );
 
   // search* caps at 50; deep links must still resolve the selected records.
   let customerOptions = customers;
@@ -65,6 +69,7 @@ export default async function NewWorkOrderPage({
           technicians={technicians}
           initialCustomerId={customer_id}
           initialMotorcycleId={motorcycle_id}
+          closureDates={closureDates}
         />
       </div>
     </div>

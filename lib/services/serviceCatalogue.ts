@@ -8,6 +8,7 @@ import type { Service } from "@/lib/services/serviceCatalogueShared";
 
 export type { Service } from "@/lib/services/serviceCatalogueShared";
 export {
+  groupIntakeServicesByCategory,
   groupServicesByCategory,
   UNCATEGORISED_SERVICE_GROUP,
 } from "@/lib/services/serviceCatalogueShared";

@@ -14,6 +14,7 @@ import {
   listMotorcyclesForCustomer,
   SERVICE_INFORMATION_FIELDS,
   type Motorcycle,
+  type MotorcycleInput,
   type ServiceInformationInput,
   type VinOwnershipConflict,
 } from "@/lib/services/motorcycles";
@@ -49,13 +50,14 @@ function safeReturnTo(
   }
 }
 
-function readMotorcycleInput(formData: FormData) {
+function readMotorcycleInput(formData: FormData): MotorcycleInput {
   const yearRaw = String(formData.get("year") ?? "").trim();
   return {
     customer_id: String(formData.get("customer_id") ?? ""),
     year: yearRaw ? Number(yearRaw) : Number.NaN,
     make: String(formData.get("make") ?? ""),
     model: String(formData.get("model") ?? ""),
+    odometer_unit: formData.get("odometer_unit") === "mi" ? "mi" : "km",
     vin: String(formData.get("vin") ?? ""),
     colour: String(formData.get("colour") ?? ""),
     plate_number: String(formData.get("plate_number") ?? ""),

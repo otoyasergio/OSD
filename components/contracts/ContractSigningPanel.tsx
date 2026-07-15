@@ -7,6 +7,7 @@ import type { AgreementTemplate, DropOffAgreement } from "@/lib/services/contrac
 import { SignatureCanvas } from "@/components/contracts/SignatureCanvas";
 import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
+import { withIntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { sanitizeContractHtml } from "@/lib/security/sanitizeHtml";
 import { PaperAgreementCopyUpload } from "@/components/contracts/PaperAgreementCopyUpload";
 
@@ -249,7 +250,10 @@ export function ContractSigningPanel({
               : "Sign drop-off agreement"}
         </button>
         {continueHref ? (
-          <Link href={continueHref} className="btn btn-secondary min-h-14 text-lg">
+          <Link
+            href={withIntakeFollowUp(continueHref, "signature")}
+            className="btn btn-secondary min-h-14 text-lg"
+          >
             Continue without signing
           </Link>
         ) : null}

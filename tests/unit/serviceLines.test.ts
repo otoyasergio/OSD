@@ -1,15 +1,106 @@
 import { describe, it, expect } from "vitest";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
 import {
+  createIntakeServiceLineDraft,
   formatServiceLineSummary,
+  hasValidServiceLinePrice,
   readServiceLinesFromFormData,
   resolveJobSnapshots,
+  serviceLineSubtotalDollars,
 } from "@/lib/forms/serviceLines";
 
 const SERVICE_A = "11111111-1111-4111-8111-111111111111";
 const SERVICE_B = "22222222-2222-4222-8222-222222222222";
 const MOTO = "33333333-3333-4333-8333-333333333333";
 const LOC = "44444444-4444-4444-8444-444444444444";
+
+describe("createIntakeServiceLineDraft", () => {
+  it("starts Diagnostic at one hour and the $145 pre-tax shop rate", () => {
+    expect(
+      createIntakeServiceLineDraft({
+        name: "Diagnostic",
+        estimatedLabour: 1,
+        standardPrice: null,
+      })
+    ).toEqual({ note: "", labourHours: "1", price: "145" });
+  });
+
+  it("falls back to one hour when Diagnostic has no catalogue labour", () => {
+    expect(
+      createIntakeServiceLineDraft({
+        name: "Diagnostics",
+        estimatedLabour: null,
+        standardPrice: null,
+      })
+    ).toEqual({ note: "", labourHours: "1", price: "145" });
+  });
+
+  it("leaves other hourly services blank for staff to estimate", () => {
+    expect(
+      createIntakeServiceLineDraft({
+        name: "General repair",
+        estimatedLabour: 2,
+        standardPrice: null,
+      })
+    ).toEqual({ note: "", labourHours: "", price: "" });
+  });
+
+  it("uses a fixed catalogue price when one is configured", () => {
+    expect(
+      createIntakeServiceLineDraft({
+        name: "Diagnostic",
+        estimatedLabour: 1,
+        standardPrice: 160,
+      })
+    ).toEqual({ note: "", labourHours: "1", price: "160" });
+  });
+});
+
+describe("serviceLineSubtotalDollars", () => {
+  it("totals selected pre-tax service prices to the cent", () => {
+    expect(
+      serviceLineSubtotalDollars([
+        { note: "", labourHours: "1", price: "145" },
+        { note: "", labourHours: "0.5", price: "72.50" },
+      ])
+    ).toBe(217.5);
+  });
+
+  it("ignores blank, invalid, and negative prices", () => {
+    expect(
+      serviceLineSubtotalDollars([
+        { note: "", labourHours: "", price: "" },
+        { note: "", labourHours: "", price: "not a price" },
+        { note: "", labourHours: "", price: "-10" },
+        undefined,
+      ])
+    ).toBe(0);
+  });
+});
+
+describe("hasValidServiceLinePrice", () => {
+  it("accepts zero and positive prices", () => {
+    expect(hasValidServiceLinePrice({ note: "", labourHours: "", price: "0" })).toBe(
+      true
+    );
+    expect(hasValidServiceLinePrice({ note: "", labourHours: "1", price: "145" })).toBe(
+      true
+    );
+  });
+
+  it("rejects missing, invalid, and negative prices", () => {
+    expect(hasValidServiceLinePrice(undefined)).toBe(false);
+    expect(hasValidServiceLinePrice({ note: "", labourHours: "", price: "" })).toBe(
+      false
+    );
+    expect(
+      hasValidServiceLinePrice({ note: "", labourHours: "", price: "invalid" })
+    ).toBe(false);
+    expect(hasValidServiceLinePrice({ note: "", labourHours: "", price: "-1" })).toBe(
+      false
+    );
+  });
+});
 
 describe("readServiceLinesFromFormData", () => {
   it("reads note, labour, and price for selected services", () => {
@@ -21,9 +112,7 @@ describe("readServiceLinesFromFormData", () => {
     formData.set(`service_labour_${SERVICE_B}`, "");
     formData.set(`service_price_${SERVICE_B}`, "");
 
-    expect(
-      readServiceLinesFromFormData(formData, [SERVICE_A, SERVICE_B])
-    ).toEqual([
+    expect(readServiceLinesFromFormData(formData, [SERVICE_A, SERVICE_B])).toEqual([
       {
         service_id: SERVICE_A,
         note: "Front pads worn",
@@ -141,13 +230,26 @@ describe("createWorkOrderSchema service_lines", () => {
       false
     );
     expect(createWorkOrderSchema.safeParse({ ...base, mileage: -1 }).success).toBe(false);
-    expect(createWorkOrderSchema.safeParse({ ...base, mileage: 12.5 }).success).toBe(false);
+    expect(createWorkOrderSchema.safeParse({ ...base, mileage: 12.5 }).success).toBe(
+      false
+    );
     expect(createWorkOrderSchema.safeParse({ ...base, mileage: 0 }).success).toBe(true);
+  });
+
+  it("defaults mileage to kilometres and accepts miles", () => {
+    expect(createWorkOrderSchema.parse(base).mileage_unit).toBe("km");
+    expect(
+      createWorkOrderSchema.parse({ ...base, mileage_unit: "mi" }).mileage_unit
+    ).toBe("mi");
+    expect(
+      createWorkOrderSchema.safeParse({ ...base, mileage_unit: "yards" }).success
+    ).toBe(false);
   });
 
   it("requires a valid estimated completion time", () => {
     expect(
-      createWorkOrderSchema.safeParse({ ...base, estimated_completion: undefined }).success
+      createWorkOrderSchema.safeParse({ ...base, estimated_completion: undefined })
+        .success
     ).toBe(false);
     expect(
       createWorkOrderSchema.safeParse({ ...base, estimated_completion: "not-a-date" })

@@ -12,6 +12,8 @@ import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { VinField, type VinAutofillSuggestion } from "@/components/forms/VinField";
 import { VinOwnershipConflictNotice } from "@/components/forms/VinOwnershipConflictNotice";
+import { MileageUnitToggle } from "@/components/forms/MileageUnitToggle";
+import { normalizeMileageUnit } from "@/lib/mileage/format";
 
 export type CustomerOption = {
   customer_id: string;
@@ -61,6 +63,9 @@ export function MotorcycleForm({
   );
   const [make, setMake] = useState(motorcycle?.make ?? defaults?.make ?? "");
   const [model, setModel] = useState(motorcycle?.model ?? defaults?.model ?? "");
+  const [odometerUnit, setOdometerUnit] = useState(() =>
+    normalizeMileageUnit(motorcycle?.odometer_unit)
+  );
   const [vinKey, setVinKey] = useState(0);
   const [touched, setTouched] = useState({
     year: Boolean(motorcycle?.year ?? defaults?.year),
@@ -232,6 +237,13 @@ export function MotorcycleForm({
           hint="Saved in uppercase."
         />
       </div>
+
+      <MileageUnitToggle
+        name="odometer_unit"
+        label="Odometer unit"
+        value={odometerUnit}
+        onChange={setOdometerUnit}
+      />
 
       <TextAreaField
         label="Internal notes"

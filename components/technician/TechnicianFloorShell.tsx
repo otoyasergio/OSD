@@ -3,11 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useMemo, useRef, type ReactNode } from "react";
-import type {
-  FloorOsSurface,
-  FloorQueueItem,
-  TechnicianFloorOs,
-} from "@/lib/services/technicianFloor";
+import type { FloorOsSurface, TechnicianFloorOs } from "@/lib/services/technicianFloor";
 import type { DocketItem } from "@/lib/services/technicianDocket";
 import type { ReadyForPickupItem } from "@/lib/services/readyForPickup";
 import { TechnicianDocketList } from "@/components/technician/TechnicianDocketList";
@@ -37,13 +33,10 @@ export { deriveDefaultStage };
 
 const FLOOR_REFRESH_MS = 60_000;
 
-function hrefForItem(item: FloorQueueItem, stage?: FloorStage): string {
+function jobHref(workOrderId: string, jobId: string): string {
   const params = new URLSearchParams();
-  if (item.job_id) params.set("job", item.job_id);
-  params.set("wo", item.work_order_id);
-  if (item.kind === "qc") params.set("stage", "qc");
-  else if (item.kind === "safety") params.set("stage", "safety");
-  else if (stage) params.set("stage", stage);
+  params.set("job", jobId);
+  params.set("wo", workOrderId);
   return `/technician?${params.toString()}`;
 }
 
@@ -64,59 +57,6 @@ function ActionMessage({ state }: { state: FloorActionState }) {
     >
       {state.error ?? state.success}
     </p>
-  );
-}
-
-function QueueLane({
-  title,
-  items,
-  selectedKey,
-  nowJobId,
-}: {
-  title: string;
-  items: FloorQueueItem[];
-  selectedKey: string | null;
-  nowJobId?: string | null;
-}) {
-  if (items.length === 0) return null;
-
-  return (
-    <div className="floor-lane">
-      <p className="floor-lane-title">{title}</p>
-      <ul className="floor-bike-card-grid floor-lane-list">
-        {items.map((item) => {
-          const selected = item.key === selectedKey;
-          const isNow = Boolean(nowJobId && item.job_id === nowJobId);
-          return (
-            <li key={item.key}>
-              <Link
-                href={hrefForItem(item)}
-                className={[
-                  "floor-bike-card",
-                  selected ? "floor-bike-card--selected" : "",
-                  isNow && !selected ? "floor-bike-card--now" : "",
-                  item.lane === "flagged" ? "floor-bike-card--flagged" : "",
-                  item.lane === "needs_qc" || item.lane === "safeties"
-                    ? "floor-bike-card--qc"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                {isNow ? <span className="floor-now-badge">NOW</span> : null}
-                <p className="floor-bike-card-bike">{item.motorcycle_label}</p>
-                <p className="floor-bike-card-wo">{item.work_order_number}</p>
-                <p className="floor-bike-card-meta">
-                  {item.service_label}
-                  <span aria-hidden> · </span>
-                  {item.status_label}
-                </p>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
   );
 }
 
@@ -183,6 +123,57 @@ function StageRail({ surface, stage }: { surface: FloorOsSurface; stage: FloorSt
         );
       })}
     </nav>
+  );
+}
+
+function MotorcycleServices({ surface }: { surface: FloorOsSurface }) {
+  if (surface.jobs.length === 0) return null;
+
+  return (
+    <section className="floor-services" aria-labelledby="floor-services-title">
+      <h3 id="floor-services-title" className="floor-section-title">
+        Services on this motorcycle
+      </h3>
+      <ul className="floor-service-list">
+        {surface.jobs.map((job) => {
+          const content = (
+            <>
+              <span className="floor-service-main">
+                <span className="floor-service-name">{job.service_name}</span>
+                <span className="floor-service-meta">{job.status_label}</span>
+              </span>
+              <span className="floor-service-owner">
+                {job.assigned_to_me
+                  ? job.is_selected
+                    ? "Open"
+                    : "My service"
+                  : "Other tech"}
+              </span>
+            </>
+          );
+
+          return (
+            <li key={job.job_id}>
+              {job.assigned_to_me ? (
+                <Link
+                  href={jobHref(surface.work_order_id, job.job_id)}
+                  className={`floor-service-item${
+                    job.is_selected ? " floor-service-item--selected" : ""
+                  }`}
+                  aria-current={job.is_selected ? "true" : undefined}
+                >
+                  {content}
+                </Link>
+              ) : (
+                <div className="floor-service-item floor-service-item--other">
+                  {content}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -747,7 +738,6 @@ export function TechnicianFloorShell({
   const router = useRouter();
   const routerRef = useRef(router);
   const selected = floor.selected;
-  const nowJobId = floor.priority.find((item) => item.is_active)?.job_id ?? null;
 
   useEffect(() => {
     routerRef.current = router;
@@ -774,18 +764,6 @@ export function TechnicianFloorShell({
     return deriveDefaultStage(selected);
   }, [selected, stageProp]);
 
-  const selectedKey =
-    selected == null
-      ? null
-      : selected.is_safety && !selected.job_id
-        ? `safety-${selected.work_order_id}`
-        : selected.is_qc && !selected.job_id
-          ? `qc-${selected.work_order_id}`
-          : selected.job_id
-            ? (floor.priority.find((i) => i.job_id === selected.job_id)?.key ??
-              `job-${selected.job_id}`)
-            : null;
-
   const docketSelectedKey =
     selected == null
       ? null
@@ -794,7 +772,11 @@ export function TechnicianFloorShell({
         : selected.is_qc && !selected.job_id
           ? `qc-${selected.work_order_id}`
           : selected.job_id
-            ? (docketItems.find((i) => i.job_id === selected.job_id)?.key ?? null)
+            ? (docketItems.find(
+                (item) =>
+                  item.work_order_id === selected.work_order_id &&
+                  (item.kind === "now" || item.kind === "assigned")
+              )?.key ?? null)
             : null;
 
   return (
@@ -811,22 +793,13 @@ export function TechnicianFloorShell({
       <div className="floor-layout">
         <aside className="floor-queue">
           <div className="floor-lane floor-docket-lane">
-            <p className="floor-lane-title">What&apos;s next</p>
+            <p className="floor-lane-title">My motorcycles</p>
             <TechnicianDocketList
               items={docketItems}
               selectedKey={docketSelectedKey}
               linkMode="floor"
             />
           </div>
-          <QueueLane
-            title="Priority"
-            items={floor.priority}
-            selectedKey={selectedKey}
-            nowJobId={nowJobId}
-          />
-          <QueueLane title="Needs QC" items={floor.needsQc} selectedKey={selectedKey} />
-          <QueueLane title="Safeties" items={floor.safeties} selectedKey={selectedKey} />
-          <QueueLane title="Flagged" items={floor.flagged} selectedKey={selectedKey} />
           {floor.priority.length === 0 &&
           floor.needsQc.length === 0 &&
           floor.safeties.length === 0 &&
@@ -841,7 +814,7 @@ export function TechnicianFloorShell({
         <section className="floor-surface">
           {!selected ? (
             <p className="floor-muted floor-surface-empty">
-              Select a job from the queue to begin.
+              Select a motorcycle from the docket to begin.
             </p>
           ) : (
             <>
@@ -877,6 +850,8 @@ export function TechnicianFloorShell({
                     </div>
                   ) : null}
                 </div>
+
+                <MotorcycleServices surface={selected} />
 
                 <StageRail surface={selected} stage={stage} />
 

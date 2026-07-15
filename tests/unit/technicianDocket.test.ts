@@ -84,6 +84,57 @@ describe("buildTechnicianDocketItems", () => {
     expect(items).toEqual([]);
   });
 
+  it("groups every assigned service for one motorcycle into one docket entry", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j-oil",
+          work_order_id: "w1",
+          work_order_number: "WO-1",
+          service_name: "Oil change",
+          motorcycle_label: "2024 Honda CB650R",
+          status: "approved",
+          status_label: "Approved",
+          docket_position: 1,
+        },
+        {
+          job_id: "j-diagnostics",
+          work_order_id: "w1",
+          work_order_number: "WO-1",
+          service_name: "Diagnostics",
+          motorcycle_label: "2024 Honda CB650R",
+          status: "in_progress",
+          status_label: "In Progress",
+          docket_position: 2,
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [
+        {
+          admin_flag_id: "flag-1",
+          work_order_id: "w1",
+          work_order_number: "WO-1",
+          job_id: "j-diagnostics",
+          motorcycle_label: "2024 Honda CB650R",
+          reason: "parts",
+          note: "Waiting for sensor",
+        },
+      ],
+      includeSafeties: false,
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      key: "work-order-w1",
+      kind: "now",
+      job_id: "j-diagnostics",
+      service_label: "Oil change · Diagnostics",
+      status_label: "2 services · In Progress · Flagged",
+    });
+    expect(items[0].href).toContain("job=j-diagnostics");
+  });
+
   it("orders assigned jobs by advisor-set docket position, unpositioned last", () => {
     const items = buildTechnicianDocketItems({
       assignedJobs: [

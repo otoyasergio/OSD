@@ -6,7 +6,9 @@ import { revalidatePath } from "next/cache";
 import {
   assignTechnicianToWorkOrder,
   createWorkOrder,
+  getLastRecordedMileageForMotorcycle,
   setPrimaryTechnician,
+  type LastRecordedMileage,
 } from "@/lib/services/workOrders";
 import { listIntakePhotos, uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
@@ -25,6 +27,13 @@ export type WorkOrderFormState = {
 };
 
 const REQUIRED_INTAKE_CATEGORIES = CREATE_INTAKE_PHOTO_SLOTS.map((slot) => slot.category);
+
+export async function getLastRecordedMileageAction(
+  motorcycleId: string
+): Promise<LastRecordedMileage | null> {
+  if (!motorcycleId.trim()) return null;
+  return getLastRecordedMileageForMotorcycle(motorcycleId);
+}
 
 function readRequiredMileage(formData: FormData): number {
   const key = "mileage";
@@ -108,6 +117,9 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
   const primaryTech = String(formData.get("primary_technician_id") ?? "").trim();
 
   const serviceLines = readServiceLinesFromFormData(formData, serviceIds);
+  if (serviceLines.some((line) => line.standard_price === null)) {
+    throw new Error("SERVICE_PRICE_REQUIRED");
+  }
 
   return createWorkOrder({
     motorcycle_id: String(formData.get("motorcycle_id") ?? ""),
@@ -115,6 +127,7 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
     // Square assigns invoice_number when staff sync/publish from Billing
     external_invoice_number: null,
     mileage: readRequiredMileage(formData),
+    mileage_unit: formData.get("mileage_unit") === "mi" ? "mi" : "km",
     estimated_completion: readEstimatedCompletion(formData),
     internal_notes: String(formData.get("internal_notes") ?? ""),
     primary_technician_id: primaryTech || null,

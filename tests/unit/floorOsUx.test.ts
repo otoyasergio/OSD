@@ -23,6 +23,16 @@ function base(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface {
     estimated_labour: null,
     labour_label: null,
     labour_over: false,
+    jobs: [
+      {
+        job_id: "j1",
+        service_name: "Oil",
+        status: "in_progress",
+        status_label: "In Progress",
+        assigned_to_me: true,
+        is_selected: true,
+      },
+    ],
     checklist: [
       {
         job_checklist_item_id: "c1",

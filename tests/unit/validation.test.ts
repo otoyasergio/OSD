@@ -112,6 +112,23 @@ describe("motorcycleSchema", () => {
       model: "CBR600RR",
     });
     expect(result.success).toBe(true);
+    expect(result.success && result.data.odometer_unit).toBe("km");
+  });
+
+  it("accepts only supported odometer units", () => {
+    const base = {
+      customer_id: "00000000-0000-4000-8000-000000000001",
+      year: 2022,
+      make: "Honda",
+      model: "CBR600RR",
+    };
+
+    expect(motorcycleSchema.safeParse({ ...base, odometer_unit: "mi" }).success).toBe(
+      true
+    );
+    expect(motorcycleSchema.safeParse({ ...base, odometer_unit: "yards" }).success).toBe(
+      false
+    );
   });
 
   it("normalizes an optional plate number to uppercase", () => {

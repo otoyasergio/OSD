@@ -13,6 +13,7 @@ import {
 import { motorcycleSchema } from "@/lib/validation/schemas";
 import { escapeSearchTerm } from "@/lib/services/customers";
 import { normalizeVin } from "@/lib/vin";
+import type { MileageUnit } from "@/lib/mileage/format";
 import {
   isServiceInfoEmpty,
   mapFitmentToServiceInfo,
@@ -27,6 +28,7 @@ export type Motorcycle = {
   year: number;
   make: string;
   model: string;
+  odometer_unit: MileageUnit;
   vin: string | null;
   colour: string | null;
   plate_number: string | null;
@@ -63,6 +65,7 @@ export type MotorcycleInput = {
   year: number;
   make: string;
   model: string;
+  odometer_unit: MileageUnit;
   vin?: string | null;
   colour?: string | null;
   plate_number?: string | null;
@@ -159,7 +162,7 @@ export type ServiceInformationInput = Partial<
 >;
 
 const MOTORCYCLE_COLUMNS =
-  "motorcycle_id, customer_id, year, make, model, vin, colour, plate_number, notes, created_at, updated_at";
+  "motorcycle_id, customer_id, year, make, model, odometer_unit, vin, colour, plate_number, notes, created_at, updated_at";
 
 const SERVICE_INFORMATION_COLUMNS =
   "service_information_id, motorcycle_id, oil_filter, oil_type, oil_capacity, air_filter, spark_plugs, front_brake_pads, rear_brake_pads, front_tire_size, rear_tire_size, chain, battery, notes, last_updated, last_updated_by_user_id";
@@ -434,6 +437,7 @@ export async function createMotorcycle(input: MotorcycleInput): Promise<Motorcyc
       year: parsed.year,
       make: parsed.make,
       model: parsed.model,
+      odometer_unit: parsed.odometer_unit,
       vin: normalizeOptional(parsed.vin),
       colour: normalizeOptional(parsed.colour),
       plate_number: normalizeOptional(parsed.plate_number),
@@ -499,6 +503,7 @@ export async function updateMotorcycle(
       year: parsed.year,
       make: parsed.make,
       model: parsed.model,
+      odometer_unit: parsed.odometer_unit,
       vin: normalizeOptional(parsed.vin),
       colour: normalizeOptional(parsed.colour),
       plate_number: normalizeOptional(parsed.plate_number),

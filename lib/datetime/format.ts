@@ -211,6 +211,30 @@ function addDaysToDateKey(dateKey: string, days: number): string {
   return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, "0")}-${String(utc.getUTCDate()).padStart(2, "0")}`;
 }
 
+/**
+ * Default promised completion for a new intake using the shop's regular hours.
+ * The shop is open Monday–Friday until 19:00 and Saturday until 16:00;
+ * Sunday is skipped. The result is ready for a datetime-local input.
+ */
+export function nextShopBusinessCompletionValue(
+  anchor: string | Date = new Date(),
+  closureDates: ReadonlyArray<string> = []
+): string {
+  const date = toDate(anchor) ?? new Date();
+  const closures = new Set(closureDates);
+  let dateKey = shopDateKey(date);
+  let weekday = 0;
+
+  do {
+    dateKey = addDaysToDateKey(dateKey, 1);
+    const [year, month, day] = dateKey.split("-").map(Number);
+    weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  } while (weekday === 0 || closures.has(dateKey));
+
+  const closeTime = weekday === 6 ? "16:00" : "19:00";
+  return `${dateKey}T${closeTime}`;
+}
+
 function shopMidnightFromDateKey(dateKey: string): Date {
   const parsed = parseShopLocalDateTimeInput(`${dateKey}T00:00:00`);
   if (!parsed) throw new Error(`Invalid shop date key: ${dateKey}`);

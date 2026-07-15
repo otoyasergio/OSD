@@ -124,6 +124,9 @@ export function canManageInspectionTemplate(role: UserRole) {
 export function canManageContractTemplate(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
+export function canManageShopClosures(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
 export function canManageUsers(role: UserRole) {
   return OWNERS.includes(role);
 }

@@ -20,6 +20,7 @@ import {
   canCreateAdminFlag,
   canManageServiceCatalogue,
   canManageContractTemplate,
+  canManageShopClosures,
   canUpdateServiceInformation,
   canDeleteIntakePhoto,
   canViewClients,
@@ -67,6 +68,13 @@ describe("permissions", () => {
     expect(canManageContractTemplate("manager")).toBe(true);
     expect(canManageContractTemplate("service_advisor")).toBe(false);
     expect(canManageContractTemplate("technician")).toBe(false);
+  });
+
+  it("owner and manager can manage shop closures", () => {
+    expect(canManageShopClosures("owner")).toBe(true);
+    expect(canManageShopClosures("manager")).toBe(true);
+    expect(canManageShopClosures("service_advisor")).toBe(false);
+    expect(canManageShopClosures("technician")).toBe(false);
   });
 
   it("technician cannot complete work order", () => {

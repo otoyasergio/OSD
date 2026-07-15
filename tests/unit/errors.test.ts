@@ -17,6 +17,21 @@ describe("toFormErrorMessage", () => {
     );
   });
 
+  it("maps missing service prices", () => {
+    expect(toFormErrorMessage(new Error("SERVICE_PRICE_REQUIRED"))).toBe(
+      "Enter a price for every selected service before creating the work order."
+    );
+  });
+
+  it("maps shop closure errors", () => {
+    expect(toFormErrorMessage(new Error("SHOP_CLOSURE_EXISTS"))).toBe(
+      "That date is already marked as closed."
+    );
+    expect(toFormErrorMessage(new Error("SHOP_CLOSURE_IN_PAST"))).toBe(
+      "Choose today or a future date."
+    );
+  });
+
   it("maps password change validation errors", () => {
     expect(toFormErrorMessage(new Error("CURRENT_PASSWORD_INVALID"))).toBe(
       "Current password is incorrect."

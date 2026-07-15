@@ -10,6 +10,7 @@ import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import type { PhotoCategory } from "@/lib/database/types";
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
+import { formatMileage } from "@/lib/mileage/format";
 
 const SECTION_PHOTO: Record<
   string,
@@ -166,7 +167,7 @@ export function InspectionChecklist({
           </div>
           <div>
             <dt>Mileage</dt>
-            <dd>{header.mileage != null ? header.mileage.toLocaleString() : "—"}</dd>
+            <dd>{formatMileage(header.mileage, header.mileage_unit)}</dd>
           </div>
           <div>
             <dt>RO #</dt>

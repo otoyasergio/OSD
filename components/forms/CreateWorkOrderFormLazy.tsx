@@ -36,6 +36,7 @@ type Props = {
   technicians: TechnicianOption[];
   initialCustomerId?: string;
   initialMotorcycleId?: string;
+  closureDates: string[];
 };
 
 export function CreateWorkOrderFormLazy(props: Props) {

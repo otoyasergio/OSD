@@ -20,6 +20,7 @@ export type Database = {
           first_name: string;
           last_name: string;
           email: string;
+          profile_photo_path: string | null;
           role: string;
           status: string;
           created_at: string;
@@ -31,6 +32,7 @@ export type Database = {
           first_name: string;
           last_name: string;
           email: string;
+          profile_photo_path?: string | null;
           role: string;
           status?: string;
           created_at?: string;
@@ -46,10 +48,31 @@ export type Database = {
           customer_id: string | null;
           work_order_number: string | null;
           status: string;
+          primary_technician_id: string | null;
+          mileage: number | null;
+          mileage_unit: "km" | "mi";
           billing_collected_cents: number | null;
           created_at: string;
           completed_at: string | null;
           opened_at: string | null;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      motorcycle: {
+        Row: {
+          motorcycle_id: string;
+          customer_id: string;
+          year: number;
+          make: string;
+          model: string;
+          vin: string | null;
+          colour: string | null;
+          plate_number: string | null;
+          odometer_unit: "km" | "mi";
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
         };
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
@@ -89,6 +112,44 @@ export type Database = {
         };
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
+      };
+      shop_closure: {
+        Row: {
+          location_id: string;
+          closure_date: string;
+          reason: string | null;
+          created_at: string;
+        };
+        Insert: {
+          location_id: string;
+          closure_date: string;
+          reason?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["shop_closure"]["Insert"]>;
+      };
+      staff_notification: {
+        Row: {
+          staff_notification_id: string;
+          recipient_user_id: string;
+          actor_user_id: string | null;
+          location_id: string;
+          work_order_id: string;
+          kind: "work_order_assigned";
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          staff_notification_id?: string;
+          recipient_user_id: string;
+          actor_user_id?: string | null;
+          location_id: string;
+          work_order_id: string;
+          kind?: "work_order_assigned";
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["staff_notification"]["Insert"]>;
       };
       chat_conversation: {
         Row: {

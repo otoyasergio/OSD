@@ -12,8 +12,9 @@ import {
 } from "react";
 import { searchCustomersAction } from "@/app/(app)/customers/actions";
 import type { Customer } from "@/lib/services/customers";
+import { filterKnownCustomerMatches } from "@/lib/forms/customerSearch";
 
-const DEBOUNCE_MS = 250;
+const DEBOUNCE_MS = 200;
 
 const INPUT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
@@ -57,6 +58,7 @@ export function CustomerSearchPicker({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [knownCustomers, setKnownCustomers] = useState<Customer[]>(initialCustomers);
+  const [searching, setSearching] = useState(false);
   const [pending, startTransition] = useTransition();
 
   const selected = useMemo(
@@ -75,8 +77,7 @@ export function CustomerSearchPicker({
   }, []);
 
   const runSearch = useCallback(
-    (term: string) => {
-      const requestId = ++requestIdRef.current;
+    (term: string, requestId: number) => {
       startTransition(async () => {
         try {
           const next = await searchCustomersAction(term);
@@ -88,6 +89,8 @@ export function CustomerSearchPicker({
           if (requestId !== requestIdRef.current) return;
           setResults([]);
           setActiveIndex(-1);
+        } finally {
+          if (requestId === requestIdRef.current) setSearching(false);
         }
       });
     },
@@ -96,7 +99,18 @@ export function CustomerSearchPicker({
 
   function scheduleSearch(term: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => runSearch(term), DEBOUNCE_MS);
+    const requestId = ++requestIdRef.current;
+    setSearching(true);
+    debounceRef.current = setTimeout(() => runSearch(term, requestId), DEBOUNCE_MS);
+  }
+
+  function cancelPendingSearch() {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    requestIdRef.current += 1;
+    setSearching(false);
   }
 
   useEffect(() => {
@@ -116,6 +130,7 @@ export function CustomerSearchPicker({
   }, []);
 
   function selectCustomer(customer: Customer) {
+    cancelPendingSearch();
     mergeKnown([customer]);
     onChange(customer.customer_id, customer);
     setQuery("");
@@ -124,6 +139,7 @@ export function CustomerSearchPicker({
   }
 
   function clearSelection() {
+    cancelPendingSearch();
     onChange("", null);
     setQuery("");
     setResults(initialCustomers);
@@ -213,14 +229,19 @@ export function CustomerSearchPicker({
         value={query}
         onChange={(event) => {
           const next = event.target.value;
+          const localMatches = filterKnownCustomerMatches(knownCustomers, next);
           setQuery(next);
+          setResults(localMatches);
+          setActiveIndex(localMatches.length > 0 ? 0 : -1);
           setOpen(true);
           scheduleSearch(next);
         }}
         onFocus={() => {
           setOpen(true);
           if (!query.trim() && results.length === 0) {
-            runSearch("");
+            const requestId = ++requestIdRef.current;
+            setSearching(true);
+            runSearch("", requestId);
           }
         }}
         onKeyDown={onInputKeyDown}
@@ -232,10 +253,10 @@ export function CustomerSearchPicker({
           role="listbox"
           aria-label="Customer matches"
         >
-          {pending && results.length === 0 ? (
+          {(searching || pending) && results.length === 0 ? (
             <div className="customer-picker-empty">Searching…</div>
           ) : null}
-          {!pending && results.length === 0 ? (
+          {!searching && !pending && results.length === 0 ? (
             <div className="customer-picker-empty">No customers found</div>
           ) : null}
           {results.length > 0 ? (

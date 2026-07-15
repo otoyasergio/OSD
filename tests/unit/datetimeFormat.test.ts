@@ -3,6 +3,7 @@ import {
   formatDate,
   formatDateTime,
   formatTime,
+  nextShopBusinessCompletionValue,
   parseShopLocalDateTimeInput,
 } from "@/lib/datetime/format";
 
@@ -49,5 +50,35 @@ describe("parseShopLocalDateTimeInput", () => {
   it("returns null for empty/invalid", () => {
     expect(parseShopLocalDateTimeInput("")).toBeNull();
     expect(parseShopLocalDateTimeInput("nope")).toBeNull();
+  });
+});
+
+describe("nextShopBusinessCompletionValue", () => {
+  it("defaults a weekday intake to the next weekday at 7 p.m.", () => {
+    expect(nextShopBusinessCompletionValue("2026-07-15T16:00:00.000Z")).toBe(
+      "2026-07-16T19:00"
+    );
+  });
+
+  it("uses the Saturday 4 p.m. close after Friday", () => {
+    expect(nextShopBusinessCompletionValue("2026-07-17T16:00:00.000Z")).toBe(
+      "2026-07-18T16:00"
+    );
+  });
+
+  it("skips Sunday after a Saturday intake", () => {
+    expect(nextShopBusinessCompletionValue("2026-07-18T16:00:00.000Z")).toBe(
+      "2026-07-20T19:00"
+    );
+  });
+
+  it("skips configured closure dates", () => {
+    expect(
+      nextShopBusinessCompletionValue("2026-07-15T16:00:00.000Z", [
+        "2026-07-16",
+        "2026-07-17",
+        "2026-07-18",
+      ])
+    ).toBe("2026-07-20T19:00");
   });
 });

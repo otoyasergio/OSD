@@ -8,6 +8,7 @@ import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
 import { WorkOrderPhotoStrip } from "@/components/work_orders/WorkOrderPhotoStrip";
 import { getGalleryStageForStatus, getWorkOrderNextAction } from "@/lib/status/pipeline";
 import { formatDateTime } from "@/lib/datetime/format";
+import { formatMileage } from "@/lib/mileage/format";
 
 const INACTIVE_JOB_STATUSES = new Set(["cancelled", "declined", "completed"]);
 
@@ -30,6 +31,7 @@ export function WorkOrderHeader({
   photos = [],
   canViewClients = true,
   canViewPricing = true,
+  showContractAction = true,
 }: {
   detail: WorkOrderDetail;
   photos?: IntakePhoto[];
@@ -37,6 +39,8 @@ export function WorkOrderHeader({
   canViewClients?: boolean;
   /** When false, hide Square invoice references (technicians). */
   canViewPricing?: boolean;
+  /** Overview renders a larger intake follow-up notice instead. */
+  showContractAction?: boolean;
 }) {
   const customer = canViewClients ? detail.customer : null;
   const bike = detail.motorcycle;
@@ -105,7 +109,7 @@ export function WorkOrderHeader({
             <span className="font-semibold text-foreground">Next action:</span>{" "}
             {nextAction}
           </p>
-          {detail.flags.includes("Contract unsigned") ? (
+          {showContractAction && detail.flags.includes("Contract unsigned") ? (
             <Link
               href={`/work_orders/${detail.work_order_id}/contract`}
               className="btn btn-secondary min-h-10 text-sm"
@@ -132,7 +136,7 @@ export function WorkOrderHeader({
             Mileage
           </dt>
           <dd className="mt-0.5 font-semibold tabular-nums text-foreground">
-            {detail.mileage != null ? detail.mileage.toLocaleString() : "—"}
+            {formatMileage(detail.mileage, detail.mileage_unit)}
           </dd>
         </div>
         <div>

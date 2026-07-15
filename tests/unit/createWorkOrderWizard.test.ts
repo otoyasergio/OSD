@@ -44,41 +44,28 @@ describe("create work order wizard steps", () => {
   it("requires mileage and estimated completion on visit details", () => {
     const estimatedCompletion = "2026-07-20T16:00";
     const selectedServiceIds = ["service-1"];
+    const validVisit = {
+      mileage: "12000",
+      estimatedCompletion,
+      selectedServiceIds,
+      servicePricingComplete: true,
+    };
+    expect(canProceedFromVisitStep({ ...validVisit, mileage: "" })).toBe(false);
+    expect(canProceedFromVisitStep({ ...validVisit, mileage: "abc" })).toBe(false);
+    expect(canProceedFromVisitStep({ ...validVisit, mileage: "-1" })).toBe(false);
+    expect(canProceedFromVisitStep({ ...validVisit, mileage: "12.5" })).toBe(false);
+    expect(canProceedFromVisitStep({ ...validVisit, mileage: "12e3" })).toBe(false);
+    expect(canProceedFromVisitStep({ ...validVisit, estimatedCompletion: "" })).toBe(
+      false
+    );
+    expect(canProceedFromVisitStep({ ...validVisit, selectedServiceIds: [] })).toBe(
+      false
+    );
+    expect(canProceedFromVisitStep(validVisit)).toBe(true);
+    expect(canProceedFromVisitStep({ ...validVisit, mileage: "0" })).toBe(true);
     expect(
-      canProceedFromVisitStep({ mileage: "", estimatedCompletion, selectedServiceIds })
+      canProceedFromVisitStep({ ...validVisit, servicePricingComplete: false })
     ).toBe(false);
-    expect(
-      canProceedFromVisitStep({ mileage: "abc", estimatedCompletion, selectedServiceIds })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({ mileage: "-1", estimatedCompletion, selectedServiceIds })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({ mileage: "12.5", estimatedCompletion, selectedServiceIds })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({ mileage: "12e3", estimatedCompletion, selectedServiceIds })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({
-        mileage: "12000",
-        estimatedCompletion: "",
-        selectedServiceIds,
-      })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({
-        mileage: "12000",
-        estimatedCompletion,
-        selectedServiceIds: [],
-      })
-    ).toBe(false);
-    expect(
-      canProceedFromVisitStep({ mileage: "12000", estimatedCompletion, selectedServiceIds })
-    ).toBe(true);
-    expect(
-      canProceedFromVisitStep({ mileage: "0", estimatedCompletion, selectedServiceIds })
-    ).toBe(true);
   });
 
   it("requires all six intake photos before continuing", () => {
@@ -91,9 +78,7 @@ describe("create work order wizard steps", () => {
         new File(["x"], `${slot.category}.jpg`, { type: "image/jpeg" }),
       ])
     );
-    expect(
-      canProceedFromPhotosStep(allRequiredIntakeSelected(files))
-    ).toBe(true);
+    expect(canProceedFromPhotosStep(allRequiredIntakeSelected(files))).toBe(true);
   });
 
   it("only allows navigating to current or previously reached steps", () => {
@@ -106,25 +91,18 @@ describe("create work order wizard steps", () => {
   });
 
   it("marks step complete based on validation for that step", () => {
-    expect(
-      isWizardStepComplete("customer", { customerId: "c1" })
-    ).toBe(true);
-    expect(
-      isWizardStepComplete("motorcycle", { motorcycleId: "" })
-    ).toBe(false);
+    expect(isWizardStepComplete("customer", { customerId: "c1" })).toBe(true);
+    expect(isWizardStepComplete("motorcycle", { motorcycleId: "" })).toBe(false);
     expect(
       isWizardStepComplete("visit", {
         mileage: "100",
         estimatedCompletion: "2026-07-20T16:00",
         selectedServiceIds: ["service-1"],
+        servicePricingComplete: true,
       })
     ).toBe(true);
-    expect(isWizardStepComplete("photos", { intakeComplete: false })).toBe(
-      false
-    );
-    expect(isWizardStepComplete("review", { intakeComplete: true })).toBe(
-      true
-    );
+    expect(isWizardStepComplete("photos", { intakeComplete: false })).toBe(false);
+    expect(isWizardStepComplete("review", { intakeComplete: true })).toBe(true);
   });
 
   it("only allows final submit on the review step when all gates pass", () => {
@@ -135,20 +113,20 @@ describe("create work order wizard steps", () => {
       mileage: "5000",
       estimatedCompletion: "2026-07-20T16:00",
       selectedServiceIds: ["service-1"],
+      servicePricingComplete: true,
       intakeComplete: true,
     };
     expect(canSubmitCreateWorkOrderWizard(ready)).toBe(true);
+    expect(canSubmitCreateWorkOrderWizard({ ...ready, stepId: "photos" })).toBe(false);
+    expect(canSubmitCreateWorkOrderWizard({ ...ready, intakeComplete: false })).toBe(
+      false
+    );
+    expect(canSubmitCreateWorkOrderWizard({ ...ready, motorcycleId: "" })).toBe(false);
+    expect(canSubmitCreateWorkOrderWizard({ ...ready, selectedServiceIds: [] })).toBe(
+      false
+    );
     expect(
-      canSubmitCreateWorkOrderWizard({ ...ready, stepId: "photos" })
-    ).toBe(false);
-    expect(
-      canSubmitCreateWorkOrderWizard({ ...ready, intakeComplete: false })
-    ).toBe(false);
-    expect(
-      canSubmitCreateWorkOrderWizard({ ...ready, motorcycleId: "" })
-    ).toBe(false);
-    expect(
-      canSubmitCreateWorkOrderWizard({ ...ready, selectedServiceIds: [] })
+      canSubmitCreateWorkOrderWizard({ ...ready, servicePricingComplete: false })
     ).toBe(false);
   });
 });

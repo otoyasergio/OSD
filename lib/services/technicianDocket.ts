@@ -13,6 +13,7 @@ import {
   sortByDocketPosition,
   type DocketMoveDirection,
 } from "@/lib/technician/docketOrder";
+import { groupAssignedJobsByWorkOrder } from "@/lib/technician/groupAssignedWorkOrders";
 import {
   isUndefinedColumnError,
   OPTIONAL_COLUMNS,
@@ -122,34 +123,27 @@ export function buildTechnicianDocketItems(input: {
       docket_position: job.docket_position ?? null,
     }))
   );
-  const nowJobs = orderedJobs.filter((job) => job.status === "in_progress");
-  const otherJobs = orderedJobs.filter((job) => job.status !== "in_progress");
+  const workOrders = groupAssignedJobsByWorkOrder(orderedJobs);
 
-  for (const job of nowJobs) {
+  for (const group of workOrders) {
+    const job = group.representative;
+    const serviceNames = [...new Set(group.jobs.map((row) => row.service_name))];
+    const serviceLabel = serviceNames.join(" · ");
+    const hasOpenFlag = input.flags.some(
+      (flag) => flag.work_order_id === job.work_order_id
+    );
+    const baseStatusLabel =
+      group.jobs.length === 1
+        ? job.status_label
+        : `${group.jobs.length} services · ${job.status_label}`;
     items.push({
-      kind: "now",
-      key: `now-${job.job_id}`,
+      kind: group.is_active ? "now" : "assigned",
+      key: `work-order-${job.work_order_id}`,
       motorcycle_label: job.motorcycle_label,
-      service_label: job.service_name,
-      title: `${job.motorcycle_label} · ${job.service_name}`,
+      service_label: serviceLabel,
+      title: `${job.motorcycle_label} · ${serviceLabel}`,
       subtitle: job.work_order_number,
-      status_label: job.status_label,
-      job_id: job.job_id,
-      work_order_id: job.work_order_id,
-      href: floorHref({ jobId: job.job_id, workOrderId: job.work_order_id }),
-      overview_href: `/work_orders/${job.work_order_id}`,
-    });
-  }
-
-  for (const job of otherJobs) {
-    items.push({
-      kind: "assigned",
-      key: `job-${job.job_id}`,
-      motorcycle_label: job.motorcycle_label,
-      service_label: job.service_name,
-      title: `${job.motorcycle_label} · ${job.service_name}`,
-      subtitle: job.work_order_number,
-      status_label: job.status_label,
+      status_label: hasOpenFlag ? `${baseStatusLabel} · Flagged` : baseStatusLabel,
       job_id: job.job_id,
       work_order_id: job.work_order_id,
       href: floorHref({ jobId: job.job_id, workOrderId: job.work_order_id }),
@@ -191,7 +185,12 @@ export function buildTechnicianDocketItems(input: {
     }
   }
 
+  const representedWorkOrders = new Set(items.map((item) => item.work_order_id));
+
   for (const flag of input.flags) {
+    // The selected motorcycle surface shows its open flags; avoid duplicating the
+    // same motorcycle as both an assigned card and a separate flag card.
+    if (representedWorkOrders.has(flag.work_order_id)) continue;
     items.push({
       kind: "flag",
       key: `flag-${flag.admin_flag_id}`,
@@ -208,6 +207,7 @@ export function buildTechnicianDocketItems(input: {
       }),
       overview_href: `/work_orders/${flag.work_order_id}`,
     });
+    representedWorkOrders.add(flag.work_order_id);
   }
 
   return items.map((item, index) => ({ ...item, position: index + 1 }));

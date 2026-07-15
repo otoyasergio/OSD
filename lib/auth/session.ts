@@ -11,6 +11,7 @@ export type AppUser = {
   first_name: string;
   last_name: string;
   email: string;
+  profile_photo_path: string | null;
   role: UserRole;
   status: UserStatus;
   location_ids: string[];
@@ -28,7 +29,9 @@ export const getCurrentAppUser = cache(async (): Promise<AppUser | null> => {
 
   const { data: user } = await supabase
     .from("app_user")
-    .select("user_id, auth_user_id, first_name, last_name, email, role, status")
+    .select(
+      "user_id, auth_user_id, first_name, last_name, email, profile_photo_path, role, status"
+    )
     .eq("auth_user_id", authUserId)
     .maybeSingle();
 

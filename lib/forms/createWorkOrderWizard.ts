@@ -23,6 +23,7 @@ export function canProceedFromVisitStep(data: {
   mileage: string;
   estimatedCompletion: string;
   selectedServiceIds: string[];
+  servicePricingComplete: boolean;
 }): boolean {
   const trimmed = data.mileage.trim();
   if (!trimmed) return false;
@@ -33,7 +34,10 @@ export function canProceedFromVisitStep(data: {
 
   if (parseShopLocalDateTimeInput(data.estimatedCompletion) === null) return false;
 
-  return data.selectedServiceIds.some((serviceId) => serviceId.trim().length > 0);
+  return (
+    data.selectedServiceIds.some((serviceId) => serviceId.trim().length > 0) &&
+    data.servicePricingComplete
+  );
 }
 
 export function canProceedFromPhotosStep(intakeComplete: boolean): boolean {
@@ -46,9 +50,7 @@ export function canNavigateToWizardStep(
   maxReachedIndex: number
 ): boolean {
   return (
-    Number.isInteger(targetIndex) &&
-    targetIndex >= 0 &&
-    targetIndex <= maxReachedIndex
+    Number.isInteger(targetIndex) && targetIndex >= 0 && targetIndex <= maxReachedIndex
   );
 }
 
@@ -58,6 +60,7 @@ type StepCompleteInput = {
   mileage?: string;
   estimatedCompletion?: string;
   selectedServiceIds?: string[];
+  servicePricingComplete?: boolean;
   intakeComplete?: boolean;
 };
 
@@ -75,6 +78,7 @@ export function isWizardStepComplete(
         mileage: data.mileage ?? "",
         estimatedCompletion: data.estimatedCompletion ?? "",
         selectedServiceIds: data.selectedServiceIds ?? [],
+        servicePricingComplete: Boolean(data.servicePricingComplete),
       });
     case "photos":
       return canProceedFromPhotosStep(Boolean(data.intakeComplete));
@@ -93,6 +97,7 @@ export function canSubmitCreateWorkOrderWizard(data: {
   mileage: string;
   estimatedCompletion: string;
   selectedServiceIds: string[];
+  servicePricingComplete: boolean;
   intakeComplete: boolean;
 }): boolean {
   if (data.stepId !== "review") return false;
@@ -103,6 +108,7 @@ export function canSubmitCreateWorkOrderWizard(data: {
       mileage: data.mileage,
       estimatedCompletion: data.estimatedCompletion,
       selectedServiceIds: data.selectedServiceIds,
+      servicePricingComplete: data.servicePricingComplete,
     }) &&
     canProceedFromPhotosStep(data.intakeComplete)
   );

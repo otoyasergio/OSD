@@ -10,6 +10,7 @@ export function PhotoActionCard({
   stageLabel,
   stageTone = "teal",
   primaryLabel = "Open",
+  badges = [],
   flagged = false,
   compact = false,
 }: {
@@ -20,6 +21,7 @@ export function PhotoActionCard({
   stageLabel: string;
   stageTone?: StageChipTone;
   primaryLabel?: string;
+  badges?: string[];
   flagged?: boolean;
   compact?: boolean;
 }) {
@@ -58,6 +60,18 @@ export function PhotoActionCard({
           <StageChip label={stageLabel} tone={stageTone} />
         </div>
         <p className="photo-action-card-subtitle">{subtitle}</p>
+        {badges.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {badges.map((badge) => (
+              <span
+                key={badge}
+                className="badge bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)] ring-1 ring-[var(--status-warning)]/20"
+              >
+                {badge}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div className="photo-action-card-actions">
           <span className="photo-action-card-primary">{primaryLabel}</span>
           {flagged ? (
