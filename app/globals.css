@@ -2653,6 +2653,12 @@ button.board-control-link {
   color: #991b1b;
 }
 
+.inspection-status-chip--na {
+  border-color: #64748b;
+  background: #f1f5f9;
+  color: #334155;
+}
+
 .inspection-status-chip--none {
   border-style: dashed;
   background: var(--surface-muted);
