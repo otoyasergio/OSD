@@ -222,7 +222,11 @@ export function InspectionItemRow({
               selectedOption
                 ? isSkip
                   ? "inspection-status-chip--skip"
-                  : `inspection-status-chip--${selectedOption.value}`
+                  : `inspection-status-chip--${
+                      selectedOption.value === "not_applicable"
+                        ? "na"
+                        : selectedOption.value
+                    }`
                 : "inspection-status-chip--none"
             }`}
           >
