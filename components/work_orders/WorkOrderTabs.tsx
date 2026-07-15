@@ -19,13 +19,17 @@ export type WorkOrderTabId = (typeof WORK_ORDER_TABS)[number]["id"];
 export function WorkOrderTabs({
   workOrderId,
   activeTab,
+  hiddenTabs,
 }: {
   workOrderId: string;
   activeTab: WorkOrderTabId;
+  /** Tabs to omit (e.g. contract for floor techs). */
+  hiddenTabs?: WorkOrderTabId[];
 }) {
+  const hidden = new Set(hiddenTabs ?? []);
   return (
     <nav aria-label="Work order sections" className="tab-bar tab-bar-scroll">
-      {WORK_ORDER_TABS.map((tab) => {
+      {WORK_ORDER_TABS.filter((tab) => !hidden.has(tab.id)).map((tab) => {
         const active = tab.id === activeTab;
         return (
           <Link

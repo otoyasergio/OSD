@@ -20,6 +20,7 @@ import {
   canOverrideSafetyRequirement,
   canUpdateServiceInformation,
   canViewClients,
+  canViewDropOffAgreement,
   canViewPartCost,
   canViewPricing,
   isFloorTech,
@@ -123,6 +124,10 @@ export default async function WorkOrderDetailPage({
   const { work_order_id } = await params;
   const { tab: tabParam, from_result: fromResultId } = await searchParams;
   const activeTab: WorkOrderTabId = isTabId(tabParam) ? tabParam : "overview";
+
+  if (activeTab === "contract" && !canViewDropOffAgreement(user.role)) {
+    redirect(`/work_orders/${work_order_id}`);
+  }
 
   const detail = await getWorkOrderDetail(work_order_id).catch((error: unknown) => {
     if (error instanceof Error && error.message === "FORBIDDEN") {
@@ -260,7 +265,13 @@ export default async function WorkOrderDetailPage({
         canViewClients={canSeeClients}
         canViewPricing={canSeePricing}
       />
-      <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
+      <WorkOrderTabs
+        workOrderId={detail.work_order_id}
+        activeTab={activeTab}
+        hiddenTabs={
+          canViewDropOffAgreement(user.role) ? undefined : ["contract"]
+        }
+      />
 
       {activeTab === "overview" ? (
         <>

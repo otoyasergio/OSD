@@ -26,6 +26,7 @@ import {
   canViewCustomerDocuments,
   canUploadCustomerDocuments,
   canDeleteCustomerDocuments,
+  canViewDropOffAgreement,
   canViewReports,
   canChangeOwnPassword,
   canPerformSafetyCheck,
@@ -231,6 +232,16 @@ describe("permissions", () => {
     expect(canOverrideSafetyRequirement("head_tech")).toBe(false);
     expect(canOverrideSafetyRequirement("technician")).toBe(false);
     expect(canOverrideSafetyRequirement("admin")).toBe(false);
+  });
+
+  it("blocks floor techs from viewing signed drop-off agreements (PII / legal)", () => {
+    // Signed agreement is PII / legal — floor techs excluded.
+    expect(canViewDropOffAgreement("technician")).toBe(false);
+    expect(canViewDropOffAgreement("head_tech")).toBe(false);
+    expect(canViewDropOffAgreement("service_advisor")).toBe(true);
+    expect(canViewDropOffAgreement("manager")).toBe(true);
+    expect(canViewDropOffAgreement("owner")).toBe(true);
+    expect(canViewDropOffAgreement("admin")).toBe(true);
   });
 
   it("head_tech inherits technician floor permissions without client CRM", () => {

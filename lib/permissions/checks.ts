@@ -152,6 +152,11 @@ export function canDeleteIntakePhoto(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
 
+/** View signed drop-off agreement content (PII / legal). Floor techs excluded. */
+export function canViewDropOffAgreement(role: UserRole) {
+  return FRONT_OFFICE.includes(role) || role === "admin";
+}
+
 /** View client CRM (customers + motorcycles directory) and customer PII. */
 export function canViewClients(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "admin";

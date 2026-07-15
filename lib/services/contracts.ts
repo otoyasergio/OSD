@@ -8,6 +8,7 @@ import {
   canCreateWorkOrder,
   canEditWorkOrder,
   canManageContractTemplate,
+  canViewDropOffAgreement,
 } from "@/lib/permissions";
 import { fileDropOffAgreementDocument } from "@/lib/services/customerDocuments";
 import {
@@ -169,7 +170,9 @@ export async function publishAgreementTemplate(input: {
 export async function getDropOffAgreement(
   workOrderId: string
 ): Promise<DropOffAgreement | null> {
-  await requireUser();
+  const user = await requireUser();
+  if (!canViewDropOffAgreement(user.role)) throw new Error("FORBIDDEN");
+
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("drop_off_agreement")
@@ -323,15 +326,29 @@ export async function signDropOffAgreement(
   };
 }
 
+/**
+ * Boolean gate only — does not return agreement content.
+ * Uses SECURITY DEFINER RPC so floor techs can still learn whether a
+ * contract is signed after RLS hides drop_off_agreement rows from them.
+ */
 export async function hasSignedDropOffAgreement(workOrderId: string): Promise<boolean> {
   await requireUser();
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("drop_off_agreement")
-    .select("agreement_id")
-    .eq("work_order_id", workOrderId)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc(
+    "work_order_has_drop_off_agreement",
+    { p_work_order_id: workOrderId }
+  );
 
-  if (error) throw error;
-  return data != null;
+  if (error) {
+    // Fallback before migration is applied: try a lightweight select.
+    const { data: row, error: selectError } = await supabase
+      .from("drop_off_agreement")
+      .select("agreement_id")
+      .eq("work_order_id", workOrderId)
+      .maybeSingle();
+    if (selectError) throw selectError;
+    return row != null;
+  }
+
+  return data === true;
 }
