@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentAppUser } from "@/lib/auth/session";
+import { canViewDropOffAgreement, staffHomePath } from "@/lib/permissions";
 import {
   getActiveAgreementTemplate,
   getDropOffAgreement,
@@ -24,6 +25,10 @@ export default async function WorkOrderContractPage({
   const { from } = await searchParams;
   const fromIntake = from === "intake";
   const workOrderHref = `/work_orders/${work_order_id}`;
+
+  if (!canViewDropOffAgreement(user.role)) {
+    redirect(staffHomePath(user.role));
+  }
 
   const [template, agreement] = await Promise.all([
     getActiveAgreementTemplate(),
