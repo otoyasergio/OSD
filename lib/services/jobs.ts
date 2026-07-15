@@ -522,14 +522,6 @@ export async function pullJob(
     throw new Error("JOB_NOT_READY");
   }
 
-  const { data: agreement, error: agreementError } = await supabase
-    .from("drop_off_agreement")
-    .select("agreement_id")
-    .eq("work_order_id", job.work_order_id)
-    .maybeSingle();
-  if (agreementError) throw agreementError;
-  if (!agreement) throw new Error("CONTRACT_REQUIRED");
-
   if (options.andStart) {
     const { data: otherActive, error: activeError } = await supabase
       .from("job")

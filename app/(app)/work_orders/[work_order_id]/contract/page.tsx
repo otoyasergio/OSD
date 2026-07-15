@@ -6,7 +6,10 @@ import {
   getDropOffAgreement,
 } from "@/lib/services/contracts";
 import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
-import { signDropOffAgreementAction } from "@/app/(app)/work_orders/contract-actions";
+import {
+  signDropOffAgreementAction,
+  uploadPaperAgreementCopyAction,
+} from "@/app/(app)/work_orders/contract-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -62,12 +65,12 @@ export default async function WorkOrderContractPage({
               All 6 required intake photos are saved. {extraPhotoFailures} optional
               extra {extraPhotoFailures === 1 ? "photo" : "photos"} could not upload;
               you can add {extraPhotoFailures === 1 ? "it" : "them"} from the work
-              order Photos tab afterward.
+              order Photos tab afterward. The agreement can be signed now or later.
             </>
           ) : (
             <>
-              Intake photos are saved. Sign the drop-off agreement next, then continue
-              to the work order.
+              Intake photos are saved. The agreement can be signed now or later; continue
+              without signing if the customer is not ready.
             </>
           )}
         </p>
@@ -79,6 +82,8 @@ export default async function WorkOrderContractPage({
         action={signDropOffAgreementAction.bind(null, work_order_id)}
         continueHref={fromIntake ? workOrderHref : undefined}
         continueLabel="Continue to work order"
+        allowPaperSignature
+        paperCopyAction={uploadPaperAgreementCopyAction.bind(null, work_order_id)}
       />
     </div>
   );

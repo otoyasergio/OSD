@@ -38,13 +38,18 @@ export type DropOffAgreement = {
   template_version: string;
   signer_name: string;
   initials: Record<string, string>;
-  signature_storage_path: string;
+  signature_method: "digital" | "paper";
+  signature_storage_path: string | null;
   signed_at: string;
   signed_url?: string | null;
+  paper_copy_url?: string | null;
+  paper_copy_mime_type?: string | null;
 };
 
 const BUCKET = "contract-signatures";
 const SIGNATURE_MAX_BYTES = 2 * 1024 * 1024;
+const AGREEMENT_COLUMNS =
+  "agreement_id, work_order_id, template_version, signer_name, initials, signature_method, signature_storage_path, signed_at";
 
 function canSignContract(role: string) {
   return canEditWorkOrder(role as never) || canCreateWorkOrder(role as never);
@@ -173,9 +178,7 @@ export async function getDropOffAgreement(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("drop_off_agreement")
-    .select(
-      "agreement_id, work_order_id, template_version, signer_name, initials, signature_storage_path, signed_at"
-    )
+    .select(AGREEMENT_COLUMNS)
     .eq("work_order_id", workOrderId)
     .maybeSingle();
 
@@ -187,13 +190,36 @@ export async function getDropOffAgreement(
     initials: (data.initials as Record<string, string>) ?? {},
   };
 
-  const { data: signed } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrl(agreement.signature_storage_path, 3600);
+  const signed = agreement.signature_storage_path
+    ? await supabase.storage
+        .from(BUCKET)
+        .createSignedUrl(agreement.signature_storage_path, 3600)
+    : { data: null };
+
+  let paperCopyUrl: string | null = null;
+  let paperCopyMimeType: string | null = null;
+  if (agreement.signature_method === "paper") {
+    const { data: paperCopy, error: paperCopyError } = await supabase
+      .from("customer_document")
+      .select("storage_bucket, storage_path, mime_type")
+      .eq("agreement_id", agreement.agreement_id)
+      .maybeSingle();
+
+    if (paperCopyError) throw paperCopyError;
+    if (paperCopy) {
+      const { data: paperCopySigned } = await supabase.storage
+        .from(paperCopy.storage_bucket)
+        .createSignedUrl(paperCopy.storage_path, 3600);
+      paperCopyUrl = paperCopySigned?.signedUrl ?? null;
+      paperCopyMimeType = paperCopy.mime_type;
+    }
+  }
 
   return {
     ...agreement,
-    signed_url: signed?.signedUrl ?? null,
+    signed_url: signed.data?.signedUrl ?? null,
+    paper_copy_url: paperCopyUrl,
+    paper_copy_mime_type: paperCopyMimeType,
   };
 }
 
@@ -267,14 +293,13 @@ export async function signDropOffAgreement(
       template_version: template.version,
       signer_name: parsed.signer_name,
       initials: parsed.initials,
+      signature_method: "digital",
       signature_storage_path: storagePath,
       signed_by_user_id: user.user_id,
       ip_address: parsed.ip_address ?? null,
       user_agent: parsed.user_agent ?? null,
     })
-    .select(
-      "agreement_id, work_order_id, template_version, signer_name, initials, signature_storage_path, signed_at"
-    )
+    .select(AGREEMENT_COLUMNS)
     .single();
 
   if (error) {
@@ -320,6 +345,86 @@ export async function signDropOffAgreement(
     ...(data as DropOffAgreement),
     initials: parsed.initials,
     signed_url: signed?.signedUrl ?? null,
+  };
+}
+
+export async function markDropOffAgreementSignedOnPaper(
+  workOrderId: string,
+  input: {
+    ip_address?: string | null;
+    user_agent?: string | null;
+  } = {}
+): Promise<DropOffAgreement> {
+  const user = await requireUser();
+  if (!canSignContract(user.role)) throw new Error("FORBIDDEN");
+
+  const template = await getActiveAgreementTemplate();
+  if (!template) throw new Error("CONTRACT_TEMPLATE_NOT_FOUND");
+
+  const supabase = await createClient();
+  const { data: workOrder, error: woError } = await supabase
+    .from("work_order")
+    .select("work_order_id, location_id, work_order_number, status")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (woError) throw woError;
+  if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+  if (workOrder.location_id !== user.active_location_id) {
+    throw new Error("FOREIGN_LOCATION");
+  }
+  if (workOrder.status === "completed" || workOrder.status === "cancelled") {
+    throw new Error("WORK_ORDER_LOCKED");
+  }
+
+  const existing = await getDropOffAgreement(workOrderId);
+  if (existing) throw new Error("CONTRACT_ALREADY_SIGNED");
+
+  const agreementId = crypto.randomUUID();
+  const { data, error } = await supabase
+    .from("drop_off_agreement")
+    .insert({
+      agreement_id: agreementId,
+      work_order_id: workOrderId,
+      template_id: template.template_id,
+      template_version: template.version,
+      signer_name: "Paper copy",
+      initials: {},
+      signature_method: "paper",
+      signature_storage_path: null,
+      signed_by_user_id: user.user_id,
+      ip_address: input.ip_address ?? null,
+      user_agent: input.user_agent ?? null,
+    })
+    .select(AGREEMENT_COLUMNS)
+    .single();
+
+  if (error) throw error;
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.DROP_OFF_AGREEMENT_SIGNED,
+    entity_type: "drop_off_agreement",
+    entity_id: agreementId,
+    description: "Drop-off agreement marked signed on paper",
+    new_value: { template_version: template.version, signature_method: "paper" },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "drop_off_agreement_signed",
+    entity_type: "drop_off_agreement",
+    entity_id: agreementId,
+    description: `Paper drop-off agreement recorded on ${workOrder.work_order_number}`,
+    new_value: { signature_method: "paper" },
+  });
+
+  return {
+    ...(data as DropOffAgreement),
+    initials: {},
+    signed_url: null,
   };
 }
 

@@ -2,15 +2,18 @@ import { describe, expect, it } from "vitest";
 import { toFormErrorMessage } from "@/lib/services/errors";
 
 describe("toFormErrorMessage", () => {
-  it("maps CONTRACT_REQUIRED to the technician-gate copy", () => {
-    expect(toFormErrorMessage(new Error("CONTRACT_REQUIRED"))).toBe(
-      "Sign the drop-off agreement before pulling or marking ready for technician."
-    );
-  });
-
   it("maps QC_REQUIRED for pickup gate parity", () => {
     expect(toFormErrorMessage(new Error("QC_REQUIRED"))).toBe(
       "Complete the quality check before marking ready for pickup."
+    );
+  });
+
+  it("maps paper agreement copy errors", () => {
+    expect(toFormErrorMessage(new Error("PAPER_AGREEMENT_REQUIRED"))).toBe(
+      "Mark the agreement as signed by paper before uploading its copy."
+    );
+    expect(toFormErrorMessage(new Error("PAPER_COPY_ALREADY_UPLOADED"))).toBe(
+      "A signed paper agreement copy is already on file."
     );
   });
 

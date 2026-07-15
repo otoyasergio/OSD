@@ -34,7 +34,7 @@ describe("getWorkOrderNextAction", () => {
       "approval"
     );
     expect(getWorkOrderNextAction("open", ["Contract unsigned"])).toBe(
-      "Get drop-off agreement signed"
+      "Start inspection"
     );
   });
 

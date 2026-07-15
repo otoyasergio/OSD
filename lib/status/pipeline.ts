@@ -184,7 +184,6 @@ export function getWorkOrderNextAction(status: WorkOrderStatus, flags: string[])
 
   if (flags.includes("Admin flag")) return "Clear admin flag and unblock technician";
   if (flags.includes("No intake photos")) return "Capture intake photos";
-  if (flags.includes("Contract unsigned")) return "Get drop-off agreement signed";
   if (flags.includes("Missing VIN")) return "Record VIN on motorcycle profile";
   if (flags.includes("Incomplete inspection")) return "Complete inspection checklist";
   if (flags.includes("Needs approval")) return "Record customer approval on jobs";

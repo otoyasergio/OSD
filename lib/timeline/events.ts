@@ -30,6 +30,7 @@ export const TimelineEventType = {
   WORK_ORDER_CANCELLED: "Work Order Cancelled",
   WORK_ORDER_PLACED_ON_HOLD: "Work Order Placed On Hold",
   DROP_OFF_AGREEMENT_SIGNED: "Drop-Off Agreement Signed",
+  DROP_OFF_AGREEMENT_COPY_UPLOADED: "Drop-Off Agreement Copy Uploaded",
   SQUARE_INVOICE_CREATED: "Square Invoice Created",
   SQUARE_INVOICE_DRAFT_SYNCED: "Square Invoice Draft Synced",
   SQUARE_INVOICE_PUBLISHED: "Square Invoice Published",

@@ -2,6 +2,8 @@ import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import type { DbClient } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
+import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
+import { TimelineEventType } from "@/lib/timeline/events";
 import {
   canDeleteCustomerDocuments,
   canUploadCustomerDocuments,
@@ -35,6 +37,8 @@ const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
+  "image/heic",
+  "image/heif",
 ]);
 
 const COLUMNS =
@@ -44,6 +48,7 @@ function extensionForType(type: string): string {
   if (type === "application/pdf") return "pdf";
   if (type === "image/png") return "png";
   if (type === "image/webp") return "webp";
+  if (type === "image/heic" || type === "image/heif") return "heic";
   return "jpg";
 }
 
@@ -237,6 +242,127 @@ export async function uploadCustomerDocument(
   };
 }
 
+export async function uploadPaperDropOffAgreementCopy(
+  workOrderId: string,
+  input: { file: File }
+): Promise<CustomerDocument> {
+  const user = await requireUser();
+  if (!canUploadCustomerDocuments(user.role)) throw new Error("FORBIDDEN");
+
+  const file = input.file;
+  if (!(file instanceof File) || file.size === 0) {
+    throw new Error("DOCUMENT_REQUIRED");
+  }
+  if (file.size > MAX_BYTES) throw new Error("DOCUMENT_TOO_LARGE");
+  if (!ALLOWED_TYPES.has(file.type)) throw new Error("DOCUMENT_TYPE_INVALID");
+
+  const supabase = await createClient();
+  const { data: workOrder, error: workOrderError } = await supabase
+    .from("work_order")
+    .select("work_order_id, customer_id, location_id, work_order_number")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (workOrderError) throw workOrderError;
+  if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+  if (workOrder.location_id !== user.active_location_id) {
+    throw new Error("FOREIGN_LOCATION");
+  }
+
+  const { data: agreement, error: agreementError } = await supabase
+    .from("drop_off_agreement")
+    .select("agreement_id, signature_method, signed_at")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+
+  if (agreementError) throw agreementError;
+  if (!agreement || agreement.signature_method !== "paper") {
+    throw new Error("PAPER_AGREEMENT_REQUIRED");
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("customer_document")
+    .select("document_id")
+    .eq("agreement_id", agreement.agreement_id)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existing) throw new Error("PAPER_COPY_ALREADY_UPLOADED");
+
+  const documentId = crypto.randomUUID();
+  const ext = extensionForType(file.type);
+  const storagePath = `${workOrder.customer_id}/${documentId}.${ext}`;
+  const bytes = Buffer.from(await file.arrayBuffer());
+
+  const { error: uploadError } = await supabase.storage
+    .from(UPLOAD_BUCKET)
+    .upload(storagePath, bytes, {
+      contentType: file.type,
+      upsert: false,
+    });
+
+  if (uploadError) throw new Error("DOCUMENT_UPLOAD_FAILED");
+
+  const title = dropOffTitle(workOrder.work_order_number, agreement.signed_at);
+  const { data, error } = await supabase
+    .from("customer_document")
+    .insert({
+      document_id: documentId,
+      customer_id: workOrder.customer_id,
+      title,
+      source: "drop_off_agreement",
+      work_order_id: workOrderId,
+      agreement_id: agreement.agreement_id,
+      storage_bucket: UPLOAD_BUCKET,
+      storage_path: storagePath,
+      mime_type: file.type,
+      file_size: file.size,
+      uploaded_by_user_id: user.user_id,
+    })
+    .select(COLUMNS)
+    .single();
+
+  if (error) {
+    await supabase.storage.from(UPLOAD_BUCKET).remove([storagePath]);
+    if (error.code === "23505") throw new Error("PAPER_COPY_ALREADY_UPLOADED");
+    throw error;
+  }
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.DROP_OFF_AGREEMENT_COPY_UPLOADED,
+    entity_type: "customer_document",
+    entity_id: documentId,
+    description: "Signed paper drop-off agreement copy uploaded",
+    new_value: { mime_type: file.type, storage_path: storagePath },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "paper_drop_off_agreement_copy_uploaded",
+    entity_type: "customer_document",
+    entity_id: documentId,
+    description: `Uploaded signed paper agreement for ${workOrder.work_order_number}`,
+    new_value: {
+      agreement_id: agreement.agreement_id,
+      mime_type: file.type,
+      storage_path: storagePath,
+    },
+  });
+
+  const { data: signed } = await supabase.storage
+    .from(UPLOAD_BUCKET)
+    .createSignedUrl(storagePath, 3600);
+
+  return {
+    ...(data as Omit<CustomerDocument, "signed_url" | "work_order_number">),
+    signed_url: signed?.signedUrl ?? null,
+    work_order_number: workOrder.work_order_number,
+  };
+}
+
 export async function deleteCustomerDocument(
   documentId: string
 ): Promise<{ customer_id: string }> {
@@ -260,8 +386,9 @@ export async function deleteCustomerDocument(
 
   if (deleteError) throw deleteError;
 
-  // Only remove storage for manual uploads — contract signatures stay with the WO.
-  if (existing.source === "upload" && existing.storage_bucket === UPLOAD_BUCKET) {
+  // Contract-signature images stay with the agreement; files in the customer
+  // documents bucket (including scanned paper agreements) are owned here.
+  if (existing.storage_bucket === UPLOAD_BUCKET) {
     await supabase.storage
       .from(UPLOAD_BUCKET)
       .remove([existing.storage_path as string]);

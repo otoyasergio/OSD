@@ -74,6 +74,12 @@ const INPUT_CLASS =
 const NAV_BTN_CLASS = "btn min-h-12 min-w-[8rem] px-6 text-base sm:min-h-14 sm:text-lg";
 
 const ALL_REQUIRED = CREATE_INTAKE_PHOTO_SLOTS.map((s) => s.category);
+const PHOTO_STEP_INDEX = CREATE_WORK_ORDER_WIZARD_STEPS.findIndex(
+  (step) => step.id === "photos"
+);
+const REVIEW_STEP_INDEX = CREATE_WORK_ORDER_WIZARD_STEPS.findIndex(
+  (step) => step.id === "review"
+);
 
 export function CreateWorkOrderForm({
   customers,
@@ -806,7 +812,8 @@ export function CreateWorkOrderForm({
             </h2>
             <p className="intake-wizard-panel-lede mt-1">
               Capture all six required photos before continuing. Add any extra photos
-              below if they help document the motorcycle.
+              below if they help document the motorcycle. The form moves to Review as
+              soon as all six required photos are ready.
             </p>
           </div>
           {stepId === "photos" ? (
@@ -830,9 +837,12 @@ export function CreateWorkOrderForm({
             if (stepId !== "photos") return;
             setIntakePhotos(next);
             setClientError(null);
-            if (!allRequiredIntakeSelected(next, ALL_REQUIRED)) {
-              setMaxReachedIndex((prev) => Math.min(prev, 3));
-              setStepIndex((prev) => Math.min(prev, 3));
+            if (allRequiredIntakeSelected(next, ALL_REQUIRED)) {
+              setMaxReachedIndex((prev) => Math.max(prev, REVIEW_STEP_INDEX));
+              setStepIndex(REVIEW_STEP_INDEX);
+            } else {
+              setMaxReachedIndex((prev) => Math.min(prev, PHOTO_STEP_INDEX));
+              setStepIndex((prev) => Math.min(prev, PHOTO_STEP_INDEX));
             }
           }}
         />
@@ -927,6 +937,17 @@ export function CreateWorkOrderForm({
             {internalNotes.trim() ? (
               <ReviewCard label="Internal notes" value={internalNotes} wide />
             ) : null}
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="btn btn-secondary min-h-11"
+              onClick={() => goToStep(PHOTO_STEP_INDEX)}
+            >
+              {optionalIntakePhotos.length > 0
+                ? "Edit intake photos"
+                : "Add optional extra photos"}
+            </button>
           </div>
         </section>
       ) : null}

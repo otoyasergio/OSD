@@ -108,9 +108,9 @@ export function WorkOrderHeader({
           {detail.flags.includes("Contract unsigned") ? (
             <Link
               href={`/work_orders/${detail.work_order_id}/contract`}
-              className="btn btn-primary min-h-10 text-sm"
+              className="btn btn-secondary min-h-10 text-sm"
             >
-              Sign drop-off agreement
+              Collect signature
             </Link>
           ) : null}
         </div>

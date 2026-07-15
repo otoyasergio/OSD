@@ -103,7 +103,10 @@ import {
   resumeWorkOrderFromHoldAction,
 } from "@/app/(app)/work_orders/quality-actions";
 import { overrideSafetyRequirementAction } from "@/app/(app)/work_orders/safety-actions";
-import { signDropOffAgreementAction } from "@/app/(app)/work_orders/contract-actions";
+import {
+  signDropOffAgreementAction,
+  uploadPaperAgreementCopyAction,
+} from "@/app/(app)/work_orders/contract-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -446,8 +449,8 @@ export default async function WorkOrderDetailPage({
             {!agreement && !detail.is_foreign_location ? (
               <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-muted px-4 py-3">
                 <p className="flex-1 text-sm text-[var(--status-neutral-fg)]">
-                  Drop-off agreement is unsigned. Sign before marking ready for
-                  technician.
+                  Drop-off agreement is unsigned. The signature is optional and can be
+                  collected at any time.
                 </p>
                 <Link
                   href={`/work_orders/${detail.work_order_id}/contract`}
@@ -469,6 +472,11 @@ export default async function WorkOrderDetailPage({
               existing={agreement}
               readOnly={detail.is_foreign_location}
               action={signDropOffAgreementAction.bind(null, detail.work_order_id)}
+              allowPaperSignature
+              paperCopyAction={uploadPaperAgreementCopyAction.bind(
+                null,
+                detail.work_order_id
+              )}
             />
           </div>
         ) : (

@@ -87,16 +87,6 @@ export async function moveWorkOrderOnBoard(
     await assertAllActiveJobsCompleted(supabase, workOrderId);
   }
 
-  if (targetColumnId === "ready") {
-    const { data: agreement, error: agreementError } = await supabase
-      .from("drop_off_agreement")
-      .select("agreement_id")
-      .eq("work_order_id", workOrderId)
-      .maybeSingle();
-    if (agreementError) throw agreementError;
-    if (!agreement) throw new Error("CONTRACT_REQUIRED");
-  }
-
   if (targetColumnId === "pickup") {
     if (!workOrder.quality_checked_at && !workOrder.quality_checked_by_user_id) {
       throw new Error("QC_REQUIRED");

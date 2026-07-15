@@ -83,8 +83,6 @@ const MESSAGES: Record<string, string> = {
   QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
   SAFETY_FAIL_RECOMMENDATIONS_REQUIRED:
     "Add at least one recommendation when failing safety.",
-  CONTRACT_REQUIRED:
-    "Sign the drop-off agreement before pulling or marking ready for technician.",
   NOT_READY_FOR_PICKUP:
     "Mark the work order ready for pickup before completing, or ask an owner/manager to override.",
   HOLD_REASON_REQUIRED: "Enter a reason when placing a work order on hold.",
@@ -100,6 +98,8 @@ const MESSAGES: Record<string, string> = {
   CONTRACT_TEMPLATE_NOT_FOUND: "No active drop-off agreement template is configured.",
   CONTRACT_INITIALS_REQUIRED: "Initial each section before signing.",
   CONTRACT_ALREADY_SIGNED: "A drop-off agreement is already on file for this work order.",
+  PAPER_AGREEMENT_REQUIRED: "Mark the agreement as signed by paper before uploading its copy.",
+  PAPER_COPY_ALREADY_UPLOADED: "A signed paper agreement copy is already on file.",
   SIGNATURE_INVALID: "Could not read the signature image.",
   SIGNATURE_TOO_LARGE: "Signature image is too large.",
   SIGNATURE_UPLOAD_FAILED: "Could not save the signature. Try again.",
