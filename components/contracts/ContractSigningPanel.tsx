@@ -8,6 +8,7 @@ import { SignatureCanvas } from "@/components/contracts/SignatureCanvas";
 import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
 import { sanitizeContractHtml } from "@/lib/security/sanitizeHtml";
+import { parseContractSections } from "@/lib/contracts/parseContractSections";
 
 type Props = {
   template: AgreementTemplate;
@@ -17,6 +18,99 @@ type Props = {
   continueHref?: string;
   continueLabel?: string;
 };
+
+function InitialsField({
+  field,
+  value,
+  onChange,
+  readOnly,
+  idPrefix,
+}: {
+  field: string;
+  value: string;
+  onChange?: (value: string) => void;
+  readOnly?: boolean;
+  idPrefix: string;
+}) {
+  const id = `${idPrefix}-initial-${field}`;
+  return (
+    <div className="contract-initials-slot">
+      <label htmlFor={id} className="field-label capitalize">
+        Initials — {field.replace(/_/g, " ")}
+      </label>
+      {readOnly ? (
+        <p className="contract-initials-readonly" aria-labelledby={id}>
+          {value || "—"}
+        </p>
+      ) : (
+        <input
+          id={id}
+          type="text"
+          maxLength={8}
+          required
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          className="contract-initials-input"
+          autoComplete="off"
+        />
+      )}
+    </div>
+  );
+}
+
+function InterleavedContractBody({
+  safeHtml,
+  initialFields,
+  initials,
+  onInitialChange,
+  readOnly,
+  idPrefix,
+}: {
+  safeHtml: string;
+  initialFields: string[];
+  initials: Record<string, string>;
+  onInitialChange?: (field: string, value: string) => void;
+  readOnly?: boolean;
+  idPrefix: string;
+}) {
+  const sections = useMemo(() => parseContractSections(safeHtml), [safeHtml]);
+  const placed = new Set(
+    sections.map((s) => s.initialKey).filter((k): k is string => Boolean(k))
+  );
+  const orphanFields = initialFields.filter((f) => !placed.has(f));
+
+  return (
+    <div className="contract-interleaved">
+      {sections.map((section, index) => (
+        <div key={`section-${index}`} className="contract-interleaved-block">
+          <div
+            className="contract-signing-prose prose prose-sm max-w-none"
+            dangerouslySetInnerHTML={{ __html: section.html }}
+          />
+          {section.initialKey ? (
+            <InitialsField
+              field={section.initialKey}
+              value={initials[section.initialKey] ?? ""}
+              onChange={(v) => onInitialChange?.(section.initialKey!, v)}
+              readOnly={readOnly}
+              idPrefix={idPrefix}
+            />
+          ) : null}
+        </div>
+      ))}
+      {orphanFields.map((field) => (
+        <InitialsField
+          key={field}
+          field={field}
+          value={initials[field] ?? ""}
+          onChange={(v) => onInitialChange?.(field, v)}
+          readOnly={readOnly}
+          idPrefix={idPrefix}
+        />
+      ))}
+    </div>
+  );
+}
 
 export function ContractSigningPanel({
   template,
@@ -41,12 +135,19 @@ export function ContractSigningPanel({
 
   if (existing) {
     return (
-      <div className="card card-pad flex flex-col gap-3">
+      <div className="card card-pad flex flex-col gap-4">
         <p className="font-semibold text-emerald-800">Drop-off agreement signed</p>
         <p className="text-sm text-foreground">
           Signed by <strong>{existing.signer_name}</strong> on{" "}
           {formatDateTime(existing.signed_at)} (template {existing.template_version})
         </p>
+        <InterleavedContractBody
+          safeHtml={safeHtml}
+          initialFields={template.initial_fields}
+          initials={existing.initials}
+          readOnly
+          idPrefix="signed"
+        />
         {existing.signed_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -105,31 +206,22 @@ export function ContractSigningPanel({
 
   return (
     <form onSubmit={submit} className="contract-signing-form flex flex-col gap-6">
-      <div
-        className="contract-signing-prose prose prose-sm max-w-none rounded border border-[var(--border)] bg-white p-4"
-        dangerouslySetInnerHTML={{ __html: safeHtml }}
-      />
+      <div className="rounded border border-[var(--border)] bg-white p-4">
+        <InterleavedContractBody
+          safeHtml={safeHtml}
+          initialFields={template.initial_fields}
+          initials={initials}
+          onInitialChange={(field, value) =>
+            setInitials((prev) => ({ ...prev, [field]: value }))
+          }
+          idPrefix="sign"
+        />
+      </div>
 
-      {template.initial_fields.map((field) => (
-        <label key={field} className="block w-full max-w-md">
-          <span className="field-label capitalize">Initial — {field}</span>
-          <input
-            type="text"
-            maxLength={8}
-            required
-            value={initials[field] ?? ""}
-            onChange={(e) =>
-              setInitials((prev) => ({ ...prev, [field]: e.target.value }))
-            }
-            className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3 text-lg uppercase tracking-widest"
-            autoComplete="off"
-          />
-        </label>
-      ))}
-
-      <label className="block max-w-md">
+      <label className="block max-w-md" htmlFor="signer-legal-name">
         <span className="field-label">Full legal name</span>
         <input
+          id="signer-legal-name"
           type="text"
           required
           value={signerName}

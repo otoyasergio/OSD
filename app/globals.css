@@ -859,8 +859,52 @@ summary {
   -webkit-overflow-scrolling: touch;
 }
 
+.contract-interleaved {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.contract-interleaved-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.contract-initials-slot {
+  max-width: 20rem;
+}
+
+.contract-initials-input {
+  min-height: 44px;
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  padding: 0.5rem 0.75rem;
+  font-size: 1.125rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.contract-initials-readonly {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border);
+  padding: 0.5rem 0.75rem;
+  font-size: 1.125rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: var(--surface-muted, #f8f8f8);
+}
+
 @media (max-width: 768px) {
   .contract-signing-form label {
+    max-width: none;
+  }
+
+  .contract-initials-slot {
     max-width: none;
   }
 }

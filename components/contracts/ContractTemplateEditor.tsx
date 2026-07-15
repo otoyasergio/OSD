@@ -77,7 +77,8 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
           <span className="mt-1 block text-xs text-[var(--status-neutral)]">
             Comma-separated keys. Each must match a{" "}
             <code className="text-xs">data-initial=&quot;key&quot;</code> section in the
-            HTML below.
+            HTML so the signing UI can place an initials field directly under that
+            clause (section → initials → section → … → signature).
           </span>
         </label>
 
