@@ -101,12 +101,14 @@ export function InspectionChecklist({
     let ok = 0;
     let future = 0;
     let immediate = 0;
+    let na = 0;
     for (const r of inspection.results) {
       if (r.status === "ok") ok += 1;
       else if (r.status === "future_attention") future += 1;
       else if (r.status === "immediate_attention") immediate += 1;
+      else if (r.status === "not_applicable") na += 1;
     }
-    return { ok, future, immediate };
+    return { ok, future, immediate, na };
   }, [inspection.results]);
   const brakeSkipped = inspection.results.some(
     (r) =>
@@ -147,6 +149,10 @@ export function InspectionChecklist({
           <span className="inspection-legend-item">
             <span className="inspection-status-swatch inspection-status-immediate is-selected" />
             Requires immediate attention
+          </span>
+          <span className="inspection-legend-item">
+            <span className="inspection-status-swatch inspection-status-na is-selected" />
+            Not applicable
           </span>
         </div>
 
@@ -221,6 +227,9 @@ export function InspectionChecklist({
             </span>
             <span className="inspection-summary-chip inspection-summary-chip--immediate">
               {statusTotals.immediate} immediate
+            </span>
+            <span className="inspection-summary-chip inspection-summary-chip--na">
+              {statusTotals.na} N/A
             </span>
           </div>
           {missingPhotoLabels.length > 0 ? (
