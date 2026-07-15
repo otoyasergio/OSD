@@ -223,6 +223,52 @@ export async function assignUnassignedJobsOnWorkOrderToTechnician(
     await assignTechnicianToJob(row.job_id as string, technicianId);
     assigned_count += 1;
   }
+
+  return { assigned_count };
+}
+
+/**
+ * Control Center dispatch: assign every active job on a work order to one tech
+ * (reassigns jobs already on another tech). Does not touch primary_technician_id.
+ */
+export async function assignAllActiveJobsOnWorkOrderToTechnician(
+  workOrderId: string,
+  technicianId: string
+): Promise<{ assigned_count: number }> {
+  const user = await requireUser();
+  if (
+    !canEditWorkOrder(user.role) &&
+    !canCreateWorkOrder(user.role) &&
+    user.role !== "admin"
+  ) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const { supabase } = await requireMutableWorkOrder(user, workOrderId);
+
+  const { data: tech, error: techError } = await supabase
+    .from("app_user")
+    .select("user_id, role, status")
+    .eq("user_id", technicianId)
+    .maybeSingle();
+  if (techError) throw techError;
+  if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
+    throw new Error("TECHNICIAN_NOT_FOUND");
+  }
+
+  const { data: jobs, error } = await supabase
+    .from("job")
+    .select("job_id")
+    .eq("work_order_id", workOrderId)
+    .not("status", "in", '("completed","cancelled","declined")')
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  let assigned_count = 0;
+  for (const row of jobs ?? []) {
+    await assignTechnicianToJob(row.job_id as string, technicianId);
+    assigned_count += 1;
+  }
   return { assigned_count };
 }
 
@@ -308,6 +354,135 @@ export async function assignTechnicianToJob(
     old_value: { assigned_technician_id: job.assigned_technician_id },
     new_value: { assigned_technician_id: technicianId },
   });
+}
+
+/**
+ * Control Center pool drop: clear technician on every active job for the WO.
+ */
+export async function unassignAllActiveJobsOnWorkOrder(
+  workOrderId: string
+): Promise<{ unassigned_count: number }> {
+  const user = await requireUser();
+  if (
+    !canEditWorkOrder(user.role) &&
+    !canCreateWorkOrder(user.role) &&
+    user.role !== "admin"
+  ) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const { supabase, workOrder } = await requireMutableWorkOrder(user, workOrderId);
+
+  const { data: jobs, error } = await supabase
+    .from("job")
+    .select("job_id, assigned_technician_id, service_name_snapshot")
+    .eq("work_order_id", workOrderId)
+    .not("status", "in", '("completed","cancelled","declined")')
+    .not("assigned_technician_id", "is", null);
+  if (error) throw error;
+
+  let unassigned_count = 0;
+  const now = new Date().toISOString();
+  for (const job of jobs ?? []) {
+    const { error: updateError } = await supabase
+      .from("job")
+      .update({
+        assigned_technician_id: null,
+        docket_position: null,
+        updated_at: now,
+      })
+      .eq("job_id", job.job_id);
+    if (isUndefinedColumnError(updateError, "docket_position")) {
+      const { error: retryError } = await supabase
+        .from("job")
+        .update({
+          assigned_technician_id: null,
+          updated_at: now,
+        })
+        .eq("job_id", job.job_id);
+      if (retryError) throw retryError;
+    } else if (updateError) {
+      throw updateError;
+    }
+
+    await addTimelineEvent(supabase, {
+      work_order_id: workOrderId,
+      user_id: user.user_id,
+      event_type: TimelineEventType.JOB_ASSIGNED,
+      entity_type: "job",
+      entity_id: job.job_id,
+      description: `Job unassigned (${job.service_name_snapshot})`,
+      old_value: { assigned_technician_id: job.assigned_technician_id },
+      new_value: { assigned_technician_id: null },
+    });
+
+    await addAuditLog(supabase, {
+      actor_user_id: user.user_id,
+      location_id: workOrder.location_id,
+      action: "job_unassigned",
+      entity_type: "job",
+      entity_id: job.job_id,
+      description: `Job ${job.service_name_snapshot} unassigned`,
+      old_value: { assigned_technician_id: job.assigned_technician_id },
+      new_value: { assigned_technician_id: null },
+    });
+
+    unassigned_count += 1;
+  }
+
+  return { unassigned_count };
+}
+
+/** Sets work_order.opened_at once (idempotent if already set). */
+export async function openWorkOrderForControlCenter(
+  workOrderId: string
+): Promise<{ opened_at: string }> {
+  const user = await requireUser();
+  if (
+    !canEditWorkOrder(user.role) &&
+    !canCreateWorkOrder(user.role) &&
+    user.role !== "admin"
+  ) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const { supabase, workOrder } = await requireMutableWorkOrder(user, workOrderId);
+
+  const { data: current, error: readError } = await supabase
+    .from("work_order")
+    .select("opened_at")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+  if (isUndefinedColumnError(readError, "opened_at")) {
+    throw new Error("OPENED_AT_UNAVAILABLE");
+  }
+  if (readError) throw readError;
+
+  if (current?.opened_at) {
+    return { opened_at: current.opened_at as string };
+  }
+
+  const opened_at = new Date().toISOString();
+  const { error } = await supabase
+    .from("work_order")
+    .update({ opened_at })
+    .eq("work_order_id", workOrderId);
+  if (isUndefinedColumnError(error, "opened_at")) {
+    throw new Error("OPENED_AT_UNAVAILABLE");
+  }
+  if (error) throw error;
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "work_order_opened",
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: "Work order opened on Control Center",
+    new_value: { opened_at },
+  });
+
+  return { opened_at };
 }
 
 export async function pullJob(

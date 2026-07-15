@@ -22,6 +22,7 @@ import {
   Archive,
   MessageSquare,
   ListOrdered,
+  Gauge,
 } from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
@@ -46,6 +47,7 @@ import {
 type NavLink = { href: string; label: string; icon: LucideIcon };
 
 const NAV_ICONS: Record<string, LucideIcon> = {
+  "/control-center": Gauge,
   "/dashboard": LayoutDashboard,
   "/work_orders": ClipboardList,
   "/parts": Package,
@@ -102,6 +104,11 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
 
   const shopFloorLinks: NavLink[] = [];
   if (canViewDashboard(role)) {
+    shopFloorLinks.push({
+      href: "/control-center",
+      label: "Control Center",
+      icon: iconFor("/control-center"),
+    });
     shopFloorLinks.push({
       href: "/dashboard",
       label: "Dashboard",
