@@ -40,6 +40,7 @@ export const INSPECTION_RESULT_LABELS: Record<InspectionResultStatus, string> = 
   ok: "OK",
   future_attention: "Future Attention",
   immediate_attention: "Immediate Attention",
+  not_applicable: "N/A",
 };
 
 export const RECOMMENDATION_SEVERITY_LABELS: Record<

@@ -2263,6 +2263,11 @@ button.board-control-link {
   border-color: #b91c1c;
 }
 
+.inspection-status-na {
+  background: #94a3b8;
+  border-color: #64748b;
+}
+
 .inspection-status-btn {
   min-height: 3rem;
   min-width: 3rem;
@@ -2389,6 +2394,12 @@ button.board-control-link {
   color: #991b1b;
 }
 
+.inspection-summary-chip--na {
+  border-color: #64748b33;
+  background: #f1f5f9;
+  color: #334155;
+}
+
 .inspection-status-chip {
   flex: none;
   align-self: center;
@@ -2416,6 +2427,12 @@ button.board-control-link {
   border-color: #b91c1c;
   background: #fef2f2;
   color: #991b1b;
+}
+
+.inspection-status-chip--na {
+  border-color: #64748b;
+  background: #f1f5f9;
+  color: #334155;
 }
 
 .inspection-status-chip--none {

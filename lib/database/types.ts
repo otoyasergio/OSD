@@ -45,7 +45,8 @@ export type PartStatus =
 export type InspectionResultStatus =
   | "ok"
   | "future_attention"
-  | "immediate_attention";
+  | "immediate_attention"
+  | "not_applicable";
 
 export type RecommendationSeverity =
   | "future_attention"

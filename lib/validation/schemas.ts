@@ -87,7 +87,7 @@ export const inspectionTemplateItemSchema = z.object({
 
 export const saveInspectionResultSchema = z.object({
   status: z
-    .enum(["ok", "future_attention", "immediate_attention"])
+    .enum(["ok", "future_attention", "immediate_attention", "not_applicable"])
     .nullable()
     .optional(),
   measurement: z.string().nullable().optional(),
