@@ -1,6 +1,11 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
+import {
+  isUndefinedColumnError,
+  OPTIONAL_COLUMNS,
+  getOptionalColumnSupport,
+  setOptionalColumnSupport,
+} from "@/lib/database/schemaCompat";
 import type { PhotoCategory, UserRole, WorkOrderStatus } from "@/lib/database/types";
 import { isControlCenterAtRisk, latestJobActivityAt } from "@/lib/control-center/atRisk";
 import {
@@ -403,10 +408,13 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
       drop_off_agreement ( agreement_id )
     `;
 
-  const [woWithOpened, membershipResult, clockResult] = await Promise.all([
+  const openedAtSupport = getOptionalColumnSupport(OPTIONAL_COLUMNS.workOrderOpenedAt);
+  const woSelect = openedAtSupport === false ? selectWithoutOpened : selectWithOpened;
+
+  const [woResult, membershipResult, clockResult] = await Promise.all([
     supabase
       .from("work_order")
-      .select(selectWithOpened)
+      .select(woSelect)
       .eq("location_id", locationId)
       .in("status", ACTIVE_STATUSES)
       .order("date_created", { ascending: false })
@@ -419,9 +427,10 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
       .is("clock_out_at", null),
   ]);
 
-  let rawData: unknown[] | null = woWithOpened.data as unknown[] | null;
-  let woError = woWithOpened.error;
-  if (isUndefinedColumnError(woWithOpened.error, "opened_at")) {
+  let rawData: unknown[] | null = woResult.data as unknown[] | null;
+  let woError = woResult.error;
+  if (openedAtSupport !== false && isUndefinedColumnError(woResult.error, "opened_at")) {
+    setOptionalColumnSupport(OPTIONAL_COLUMNS.workOrderOpenedAt, false);
     const fallback = await supabase
       .from("work_order")
       .select(selectWithoutOpened)
@@ -431,6 +440,8 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
       .limit(300);
     rawData = fallback.data as unknown[] | null;
     woError = fallback.error;
+  } else if (openedAtSupport !== false && !woResult.error) {
+    setOptionalColumnSupport(OPTIONAL_COLUMNS.workOrderOpenedAt, true);
   }
 
   if (woError) throw woError;

@@ -9,7 +9,12 @@ import type { AdminFlag } from "@/lib/services/adminFlags";
 import { canPerformSafetyCheck } from "@/lib/permissions";
 import { canViewerAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
 import { sortByDocketPosition } from "@/lib/technician/docketOrder";
-import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
+import {
+  getOptionalColumnSupport,
+  isUndefinedColumnError,
+  OPTIONAL_COLUMNS,
+  setOptionalColumnSupport,
+} from "@/lib/database/schemaCompat";
 
 export type FloorOsMode = "job" | "inspection" | "parts" | "qc" | "notes" | "safety";
 
@@ -147,71 +152,92 @@ export async function getTechnicianFloorOs(input: {
   };
 
   let myJobsRaw: unknown[] | null = null;
-  {
-    const withPosition = await supabase
-      .from("job")
-      .select(jobFloorSelectWithPosition)
-      .eq("assigned_technician_id", user.user_id)
-      .not("status", "in", '("completed","cancelled","declined")')
-      .order("created_at", { ascending: true });
-    if (isUndefinedColumnError(withPosition.error, "docket_position")) {
-      // Migration 043_job_docket_position not applied yet — fall back to created_at order.
-      const withoutPosition = await supabase
-        .from("job")
-        .select(jobFloorSelectWithoutPosition)
-        .eq("assigned_technician_id", user.user_id)
-        .not("status", "in", '("completed","cancelled","declined")')
-        .order("created_at", { ascending: true });
-      if (withoutPosition.error) throw withoutPosition.error;
-      myJobsRaw = withoutPosition.data;
-    } else {
-      if (withPosition.error) throw withPosition.error;
-      myJobsRaw = withPosition.data;
-    }
-  }
+  const docketSupport = getOptionalColumnSupport(OPTIONAL_COLUMNS.jobDocketPosition);
 
-  const [
-    { data: qcRows, error: qcError },
-    { data: safetyRows, error: safetyError },
-    { data: myFlags, error: flagsError },
-  ] = await Promise.all([
-    supabase
-      .from("work_order")
-      .select(
-        `
+  const myJobsQuery =
+    docketSupport === false
+      ? supabase
+          .from("job")
+          .select(jobFloorSelectWithoutPosition)
+          .eq("assigned_technician_id", user.user_id)
+          .not("status", "in", '("completed","cancelled","declined")')
+          .order("created_at", { ascending: true })
+      : supabase
+          .from("job")
+          .select(jobFloorSelectWithPosition)
+          .eq("assigned_technician_id", user.user_id)
+          .not("status", "in", '("completed","cancelled","declined")')
+          .order("created_at", { ascending: true });
+
+  const [myJobsFirst, queueResults] = await Promise.all([
+    myJobsQuery,
+    Promise.all([
+      supabase
+        .from("work_order")
+        .select(
+          `
         work_order_id, work_order_number, status, quality_check_assigned_to, location_id,
         motorcycle:motorcycle_id (
           year, make, model,
           customer:customer_id ( first_name, last_name )
         )
       `
-      )
-      .eq("location_id", locationId)
-      .eq("status", "quality_check")
-      .eq("quality_check_assigned_to", user.user_id),
-    canPerformSafetyCheck(user.role)
-      ? supabase
-          .from("work_order")
-          .select(
-            `
+        )
+        .eq("location_id", locationId)
+        .eq("status", "quality_check")
+        .eq("quality_check_assigned_to", user.user_id),
+      canPerformSafetyCheck(user.role)
+        ? supabase
+            .from("work_order")
+            .select(
+              `
             work_order_id, work_order_number, status, location_id,
             motorcycle:motorcycle_id (
               year, make, model,
               customer:customer_id ( first_name, last_name )
             )
           `
-          )
-          .eq("location_id", locationId)
-          .eq("status", "safety_check")
-      : Promise.resolve({ data: [] as unknown[], error: null }),
-    supabase
-      .from("admin_flag")
-      .select(
-        "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
-      )
-      .eq("created_by_user_id", user.user_id)
-      .is("cleared_at", null),
+            )
+            .eq("location_id", locationId)
+            .eq("status", "safety_check")
+        : Promise.resolve({ data: [] as unknown[], error: null }),
+      supabase
+        .from("admin_flag")
+        .select(
+          "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
+        )
+        .eq("created_by_user_id", user.user_id)
+        .is("cleared_at", null),
+    ]),
   ]);
+
+  if (
+    docketSupport !== false &&
+    isUndefinedColumnError(myJobsFirst.error, "docket_position")
+  ) {
+    setOptionalColumnSupport(OPTIONAL_COLUMNS.jobDocketPosition, false);
+    // Migration 043_job_docket_position not applied yet — fall back to created_at order.
+    const withoutPosition = await supabase
+      .from("job")
+      .select(jobFloorSelectWithoutPosition)
+      .eq("assigned_technician_id", user.user_id)
+      .not("status", "in", '("completed","cancelled","declined")')
+      .order("created_at", { ascending: true });
+    if (withoutPosition.error) throw withoutPosition.error;
+    myJobsRaw = withoutPosition.data;
+  } else {
+    if (myJobsFirst.error) throw myJobsFirst.error;
+    if (docketSupport !== false) {
+      setOptionalColumnSupport(OPTIONAL_COLUMNS.jobDocketPosition, true);
+    }
+    myJobsRaw = myJobsFirst.data;
+  }
+
+  const [
+    { data: qcRows, error: qcError },
+    { data: safetyRows, error: safetyError },
+    { data: myFlags, error: flagsError },
+  ] = queueResults;
 
   if (qcError) throw qcError;
   if (safetyError) throw safetyError;
@@ -478,29 +504,33 @@ export async function getTechnicianFloorOs(input: {
       job.assigned_technician_id === user.user_id
     ) {
       const labels = bikeCustomerLabel(unwrapMoto(wo));
-      const checklist = await listJobChecklist(job.job_id);
-      const { data: parts } = await supabase
-        .from("part")
-        .select("part_id, name, status")
-        .eq("job_id", job.job_id);
-      const { data: proofs } = await supabase
-        .from("intake_photo")
-        .select("photo_id")
-        .eq("job_id", job.job_id)
-        .eq("category", "job_proof");
-      const { data: exceptions } = await supabase
-        .from("technician_note")
-        .select("technician_note_id")
-        .eq("job_id", job.job_id)
-        .eq("note_type", "proof_exception")
-        .limit(1);
-      const { data: openFlags } = await supabase
-        .from("admin_flag")
-        .select(
-          "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
-        )
-        .eq("work_order_id", wo.work_order_id)
-        .is("cleared_at", null);
+      const [checklist, partsResult, proofsResult, exceptionsResult, openFlagsResult] =
+        await Promise.all([
+          listJobChecklist(job.job_id, supabase),
+          supabase.from("part").select("part_id, name, status").eq("job_id", job.job_id),
+          supabase
+            .from("intake_photo")
+            .select("photo_id")
+            .eq("job_id", job.job_id)
+            .eq("category", "job_proof"),
+          supabase
+            .from("technician_note")
+            .select("technician_note_id")
+            .eq("job_id", job.job_id)
+            .eq("note_type", "proof_exception")
+            .limit(1),
+          supabase
+            .from("admin_flag")
+            .select(
+              "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
+            )
+            .eq("work_order_id", wo.work_order_id)
+            .is("cleared_at", null),
+        ]);
+      const { data: parts } = partsResult;
+      const { data: proofs } = proofsResult;
+      const { data: exceptions } = exceptionsResult;
+      const { data: openFlags } = openFlagsResult;
 
       const inspectionComplete = Boolean(wo.inspection?.[0]?.completed_at);
       const gate = evaluateJobCompleteGate({

@@ -31,9 +31,12 @@ export async function seedDefaultJobChecklist(
   if (error) throw error;
 }
 
-export async function listJobChecklist(jobId: string): Promise<JobChecklistItem[]> {
-  await requireUser();
-  const supabase = await createClient();
+export async function listJobChecklist(
+  jobId: string,
+  client?: DbClient
+): Promise<JobChecklistItem[]> {
+  if (!client) await requireUser();
+  const supabase = client ?? (await createClient());
   const { data, error } = await supabase
     .from("job_checklist_item")
     .select(

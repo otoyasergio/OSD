@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, type ReactNode } from "react";
+import { useActionState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import type {
   FloorOsSurface,
   FloorQueueItem,
@@ -741,17 +741,28 @@ export function TechnicianFloorShell({
   docketItems?: DocketItem[];
 }) {
   const router = useRouter();
+  const routerRef = useRef(router);
   const selected = floor.selected;
   const nowJobId = floor.priority.find((item) => item.is_active)?.job_id ?? null;
 
   useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
+
+  // Stable empty deps — depending on `router` remounted intervals and stacked refreshes.
+  useEffect(() => {
+    let lastRefreshAt = 0;
     const tick = () => {
       if (document.visibilityState === "hidden") return;
-      router.refresh();
+      const now = Date.now();
+      // Guard against leaked duplicate intervals from HMR / prior mounts.
+      if (now - lastRefreshAt < FLOOR_REFRESH_MS - 5_000) return;
+      lastRefreshAt = now;
+      routerRef.current.refresh();
     };
     const id = window.setInterval(tick, FLOOR_REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [router]);
+  }, []);
 
   const stage = useMemo(() => {
     if (!selected) return "work" as FloorStage;

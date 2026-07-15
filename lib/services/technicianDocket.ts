@@ -13,7 +13,12 @@ import {
   sortByDocketPosition,
   type DocketMoveDirection,
 } from "@/lib/technician/docketOrder";
-import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
+import {
+  isUndefinedColumnError,
+  OPTIONAL_COLUMNS,
+  getOptionalColumnSupport,
+  setOptionalColumnSupport,
+} from "@/lib/database/schemaCompat";
 
 export type DocketItemKind = "now" | "assigned" | "qc" | "safety" | "flag";
 
@@ -263,65 +268,82 @@ export async function getTechnicianDocket(
   };
 
   let myJobsRaw: unknown[] | null = null;
-  {
-    const withPosition = await supabase
+  const docketSupport = getOptionalColumnSupport(OPTIONAL_COLUMNS.jobDocketPosition);
+  const myJobsQuery =
+    docketSupport === false
+      ? supabase
+          .from("job")
+          .select(jobDocketSelectWithoutPosition)
+          .eq("assigned_technician_id", technicianUserId)
+          .not("status", "in", '("completed","cancelled","declined")')
+          .order("created_at", { ascending: true })
+      : supabase
+          .from("job")
+          .select(jobDocketSelectWithPosition)
+          .eq("assigned_technician_id", technicianUserId)
+          .not("status", "in", '("completed","cancelled","declined")')
+          .order("created_at", { ascending: true });
+
+  const [first, queueResults] = await Promise.all([
+    myJobsQuery,
+    Promise.all([
+      supabase
+        .from("work_order")
+        .select(
+          `
+        work_order_id, work_order_number, status, location_id,
+        motorcycle:motorcycle_id ( year, make, model )
+      `
+        )
+        .eq("location_id", locationId)
+        .eq("status", "quality_check")
+        .eq("quality_check_assigned_to", technicianUserId),
+      canPerformSafetyCheck(tech.role as UserRole)
+        ? supabase
+            .from("work_order")
+            .select(
+              `
+            work_order_id, work_order_number, status, location_id,
+            motorcycle:motorcycle_id ( year, make, model )
+          `
+            )
+            .eq("location_id", locationId)
+            .eq("status", "safety_check")
+        : Promise.resolve({ data: [] as unknown[], error: null }),
+      supabase
+        .from("admin_flag")
+        .select(
+          "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
+        )
+        .eq("created_by_user_id", technicianUserId)
+        .is("cleared_at", null),
+    ]),
+  ]);
+
+  if (docketSupport !== false && isUndefinedColumnError(first.error, "docket_position")) {
+    setOptionalColumnSupport(OPTIONAL_COLUMNS.jobDocketPosition, false);
+    // Migration 043_job_docket_position not applied yet — fall back to created_at order.
+    const withoutPosition = await supabase
       .from("job")
-      .select(jobDocketSelectWithPosition)
+      .select(jobDocketSelectWithoutPosition)
       .eq("assigned_technician_id", technicianUserId)
       .not("status", "in", '("completed","cancelled","declined")')
       .order("created_at", { ascending: true });
-    if (isUndefinedColumnError(withPosition.error, "docket_position")) {
-      // Migration 043_job_docket_position not applied yet — fall back to created_at order.
-      const withoutPosition = await supabase
-        .from("job")
-        .select(jobDocketSelectWithoutPosition)
-        .eq("assigned_technician_id", technicianUserId)
-        .not("status", "in", '("completed","cancelled","declined")')
-        .order("created_at", { ascending: true });
-      if (withoutPosition.error) throw withoutPosition.error;
-      myJobsRaw = withoutPosition.data;
-    } else {
-      if (withPosition.error) throw withPosition.error;
-      myJobsRaw = withPosition.data;
+    if (withoutPosition.error) throw withoutPosition.error;
+    myJobsRaw = withoutPosition.data;
+  } else {
+    if (first.error) throw first.error;
+    if (docketSupport !== false) {
+      setOptionalColumnSupport(OPTIONAL_COLUMNS.jobDocketPosition, true);
     }
+    myJobsRaw = first.data;
   }
 
   const [
     { data: qcRows, error: qcError },
     { data: safetyRows, error: safetyError },
     { data: myFlags, error: flagsError },
-  ] = await Promise.all([
-    supabase
-      .from("work_order")
-      .select(
-        `
-        work_order_id, work_order_number, status, location_id,
-        motorcycle:motorcycle_id ( year, make, model )
-      `
-      )
-      .eq("location_id", locationId)
-      .eq("status", "quality_check")
-      .eq("quality_check_assigned_to", technicianUserId),
-    canPerformSafetyCheck(tech.role as UserRole)
-      ? supabase
-          .from("work_order")
-          .select(
-            `
-            work_order_id, work_order_number, status, location_id,
-            motorcycle:motorcycle_id ( year, make, model )
-          `
-          )
-          .eq("location_id", locationId)
-          .eq("status", "safety_check")
-      : Promise.resolve({ data: [] as unknown[], error: null }),
-    supabase
-      .from("admin_flag")
-      .select(
-        "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
-      )
-      .eq("created_by_user_id", technicianUserId)
-      .is("cleared_at", null),
-  ]);
+  ] = queueResults;
 
   if (qcError) throw qcError;
   if (safetyError) throw safetyError;
