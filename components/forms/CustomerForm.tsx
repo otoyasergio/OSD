@@ -6,6 +6,8 @@ import type { Customer } from "@/lib/services/customers";
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { AddressAutocomplete } from "@/components/forms/AddressAutocomplete";
+import { PhoneField } from "@/components/forms/PhoneField";
 
 type Props = {
   action: (state: CustomerFormState, formData: FormData) => Promise<CustomerFormState>;
@@ -16,9 +18,11 @@ type Props = {
 export function CustomerForm({ action, customer, submitLabel }: Props) {
   const [state, formAction] = useActionState(action, { error: null });
   const fieldErrors = state.fieldErrors ?? {};
+  const accountType = customer?.account_type ?? "retail";
+  const hasExistingNotes = Boolean(customer?.notes?.trim());
 
   return (
-    <form action={formAction} className="flex max-w-2xl flex-col gap-4">
+    <form action={formAction} className="flex max-w-3xl flex-col gap-4">
       <FormError message={state.error} />
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -26,6 +30,8 @@ export function CustomerForm({ action, customer, submitLabel }: Props) {
           label="First name"
           name="first_name"
           required
+          autoComplete="given-name"
+          autoFocus={!customer}
           defaultValue={customer?.first_name}
           error={fieldErrors.first_name}
         />
@@ -33,52 +39,78 @@ export function CustomerForm({ action, customer, submitLabel }: Props) {
           label="Last name"
           name="last_name"
           required
+          autoComplete="family-name"
           defaultValue={customer?.last_name}
           error={fieldErrors.last_name}
         />
-        <TextField
-          label="Phone"
-          name="phone"
-          type="tel"
+        <PhoneField
           defaultValue={customer?.phone}
-          hint="Phone or email is required"
           error={fieldErrors.phone}
         />
         <TextField
           label="Email"
           name="email"
           type="email"
+          required
+          autoComplete="email"
           defaultValue={customer?.email}
           error={fieldErrors.email}
         />
+        <div className="sm:col-span-2">
+          <AddressAutocomplete
+            defaultValue={customer?.address}
+            error={fieldErrors.address}
+          />
+        </div>
+        <TextField
+          label="Birthday (optional)"
+          name="date_of_birth"
+          type="date"
+          defaultValue={customer?.date_of_birth}
+          autoComplete="bday"
+          error={fieldErrors.date_of_birth}
+        />
       </div>
 
-      <label htmlFor="account_type" className="block">
-        <span className="field-label">Account type</span>
-        <select
-          id="account_type"
-          name="account_type"
-          defaultValue={customer?.account_type ?? "retail"}
-          className="input"
-        >
-          {(
-            Object.keys(CUSTOMER_ACCOUNT_TYPE_LABELS) as Array<
-              keyof typeof CUSTOMER_ACCOUNT_TYPE_LABELS
-            >
-          ).map((value) => (
-            <option key={value} value={value}>
-              {CUSTOMER_ACCOUNT_TYPE_LABELS[value]}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <TextAreaField
-        label="Notes"
-        name="notes"
-        defaultValue={customer?.notes}
-        error={fieldErrors.notes}
-      />
+      <details
+        open={Boolean(customer && (accountType !== "retail" || hasExistingNotes))}
+        className="rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-2"
+      >
+        <summary className="cursor-pointer text-sm font-medium text-foreground">
+          More details
+          <span className="ml-2 font-normal text-[var(--status-neutral)]">
+            {CUSTOMER_ACCOUNT_TYPE_LABELS[accountType]}
+          </span>
+        </summary>
+        <label htmlFor="account_type" className="mt-3 block max-w-sm pb-2">
+          <span className="field-label">Account type</span>
+          <select
+            id="account_type"
+            name="account_type"
+            defaultValue={accountType}
+            className="input"
+          >
+            {(
+              Object.keys(CUSTOMER_ACCOUNT_TYPE_LABELS) as Array<
+                keyof typeof CUSTOMER_ACCOUNT_TYPE_LABELS
+              >
+            ).map((value) => (
+              <option key={value} value={value}>
+                {CUSTOMER_ACCOUNT_TYPE_LABELS[value]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="max-w-2xl pb-2">
+          <TextAreaField
+            label="Notes (optional)"
+            name="notes"
+            rows={2}
+            defaultValue={customer?.notes}
+            error={fieldErrors.notes}
+          />
+        </div>
+      </details>
 
       <div>
         <SubmitButton label={submitLabel} pendingLabel="Saving…" />

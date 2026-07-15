@@ -6,7 +6,7 @@ import {
 } from "@/lib/validation/schemas";
 
 describe("customerSchema", () => {
-  it("requires phone or email", () => {
+  it("requires phone and email", () => {
     const result = customerSchema.safeParse({
       first_name: "Ada",
       last_name: "Lovelace",
@@ -14,11 +14,27 @@ describe("customerSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts phone only", () => {
+  it("rejects phone-only and email-only customers", () => {
+    const phoneOnly = customerSchema.safeParse({
+      first_name: "Ada",
+      last_name: "Lovelace",
+      phone: "4165551212",
+    });
+    const emailOnly = customerSchema.safeParse({
+      first_name: "Ada",
+      last_name: "Lovelace",
+      email: "ada@example.com",
+    });
+    expect(phoneOnly.success).toBe(false);
+    expect(emailOnly.success).toBe(false);
+  });
+
+  it("accepts phone and email", () => {
     const result = customerSchema.safeParse({
       first_name: "Ada",
       last_name: "Lovelace",
       phone: "4165551212",
+      email: "ada@example.com",
     });
     expect(result.success).toBe(true);
     expect(result.success && result.data.account_type).toBe("retail");
@@ -29,10 +45,42 @@ describe("customerSchema", () => {
       first_name: "Fleet",
       last_name: "Co",
       phone: "4165550199",
+      email: "service@fleet.example",
       account_type: "fleet",
     });
     expect(result.success).toBe(true);
     expect(result.success && result.data.account_type).toBe("fleet");
+  });
+
+  it("accepts an optional address and birthday", () => {
+    const result = customerSchema.safeParse({
+      first_name: "Ada",
+      last_name: "Lovelace",
+      phone: "4165551212",
+      email: "ada@example.com",
+      address: "123 Queen St W, Toronto, ON M5H 2M9",
+      date_of_birth: "1990-12-10",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects invalid or future birthdays", () => {
+    const invalid = customerSchema.safeParse({
+      first_name: "Ada",
+      last_name: "Lovelace",
+      phone: "4165551212",
+      email: "ada@example.com",
+      date_of_birth: "1990-02-30",
+    });
+    const future = customerSchema.safeParse({
+      first_name: "Ada",
+      last_name: "Lovelace",
+      phone: "4165551212",
+      email: "ada@example.com",
+      date_of_birth: "2999-01-01",
+    });
+    expect(invalid.success).toBe(false);
+    expect(future.success).toBe(false);
   });
 });
 
@@ -70,9 +118,7 @@ describe("serviceSchema", () => {
       category: "Maintenance",
     });
     expect(withCategory.success).toBe(true);
-    expect(withCategory.success && withCategory.data.category).toBe(
-      "Maintenance"
-    );
+    expect(withCategory.success && withCategory.data.category).toBe("Maintenance");
 
     const withoutCategory = serviceSchema.safeParse({ name: "Oil Change" });
     expect(withoutCategory.success).toBe(true);

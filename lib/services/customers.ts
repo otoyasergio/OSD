@@ -14,6 +14,8 @@ export type Customer = {
   last_name: string;
   phone: string | null;
   email: string | null;
+  address: string | null;
+  date_of_birth: string | null;
   notes: string | null;
   account_type: CustomerAccountType;
   wix_contact_id: string | null;
@@ -26,12 +28,14 @@ export type CustomerInput = {
   last_name: string;
   phone?: string | null;
   email?: string | null;
+  address?: string | null;
+  date_of_birth?: string | null;
   notes?: string | null;
   account_type?: CustomerAccountType;
 };
 
 const CUSTOMER_COLUMNS =
-  "customer_id, first_name, last_name, phone, email, notes, account_type, wix_contact_id, created_at, updated_at";
+  "customer_id, first_name, last_name, phone, email, address, date_of_birth, notes, account_type, wix_contact_id, created_at, updated_at";
 
 /**
  * PostgREST `or()` uses commas and parentheses as syntax, so those characters are
@@ -128,6 +132,8 @@ export async function createCustomer(input: CustomerInput): Promise<Customer> {
     ...input,
     phone: normalizeOptional(input.phone),
     email: normalizeOptional(input.email),
+    address: normalizeOptional(input.address),
+    date_of_birth: normalizeOptional(input.date_of_birth),
     notes: normalizeOptional(input.notes),
   });
 
@@ -139,6 +145,8 @@ export async function createCustomer(input: CustomerInput): Promise<Customer> {
       last_name: parsed.last_name,
       phone: normalizeOptional(parsed.phone),
       email: normalizeOptional(parsed.email),
+      address: normalizeOptional(parsed.address),
+      date_of_birth: normalizeOptional(parsed.date_of_birth),
       notes: normalizeOptional(parsed.notes),
       account_type: parsed.account_type,
     })
@@ -172,6 +180,8 @@ export async function updateCustomer(
     ...input,
     phone: normalizeOptional(input.phone),
     email: normalizeOptional(input.email),
+    address: normalizeOptional(input.address),
+    date_of_birth: normalizeOptional(input.date_of_birth),
     notes: normalizeOptional(input.notes),
   });
 
@@ -186,6 +196,8 @@ export async function updateCustomer(
       last_name: parsed.last_name,
       phone: normalizeOptional(parsed.phone),
       email: normalizeOptional(parsed.email),
+      address: normalizeOptional(parsed.address),
+      date_of_birth: normalizeOptional(parsed.date_of_birth),
       notes: normalizeOptional(parsed.notes),
       account_type: parsed.account_type,
       updated_at: new Date().toISOString(),

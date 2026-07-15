@@ -42,6 +42,18 @@ export function formatDate(value: string | Date | null | undefined): string {
   return date.toLocaleDateString(LOCALE, DATE_OPTS);
 }
 
+/** Format a date-only `YYYY-MM-DD` value without shifting it across timezones. */
+export function formatCalendarDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return "";
+  const date = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  );
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(LOCALE, { ...DATE_OPTS, timeZone: "UTC" });
+}
+
 /** Time only in America/Toronto (e.g. "2:30 p.m."). */
 export function formatTime(value: string | Date | null | undefined): string {
   const date = toDate(value);

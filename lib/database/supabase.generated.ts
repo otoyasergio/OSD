@@ -71,6 +71,8 @@ export type Database = {
           last_name: string;
           phone: string | null;
           email: string | null;
+          address: string | null;
+          date_of_birth: string | null;
           account_type: string;
           sms_opted_out_at: string | null;
         };

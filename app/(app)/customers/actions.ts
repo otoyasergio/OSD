@@ -31,6 +31,8 @@ function readCustomerInput(formData: FormData) {
     last_name: String(formData.get("last_name") ?? ""),
     phone: String(formData.get("phone") ?? ""),
     email: String(formData.get("email") ?? ""),
+    address: String(formData.get("address") ?? ""),
+    date_of_birth: String(formData.get("date_of_birth") ?? ""),
     notes: String(formData.get("notes") ?? ""),
     account_type: accountType as CustomerAccountType,
   };

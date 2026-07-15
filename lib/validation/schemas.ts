@@ -3,19 +3,52 @@ import { normalizeVin, validateOptionalVin } from "@/lib/vin/validate";
 
 export const customerAccountTypeSchema = z.enum(["retail", "fleet", "commercial"]);
 
-export const customerSchema = z
-  .object({
-    first_name: z.string().min(1),
-    last_name: z.string().min(1),
-    phone: z.string().optional().nullable(),
-    email: z.string().email().optional().nullable().or(z.literal("")),
-    notes: z.string().optional().nullable(),
-    account_type: customerAccountTypeSchema.default("retail"),
-  })
-  .refine((v) => Boolean(v.phone?.trim() || v.email?.trim()), {
-    message: "Phone or email is required",
-    path: ["phone"],
-  });
+function isCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+const dateOfBirthSchema = z
+  .string()
+  .refine(isCalendarDate, "Enter a valid birthday")
+  .refine(
+    (value) => value <= new Date().toISOString().slice(0, 10),
+    "Birthday cannot be in the future"
+  )
+  .optional()
+  .nullable();
+
+export const customerSchema = z.object({
+  first_name: z.string().min(1),
+  last_name: z.string().min(1),
+  phone: z
+    .string()
+    .trim()
+    .min(1, "Phone is required")
+    .nullable()
+    .refine((value) => Boolean(value), "Phone is required"),
+  email: z
+    .string()
+    .trim()
+    .email("Enter a valid email")
+    .nullable()
+    .refine((value) => Boolean(value), "Email is required"),
+  address: z.string().max(500, "Address is too long").optional().nullable(),
+  date_of_birth: dateOfBirthSchema,
+  notes: z.string().optional().nullable(),
+  account_type: customerAccountTypeSchema.default("retail"),
+});
 
 export const motorcycleSchema = z.object({
   customer_id: z.string().uuid(),

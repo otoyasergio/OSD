@@ -101,9 +101,11 @@ export function ClientGarage({
             Motorcycles on file for this customer.
           </p>
         </div>
-        <Link href={addHref} className="btn btn-primary">
-          Add to garage
-        </Link>
+        {bikes.length > 0 ? (
+          <Link href={addHref} className="btn btn-primary">
+            Add another motorcycle
+          </Link>
+        ) : null}
       </div>
 
       {bikes.length === 0 ? (
@@ -113,7 +115,7 @@ export function ClientGarage({
             Add the first motorcycle to keep intake photos and service history together.
           </p>
           <Link href={addHref} className="btn btn-accent mt-4">
-            Add motorcycle
+            Add first motorcycle
           </Link>
         </div>
       ) : (

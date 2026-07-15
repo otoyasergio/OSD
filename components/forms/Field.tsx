@@ -9,6 +9,7 @@ type TextFieldProps = {
   hint?: string;
   error?: string | null;
   autoComplete?: string;
+  autoFocus?: boolean;
   minLength?: number;
 };
 
@@ -23,6 +24,7 @@ export function TextField({
   hint,
   error,
   autoComplete,
+  autoFocus,
   minLength,
 }: TextFieldProps) {
   const inputId = id ?? name;
@@ -45,6 +47,7 @@ export function TextField({
         required={required}
         placeholder={placeholder}
         autoComplete={autoComplete}
+        autoFocus={autoFocus}
         minLength={minLength}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}

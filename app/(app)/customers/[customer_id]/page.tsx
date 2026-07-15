@@ -23,7 +23,7 @@ import {
   canViewCustomerDocuments,
 } from "@/lib/permissions";
 import { isWixSyncAvailable } from "@/lib/services/wixContacts";
-import { formatDate } from "@/lib/datetime/format";
+import { formatCalendarDate, formatDate } from "@/lib/datetime/format";
 
 function WorkOrderHistoryList({
   items,
@@ -133,6 +133,14 @@ export default async function CustomerDetailPage({
           </span>
           {customer.phone ?? "No phone"} · {customer.email ?? "No email"}
         </p>
+        {customer.address || customer.date_of_birth ? (
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
+            {customer.address ?? "No address"}
+            {customer.date_of_birth
+              ? ` · Birthday ${formatCalendarDate(customer.date_of_birth)}`
+              : ""}
+          </p>
+        ) : null}
       </div>
 
       <WixCustomerSyncPanel
