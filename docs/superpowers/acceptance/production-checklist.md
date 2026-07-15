@@ -63,11 +63,18 @@ After migrations, confirm Storage buckets: `intake-photos`, `contract-signatures
 
 ## 4. Hosting (Vercel) + Safari
 
-1. Connect the GitHub repo; deploy branch `main`.
-2. Set all env vars (Production + Preview as needed).
-3. Confirm webhook URLs in Square / Twilio / Wix match `NEXT_PUBLIC_APP_URL`.
-4. Smoke on **Safari Mac** and **Safari iPad**.
-5. CI must be green: `npm run typecheck && npm run lint && npm test && npm run build`.
+**Production branch is `main` only.** Never deploy `feature/*` (including
+`feature/v1-implementation`) to https://service.torontomoto.com. Doing that
+rolls the live site back to whatever that branch last contained.
+
+1. GitHub default branch must be `main` (repo setting).
+2. Vercel → Project → Settings → Environments → Production → Branch Tracking → `main`.
+3. Connect the GitHub repo in Vercel (Login Connection) so pushes to `main` deploy production.
+4. For CLI deploys use **only** `npm run deploy:production` (guards: on `main`, matches `origin/main`, clean tree). Do **not** run bare `vercel --prod` from a feature branch.
+5. Set all env vars (Production + Preview as needed).
+6. Confirm webhook URLs in Square / Twilio / Wix match `NEXT_PUBLIC_APP_URL`.
+7. Smoke on **Safari Mac** and **Safari iPad**.
+8. CI must be green: `npm run typecheck && npm run lint && npm test && npm run build`.
 
 ---
 

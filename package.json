@@ -11,6 +11,7 @@
     "test:e2e": "playwright test",
     "analyze": "ANALYZE=true next build --webpack",
     "db:types": "supabase gen types typescript --linked > lib/database/supabase.generated.ts",
+    "deploy:production": "node scripts/guard-prod-deploy.mjs && vercel --prod --yes",
     "prepare": "husky"
   },
   "lint-staged": {
