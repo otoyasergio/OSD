@@ -12,6 +12,8 @@ import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { VinField, type VinAutofillSuggestion } from "@/components/forms/VinField";
 import { VinOwnershipConflictNotice } from "@/components/forms/VinOwnershipConflictNotice";
+import { DocumentScanCapture } from "@/components/scan/DocumentScanCapture";
+import { decodeVinAction } from "@/app/(app)/vin/actions";
 
 export type CustomerOption = {
   customer_id: string;
@@ -62,6 +64,9 @@ export function MotorcycleForm({
   const [make, setMake] = useState(motorcycle?.make ?? defaults?.make ?? "");
   const [model, setModel] = useState(motorcycle?.model ?? defaults?.model ?? "");
   const [vinKey, setVinKey] = useState(0);
+  const [vinDefault, setVinDefault] = useState(
+    motorcycle?.vin ?? defaults?.vin ?? ""
+  );
   const [touched, setTouched] = useState({
     year: Boolean(motorcycle?.year ?? defaults?.year),
     make: Boolean(motorcycle?.make ?? defaults?.make),
@@ -127,6 +132,35 @@ export function MotorcycleForm({
       <FormError message={state.error} />
       {returnTo ? <input type="hidden" name="return_to" value={returnTo} /> : null}
 
+      <DocumentScanCapture
+        mode="ownership"
+        onConfirm={(draft) => {
+          if (draft.year) {
+            setYear(String(draft.year));
+            setTouched((prev) => ({ ...prev, year: true }));
+          }
+          if (draft.make) {
+            setMake(draft.make);
+            setTouched((prev) => ({ ...prev, make: true }));
+          }
+          if (draft.model) {
+            setModel(draft.model);
+            setTouched((prev) => ({ ...prev, model: true }));
+          }
+          if (draft.vin) {
+            setVinDefault(draft.vin);
+            setVinKey((k) => k + 1);
+            void decodeVinAction(draft.vin).then((decoded) => {
+              applyVinSuggestion({
+                year: decoded.fields.modelYear ?? undefined,
+                make: decoded.fields.make ?? undefined,
+                model: decoded.fields.model ?? undefined,
+              });
+            });
+          }
+        }}
+      />
+
       <label className="block">
         <span className="mb-1.5 block text-sm font-medium text-foreground">
           Customer<span className="ml-1 text-red-600">*</span>
@@ -155,7 +189,7 @@ export function MotorcycleForm({
 
       <VinField
         key={vinKey}
-        defaultValue={motorcycle?.vin ?? defaults?.vin}
+        defaultValue={vinDefault || motorcycle?.vin || defaults?.vin}
         onSuggestion={applyVinSuggestion}
         onVinReady={checkVinOwnership}
       />

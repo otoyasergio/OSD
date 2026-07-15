@@ -1,41 +1,85 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { CustomerFormState } from "@/app/(app)/customers/actions";
 import type { Customer } from "@/lib/services/customers";
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
-import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
+import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { DocumentScanCapture } from "@/components/scan/DocumentScanCapture";
 
 type Props = {
   action: (state: CustomerFormState, formData: FormData) => Promise<CustomerFormState>;
   customer?: Customer;
   submitLabel: string;
+  /** Optional DL scan (front office create/edit only). */
+  enableDocumentScan?: boolean;
 };
 
-export function CustomerForm({ action, customer, submitLabel }: Props) {
+export function CustomerForm({
+  action,
+  customer,
+  submitLabel,
+  enableDocumentScan = true,
+}: Props) {
   const [state, formAction] = useActionState(action, { error: null });
   const fieldErrors = state.fieldErrors ?? {};
+  const [firstName, setFirstName] = useState(customer?.first_name ?? "");
+  const [lastName, setLastName] = useState(customer?.last_name ?? "");
+  const [notes, setNotes] = useState(customer?.notes ?? "");
 
   return (
     <form action={formAction} className="flex max-w-2xl flex-col gap-4">
       <FormError message={state.error} />
 
+      {enableDocumentScan ? (
+        <DocumentScanCapture
+          mode="driver_license"
+          onConfirm={(draft) => {
+            if (draft.first_name) setFirstName(draft.first_name);
+            if (draft.last_name) setLastName(draft.last_name);
+            if (draft.raw_notes) {
+              setNotes((prev) =>
+                prev?.trim()
+                  ? `${prev.trim()}\n${draft.raw_notes}`
+                  : (draft.raw_notes ?? "")
+              );
+            }
+          }}
+        />
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextField
-          label="First name"
-          name="first_name"
-          required
-          defaultValue={customer?.first_name}
-          error={fieldErrors.first_name}
-        />
-        <TextField
-          label="Last name"
-          name="last_name"
-          required
-          defaultValue={customer?.last_name}
-          error={fieldErrors.last_name}
-        />
+        <label className="block">
+          <span className="field-label">
+            First name<span className="ml-1 text-red-600">*</span>
+          </span>
+          <input
+            name="first_name"
+            required
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            className="input"
+          />
+          {fieldErrors.first_name ? (
+            <p className="mt-1 text-sm text-red-700">{fieldErrors.first_name}</p>
+          ) : null}
+        </label>
+        <label className="block">
+          <span className="field-label">
+            Last name<span className="ml-1 text-red-600">*</span>
+          </span>
+          <input
+            name="last_name"
+            required
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            className="input"
+          />
+          {fieldErrors.last_name ? (
+            <p className="mt-1 text-sm text-red-700">{fieldErrors.last_name}</p>
+          ) : null}
+        </label>
         <TextField
           label="Phone"
           name="phone"
@@ -73,12 +117,18 @@ export function CustomerForm({ action, customer, submitLabel }: Props) {
         </select>
       </label>
 
-      <TextAreaField
-        label="Notes"
-        name="notes"
-        defaultValue={customer?.notes}
-        error={fieldErrors.notes}
-      />
+      <label className="block">
+        <span className="field-label">Notes</span>
+        <textarea
+          name="notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          className="input min-h-24"
+        />
+        {fieldErrors.notes ? (
+          <p className="mt-1 text-sm text-red-700">{fieldErrors.notes}</p>
+        ) : null}
+      </label>
 
       <div>
         <SubmitButton label={submitLabel} pendingLabel="Saving…" />
