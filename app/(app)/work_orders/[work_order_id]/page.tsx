@@ -57,6 +57,7 @@ import { ServiceInfoTab } from "@/components/work_orders/ServiceInfoTab";
 import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
 import { SendMessagePanel } from "@/components/communications/SendMessagePanel";
 import { SquareInvoicePanel } from "@/components/square/SquareInvoicePanel";
+import { estimateTotalsWithHst } from "@/lib/pricing/hst";
 import { JobsTab } from "@/components/jobs/JobsTab";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 import { RecommendationsTab } from "@/components/recommendations/RecommendationsTab";
@@ -209,18 +210,21 @@ export default async function WorkOrderDetailPage({
   const canEditServiceInfo =
     !detail.is_foreign_location && canUpdateServiceInformation(user.role);
 
-  const estimateTotalCents = Math.round(
-    (detail.jobs
+  const merchandiseDollars =
+    detail.jobs
       .filter((job) => job.status !== "cancelled" && job.status !== "declined")
       .reduce((sum, job) => sum + Number(job.standard_price_snapshot ?? 0), 0) +
-      parts
-        .filter((part) => part.status !== "cancelled" && part.status !== "not_required")
-        .reduce(
-          (sum, part) => sum + Number(part.unit_price ?? 0) * Number(part.quantity ?? 0),
-          0
-        )) *
-      100
-  );
+    parts
+      .filter((part) => part.status !== "cancelled" && part.status !== "not_required")
+      .reduce(
+        (sum, part) => sum + Number(part.unit_price ?? 0) * Number(part.quantity ?? 0),
+        0
+      );
+  const {
+    subtotalCents: estimateSubtotalCents,
+    hstCents: estimateHstCents,
+    totalCents: estimateTotalCents,
+  } = estimateTotalsWithHst(merchandiseDollars);
 
   const fromResult = fromResultId
     ? inspection?.results.find((r) => r.inspection_result_id === fromResultId)
@@ -299,6 +303,8 @@ export default async function WorkOrderDetailPage({
               squareInvoicePublicUrl={detail.square_invoice_public_url}
               billingStage={detail.billing_stage}
               billingCollectedCents={detail.billing_collected_cents}
+              estimateSubtotalCents={estimateSubtotalCents}
+              estimateHstCents={estimateHstCents}
               estimateTotalCents={estimateTotalCents}
               canManage={canApprove}
               readOnly={detail.is_foreign_location}

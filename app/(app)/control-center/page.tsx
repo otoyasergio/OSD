@@ -2,6 +2,12 @@ import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { canAssignTechnician, canViewDashboard, staffHomePath } from "@/lib/permissions";
 import { getControlCenterData } from "@/lib/services/controlCenter";
+import {
+  listReadyForPickup,
+  listReadyForQc,
+  listReadyForSafetyInspection,
+  listWaitingForParts,
+} from "@/lib/services/readyForPickup";
 import { ControlCenterShell } from "@/components/control-center/ControlCenterShell";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +17,23 @@ export default async function ControlCenterPage() {
   if (!user) redirect("/login");
   if (!canViewDashboard(user.role)) redirect(staffHomePath(user.role));
 
-  const data = await getControlCenterData();
+  const [data, waitingForParts, readyForQc, readyForSafety, readyForPickup] =
+    await Promise.all([
+      getControlCenterData(),
+      listWaitingForParts().catch(() => []),
+      listReadyForQc().catch(() => []),
+      listReadyForSafetyInspection().catch(() => []),
+      listReadyForPickup().catch(() => []),
+    ]);
 
-  return <ControlCenterShell data={data} canAssign={canAssignTechnician(user.role)} />;
+  return (
+    <ControlCenterShell
+      data={data}
+      canAssign={canAssignTechnician(user.role)}
+      waitingForParts={waitingForParts}
+      readyForQc={readyForQc}
+      readyForSafety={readyForSafety}
+      readyForPickup={readyForPickup}
+    />
+  );
 }

@@ -6,10 +6,13 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  closestCenter,
+  pointerWithin,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -19,17 +22,70 @@ import {
   openWorkOrderAction,
   unassignWorkOrderJobsAction,
 } from "@/app/(app)/control-center/actions";
+import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
 import { createClient } from "@/lib/database/supabase-browser";
+import type { WorkOrderStatus } from "@/lib/database/types";
+import {
+  isCcStageDropId,
+  normalizeControlCenterDragId,
+  resolveControlCenterDropTarget,
+  stageDropIdForStatus,
+  statusForCcStage,
+  type CcStageDropId,
+} from "@/lib/control-center/dnd";
 import { formatElapsedTimer, timeInShopTone } from "@/lib/control-center/formatTimer";
 import type {
   ControlCenterBike,
   ControlCenterData,
   ControlCenterTech,
 } from "@/lib/services/controlCenter";
+import type { ReadyForPickupItem, WaitingStageBike } from "@/lib/services/readyForPickup";
+import { canDropInColumn } from "@/lib/status/transitions";
+import {
+  ReadyForPickupCarousel,
+  ReadyForQcCarousel,
+  ReadyForSafetyInspectionCarousel,
+  WaitingForPartsCarousel,
+} from "@/components/technician/ReadyForPickupCarousel";
 import { StageChip } from "@/components/ui/StageChip";
 import { PageHeader } from "@/components/ui/PageHeader";
 
 const POOL_ID = "pool";
+
+const controlCenterCollision: CollisionDetection = (args) => {
+  const hits = pointerWithin(args);
+  if (hits.length > 0) return hits;
+  return closestCenter(args);
+};
+
+function toStageBike(
+  bike: ControlCenterBike | WaitingStageBike,
+  stageId: CcStageDropId
+): WaitingStageBike {
+  if ("motorcycle_label" in bike && "ready_since" in bike) {
+    const item = bike as WaitingStageBike;
+    return {
+      ...item,
+      overview_href:
+        stageId === "parts"
+          ? `/work_orders/${item.work_order_id}?tab=parts`
+          : `/work_orders/${item.work_order_id}`,
+    };
+  }
+  const cc = bike as ControlCenterBike;
+  return {
+    work_order_id: cc.work_order_id,
+    work_order_number: cc.work_order_number,
+    motorcycle_label: cc.bike_title,
+    ready_since: new Date().toISOString(),
+    ready_since_inferred: true,
+    primary_photo_url: cc.primary_photo_url,
+    overview_href:
+      stageId === "parts"
+        ? `/work_orders/${cc.work_order_id}?tab=parts`
+        : `/work_orders/${cc.work_order_id}`,
+  };
+}
 
 function initials(first: string, last: string) {
   return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
@@ -163,14 +219,14 @@ function MiniBikeCard({
   return (
     <div
       ref={setNodeRef}
-      role="button"
-      tabIndex={0}
       className={["cc-mini-bike", isDragging || dragging ? "cc-mini-bike--dragging" : ""]
         .filter(Boolean)
         .join(" ")}
       aria-label={`Open work order ${bike.work_order_number} for ${bike.bike_title}`}
       {...listeners}
       {...attributes}
+      role="button"
+      tabIndex={0}
       onClick={() => onOpenWork(bike.work_order_id)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -298,9 +354,17 @@ function TechCard({
 export function ControlCenterShell({
   data,
   canAssign,
+  waitingForParts = [],
+  readyForQc = [],
+  readyForSafety = [],
+  readyForPickup = [],
 }: {
   data: ControlCenterData;
   canAssign: boolean;
+  waitingForParts?: ReadyForPickupItem[];
+  readyForQc?: ReadyForPickupItem[];
+  readyForSafety?: ReadyForPickupItem[];
+  readyForPickup?: ReadyForPickupItem[];
 }) {
   const router = useRouter();
   const now = useNowTick(true);
@@ -310,6 +374,10 @@ export function ControlCenterShell({
   const [techs, setTechs] = useState(data.techs);
   const [kpis, setKpis] = useState(data.kpis);
   const [liveSummary, setLiveSummary] = useState(data.live_summary);
+  const [partsQueue, setPartsQueue] = useState(waitingForParts);
+  const [qcQueue, setQcQueue] = useState(readyForQc);
+  const [safetyQueue, setSafetyQueue] = useState(readyForSafety);
+  const [pickupQueue, setPickupQueue] = useState(readyForPickup);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -318,18 +386,24 @@ export function ControlCenterShell({
     () =>
       JSON.stringify({
         pool: data.pool.map(
-          (b) => `${b.work_order_id}:${b.opened_at}:${b.technician_id}`
+          (b) => `${b.work_order_id}:${b.opened_at}:${b.technician_id}:${b.status}`
         ),
         techs: data.techs.map(
           (t) =>
             `${t.user_id}:${t.availability}:${t.assigned_bikes
-              .map((b) => `${b.work_order_id}:${b.opened_at}`)
+              .map((b) => `${b.work_order_id}:${b.opened_at}:${b.status}`)
               .join(",")}`
         ),
+        stages: {
+          parts: waitingForParts.map((b) => b.work_order_id),
+          qc: readyForQc.map((b) => b.work_order_id),
+          safety: readyForSafety.map((b) => b.work_order_id),
+          pickup: readyForPickup.map((b) => b.work_order_id),
+        },
         kpis: data.kpis,
         live: data.live_summary,
       }),
-    [data]
+    [data, waitingForParts, readyForQc, readyForSafety, readyForPickup]
   );
   const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
   if (syncKey !== prevSyncKey) {
@@ -338,6 +412,10 @@ export function ControlCenterShell({
     setTechs(data.techs);
     setKpis(data.kpis);
     setLiveSummary(data.live_summary);
+    setPartsQueue(waitingForParts);
+    setQcQueue(readyForQc);
+    setSafetyQueue(readyForSafety);
+    setPickupQueue(readyForPickup);
   }
 
   useEffect(() => {
@@ -370,7 +448,7 @@ export function ControlCenterShell({
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
+      activationConstraint: { distance: 6 },
     })
   );
 
@@ -378,6 +456,17 @@ export function ControlCenterShell({
     id: POOL_ID,
     disabled: !canAssign,
   });
+
+  const stageQueues = useMemo(
+    () =>
+      ({
+        parts: partsQueue,
+        qc: qcQueue,
+        safety: safetyQueue,
+        pickup: pickupQueue,
+      }) as Record<CcStageDropId, WaitingStageBike[]>,
+    [partsQueue, qcQueue, safetyQueue, pickupQueue]
+  );
 
   const allBikes = useMemo(() => {
     const map = new Map<string, ControlCenterBike>();
@@ -388,9 +477,21 @@ export function ControlCenterShell({
     return map;
   }, [pool, techs]);
 
-  const activeBike = activeId ? (allBikes.get(activeId) ?? null) : null;
+  const stageBikeMap = useMemo(() => {
+    const map = new Map<string, WaitingStageBike>();
+    for (const items of Object.values(stageQueues)) {
+      for (const item of items) map.set(item.work_order_id, item);
+    }
+    return map;
+  }, [stageQueues]);
 
-  function findBikeOwner(workOrderId: string): string | null {
+  const activeWorkOrderId = activeId ? normalizeControlCenterDragId(activeId) : null;
+  const activeBike = activeWorkOrderId ? (allBikes.get(activeWorkOrderId) ?? null) : null;
+  const activeStageBike = activeWorkOrderId
+    ? (stageBikeMap.get(activeWorkOrderId) ?? null)
+    : null;
+
+  function findAssignmentOwner(workOrderId: string): string | null {
     if (pool.some((b) => b.work_order_id === workOrderId)) return POOL_ID;
     for (const tech of techs) {
       if (tech.assigned_bikes.some((b) => b.work_order_id === workOrderId)) {
@@ -400,7 +501,34 @@ export function ControlCenterShell({
     return null;
   }
 
-  function applyOptimisticMove(workOrderId: string, targetId: string) {
+  function findStageOwner(workOrderId: string): CcStageDropId | null {
+    for (const stageId of Object.keys(stageQueues) as CcStageDropId[]) {
+      if (stageQueues[stageId].some((b) => b.work_order_id === workOrderId)) {
+        return stageId;
+      }
+    }
+    return null;
+  }
+
+  function containerForWorkOrder(workOrderId: string): string | null {
+    return findAssignmentOwner(workOrderId) ?? findStageOwner(workOrderId);
+  }
+
+  function statusForWorkOrder(workOrderId: string): WorkOrderStatus | null {
+    const bike = allBikes.get(workOrderId);
+    if (bike) return bike.status;
+    const stage = findStageOwner(workOrderId);
+    return stage ? statusForCcStage(stage) : null;
+  }
+
+  function setStageQueue(stageId: CcStageDropId, items: WaitingStageBike[]) {
+    if (stageId === "parts") setPartsQueue(items);
+    else if (stageId === "qc") setQcQueue(items);
+    else if (stageId === "safety") setSafetyQueue(items);
+    else setPickupQueue(items);
+  }
+
+  function applyOptimisticAssign(workOrderId: string, targetId: string) {
     const bike = allBikes.get(workOrderId);
     if (!bike) return null;
     const previous = { pool, techs };
@@ -432,8 +560,44 @@ export function ControlCenterShell({
     return previous;
   }
 
+  function applyOptimisticStatusMove(workOrderId: string, stageId: CcStageDropId) {
+    const nextStatus = statusForCcStage(stageId);
+    const previous = {
+      pool,
+      techs,
+      partsQueue,
+      qcQueue,
+      safetyQueue,
+      pickupQueue,
+    };
+
+    const source = allBikes.get(workOrderId) ?? stageBikeMap.get(workOrderId) ?? null;
+    if (!source) return null;
+
+    setPool((current) =>
+      current.map((bike) =>
+        bike.work_order_id === workOrderId ? { ...bike, status: nextStatus } : bike
+      )
+    );
+    setTechs((current) =>
+      current.map((tech) => ({
+        ...tech,
+        assigned_bikes: tech.assigned_bikes.map((bike) =>
+          bike.work_order_id === workOrderId ? { ...bike, status: nextStatus } : bike
+        ),
+      }))
+    );
+
+    const nextItem = toStageBike(source, stageId);
+    for (const id of Object.keys(stageQueues) as CcStageDropId[]) {
+      const filtered = stageQueues[id].filter((b) => b.work_order_id !== workOrderId);
+      setStageQueue(id, id === stageId ? [nextItem, ...filtered] : filtered);
+    }
+
+    return previous;
+  }
+
   function releaseSuppressBikeClick() {
-    // Clear after the post-drag click (if any) so the next real click still works.
     window.setTimeout(() => {
       suppressNextBikeClick.current = false;
     }, 50);
@@ -445,26 +609,73 @@ export function ControlCenterShell({
     setActiveId(String(event.active.id));
   }
 
-  function handleOpenWork(workOrderId: string) {
+  function handleOpenWork(workOrderId: string, href?: string) {
     if (suppressNextBikeClick.current) {
       suppressNextBikeClick.current = false;
       return;
     }
-    router.push(`/work_orders/${workOrderId}`);
+    router.push(href ?? `/work_orders/${workOrderId}`);
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
     releaseSuppressBikeClick();
     const { active, over } = event;
-    if (!over || !canAssign) return;
+    if (!over) return;
 
-    const workOrderId = String(active.id);
-    const targetId = String(over.id);
-    const fromId = findBikeOwner(workOrderId);
-    if (!fromId || fromId === targetId) return;
+    const workOrderId = normalizeControlCenterDragId(String(active.id));
+    const techIds = techs.map((t) => t.user_id);
+    const targetId = resolveControlCenterDropTarget({
+      overId: String(over.id),
+      poolId: POOL_ID,
+      techIds,
+      containerForWorkOrder,
+    });
+    if (!targetId) return;
 
-    const previous = applyOptimisticMove(workOrderId, targetId);
+    // Ignore drops that resolve back to the same dragged work order id.
+    if (targetId === workOrderId) return;
+
+    const fromAssign = findAssignmentOwner(workOrderId);
+    const fromStage = findStageOwner(workOrderId);
+    const currentStatus = statusForWorkOrder(workOrderId);
+    if (!currentStatus) return;
+
+    if (fromAssign && fromAssign === targetId) return;
+    if (fromStage && fromStage === targetId) return;
+    if (stageDropIdForStatus(currentStatus) === targetId) return;
+
+    if (isCcStageDropId(targetId)) {
+      if (!canDropInColumn(data.role, targetId, currentStatus)) {
+        setErrorMessage("You do not have permission to move this bike there.");
+        return;
+      }
+
+      const previous = applyOptimisticStatusMove(workOrderId, targetId);
+      if (!previous) return;
+
+      startTransition(async () => {
+        const result = await moveWorkOrderOnBoardAction(workOrderId, targetId);
+        if (result.error) {
+          setPool(previous.pool);
+          setTechs(previous.techs);
+          setPartsQueue(previous.partsQueue);
+          setQcQueue(previous.qcQueue);
+          setSafetyQueue(previous.safetyQueue);
+          setPickupQueue(previous.pickupQueue);
+          setErrorMessage(result.error);
+        }
+      });
+      return;
+    }
+
+    if (!canAssign) return;
+    if (!fromAssign && !allBikes.has(workOrderId)) {
+      setErrorMessage("Open the work order to assign a technician.");
+      return;
+    }
+
+    const previous = applyOptimisticAssign(workOrderId, targetId);
     if (!previous) return;
 
     startTransition(async () => {
@@ -536,6 +747,12 @@ export function ControlCenterShell({
     carouselRef.current?.scrollBy({ left: direction * 340, behavior: "smooth" });
   }
 
+  const stageDndBase = {
+    dragEnabled: true,
+    draggingId: activeId,
+    onOpenWork: handleOpenWork,
+  };
+
   return (
     <div className="page-stack page-stack--wide" style={{ gap: "1.25rem" }}>
       <PageHeader
@@ -577,6 +794,7 @@ export function ControlCenterShell({
 
       <DndContext
         sensors={sensors}
+        collisionDetection={controlCenterCollision}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={() => {
@@ -592,7 +810,7 @@ export function ControlCenterShell({
         >
           <div className="cc-pool-header">
             <div className="cc-pool-title-row">
-              <h2 className="cc-pool-title">Bikes in shop</h2>
+              <h2 className="cc-pool-title">Waiting for tech</h2>
               <span className="shop-board-column-count">{pool.length}</span>
               <span className="cc-pool-caption">
                 Unassigned — drag onto a tech to dispatch
@@ -650,6 +868,41 @@ export function ControlCenterShell({
           ))}
         </div>
 
+        <div className="cc-stage-queues">
+          <WaitingForPartsCarousel
+            items={partsQueue}
+            dnd={{
+              ...stageDndBase,
+              droppableId: "parts",
+              dropDisabled: false,
+            }}
+          />
+          <ReadyForQcCarousel
+            items={qcQueue}
+            dnd={{
+              ...stageDndBase,
+              droppableId: "qc",
+              dropDisabled: false,
+            }}
+          />
+          <ReadyForSafetyInspectionCarousel
+            items={safetyQueue}
+            dnd={{
+              ...stageDndBase,
+              droppableId: "safety",
+              dropDisabled: false,
+            }}
+          />
+          <ReadyForPickupCarousel
+            items={pickupQueue}
+            dnd={{
+              ...stageDndBase,
+              droppableId: "pickup",
+              dropDisabled: false,
+            }}
+          />
+        </div>
+
         <DragOverlay>
           {activeBike ? (
             <div className="cc-bike-card" style={{ width: "13.5rem" }}>
@@ -659,6 +912,31 @@ export function ControlCenterShell({
                 <p className="cc-bike-subtitle">
                   {activeBike.customer_name} · {activeBike.work_order_number}
                 </p>
+              </div>
+            </div>
+          ) : activeStageBike ? (
+            <div className="cc-bike-card" style={{ width: "13.5rem" }}>
+              <div className="cc-bike-media">
+                {activeStageBike.primary_photo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
+                  <img src={activeStageBike.primary_photo_url} alt="" />
+                ) : (
+                  <div className="cc-bike-placeholder" aria-hidden>
+                    <svg viewBox="0 0 48 32" width="40" height="26">
+                      <path
+                        d="M8 22c2-6 6-10 10-11 3 4 7 6 12 6 2 0 4-.4 6-1.2L40 22H8z"
+                        fill="currentColor"
+                        opacity="0.4"
+                      />
+                      <circle cx="16" cy="12" r="3" fill="currentColor" opacity="0.5" />
+                      <path d="M6 24h36v2H6z" fill="currentColor" opacity="0.3" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+              <div className="cc-bike-body">
+                <p className="cc-bike-title">{activeStageBike.motorcycle_label}</p>
+                <p className="cc-bike-subtitle">{activeStageBike.work_order_number}</p>
               </div>
             </div>
           ) : null}

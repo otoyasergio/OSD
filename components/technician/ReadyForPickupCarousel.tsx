@@ -2,18 +2,27 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { ReadyForPickupItem } from "@/lib/services/readyForPickup";
+import type { WaitingStageBike } from "@/lib/services/readyForPickup";
 import { formatElapsedTimer } from "@/lib/control-center/formatTimer";
 import styles from "./ReadyForPickupCarousel.module.css";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+
 const PICKUP_YELLOW_MS = 1 * DAY_MS;
 const PICKUP_RED_MS = 3 * DAY_MS;
+const SAFETY_YELLOW_MS = 2 * HOUR_MS;
+const SAFETY_RED_MS = 8 * HOUR_MS;
 
-function pickupTone(elapsedMs: number): "ok" | "warn" | "late" {
-  if (elapsedMs >= PICKUP_RED_MS) return "late";
-  if (elapsedMs >= PICKUP_YELLOW_MS) return "warn";
+function waitTone(
+  elapsedMs: number,
+  warnAfterMs: number,
+  lateAfterMs: number
+): "ok" | "warn" | "late" {
+  if (elapsedMs >= lateAfterMs) return "late";
+  if (elapsedMs >= warnAfterMs) return "warn";
   return "ok";
 }
 
@@ -27,23 +36,52 @@ function useNowTick(enabled: boolean) {
   return now;
 }
 
-function PickupCard({ item, now }: { item: ReadyForPickupItem; now: number }) {
+export type WaitingBikeCarouselDnd = {
+  droppableId: string;
+  dropDisabled?: boolean;
+  dragEnabled?: boolean;
+  draggingId?: string | null;
+  onOpenWork: (workOrderId: string, href: string) => void;
+};
+
+export type WaitingBikeCarouselProps = {
+  items: WaitingStageBike[];
+  title: string;
+  /** Optional muted line next to the count badge. */
+  subtitle?: string;
+  emptyMessage: string;
+  /** Caption when the stage stamp is present. */
+  readyCaption?: string;
+  /** Caption when waiting-since was inferred from updated_at. */
+  approxCaption?: string;
+  warnAfterMs?: number;
+  lateAfterMs?: number;
+  /** When set, section is a drop target and cards are draggable. */
+  dnd?: WaitingBikeCarouselDnd;
+};
+
+function CardBody({
+  item,
+  now,
+  readyCaption,
+  approxCaption,
+  warnAfterMs,
+  lateAfterMs,
+}: {
+  item: WaitingStageBike;
+  now: number;
+  readyCaption: string;
+  approxCaption: string;
+  warnAfterMs: number;
+  lateAfterMs: number;
+}) {
   const startMs = Date.parse(item.ready_since);
   const elapsed = !Number.isFinite(startMs) ? null : Math.max(0, now - startMs);
-  const tone = elapsed == null ? "ok" : pickupTone(elapsed);
+  const tone = elapsed == null ? "ok" : waitTone(elapsed, warnAfterMs, lateAfterMs);
   const timerLabel = elapsed == null ? "—" : formatElapsedTimer(elapsed);
 
   return (
-    <Link
-      href={item.overview_href}
-      className={[
-        styles.card,
-        tone === "warn" ? styles.cardWarn : "",
-        tone === "late" ? styles.cardLate : "",
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
+    <>
       <div className={styles.media}>
         {item.primary_photo_url ? (
           // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
@@ -71,50 +109,168 @@ function PickupCard({ item, now }: { item: ReadyForPickupItem; now: number }) {
             .join(" ")}
         >
           <span className={styles.timerDot} aria-hidden />
-          <span className="tabular-nums">{timerLabel}</span>
+          <span className="tabular-nums" suppressHydrationWarning>
+            {timerLabel}
+          </span>
         </span>
       </div>
       <div className={styles.body}>
         <p className={styles.bike}>{item.motorcycle_label}</p>
         <p className={styles.wo}>{item.work_order_number}</p>
         <p className={styles.caption}>
-          {item.ready_since_inferred ? "Waiting (approx)" : "Ready"}
+          {item.ready_since_inferred ? approxCaption : readyCaption}
           {elapsed == null ? "" : ` · ${formatElapsedTimer(elapsed)}`}
         </p>
       </div>
+    </>
+  );
+}
+
+function cardToneClass(
+  item: WaitingStageBike,
+  now: number,
+  warnAfterMs: number,
+  lateAfterMs: number
+) {
+  const startMs = Date.parse(item.ready_since);
+  const elapsed = !Number.isFinite(startMs) ? null : Math.max(0, now - startMs);
+  const tone = elapsed == null ? "ok" : waitTone(elapsed, warnAfterMs, lateAfterMs);
+  return [
+    styles.card,
+    tone === "warn" ? styles.cardWarn : "",
+    tone === "late" ? styles.cardLate : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function LinkBikeCard({
+  item,
+  now,
+  readyCaption,
+  approxCaption,
+  warnAfterMs,
+  lateAfterMs,
+}: {
+  item: WaitingStageBike;
+  now: number;
+  readyCaption: string;
+  approxCaption: string;
+  warnAfterMs: number;
+  lateAfterMs: number;
+}) {
+  return (
+    <Link
+      href={item.overview_href}
+      className={cardToneClass(item, now, warnAfterMs, lateAfterMs)}
+    >
+      <CardBody
+        item={item}
+        now={now}
+        readyCaption={readyCaption}
+        approxCaption={approxCaption}
+        warnAfterMs={warnAfterMs}
+        lateAfterMs={lateAfterMs}
+      />
     </Link>
   );
 }
 
-export function ReadyForPickupCarousel({ items }: { items: ReadyForPickupItem[] }) {
+function DraggableBikeCard({
+  item,
+  now,
+  readyCaption,
+  approxCaption,
+  warnAfterMs,
+  lateAfterMs,
+  dragEnabled,
+  dragging,
+  onOpenWork,
+}: {
+  item: WaitingStageBike;
+  now: number;
+  readyCaption: string;
+  approxCaption: string;
+  warnAfterMs: number;
+  lateAfterMs: number;
+  dragEnabled: boolean;
+  dragging: boolean;
+  onOpenWork: (workOrderId: string, href: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `stage:${item.work_order_id}`,
+    data: { workOrderId: item.work_order_id, source: "stage" },
+    disabled: !dragEnabled,
+  });
+
+  return (
+    <button
+      type="button"
+      ref={setNodeRef}
+      className={[
+        cardToneClass(item, now, warnAfterMs, lateAfterMs),
+        styles.cardButton,
+        isDragging || dragging ? styles.cardDragging : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-label={`Open work order ${item.work_order_number} for ${item.motorcycle_label}`}
+      {...listeners}
+      {...attributes}
+      onClick={() => onOpenWork(item.work_order_id, item.overview_href)}
+    >
+      <CardBody
+        item={item}
+        now={now}
+        readyCaption={readyCaption}
+        approxCaption={approxCaption}
+        warnAfterMs={warnAfterMs}
+        lateAfterMs={lateAfterMs}
+      />
+    </button>
+  );
+}
+
+export function WaitingBikeCarousel({
+  items,
+  title,
+  subtitle,
+  emptyMessage,
+  readyCaption = "Ready",
+  approxCaption = "Waiting (approx)",
+  warnAfterMs = PICKUP_YELLOW_MS,
+  lateAfterMs = PICKUP_RED_MS,
+  dnd,
+}: WaitingBikeCarouselProps) {
   const carouselRef = useRef<HTMLDivElement>(null);
   const now = useNowTick(items.length > 0);
+  const { setNodeRef, isOver } = useDroppable({
+    id: dnd?.droppableId ?? `${title}-disabled-drop`,
+    disabled: !dnd || Boolean(dnd.dropDisabled),
+  });
 
   function scrollCarousel(direction: -1 | 1) {
     carouselRef.current?.scrollBy({ left: direction * 280, behavior: "smooth" });
   }
 
-  if (items.length === 0) {
-    return (
-      <section className={styles.section} aria-label="Ready for pickup">
-        <div className={styles.header}>
-          <div className={styles.titleRow}>
-            <h2 className={styles.title}>Ready for pickup</h2>
-            <span className="shop-board-column-count">0</span>
-          </div>
-        </div>
-        <div className={styles.empty}>No bikes waiting for pickup.</div>
-      </section>
-    );
-  }
+  const sectionClass = [
+    styles.section,
+    dnd && isOver && !dnd.dropDisabled ? styles.sectionOver : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <section className={styles.section} aria-label="Ready for pickup">
+    <section
+      ref={dnd ? setNodeRef : undefined}
+      className={sectionClass}
+      aria-label={title}
+    >
       <div className={styles.header}>
         <div className={styles.titleRow}>
-          <h2 className={styles.title}>Ready for pickup</h2>
+          <h2 className={styles.title}>{title}</h2>
           <span className="shop-board-column-count">{items.length}</span>
-          <span className={styles.subtitle}>Waiting on customer</span>
+          {subtitle ? <span className={styles.subtitle}>{subtitle}</span> : null}
         </div>
         {items.length > 2 ? (
           <div className={styles.scrollBtns}>
@@ -137,11 +293,114 @@ export function ReadyForPickupCarousel({ items }: { items: ReadyForPickupItem[] 
           </div>
         ) : null}
       </div>
-      <div ref={carouselRef} className={styles.carousel}>
-        {items.map((item) => (
-          <PickupCard key={item.work_order_id} item={item} now={now} />
-        ))}
-      </div>
+      {items.length === 0 ? (
+        <div className={styles.empty}>{emptyMessage}</div>
+      ) : (
+        <div ref={carouselRef} className={styles.carousel}>
+          {items.map((item) =>
+            dnd ? (
+              <DraggableBikeCard
+                key={item.work_order_id}
+                item={item}
+                now={now}
+                readyCaption={readyCaption}
+                approxCaption={approxCaption}
+                warnAfterMs={warnAfterMs}
+                lateAfterMs={lateAfterMs}
+                dragEnabled={dnd.dragEnabled !== false}
+                dragging={
+                  dnd.draggingId === item.work_order_id ||
+                  dnd.draggingId === `stage:${item.work_order_id}`
+                }
+                onOpenWork={dnd.onOpenWork}
+              />
+            ) : (
+              <LinkBikeCard
+                key={item.work_order_id}
+                item={item}
+                now={now}
+                readyCaption={readyCaption}
+                approxCaption={approxCaption}
+                warnAfterMs={warnAfterMs}
+                lateAfterMs={lateAfterMs}
+              />
+            )
+          )}
+        </div>
+      )}
     </section>
+  );
+}
+
+type StageCarouselProps = {
+  items: WaitingStageBike[];
+  dnd?: WaitingBikeCarouselDnd;
+};
+
+/** Tech-floor / CC pickup queue — thin wrapper over WaitingBikeCarousel. */
+export function ReadyForPickupCarousel({ items, dnd }: StageCarouselProps) {
+  return (
+    <WaitingBikeCarousel
+      items={items}
+      title="Ready for pickup"
+      subtitle={dnd ? "Drop to mark ready · waiting on customer" : "Waiting on customer"}
+      emptyMessage="No bikes waiting for pickup."
+      readyCaption="Ready"
+      approxCaption="Waiting (approx)"
+      warnAfterMs={PICKUP_YELLOW_MS}
+      lateAfterMs={PICKUP_RED_MS}
+      dnd={dnd}
+    />
+  );
+}
+
+/** Control Center — bikes in `waiting_for_parts` (above QC). */
+export function WaitingForPartsCarousel({ items, dnd }: StageCarouselProps) {
+  return (
+    <WaitingBikeCarousel
+      items={items}
+      title="Waiting for parts"
+      subtitle={dnd ? "Drop to set waiting for parts" : "Parts needed or on order"}
+      emptyMessage="No bikes waiting for parts."
+      readyCaption="Waiting"
+      approxCaption="Waiting (approx)"
+      warnAfterMs={PICKUP_YELLOW_MS}
+      lateAfterMs={PICKUP_RED_MS}
+      dnd={dnd}
+    />
+  );
+}
+
+/** Control Center — bikes in `quality_check` awaiting QC. */
+export function ReadyForQcCarousel({ items, dnd }: StageCarouselProps) {
+  return (
+    <WaitingBikeCarousel
+      items={items}
+      title="QC"
+      subtitle={dnd ? "Drop when jobs are complete" : "Waiting on quality check"}
+      emptyMessage="No bikes waiting for QC."
+      readyCaption="In queue"
+      approxCaption="In queue (approx)"
+      warnAfterMs={SAFETY_YELLOW_MS}
+      lateAfterMs={SAFETY_RED_MS}
+      dnd={dnd}
+    />
+  );
+}
+
+/** Control Center — bikes in `safety_check` awaiting inspection. */
+export function ReadyForSafetyInspectionCarousel({ items, dnd }: StageCarouselProps) {
+  return (
+    <WaitingBikeCarousel
+      items={items}
+      title="Ready for safety"
+      subtitle={dnd ? "Drop for head-tech safety check" : "Waiting on head tech"}
+      emptyMessage="No bikes waiting for safety."
+      readyCaption="In queue"
+      approxCaption="In queue (approx)"
+      warnAfterMs={SAFETY_YELLOW_MS}
+      lateAfterMs={SAFETY_RED_MS}
+      dnd={dnd}
+    />
   );
 }

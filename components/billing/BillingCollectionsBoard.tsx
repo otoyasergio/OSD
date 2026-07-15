@@ -41,8 +41,8 @@ function BillingCard({
         {item.square_payment_status ? ` · ${item.square_payment_status}` : ""}
       </p>
       <p className="td-board-card-sub">
-        Est {money(item.estimate_cents)} · Collected {money(item.billing_collected_cents)}{" "}
-        · Due {money(item.remaining_cents)}
+        Est {money(item.estimate_cents)} incl. HST · Collected{" "}
+        {money(item.billing_collected_cents)} · Due {money(item.remaining_cents)}
       </p>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link href={item.href} className="wo-card-number data-table-link">

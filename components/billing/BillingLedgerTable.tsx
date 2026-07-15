@@ -27,7 +27,7 @@ export function BillingLedgerTable({ items }: { items: BillingBoardItem[] }) {
             <th className="px-3 py-3 font-semibold">Bike</th>
             <th className="px-3 py-3 font-semibold">Stage</th>
             <th className="px-3 py-3 font-semibold">Payment</th>
-            <th className="px-3 py-3 font-semibold">Estimate</th>
+            <th className="px-3 py-3 font-semibold">Estimate (incl. HST)</th>
             <th className="px-3 py-3 font-semibold">Collected</th>
             <th className="px-3 py-3 font-semibold">Remaining</th>
             <th className="px-3 py-3 font-semibold">Square</th>

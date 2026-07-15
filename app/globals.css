@@ -4558,6 +4558,14 @@ label.photo-source-sheet-action {
   grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
 }
 
+/* Stage queues under technician columns: parts → QC → safety → pickup */
+.cc-stage-queues {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
 .cc-tech-card {
   border: 1px solid var(--border);
   border-radius: 11px;

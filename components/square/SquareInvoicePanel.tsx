@@ -9,6 +9,7 @@ import {
   syncSquareDraftAction,
 } from "@/app/(app)/work_orders/square-actions";
 import type { BillingAmountMode, BillingStage } from "@/lib/billing/stages";
+import { HST_PERCENT } from "@/lib/pricing/hst";
 import { FormError } from "@/components/forms/Field";
 
 type Props = {
@@ -18,6 +19,8 @@ type Props = {
   squareInvoicePublicUrl: string | null;
   billingStage: BillingStage | string;
   billingCollectedCents: number;
+  estimateSubtotalCents: number;
+  estimateHstCents: number;
   estimateTotalCents: number;
   canManage: boolean;
   readOnly?: boolean;
@@ -42,6 +45,8 @@ export function SquareInvoicePanel({
   squareInvoicePublicUrl,
   billingStage,
   billingCollectedCents,
+  estimateSubtotalCents,
+  estimateHstCents,
   estimateTotalCents,
   canManage,
   readOnly = false,
@@ -121,6 +126,12 @@ export function SquareInvoicePanel({
       </div>
 
       <div className="text-sm text-foreground">
+        <p>
+          Subtotal: <strong>${(estimateSubtotalCents / 100).toFixed(2)}</strong>
+        </p>
+        <p>
+          HST ({HST_PERCENT}%): <strong>${(estimateHstCents / 100).toFixed(2)}</strong>
+        </p>
         <p>
           Estimate total: <strong>${(estimateTotalCents / 100).toFixed(2)}</strong>
         </p>

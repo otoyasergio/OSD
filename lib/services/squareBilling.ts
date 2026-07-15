@@ -16,6 +16,7 @@ import {
   stageAfterJobApprovals,
   sumLines,
 } from "@/lib/billing/stages";
+import { appendHstLine } from "@/lib/pricing/hst";
 import {
   cancelSquareInvoice,
   createSquareInvoiceDraft,
@@ -75,9 +76,7 @@ function toSquareMoney(amountDollars: number) {
   };
 }
 
-export async function listCustomerCredits(
-  customerId: string
-): Promise<CustomerCredit[]> {
+export async function listCustomerCredits(customerId: string): Promise<CustomerCredit[]> {
   await requireUser();
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -136,9 +135,7 @@ async function buildLines(
 ): Promise<BillableLine[]> {
   const supabase = await createClient();
   const statuses =
-    mode === "draft"
-      ? [...DRAFT_JOB_STATUSES]
-      : [...PUBLISHABLE_JOB_STATUSES];
+    mode === "draft" ? [...DRAFT_JOB_STATUSES] : [...PUBLISHABLE_JOB_STATUSES];
 
   const { data: jobs, error: jobsError } = await supabase
     .from("job")
@@ -149,8 +146,7 @@ async function buildLines(
   if (jobsError) throw jobsError;
 
   const jobIds = (jobs ?? []).map((j) => j.job_id);
-  let parts: { part_name: string; quantity: number; unit_price: number | null }[] =
-    [];
+  let parts: { part_name: string; quantity: number; unit_price: number | null }[] = [];
 
   if (jobIds.length > 0) {
     const { data: partRows, error: partsError } = await supabase
@@ -186,12 +182,11 @@ async function buildLines(
     }
   }
 
-  return lines;
+  // Ontario HST on merchandise (jobs + parts); credits applied after tax.
+  return appendHstLine(lines) as BillableLine[];
 }
 
-async function loadBillingWorkOrder(
-  workOrderId: string
-): Promise<WorkOrderBillingRow> {
+async function loadBillingWorkOrder(workOrderId: string): Promise<WorkOrderBillingRow> {
   const user = await requireUser();
   if (!canRecordCustomerApproval(user.role)) throw new Error("FORBIDDEN");
 
@@ -342,9 +337,7 @@ export async function syncWorkOrderSquareDraft(
       square_payment_status: "draft",
       square_invoice_public_url: invoice.public_url ?? null,
       billing_stage: nextStage,
-      ...(displayNumber
-        ? { external_invoice_number: displayNumber }
-        : {}),
+      ...(displayNumber ? { external_invoice_number: displayNumber } : {}),
     })
     .eq("work_order_id", workOrderId);
 
@@ -470,10 +463,7 @@ export async function publishWorkOrderSquareInvoice(
   if (publishLines.length === 0) throw new Error("SQUARE_NO_BILLABLE_LINES");
 
   const credits = await listCustomerCredits(detail.customer.customer_id);
-  const creditApplied = credits.reduce(
-    (sum, c) => sum + Number(c.remaining_amount),
-    0
-  );
+  const creditApplied = credits.reduce((sum, c) => sum + Number(c.remaining_amount), 0);
 
   const billableTotalCents = Math.max(
     0,
@@ -501,8 +491,7 @@ export async function publishWorkOrderSquareInvoice(
     }
   }
 
-  const isDeposit =
-    input.mode === "deposit_percent" || input.mode === "custom";
+  const isDeposit = input.mode === "deposit_percent" || input.mode === "custom";
   const useSingleChargeLine =
     isDeposit || input.mode === "balance" || detail.billing_collected_cents > 0;
 
@@ -530,8 +519,7 @@ export async function publishWorkOrderSquareInvoice(
 
   const invoice = await publishSquareInvoice(draft.id, draft.version ?? 0);
   const displayNumber =
-    squareInvoiceDisplayNumber(invoice) ??
-    squareInvoiceDisplayNumber(draft);
+    squareInvoiceDisplayNumber(invoice) ?? squareInvoiceDisplayNumber(draft);
 
   await supabase
     .from("work_order")
@@ -543,9 +531,7 @@ export async function publishWorkOrderSquareInvoice(
       billing_amount_mode: input.mode,
       billing_amount_cents: chargeCents,
       invoice_published_at: new Date().toISOString(),
-      ...(displayNumber
-        ? { external_invoice_number: displayNumber }
-        : {}),
+      ...(displayNumber ? { external_invoice_number: displayNumber } : {}),
     })
     .eq("work_order_id", workOrderId);
 
@@ -595,9 +581,7 @@ export async function publishWorkOrderSquareBalance(
   return publishWorkOrderSquareInvoice(workOrderId, { mode: "balance" });
 }
 
-export async function cancelAndRecreateSquareInvoice(
-  workOrderId: string
-): Promise<void> {
+export async function cancelAndRecreateSquareInvoice(workOrderId: string): Promise<void> {
   const user = await requireUser();
   if (!isSquareConfigured()) throw new Error("SQUARE_NOT_CONFIGURED");
 
@@ -652,15 +636,11 @@ export async function createWorkOrderSquareInvoice(
   return publishWorkOrderSquareInvoice(workOrderId, { mode: "full" });
 }
 
-export async function recomputeWorkOrderBillingStage(
-  workOrderId: string
-): Promise<void> {
+export async function recomputeWorkOrderBillingStage(workOrderId: string): Promise<void> {
   const admin = createAdminClient();
   const { data: wo } = await admin
     .from("work_order")
-    .select(
-      "billing_stage, square_invoice_id, estimate_sent_at, square_payment_status"
-    )
+    .select("billing_stage, square_invoice_id, estimate_sent_at, square_payment_status")
     .eq("work_order_id", workOrderId)
     .maybeSingle();
 
@@ -783,10 +763,8 @@ export async function processSquareWebhookEvent(payload: {
     const isDeposit = mode === "deposit_percent" || mode === "custom";
 
     if (mapped === "paid") {
-      const add =
-        paidAmount ?? Number(wo.billing_amount_cents ?? 0);
-      const collected =
-        Number(wo.billing_collected_cents ?? 0) + (add > 0 ? add : 0);
+      const add = paidAmount ?? Number(wo.billing_amount_cents ?? 0);
+      const collected = Number(wo.billing_collected_cents ?? 0) + (add > 0 ? add : 0);
       updates.billing_collected_cents = collected;
       // Deposit paid → ready for balance invoice; full/balance paid → paid
       updates.billing_stage = isDeposit ? "ready_to_invoice" : "paid";
@@ -817,10 +795,7 @@ export async function processSquareWebhookEvent(payload: {
       updates.billing_stage = "none";
     }
 
-    await admin
-      .from("work_order")
-      .update(updates)
-      .eq("work_order_id", wo.work_order_id);
+    await admin.from("work_order").update(updates).eq("work_order_id", wo.work_order_id);
 
     await addTimelineEvent(admin, {
       work_order_id: wo.work_order_id,

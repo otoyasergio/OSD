@@ -3,6 +3,7 @@ import { createClient } from "@/lib/database/supabase-server";
 import { canViewBillingArea } from "@/lib/permissions";
 import type { BillingStage } from "@/lib/billing/stages";
 import { type BillingBucket, classifyBillingBucket } from "@/lib/billing/buckets";
+import { estimateTotalsWithHst } from "@/lib/pricing/hst";
 
 export type BillingBoardItem = {
   work_order_id: string;
@@ -139,9 +140,8 @@ export async function listBillingBoardForLocation(
     const jobTotal = jobs
       .filter((j) => j.status !== "cancelled" && j.status !== "declined")
       .reduce((sum, j) => sum + Number(j.standard_price_snapshot ?? 0), 0);
-    const estimate_cents = Math.round(
-      (jobTotal + (partTotals.get(row.work_order_id) ?? 0)) * 100
-    );
+    const merchandiseDollars = jobTotal + (partTotals.get(row.work_order_id) ?? 0);
+    const { totalCents: estimate_cents } = estimateTotalsWithHst(merchandiseDollars);
     const collected = Number(row.billing_collected_cents ?? 0);
     const stage = (row.billing_stage ?? "none") as BillingStage;
 

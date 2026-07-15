@@ -6,6 +6,30 @@
   padding: 0.85rem 0.9rem 1rem;
 }
 
+.sectionOver {
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+  background: #fff7ed;
+}
+
+.cardButton {
+  display: block;
+  width: 12.5rem;
+  flex: 0 0 12.5rem;
+  padding: 0;
+  text-align: left;
+  cursor: grab;
+  font: inherit;
+}
+
+.cardButton:active {
+  cursor: grabbing;
+}
+
+.cardDragging {
+  opacity: 0.45;
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -23,7 +47,7 @@
 
 .title {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
