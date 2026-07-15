@@ -19,11 +19,25 @@ test.describe("smoke", () => {
     await expect(page).toHaveURL(/\/login/);
   });
 
-  test("billing and complete are middleware-protected", async ({ page }) => {
-    await page.goto("/billing");
-    await expect(page).toHaveURL(/\/login/);
-    await page.goto("/complete");
-    await expect(page).toHaveURL(/\/login/);
+  test("staff routes are proxy-protected by default", async ({ page }) => {
+    for (const path of ["/billing", "/complete", "/control-center", "/vin"]) {
+      await page.goto(path);
+      await expect(page).toHaveURL(/\/login/);
+    }
+  });
+
+  test("auth redirects preserve a safe return path and disable caching", async ({
+    request,
+  }) => {
+    const response = await request.get("/control-center?view=shop", {
+      maxRedirects: 0,
+    });
+
+    expect(response.status()).toBe(307);
+    expect(response.headers().location).toContain(
+      "/login?next=%2Fcontrol-center%3Fview%3Dshop"
+    );
+    expect(response.headers()["cache-control"]).toContain("no-store");
   });
 });
 

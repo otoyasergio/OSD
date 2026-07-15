@@ -3,12 +3,9 @@ import { getCurrentAppUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { AppShell } from "@/components/layout/AppShell";
 import type { LocationOption } from "@/components/layout/LocationSwitcher";
+import { getSupabasePublicConfig } from "@/lib/database/config";
 
-export default async function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentAppUser();
   if (!user) {
     redirect("/login");
@@ -28,11 +25,7 @@ export default async function AppLayout({
   }
 
   let locations: LocationOption[] = [];
-  if (
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-    user.location_ids.length > 0
-  ) {
+  if (getSupabasePublicConfig() && user.location_ids.length > 0) {
     const supabase = await createClient();
     const { data } = await supabase
       .from("location")

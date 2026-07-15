@@ -15,9 +15,9 @@ You need a **live Supabase project**. Do not invent credentials; copy them from 
 ### 1. Create a Supabase project
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. Open **Project Settings → API** and note:
+2. Open the project's **Connect** dialog and note:
    - Project URL
-   - `anon` (public) key
+   - Publishable (`sb_publishable_...`) key; the legacy `anon` key remains a fallback
    - `service_role` key (server-only; never expose in the browser)
 
 ### 2. Configure environment
@@ -27,6 +27,11 @@ cp .env.local.example .env.local
 ```
 
 Fill in `.env.local` from [`.env.local.example`](./.env.local.example) (Supabase, Square, Twilio, Wix, cron, Sentry, Parts Canada).
+
+Supabase Auth uses cookie-backed SSR sessions. `proxy.ts` verifies/refreshes the
+session and protects every app page except `/login`, customer portal links under
+`/c/*`, and API handlers. The `(app)` layout then requires an active `app_user`
+record and assigned location before rendering staff tools.
 
 ### 3. Apply migrations
 

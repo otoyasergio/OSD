@@ -41,7 +41,8 @@ For multi-instance production at scale, prefer Vercel Firewall or Upstash Redis.
 
 - Staff sign-out is available in the app chrome (`SignOutButton`)
 - Active location cookie is `httpOnly`, `sameSite=lax`, `secure` in production
-- Middleware protects `/billing` and `/complete` in addition to core routes
+- Next.js Proxy verifies Supabase JWT claims, refreshes auth cookies with
+  no-cache headers, and protects every non-public page by default
 
 ## Contract HTML
 

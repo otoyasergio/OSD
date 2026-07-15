@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("messages", () => {
-  test("messages routes are middleware-protected", async ({ page, context }) => {
+  test("messages routes are proxy-protected", async ({ page, context }) => {
     await context.clearCookies();
     await page.goto("/messages");
     await expect(page).toHaveURL(/\/login/);

@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Generated coverage report.
     "coverage/**",
+    // Local Codex/Claude worktrees can contain their own source and build output.
+    ".worktrees/**",
   ]),
   {
     rules: {

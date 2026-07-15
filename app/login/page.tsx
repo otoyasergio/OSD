@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/database/supabase-browser";
 import { assertLoginAllowed } from "@/app/login/actions";
+import { safeNextPath } from "@/lib/auth/routes";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -36,8 +37,10 @@ export default function LoginPage() {
         return;
       }
 
-      // Land on / so app/page.tsx can resolve role-aware home after cookies settle.
-      router.replace("/");
+      const nextPath = safeNextPath(
+        new URLSearchParams(window.location.search).get("next")
+      );
+      router.replace(nextPath);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in");
