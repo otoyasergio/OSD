@@ -370,13 +370,6 @@ export function InspectionChecklist({
                     photoRequired={inspection.missing_photos.some(
                       (p) => p.inspection_result_id === result.inspection_result_id
                     )}
-                    onRecommend={
-                      canRecommend
-                        ? (r) => {
-                            window.location.href = `/work_orders/${inspection.work_order_id}?tab=recommendations&from_result=${r.inspection_result_id}`;
-                          }
-                        : undefined
-                    }
                   />
                 ))}
               </div>

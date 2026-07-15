@@ -18,6 +18,8 @@ import {
   getMissingInspectionPhotos,
   type InspectionPhotoRequirement,
 } from "@/lib/services/inspectionGate";
+import { shouldAutoCreateRecommendation } from "@/lib/services/autoRecommendationFromInspection";
+import { ensureRecommendationForInspectionResult } from "@/lib/services/recommendations";
 
 export type InspectionResultRow = {
   inspection_result_id: string;
@@ -32,6 +34,8 @@ export type InspectionResultRow = {
   notes: string | null;
   updated_by_user_id: string | null;
   updated_at: string;
+  /** Linked recommendation when auto-created from yellow/red. */
+  recommendation_id?: string | null;
 };
 
 export type InspectionHeader = {
@@ -287,6 +291,30 @@ export async function getInspectionForWorkOrder(
     .slice()
     .sort((a, b) => a.display_order_snapshot - b.display_order_snapshot);
 
+  const resultIds = results.map((r) => r.inspection_result_id);
+  const recommendationByResult = new Map<string, string>();
+  if (resultIds.length > 0) {
+    const { data: recRows, error: recError } = await supabase
+      .from("recommendation")
+      .select("recommendation_id, inspection_result_id")
+      .in("inspection_result_id", resultIds);
+    if (recError) throw recError;
+    for (const row of recRows ?? []) {
+      if (row.inspection_result_id) {
+        recommendationByResult.set(
+          row.inspection_result_id as string,
+          row.recommendation_id as string
+        );
+      }
+    }
+  }
+
+  const resultsWithRecs: InspectionResultRow[] = results.map((r) => ({
+    ...r,
+    recommendation_id:
+      recommendationByResult.get(r.inspection_result_id) ?? null,
+  }));
+
   type NestedCustomer = { first_name: string; last_name: string };
   type NestedMotorcycle = {
     year: number;
@@ -373,9 +401,9 @@ export async function getInspectionForWorkOrder(
       technician_name: tech ? `${tech.first_name} ${tech.last_name}` : null,
       date_created: (workOrder.date_created as string | null) ?? null,
     },
-    results,
-    incomplete_count: countIncomplete(results),
-    missing_photos: getMissingInspectionPhotos(results, photos),
+    results: resultsWithRecs,
+    incomplete_count: countIncomplete(resultsWithRecs),
+    missing_photos: getMissingInspectionPhotos(resultsWithRecs, photos),
     photos,
   };
 }
@@ -540,6 +568,19 @@ export async function saveInspectionResult(
       notes: result.notes,
     },
   });
+
+  // Auto-create recommendation for yellow/red. Clearing the flag does not
+  // delete the recommendation — office declines/defers as needed.
+  if (shouldAutoCreateRecommendation(result.status)) {
+    try {
+      await ensureRecommendationForInspectionResult(inspectionResultId);
+    } catch (err) {
+      // Don't fail the status save if recommendation create races; rethrow
+      // permission / real failures.
+      if (err instanceof Error && err.message === "FORBIDDEN") throw err;
+      throw err;
+    }
+  }
 
   return result;
 }

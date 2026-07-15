@@ -39,12 +39,16 @@ export async function createRecommendationAction(
     const fromResult = String(formData.get("inspection_result_id") ?? "").trim();
     if (fromResult) {
       const severityRaw = String(formData.get("severity") ?? "").trim();
+      const description =
+        String(formData.get("description") ?? "").trim() || undefined;
+      const notes = String(formData.get("notes") ?? "").trim() || null;
+      // Idempotent ensure when deep-linked from older UIs.
       await createRecommendationFromInspectionResult(fromResult, {
-        description: String(formData.get("description") ?? "").trim() || undefined,
+        description,
         severity: severityRaw
           ? (severityRaw as RecommendationSeverity)
           : undefined,
-        notes: String(formData.get("notes") ?? "").trim() || null,
+        notes,
       });
     } else {
       await createRecommendation(workOrderId, {

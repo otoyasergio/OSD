@@ -58,7 +58,6 @@ export function InspectionItemRow({
   readOnly,
   photoUrl,
   photoRequired,
-  onRecommend,
   compact,
 }: {
   workOrderId: string;
@@ -66,7 +65,6 @@ export function InspectionItemRow({
   readOnly: boolean;
   photoUrl?: string | null;
   photoRequired?: boolean;
-  onRecommend?: (result: InspectionResultRow) => void;
   compact?: boolean;
 }) {
   const [status, setStatus] = useState<InspectionResultStatus | null>(result.status);
@@ -74,6 +72,9 @@ export function InspectionItemRow({
   const [notes, setNotes] = useState(result.notes ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [hasRecommendation, setHasRecommendation] = useState(
+    Boolean(result.recommendation_id)
+  );
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measurementRef = useRef(measurement);
@@ -86,12 +87,14 @@ export function InspectionItemRow({
     prevResult.status !== result.status ||
     prevResult.measurement !== result.measurement ||
     prevResult.notes !== result.notes ||
-    prevResult.updated_at !== result.updated_at
+    prevResult.updated_at !== result.updated_at ||
+    prevResult.recommendation_id !== result.recommendation_id
   ) {
     setPrevResult(result);
     setStatus(result.status);
     setMeasurement(result.measurement ?? "");
     setNotes(result.notes ?? "");
+    setHasRecommendation(Boolean(result.recommendation_id));
   }
 
   useEffect(() => {
@@ -122,6 +125,12 @@ export function InspectionItemRow({
         setSaveState("error");
         setError(response.error);
         return;
+      }
+      if (
+        input.status === "future_attention" ||
+        input.status === "immediate_attention"
+      ) {
+        setHasRecommendation(true);
       }
       setSaveState("saved");
       window.setTimeout(() => setSaveState("idle"), 1200);
@@ -323,14 +332,10 @@ export function InspectionItemRow({
             existingUrl={photoUrl}
             readOnly={readOnly}
           />
-          {!readOnly && onRecommend ? (
-            <button
-              type="button"
-              onClick={() => onRecommend(result)}
-              className="btn btn-secondary min-h-12"
-            >
-              Create recommendation
-            </button>
+          {hasRecommendation || result.recommendation_id ? (
+            <p className="text-sm font-medium text-emerald-800">
+              Recommendation created
+            </p>
           ) : null}
         </div>
       ) : null}

@@ -17,6 +17,11 @@ import {
 } from "@/lib/permissions";
 import { recommendationSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import {
+  severityFromInspectionStatus,
+  shouldAutoCreateRecommendation,
+  shouldSkipDuplicateRecommendation,
+} from "@/lib/services/autoRecommendationFromInspection";
 
 export type Recommendation = {
   recommendation_id: string;
@@ -53,13 +58,6 @@ const OUTSTANDING_STATUSES: RecommendationStatus[] = [
 
 const COLUMNS =
   "recommendation_id, work_order_id, inspection_result_id, created_by_user_id, description, severity, status, converted_job_id, notes, created_at, resolved_at";
-
-function severityFromInspectionStatus(
-  status: InspectionResultStatus | null
-): RecommendationSeverity {
-  if (status === "immediate_attention") return "immediate_attention";
-  return "future_attention";
-}
 
 async function requireMutableWorkOrder(
   user: AppUser,
@@ -250,6 +248,77 @@ export async function createRecommendation(
   return recommendation;
 }
 
+/**
+ * Idempotent: creates a pending recommendation for a yellow/red inspection
+ * result if one is not already linked. Office handles decline/defer if the
+ * tech later clears the flag — we do not auto-delete.
+ */
+export async function ensureRecommendationForInspectionResult(
+  inspectionResultId: string
+): Promise<Recommendation | null> {
+  const user = await requireUser();
+  if (!canCreateRecommendation(user.role)) throw new Error("FORBIDDEN");
+
+  const supabase = await createClient();
+  const { data: result, error } = await supabase
+    .from("inspection_result")
+    .select(
+      `
+      inspection_result_id,
+      item_name_snapshot,
+      category_snapshot,
+      status,
+      notes,
+      inspection:inspection_id ( work_order_id )
+    `
+    )
+    .eq("inspection_result_id", inspectionResultId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!result) throw new Error("INSPECTION_RESULT_NOT_FOUND");
+
+  const status = result.status as InspectionResultStatus | null;
+  if (!shouldAutoCreateRecommendation(status)) {
+    return null;
+  }
+
+  const inspection = result.inspection as unknown as {
+    work_order_id: string;
+  } | null;
+  if (!inspection) throw new Error("INSPECTION_NOT_FOUND");
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from("recommendation")
+    .select("recommendation_id, inspection_result_id")
+    .eq("inspection_result_id", inspectionResultId)
+    .limit(1);
+
+  if (existingError) throw existingError;
+  if (
+    shouldSkipDuplicateRecommendation(
+      (existingRows ?? []).map((r) => r.inspection_result_id as string),
+      inspectionResultId
+    )
+  ) {
+    const existingId = existingRows![0].recommendation_id as string;
+    const { data: existing, error: loadError } = await supabase
+      .from("recommendation")
+      .select(COLUMNS)
+      .eq("recommendation_id", existingId)
+      .single();
+    if (loadError) throw loadError;
+    return existing as Recommendation;
+  }
+
+  return createRecommendation(inspection.work_order_id, {
+    description: `${result.item_name_snapshot} (${result.category_snapshot})`,
+    severity: severityFromInspectionStatus(status),
+    notes: (result.notes as string | null) ?? null,
+    inspection_result_id: inspectionResultId,
+  });
+}
+
 export async function createRecommendationFromInspectionResult(
   inspectionResultId: string,
   input: {
@@ -258,6 +327,18 @@ export async function createRecommendationFromInspectionResult(
     notes?: string | null;
   } = {}
 ): Promise<Recommendation> {
+  // Prefer idempotent ensure when no overrides; still allow description/severity overrides.
+  if (
+    input.description === undefined &&
+    input.severity === undefined &&
+    input.notes === undefined
+  ) {
+    const ensured = await ensureRecommendationForInspectionResult(
+      inspectionResultId
+    );
+    if (ensured) return ensured;
+  }
+
   const user = await requireUser();
   if (!canCreateRecommendation(user.role)) throw new Error("FORBIDDEN");
 
@@ -284,6 +365,19 @@ export async function createRecommendationFromInspectionResult(
     work_order_id: string;
   } | null;
   if (!inspection) throw new Error("INSPECTION_NOT_FOUND");
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from("recommendation")
+    .select("recommendation_id")
+    .eq("inspection_result_id", inspectionResultId)
+    .limit(1);
+  if (existingError) throw existingError;
+  if (existingRows && existingRows.length > 0) {
+    const ensured = await ensureRecommendationForInspectionResult(
+      inspectionResultId
+    );
+    if (ensured) return ensured;
+  }
 
   const defaultSeverity = severityFromInspectionStatus(
     result.status as InspectionResultStatus | null
