@@ -575,6 +575,10 @@ export async function pullJob(
 
   if (options.andStart) {
     await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+    if (isFloorTech(user.role)) {
+      const { startJobTime } = await import("@/lib/services/jobTimeClock");
+      await startJobTime(jobId);
+    }
   }
 }
 
@@ -713,6 +717,18 @@ export async function updateJobStatus(
 
   const { error } = await supabase.from("job").update(updates).eq("job_id", jobId);
   if (error) throw error;
+
+  if (nextStatus === "in_progress" && isFloorTech(user.role)) {
+    const { switchJobTime } = await import("@/lib/services/jobTimeClock");
+    await switchJobTime(jobId);
+  }
+  if (
+    (nextStatus === "completed" || nextStatus === "cancelled") &&
+    isFloorTech(user.role)
+  ) {
+    const { endOpenJobTime } = await import("@/lib/services/jobTimeClock");
+    await endOpenJobTime({ jobId }).catch(() => null);
+  }
 
   await addTimelineEvent(supabase, {
     work_order_id: job.work_order_id,

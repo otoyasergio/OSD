@@ -72,6 +72,11 @@ export default async function ReportsPage({
           value={report.avg_days_in_shop == null ? "—" : String(report.avg_days_in_shop)}
         />
         <StatCard label="Tech hours punched" value={String(report.tech_hours)} />
+        <StatCard label="Job hours (bay)" value={String(report.job_hours)} />
+        <StatCard
+          label="Efficiency (job ÷ attendance)"
+          value={report.efficiency_pct == null ? "—" : `${report.efficiency_pct}%`}
+        />
         <StatCard label="Parts waiting" value={String(report.parts_waiting)} />
       </div>
 

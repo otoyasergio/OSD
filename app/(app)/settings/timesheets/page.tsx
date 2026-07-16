@@ -40,8 +40,8 @@ export default async function TimesheetsPage({
           Timesheets
         </h1>
         <p className="mt-1 text-sm text-[var(--status-neutral)]">
-          Who is punched in, weekly hours, and corrections for missed punches. Technician
-          clock in/out stays on the Technician page.
+          Who is punched in, weekly paid hours (breaks deducted), overtime after 44h,
+          approvals, and corrections. Staff clock in/out on Time clock.
         </p>
       </div>
 
@@ -51,6 +51,7 @@ export default async function TimesheetsPage({
         entries={view.entries}
         summaries={view.summaries}
         staff={staff}
+        weeksByUser={view.weeksByUser}
         weekParam={weekParam}
       />
     </div>

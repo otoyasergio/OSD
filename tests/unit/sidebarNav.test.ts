@@ -124,19 +124,20 @@ describe("buildNavCategories", () => {
     }
   });
 
-  it("exposes Time clock under Staffing for floor techs", () => {
-    for (const role of ["technician", "head_tech"] as const) {
+  it("exposes Time clock under Staffing for all active staff roles", () => {
+    for (const role of [
+      "owner",
+      "manager",
+      "service_advisor",
+      "technician",
+      "head_tech",
+      "admin",
+    ] as const) {
       const staffing = buildNavCategories(role).find((c) => c.id === "staffing");
       expect(staffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
         expect.arrayContaining(["/technician", "/technician/clock"])
       );
     }
-    const owner = buildNavCategories("owner");
-    const ownerStaffing = owner.find((c) => c.id === "staffing");
-    const ownerHrefs = ownerStaffing?.subgroups
-      .flatMap((g) => g.links)
-      .map((l) => l.href);
-    expect(ownerHrefs).not.toContain("/technician/clock");
   });
 
   it("does not expose Password as a sidebar nav item for any role", () => {

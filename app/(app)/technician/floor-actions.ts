@@ -187,6 +187,37 @@ export async function installPartFloorAction(
   }
 }
 
+export async function pauseJobFloorAction(
+  _prev: FloorActionState,
+  formData: FormData
+): Promise<FloorActionState> {
+  try {
+    const workOrderId = String(formData.get("work_order_id") ?? "");
+    const { pauseJobTime } = await import("@/lib/services/jobTimeClock");
+    await pauseJobTime();
+    revalidateFloor(workOrderId);
+    return { success: "Job timer paused." };
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+}
+
+export async function resumeJobFloorAction(
+  _prev: FloorActionState,
+  formData: FormData
+): Promise<FloorActionState> {
+  try {
+    const jobId = String(formData.get("job_id") ?? "");
+    const workOrderId = String(formData.get("work_order_id") ?? "");
+    const { startJobTime } = await import("@/lib/services/jobTimeClock");
+    await startJobTime(jobId);
+    revalidateFloor(workOrderId);
+    return { success: "Job timer resumed." };
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+}
+
 export async function passPeerQcAction(
   _prev: FloorActionState,
   formData: FormData

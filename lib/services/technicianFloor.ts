@@ -87,6 +87,8 @@ export type FloorOsSurface = {
   can_start: boolean;
   can_complete: boolean;
   can_pull: boolean;
+  /** True when this user has an open job_time_entry on the selected job. */
+  job_timer_running: boolean;
   is_qc: boolean;
   qc_assignee_is_me: boolean;
   is_safety: boolean;
@@ -580,10 +582,21 @@ export async function getTechnicianFloorOs(input: {
         hasProofException: (exceptions ?? []).length > 0,
         inspectionComplete,
       });
+      const { sumJobTimeMs, getOpenJobTimeEntry } =
+        await import("@/lib/services/jobTimeClock");
+      const { data: jobTimeRows } = await supabase
+        .from("job_time_entry")
+        .select("started_at, ended_at, user_id, job_id")
+        .eq("job_id", job.job_id);
+      const segmentMs = sumJobTimeMs(jobTimeRows ?? []);
+      const openJobTimer = await getOpenJobTimeEntry(user.user_id).catch(() => null);
       const labour = formatLabourComparison(
         job.estimated_labour_snapshot as number | null,
         job.started_at,
-        job.completed_at
+        job.completed_at,
+        {
+          actualMsFromSegments: (jobTimeRows ?? []).length > 0 ? segmentMs : null,
+        }
       );
       const returnTo = encodeURIComponent(
         `/technician?job=${job.job_id}&wo=${wo.work_order_id}`
@@ -645,6 +658,9 @@ export async function getTechnicianFloorOs(input: {
         can_complete:
           job.assigned_technician_id === user.user_id && job.status === "in_progress",
         can_pull: false,
+        job_timer_running: Boolean(
+          openJobTimer && openJobTimer.job_id === job.job_id && !openJobTimer.ended_at
+        ),
         is_qc: false,
         qc_assignee_is_me: false,
         is_safety: wo.status === "safety_check",
@@ -761,6 +777,7 @@ export async function getTechnicianFloorOs(input: {
         can_start: false,
         can_complete: false,
         can_pull: false,
+        job_timer_running: false,
         is_qc: wo.status === "quality_check",
         qc_assignee_is_me: wo.quality_check_assigned_to === user.user_id,
         is_safety: isSafety,

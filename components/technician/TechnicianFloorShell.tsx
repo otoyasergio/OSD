@@ -15,7 +15,9 @@ import {
   flagForAdminAction,
   installPartFloorAction,
   passPeerQcAction,
+  pauseJobFloorAction,
   pullJobAction,
+  resumeJobFloorAction,
   startJobFloorAction,
   toggleChecklistAction,
   uploadJobProofAction,
@@ -525,6 +527,14 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
     completeJobFloorAction,
     null
   );
+  const [pauseState, pauseAction, pausePending] = useActionState(
+    pauseJobFloorAction,
+    null
+  );
+  const [resumeState, resumeAction, resumePending] = useActionState(
+    resumeJobFloorAction,
+    null
+  );
   const [pullState, pullAction, pullPending] = useActionState(pullJobAction, null);
   const [flagState, flagAction, flagPending] = useActionState(flagForAdminAction, null);
   const [passState, passAction, passPending] = useActionState(passPeerQcAction, null);
@@ -671,6 +681,27 @@ function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorS
       </form>
     );
   } else if (stage === "work" && workReady) {
+    secondary =
+      surface.job_id && surface.can_complete ? (
+        surface.job_timer_running ? (
+          <form action={pauseAction}>
+            <input type="hidden" name="work_order_id" value={surface.work_order_id} />
+            <button className="btn btn-secondary floor-dock-btn" disabled={pausePending}>
+              {pausePending ? "Pausing…" : "Pause timer"}
+            </button>
+            <ActionMessage state={pauseState} />
+          </form>
+        ) : (
+          <form action={resumeAction}>
+            <input type="hidden" name="job_id" value={surface.job_id} />
+            <input type="hidden" name="work_order_id" value={surface.work_order_id} />
+            <button className="btn btn-secondary floor-dock-btn" disabled={resumePending}>
+              {resumePending ? "Resuming…" : "Resume timer"}
+            </button>
+            <ActionMessage state={resumeState} />
+          </form>
+        )
+      ) : null;
     primary = (
       <Link href={stageHref(surface, "proof")} className="btn btn-primary floor-dock-btn">
         Continue to Proof →

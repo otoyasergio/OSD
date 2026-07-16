@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  approveTimesheetWeek,
   createTimeClockCorrection,
   deleteTimeClockCorrection,
+  rejectTimesheetWeek,
+  reopenTimesheetWeek,
   updateTimeClockCorrection,
 } from "@/lib/services/timeClock";
 import { toFormErrorMessage } from "@/lib/services/errors";
@@ -13,6 +16,7 @@ export type TimesheetFormState = { error: string | null; ok?: boolean };
 function revalidateTimesheets() {
   revalidatePath("/settings/timesheets");
   revalidatePath("/technician");
+  revalidatePath("/technician/clock");
 }
 
 export async function createPunchAction(
@@ -56,12 +60,63 @@ export async function updatePunchAction(
 export async function deletePunchAction(
   entryId: string,
   _prev: TimesheetFormState,
-  _formData: FormData // required by useActionState bind signature
+  _formData: FormData
 ): Promise<TimesheetFormState> {
   void _prev;
   void _formData;
   try {
     await deleteTimeClockCorrection(entryId);
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+  revalidateTimesheets();
+  return { error: null, ok: true };
+}
+
+export async function approveTimesheetAction(
+  _prev: TimesheetFormState,
+  formData: FormData
+): Promise<TimesheetFormState> {
+  try {
+    await approveTimesheetWeek({
+      user_id: String(formData.get("user_id") ?? ""),
+      week_start_date: String(formData.get("week_start_date") ?? ""),
+      note: String(formData.get("note") ?? ""),
+    });
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+  revalidateTimesheets();
+  return { error: null, ok: true };
+}
+
+export async function rejectTimesheetAction(
+  _prev: TimesheetFormState,
+  formData: FormData
+): Promise<TimesheetFormState> {
+  try {
+    await rejectTimesheetWeek({
+      user_id: String(formData.get("user_id") ?? ""),
+      week_start_date: String(formData.get("week_start_date") ?? ""),
+      note: String(formData.get("note") ?? ""),
+    });
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+  revalidateTimesheets();
+  return { error: null, ok: true };
+}
+
+export async function reopenTimesheetAction(
+  _prev: TimesheetFormState,
+  formData: FormData
+): Promise<TimesheetFormState> {
+  try {
+    await reopenTimesheetWeek({
+      user_id: String(formData.get("user_id") ?? ""),
+      week_start_date: String(formData.get("week_start_date") ?? ""),
+      note: String(formData.get("note") ?? ""),
+    });
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

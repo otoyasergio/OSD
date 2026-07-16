@@ -51,6 +51,7 @@ function base(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface {
     can_start: false,
     can_complete: true,
     can_pull: false,
+    job_timer_running: false,
     is_qc: false,
     qc_assignee_is_me: false,
     is_safety: false,

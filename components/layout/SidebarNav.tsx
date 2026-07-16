@@ -132,14 +132,12 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
 
   const staffingLinks: NavLink[] = [
     { href: "/technician", label: "Technician", icon: iconFor("/technician") },
-  ];
-  if (isFloorTech(role)) {
-    staffingLinks.push({
+    {
       href: "/technician/clock",
       label: "Time clock",
       icon: iconFor("/technician/clock"),
-    });
-  }
+    },
+  ];
   if (canAssignTechnician(role)) {
     staffingLinks.push({
       href: "/technician/docket",
