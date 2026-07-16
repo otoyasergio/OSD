@@ -4,6 +4,21 @@ import {
   type ShopWeekRange,
 } from "@/lib/datetime/format";
 
+/** Ontario ESA default weekly overtime threshold (hours). */
+export const ONTARIO_OT_THRESHOLD_HOURS = 44;
+export const ONTARIO_OT_THRESHOLD_MS = ONTARIO_OT_THRESHOLD_HOURS * 60 * 60 * 1000;
+
+/** Soft ESA meal-break nudge after this many consecutive paid hours. */
+export const MEAL_BREAK_NUDGE_MS = 5 * 60 * 60 * 1000;
+
+export type TimeClockBreakForSummary = {
+  break_id?: string;
+  entry_id: string;
+  break_type?: string;
+  break_start_at: string;
+  break_end_at: string | null;
+};
+
 export function formatElapsedMs(startedAt: string, now = Date.now()): string {
   const start = new Date(startedAt).getTime();
   if (Number.isNaN(start)) return "0:00";
@@ -27,6 +42,71 @@ export function punchDurationMs(
   const end = clockOutAt ? new Date(clockOutAt).getTime() : nowMs;
   if (Number.isNaN(end) || end < start) return 0;
   return end - start;
+}
+
+/** Unpaid break duration within a punch (open breaks use nowMs). */
+export function breakDurationMs(
+  breakStartAt: string,
+  breakEndAt: string | null,
+  nowMs = Date.now()
+): number {
+  return punchDurationMs(breakStartAt, breakEndAt, nowMs);
+}
+
+export function unpaidBreakMsForEntry(
+  breaks: TimeClockBreakForSummary[],
+  entryId: string,
+  nowMs = Date.now()
+): number {
+  let total = 0;
+  for (const b of breaks) {
+    if (b.entry_id !== entryId) continue;
+    total += breakDurationMs(b.break_start_at, b.break_end_at, nowMs);
+  }
+  return total;
+}
+
+/** Paid ms = gross punch span minus unpaid breaks. */
+export function paidPunchDurationMs(
+  clockInAt: string,
+  clockOutAt: string | null,
+  breaks: TimeClockBreakForSummary[],
+  entryId: string,
+  nowMs = Date.now()
+): number {
+  const gross = punchDurationMs(clockInAt, clockOutAt, nowMs);
+  const unpaid = unpaidBreakMsForEntry(breaks, entryId, nowMs);
+  return Math.max(0, gross - unpaid);
+}
+
+export function splitRegularAndOtMs(
+  paidMs: number,
+  otThresholdMs = ONTARIO_OT_THRESHOLD_MS
+): { regular_ms: number; ot_ms: number } {
+  const paid = Math.max(0, paidMs);
+  const regular_ms = Math.min(paid, otThresholdMs);
+  const ot_ms = Math.max(0, paid - otThresholdMs);
+  return { regular_ms, ot_ms };
+}
+
+/**
+ * True when an open punch has been on the clock ≥ 5h without a completed meal break
+ * (and is not currently on an open break).
+ */
+export function shouldNudgeMealBreak(
+  clockInAt: string,
+  breaks: TimeClockBreakForSummary[],
+  entryId: string,
+  nowMs = Date.now()
+): boolean {
+  const entryBreaks = breaks.filter((b) => b.entry_id === entryId);
+  if (entryBreaks.some((b) => !b.break_end_at)) return false;
+  const hasCompletedMeal = entryBreaks.some(
+    (b) => (b.break_type ?? "meal") === "meal" && b.break_end_at
+  );
+  if (hasCompletedMeal) return false;
+  const elapsed = punchDurationMs(clockInAt, null, nowMs);
+  return elapsed >= MEAL_BREAK_NUDGE_MS;
 }
 
 export function formatHoursDecimal(ms: number, digits = 2): string {
@@ -80,6 +160,9 @@ export type PunchForSummary = {
   clock_in_at: string;
   clock_out_at: string | null;
   notes?: string | null;
+  voided_at?: string | null;
+  breaks?: TimeClockBreakForSummary[];
+  week_approval?: string | null;
 };
 
 export type UserDayHours = {
@@ -92,14 +175,39 @@ export type UserWeekSummary = {
   user_id: string;
   display_name: string;
   total_ms: number;
+  regular_ms: number;
+  ot_ms: number;
+  unpaid_break_ms: number;
   daily: UserDayHours[];
   open_entry_ids: string[];
+  week_approval: string | null;
 };
+
+/** Allocate paid ms across shop days (gross day slices scaled by paid/gross ratio). */
+export function allocatePaidMsByShopDay(
+  clockInAt: string,
+  clockOutAt: string | null,
+  breaks: TimeClockBreakForSummary[],
+  entryId: string,
+  nowMs = Date.now()
+): Map<string, number> {
+  const grossByDay = allocatePunchMsByShopDay(clockInAt, clockOutAt, nowMs);
+  const gross = punchDurationMs(clockInAt, clockOutAt, nowMs);
+  if (gross <= 0) return new Map();
+  const paid = paidPunchDurationMs(clockInAt, clockOutAt, breaks, entryId, nowMs);
+  const ratio = paid / gross;
+  const result = new Map<string, number>();
+  for (const [dateKey, ms] of grossByDay) {
+    result.set(dateKey, ms * ratio);
+  }
+  return result;
+}
 
 export function summarizeWeek(
   entries: PunchForSummary[],
   range: ShopWeekRange,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  otThresholdMs = ONTARIO_OT_THRESHOLD_MS
 ): UserWeekSummary[] {
   const byUser = new Map<
     string,
@@ -109,12 +217,16 @@ export function summarizeWeek(
       dayMs: Map<string, number>;
       openDays: Set<string>;
       open_entry_ids: string[];
+      unpaid_break_ms: number;
+      week_approval: string | null;
     }
   >();
 
   const dateKeySet = new Set(range.dateKeys);
 
   for (const entry of entries) {
+    if (entry.voided_at) continue;
+
     let bucket = byUser.get(entry.user_id);
     if (!bucket) {
       bucket = {
@@ -123,19 +235,27 @@ export function summarizeWeek(
         dayMs: new Map(),
         openDays: new Set(),
         open_entry_ids: [],
+        unpaid_break_ms: 0,
+        week_approval: entry.week_approval ?? null,
       };
       byUser.set(entry.user_id, bucket);
     }
 
     if (entry.first_name) bucket.first_name = entry.first_name.trim();
     if (entry.last_name) bucket.last_name = entry.last_name.trim();
+    if (entry.week_approval) bucket.week_approval = entry.week_approval;
+
+    const breaks = entry.breaks ?? [];
+    bucket.unpaid_break_ms += unpaidBreakMsForEntry(breaks, entry.entry_id, nowMs);
 
     const isOpen = !entry.clock_out_at;
     if (isOpen) bucket.open_entry_ids.push(entry.entry_id);
 
-    const allocated = allocatePunchMsByShopDay(
+    const allocated = allocatePaidMsByShopDay(
       entry.clock_in_at,
       entry.clock_out_at,
+      breaks,
+      entry.entry_id,
       nowMs
     );
     for (const [dateKey, ms] of allocated) {
@@ -153,14 +273,19 @@ export function summarizeWeek(
       open: bucket.openDays.has(dateKey),
     }));
     const total_ms = daily.reduce((sum, day) => sum + day.ms, 0);
+    const { regular_ms, ot_ms } = splitRegularAndOtMs(total_ms, otThresholdMs);
     const display_name =
       [bucket.first_name, bucket.last_name].filter(Boolean).join(" ") || user_id;
     summaries.push({
       user_id,
       display_name,
       total_ms,
+      regular_ms,
+      ot_ms,
+      unpaid_break_ms: bucket.unpaid_break_ms,
       daily,
       open_entry_ids: bucket.open_entry_ids,
+      week_approval: bucket.week_approval,
     });
   }
 
@@ -177,27 +302,32 @@ function csvEscape(value: string): string {
 
 export function buildTimesheetCsv(
   entries: PunchForSummary[],
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  summaries?: UserWeekSummary[]
 ): string {
-  const header = "employee,user_id,date,clock_in,clock_out,hours,notes,status";
+  const header =
+    "employee,user_id,date,clock_in,clock_out,gross_hours,unpaid_break_minutes,paid_hours,notes,status,week_approval";
   const lines = [header];
 
-  const sorted = [...entries].sort((a, b) => {
-    const nameA = `${a.last_name ?? ""} ${a.first_name ?? ""}`;
-    const nameB = `${b.last_name ?? ""} ${b.first_name ?? ""}`;
-    const byName = nameA.localeCompare(nameB);
-    if (byName !== 0) return byName;
-    return a.clock_in_at.localeCompare(b.clock_in_at);
-  });
+  const sorted = [...entries]
+    .filter((e) => !e.voided_at)
+    .sort((a, b) => {
+      const nameA = `${a.last_name ?? ""} ${a.first_name ?? ""}`;
+      const nameB = `${b.last_name ?? ""} ${b.first_name ?? ""}`;
+      const byName = nameA.localeCompare(nameB);
+      if (byName !== 0) return byName;
+      return a.clock_in_at.localeCompare(b.clock_in_at);
+    });
 
   for (const entry of sorted) {
     const display =
       [entry.first_name?.trim(), entry.last_name?.trim()].filter(Boolean).join(" ") ||
       entry.user_id;
     const date = shopDateKey(entry.clock_in_at);
-    const hours = formatHoursDecimal(
-      punchDurationMs(entry.clock_in_at, entry.clock_out_at, nowMs)
-    );
+    const breaks = entry.breaks ?? [];
+    const grossMs = punchDurationMs(entry.clock_in_at, entry.clock_out_at, nowMs);
+    const unpaidMs = unpaidBreakMsForEntry(breaks, entry.entry_id, nowMs);
+    const paidMs = Math.max(0, grossMs - unpaidMs);
     const status = entry.clock_out_at ? "closed" : "open";
     lines.push(
       [
@@ -206,11 +336,36 @@ export function buildTimesheetCsv(
         csvEscape(date),
         csvEscape(entry.clock_in_at),
         csvEscape(entry.clock_out_at ?? ""),
-        hours,
+        formatHoursDecimal(grossMs),
+        formatHoursDecimal(unpaidMs / 60_000, 0) === "0"
+          ? String(Math.round(unpaidMs / 60_000))
+          : String(Math.round(unpaidMs / 60_000)),
+        formatHoursDecimal(paidMs),
         csvEscape(entry.notes ?? ""),
         status,
+        csvEscape(entry.week_approval ?? "open"),
       ].join(",")
     );
+  }
+
+  if (summaries && summaries.length > 0) {
+    lines.push("");
+    lines.push(
+      "employee,user_id,paid_hours,regular_hours,ot_hours,unpaid_break_minutes,week_approval"
+    );
+    for (const row of summaries) {
+      lines.push(
+        [
+          csvEscape(row.display_name),
+          csvEscape(row.user_id),
+          formatHoursDecimal(row.total_ms),
+          formatHoursDecimal(row.regular_ms),
+          formatHoursDecimal(row.ot_ms),
+          String(Math.round(row.unpaid_break_ms / 60_000)),
+          csvEscape(row.week_approval ?? "open"),
+        ].join(",")
+      );
+    }
   }
 
   return `${lines.join("\n")}\n`;
