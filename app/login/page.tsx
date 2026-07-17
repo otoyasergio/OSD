@@ -43,7 +43,13 @@ export default function LoginPage() {
       router.replace(nextPath);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to sign in");
+      const message = err instanceof Error ? err.message : "Unable to sign in";
+      // Next.js surfaces middleware redirects of Server Actions as this string.
+      setError(
+        /unexpected response was received from the server/i.test(message)
+          ? "Sign-in was interrupted. Refresh the page and try again."
+          : message
+      );
     } finally {
       setPending(false);
     }
