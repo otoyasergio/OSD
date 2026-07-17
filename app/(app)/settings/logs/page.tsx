@@ -29,7 +29,7 @@ export default async function OwnerLogsPage({
   if (!canViewAuditLog(user.role)) redirect("/settings");
 
   const params = await searchParams;
-  const tab = params.tab === "audit" ? "audit" : "ux";
+  const tab = params.tab === "ux" ? "ux" : "audit";
   const filters = {
     from: params.from?.trim() || "",
     to: params.to?.trim() || "",
@@ -78,22 +78,12 @@ export default async function OwnerLogsPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Logs</h1>
         <p className="mt-1 text-sm text-[var(--status-neutral)]">
-          Owner-only feed of UX friction and the company audit trail — use it to spot what
-          is slowing the shop down.
+          Owner-only record of every company action, plus UX friction signals when staff
+          hit a wall.
         </p>
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-[var(--border)] pb-2">
-        <Link
-          href="/settings/logs?tab=ux"
-          className={
-            tab === "ux"
-              ? "rounded-md bg-[var(--chrome)] px-3 py-1.5 text-sm font-semibold text-white"
-              : "rounded-md px-3 py-1.5 text-sm font-medium text-foreground hover:bg-[var(--surface-muted)]"
-          }
-        >
-          UX signals
-        </Link>
         <Link
           href="/settings/logs?tab=audit"
           className={
@@ -104,22 +94,19 @@ export default async function OwnerLogsPage({
         >
           Audit
         </Link>
+        <Link
+          href="/settings/logs?tab=ux"
+          className={
+            tab === "ux"
+              ? "rounded-md bg-[var(--chrome)] px-3 py-1.5 text-sm font-semibold text-white"
+              : "rounded-md px-3 py-1.5 text-sm font-medium text-foreground hover:bg-[var(--surface-muted)]"
+          }
+        >
+          UX signals
+        </Link>
       </div>
 
-      {tab === "ux" ? (
-        <UxEventsPanel
-          events={uxEvents}
-          topCodes={topCodes}
-          actors={options.actors}
-          filters={{
-            from: filters.from,
-            to: filters.to,
-            actor_user_id: filters.actor_user_id,
-            event_type: filters.event_type,
-            code: filters.code,
-          }}
-        />
-      ) : (
+      {tab === "audit" ? (
         <AuditLogTable
           entries={auditEntries}
           actors={options.actors}
@@ -134,6 +121,19 @@ export default async function OwnerLogsPage({
             action: filters.action,
           }}
           formBasePath="/settings/logs"
+        />
+      ) : (
+        <UxEventsPanel
+          events={uxEvents}
+          topCodes={topCodes}
+          actors={options.actors}
+          filters={{
+            from: filters.from,
+            to: filters.to,
+            actor_user_id: filters.actor_user_id,
+            event_type: filters.event_type,
+            code: filters.code,
+          }}
         />
       )}
     </div>
