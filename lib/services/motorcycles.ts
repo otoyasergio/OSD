@@ -15,10 +15,8 @@ import { escapeSearchTerm } from "@/lib/services/customers";
 import { normalizeVin } from "@/lib/vin";
 import type { MileageUnit } from "@/lib/mileage/format";
 import {
-  isServiceInfoEmpty,
-  mapFitmentToServiceInfo,
+  buildServiceInfoFromFitmentRows,
   mergeServiceInfoFill,
-  pickBestFitmentVehicle,
   type FitmentPayload,
 } from "@/lib/fitment/serviceInfoFromFitment";
 
@@ -336,11 +334,15 @@ export async function getServiceInformation(
   const supabase = await createClient();
 
   let info = await loadServiceInformation(supabase, motorcycleId);
-  if (info && isServiceInfoEmpty(info)) {
+  if (info) {
     const motorcycle = await getMotorcycleById(motorcycleId);
     if (motorcycle) {
-      await fillServiceInformationFromFitment(supabase, motorcycle, info);
-      info = await loadServiceInformation(supabase, motorcycleId);
+      const filled = await fillServiceInformationFromFitment(supabase, motorcycle, info, {
+        refreshFitmentValues: true,
+      });
+      if (filled > 0) {
+        info = await loadServiceInformation(supabase, motorcycleId);
+      }
     }
   }
   return info;
@@ -363,7 +365,8 @@ async function loadServiceInformation(
 async function fillServiceInformationFromFitment(
   supabase: DbClient,
   motorcycle: Pick<Motorcycle, "motorcycle_id" | "year" | "make" | "model">,
-  existing: ServiceInformation
+  existing: ServiceInformation,
+  options: { refreshFitmentValues?: boolean } = {}
 ): Promise<number> {
   const { data, error } = await supabase
     .from("fitment_vehicle")
@@ -381,16 +384,15 @@ async function fillServiceInformationFromFitment(
     part_data: (row.part_data as Record<string, string>) ?? {},
   })) satisfies FitmentPayload[];
 
-  const match = pickBestFitmentVehicle(
+  const mapped = buildServiceInfoFromFitmentRows(
     rows,
     motorcycle.year,
     motorcycle.make,
     motorcycle.model
   );
-  if (!match) return 0;
+  if (!mapped) return 0;
 
-  const mapped = mapFitmentToServiceInfo(match);
-  const { next, filledCount } = mergeServiceInfoFill(existing, mapped);
+  const { next, filledCount } = mergeServiceInfoFill(existing, mapped, options);
   if (filledCount === 0) return 0;
 
   const { error: updateError } = await supabase
@@ -516,6 +518,19 @@ export async function updateMotorcycle(
 
   if (error) throw error;
   const motorcycle = data as Motorcycle;
+
+  const ymmChanged =
+    previous.year !== motorcycle.year ||
+    previous.make !== motorcycle.make ||
+    previous.model !== motorcycle.model;
+  if (ymmChanged) {
+    const info = await loadServiceInformation(supabase, motorcycleId);
+    if (info) {
+      await fillServiceInformationFromFitment(supabase, motorcycle, info, {
+        refreshFitmentValues: true,
+      });
+    }
+  }
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,
