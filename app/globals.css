@@ -3852,6 +3852,13 @@ label.photo-source-sheet-action {
   padding: 1.5rem;
 }
 
+.floor-packet-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
 .floor-surface-hero {
   margin-bottom: 0.875rem;
 }
@@ -5049,4 +5056,76 @@ label.photo-source-sheet-action {
   color: var(--status-danger);
   font-size: 0.875rem;
   font-weight: 600;
+}
+
+/* Job packet panel (in-floor context overlay on work surface) */
+.floor-packet {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.floor-packet-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1rem 0.5rem;
+}
+
+.floor-packet-header {
+  margin-bottom: 1rem;
+}
+
+.floor-packet-section {
+  margin-bottom: 1.25rem;
+  scroll-margin-top: 0.75rem;
+}
+
+.floor-packet-photo-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.floor-packet-photo {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.floor-packet-photo-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--surface-muted, #f3f4f6);
+}
+
+.floor-packet-photo-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  background: var(--surface-muted, #f3f4f6);
+  font-size: 0.8125rem;
+  color: var(--status-neutral);
+}
+
+.floor-packet-photo-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem 0.625rem 0.625rem;
+}
+
+.floor-packet-footer {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }

@@ -110,6 +110,7 @@ import {
   uploadPaperAgreementCopyAction,
 } from "@/app/(app)/work_orders/contract-actions";
 import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
+import { floorTechWorkOrderRedirect } from "@/lib/technician/assignmentHref";
 
 export const dynamic = "force-dynamic";
 
@@ -144,6 +145,10 @@ export default async function WorkOrderDetailPage({
     followUpParam === "signature" || followUpParam === "paper_copy"
       ? followUpParam
       : undefined;
+
+  if (isFloorTech(user.role)) {
+    redirect(floorTechWorkOrderRedirect(work_order_id, tabParam));
+  }
 
   const detail = await getWorkOrderDetail(work_order_id).catch((error: unknown) => {
     if (error instanceof Error && error.message === "FORBIDDEN") {

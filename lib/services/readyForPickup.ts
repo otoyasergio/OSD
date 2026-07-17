@@ -118,7 +118,10 @@ async function listWaitingStageBikes(input: {
  * Primary surface: Control Center (below tech columns). Also shown on the
  * tech floor for shop awareness (no customer PII).
  */
-export async function listReadyForPickup(): Promise<WaitingStageBike[]> {
+export async function listReadyForPickup(input?: {
+  /** Defaults to work-order overview (Control Center / office). */
+  hrefFor?: (workOrderId: string) => string;
+}): Promise<WaitingStageBike[]> {
   return listWaitingStageBikes({
     status: "ready_for_pickup",
     orderColumn: "ready_for_pickup_at",
@@ -126,6 +129,7 @@ export async function listReadyForPickup(): Promise<WaitingStageBike[]> {
       at: row.ready_for_pickup_at,
       inferredFallback: row.updated_at,
     }),
+    hrefFor: input?.hrefFor,
   });
 }
 
