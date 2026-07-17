@@ -25,8 +25,9 @@ export function FormError({ message, source, code, workOrderId }: Props) {
 
   if (!message) return null;
 
-  const submitted = submittedFor === message;
-  const noteUiOpen = noteOpen && noteFor === message;
+  const errorMessage = message;
+  const submitted = submittedFor === errorMessage;
+  const noteUiOpen = noteOpen && noteFor === errorMessage;
 
   function handleSubmit() {
     setSubmitError(null);
@@ -38,9 +39,9 @@ export function FormError({ message, source, code, workOrderId }: Props) {
 
     startTransition(async () => {
       const result = await submitUxLogAction({
-        message,
+        message: errorMessage,
         source: path,
-        note: noteFor === message ? note : "",
+        note: noteFor === errorMessage ? note : "",
         code,
         workOrderId,
       });
@@ -48,14 +49,14 @@ export function FormError({ message, source, code, workOrderId }: Props) {
         setSubmitError(result.error);
         return;
       }
-      setSubmittedFor(message);
+      setSubmittedFor(errorMessage);
       setNoteOpen(false);
     });
   }
 
   return (
     <div role="alert" className="alert-error flex flex-col gap-2">
-      <p>{message}</p>
+      <p>{errorMessage}</p>
       {submitted ? (
         <p className="text-sm font-medium text-foreground">
           Log submitted — owners can review it under Settings → Logs.
@@ -83,7 +84,7 @@ export function FormError({ message, source, code, workOrderId }: Props) {
                 type="button"
                 className="btn btn-secondary min-h-10 text-sm"
                 onClick={() => {
-                  setNoteFor(message);
+                  setNoteFor(errorMessage);
                   setNoteOpen(true);
                   setNote("");
                   setSubmitError(null);
