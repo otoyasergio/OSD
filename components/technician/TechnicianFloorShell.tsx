@@ -28,12 +28,43 @@ import {
   passSafetyCheckAction,
   type SafetyFormState,
 } from "@/app/(app)/work_orders/safety-actions";
+import {
+  techJobPacketHref,
+  type JobPacketSection,
+} from "@/lib/technician/assignmentHref";
+import type { JobPacket } from "@/lib/services/jobPacket";
+import type { IntakePhoto } from "@/lib/services/photos";
+import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
 import { deriveDefaultStage, type FloorStage } from "@/lib/technician/floorStage";
+
+function closePacketHref(
+  workOrderId: string,
+  jobId: string | null | undefined,
+  stage: FloorStage
+): string {
+  const params = new URLSearchParams();
+  params.set("wo", workOrderId);
+  if (jobId) params.set("job", jobId);
+  params.set("stage", stage);
+  return `/technician?${params.toString()}`;
+}
+
+function JobPacketErrorState({ backHref }: { backHref: string }) {
+  return (
+    <div className="floor-surface-empty floor-packet-error">
+      <h2 className="floor-section-title">Couldn&apos;t open job packet</h2>
+      <p className="floor-muted">
+        This work order may be unavailable or you may not have access.
+      </p>
+      <Link href={backHref} className="btn btn-secondary floor-tap floor-tap--wide">
+        Back to floor
+      </Link>
+    </div>
+  );
+}
 
 export type { FloorStage };
 export { deriveDefaultStage };
-
-const FLOOR_REFRESH_MS = 60_000;
 
 function jobHref(workOrderId: string, jobId: string): string {
   const params = new URLSearchParams();
@@ -395,7 +426,7 @@ function ProofStage({ surface }: { surface: FloorOsSurface }) {
   );
 }
 
-function DoneStage({ surface }: { surface: FloorOsSurface }) {
+function DoneStage({ surface, stage }: { surface: FloorOsSurface; stage: FloorStage }) {
   return (
     <div className="floor-stage-body">
       <h3 className="floor-section-title">Ready to finish?</h3>
@@ -440,7 +471,11 @@ function DoneStage({ surface }: { surface: FloorOsSurface }) {
         <p className="floor-muted">Use the dock below to start or complete this job.</p>
       )}
       <Link
-        href={`${surface.overview_href}?tab=notes`}
+        href={techJobPacketHref(surface.work_order_id, {
+          jobId: surface.job_id ?? undefined,
+          section: "notes",
+          stage,
+        })}
         className="btn btn-secondary floor-tap floor-tap--wide"
       >
         Open notes
@@ -449,7 +484,7 @@ function DoneStage({ surface }: { surface: FloorOsSurface }) {
   );
 }
 
-function QcStage({ surface }: { surface: FloorOsSurface }) {
+function QcStage({ surface, stage }: { surface: FloorOsSurface; stage: FloorStage }) {
   if (!surface.is_qc) {
     return <p className="floor-muted">No peer QC on this work order yet.</p>;
   }
@@ -484,8 +519,15 @@ function QcStage({ surface }: { surface: FloorOsSurface }) {
         </li>
       </ul>
       <p className="floor-muted">
-        <Link href={surface.overview_href}>Open work order overview</Link> for full
-        detail. Pass or Fail from the dock below.
+        <Link
+          href={techJobPacketHref(surface.work_order_id, {
+            jobId: surface.job_id ?? undefined,
+            stage,
+          })}
+        >
+          Open job packet
+        </Link>{" "}
+        for notes, photos, and sibling jobs. Pass or Fail from the dock below.
       </p>
     </div>
   );
@@ -760,11 +802,26 @@ export function TechnicianFloorShell({
   stage: stageProp,
   docketItems = [],
   readyForPickup = [],
+  panel = null,
+  packet = null,
+  packetSection = null,
+  packetPhotos = [],
+  packetWorkOrderId = null,
+  packetJobId = null,
 }: {
   floor: TechnicianFloorOs;
   stage?: FloorStage | null;
   docketItems?: DocketItem[];
   readyForPickup?: ReadyForPickupItem[];
+  /** Job packet panel routing. */
+  panel?: "packet" | null;
+  packet?: JobPacket | null;
+  packetSection?: JobPacketSection | null;
+  /** Intake/proof photos — loaded only when packetSection=photos. */
+  packetPhotos?: IntakePhoto[];
+  /** URL `wo` / `job` when opening the packet panel (for error back link). */
+  packetWorkOrderId?: string | null;
+  packetJobId?: string | null;
 }) {
   const router = useRouter();
   const routerRef = useRef(router);
@@ -774,19 +831,14 @@ export function TechnicianFloorShell({
     routerRef.current = router;
   }, [router]);
 
-  // Stable empty deps — depending on `router` remounted intervals and stacked refreshes.
   useEffect(() => {
-    let lastRefreshAt = 0;
-    const tick = () => {
-      if (document.visibilityState === "hidden") return;
-      const now = Date.now();
-      // Guard against leaked duplicate intervals from HMR / prior mounts.
-      if (now - lastRefreshAt < FLOOR_REFRESH_MS - 5_000) return;
-      lastRefreshAt = now;
-      routerRef.current.refresh();
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        routerRef.current.refresh();
+      }
     };
-    const id = window.setInterval(tick, FLOOR_REFRESH_MS);
-    return () => window.clearInterval(id);
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   const stage = useMemo(() => {
@@ -809,6 +861,20 @@ export function TechnicianFloorShell({
                   (item.kind === "now" || item.kind === "assigned")
               )?.key ?? null)
             : null;
+
+  const packetErrorBackHref = useMemo(() => {
+    const workOrderId = packetWorkOrderId ?? selected?.work_order_id ?? null;
+    if (!workOrderId) return "/technician";
+    const jobId = packetJobId ?? selected?.job_id ?? null;
+    return closePacketHref(workOrderId, jobId, stageProp ?? stage);
+  }, [
+    packetWorkOrderId,
+    packetJobId,
+    selected?.work_order_id,
+    selected?.job_id,
+    stageProp,
+    stage,
+  ]);
 
   return (
     <div className="floor-shell">
@@ -843,7 +909,22 @@ export function TechnicianFloorShell({
         </aside>
 
         <section className="floor-surface">
-          {!selected ? (
+          {panel === "packet" && packet ? (
+            <JobPacketPanel
+              packet={packet}
+              section={packetSection}
+              closeHref={closePacketHref(
+                packet.work_order_id,
+                selected?.job_id ?? null,
+                stageProp ?? stage
+              )}
+              photos={packetPhotos}
+              selectedJobId={selected?.job_id ?? null}
+              stage={stageProp ?? stage}
+            />
+          ) : panel === "packet" && !packet ? (
+            <JobPacketErrorState backHref={packetErrorBackHref} />
+          ) : !selected ? (
             <p className="floor-muted floor-surface-empty">
               Select a motorcycle from the docket to begin.
             </p>
@@ -875,8 +956,14 @@ export function TechnicianFloorShell({
                           </li>
                         ))}
                       </ul>
-                      <Link href={selected.overview_href} className="floor-muted">
-                        View on overview →
+                      <Link
+                        href={techJobPacketHref(selected.work_order_id, {
+                          jobId: selected.job_id ?? undefined,
+                          stage,
+                        })}
+                        className="floor-muted"
+                      >
+                        View in job packet →
                       </Link>
                     </div>
                   ) : null}
@@ -889,8 +976,8 @@ export function TechnicianFloorShell({
                 {stage === "inspect" ? <InspectStage surface={selected} /> : null}
                 {stage === "work" ? <WorkStage surface={selected} /> : null}
                 {stage === "proof" ? <ProofStage surface={selected} /> : null}
-                {stage === "done" ? <DoneStage surface={selected} /> : null}
-                {stage === "qc" ? <QcStage surface={selected} /> : null}
+                {stage === "done" ? <DoneStage surface={selected} stage={stage} /> : null}
+                {stage === "qc" ? <QcStage surface={selected} stage={stage} /> : null}
                 {stage === "safety" ? <SafetyStage surface={selected} /> : null}
               </div>
 

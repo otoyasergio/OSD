@@ -3,6 +3,7 @@ import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, PhotoCategory, WorkOrderStatus } from "@/lib/database/types";
 import { WORK_ORDER_STATUS_LABELS, JOB_STATUS_LABELS } from "@/lib/status/labels";
 import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 
 export type TechnicianAssignedJob = {
   job_id: string;
@@ -258,7 +259,7 @@ export async function getTechnicianDashboard(): Promise<TechnicianDashboard> {
         status_label: JOB_STATUS_LABELS[job.status] ?? job.status,
         assigned_to_me: job.assigned_technician_id === user.user_id,
       })),
-      overview_href: `/work_orders/${wo.work_order_id}`,
+      overview_href: techJobPacketHref(wo.work_order_id),
       inspection_href: `/work_orders/${wo.work_order_id}/inspection`,
       jobs_href: `/work_orders/${wo.work_order_id}?tab=jobs`,
     };

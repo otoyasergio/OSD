@@ -8,6 +8,7 @@ import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 import type { AdminFlag } from "@/lib/services/adminFlags";
 import { canPerformSafetyCheck } from "@/lib/permissions";
 import { canViewerAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
+import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import { sortByDocketPosition } from "@/lib/technician/docketOrder";
 import { groupAssignedJobsByWorkOrder } from "@/lib/technician/groupAssignedWorkOrders";
 import {
@@ -104,6 +105,18 @@ export type TechnicianFloorOs = {
   flagged: FloorQueueItem[];
   selected: FloorOsSurface | null;
 };
+
+/** Idle home — skip DB fetch when no job/wo is selected. */
+export function emptyFloorOs(): TechnicianFloorOs {
+  return {
+    priority: [],
+    readyToPull: [],
+    needsQc: [],
+    safeties: [],
+    flagged: [],
+    selected: null,
+  };
+}
 
 function bikeCustomerLabel(
   motorcycle: {
@@ -617,7 +630,7 @@ export async function getTechnicianFloorOs(input: {
           WORK_ORDER_STATUS_LABELS[wo.status as WorkOrderStatus] ?? wo.status,
         inspection_complete: inspectionComplete,
         inspection_href: `/work_orders/${wo.work_order_id}/inspection?returnTo=${returnTo}`,
-        overview_href: `/work_orders/${wo.work_order_id}`,
+        overview_href: techJobPacketHref(wo.work_order_id),
         started_at: job.started_at,
         completed_at: job.completed_at,
         estimated_labour: job.estimated_labour_snapshot as number | null,
@@ -741,7 +754,7 @@ export async function getTechnicianFloorOs(input: {
           wo.inspection as InspectionCompletionRelation
         ),
         inspection_href: `/work_orders/${wo.work_order_id}/inspection?returnTo=${returnTo}`,
-        overview_href: `/work_orders/${wo.work_order_id}`,
+        overview_href: techJobPacketHref(wo.work_order_id),
         started_at: null,
         completed_at: null,
         estimated_labour: null,

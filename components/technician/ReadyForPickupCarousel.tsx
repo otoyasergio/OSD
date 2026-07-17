@@ -415,3 +415,20 @@ export function ReadyForSafetyInspectionCarousel({ items, dnd }: StageCarouselPr
     />
   );
 }
+
+/** Control Center — recently completed / released bikes (drop to complete). */
+export function CompleteCarousel({ items, dnd }: StageCarouselProps) {
+  return (
+    <WaitingBikeCarousel
+      items={items}
+      title="Complete"
+      subtitle={dnd ? "Drop to mark picked up / complete" : "Recently completed"}
+      emptyMessage="No recently completed bikes."
+      readyCaption="Completed"
+      approxCaption="Completed (approx)"
+      warnAfterMs={PICKUP_YELLOW_MS}
+      lateAfterMs={PICKUP_RED_MS}
+      dnd={dnd}
+    />
+  );
+}

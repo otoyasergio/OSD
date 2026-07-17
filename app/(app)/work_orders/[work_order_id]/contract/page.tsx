@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentAppUser } from "@/lib/auth/session";
+import { isFloorTech } from "@/lib/permissions";
+import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import {
   getActiveAgreementTemplate,
   getDropOffAgreement,
@@ -24,6 +26,11 @@ export default async function WorkOrderContractPage({
   if (!user) redirect("/login");
 
   const { work_order_id } = await params;
+
+  if (isFloorTech(user.role)) {
+    redirect(techJobPacketHref(work_order_id));
+  }
+
   const { from, extra_photo_failures: extraPhotoFailuresRaw } = await searchParams;
   const fromIntake = from === "intake";
   const parsedExtraPhotoFailures = Number.parseInt(extraPhotoFailuresRaw ?? "0", 10);

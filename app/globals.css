@@ -3852,6 +3852,13 @@ label.photo-source-sheet-action {
   padding: 1.5rem;
 }
 
+.floor-packet-error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
 .floor-surface-hero {
   margin-bottom: 0.875rem;
 }
@@ -4919,6 +4926,91 @@ label.photo-source-sheet-action {
   background: currentColor;
 }
 
+.cc-tech-identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.cc-sign-in-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.3rem 0.45rem 0.3rem 0.55rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+  background: #fff;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.cc-sign-in-toggle--header {
+  margin-left: auto;
+}
+
+.cc-sign-in-toggle.is-on {
+  border-color: color-mix(in srgb, #16a34a 45%, var(--border));
+  background: color-mix(in srgb, #16a34a 10%, #fff);
+}
+
+.cc-sign-in-toggle-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+.cc-sign-in-toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.cc-sign-in-toggle-track {
+  position: relative;
+  width: 2.5rem;
+  height: 1.35rem;
+  border-radius: 9999px;
+  background: #cbd5e1;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.cc-sign-in-toggle-thumb {
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  transition: transform 0.15s ease;
+}
+
+.cc-sign-in-toggle-input:checked + .cc-sign-in-toggle-track {
+  background: #16a34a;
+}
+
+.cc-sign-in-toggle-input:checked + .cc-sign-in-toggle-track .cc-sign-in-toggle-thumb {
+  transform: translateX(1.15rem);
+}
+
+.cc-sign-in-toggle-input:disabled + .cc-sign-in-toggle-track {
+  opacity: 0.55;
+}
+
+.cc-sign-in-toggle:has(.cc-sign-in-toggle-input:disabled) {
+  cursor: wait;
+  opacity: 0.85;
+}
+
 .cc-tech-meta {
   display: flex;
   justify-content: space-between;
@@ -5049,4 +5141,76 @@ label.photo-source-sheet-action {
   color: var(--status-danger);
   font-size: 0.875rem;
   font-weight: 600;
+}
+
+/* Job packet panel (in-floor context overlay on work surface) */
+.floor-packet {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.floor-packet-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 1rem 1rem 0.5rem;
+}
+
+.floor-packet-header {
+  margin-bottom: 1rem;
+}
+
+.floor-packet-section {
+  margin-bottom: 1.25rem;
+  scroll-margin-top: 0.75rem;
+}
+
+.floor-packet-photo-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.floor-packet-photo {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.floor-packet-photo-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: var(--surface-muted, #f3f4f6);
+}
+
+.floor-packet-photo-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  background: var(--surface-muted, #f3f4f6);
+  font-size: 0.8125rem;
+  color: var(--status-neutral);
+}
+
+.floor-packet-photo-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem 0.625rem 0.625rem;
+}
+
+.floor-packet-footer {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
