@@ -48,12 +48,8 @@ import {
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
 import { AgreementFollowUpNotice } from "@/components/work_orders/AgreementFollowUpNotice";
-import {
-  ComingSoonPanel,
-  WORK_ORDER_TABS,
-  WorkOrderTabs,
-  type WorkOrderTabId,
-} from "@/components/work_orders/WorkOrderTabs";
+import { ComingSoonPanel, WorkOrderTabs } from "@/components/work_orders/WorkOrderTabs";
+import { WORK_ORDER_TABS, type WorkOrderTabId } from "@/lib/workOrders/tabs";
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
 import { ServiceInfoTab } from "@/components/work_orders/ServiceInfoTab";
 import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";

@@ -2,39 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-
-export const WORK_ORDER_TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "jobs", label: "Jobs" },
-  { id: "inspection", label: "Inspection" },
-  { id: "recommendations", label: "Recommendations" },
-  { id: "parts", label: "Parts" },
-  { id: "photos", label: "Photos" },
-  { id: "notes", label: "Notes" },
-  { id: "timeline", label: "Activity" },
-  { id: "service-info", label: "Service Info" },
-  { id: "contract", label: "Contract" },
-  { id: "messages", label: "Messages" },
-] as const;
-
-export type WorkOrderTabId = (typeof WORK_ORDER_TABS)[number]["id"];
-
-const PRIMARY_TAB_IDS: WorkOrderTabId[] = [
-  "overview",
-  "jobs",
-  "inspection",
-  "parts",
-  "photos",
-  "notes",
-];
-
-const MORE_TAB_IDS: WorkOrderTabId[] = [
-  "recommendations",
-  "timeline",
-  "service-info",
-  "contract",
-  "messages",
-];
+import {
+  MORE_TAB_IDS,
+  PRIMARY_TAB_IDS,
+  WORK_ORDER_TABS,
+  type WorkOrderTabId,
+} from "@/lib/workOrders/tabs";
 
 export function WorkOrderTabs({
   workOrderId,
