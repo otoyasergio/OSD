@@ -1,7 +1,8 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
-import { canManageTimesheets } from "@/lib/permissions";
+import { canClockStaff, canManageTimesheets, isFloorTech } from "@/lib/permissions";
+import type { UserRole } from "@/lib/database/types";
 import {
   getShopWeekRange,
   getShopMonthRange,
@@ -280,6 +281,133 @@ export async function clockOut(): Promise<TimeClockEntry> {
     entity_type: "time_clock_entry",
     entity_id: entry.entry_id,
     description: `${user.first_name} ${user.last_name} clocked out`,
+    old_value: open,
+    new_value: entry,
+  });
+
+  return entry;
+}
+
+async function requireClockStaffActor() {
+  const user = await requireUser();
+  if (!canClockStaff(user.role)) throw new Error("FORBIDDEN");
+  if (!user.active_location_id) throw new Error("NO_LOCATION");
+  return user;
+}
+
+async function loadFloorStaffForClock(userId: string): Promise<{
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  role: UserRole;
+  status: string;
+}> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("app_user")
+    .select("user_id, first_name, last_name, role, status")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || data.status !== "active" || !isFloorTech(data.role as UserRole)) {
+    throw new Error("TECHNICIAN_NOT_FOUND");
+  }
+  return data as {
+    user_id: string;
+    first_name: string;
+    last_name: string;
+    role: UserRole;
+    status: string;
+  };
+}
+
+/** Owner / manager / service advisor clock a floor tech in at the active location. */
+export async function clockStaffIn(staffUserId: string): Promise<TimeClockEntry> {
+  const actor = await requireClockStaffActor();
+  const staff = await loadFloorStaffForClock(staffUserId);
+
+  const open = await getOpenTimeClockEntry(staff.user_id);
+  if (open) throw new Error("ALREADY_CLOCKED_IN");
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("time_clock_entry")
+    .insert({
+      user_id: staff.user_id,
+      location_id: actor.active_location_id,
+      notes: `Signed in by ${actor.first_name} ${actor.last_name}`,
+    })
+    .select(ENTRY_COLUMNS)
+    .single();
+  if (error) throw error;
+  const entry = data as TimeClockEntry;
+
+  await addAuditLog(supabase, {
+    actor_user_id: actor.user_id,
+    location_id: actor.active_location_id,
+    action: "time_clock_staff_in",
+    entity_type: "time_clock_entry",
+    entity_id: entry.entry_id,
+    description: `${actor.first_name} ${actor.last_name} signed in ${staff.first_name} ${staff.last_name}`,
+    new_value: entry,
+  });
+
+  return entry;
+}
+
+/** Owner / manager / service advisor clock a floor tech out. */
+export async function clockStaffOut(staffUserId: string): Promise<TimeClockEntry> {
+  const actor = await requireClockStaffActor();
+  const staff = await loadFloorStaffForClock(staffUserId);
+
+  const open = await getOpenTimeClockEntry(staff.user_id);
+  if (!open) throw new Error("NOT_CLOCKED_IN");
+
+  const supabase = await createClient();
+
+  const { data: openBreak } = await supabase
+    .from("time_clock_break")
+    .select(BREAK_COLUMNS)
+    .eq("entry_id", open.entry_id)
+    .is("break_end_at", null)
+    .maybeSingle();
+  if (openBreak) {
+    await supabase
+      .from("time_clock_break")
+      .update({ break_end_at: new Date().toISOString() })
+      .eq("break_id", openBreak.break_id);
+  }
+
+  const { data: openJob } = await supabase
+    .from("job_time_entry")
+    .select("job_time_entry_id")
+    .eq("user_id", staff.user_id)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (openJob) {
+    await supabase
+      .from("job_time_entry")
+      .update({ ended_at: new Date().toISOString() })
+      .eq("job_time_entry_id", openJob.job_time_entry_id);
+  }
+
+  const clockOutAt = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("time_clock_entry")
+    .update({ clock_out_at: clockOutAt })
+    .eq("entry_id", open.entry_id)
+    .select(ENTRY_COLUMNS)
+    .single();
+  if (error) throw error;
+  const entry = data as TimeClockEntry;
+
+  await addAuditLog(supabase, {
+    actor_user_id: actor.user_id,
+    location_id: actor.active_location_id,
+    action: "time_clock_staff_out",
+    entity_type: "time_clock_entry",
+    entity_id: entry.entry_id,
+    description: `${actor.first_name} ${actor.last_name} signed out ${staff.first_name} ${staff.last_name}`,
     old_value: open,
     new_value: entry,
   });

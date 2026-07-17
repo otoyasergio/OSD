@@ -20,12 +20,16 @@ import { ChevronLeft, ChevronRight, Flag, Play } from "lucide-react";
 import {
   dispatchWorkOrderToTechnicianAction,
   openWorkOrderAction,
+  setStaffSignedInAction,
   unassignWorkOrderJobsAction,
 } from "@/app/(app)/control-center/actions";
+import { deriveTechAvailability } from "@/lib/control-center/availability";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
 import { createClient } from "@/lib/database/supabase-browser";
 import type { WorkOrderStatus } from "@/lib/database/types";
 import {
+  canDragCcBike,
+  isCcStageDropEnabledForRole,
   isCcStageDropId,
   normalizeControlCenterDragId,
   resolveControlCenterDropTarget,
@@ -42,6 +46,7 @@ import type {
 import type { ReadyForPickupItem, WaitingStageBike } from "@/lib/services/readyForPickup";
 import { canDropInColumn } from "@/lib/status/transitions";
 import {
+  CompleteCarousel,
   ReadyForPickupCarousel,
   ReadyForQcCarousel,
   ReadyForSafetyInspectionCarousel,
@@ -141,16 +146,19 @@ function PoolBikeCard({
   bike,
   now,
   dragging,
+  canDrag,
   onOpenWork,
 }: {
   bike: ControlCenterBike;
   now: number;
   dragging: boolean;
+  canDrag: boolean;
   onOpenWork: (workOrderId: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: bike.work_order_id,
     data: { workOrderId: bike.work_order_id },
+    disabled: !canDrag,
   });
 
   return (
@@ -161,12 +169,12 @@ function PoolBikeCard({
         "cc-bike-card",
         bike.at_risk ? "cc-bike-card--risk" : "",
         isDragging || dragging ? "cc-bike-card--dragging" : "",
+        !canDrag ? "cc-bike-card--static" : "",
       ]
         .filter(Boolean)
         .join(" ")}
       aria-label={`Open work order ${bike.work_order_number} for ${bike.bike_title}`}
-      {...listeners}
-      {...attributes}
+      {...(canDrag ? { ...listeners, ...attributes } : {})}
       onClick={() => onOpenWork(bike.work_order_id)}
     >
       <BikeMedia bike={bike} now={now} />
@@ -197,6 +205,7 @@ function MiniBikeCard({
   bike,
   now,
   canOpen,
+  canDrag,
   onStartWork,
   onOpenWork,
   dragging,
@@ -204,6 +213,7 @@ function MiniBikeCard({
   bike: ControlCenterBike;
   now: number;
   canOpen: boolean;
+  canDrag: boolean;
   onStartWork: (workOrderId: string) => void;
   onOpenWork: (workOrderId: string) => void;
   dragging: boolean;
@@ -211,6 +221,7 @@ function MiniBikeCard({
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: bike.work_order_id,
     data: { workOrderId: bike.work_order_id },
+    disabled: !canDrag,
   });
   const workElapsed = bike.opened_at
     ? Math.max(0, now - new Date(bike.opened_at).getTime())
@@ -219,12 +230,15 @@ function MiniBikeCard({
   return (
     <div
       ref={setNodeRef}
-      className={["cc-mini-bike", isDragging || dragging ? "cc-mini-bike--dragging" : ""]
+      className={[
+        "cc-mini-bike",
+        isDragging || dragging ? "cc-mini-bike--dragging" : "",
+        !canDrag ? "cc-mini-bike--static" : "",
+      ]
         .filter(Boolean)
         .join(" ")}
       aria-label={`Open work order ${bike.work_order_number} for ${bike.bike_title}`}
-      {...listeners}
-      {...attributes}
+      {...(canDrag ? { ...listeners, ...attributes } : {})}
       role="button"
       tabIndex={0}
       onClick={() => onOpenWork(bike.work_order_id)}
@@ -272,6 +286,9 @@ function TechCard({
   tech,
   now,
   canAssign,
+  canClockStaff,
+  clockPending,
+  onToggleSignedIn,
   onStartWork,
   onOpenWork,
   activeId,
@@ -279,6 +296,9 @@ function TechCard({
   tech: ControlCenterTech;
   now: number;
   canAssign: boolean;
+  canClockStaff: boolean;
+  clockPending: boolean;
+  onToggleSignedIn: (techUserId: string, signedIn: boolean) => void;
   onStartWork: (workOrderId: string) => void;
   onOpenWork: (workOrderId: string) => void;
   activeId: string | null;
@@ -291,6 +311,7 @@ function TechCard({
     const ms = now - new Date(bike.date_created).getTime();
     return Math.max(max, ms);
   }, 0);
+  const signedIn = tech.availability !== "off";
 
   return (
     <section
@@ -321,6 +342,30 @@ function TechCard({
           {availabilityLabel(tech.availability)}
         </span>
       </div>
+      {canClockStaff ? (
+        <label className="cc-sign-in-toggle">
+          <span className="cc-sign-in-toggle-label">
+            {signedIn ? "Signed in" : "Signed out"}
+          </span>
+          <input
+            type="checkbox"
+            className="cc-sign-in-toggle-input"
+            checked={signedIn}
+            disabled={clockPending}
+            aria-label={
+              signedIn
+                ? `Sign out ${tech.first_name} ${tech.last_name}`
+                : `Sign in ${tech.first_name} ${tech.last_name}`
+            }
+            onChange={(event) => {
+              onToggleSignedIn(tech.user_id, event.target.checked);
+            }}
+          />
+          <span className="cc-sign-in-toggle-track" aria-hidden>
+            <span className="cc-sign-in-toggle-thumb" />
+          </span>
+        </label>
+      ) : null}
       <div className="cc-tech-meta">
         <span>
           {tech.assigned_bikes.length} bike
@@ -340,6 +385,7 @@ function TechCard({
               bike={bike}
               now={now}
               canOpen={canAssign}
+              canDrag={canAssign}
               onStartWork={onStartWork}
               onOpenWork={onOpenWork}
               dragging={activeId === bike.work_order_id}
@@ -354,17 +400,21 @@ function TechCard({
 export function ControlCenterShell({
   data,
   canAssign,
+  canClockStaff = false,
   waitingForParts = [],
   readyForQc = [],
   readyForSafety = [],
   readyForPickup = [],
+  recentlyCompleted = [],
 }: {
   data: ControlCenterData;
   canAssign: boolean;
+  canClockStaff?: boolean;
   waitingForParts?: ReadyForPickupItem[];
   readyForQc?: ReadyForPickupItem[];
   readyForSafety?: ReadyForPickupItem[];
   readyForPickup?: ReadyForPickupItem[];
+  recentlyCompleted?: ReadyForPickupItem[];
 }) {
   const router = useRouter();
   const now = useNowTick(true);
@@ -378,6 +428,7 @@ export function ControlCenterShell({
   const [qcQueue, setQcQueue] = useState(readyForQc);
   const [safetyQueue, setSafetyQueue] = useState(readyForSafety);
   const [pickupQueue, setPickupQueue] = useState(readyForPickup);
+  const [completeQueue, setCompleteQueue] = useState(recentlyCompleted);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -399,11 +450,12 @@ export function ControlCenterShell({
           qc: readyForQc.map((b) => b.work_order_id),
           safety: readyForSafety.map((b) => b.work_order_id),
           pickup: readyForPickup.map((b) => b.work_order_id),
+          complete: recentlyCompleted.map((b) => b.work_order_id),
         },
         kpis: data.kpis,
         live: data.live_summary,
       }),
-    [data, waitingForParts, readyForQc, readyForSafety, readyForPickup]
+    [data, waitingForParts, readyForQc, readyForSafety, readyForPickup, recentlyCompleted]
   );
   const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
   if (syncKey !== prevSyncKey) {
@@ -416,6 +468,7 @@ export function ControlCenterShell({
     setQcQueue(readyForQc);
     setSafetyQueue(readyForSafety);
     setPickupQueue(readyForPickup);
+    setCompleteQueue(recentlyCompleted);
   }
 
   useEffect(() => {
@@ -464,8 +517,9 @@ export function ControlCenterShell({
         qc: qcQueue,
         safety: safetyQueue,
         pickup: pickupQueue,
+        complete: completeQueue,
       }) as Record<CcStageDropId, WaitingStageBike[]>,
-    [partsQueue, qcQueue, safetyQueue, pickupQueue]
+    [partsQueue, qcQueue, safetyQueue, pickupQueue, completeQueue]
   );
 
   const allBikes = useMemo(() => {
@@ -525,7 +579,8 @@ export function ControlCenterShell({
     if (stageId === "parts") setPartsQueue(items);
     else if (stageId === "qc") setQcQueue(items);
     else if (stageId === "safety") setSafetyQueue(items);
-    else setPickupQueue(items);
+    else if (stageId === "pickup") setPickupQueue(items);
+    else setCompleteQueue(items);
   }
 
   function applyOptimisticAssign(workOrderId: string, targetId: string) {
@@ -569,24 +624,37 @@ export function ControlCenterShell({
       qcQueue,
       safetyQueue,
       pickupQueue,
+      completeQueue,
     };
 
     const source = allBikes.get(workOrderId) ?? stageBikeMap.get(workOrderId) ?? null;
     if (!source) return null;
 
-    setPool((current) =>
-      current.map((bike) =>
-        bike.work_order_id === workOrderId ? { ...bike, status: nextStatus } : bike
-      )
-    );
-    setTechs((current) =>
-      current.map((tech) => ({
-        ...tech,
-        assigned_bikes: tech.assigned_bikes.map((bike) =>
+    if (stageId === "complete") {
+      setPool((current) => current.filter((bike) => bike.work_order_id !== workOrderId));
+      setTechs((current) =>
+        current.map((tech) => ({
+          ...tech,
+          assigned_bikes: tech.assigned_bikes.filter(
+            (bike) => bike.work_order_id !== workOrderId
+          ),
+        }))
+      );
+    } else {
+      setPool((current) =>
+        current.map((bike) =>
           bike.work_order_id === workOrderId ? { ...bike, status: nextStatus } : bike
-        ),
-      }))
-    );
+        )
+      );
+      setTechs((current) =>
+        current.map((tech) => ({
+          ...tech,
+          assigned_bikes: tech.assigned_bikes.map((bike) =>
+            bike.work_order_id === workOrderId ? { ...bike, status: nextStatus } : bike
+          ),
+        }))
+      );
+    }
 
     const nextItem = toStageBike(source, stageId);
     for (const id of Object.keys(stageQueues) as CcStageDropId[]) {
@@ -663,13 +731,17 @@ export function ControlCenterShell({
           setQcQueue(previous.qcQueue);
           setSafetyQueue(previous.safetyQueue);
           setPickupQueue(previous.pickupQueue);
+          setCompleteQueue(previous.completeQueue);
           setErrorMessage(result.error);
         }
       });
       return;
     }
 
-    if (!canAssign) return;
+    if (!canAssign) {
+      setErrorMessage("You do not have permission to assign technicians.");
+      return;
+    }
     if (!fromAssign && !allBikes.has(workOrderId)) {
       setErrorMessage("Open the work order to assign a technician.");
       return;
@@ -686,6 +758,35 @@ export function ControlCenterShell({
       if (result.error) {
         setPool(previous.pool);
         setTechs(previous.techs);
+        setErrorMessage(result.error);
+      }
+    });
+  }
+
+  function handleToggleStaffSignedIn(techUserId: string, signedIn: boolean) {
+    if (!canClockStaff) {
+      setErrorMessage("You do not have permission to sign staff in or out.");
+      return;
+    }
+    setErrorMessage(null);
+    const previous = techs;
+    setTechs((current) =>
+      current.map((tech) => {
+        if (tech.user_id !== techUserId) return tech;
+        return {
+          ...tech,
+          availability: deriveTechAvailability({
+            clockedIn: signedIn,
+            activeAssignedJobCount: tech.assigned_bikes.length,
+          }),
+        };
+      })
+    );
+
+    startTransition(async () => {
+      const result = await setStaffSignedInAction(techUserId, signedIn);
+      if (result.error) {
+        setTechs(previous);
         setErrorMessage(result.error);
       }
     });
@@ -747,8 +848,12 @@ export function ControlCenterShell({
     carouselRef.current?.scrollBy({ left: direction * 340, behavior: "smooth" });
   }
 
+  const canDragStages = canDragCcBike(data.role, "in_progress", {
+    mode: "stage",
+    canAssign,
+  });
   const stageDndBase = {
-    dragEnabled: true,
+    dragEnabled: canDragStages,
     draggingId: activeId,
     onOpenWork: handleOpenWork,
   };
@@ -813,7 +918,9 @@ export function ControlCenterShell({
               <h2 className="cc-pool-title">Waiting for tech</h2>
               <span className="shop-board-column-count">{pool.length}</span>
               <span className="cc-pool-caption">
-                Unassigned — drag onto a tech to dispatch
+                {canAssign
+                  ? "Unassigned — drag onto a tech to dispatch"
+                  : "Unassigned bikes (view only — you cannot assign)"}
               </span>
             </div>
             <div style={{ display: "flex", gap: "0.4rem" }}>
@@ -846,6 +953,7 @@ export function ControlCenterShell({
                   key={bike.work_order_id}
                   bike={bike}
                   now={now}
+                  canDrag={canAssign}
                   dragging={activeId === bike.work_order_id}
                   onOpenWork={handleOpenWork}
                 />
@@ -861,6 +969,9 @@ export function ControlCenterShell({
               tech={tech}
               now={now}
               canAssign={canAssign}
+              canClockStaff={canClockStaff}
+              clockPending={isPending}
+              onToggleSignedIn={handleToggleStaffSignedIn}
               onStartWork={handleStartWork}
               onOpenWork={handleOpenWork}
               activeId={activeId}
@@ -874,7 +985,7 @@ export function ControlCenterShell({
             dnd={{
               ...stageDndBase,
               droppableId: "parts",
-              dropDisabled: false,
+              dropDisabled: !isCcStageDropEnabledForRole(data.role, "parts"),
             }}
           />
           <ReadyForQcCarousel
@@ -882,7 +993,7 @@ export function ControlCenterShell({
             dnd={{
               ...stageDndBase,
               droppableId: "qc",
-              dropDisabled: false,
+              dropDisabled: !isCcStageDropEnabledForRole(data.role, "qc"),
             }}
           />
           <ReadyForSafetyInspectionCarousel
@@ -890,7 +1001,7 @@ export function ControlCenterShell({
             dnd={{
               ...stageDndBase,
               droppableId: "safety",
-              dropDisabled: false,
+              dropDisabled: !isCcStageDropEnabledForRole(data.role, "safety"),
             }}
           />
           <ReadyForPickupCarousel
@@ -898,7 +1009,16 @@ export function ControlCenterShell({
             dnd={{
               ...stageDndBase,
               droppableId: "pickup",
-              dropDisabled: false,
+              dropDisabled: !isCcStageDropEnabledForRole(data.role, "pickup"),
+            }}
+          />
+          <CompleteCarousel
+            items={completeQueue}
+            dnd={{
+              ...stageDndBase,
+              dragEnabled: false,
+              droppableId: "complete",
+              dropDisabled: !isCcStageDropEnabledForRole(data.role, "complete"),
             }}
           />
         </div>

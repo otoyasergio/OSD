@@ -424,7 +424,8 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
       .from("time_clock_entry")
       .select("user_id")
       .eq("location_id", locationId)
-      .is("clock_out_at", null),
+      .is("clock_out_at", null)
+      .is("voided_at", null),
   ]);
 
   let rawData: unknown[] | null = woResult.data as unknown[] | null;

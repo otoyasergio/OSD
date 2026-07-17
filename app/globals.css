@@ -4926,6 +4926,72 @@ label.photo-source-sheet-action {
   background: currentColor;
 }
 
+.cc-sign-in-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.35rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--chrome-border) 35%, transparent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.cc-sign-in-toggle-label {
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--foreground);
+}
+
+.cc-sign-in-toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.cc-sign-in-toggle-track {
+  position: relative;
+  width: 2.5rem;
+  height: 1.35rem;
+  border-radius: 9999px;
+  background: #cbd5e1;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.cc-sign-in-toggle-thumb {
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  transition: transform 0.15s ease;
+}
+
+.cc-sign-in-toggle-input:checked + .cc-sign-in-toggle-track {
+  background: #16a34a;
+}
+
+.cc-sign-in-toggle-input:checked + .cc-sign-in-toggle-track .cc-sign-in-toggle-thumb {
+  transform: translateX(1.15rem);
+}
+
+.cc-sign-in-toggle-input:disabled + .cc-sign-in-toggle-track {
+  opacity: 0.55;
+}
+
+.cc-sign-in-toggle:has(.cc-sign-in-toggle-input:disabled) {
+  cursor: wait;
+  opacity: 0.85;
+}
+
 .cc-tech-meta {
   display: flex;
   justify-content: space-between;

@@ -264,8 +264,12 @@ export async function assignAllActiveJobsOnWorkOrderToTechnician(
     .order("created_at", { ascending: true });
   if (error) throw error;
 
+  if (!jobs?.length) {
+    throw new Error("NO_JOBS_TO_ASSIGN");
+  }
+
   let assigned_count = 0;
-  for (const row of jobs ?? []) {
+  for (const row of jobs) {
     await assignTechnicianToJob(row.job_id as string, technicianId);
     assigned_count += 1;
   }

@@ -81,6 +81,7 @@ const MESSAGES: Record<string, string> = {
     "The work order was created, but some intake photos failed to upload. Finish the missing photos below.",
   NOTE_REQUIRED: "Enter a note before saving.",
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
+  NO_JOBS_TO_ASSIGN: "This work order has no active jobs to assign. Add a job first.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
   QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
   SAFETY_FAIL_RECOMMENDATIONS_REQUIRED:
@@ -160,6 +161,8 @@ const MESSAGES: Record<string, string> = {
   JOB_TIME_ALREADY_OPEN: "Pause or finish your current job timer first.",
   JOB_TIME_NOT_OPEN: "No open job timer to pause.",
   JOB_TIME_WRONG_JOB: "That job timer is not yours or already closed.",
+  OPENED_AT_UNAVAILABLE:
+    "Open timer is not available until the database migration is applied.",
   INVALID_CLOCK_IN: "Enter a valid clock-in date and time.",
   INVALID_CLOCK_OUT: "Enter a valid clock-out date and time.",
   CLOCK_OUT_BEFORE_IN: "Clock-out must be after clock-in.",

@@ -6,26 +6,14 @@ import {
   openWorkOrderForControlCenter,
   unassignAllActiveJobsOnWorkOrder,
 } from "@/lib/services/jobs";
+import { clockStaffIn, clockStaffOut } from "@/lib/services/timeClock";
+import { toFormErrorMessage } from "@/lib/services/errors";
 
-function actionError(error: unknown): string {
-  const message = error instanceof Error ? error.message : "UNKNOWN";
-  switch (message) {
-    case "FORBIDDEN":
-      return "You do not have permission to do that.";
-    case "FOREIGN_LOCATION":
-      return "That work order is at another location.";
-    case "WORK_ORDER_NOT_FOUND":
-    case "JOB_NOT_FOUND":
-      return "Work order not found.";
-    case "WORK_ORDER_LOCKED":
-      return "That work order is locked.";
-    case "TECHNICIAN_NOT_FOUND":
-      return "Technician not found.";
-    case "OPENED_AT_UNAVAILABLE":
-      return "Open timer is not available until the database migration is applied.";
-    default:
-      return "Something went wrong. Try again.";
-  }
+function revalidateDispatch() {
+  revalidatePath("/control-center");
+  revalidatePath("/technician");
+  revalidatePath("/technician/docket");
+  revalidatePath("/dashboard");
 }
 
 export async function dispatchWorkOrderToTechnicianAction(
@@ -34,13 +22,10 @@ export async function dispatchWorkOrderToTechnicianAction(
 ): Promise<{ error: string | null }> {
   try {
     await assignAllActiveJobsOnWorkOrderToTechnician(workOrderId, technicianId);
-    revalidatePath("/control-center");
-    revalidatePath("/technician");
-    revalidatePath("/technician/docket");
-    revalidatePath("/dashboard");
+    revalidateDispatch();
     return { error: null };
   } catch (error) {
-    return { error: actionError(error) };
+    return { error: toFormErrorMessage(error) };
   }
 }
 
@@ -49,13 +34,10 @@ export async function unassignWorkOrderJobsAction(
 ): Promise<{ error: string | null }> {
   try {
     await unassignAllActiveJobsOnWorkOrder(workOrderId);
-    revalidatePath("/control-center");
-    revalidatePath("/technician");
-    revalidatePath("/technician/docket");
-    revalidatePath("/dashboard");
+    revalidateDispatch();
     return { error: null };
   } catch (error) {
-    return { error: actionError(error) };
+    return { error: toFormErrorMessage(error) };
   }
 }
 
@@ -67,6 +49,25 @@ export async function openWorkOrderAction(
     revalidatePath("/control-center");
     return { error: null, opened_at: result.opened_at };
   } catch (error) {
-    return { error: actionError(error) };
+    return { error: toFormErrorMessage(error) };
+  }
+}
+
+export async function setStaffSignedInAction(
+  staffUserId: string,
+  signedIn: boolean
+): Promise<{ error: string | null }> {
+  try {
+    if (signedIn) {
+      await clockStaffIn(staffUserId);
+    } else {
+      await clockStaffOut(staffUserId);
+    }
+    revalidatePath("/control-center");
+    revalidatePath("/technician");
+    revalidatePath("/settings/timesheets");
+    return { error: null };
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
   }
 }

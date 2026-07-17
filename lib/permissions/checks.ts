@@ -20,6 +20,11 @@ export function canEditWorkOrder(role: UserRole) {
 export function canAssignTechnician(role: UserRole) {
   return OWNERS_MANAGERS.includes(role) || role === "service_advisor";
 }
+
+/** Clock floor staff in/out from Control Center (owner / manager / service advisor). */
+export function canClockStaff(role: UserRole) {
+  return canAssignTechnician(role);
+}
 /** View a technician's ordered job-load docket (self if floor tech; any tech if assigner). */
 export function canViewTechnicianDocket(
   role: UserRole,
