@@ -21,9 +21,9 @@ export function canAssignTechnician(role: UserRole) {
   return OWNERS_MANAGERS.includes(role) || role === "service_advisor";
 }
 
-/** Clock floor staff in/out from Control Center (owner / manager / service advisor). */
+/** Clock floor staff in/out from Control Center (front office + admin). */
 export function canClockStaff(role: UserRole) {
-  return canAssignTechnician(role);
+  return canAssignTechnician(role) || role === "admin";
 }
 /** View a technician's ordered job-load docket (self if floor tech; any tech if assigner). */
 export function canViewTechnicianDocket(

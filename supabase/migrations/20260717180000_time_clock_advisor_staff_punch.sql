@@ -9,7 +9,7 @@ CREATE POLICY time_clock_insert_scoped ON time_clock_entry
     AND location_id IN (SELECT public.user_location_ids())
     AND (
       user_id = current_app_user_id()
-      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor')
+      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor', 'admin')
     )
   );
 
@@ -21,7 +21,7 @@ CREATE POLICY time_clock_update_scoped ON time_clock_entry
     AND location_id IN (SELECT public.user_location_ids())
     AND (
       user_id = current_app_user_id()
-      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor')
+      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor', 'admin')
     )
   )
   WITH CHECK (
@@ -29,7 +29,7 @@ CREATE POLICY time_clock_update_scoped ON time_clock_entry
     AND location_id IN (SELECT public.user_location_ids())
     AND (
       user_id = current_app_user_id()
-      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor')
+      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor', 'admin')
     )
   );
 
@@ -43,7 +43,7 @@ CREATE POLICY time_clock_break_update ON time_clock_break
       WHERE e.entry_id = time_clock_break.entry_id
         AND (
           e.user_id = current_app_user_id()
-          OR current_app_user_role() IN ('owner', 'manager', 'service_advisor')
+          OR current_app_user_role() IN ('owner', 'manager', 'service_advisor', 'admin')
         )
     )
   )
@@ -53,7 +53,7 @@ CREATE POLICY time_clock_break_update ON time_clock_break
       WHERE e.entry_id = time_clock_break.entry_id
         AND (
           e.user_id = current_app_user_id()
-          OR current_app_user_role() IN ('owner', 'manager', 'service_advisor')
+          OR current_app_user_role() IN ('owner', 'manager', 'service_advisor', 'admin')
         )
     )
   );
@@ -66,13 +66,13 @@ CREATE POLICY job_time_update ON job_time_entry
     is_active_app_user()
     AND (
       user_id = current_app_user_id()
-      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor')
+      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor', 'admin')
     )
   )
   WITH CHECK (
     is_active_app_user()
     AND (
       user_id = current_app_user_id()
-      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor')
+      OR current_app_user_role() IN ('owner', 'manager', 'service_advisor', 'admin')
     )
   );

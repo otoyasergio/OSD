@@ -329,7 +329,7 @@ function TechCard({
           {initials(tech.first_name, tech.last_name)}
           <span className={`cc-tech-avail-dot cc-tech-avail-dot--${tech.availability}`} />
         </div>
-        <div>
+        <div className="cc-tech-identity">
           <p className="cc-tech-name">
             {tech.first_name} {tech.last_name}
           </p>
@@ -337,35 +337,40 @@ function TechCard({
             {tech.role === "head_tech" ? "Head tech" : "Technician"}
           </p>
         </div>
-        <span className={`cc-avail-pill cc-avail-pill--${tech.availability}`}>
-          <span className="cc-avail-pill-dot" />
-          {availabilityLabel(tech.availability)}
-        </span>
+        {canClockStaff ? (
+          <label
+            className={`cc-sign-in-toggle cc-sign-in-toggle--header${signedIn ? " is-on" : ""}`}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="cc-sign-in-toggle-label">
+              {signedIn ? "Signed in" : "Signed out"}
+            </span>
+            <input
+              type="checkbox"
+              className="cc-sign-in-toggle-input"
+              checked={signedIn}
+              disabled={clockPending}
+              aria-label={
+                signedIn
+                  ? `Sign out ${tech.first_name} ${tech.last_name}`
+                  : `Sign in ${tech.first_name} ${tech.last_name}`
+              }
+              onChange={(event) => {
+                onToggleSignedIn(tech.user_id, event.target.checked);
+              }}
+            />
+            <span className="cc-sign-in-toggle-track" aria-hidden>
+              <span className="cc-sign-in-toggle-thumb" />
+            </span>
+          </label>
+        ) : (
+          <span className={`cc-avail-pill cc-avail-pill--${tech.availability}`}>
+            <span className="cc-avail-pill-dot" />
+            {availabilityLabel(tech.availability)}
+          </span>
+        )}
       </div>
-      {canClockStaff ? (
-        <label className="cc-sign-in-toggle">
-          <span className="cc-sign-in-toggle-label">
-            {signedIn ? "Signed in" : "Signed out"}
-          </span>
-          <input
-            type="checkbox"
-            className="cc-sign-in-toggle-input"
-            checked={signedIn}
-            disabled={clockPending}
-            aria-label={
-              signedIn
-                ? `Sign out ${tech.first_name} ${tech.last_name}`
-                : `Sign in ${tech.first_name} ${tech.last_name}`
-            }
-            onChange={(event) => {
-              onToggleSignedIn(tech.user_id, event.target.checked);
-            }}
-          />
-          <span className="cc-sign-in-toggle-track" aria-hidden>
-            <span className="cc-sign-in-toggle-thumb" />
-          </span>
-        </label>
-      ) : null}
       <div className="cc-tech-meta">
         <span>
           {tech.assigned_bikes.length} bike

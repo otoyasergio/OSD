@@ -4926,23 +4926,42 @@ label.photo-source-sheet-action {
   background: currentColor;
 }
 
+.cc-tech-identity {
+  min-width: 0;
+  flex: 1;
+}
+
 .cc-sign-in-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  margin: 0 0 0.35rem;
-  padding: 0.35rem 0.5rem;
-  border-radius: 0.5rem;
-  background: color-mix(in srgb, var(--chrome-border) 35%, transparent);
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.3rem 0.45rem 0.3rem 0.55rem;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+  background: #fff;
   cursor: pointer;
   user-select: none;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.cc-sign-in-toggle--header {
+  margin-left: auto;
+}
+
+.cc-sign-in-toggle.is-on {
+  border-color: color-mix(in srgb, #16a34a 45%, var(--border));
+  background: color-mix(in srgb, #16a34a 10%, #fff);
 }
 
 .cc-sign-in-toggle-label {
-  font-size: 0.75rem;
-  font-weight: 650;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   color: var(--foreground);
+  white-space: nowrap;
 }
 
 .cc-sign-in-toggle-input {
