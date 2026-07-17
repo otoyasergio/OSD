@@ -119,6 +119,15 @@ describe("fitmentModelAffinity", () => {
     expect(fitmentModelAffinity("R3", "R25/R3")).toBe(0);
     expect(fitmentModelAffinity("R3", "R1250GS")).toBe(0);
   });
+
+  it("matches nickname, token, and trim variants", () => {
+    expect(fitmentModelAffinity("NPS50 (Ruckus)", "Ruckus")).toBeGreaterThan(0);
+    expect(
+      fitmentModelAffinity("VT750 (Shadow Spirit 750)", "VT750 C2 Shadow Spirit")
+    ).toBeGreaterThan(0);
+    expect(fitmentModelAffinity("V-Strom 1000", "DL1000 V-Strom")).toBeGreaterThan(0);
+    expect(fitmentModelAffinity("Ninja 500 SE", "EX500 Ninja 500")).toBeGreaterThan(0);
+  });
 });
 
 describe("pickBestFitmentVehicle", () => {

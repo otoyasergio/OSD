@@ -70,13 +70,7 @@ function matchesPrefixedModel(catalogue: string, modelKey: string): boolean {
   return pattern.test(catalogue);
 }
 
-/**
- * How closely a catalogue model matches the bike model.
- * 0 = unrelated (must not use). Higher is a tighter match.
- */
-export function fitmentModelAffinity(bikeModel: string, fitmentModel: string): number {
-  const bike = normalizeFitmentModelKey(bikeModel);
-  const catalogue = normalizeFitmentModelKey(fitmentModel);
+function affinityAgainstNormalized(bike: string, catalogue: string): number {
   if (!bike || !catalogue) return 0;
   if (bike === catalogue) return 100;
 
@@ -99,6 +93,48 @@ export function fitmentModelAffinity(bikeModel: string, fitmentModel: string): n
   if (catalogue.length >= 4 && bike.includes(catalogue)) return 50;
 
   return 0;
+}
+
+/**
+ * How closely a catalogue model matches the bike model.
+ * 0 = unrelated (must not use). Higher is a tighter match.
+ */
+/** "V-Strom 1000" ↔ "DL1000 V-Strom": every meaningful token appears in catalogue key. */
+function tokenCoverageAffinity(bikeModel: string, fitmentModel: string): number {
+  const catalogue = normalizeFitmentModelKey(fitmentModel);
+  const words = bikeModel
+    .replace(/\([^)]*\)/g, " ")
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 3 && !["ABS", "ABSSE", "THE", "AND"].includes(w));
+  if (words.length < 2) return 0;
+  if (words.every((word) => catalogue.includes(word))) return 55;
+  return 0;
+}
+
+export function fitmentModelAffinity(bikeModel: string, fitmentModel: string): number {
+  const catalogue = normalizeFitmentModelKey(fitmentModel);
+  const parenContents = [...bikeModel.matchAll(/\(([^)]+)\)/g)].map((m) => m[1].trim());
+  const variants = [
+    bikeModel,
+    // "NPS50 (Ruckus)" / "VT750 (Shadow Spirit 750)"
+    bikeModel.replace(/\s*\([^)]*\)\s*/g, " ").trim(),
+    // Nickname inside parens ("Ruckus")
+    ...parenContents,
+    // "Ninja 500 SE" → drop trim-level suffixes
+    bikeModel.replace(/\b(SE|ABS|ABSSE)\b/gi, " ").trim(),
+  ].filter(Boolean);
+
+  let best = 0;
+  for (const variant of variants) {
+    best = Math.max(
+      best,
+      affinityAgainstNormalized(normalizeFitmentModelKey(variant), catalogue),
+      tokenCoverageAffinity(variant, fitmentModel)
+    );
+  }
+  return best;
 }
 
 function pickValues(
