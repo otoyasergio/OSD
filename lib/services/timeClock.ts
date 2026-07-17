@@ -1056,6 +1056,170 @@ export async function deleteTimeClockCorrection(entryId: string): Promise<void> 
   });
 }
 
+export async function createBreakCorrection(input: {
+  entry_id: string;
+  break_start_at: string;
+  break_end_at: string;
+  break_type?: "meal" | "other";
+}): Promise<TimeClockBreak> {
+  const actor = await requireTimesheetManager();
+  const loc = actor.active_location_id;
+  if (!loc) throw new Error("NO_LOCATION");
+
+  const start = parseShopLocalDateTimeInput(input.break_start_at);
+  const end = parseShopLocalDateTimeInput(input.break_end_at);
+  if (!start) throw new Error("INVALID_BREAK_START");
+  if (!end) throw new Error("INVALID_BREAK_END");
+  if (end.getTime() <= start.getTime()) throw new Error("BREAK_END_BEFORE_START");
+
+  const supabase = await createClient();
+  const { data: entry, error: entryError } = await supabase
+    .from("time_clock_entry")
+    .select(ENTRY_COLUMNS)
+    .eq("entry_id", input.entry_id)
+    .maybeSingle();
+  if (entryError) throw entryError;
+  if (!entry || entry.voided_at) throw new Error("TIME_CLOCK_ENTRY_NOT_FOUND");
+
+  await assertWeekNotApproved(entry.user_id, loc, new Date(entry.clock_in_at));
+
+  const clockInMs = new Date(entry.clock_in_at).getTime();
+  const clockOutMs = entry.clock_out_at
+    ? new Date(entry.clock_out_at).getTime()
+    : Number.POSITIVE_INFINITY;
+  if (start.getTime() < clockInMs || end.getTime() > clockOutMs) {
+    throw new Error("BREAK_OUTSIDE_PUNCH");
+  }
+
+  const { data, error } = await supabase
+    .from("time_clock_break")
+    .insert({
+      entry_id: input.entry_id,
+      break_type: input.break_type === "other" ? "other" : "meal",
+      break_start_at: start.toISOString(),
+      break_end_at: end.toISOString(),
+    })
+    .select(BREAK_COLUMNS)
+    .single();
+  if (error) throw error;
+  const row = mapBreak(data);
+
+  await addAuditLog(supabase, {
+    actor_user_id: actor.user_id,
+    location_id: loc,
+    action: "time_clock_break_correction_create",
+    entity_type: "time_clock_break",
+    entity_id: row.break_id,
+    description: `${actor.first_name} ${actor.last_name} added a break slot`,
+    new_value: row,
+  });
+
+  return row;
+}
+
+export async function updateBreakCorrection(input: {
+  break_id: string;
+  break_start_at: string;
+  break_end_at: string;
+  break_type?: "meal" | "other";
+}): Promise<TimeClockBreak> {
+  const actor = await requireTimesheetManager();
+  const loc = actor.active_location_id;
+  if (!loc) throw new Error("NO_LOCATION");
+
+  const start = parseShopLocalDateTimeInput(input.break_start_at);
+  const end = parseShopLocalDateTimeInput(input.break_end_at);
+  if (!start) throw new Error("INVALID_BREAK_START");
+  if (!end) throw new Error("INVALID_BREAK_END");
+  if (end.getTime() <= start.getTime()) throw new Error("BREAK_END_BEFORE_START");
+
+  const supabase = await createClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("time_clock_break")
+    .select(BREAK_COLUMNS)
+    .eq("break_id", input.break_id)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (!existing) throw new Error("BREAK_NOT_FOUND");
+
+  const { data: entry, error: entryError } = await supabase
+    .from("time_clock_entry")
+    .select(ENTRY_COLUMNS)
+    .eq("entry_id", existing.entry_id)
+    .maybeSingle();
+  if (entryError) throw entryError;
+  if (!entry || entry.voided_at) throw new Error("TIME_CLOCK_ENTRY_NOT_FOUND");
+
+  await assertWeekNotApproved(entry.user_id, loc, new Date(entry.clock_in_at));
+
+  const { data, error } = await supabase
+    .from("time_clock_break")
+    .update({
+      break_type: input.break_type === "other" ? "other" : "meal",
+      break_start_at: start.toISOString(),
+      break_end_at: end.toISOString(),
+    })
+    .eq("break_id", input.break_id)
+    .select(BREAK_COLUMNS)
+    .single();
+  if (error) throw error;
+  const row = mapBreak(data);
+
+  await addAuditLog(supabase, {
+    actor_user_id: actor.user_id,
+    location_id: loc,
+    action: "time_clock_break_correction_update",
+    entity_type: "time_clock_break",
+    entity_id: row.break_id,
+    description: `${actor.first_name} ${actor.last_name} updated a break slot`,
+    old_value: mapBreak(existing),
+    new_value: row,
+  });
+
+  return row;
+}
+
+export async function deleteBreakCorrection(breakId: string): Promise<void> {
+  const actor = await requireTimesheetManager();
+  const loc = actor.active_location_id;
+  if (!loc) throw new Error("NO_LOCATION");
+
+  const supabase = await createClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("time_clock_break")
+    .select(BREAK_COLUMNS)
+    .eq("break_id", breakId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (!existing) throw new Error("BREAK_NOT_FOUND");
+
+  const { data: entry, error: entryError } = await supabase
+    .from("time_clock_entry")
+    .select(ENTRY_COLUMNS)
+    .eq("entry_id", existing.entry_id)
+    .maybeSingle();
+  if (entryError) throw entryError;
+  if (!entry || entry.voided_at) throw new Error("TIME_CLOCK_ENTRY_NOT_FOUND");
+
+  await assertWeekNotApproved(entry.user_id, loc, new Date(entry.clock_in_at));
+
+  const { error } = await supabase
+    .from("time_clock_break")
+    .delete()
+    .eq("break_id", breakId);
+  if (error) throw error;
+
+  await addAuditLog(supabase, {
+    actor_user_id: actor.user_id,
+    location_id: loc,
+    action: "time_clock_break_correction_delete",
+    entity_type: "time_clock_break",
+    entity_id: breakId,
+    description: `${actor.first_name} ${actor.last_name} deleted a break slot`,
+    old_value: mapBreak(existing),
+  });
+}
+
 async function upsertTimesheetWeekStatus(input: {
   userId: string;
   locationId: string;

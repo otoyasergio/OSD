@@ -123,14 +123,7 @@ export function TextAreaField({
   );
 }
 
-export function FormError({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <p role="alert" className="alert-error">
-      {message}
-    </p>
-  );
-}
+export { FormError } from "@/components/forms/FormError";
 
 /** Shared class for selects outside Field components */
 export const SELECT_CLASS = "select";

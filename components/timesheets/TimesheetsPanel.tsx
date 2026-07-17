@@ -24,10 +24,13 @@ import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import {
   approveTimesheetAction,
+  createBreakAction,
   createPunchAction,
+  deleteBreakAction,
   deletePunchAction,
   rejectTimesheetAction,
   reopenTimesheetAction,
+  updateBreakAction,
   updatePunchAction,
   type TimesheetFormState,
 } from "@/app/(app)/settings/timesheets/actions";
@@ -162,11 +165,122 @@ function EditPunchForm({
         </div>
         <FormError message={updateState.error} />
       </form>
+
+      <BreakSlotsEditor entry={entry} />
+
       <form action={deleteAction}>
         <SubmitButton label="Void punch" pendingLabel="Voiding…" variant="danger" />
         <FormError message={deleteState.error} />
       </form>
     </div>
+  );
+}
+
+function BreakSlotsEditor({ entry }: { entry: TimeClockEntryWithUser }) {
+  const breaks = entry.breaks ?? [];
+  const [addState, addAction] = useActionState(
+    createBreakAction.bind(null, entry.entry_id),
+    { error: null } satisfies TimesheetFormState
+  );
+
+  return (
+    <div className="space-y-3 rounded border border-[var(--chrome-border)] bg-[var(--surface-muted)] p-3">
+      <p className="text-sm font-semibold text-foreground">Break slots</p>
+      {breaks.length === 0 ? (
+        <p className="text-sm text-[var(--status-neutral)]">No breaks on this punch.</p>
+      ) : (
+        <ul className="space-y-3">
+          {breaks.map((brk) => (
+            <BreakSlotRow key={brk.break_id} brk={brk} />
+          ))}
+        </ul>
+      )}
+      <form action={addAction} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="block">
+          <span className="field-label">Break start</span>
+          <input name="break_start_at" type="datetime-local" className="input" required />
+        </label>
+        <label className="block">
+          <span className="field-label">Break end</span>
+          <input name="break_end_at" type="datetime-local" className="input" required />
+        </label>
+        <label className="block">
+          <span className="field-label">Type</span>
+          <select name="break_type" className="input" defaultValue="meal">
+            <option value="meal">Meal</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <div className="flex items-end">
+          <SubmitButton label="Add break" pendingLabel="Saving…" />
+        </div>
+        <div className="sm:col-span-2 lg:col-span-4">
+          <FormError message={addState.error} />
+          {addState.ok ? (
+            <p className="text-sm text-[var(--status-success)]">Break added.</p>
+          ) : null}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function BreakSlotRow({
+  brk,
+}: {
+  brk: NonNullable<TimeClockEntryWithUser["breaks"]>[number];
+}) {
+  const [updateState, updateAction] = useActionState(
+    updateBreakAction.bind(null, brk.break_id),
+    { error: null } satisfies TimesheetFormState
+  );
+  const [deleteState, deleteAction] = useActionState(
+    deleteBreakAction.bind(null, brk.break_id),
+    { error: null } satisfies TimesheetFormState
+  );
+
+  return (
+    <li className="space-y-2 rounded border border-[var(--chrome-border)] bg-white p-3">
+      <form action={updateAction} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="block">
+          <span className="field-label">Break start</span>
+          <input
+            name="break_start_at"
+            type="datetime-local"
+            className="input"
+            required
+            defaultValue={toShopDatetimeLocalValue(brk.break_start_at)}
+          />
+        </label>
+        <label className="block">
+          <span className="field-label">Break end</span>
+          <input
+            name="break_end_at"
+            type="datetime-local"
+            className="input"
+            required
+            defaultValue={
+              brk.break_end_at ? toShopDatetimeLocalValue(brk.break_end_at) : ""
+            }
+          />
+        </label>
+        <label className="block">
+          <span className="field-label">Type</span>
+          <select name="break_type" className="input" defaultValue={brk.break_type}>
+            <option value="meal">Meal</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <div className="flex flex-wrap items-end gap-2">
+          <SubmitButton label="Save break" pendingLabel="Saving…" />
+        </div>
+        <FormError message={updateState.error} />
+      </form>
+      <form action={deleteAction}>
+        <SubmitButton label="Remove break" pendingLabel="Removing…" variant="danger" />
+        <FormError message={deleteState.error} />
+      </form>
+    </li>
   );
 }
 

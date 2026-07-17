@@ -70,8 +70,8 @@ export default async function SettingsPage() {
       visible: canManageUsers(user.role),
     },
     {
-      href: "/settings/audit",
-      label: "Audit log",
+      href: "/settings/logs",
+      label: "Logs",
       description: "Every action recorded across the company.",
       visible: canViewAuditLog(user.role),
     },

@@ -63,7 +63,24 @@ export async function createCustomerAction(
   }
 
   revalidatePath("/customers");
-  const workOrderPath = `/work_orders/new?customer_id=${encodeURIComponent(customerId)}`;
+
+  const rawReturnTo = String(formData.get("return_to") ?? "").trim();
+  const intakeReturnTo =
+    rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//")
+      ? rawReturnTo
+      : "/work_orders/new";
+
+  let workOrderPath = `/work_orders/new?customer_id=${encodeURIComponent(customerId)}`;
+  try {
+    const url = new URL(intakeReturnTo, "https://example.invalid");
+    if (url.pathname === "/work_orders/new") {
+      url.searchParams.set("customer_id", customerId);
+      workOrderPath = `${url.pathname}${url.search}${url.hash}`;
+    }
+  } catch {
+    // keep default workOrderPath
+  }
+
   redirect(
     `/motorcycles/new?customer_id=${encodeURIComponent(customerId)}&return_to=${encodeURIComponent(workOrderPath)}`
   );

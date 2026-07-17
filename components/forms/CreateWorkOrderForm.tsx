@@ -561,7 +561,10 @@ export function CreateWorkOrderForm({
             />
             <span className="mt-1 block text-xs text-[var(--status-neutral)]">
               Search by name, email, or phone. Need a new customer?{" "}
-              <Link href="/customers/new" className="underline underline-offset-2">
+              <Link
+                href="/customers/new?return_to=%2Fwork_orders%2Fnew"
+                className="underline underline-offset-2"
+              >
                 Create one first
               </Link>
               .

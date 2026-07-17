@@ -129,6 +129,10 @@ export function canManageInspectionTemplate(role: UserRole) {
 export function canManageContractTemplate(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
+/** Capture drop-off agreement signature — front office + admin; never floor techs. */
+export function canSignContract(role: UserRole) {
+  return canEditWorkOrder(role) || canCreateWorkOrder(role);
+}
 export function canManageShopClosures(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }

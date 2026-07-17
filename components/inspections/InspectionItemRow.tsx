@@ -65,6 +65,8 @@ export function InspectionItemRow({
   photoUrl,
   photoRequired,
   onRecommend,
+  onBusyChange,
+  onLocalStatusChange,
   compact,
 }: {
   workOrderId: string;
@@ -73,6 +75,8 @@ export function InspectionItemRow({
   photoUrl?: string | null;
   photoRequired?: boolean;
   onRecommend?: (result: InspectionResultRow) => void;
+  onBusyChange?: (resultId: string, busy: boolean) => void;
+  onLocalStatusChange?: (resultId: string, status: InspectionResultStatus | null) => void;
   compact?: boolean;
 }) {
   const [status, setStatus] = useState<InspectionResultStatus | null>(result.status);
@@ -84,6 +88,7 @@ export function InspectionItemRow({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measurementRef = useRef(measurement);
   const notesRef = useRef(notes);
+  const statusBeforeSaveRef = useRef<InspectionResultStatus | null>(result.status);
 
   // Re-sync local edits when the server row changes (adjust-state-during-render
   // pattern, https://react.dev/learn/you-might-not-need-an-effect).
@@ -116,27 +121,37 @@ export function InspectionItemRow({
     measurement?: string | null;
     notes?: string | null;
   }) {
+    const resultId = result.inspection_result_id;
     setSaveState("saving");
+    onBusyChange?.(resultId, true);
     setError(null);
     startTransition(async () => {
-      const response = await saveInspectionResultAction(
-        workOrderId,
-        result.inspection_result_id,
-        input
-      );
+      const response = await saveInspectionResultAction(workOrderId, resultId, input);
       if (!response.ok) {
+        if ("status" in input) {
+          const reverted = statusBeforeSaveRef.current;
+          setStatus(reverted);
+          onLocalStatusChange?.(resultId, reverted);
+        }
         setSaveState("error");
         setError(response.error);
+        onBusyChange?.(resultId, false);
         return;
       }
+      if ("status" in input) {
+        statusBeforeSaveRef.current = input.status ?? null;
+      }
       setSaveState("saved");
+      onBusyChange?.(resultId, false);
       window.setTimeout(() => setSaveState("idle"), 1200);
     });
   }
 
   function saveStatus(next: InspectionResultStatus | null) {
     const value = status === next ? null : next;
+    statusBeforeSaveRef.current = status;
     setStatus(value);
+    onLocalStatusChange?.(result.inspection_result_id, value);
     persist({ status: value });
   }
 

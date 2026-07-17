@@ -163,6 +163,7 @@ export default async function WorkOrderDetailPage({
   const needsServices =
     !foreign && (activeTab === "jobs" || activeTab === "recommendations");
   const needsInspection =
+    activeTab === "overview" ||
     activeTab === "inspection" ||
     activeTab === "jobs" ||
     (activeTab === "recommendations" && Boolean(fromResultId));
@@ -318,6 +319,7 @@ export default async function WorkOrderDetailPage({
             canOverrideComplete={canOverrideComplete}
             canClearFlags={canClearFlags}
             canOverrideSafety={canOverrideSafety}
+            inspectionCompleted={Boolean(inspection?.completed_at)}
             readOnly={detail.is_foreign_location}
             assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
             setPrimaryAction={setPrimaryTechnicianAction.bind(null, detail.work_order_id)}

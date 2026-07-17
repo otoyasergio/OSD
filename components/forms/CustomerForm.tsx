@@ -15,9 +15,11 @@ type Props = {
   action: (state: CustomerFormState, formData: FormData) => Promise<CustomerFormState>;
   customer?: Customer;
   submitLabel: string;
+  /** Safe in-app path to resume after create (e.g. /work_orders/new). */
+  returnTo?: string;
 };
 
-export function CustomerForm({ action, customer, submitLabel }: Props) {
+export function CustomerForm({ action, customer, submitLabel, returnTo }: Props) {
   const [state, formAction] = useActionState(action, { error: null });
   const fieldErrors = state.fieldErrors ?? {};
   const accountType = customer?.account_type ?? "retail";
@@ -27,6 +29,7 @@ export function CustomerForm({ action, customer, submitLabel }: Props) {
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-4">
+      {returnTo ? <input type="hidden" name="return_to" value={returnTo} /> : null}
       <FormError message={state.error} />
 
       <div className="grid gap-4 sm:grid-cols-2">

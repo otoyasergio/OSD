@@ -6,7 +6,7 @@ export const SHOP_HOURLY_RATE = 145;
 
 export const SHOP_MINIMUM_HOURS = 0.25;
 
-/** Storage (and similar) are flat-rate — not billed at the hourly shop rate. */
+/** Storage / tires (and similar) are flat-rate — not billed at the hourly shop rate. */
 export function isFlatRateService(service: {
   category?: string | null;
   name?: string | null;
@@ -14,7 +14,13 @@ export function isFlatRateService(service: {
   const category = service.category?.trim().toLowerCase() ?? "";
   if (category === "storage") return true;
   const name = service.name?.trim().toLowerCase() ?? "";
-  return /\bstorage\b/.test(name);
+  if (/\bstorage\b/.test(name)) return true;
+  return (
+    name === "front tire" ||
+    name === "rear tire" ||
+    name === "tire change" ||
+    /\btire\b/.test(name)
+  );
 }
 
 /** Labour charge for a given number of hours at the shop rate. */
@@ -45,9 +51,7 @@ export function defaultServiceLinePrice(args: {
     return String(args.cataloguePrice);
   }
   const fromHours =
-    args.labourHours != null
-      ? suggestedPriceFromLabourHours(args.labourHours)
-      : "";
+    args.labourHours != null ? suggestedPriceFromLabourHours(args.labourHours) : "";
   if (fromHours) return fromHours;
   const fromCatalogue = labourPriceFromHours(args.catalogueLabour ?? null);
   return fromCatalogue == null ? "" : String(fromCatalogue);

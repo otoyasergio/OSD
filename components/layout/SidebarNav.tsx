@@ -63,6 +63,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/settings/contract_template": ScrollText,
   "/settings/services": BookOpen,
   "/settings/users": Shield,
+  "/settings/logs": ScrollText,
   "/settings/audit": ScrollText,
   "/settings/reports": BarChart3,
   "/billing": Wallet,
@@ -195,9 +196,9 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
   }
   if (canViewAuditLog(role)) {
     adminSettings.push({
-      href: "/settings/audit",
-      label: "Audit log",
-      icon: iconFor("/settings/audit"),
+      href: "/settings/logs",
+      label: "Logs",
+      icon: iconFor("/settings/logs"),
     });
   }
   if (canViewReports(role)) {

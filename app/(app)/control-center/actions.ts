@@ -7,7 +7,7 @@ import {
   unassignAllActiveJobsOnWorkOrder,
 } from "@/lib/services/jobs";
 import { clockStaffIn, clockStaffOut } from "@/lib/services/timeClock";
-import { toFormErrorMessage } from "@/lib/services/errors";
+import { recordUxFailure } from "@/lib/services/uxEvents";
 
 function revalidateDispatch() {
   revalidatePath("/control-center");
@@ -25,7 +25,12 @@ export async function dispatchWorkOrderToTechnicianAction(
     revalidateDispatch();
     return { error: null };
   } catch (error) {
-    return { error: toFormErrorMessage(error) };
+    return {
+      error: await recordUxFailure(error, {
+        source: "control_center.dispatch",
+        context: { work_order_id: workOrderId, technician_id: technicianId },
+      }),
+    };
   }
 }
 
@@ -37,7 +42,12 @@ export async function unassignWorkOrderJobsAction(
     revalidateDispatch();
     return { error: null };
   } catch (error) {
-    return { error: toFormErrorMessage(error) };
+    return {
+      error: await recordUxFailure(error, {
+        source: "control_center.unassign",
+        context: { work_order_id: workOrderId },
+      }),
+    };
   }
 }
 
@@ -49,7 +59,12 @@ export async function openWorkOrderAction(
     revalidatePath("/control-center");
     return { error: null, opened_at: result.opened_at };
   } catch (error) {
-    return { error: toFormErrorMessage(error) };
+    return {
+      error: await recordUxFailure(error, {
+        source: "control_center.open",
+        context: { work_order_id: workOrderId },
+      }),
+    };
   }
 }
 
@@ -68,6 +83,11 @@ export async function setStaffSignedInAction(
     revalidatePath("/settings/timesheets");
     return { error: null };
   } catch (error) {
-    return { error: toFormErrorMessage(error) };
+    return {
+      error: await recordUxFailure(error, {
+        source: signedIn ? "control_center.staff_in" : "control_center.staff_out",
+        context: { staff_user_id: staffUserId },
+      }),
+    };
   }
 }

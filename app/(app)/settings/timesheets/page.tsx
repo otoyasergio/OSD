@@ -2,8 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { canManageTimesheets } from "@/lib/permissions";
-import { getTimesheetWeek, listTimesheetStaff } from "@/lib/services/timeClock";
+import {
+  getClockWidgetState,
+  getTimesheetWeek,
+  listTimesheetStaff,
+} from "@/lib/services/timeClock";
 import { TimesheetsPanel } from "@/components/timesheets/TimesheetsPanel";
+import { TimeClockWidget } from "@/components/technician/TimeClockWidget";
 import { shopDateKey } from "@/lib/datetime/format";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +25,10 @@ export default async function TimesheetsPage({
   const params = await searchParams;
   const week = params.week?.trim() || "";
 
-  const [view, staff] = await Promise.all([
+  const [view, staff, clockState] = await Promise.all([
     getTimesheetWeek(week || null),
     listTimesheetStaff(),
+    getClockWidgetState(user.user_id),
   ]);
 
   const weekParam = week || view.range.startDateKey || shopDateKey(new Date());
@@ -40,10 +46,19 @@ export default async function TimesheetsPage({
           Timesheets
         </h1>
         <p className="mt-1 text-sm text-[var(--status-neutral)]">
-          Who is punched in, weekly paid hours (breaks deducted), overtime after 44h,
-          approvals, and corrections. Staff clock in/out on Time clock.
+          Clock yourself in below, then manage staff punches, breaks, overtime after 44h,
+          and approvals. Use missed punch for past corrections.
         </p>
       </div>
+
+      <section className="rounded-lg border border-[var(--chrome-border)] bg-[var(--surface)] p-4">
+        <h2 className="mb-3 text-lg font-semibold text-foreground">Your clock</h2>
+        <TimeClockWidget
+          openEntry={clockState.openEntry}
+          openBreak={clockState.openBreak}
+          mealBreakNudge={clockState.mealBreakNudge}
+        />
+      </section>
 
       <TimesheetsPanel
         range={view.range}

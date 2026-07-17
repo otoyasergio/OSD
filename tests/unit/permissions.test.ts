@@ -20,6 +20,7 @@ import {
   canCreateAdminFlag,
   canManageServiceCatalogue,
   canManageContractTemplate,
+  canSignContract,
   canManageShopClosures,
   canUpdateServiceInformation,
   canDeleteIntakePhoto,
@@ -79,6 +80,14 @@ describe("permissions", () => {
 
   it("technician cannot complete work order", () => {
     expect(canCompleteWorkOrder("technician")).toBe(false);
+  });
+
+  it("floor techs cannot sign drop-off agreements", () => {
+    expect(canSignContract("technician")).toBe(false);
+    expect(canSignContract("head_tech")).toBe(false);
+    expect(canSignContract("service_advisor")).toBe(true);
+    expect(canSignContract("owner")).toBe(true);
+    expect(canSignContract("admin")).toBe(true);
   });
 
   it("service_advisor can run quality check", () => {
