@@ -54,12 +54,16 @@ export function JobPacketPanel({
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [section]);
 
+  const notesHref = techJobPacketHref(packet.work_order_id, {
+    jobId: selectedJobId ?? undefined,
+    section: "notes",
+    stage,
+  });
   const photosHref = techJobPacketHref(packet.work_order_id, {
     jobId: selectedJobId ?? undefined,
     section: "photos",
     stage,
   });
-  const photosLoaded = section === "photos";
 
   return (
     <div className="floor-packet">
@@ -69,7 +73,17 @@ export function JobPacketPanel({
             {packet.work_order_number} · {packet.wo_status_label}
           </p>
           <h2 className="floor-bike">{packet.motorcycle_label}</h2>
-          <p className="floor-muted">Job packet — notes, photos, and sibling jobs</p>
+          <p className="floor-muted">
+            Intake photos &amp; notes — available whenever this bike is on your docket
+          </p>
+          <div className="floor-packet-jump" aria-label="Jump to section">
+            <Link href={notesHref} className="pit-secondary-link">
+              Notes
+            </Link>
+            <Link href={photosHref} className="pit-secondary-link">
+              Photos
+            </Link>
+          </div>
         </header>
 
         <section
@@ -148,46 +162,35 @@ export function JobPacketPanel({
           aria-labelledby="floor-packet-photos-title"
         >
           <h3 id="floor-packet-photos-title" className="floor-section-title">
-            Photos
+            Intake &amp; proof photos
           </h3>
-          {photosLoaded ? (
-            photos.length === 0 ? (
-              <p className="floor-muted">No intake or proof photos on file.</p>
-            ) : (
-              <ul className="floor-packet-photo-grid">
-                {photos.map((photo) => (
-                  <li key={photo.photo_id} className="floor-packet-photo">
-                    {photo.signed_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={photo.signed_url}
-                        alt={`${PHOTO_CATEGORY_LABELS[photo.category]} photo`}
-                        className="floor-packet-photo-img"
-                      />
-                    ) : (
-                      <div className="floor-packet-photo-missing">
-                        Preview unavailable
-                      </div>
-                    )}
-                    <div className="floor-packet-photo-meta">
-                      <span className="floor-service-name">
-                        {PHOTO_CATEGORY_LABELS[photo.category]}
-                      </span>
-                      <span className="floor-muted">
-                        {formatDateTime(photo.created_at)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )
+          {photos.length === 0 ? (
+            <p className="floor-muted">No intake or proof photos on file.</p>
           ) : (
-            <Link
-              href={photosHref}
-              className="btn btn-secondary floor-tap floor-tap--wide"
-            >
-              Load photos
-            </Link>
+            <ul className="floor-packet-photo-grid">
+              {photos.map((photo) => (
+                <li key={photo.photo_id} className="floor-packet-photo">
+                  {photo.signed_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={photo.signed_url}
+                      alt={`${PHOTO_CATEGORY_LABELS[photo.category]} photo`}
+                      className="floor-packet-photo-img"
+                    />
+                  ) : (
+                    <div className="floor-packet-photo-missing">Preview unavailable</div>
+                  )}
+                  <div className="floor-packet-photo-meta">
+                    <span className="floor-service-name">
+                      {PHOTO_CATEGORY_LABELS[photo.category]}
+                    </span>
+                    <span className="floor-muted">
+                      {formatDateTime(photo.created_at)}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       </div>

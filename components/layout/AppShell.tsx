@@ -160,7 +160,7 @@ export function AppShell({
       open={notificationOpen}
       busy={notificationBusy}
       error={notificationError}
-      onToggle={() => setNotificationOpen((open) => !open)}
+      onToggle={() => setNotificationOpen((current) => !current)}
       onOpenNotification={(notification) => void openNotification(notification)}
       onMarkAllRead={() => void markAllNotificationsRead()}
     />
@@ -190,9 +190,9 @@ export function AppShell({
           <Image
             src="/otomoto-logo.png"
             alt="OTOMOTO Toronto Moto"
-            width={150}
-            height={52}
-            className="h-8 w-auto"
+            width={240}
+            height={84}
+            className="brand-logo brand-logo--mobile"
             priority
           />
         </Link>
@@ -236,9 +236,9 @@ export function AppShell({
           <Image
             src="/otomoto-logo.png"
             alt="OTOMOTO Toronto Moto"
-            width={150}
-            height={52}
-            className="h-9 w-auto"
+            width={260}
+            height={90}
+            className="brand-logo"
             priority
           />
           <span className="brand-wordmark" aria-hidden>

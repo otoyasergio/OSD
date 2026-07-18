@@ -28,4 +28,5 @@ export function setOptionalColumnSupport(key: string, supported: boolean): void 
 export const OPTIONAL_COLUMNS = {
   jobDocketPosition: "job.docket_position",
   workOrderOpenedAt: "work_order.opened_at",
+  jobFloorParkAck: "job.floor_acknowledged_at",
 } as const;

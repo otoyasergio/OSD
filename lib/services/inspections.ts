@@ -571,7 +571,8 @@ export async function completeInspection(
         inspection_result_id,
         status,
         category_snapshot,
-        item_name_snapshot
+        item_name_snapshot,
+        notes
       )
     `
     )
@@ -588,6 +589,7 @@ export async function completeInspection(
       status: string | null;
       category_snapshot: string;
       item_name_snapshot: string;
+      notes: string | null;
     }> | null) ?? [];
   const incompleteCount = countIncompleteInspectionResults(results);
 
@@ -658,6 +660,26 @@ export async function completeInspection(
       forced: Boolean(options.force && incompleteCount > 0),
     },
   });
+
+  // Yellow / red findings become recommendations immediately on complete.
+  const { ensureRecommendationsForAttentionFindings } =
+    await import("@/lib/services/recommendations");
+  const recommendationCount = await ensureRecommendationsForAttentionFindings(
+    workOrderId,
+    results
+  );
+
+  if (recommendationCount > 0) {
+    await addTimelineEvent(supabase, {
+      work_order_id: workOrderId,
+      user_id: user.user_id,
+      event_type: TimelineEventType.RECOMMENDATION_CREATED,
+      entity_type: "inspection",
+      entity_id: inspection.inspection_id,
+      description: `${recommendationCount} recommendation(s) created from inspection findings`,
+      new_value: { recommendation_count: recommendationCount },
+    });
+  }
 
   await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
 }

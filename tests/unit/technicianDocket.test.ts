@@ -1,5 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { buildTechnicianDocketItems } from "@/lib/services/technicianDocket";
+import {
+  docketCardAccessibleName,
+  docketCardJobLine,
+} from "@/lib/technician/docketCardDisplay";
+
+describe("docketCardJobLine", () => {
+  it("formats WO · service for active jobs", () => {
+    expect(
+      docketCardJobLine({
+        subtitle: "WO-1209",
+        service_label: "Annual safety inspection",
+        board_stamp: "NEXT",
+        park_reason_label: "",
+      })
+    ).toBe("WO-1209 · Annual safety inspection");
+  });
+
+  it("shows park reason on HOLD rows instead of service", () => {
+    expect(
+      docketCardJobLine({
+        subtitle: "WO-1198",
+        service_label: "Front brake pads",
+        board_stamp: "HOLD",
+        park_reason_label: "Parts not here",
+      })
+    ).toBe("WO-1198 · Parts not here");
+  });
+});
 
 describe("buildTechnicianDocketItems", () => {
   it("orders NOW first, then assigned, QC, safety, flags", () => {
@@ -65,6 +93,7 @@ describe("buildTechnicianDocketItems", () => {
     expect(items[0].service_label).toBe("Brakes");
     expect(items[0].href).toContain("job=j1");
     expect(items[0].href).toContain("wo=w1");
+    expect(docketCardJobLine(items[0])).toBe("WO-1 · Brakes");
   });
 
   it("omits safeties when includeSafeties is false", () => {
@@ -230,7 +259,76 @@ describe("buildTechnicianDocketItems", () => {
     ]);
   });
 
-  it("never includes customer PII in titles", () => {
+  it("does not park an in-progress bike when a sibling job awaits approval", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j-original",
+          work_order_id: "w1",
+          work_order_number: "WO-1013",
+          service_name: "Oil change",
+          motorcycle_label: "Yamaha R3",
+          status: "in_progress",
+          status_label: "In Progress",
+          docket_position: 1,
+          floor_acknowledged_at: "2026-07-17T12:00:00Z",
+          job_timer_running: true,
+        },
+        {
+          job_id: "j-waiting",
+          work_order_id: "w1",
+          work_order_number: "WO-1013",
+          service_name: "Chain kit",
+          motorcycle_label: "Yamaha R3",
+          status: "waiting_for_approval",
+          status_label: "Waiting For Approval",
+          docket_position: 2,
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      job_id: "j-original",
+      kind: "now",
+      board_status: "bench",
+      board_stamp: "NOW",
+    });
+  });
+
+  it("shows approved recommendation jobs as NEW on the docket", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j-from-rec",
+          work_order_id: "w1",
+          work_order_number: "WO-1013",
+          service_name: "Brake pads",
+          motorcycle_label: "Yamaha R3",
+          status: "approved",
+          status_label: "Approved",
+          docket_position: 1,
+          floor_acknowledged_at: null,
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+
+    expect(items[0]).toMatchObject({
+      job_id: "j-from-rec",
+      board_status: "offered",
+      board_stamp: "NEW",
+    });
+  });
+
+  it("never includes customer PII in docket display fields", () => {
     const items = buildTechnicianDocketItems({
       assignedJobs: [
         {
@@ -245,10 +343,29 @@ describe("buildTechnicianDocketItems", () => {
       ],
       qcItems: [],
       safetyItems: [],
-      flags: [],
+      flags: [
+        {
+          admin_flag_id: "f1",
+          work_order_id: "w2",
+          work_order_number: "WO-2",
+          job_id: null,
+          motorcycle_label: "Ducati Monster",
+          reason: "parts",
+          note: "Customer called about pickup",
+        },
+      ],
       includeSafeties: false,
     });
-    expect(items[0].title).toBe("Yamaha R3 · Oil");
-    expect(items[0].title.toLowerCase()).not.toContain("customer");
+
+    for (const item of items) {
+      expect(item.title.toLowerCase()).not.toContain("customer");
+      expect(item.title.toLowerCase()).not.toContain("client");
+      expect(docketCardJobLine(item).toLowerCase()).not.toContain("customer");
+      expect(docketCardAccessibleName(item).toLowerCase()).not.toContain("customer");
+    }
+
+    const flag = items.find((item) => item.kind === "flag");
+    expect(flag?.subtitle).toBe("WO-2");
+    expect(flag?.subtitle).not.toContain("Customer");
   });
 });

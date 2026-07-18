@@ -79,6 +79,24 @@ export type TechnicianNoteType =
 
 export type AdminFlagReason = "parts" | "approval" | "tool" | "quality" | "other";
 
+/** Pit Board park reasons (job.floor_park_reason). */
+export type FloorParkReason = "parts" | "approval" | "tool" | "other" | "swapped";
+
+/** Who owns a parked wait (job.floor_wait_owner). */
+export type FloorWaitOwner = "front_desk" | "technician";
+
+/** Derived Pit Board stamp / status for the tech floor UI. */
+export type PitBoardStatus =
+  | "offered"
+  | "next"
+  | "bench"
+  | "waiting"
+  | "check"
+  | "done"
+  | "qcpassed"
+  | "qcfailed"
+  | "safety";
+
 export type { Database } from "@/lib/database/supabase.generated";
 
 /** Untyped until createClient is wired with generated Database generics. */

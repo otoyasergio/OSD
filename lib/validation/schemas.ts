@@ -106,6 +106,13 @@ export const shopClosureSchema = z.object({
 export const createWorkOrderSchema = z.object({
   motorcycle_id: z.string().uuid(),
   location_id: z.string().uuid(),
+  /** Wix work order # — used as the shop work order number (no auto-mint at intake). */
+  work_order_number: z
+    .string()
+    .trim()
+    .min(1, "Wix work order number is required")
+    .max(80)
+    .transform((value) => value.replace(/\s+/g, " ")),
   external_invoice_number: z.string().optional().nullable(),
   mileage: z.number().int().nonnegative(),
   mileage_unit: z.enum(["km", "mi"]).default("km"),

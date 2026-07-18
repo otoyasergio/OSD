@@ -79,8 +79,9 @@ export default async function TechnicianPage({
   const packetSection = packetSectionFromParams(params.packetSection);
 
   const hasSelection = Boolean(params.job || params.wo);
-  const loadPhotos =
-    panel === "packet" && packetSection === "photos" && Boolean(params.wo);
+  // Always load intake/proof photos with the packet so techs can open them
+  // any time the bike is on their docket — no second "Load photos" hop.
+  const loadPacket = panel === "packet" && Boolean(params.wo);
 
   const [floor, docket, readyForPickup, packet, packetPhotos] = await Promise.all([
     hasSelection
@@ -93,13 +94,12 @@ export default async function TechnicianPage({
     isFloorTech(user.role)
       ? getTechnicianDocket(user.user_id).catch(() => null)
       : Promise.resolve(null),
-    listReadyForPickup({ hrefFor: (id) => techJobPacketHref(id) }).catch(() => []),
-    panel === "packet" && params.wo
-      ? getJobPacket(params.wo).catch(() => null)
-      : Promise.resolve(null),
-    loadPhotos && params.wo
-      ? listIntakePhotos(params.wo).catch(() => [])
-      : Promise.resolve([]),
+    // Pickup queue is front-office only — floor techs stay on their docket.
+    isFloorTech(user.role)
+      ? Promise.resolve([])
+      : listReadyForPickup({ hrefFor: (id) => techJobPacketHref(id) }).catch(() => []),
+    loadPacket ? getJobPacket(params.wo!).catch(() => null) : Promise.resolve(null),
+    loadPacket ? listIntakePhotos(params.wo!).catch(() => []) : Promise.resolve([]),
   ]);
 
   const stage =

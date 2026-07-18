@@ -4,16 +4,25 @@ import type { DbClient } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canPerformPeerQualityCheck, canRunQualityCheck } from "@/lib/permissions";
+import {
+  canCompleteJob,
+  canPerformPeerQualityCheck,
+  canRunQualityCheck,
+} from "@/lib/permissions";
 import { pickPeerQcAssignee } from "@/lib/status/peerQcAssigner";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { createAdminFlag } from "@/lib/services/adminFlags";
 import { completeQualityCheck } from "@/lib/services/quality";
 
-async function listClockedInTechnicianIds(
+export type PeerQcPickerOption = {
+  user_id: string;
+  display_name: string;
+};
+
+async function listClockedInTechnicians(
   supabase: DbClient,
   locationId: string
-): Promise<string[]> {
+): Promise<Array<{ user_id: string; first_name: string; last_name: string }>> {
   const { data: punches, error } = await supabase
     .from("time_clock_entry")
     .select("user_id")
@@ -28,12 +37,114 @@ async function listClockedInTechnicianIds(
 
   const { data: techs, error: techError } = await supabase
     .from("app_user")
-    .select("user_id")
+    .select("user_id, first_name, last_name")
     .in("user_id", userIds)
     .in("role", ["technician", "head_tech"])
     .eq("status", "active");
   if (techError) throw techError;
-  return (techs ?? []).map((row: { user_id: string }) => row.user_id);
+  return (techs ?? []) as Array<{
+    user_id: string;
+    first_name: string;
+    last_name: string;
+  }>;
+}
+
+async function listClockedInTechnicianIds(
+  supabase: DbClient,
+  locationId: string
+): Promise<string[]> {
+  const techs = await listClockedInTechnicians(supabase, locationId);
+  return techs.map((row) => row.user_id);
+}
+
+/** Clocked-in peers a tech can ask to check their work (excludes themselves). */
+export async function listPeerQcPickerOptions(
+  excludeUserId: string
+): Promise<PeerQcPickerOption[]> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const locationId = user.active_location_id!;
+  const techs = await listClockedInTechnicians(supabase, locationId);
+  return techs
+    .filter((tech) => tech.user_id !== excludeUserId)
+    .map((tech) => ({
+      user_id: tech.user_id,
+      display_name: `${tech.first_name} ${tech.last_name}`.trim() || "Technician",
+    }))
+    .sort((a, b) => a.display_name.localeCompare(b.display_name));
+}
+
+/** Tech-chosen peer QC assignee after finishing a job. */
+export async function assignPeerQcByTechnician(
+  workOrderId: string,
+  assigneeUserId: string
+): Promise<void> {
+  const user = await requireUser();
+  if (!canCompleteJob(user.role)) throw new Error("FORBIDDEN");
+  const supabase = await createClient();
+  const locationId = user.active_location_id!;
+
+  if (!assigneeUserId || assigneeUserId === user.user_id) {
+    throw new Error("QC_ASSIGNEE_REQUIRED");
+  }
+
+  const { data: workOrder, error } = await supabase
+    .from("work_order")
+    .select("work_order_id, location_id, status, work_order_number")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+  if (workOrder.location_id !== locationId) throw new Error("FOREIGN_LOCATION");
+
+  const clockedIn = await listClockedInTechnicianIds(supabase, locationId);
+  if (!clockedIn.includes(assigneeUserId)) {
+    throw new Error("QC_ASSIGNEE_NOT_AVAILABLE");
+  }
+
+  const { data: assignee, error: assigneeError } = await supabase
+    .from("app_user")
+    .select("user_id, role, status, first_name, last_name")
+    .eq("user_id", assigneeUserId)
+    .maybeSingle();
+  if (assigneeError) throw assigneeError;
+  if (
+    !assignee ||
+    assignee.status !== "active" ||
+    !["technician", "head_tech"].includes(assignee.role)
+  ) {
+    throw new Error("QC_ASSIGNEE_NOT_AVAILABLE");
+  }
+
+  const { error: updateError } = await supabase
+    .from("work_order")
+    .update({
+      quality_check_assigned_to: assigneeUserId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("work_order_id", workOrderId);
+  if (updateError) throw updateError;
+
+  const name = `${assignee.first_name} ${assignee.last_name}`.trim();
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.WORK_ORDER_STATUS_CHANGED,
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Peer QC assigned to ${name || "technician"}`,
+    new_value: { quality_check_assigned_to: assigneeUserId, chosen_by: user.user_id },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: locationId,
+    action: "peer_qc_assigned",
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Peer QC chosen by finishing tech → ${name || assigneeUserId}`,
+    new_value: { quality_check_assigned_to: assigneeUserId },
+  });
 }
 
 const UNASSIGNED_QC_NOTE =

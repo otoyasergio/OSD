@@ -66,9 +66,9 @@ export default function LoginPage() {
               <Image
                 src="/otomoto-logo.png"
                 alt="OTOMOTO Toronto Moto"
-                width={180}
-                height={62}
-                className="h-11 w-auto"
+                width={280}
+                height={96}
+                className="brand-logo brand-logo--login"
                 priority
               />
               <div>
@@ -135,9 +135,9 @@ export default function LoginPage() {
           <Image
             src="/otomoto-service-logo.png"
             alt="OTOMOTO Moto Service"
-            width={160}
-            height={124}
-            className="h-14 w-auto opacity-70"
+            width={220}
+            height={170}
+            className="brand-logo brand-logo--service"
           />
         </div>
       </div>

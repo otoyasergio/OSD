@@ -29,9 +29,9 @@ export default async function AccountPage() {
           <Image
             src="/otomoto-logo.png"
             alt="OTOMOTO Toronto Moto"
-            width={150}
-            height={52}
-            className="h-9 w-auto"
+            width={260}
+            height={90}
+            className="brand-logo"
             priority
           />
         </Link>

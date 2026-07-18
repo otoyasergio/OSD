@@ -16,23 +16,34 @@ const MESSAGES: Record<string, string> = {
   TECHNICIAN_NOT_FOUND: "That technician is not available at this location.",
   WORK_ORDER_NOT_FOUND: "That work order no longer exists.",
   WORK_ORDER_NUMBER_FAILED: "Could not mint a work order number. Try again.",
+  WORK_ORDER_NUMBER_REQUIRED: "Enter the Wix work order number.",
+  WORK_ORDER_NUMBER_TAKEN:
+    "That Wix work order number is already used at this location. Check the number and try again.",
   JOB_NOT_FOUND: "That job no longer exists.",
   FOREIGN_LOCATION:
     "This work order belongs to another location. Switch location to make changes.",
   WORK_ORDER_LOCKED: "This work order is completed or cancelled and cannot be changed.",
   JOB_NOT_READY: "That job is not ready to pull yet.",
+  JOB_AWAITING_CUSTOMER_APPROVAL:
+    "Waiting on client approval — front desk will send it back to Perform work when approved.",
   JOB_NOT_ASSIGNED: "Assign a technician before completing this job.",
   JOB_NOT_ASSIGNED_TO_YOU: "You can only start or complete jobs assigned to you.",
   JOB_ALREADY_ASSIGNED: "That job is already assigned.",
-  OTHER_JOB_IN_PROGRESS: "Finish or flag your current job before starting another.",
+  OTHER_JOB_IN_PROGRESS: "Park or finish the bike on your bench before starting another.",
+  JOB_NOT_ON_BENCH: "Only a bike on the bench can be parked.",
+  SWAP_SAME_JOB: "Pick a different bike to swap onto.",
+  PROOF_SKIP_REASON_REQUIRED: "Choose a reason to skip the after photo.",
   INVALID_STATUS: "This work order is not in the right status for that action.",
   CHECKLIST_REQUIRED: "Complete the standard work checklist first.",
   CHECKLIST_INCOMPLETE: "Check all checklist items before completing.",
   PARTS_NOT_INSTALLED: "Install or clear all parts before completing.",
-  PROOF_REQUIRED: "Add an after photo or a proof exception note.",
+  PROOF_REQUIRED: "Add an after photo or skip with a reason.",
   QC_NOT_ASSIGNED_TO_YOU: "This quality check is assigned to another technician.",
   CANNOT_QC_OWN_WORK: "You cannot quality-check work you performed.",
   QC_FAIL_REASON_REQUIRED: "Enter a reason when failing quality check.",
+  QC_ASSIGNEE_REQUIRED: "Choose who should check your work.",
+  QC_ASSIGNEE_NOT_AVAILABLE:
+    "That technician is not clocked in or available for peer QC.",
   INVALID_FLAG_REASON: "Choose a valid flag reason.",
   ADMIN_FLAG_NOT_FOUND: "That admin flag no longer exists.",
   ADMIN_FLAG_ALREADY_CLEARED: "That admin flag was already cleared.",
@@ -51,6 +62,8 @@ const MESSAGES: Record<string, string> = {
   INSPECTION_PHOTOS_REQUIRED:
     "Add required inspection photos (tires, brakes, forks, and any items marked needing work) before completing the report.",
   RECOMMENDATION_NOT_FOUND: "That recommendation no longer exists.",
+  RECOMMENDATION_DECLINED:
+    "That recommendation was declined and can’t be sent to the floor.",
   RECOMMENDATION_ALREADY_CONVERTED:
     "That recommendation has already been converted to a job.",
   PART_NOT_FOUND: "That part no longer exists.",

@@ -51,11 +51,70 @@ const OUTSTANDING_STATUSES: RecommendationStatus[] = ["pending", "deferred", "de
 const COLUMNS =
   "recommendation_id, work_order_id, inspection_result_id, created_by_user_id, description, severity, status, converted_job_id, notes, created_at, resolved_at";
 
-function severityFromInspectionStatus(
+export function severityFromInspectionStatus(
   status: InspectionResultStatus | null
 ): RecommendationSeverity {
   if (status === "immediate_attention") return "immediate_attention";
   return "future_attention";
+}
+
+/** Yellow / red inspection findings that should become recommendations. */
+export function isAttentionInspectionStatus(
+  status: string | null | undefined
+): status is "future_attention" | "immediate_attention" {
+  return status === "future_attention" || status === "immediate_attention";
+}
+
+export type AttentionFindingInput = {
+  inspection_result_id: string;
+  status: string | null;
+  item_name_snapshot: string;
+  category_snapshot: string;
+  notes?: string | null;
+};
+
+/**
+ * On inspection complete: create a pending recommendation for every yellow/red
+ * finding that does not already have one linked.
+ */
+export async function ensureRecommendationsForAttentionFindings(
+  workOrderId: string,
+  findings: AttentionFindingInput[]
+): Promise<number> {
+  const attention = findings.filter((f) => isAttentionInspectionStatus(f.status));
+  if (attention.length === 0) return 0;
+
+  const user = await requireUser();
+  if (!canCreateRecommendation(user.role)) throw new Error("FORBIDDEN");
+
+  const { supabase } = await requireMutableWorkOrder(user, workOrderId);
+
+  const resultIds = attention.map((f) => f.inspection_result_id);
+  const { data: existing, error: existingError } = await supabase
+    .from("recommendation")
+    .select("inspection_result_id")
+    .eq("work_order_id", workOrderId)
+    .in("inspection_result_id", resultIds);
+  if (existingError) throw existingError;
+
+  const already = new Set(
+    (existing ?? [])
+      .map((row) => row.inspection_result_id as string | null)
+      .filter((id): id is string => Boolean(id))
+  );
+
+  let created = 0;
+  for (const finding of attention) {
+    if (already.has(finding.inspection_result_id)) continue;
+    await createRecommendation(workOrderId, {
+      description: `${finding.item_name_snapshot} (${finding.category_snapshot})`,
+      severity: severityFromInspectionStatus(finding.status as InspectionResultStatus),
+      notes: finding.notes ?? null,
+      inspection_result_id: finding.inspection_result_id,
+    });
+    created += 1;
+  }
+  return created;
 }
 
 async function requireMutableWorkOrder(
@@ -363,15 +422,174 @@ export async function updateRecommendationStatus(
     new_value: { status },
   });
 
+  // Decline / defer: recalc from jobs only — no new work, finished path kept.
+  // Pending recs are never auto-cleared; only this explicit decision resolves them.
+  const { recalculateWorkOrderStatus } =
+    await import("@/lib/status/recalculateWorkOrderStatus");
+  await recalculateWorkOrderStatus(supabase, existing.work_order_id, user.user_id);
+
   return recommendation;
+}
+
+const CUSTOM_SERVICE_NAME = "Custom Service";
+
+function jobTitleFromRecommendation(description: string, serviceName: string): string {
+  const trimmed = description.trim();
+  if (!trimmed) return serviceName;
+  // Keep floor cards readable; full text stays in job notes / work brief.
+  return trimmed.length > 80 ? `${trimmed.slice(0, 77)}…` : trimmed;
+}
+
+async function resolveServiceForRecommendation(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  serviceId?: string | null
+) {
+  if (serviceId) {
+    const { data: service, error } = await supabase
+      .from("service")
+      .select("service_id, name, standard_price, estimated_labour, active")
+      .eq("service_id", serviceId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!service || !service.active) throw new Error("SERVICE_NOT_FOUND");
+    return service;
+  }
+
+  const { data: custom, error: customError } = await supabase
+    .from("service")
+    .select("service_id, name, standard_price, estimated_labour, active")
+    .eq("name", CUSTOM_SERVICE_NAME)
+    .eq("active", true)
+    .maybeSingle();
+  if (customError) throw customError;
+  if (!custom) throw new Error("SERVICE_NOT_FOUND");
+  return custom;
+}
+
+/** Prefer active tech, then who finished prior work on this WO, then primary. */
+export function pickAssigneeForRecommendationJob(input: {
+  activeTechnicianId: string | null | undefined;
+  completedTechnicianId?: string | null | undefined;
+  primaryTechnicianId: string | null | undefined;
+}): string | null {
+  return (
+    input.activeTechnicianId ??
+    input.completedTechnicianId ??
+    input.primaryTechnicianId ??
+    null
+  );
+}
+
+/** True when approve must reopen a finished visit (QC / safety / pickup). */
+export function workOrderNeedsReopenForNewRecommendationWork(wo: {
+  quality_checked_at?: string | null;
+  quality_checked_by_user_id?: string | null;
+  safety_checked_at?: string | null;
+  safety_checked_by_user_id?: string | null;
+  ready_for_pickup_at?: string | null;
+  status?: string | null;
+}): boolean {
+  return Boolean(
+    wo.quality_checked_at ||
+    wo.quality_checked_by_user_id ||
+    wo.safety_checked_at ||
+    wo.safety_checked_by_user_id ||
+    wo.ready_for_pickup_at ||
+    wo.status === "quality_check" ||
+    wo.status === "safety_check" ||
+    wo.status === "ready_for_pickup"
+  );
+}
+
+/**
+ * Approving new work after the visit finished must reopen the wrench flow:
+ * clear QC / safety / pickup stamps so the WO is unfinished again.
+ * Decline never calls this — finished state is preserved.
+ */
+export async function clearFinishedStampsForNewRecommendationWork(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workOrderId: string
+): Promise<boolean> {
+  const { data: wo, error } = await supabase
+    .from("work_order")
+    .select(
+      "quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, ready_for_pickup_at, status"
+    )
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!wo || !workOrderNeedsReopenForNewRecommendationWork(wo)) return false;
+
+  const { error: clearError } = await supabase
+    .from("work_order")
+    .update({
+      quality_checked_at: null,
+      quality_checked_by_user_id: null,
+      quality_check_notes: null,
+      quality_check_assigned_to: null,
+      safety_checked_at: null,
+      safety_checked_by_user_id: null,
+      safety_check_notes: null,
+      ready_for_pickup_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("work_order_id", workOrderId);
+  if (clearError) throw clearError;
+  return true;
+}
+
+/**
+ * Client approved a recommendation → create an approved job and put it on the
+ * tech's docket as pending Perform work.
+ */
+export async function approveRecommendationAndSendToFloor(
+  recommendationId: string,
+  input: { service_id?: string | null } = {}
+): Promise<{ job_id: string; recommendation_id: string }> {
+  const user = await requireUser();
+  if (!canRecordCustomerApproval(user.role) && !canConvertRecommendation(user.role)) {
+    throw new Error("FORBIDDEN");
+  }
+
+  const supabase = await createClient();
+  const { data: existing, error: loadError } = await supabase
+    .from("recommendation")
+    .select(COLUMNS)
+    .eq("recommendation_id", recommendationId)
+    .maybeSingle();
+
+  if (loadError) throw loadError;
+  if (!existing) throw new Error("RECOMMENDATION_NOT_FOUND");
+  if (existing.status === "converted_to_job" || existing.converted_job_id) {
+    throw new Error("RECOMMENDATION_ALREADY_CONVERTED");
+  }
+  if (existing.status === "declined") {
+    throw new Error("RECOMMENDATION_DECLINED");
+  }
+
+  return convertRecommendationToJob(recommendationId, {
+    service_id: input.service_id ?? undefined,
+    already_approved: true,
+    use_recommendation_title: true,
+  });
 }
 
 export async function convertRecommendationToJob(
   recommendationId: string,
-  input: { service_id: string; already_approved?: boolean }
+  input: {
+    service_id?: string;
+    already_approved?: boolean;
+    /** Prefer recommendation description as the job/service label on the floor. */
+    use_recommendation_title?: boolean;
+  }
 ): Promise<{ job_id: string; recommendation_id: string }> {
   const user = await requireUser();
-  if (!canConvertRecommendation(user.role)) throw new Error("FORBIDDEN");
+  if (
+    !canConvertRecommendation(user.role) &&
+    !(input.already_approved && canRecordCustomerApproval(user.role))
+  ) {
+    throw new Error("FORBIDDEN");
+  }
 
   const supabase = await createClient();
   const { data: existing, error: loadError } = await supabase
@@ -391,30 +609,33 @@ export async function convertRecommendationToJob(
     existing.work_order_id
   );
 
-  const { data: service, error: serviceError } = await supabase
-    .from("service")
-    .select("service_id, name, standard_price, estimated_labour, active")
-    .eq("service_id", input.service_id)
-    .maybeSingle();
-
-  if (serviceError) throw serviceError;
-  if (!service || !service.active) throw new Error("SERVICE_NOT_FOUND");
+  const service = await resolveServiceForRecommendation(supabase, input.service_id);
 
   const alreadyApproved =
     Boolean(input.already_approved) || existing.status === "approved";
   const jobStatus: JobStatus = alreadyApproved ? "approved" : "waiting_for_approval";
+  const serviceNameSnapshot =
+    input.use_recommendation_title || service.name === CUSTOM_SERVICE_NAME
+      ? jobTitleFromRecommendation(existing.description, service.name)
+      : service.name;
+  const jobNotes = [
+    `From recommendation: ${existing.description}`,
+    existing.notes?.trim() || null,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const { data: job, error: jobError } = await supabase
     .from("job")
     .insert({
       work_order_id: existing.work_order_id,
       service_id: service.service_id,
-      service_name_snapshot: service.name,
+      service_name_snapshot: serviceNameSnapshot,
       standard_price_snapshot: service.standard_price,
       estimated_labour_snapshot: service.estimated_labour,
       status: jobStatus,
       created_by_user_id: user.user_id,
-      notes: `From recommendation: ${existing.description}`,
+      notes: jobNotes,
       ...(alreadyApproved
         ? {
             approved_by_customer_at: new Date().toISOString(),
@@ -474,16 +695,50 @@ export async function convertRecommendationToJob(
     },
   });
 
-  await recalculateWorkOrderStatus(supabase, existing.work_order_id, user.user_id);
-
+  // Prefer tech on open work; if original job already finished, use that tech.
+  const { data: activeTechJob } = await supabase
+    .from("job")
+    .select("assigned_technician_id")
+    .eq("work_order_id", existing.work_order_id)
+    .not("assigned_technician_id", "is", null)
+    .not("status", "in", '("completed","cancelled","declined")')
+    .neq("job_id", job.job_id)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const { data: completedTechJob } = await supabase
+    .from("job")
+    .select("assigned_technician_id")
+    .eq("work_order_id", existing.work_order_id)
+    .eq("status", "completed")
+    .not("assigned_technician_id", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
   const { data: woPrimary } = await supabase
     .from("work_order")
     .select("primary_technician_id")
     .eq("work_order_id", existing.work_order_id)
     .maybeSingle();
-  if (woPrimary?.primary_technician_id) {
-    await assignTechnicianToJob(job.job_id, woPrimary.primary_technician_id as string);
+  const assigneeId = pickAssigneeForRecommendationJob({
+    activeTechnicianId: activeTechJob?.assigned_technician_id as string | null,
+    completedTechnicianId: completedTechJob?.assigned_technician_id as string | null,
+    primaryTechnicianId: woPrimary?.primary_technician_id as string | null,
+  });
+  if (assigneeId) {
+    await assignTechnicianToJob(job.job_id, assigneeId);
   }
+
+  // Ensure Perform work checklist exists so the new docket job is ready to open.
+  const { listJobChecklist } = await import("@/lib/services/jobChecklist");
+  await listJobChecklist(job.job_id, supabase);
+
+  // Approve after finish → unfinished again (clear QC/safety/pickup stamps).
+  if (alreadyApproved) {
+    await clearFinishedStampsForNewRecommendationWork(supabase, existing.work_order_id);
+  }
+
+  await recalculateWorkOrderStatus(supabase, existing.work_order_id, user.user_id);
 
   return {
     job_id: job.job_id,
