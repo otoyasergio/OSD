@@ -742,10 +742,11 @@ export async function getTechnicianFloorOs(input: {
         severity: string;
       }>;
       const technicianNotes = (technicianNotesResult.data ?? []).map((row) => {
-        const createdBy = row.created_by as {
-          first_name: string;
-          last_name: string;
-        } | null;
+        const createdByRaw = row.created_by as
+          | { first_name: string; last_name: string }
+          | { first_name: string; last_name: string }[]
+          | null;
+        const createdBy = Array.isArray(createdByRaw) ? createdByRaw[0] : createdByRaw;
         return {
           technician_note_id: row.technician_note_id as string,
           note: row.note as string,
