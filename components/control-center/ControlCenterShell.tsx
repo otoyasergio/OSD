@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -27,6 +28,7 @@ import { deriveTechAvailability } from "@/lib/control-center/availability";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
 import { createClient } from "@/lib/database/supabase-browser";
 import type { WorkOrderStatus } from "@/lib/database/types";
+import { controlCenterCohortHref } from "@/lib/control-center/cohorts";
 import {
   canDragCcBike,
   isCcStageDropEnabledForRole,
@@ -882,18 +884,32 @@ export function ControlCenterShell({
       />
 
       <div className="cc-kpi-grid">
-        {kpis.map((kpi) => (
-          <div key={kpi.label} className="stat-card">
-            <span className="stat-card-label">{kpi.label}</span>
-            <span
-              className={["cc-kpi-value", kpi.danger ? "cc-kpi-value--danger" : ""]
-                .filter(Boolean)
-                .join(" ")}
+        {kpis.map((kpi) => {
+          const valueClass = ["cc-kpi-value", kpi.danger ? "cc-kpi-value--danger" : ""]
+            .filter(Boolean)
+            .join(" ");
+
+          if (!kpi.cohort) {
+            return (
+              <div key={kpi.label} className="stat-card">
+                <span className="stat-card-label">{kpi.label}</span>
+                <span className={valueClass}>{kpi.value}</span>
+              </div>
+            );
+          }
+
+          return (
+            <Link
+              key={kpi.label}
+              href={controlCenterCohortHref(kpi.cohort)}
+              className="stat-card cc-kpi-link"
+              aria-label={`View ${kpi.label} bikes`}
             >
-              {kpi.value}
-            </span>
-          </div>
-        ))}
+              <span className="stat-card-label">{kpi.label}</span>
+              <span className={valueClass}>{kpi.value}</span>
+            </Link>
+          );
+        })}
       </div>
 
       {errorMessage ? (

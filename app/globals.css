@@ -744,6 +744,17 @@ summary {
     box-shadow 0.15s;
 }
 
+a.stat-card {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.stat-card:hover {
+  border-color: color-mix(in srgb, var(--chrome) 45%, var(--border));
+  box-shadow: var(--shadow-md);
+}
+
 .stat-card:active {
   box-shadow: var(--shadow-md);
 }
@@ -4615,6 +4626,70 @@ label.photo-source-sheet-action {
   .cc-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+a.cc-kpi-link:focus-visible {
+  outline: 2px solid var(--chrome);
+  outline-offset: 2px;
+}
+
+.cc-cohort-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.cc-cohort-list-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cc-cohort-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cc-cohort-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: var(--tap-min);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--background);
+  padding: 0.75rem 0.875rem;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.cc-cohort-row:hover {
+  border-color: color-mix(in srgb, var(--chrome) 45%, var(--border));
+  box-shadow: var(--shadow-sm);
+}
+
+.cc-cohort-row:focus-visible {
+  outline: 2px solid var(--chrome);
+  outline-offset: 2px;
+}
+
+.cc-cohort-row-main {
+  min-width: 0;
+  flex: 1;
 }
 
 .cc-kpi-value {
