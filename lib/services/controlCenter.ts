@@ -6,7 +6,7 @@ import {
   getOptionalColumnSupport,
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
-import type { PhotoCategory, UserRole, WorkOrderStatus } from "@/lib/database/types";
+import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
 import { isControlCenterAtRisk, latestJobActivityAt } from "@/lib/control-center/atRisk";
 import {
   deriveTechAvailability,
@@ -15,7 +15,7 @@ import {
 import type { ControlCenterCohortKey } from "@/lib/control-center/cohorts";
 import { canViewReports, isFloorTech } from "@/lib/permissions";
 import { listOpenAdminFlagsForWorkOrders } from "@/lib/services/adminFlags";
-import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 import { getShopReportSummary } from "@/lib/services/reports";
 import { buildWorkOrderFlags, isOverdue } from "@/lib/status/flags";
 import { getGalleryStageForStatus } from "@/lib/status/pipeline";
@@ -116,13 +116,6 @@ type RawRow = {
   job: RawJob[] | null;
   recommendation: Array<{ severity: string; status: string }> | null;
   drop_off_agreement: Array<{ agreement_id: string }> | null;
-  intake_photo: Array<{
-    photo_id: string;
-    storage_path: string;
-    photo_url: string | null;
-    category: PhotoCategory;
-    created_at: string;
-  }> | null;
   inspection: Array<{ completed_at: string | null }> | null;
 };
 
@@ -173,11 +166,11 @@ function toBike(
   row: RawRow,
   now: Date,
   primaryPhotoUrl: string | null,
+  photoCount: number,
   hasOpenAdminFlag: boolean
 ): ControlCenterBike {
   const jobs = row.job ?? [];
   const recommendations = row.recommendation ?? [];
-  const photos = row.intake_photo ?? [];
   const inspection = row.inspection?.[0] ?? null;
   const bike = row.motorcycle;
   const customer = row.customer;
@@ -187,7 +180,7 @@ function toBike(
     estimated_completion: row.estimated_completion,
     jobs,
     recommendations,
-    photoCount: photos.length,
+    photoCount,
     inspectionComplete: inspection ? Boolean(inspection.completed_at) : null,
     hasSignedAgreement: (row.drop_off_agreement?.length ?? 0) > 0,
     hasOpenAdminFlag,
@@ -391,7 +384,6 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
       ),
       job ( job_id, status, assigned_technician_id, started_at, updated_at, created_at ),
       recommendation ( severity, status ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
       inspection ( completed_at ),
       drop_off_agreement ( agreement_id )
     `;
@@ -416,7 +408,6 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
       ),
       job ( job_id, status, assigned_technician_id, started_at, updated_at, created_at ),
       recommendation ( severity, status ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
       inspection ( completed_at ),
       drop_off_agreement ( agreement_id )
     `;
@@ -471,21 +462,18 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
     user.user_id
   ) as unknown as RawRow[];
 
-  const photosByWorkOrder = new Map<string, IntakePhotoRef[]>();
-  for (const row of rawRows) {
-    photosByWorkOrder.set(row.work_order_id, row.intake_photo ?? []);
-  }
-  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(supabase, photosByWorkOrder);
-  const openFlags = await listOpenAdminFlagsForWorkOrders(
-    supabase,
-    rawRows.map((row) => row.work_order_id)
-  );
+  const workOrderIds = rawRows.map((row) => row.work_order_id);
+  const [{ urls: primaryPhotoUrls, counts: photoCounts }, openFlags] = await Promise.all([
+    resolveBoardPrimaryPhotos(supabase, workOrderIds),
+    listOpenAdminFlagsForWorkOrders(supabase, workOrderIds),
+  ]);
 
   const bikes = rawRows.map((row) =>
     toBike(
       row,
       now,
       primaryPhotoUrls.get(row.work_order_id) ?? null,
+      photoCounts.get(row.work_order_id) ?? 0,
       (openFlags.get(row.work_order_id) ?? []).length > 0
     )
   );
@@ -612,7 +600,6 @@ export async function listControlCenterCompletedToday(): Promise<ControlCenterBi
       ),
       job ( job_id, status, assigned_technician_id, started_at, updated_at, created_at ),
       recommendation ( severity, status ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
       inspection ( completed_at ),
       drop_off_agreement ( agreement_id )
     `;
@@ -629,21 +616,18 @@ export async function listControlCenterCompletedToday(): Promise<ControlCenterBi
   if (error) throw error;
 
   const rawRows = (data ?? []) as unknown as RawRow[];
-  const photosByWorkOrder = new Map<string, IntakePhotoRef[]>();
-  for (const row of rawRows) {
-    photosByWorkOrder.set(row.work_order_id, row.intake_photo ?? []);
-  }
-  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(supabase, photosByWorkOrder);
-  const openFlags = await listOpenAdminFlagsForWorkOrders(
-    supabase,
-    rawRows.map((row) => row.work_order_id)
-  );
+  const workOrderIds = rawRows.map((row) => row.work_order_id);
+  const [{ urls: primaryPhotoUrls, counts: photoCounts }, openFlags] = await Promise.all([
+    resolveBoardPrimaryPhotos(supabase, workOrderIds),
+    listOpenAdminFlagsForWorkOrders(supabase, workOrderIds),
+  ]);
 
   return rawRows.map((row) =>
     toBike(
       row,
       now,
       primaryPhotoUrls.get(row.work_order_id) ?? null,
+      photoCounts.get(row.work_order_id) ?? 0,
       (openFlags.get(row.work_order_id) ?? []).length > 0
     )
   );

@@ -34,7 +34,7 @@ import {
   waitOwnerLabel,
   type PitBoardStamp,
 } from "@/lib/technician/pitBoard";
-import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import type { DbClient } from "@/lib/database/types";
 
@@ -305,26 +305,7 @@ async function attachDocketPrimaryPhotos(
   const woIds = [...new Set(items.map((item) => item.work_order_id))];
   if (woIds.length === 0) return items;
 
-  const { data, error } = await supabase
-    .from("intake_photo")
-    .select("photo_id, work_order_id, storage_path, photo_url, category, created_at")
-    .in("work_order_id", woIds);
-  if (error) throw error;
-
-  const photoMap = new Map<string, IntakePhotoRef[]>();
-  for (const row of data ?? []) {
-    const list = photoMap.get(row.work_order_id) ?? [];
-    list.push({
-      photo_id: row.photo_id,
-      storage_path: row.storage_path,
-      photo_url: row.photo_url,
-      category: row.category,
-      created_at: row.created_at,
-    });
-    photoMap.set(row.work_order_id, list);
-  }
-
-  const urls = await resolvePrimaryPhotoUrls(supabase, photoMap);
+  const { urls } = await resolveBoardPrimaryPhotos(supabase, woIds);
   return items.map((item) => ({
     ...item,
     primary_photo_url: urls.get(item.work_order_id) ?? null,

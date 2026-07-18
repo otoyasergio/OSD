@@ -1,5 +1,6 @@
+import { createClient } from "@/lib/database/supabase-server";
+import type { WorkOrderStatus } from "@/lib/database/types";
 import { searchCustomers } from "@/lib/services/customers";
-import { getDashboardData } from "@/lib/services/dashboard";
 import { searchMotorcycles } from "@/lib/services/motorcycles";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 
@@ -79,10 +80,102 @@ function customerMeta(phone: string | null, email: string | null): string {
   return phone?.trim() || email?.trim() || "Customer";
 }
 
+type SearchWoRow = {
+  work_order_id: string;
+  work_order_number: string;
+  external_invoice_number: string | null;
+  status: WorkOrderStatus;
+  customer: {
+    first_name: string;
+    last_name: string;
+  } | null;
+  motorcycle: {
+    year: number;
+    make: string;
+    model: string;
+    vin: string | null;
+  } | null;
+};
+
+const WO_SEARCH_SELECT = `
+  work_order_id,
+  work_order_number,
+  external_invoice_number,
+  status,
+  customer:customer_id ( first_name, last_name ),
+  motorcycle:motorcycle_id ( year, make, model, vin )
+`;
+
+function rowMatchesQuery(row: SearchWoRow, query: string): boolean {
+  if (isWoNumberPrefixMatch(query, row.work_order_number)) return true;
+  const q = normalizeQuery(query);
+  const customer = row.customer;
+  const bike = row.motorcycle;
+  const haystack = [
+    row.work_order_number,
+    row.external_invoice_number,
+    customer?.first_name,
+    customer?.last_name,
+    bike?.make,
+    bike?.model,
+    bike?.vin,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
+}
+
+/**
+ * Lean WO typeahead query — never loads the full dashboard board graph.
+ * Matches WO/invoice via SQL ilike, plus customer/bike/VIN via a small recent window.
+ */
+async function searchWorkOrders(
+  query: string,
+  locationId: string,
+  limit: number
+): Promise<SearchWoRow[]> {
+  const supabase = await createClient();
+  const cleaned = query.replace(/[%_]/g, "").trim();
+  if (!cleaned) return [];
+  const pattern = `%${cleaned}%`;
+  const fetchLimit = Math.min(Math.max(limit * 4, 24), 60);
+
+  const [numberResult, recentResult] = await Promise.all([
+    supabase
+      .from("work_order")
+      .select(WO_SEARCH_SELECT)
+      .eq("location_id", locationId)
+      .or(`work_order_number.ilike.${pattern},external_invoice_number.ilike.${pattern}`)
+      .order("date_created", { ascending: false })
+      .limit(fetchLimit),
+    supabase
+      .from("work_order")
+      .select(WO_SEARCH_SELECT)
+      .eq("location_id", locationId)
+      .order("date_created", { ascending: false })
+      .limit(80),
+  ]);
+
+  if (numberResult.error) throw numberResult.error;
+  if (recentResult.error) throw recentResult.error;
+
+  const byId = new Map<string, SearchWoRow>();
+  for (const row of (numberResult.data ?? []) as unknown as SearchWoRow[]) {
+    byId.set(row.work_order_id, row);
+  }
+  for (const row of (recentResult.data ?? []) as unknown as SearchWoRow[]) {
+    if (byId.has(row.work_order_id)) continue;
+    if (rowMatchesQuery(row, query)) {
+      byId.set(row.work_order_id, row);
+    }
+  }
+
+  return [...byId.values()];
+}
+
 /**
  * Unified typeahead search across work orders (active location), customers, and motorcycles.
- * `locationId` documents the WO scope; dashboard query uses the session active location
- * (callers should pass `user.active_location_id`).
  */
 export async function searchAll(
   query: string,
@@ -94,34 +187,32 @@ export async function searchAll(
 
   const includeClients = options.includeClients !== false;
 
-  const [customers, motorcycles, dashboard] = await Promise.all([
+  const [customers, motorcycles, workOrders] = await Promise.all([
     includeClients ? searchCustomers(trimmed) : Promise.resolve([]),
     includeClients ? searchMotorcycles(trimmed) : Promise.resolve([]),
-    getDashboardData({ q: trimmed }),
+    searchWorkOrders(trimmed, options.locationId, limit),
   ]);
 
-  const results: SearchResult[] = [
-    ...dashboard.rows.map((row) => {
-      const customer = row.motorcycle?.customer;
-      const bike = row.motorcycle
-        ? `${row.motorcycle.year} ${row.motorcycle.make} ${row.motorcycle.model}`
+  const results: SearchResult[] = workOrders.map((row) => {
+    const customer = row.customer;
+    const bike = row.motorcycle
+      ? `${row.motorcycle.year} ${row.motorcycle.make} ${row.motorcycle.model}`
+      : null;
+    const customerName =
+      includeClients && customer
+        ? `${customer.first_name} ${customer.last_name}`.trim()
         : null;
-      const customerName =
-        includeClients && customer
-          ? `${customer.first_name} ${customer.last_name}`.trim()
-          : null;
-      const statusLabel = WORK_ORDER_STATUS_LABELS[row.status] ?? row.status;
-      const metaParts = [customerName, bike, statusLabel].filter(Boolean);
+    const statusLabel = WORK_ORDER_STATUS_LABELS[row.status] ?? row.status;
+    const metaParts = [customerName, bike, statusLabel].filter(Boolean);
 
-      return {
-        type: "work_order" as const,
-        id: row.work_order_id,
-        label: row.work_order_number,
-        href: `/work_orders/${row.work_order_id}`,
-        meta: metaParts.join(" · "),
-      };
-    }),
-  ];
+    return {
+      type: "work_order" as const,
+      id: row.work_order_id,
+      label: row.work_order_number,
+      href: `/work_orders/${row.work_order_id}`,
+      meta: metaParts.join(" · "),
+    };
+  });
 
   if (includeClients) {
     results.push(
@@ -141,9 +232,10 @@ export async function searchAll(
           id: bike.motorcycle_id,
           label: `${bike.year} ${bike.make} ${bike.model}`,
           href: `/motorcycles/${bike.motorcycle_id}`,
-          meta: [owner, bike.plate_number ? `Plate ${bike.plate_number}` : null, bike.vin]
-            .filter(Boolean)
-            .join(" · ") || "Motorcycle",
+          meta:
+            [owner, bike.plate_number ? `Plate ${bike.plate_number}` : null, bike.vin]
+              .filter(Boolean)
+              .join(" · ") || "Motorcycle",
         };
       })
     );

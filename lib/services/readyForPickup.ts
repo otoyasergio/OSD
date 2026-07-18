@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { PhotoCategory, WorkOrderStatus } from "@/lib/database/types";
-import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import type { WorkOrderStatus } from "@/lib/database/types";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 
 /** Bike waiting in a shop-floor stage queue (pickup, safety, etc.). */
 export type WaitingStageBike = {
@@ -25,14 +25,6 @@ type NestedMotorcycle = {
   model: string;
 } | null;
 
-type NestedPhoto = {
-  photo_id: string;
-  storage_path: string;
-  photo_url: string | null;
-  category: PhotoCategory;
-  created_at: string;
-};
-
 type StageRow = {
   work_order_id: string;
   work_order_number: string;
@@ -40,7 +32,6 @@ type StageRow = {
   quality_checked_at: string | null;
   updated_at: string;
   motorcycle: NestedMotorcycle | NestedMotorcycle[];
-  intake_photo: NestedPhoto[] | null;
 };
 
 function asOne<T>(value: T | T[] | null | undefined): T | null {
@@ -69,8 +60,7 @@ async function listWaitingStageBikes(input: {
       ready_for_pickup_at,
       quality_checked_at,
       updated_at,
-      motorcycle:motorcycle_id ( year, make, model ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at )
+      motorcycle:motorcycle_id ( year, make, model )
     `
     )
     .eq("location_id", locationId)
@@ -80,21 +70,10 @@ async function listWaitingStageBikes(input: {
   if (error) throw error;
 
   const rows = (data ?? []) as StageRow[];
-  const photoMap = new Map<string, IntakePhotoRef[]>();
-  for (const row of rows) {
-    photoMap.set(
-      row.work_order_id,
-      (row.intake_photo ?? []).map((p) => ({
-        photo_id: p.photo_id,
-        storage_path: p.storage_path,
-        photo_url: p.photo_url,
-        category: p.category,
-        created_at: p.created_at,
-      }))
-    );
-  }
-
-  const urls = await resolvePrimaryPhotoUrls(supabase, photoMap);
+  const { urls } = await resolveBoardPrimaryPhotos(
+    supabase,
+    rows.map((row) => row.work_order_id)
+  );
 
   return rows.map((row) => {
     const motorcycle = asOne(row.motorcycle);
@@ -204,8 +183,7 @@ export async function listRecentlyCompleted(): Promise<WaitingStageBike[]> {
       quality_checked_at,
       updated_at,
       completed_at,
-      motorcycle:motorcycle_id ( year, make, model ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at )
+      motorcycle:motorcycle_id ( year, make, model )
     `
     )
     .eq("location_id", locationId)
@@ -218,21 +196,10 @@ export async function listRecentlyCompleted(): Promise<WaitingStageBike[]> {
 
   type CompletedRow = StageRow & { completed_at: string | null };
   const rows = (data ?? []) as CompletedRow[];
-  const photoMap = new Map<string, IntakePhotoRef[]>();
-  for (const row of rows) {
-    photoMap.set(
-      row.work_order_id,
-      (row.intake_photo ?? []).map((p) => ({
-        photo_id: p.photo_id,
-        storage_path: p.storage_path,
-        photo_url: p.photo_url,
-        category: p.category,
-        created_at: p.created_at,
-      }))
-    );
-  }
-
-  const urls = await resolvePrimaryPhotoUrls(supabase, photoMap);
+  const { urls } = await resolveBoardPrimaryPhotos(
+    supabase,
+    rows.map((row) => row.work_order_id)
+  );
 
   return rows.map((row) => {
     const motorcycle = asOne(row.motorcycle);
