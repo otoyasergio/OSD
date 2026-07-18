@@ -880,9 +880,6 @@ export function TechnicianFloorShell({
     <div className="floor-shell">
       <header className="floor-header">
         <h1 className="floor-title">Tech floor</h1>
-        <Link href="/technician/clock" className="btn btn-secondary text-sm">
-          Time clock
-        </Link>
       </header>
 
       <ReadyForPickupCarousel items={readyForPickup} />

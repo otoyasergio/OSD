@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { TimeClockWidget } from "@/components/technician/TimeClockWidget";
 import { ShiftMonthCalendar } from "@/components/technician/ShiftMonthCalendar";
 import { MyTimesheetCard } from "@/components/technician/MyTimesheetCard";
+import { canSelfClock, staffHomePath } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export default async function TechnicianClockPage({
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
+  if (!canSelfClock(user.role)) redirect(staffHomePath(user.role));
 
   const params = await searchParams;
   const month = params.month?.trim() || "";

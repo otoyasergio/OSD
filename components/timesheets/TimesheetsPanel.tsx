@@ -62,6 +62,48 @@ function shortDayLabel(dateKey: string): string {
   });
 }
 
+function PunchPhotoRow({ entry }: { entry: TimeClockEntryWithUser }) {
+  const thumbs: Array<{ label: string; url: string | null | undefined }> = [
+    { label: "In", url: entry.clock_in_photo_url },
+    { label: "Out", url: entry.clock_out_photo_url },
+  ];
+  for (const b of entry.breaks ?? []) {
+    thumbs.push({ label: "Meal start", url: b.break_start_photo_url });
+    thumbs.push({ label: "Meal end", url: b.break_end_photo_url });
+  }
+  const visible = thumbs.filter((t) => t.url);
+  if (visible.length === 0) {
+    return (
+      <p className="mt-2 text-xs text-[var(--status-neutral)]">
+        No kiosk photos on this punch (manual correction or legacy).
+      </p>
+    );
+  }
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {visible.map((t) => (
+        <a
+          key={`${t.label}-${t.url}`}
+          href={t.url!}
+          target="_blank"
+          rel="noreferrer"
+          className="block"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={t.url!}
+            alt={t.label}
+            className="h-16 w-16 rounded border border-[var(--border)] object-cover"
+          />
+          <span className="mt-0.5 block text-center text-[10px] text-[var(--status-neutral)]">
+            {t.label}
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function CreatePunchForm({ staff }: { staff: TimesheetStaffOption[] }) {
   const [state, action] = useActionState(createPunchAction, {
     error: null,
@@ -543,6 +585,7 @@ export function TimesheetsPanel({
                         {entry.notes}
                       </p>
                     ) : null}
+                    <PunchPhotoRow entry={entry} />
                     <EditPunchForm entry={entry} locked={locked} />
                   </details>
                 </li>

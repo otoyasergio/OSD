@@ -1,7 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type UserRole =
-  "owner" | "manager" | "service_advisor" | "technician" | "head_tech" | "admin";
+  | "owner"
+  | "manager"
+  | "service_advisor"
+  | "technician"
+  | "head_tech"
+  | "admin"
+  | "time_clock_kiosk";
 
 export type UserStatus = "active" | "inactive" | "suspended";
 

@@ -7,8 +7,10 @@ import {
   getTimesheetWeek,
   listTimesheetStaff,
 } from "@/lib/services/timeClock";
+import { getAttendanceAnalytics } from "@/lib/services/attendanceAnalytics";
 import { TimesheetsPanel } from "@/components/timesheets/TimesheetsPanel";
 import { TimeClockWidget } from "@/components/technician/TimeClockWidget";
+import { HrmsSuggestionsPanel } from "@/components/reports/HrmsSuggestionsPanel";
 import { shopDateKey } from "@/lib/datetime/format";
 
 export const dynamic = "force-dynamic";
@@ -25,10 +27,11 @@ export default async function TimesheetsPage({
   const params = await searchParams;
   const week = params.week?.trim() || "";
 
-  const [view, staff, clockState] = await Promise.all([
+  const [view, staff, clockState, attendance] = await Promise.all([
     getTimesheetWeek(week || null),
     listTimesheetStaff(),
     getClockWidgetState(user.user_id),
+    getAttendanceAnalytics("week"),
   ]);
 
   const weekParam = week || view.range.startDateKey || shopDateKey(new Date());
@@ -47,9 +50,11 @@ export default async function TimesheetsPage({
         </h1>
         <p className="mt-1 text-sm text-[var(--status-neutral)]">
           Clock yourself in below, then manage staff punches, breaks, overtime after 44h,
-          and approvals. Use missed punch for past corrections.
+          and approvals. Floor staff punch on the tablet kiosk (with photos).
         </p>
       </div>
+
+      <HrmsSuggestionsPanel suggestions={attendance.suggestions.slice(0, 6)} />
 
       <section className="rounded-lg border border-[var(--chrome-border)] bg-[var(--surface)] p-4">
         <h2 className="mb-3 text-lg font-semibold text-foreground">Your clock</h2>

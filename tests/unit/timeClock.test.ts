@@ -11,7 +11,9 @@ import {
   paidPunchDurationMs,
   splitRegularAndOtMs,
   shouldNudgeMealBreak,
+  shouldWarnSupervisorWeeklyHours,
   ONTARIO_OT_THRESHOLD_MS,
+  WEEKLY_HOURS_SUPERVISOR_WARNING_MS,
 } from "@/lib/services/timeClockShared";
 import {
   shopDateKey,
@@ -382,5 +384,17 @@ describe("buildShiftMonthCalendar", () => {
     expect(aug1.ms).toBe(60 * 60 * 1000);
     expect(aug1.entryCount).toBe(1);
     expect(calendar.total_ms).toBe(60 * 60 * 1000);
+  });
+});
+
+describe("shouldWarnSupervisorWeeklyHours", () => {
+  it("warns at 37.5h and below OT threshold", () => {
+    expect(shouldWarnSupervisorWeeklyHours(WEEKLY_HOURS_SUPERVISOR_WARNING_MS)).toBe(
+      true
+    );
+    expect(shouldWarnSupervisorWeeklyHours(WEEKLY_HOURS_SUPERVISOR_WARNING_MS - 1)).toBe(
+      false
+    );
+    expect(shouldWarnSupervisorWeeklyHours(ONTARIO_OT_THRESHOLD_MS)).toBe(false);
   });
 });

@@ -289,6 +289,7 @@ export const appUserLinkSchema = z.object({
     "technician",
     "head_tech",
     "admin",
+    "time_clock_kiosk",
   ]),
   location_ids: z.array(z.string().uuid()).min(1, "Assign at least one location"),
 });
@@ -305,6 +306,7 @@ export const appUserUpdateSchema = z.object({
     "technician",
     "head_tech",
     "admin",
+    "time_clock_kiosk",
   ]),
   status: z.enum(["active", "inactive", "suspended"]),
   location_ids: z.array(z.string().uuid()).min(1, "Assign at least one location"),

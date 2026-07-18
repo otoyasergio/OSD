@@ -31,6 +31,7 @@ const ROLE_LABELS: Record<AppUser["role"], string> = {
   technician: "Technician",
   head_tech: "Head Tech",
   admin: "Admin",
+  time_clock_kiosk: "Time Clock Kiosk",
 };
 
 type Props = {

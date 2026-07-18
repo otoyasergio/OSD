@@ -10,6 +10,11 @@ import {
   canViewFiledArchive,
   canViewDashboard,
   staffHomePath,
+  canUseTimeClockKiosk,
+  canManageTimeClockPins,
+  canManageStaffProfiles,
+  canSelfClock,
+  canUseMessenger,
   canSyncPartsCanadaCatalog,
   canSyncWixContacts,
   canCompleteWorkOrder,
@@ -151,11 +156,31 @@ describe("permissions", () => {
     expect(canViewDashboard("admin")).toBe(true);
   });
 
-  it("staffHomePath sends floor techs to the tech floor", () => {
+  it("staffHomePath sends floor techs to the tech floor and kiosk to /kiosk", () => {
     expect(staffHomePath("technician")).toBe("/technician");
     expect(staffHomePath("head_tech")).toBe("/technician");
     expect(staffHomePath("owner")).toBe("/dashboard");
     expect(staffHomePath("service_advisor")).toBe("/dashboard");
+    expect(staffHomePath("time_clock_kiosk")).toBe("/kiosk");
+  });
+
+  it("time clock kiosk and self-clock permissions", () => {
+    expect(canUseTimeClockKiosk("time_clock_kiosk")).toBe(true);
+    expect(canUseTimeClockKiosk("owner")).toBe(false);
+    expect(canManageTimeClockPins("owner")).toBe(true);
+    expect(canManageTimeClockPins("manager")).toBe(true);
+    expect(canManageTimeClockPins("service_advisor")).toBe(false);
+    expect(canManageStaffProfiles("manager")).toBe(true);
+    expect(canManageStaffProfiles("technician")).toBe(false);
+    expect(canSelfClock("owner")).toBe(true);
+    expect(canSelfClock("manager")).toBe(true);
+    expect(canSelfClock("technician")).toBe(false);
+    expect(canSelfClock("head_tech")).toBe(false);
+    expect(canSelfClock("service_advisor")).toBe(false);
+    expect(canSelfClock("admin")).toBe(false);
+    expect(canSelfClock("time_clock_kiosk")).toBe(false);
+    expect(canUseMessenger("time_clock_kiosk")).toBe(false);
+    expect(canChangeOwnPassword("time_clock_kiosk")).toBe(true);
   });
 
   it("canSyncPartsCanadaCatalog is owner/manager only", () => {

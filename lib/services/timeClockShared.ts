@@ -8,8 +8,25 @@ import {
 export const ONTARIO_OT_THRESHOLD_HOURS = 44;
 export const ONTARIO_OT_THRESHOLD_MS = ONTARIO_OT_THRESHOLD_HOURS * 60 * 60 * 1000;
 
+/**
+ * Soft warning when staff are nearing a full shop week — tell supervisor
+ * before crossing into OT territory (Ontario OT at 44h).
+ */
+export const WEEKLY_HOURS_SUPERVISOR_WARNING_HOURS = 37.5;
+export const WEEKLY_HOURS_SUPERVISOR_WARNING_MS =
+  WEEKLY_HOURS_SUPERVISOR_WARNING_HOURS * 60 * 60 * 1000;
+
 /** Soft ESA meal-break nudge after this many consecutive paid hours. */
 export const MEAL_BREAK_NUDGE_MS = 5 * 60 * 60 * 1000;
+
+/** True when week paid hours are at/above the supervisor-notify threshold and below OT. */
+export function shouldWarnSupervisorWeeklyHours(
+  weekPaidMs: number,
+  warningMs = WEEKLY_HOURS_SUPERVISOR_WARNING_MS,
+  otMs = ONTARIO_OT_THRESHOLD_MS
+): boolean {
+  return weekPaidMs >= warningMs && weekPaidMs < otMs;
+}
 
 export type TimeClockBreakForSummary = {
   break_id?: string;

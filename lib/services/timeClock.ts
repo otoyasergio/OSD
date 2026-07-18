@@ -1,7 +1,12 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
-import { canClockStaff, canManageTimesheets, isFloorTech } from "@/lib/permissions";
+import {
+  canClockStaff,
+  canManageTimesheets,
+  canSelfClock,
+  isFloorTech,
+} from "@/lib/permissions";
 import type { UserRole } from "@/lib/database/types";
 import {
   getShopWeekRange,
@@ -30,6 +35,10 @@ export type TimeClockBreak = {
   break_type: "meal" | "other";
   break_start_at: string;
   break_end_at: string | null;
+  break_start_photo_path: string | null;
+  break_end_photo_path: string | null;
+  break_start_photo_url?: string | null;
+  break_end_photo_url?: string | null;
 };
 
 export type TimeClockEntry = {
@@ -40,12 +49,16 @@ export type TimeClockEntry = {
   clock_out_at: string | null;
   notes: string | null;
   voided_at: string | null;
+  clock_in_photo_path: string | null;
+  clock_out_photo_path: string | null;
 };
 
 export type TimeClockEntryWithUser = TimeClockEntry & {
   first_name: string;
   last_name: string;
   breaks?: TimeClockBreak[];
+  clock_in_photo_url?: string | null;
+  clock_out_photo_url?: string | null;
 };
 
 export type TimesheetStaffOption = {
@@ -70,8 +83,9 @@ export type TimesheetWeekRow = {
 };
 
 const ENTRY_COLUMNS =
-  "entry_id, user_id, location_id, clock_in_at, clock_out_at, notes, voided_at";
-const BREAK_COLUMNS = "break_id, entry_id, break_type, break_start_at, break_end_at";
+  "entry_id, user_id, location_id, clock_in_at, clock_out_at, notes, voided_at, clock_in_photo_path, clock_out_photo_path";
+const BREAK_COLUMNS =
+  "break_id, entry_id, break_type, break_start_at, break_end_at, break_start_photo_path, break_end_photo_path";
 const WEEK_COLUMNS =
   "timesheet_week_id, user_id, location_id, week_start_date, status, submitted_at, approved_by, approved_at, note";
 
@@ -87,6 +101,8 @@ function mapBreak(row: {
   break_type: string;
   break_start_at: string;
   break_end_at: string | null;
+  break_start_photo_path?: string | null;
+  break_end_photo_path?: string | null;
 }): TimeClockBreak {
   return {
     break_id: row.break_id,
@@ -94,6 +110,8 @@ function mapBreak(row: {
     break_type: row.break_type === "other" ? "other" : "meal",
     break_start_at: row.break_start_at,
     break_end_at: row.break_end_at,
+    break_start_photo_path: row.break_start_photo_path ?? null,
+    break_end_photo_path: row.break_end_photo_path ?? null,
   };
 }
 
@@ -126,6 +144,8 @@ function mapEntryWithUser(row: {
   clock_out_at: string | null;
   notes: string | null;
   voided_at?: string | null;
+  clock_in_photo_path?: string | null;
+  clock_out_photo_path?: string | null;
   user?:
     | { first_name: string; last_name: string }
     | { first_name: string; last_name: string }[]
@@ -140,9 +160,221 @@ function mapEntryWithUser(row: {
     clock_out_at: row.clock_out_at,
     notes: row.notes,
     voided_at: row.voided_at ?? null,
+    clock_in_photo_path: row.clock_in_photo_path ?? null,
+    clock_out_photo_path: row.clock_out_photo_path ?? null,
     first_name: user?.first_name ?? "",
     last_name: user?.last_name ?? "",
   };
+}
+
+type SubjectPunchActor = {
+  user_id: string;
+  first_name: string;
+  last_name: string;
+  active_location_id: string | null;
+};
+
+/** Internal: clock a subject in (kiosk / staff punch / self). */
+export async function clockSubjectIn(input: {
+  actorUserId: string;
+  subjectUserId: string;
+  locationId: string;
+  notes?: string | null;
+  photoPath?: string | null;
+  actor?: SubjectPunchActor;
+  description?: string;
+}): Promise<TimeClockEntry> {
+  const supabase = await createClient();
+  const open = await getOpenTimeClockEntry(input.subjectUserId);
+  if (open) throw new Error("ALREADY_CLOCKED_IN");
+
+  const { data, error } = await supabase
+    .from("time_clock_entry")
+    .insert({
+      user_id: input.subjectUserId,
+      location_id: input.locationId,
+      notes: input.notes?.trim() || null,
+      clock_in_photo_path: input.photoPath ?? null,
+    })
+    .select(ENTRY_COLUMNS)
+    .single();
+  if (error) throw error;
+  const entry = data as TimeClockEntry;
+
+  const actor = input.actor;
+  const isSelf = input.actorUserId === input.subjectUserId;
+  await addAuditLog(supabase, {
+    actor_user_id: input.actorUserId,
+    location_id: input.locationId,
+    action: isSelf ? "time_clock_in" : "time_clock_staff_in",
+    entity_type: "time_clock_entry",
+    entity_id: entry.entry_id,
+    description:
+      input.description ??
+      (isSelf
+        ? `${actor?.first_name ?? "User"} ${actor?.last_name ?? ""} clocked in`.trim()
+        : `${actor?.first_name ?? "Staff"} ${actor?.last_name ?? ""} signed in a staff member`.trim()),
+    new_value: entry,
+  });
+
+  return entry;
+}
+
+/** Internal: clock a subject out (closes open break + open job timer). */
+export async function clockSubjectOut(input: {
+  actorUserId: string;
+  subjectUserId: string;
+  photoPath?: string | null;
+  actor?: SubjectPunchActor;
+  description?: string;
+}): Promise<TimeClockEntry> {
+  const supabase = await createClient();
+  const open = await getOpenTimeClockEntry(input.subjectUserId);
+  if (!open) throw new Error("NOT_CLOCKED_IN");
+
+  const { data: openBreak } = await supabase
+    .from("time_clock_break")
+    .select(BREAK_COLUMNS)
+    .eq("entry_id", open.entry_id)
+    .is("break_end_at", null)
+    .maybeSingle();
+  if (openBreak) {
+    await supabase
+      .from("time_clock_break")
+      .update({ break_end_at: new Date().toISOString() })
+      .eq("break_id", openBreak.break_id);
+  }
+
+  const { data: openJob } = await supabase
+    .from("job_time_entry")
+    .select("job_time_entry_id")
+    .eq("user_id", input.subjectUserId)
+    .is("ended_at", null)
+    .maybeSingle();
+  if (openJob) {
+    await supabase
+      .from("job_time_entry")
+      .update({ ended_at: new Date().toISOString() })
+      .eq("job_time_entry_id", openJob.job_time_entry_id);
+  }
+
+  const clockOutAt = new Date().toISOString();
+  const patch: Record<string, unknown> = { clock_out_at: clockOutAt };
+  if (input.photoPath) patch.clock_out_photo_path = input.photoPath;
+
+  const { data, error } = await supabase
+    .from("time_clock_entry")
+    .update(patch)
+    .eq("entry_id", open.entry_id)
+    .select(ENTRY_COLUMNS)
+    .single();
+  if (error) throw error;
+  const entry = data as TimeClockEntry;
+
+  const actor = input.actor;
+  const isSelf = input.actorUserId === input.subjectUserId;
+  await addAuditLog(supabase, {
+    actor_user_id: input.actorUserId,
+    location_id: open.location_id,
+    action: isSelf ? "time_clock_out" : "time_clock_staff_out",
+    entity_type: "time_clock_entry",
+    entity_id: entry.entry_id,
+    description:
+      input.description ??
+      (isSelf
+        ? `${actor?.first_name ?? "User"} ${actor?.last_name ?? ""} clocked out`.trim()
+        : `${actor?.first_name ?? "Staff"} ${actor?.last_name ?? ""} signed out a staff member`.trim()),
+    old_value: open,
+    new_value: entry,
+  });
+
+  return entry;
+}
+
+/** Internal: start a meal/other break for a subject. */
+export async function startSubjectBreak(input: {
+  actorUserId: string;
+  subjectUserId: string;
+  breakType?: "meal" | "other";
+  photoPath?: string | null;
+  actor?: SubjectPunchActor;
+}): Promise<TimeClockBreak> {
+  const open = await getOpenTimeClockEntry(input.subjectUserId);
+  if (!open) throw new Error("NOT_CLOCKED_IN");
+
+  const existing = await getOpenBreakForEntry(open.entry_id);
+  if (existing) throw new Error("ALREADY_ON_BREAK");
+
+  const breakType = input.breakType ?? "meal";
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("time_clock_break")
+    .insert({
+      entry_id: open.entry_id,
+      break_type: breakType,
+      break_start_photo_path: input.photoPath ?? null,
+    })
+    .select(BREAK_COLUMNS)
+    .single();
+  if (error) throw error;
+  const row = mapBreak(data);
+
+  const actor = input.actor;
+  await addAuditLog(supabase, {
+    actor_user_id: input.actorUserId,
+    location_id: open.location_id,
+    action: "time_clock_break_start",
+    entity_type: "time_clock_break",
+    entity_id: row.break_id,
+    description:
+      `${actor?.first_name ?? "User"} ${actor?.last_name ?? ""} started a ${breakType} break`.trim(),
+    new_value: row,
+  });
+
+  return row;
+}
+
+/** Internal: end an open break for a subject. */
+export async function endSubjectBreak(input: {
+  actorUserId: string;
+  subjectUserId: string;
+  photoPath?: string | null;
+  actor?: SubjectPunchActor;
+}): Promise<TimeClockBreak> {
+  const open = await getOpenTimeClockEntry(input.subjectUserId);
+  if (!open) throw new Error("NOT_CLOCKED_IN");
+
+  const existing = await getOpenBreakForEntry(open.entry_id);
+  if (!existing) throw new Error("NOT_ON_BREAK");
+
+  const supabase = await createClient();
+  const endAt = new Date().toISOString();
+  const patch: Record<string, unknown> = { break_end_at: endAt };
+  if (input.photoPath) patch.break_end_photo_path = input.photoPath;
+
+  const { data, error } = await supabase
+    .from("time_clock_break")
+    .update(patch)
+    .eq("break_id", existing.break_id)
+    .select(BREAK_COLUMNS)
+    .single();
+  if (error) throw error;
+  const row = mapBreak(data);
+
+  const actor = input.actor;
+  await addAuditLog(supabase, {
+    actor_user_id: input.actorUserId,
+    location_id: open.location_id,
+    action: "time_clock_break_end",
+    entity_type: "time_clock_break",
+    entity_id: row.break_id,
+    description:
+      `${actor?.first_name ?? "User"} ${actor?.last_name ?? ""} ended a break`.trim(),
+    old_value: existing,
+    new_value: row,
+  });
+
+  return row;
 }
 
 export async function getOpenTimeClockEntry(
@@ -213,79 +445,27 @@ export async function getClockWidgetState(userId?: string): Promise<ClockWidgetS
 
 export async function clockIn(notes?: string | null): Promise<TimeClockEntry> {
   const user = await requireUser();
+  if (!canSelfClock(user.role)) throw new Error("FORBIDDEN");
   if (!user.active_location_id) throw new Error("NO_LOCATION");
 
-  const open = await getOpenTimeClockEntry(user.user_id);
-  if (open) throw new Error("ALREADY_CLOCKED_IN");
-
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("time_clock_entry")
-    .insert({
-      user_id: user.user_id,
-      location_id: user.active_location_id,
-      notes: notes?.trim() || null,
-    })
-    .select(ENTRY_COLUMNS)
-    .single();
-
-  if (error) throw error;
-  const entry = data as TimeClockEntry;
-
-  await addAuditLog(supabase, {
-    actor_user_id: user.user_id,
-    location_id: user.active_location_id,
-    action: "time_clock_in",
-    entity_type: "time_clock_entry",
-    entity_id: entry.entry_id,
-    description: `${user.first_name} ${user.last_name} clocked in`,
-    new_value: entry,
+  return clockSubjectIn({
+    actorUserId: user.user_id,
+    subjectUserId: user.user_id,
+    locationId: user.active_location_id,
+    notes,
+    actor: user,
   });
-
-  return entry;
 }
 
 export async function clockOut(): Promise<TimeClockEntry> {
   const user = await requireUser();
-  const open = await getOpenTimeClockEntry(user.user_id);
-  if (!open) throw new Error("NOT_CLOCKED_IN");
+  if (!canSelfClock(user.role)) throw new Error("FORBIDDEN");
 
-  const openBreak = await getOpenBreakForEntry(open.entry_id);
-  if (openBreak) {
-    await endBreak();
-  }
-
-  try {
-    const { endOpenJobTime } = await import("@/lib/services/jobTimeClock");
-    await endOpenJobTime();
-  } catch {
-    // No open job timer — fine.
-  }
-
-  const supabase = await createClient();
-  const clockOutAt = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("time_clock_entry")
-    .update({ clock_out_at: clockOutAt })
-    .eq("entry_id", open.entry_id)
-    .select(ENTRY_COLUMNS)
-    .single();
-
-  if (error) throw error;
-  const entry = data as TimeClockEntry;
-
-  await addAuditLog(supabase, {
-    actor_user_id: user.user_id,
-    location_id: user.active_location_id,
-    action: "time_clock_out",
-    entity_type: "time_clock_entry",
-    entity_id: entry.entry_id,
-    description: `${user.first_name} ${user.last_name} clocked out`,
-    old_value: open,
-    new_value: entry,
+  return clockSubjectOut({
+    actorUserId: user.user_id,
+    subjectUserId: user.user_id,
+    actor: user,
   });
-
-  return entry;
 }
 
 async function requireClockStaffActor() {
@@ -325,34 +505,16 @@ async function loadFloorStaffForClock(userId: string): Promise<{
 export async function clockStaffIn(staffUserId: string): Promise<TimeClockEntry> {
   const actor = await requireClockStaffActor();
   const staff = await loadFloorStaffForClock(staffUserId);
+  if (!actor.active_location_id) throw new Error("NO_LOCATION");
 
-  const open = await getOpenTimeClockEntry(staff.user_id);
-  if (open) throw new Error("ALREADY_CLOCKED_IN");
-
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("time_clock_entry")
-    .insert({
-      user_id: staff.user_id,
-      location_id: actor.active_location_id,
-      notes: `Signed in by ${actor.first_name} ${actor.last_name}`,
-    })
-    .select(ENTRY_COLUMNS)
-    .single();
-  if (error) throw error;
-  const entry = data as TimeClockEntry;
-
-  await addAuditLog(supabase, {
-    actor_user_id: actor.user_id,
-    location_id: actor.active_location_id,
-    action: "time_clock_staff_in",
-    entity_type: "time_clock_entry",
-    entity_id: entry.entry_id,
+  return clockSubjectIn({
+    actorUserId: actor.user_id,
+    subjectUserId: staff.user_id,
+    locationId: actor.active_location_id,
+    notes: `Signed in by ${actor.first_name} ${actor.last_name}`,
+    actor,
     description: `${actor.first_name} ${actor.last_name} signed in ${staff.first_name} ${staff.last_name}`,
-    new_value: entry,
   });
-
-  return entry;
 }
 
 /** Owner / manager / service advisor clock a floor tech out. */
@@ -360,129 +522,37 @@ export async function clockStaffOut(staffUserId: string): Promise<TimeClockEntry
   const actor = await requireClockStaffActor();
   const staff = await loadFloorStaffForClock(staffUserId);
 
-  const open = await getOpenTimeClockEntry(staff.user_id);
-  if (!open) throw new Error("NOT_CLOCKED_IN");
-
-  const supabase = await createClient();
-
-  const { data: openBreak } = await supabase
-    .from("time_clock_break")
-    .select(BREAK_COLUMNS)
-    .eq("entry_id", open.entry_id)
-    .is("break_end_at", null)
-    .maybeSingle();
-  if (openBreak) {
-    await supabase
-      .from("time_clock_break")
-      .update({ break_end_at: new Date().toISOString() })
-      .eq("break_id", openBreak.break_id);
-  }
-
-  const { data: openJob } = await supabase
-    .from("job_time_entry")
-    .select("job_time_entry_id")
-    .eq("user_id", staff.user_id)
-    .is("ended_at", null)
-    .maybeSingle();
-  if (openJob) {
-    await supabase
-      .from("job_time_entry")
-      .update({ ended_at: new Date().toISOString() })
-      .eq("job_time_entry_id", openJob.job_time_entry_id);
-  }
-
-  const clockOutAt = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("time_clock_entry")
-    .update({ clock_out_at: clockOutAt })
-    .eq("entry_id", open.entry_id)
-    .select(ENTRY_COLUMNS)
-    .single();
-  if (error) throw error;
-  const entry = data as TimeClockEntry;
-
-  await addAuditLog(supabase, {
-    actor_user_id: actor.user_id,
-    location_id: actor.active_location_id,
-    action: "time_clock_staff_out",
-    entity_type: "time_clock_entry",
-    entity_id: entry.entry_id,
+  return clockSubjectOut({
+    actorUserId: actor.user_id,
+    subjectUserId: staff.user_id,
+    actor,
     description: `${actor.first_name} ${actor.last_name} signed out ${staff.first_name} ${staff.last_name}`,
-    old_value: open,
-    new_value: entry,
   });
-
-  return entry;
 }
 
 export async function startBreak(
   breakType: "meal" | "other" = "meal"
 ): Promise<TimeClockBreak> {
   const user = await requireUser();
-  const open = await getOpenTimeClockEntry(user.user_id);
-  if (!open) throw new Error("NOT_CLOCKED_IN");
+  if (!canSelfClock(user.role)) throw new Error("FORBIDDEN");
 
-  const existing = await getOpenBreakForEntry(open.entry_id);
-  if (existing) throw new Error("ALREADY_ON_BREAK");
-
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("time_clock_break")
-    .insert({
-      entry_id: open.entry_id,
-      break_type: breakType,
-    })
-    .select(BREAK_COLUMNS)
-    .single();
-
-  if (error) throw error;
-  const row = mapBreak(data);
-
-  await addAuditLog(supabase, {
-    actor_user_id: user.user_id,
-    location_id: user.active_location_id,
-    action: "time_clock_break_start",
-    entity_type: "time_clock_break",
-    entity_id: row.break_id,
-    description: `${user.first_name} ${user.last_name} started a ${breakType} break`,
-    new_value: row,
+  return startSubjectBreak({
+    actorUserId: user.user_id,
+    subjectUserId: user.user_id,
+    breakType,
+    actor: user,
   });
-
-  return row;
 }
 
 export async function endBreak(): Promise<TimeClockBreak> {
   const user = await requireUser();
-  const open = await getOpenTimeClockEntry(user.user_id);
-  if (!open) throw new Error("NOT_CLOCKED_IN");
+  if (!canSelfClock(user.role)) throw new Error("FORBIDDEN");
 
-  const existing = await getOpenBreakForEntry(open.entry_id);
-  if (!existing) throw new Error("NOT_ON_BREAK");
-
-  const supabase = await createClient();
-  const endAt = new Date().toISOString();
-  const { data, error } = await supabase
-    .from("time_clock_break")
-    .update({ break_end_at: endAt })
-    .eq("break_id", existing.break_id)
-    .select(BREAK_COLUMNS)
-    .single();
-
-  if (error) throw error;
-  const row = mapBreak(data);
-
-  await addAuditLog(supabase, {
-    actor_user_id: user.user_id,
-    location_id: user.active_location_id,
-    action: "time_clock_break_end",
-    entity_type: "time_clock_break",
-    entity_id: row.break_id,
-    description: `${user.first_name} ${user.last_name} ended a break`,
-    old_value: existing,
-    new_value: row,
+  return endSubjectBreak({
+    actorUserId: user.user_id,
+    subjectUserId: user.user_id,
+    actor: user,
   });
-
-  return row;
 }
 
 export async function listOpenTimeClockEntries(
@@ -666,16 +736,95 @@ export async function getTimesheetWeek(
     range.startDateKey
   );
 
+  const entriesWithPhotos = await attachTimeClockPhotoUrls(entries);
+  const openWithPhotos = await attachTimeClockPhotoUrls(open);
+
   const weeksRecord: Record<string, TimesheetWeekRow> = {};
   for (const [uid, row] of weeksByUser) weeksRecord[uid] = row;
 
   return {
     range,
-    open,
-    entries,
+    open: openWithPhotos,
+    entries: entriesWithPhotos,
     summaries: summarizeWeek(punches, range),
     weeksByUser: weeksRecord,
   };
+}
+
+const TIME_CLOCK_PHOTO_BUCKET = "time-clock-photos";
+
+/** Attach short-lived signed URLs for punch/break photos (owner/manager Timesheets). */
+export async function attachTimeClockPhotoUrls(
+  entries: TimeClockEntryWithUser[]
+): Promise<TimeClockEntryWithUser[]> {
+  const paths = new Set<string>();
+  for (const e of entries) {
+    if (e.clock_in_photo_path) paths.add(e.clock_in_photo_path);
+    if (e.clock_out_photo_path) paths.add(e.clock_out_photo_path);
+    for (const b of e.breaks ?? []) {
+      if (b.break_start_photo_path) paths.add(b.break_start_photo_path);
+      if (b.break_end_photo_path) paths.add(b.break_end_photo_path);
+    }
+  }
+  if (paths.size === 0) return entries;
+
+  const supabase = await createClient();
+  const { data } = await supabase.storage
+    .from(TIME_CLOCK_PHOTO_BUCKET)
+    .createSignedUrls([...paths], 3600);
+  const byPath = new Map<string, string>();
+  for (const row of data ?? []) {
+    if (row.path && row.signedUrl) byPath.set(row.path, row.signedUrl);
+  }
+
+  return entries.map((e) => ({
+    ...e,
+    clock_in_photo_url: e.clock_in_photo_path
+      ? (byPath.get(e.clock_in_photo_path) ?? null)
+      : null,
+    clock_out_photo_url: e.clock_out_photo_path
+      ? (byPath.get(e.clock_out_photo_path) ?? null)
+      : null,
+    breaks: (e.breaks ?? []).map((b) => ({
+      ...b,
+      break_start_photo_url: b.break_start_photo_path
+        ? (byPath.get(b.break_start_photo_path) ?? null)
+        : null,
+      break_end_photo_url: b.break_end_photo_path
+        ? (byPath.get(b.break_end_photo_path) ?? null)
+        : null,
+    })),
+  }));
+}
+
+/** Recent punches for a staff EE profile (with photos). */
+export async function listRecentPunchesForStaff(
+  staffUserId: string,
+  limit = 14
+): Promise<TimeClockEntryWithUser[]> {
+  await requireTimesheetManager();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("time_clock_entry")
+    .select(
+      `
+      ${ENTRY_COLUMNS},
+      user:user_id (first_name, last_name)
+    `
+    )
+    .eq("user_id", staffUserId)
+    .is("voided_at", null)
+    .order("clock_in_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  const mapped = (data ?? []).map((row) => mapEntryWithUser(row));
+  const ids = mapped.map((e) => e.entry_id);
+  const breaks = await loadBreaksForEntries(ids);
+  const withBreaks = mapped.map((e) => ({
+    ...e,
+    breaks: breaks.get(e.entry_id) ?? [],
+  }));
+  return attachTimeClockPhotoUrls(withBreaks);
 }
 
 export type MyTimesheetWeekView = {

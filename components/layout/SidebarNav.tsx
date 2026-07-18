@@ -33,6 +33,7 @@ import {
   canManageServiceCatalogue,
   canManageTimesheets,
   canManageUsers,
+  canSelfClock,
   canUseMessenger,
   canViewAuditLog,
   canViewBillingArea,
@@ -133,12 +134,14 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
 
   const staffingLinks: NavLink[] = [
     { href: "/technician", label: "Technician", icon: iconFor("/technician") },
-    {
+  ];
+  if (canSelfClock(role)) {
+    staffingLinks.push({
       href: "/technician/clock",
       label: "Time clock",
       icon: iconFor("/technician/clock"),
-    },
-  ];
+    });
+  }
   if (canAssignTechnician(role)) {
     staffingLinks.push({
       href: "/technician/docket",

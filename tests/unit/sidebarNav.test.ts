@@ -32,7 +32,6 @@ describe("buildNavCategories", () => {
     const techStaffing = tech.find((c) => c.id === "staffing");
     expect(techStaffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
       "/technician",
-      "/technician/clock",
     ]);
   });
 
@@ -124,19 +123,19 @@ describe("buildNavCategories", () => {
     }
   });
 
-  it("exposes Time clock under Staffing for all active staff roles", () => {
-    for (const role of [
-      "owner",
-      "manager",
-      "service_advisor",
-      "technician",
-      "head_tech",
-      "admin",
-    ] as const) {
+  it("exposes Time clock under Staffing only for owner/manager (self-clock)", () => {
+    for (const role of ["owner", "manager"] as const) {
       const staffing = buildNavCategories(role).find((c) => c.id === "staffing");
       expect(staffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
         expect.arrayContaining(["/technician", "/technician/clock"])
       );
+    }
+    for (const role of ["service_advisor", "technician", "head_tech", "admin"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).toContain("/technician");
+      expect(hrefs).not.toContain("/technician/clock");
     }
   });
 
