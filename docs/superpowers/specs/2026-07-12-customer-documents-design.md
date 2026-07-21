@@ -13,10 +13,10 @@ Unified `customer_document` table. Manual uploads use a private `customer-docume
 
 ## Permissions
 
-| Action | Roles |
-|--------|--------|
+| Action        | Roles                                  |
+| ------------- | -------------------------------------- |
 | View / upload | owner, manager, admin, service_advisor |
-| Delete | owner, manager only |
+| Delete        | owner, manager only                    |
 
 Technicians have no access. Role checks are enforced in the service layer (same pattern as intake photos).
 
@@ -24,18 +24,18 @@ Technicians have no access. Role checks are enforced in the service layer (same 
 
 `customer_document`:
 
-- `document_id` uuid PK  
-- `customer_id` uuid FK → customer  
-- `title` text  
-- `source` text: `upload` | `drop_off_agreement`  
-- `work_order_id` uuid nullable FK  
-- `agreement_id` uuid nullable unique FK → drop_off_agreement  
-- `storage_bucket` text  
-- `storage_path` text  
-- `mime_type` text  
-- `file_size` integer nullable  
-- `uploaded_by_user_id` uuid nullable  
-- `created_at` timestamptz  
+- `document_id` uuid PK
+- `customer_id` uuid FK → customer
+- `title` text
+- `source` text: `upload` | `drop_off_agreement`
+- `work_order_id` uuid nullable FK
+- `agreement_id` uuid nullable unique FK → drop_off_agreement
+- `storage_bucket` text
+- `storage_path` text
+- `mime_type` text
+- `file_size` integer nullable
+- `uploaded_by_user_id` uuid nullable
+- `created_at` timestamptz
 
 ## Sign flow
 
@@ -47,6 +47,6 @@ Documents section on customer detail: list, view/download signed URL, upload (PD
 
 ## Out of scope
 
-- PDF of full contract body  
-- Customer portal self-upload  
-- Deleting a profile document does not delete the work-order agreement row  
+- PDF of full contract body
+- Customer portal self-upload
+- Deleting a profile document does not delete the work-order agreement row

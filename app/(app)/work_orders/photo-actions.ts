@@ -1,10 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import {
-  deleteIntakePhoto,
-  uploadIntakePhoto,
-} from "@/lib/services/photos";
+import { deleteIntakePhoto, uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import type { PhotoCategory } from "@/lib/database/types";
 

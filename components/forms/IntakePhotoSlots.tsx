@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { PhotoCategory } from "@/lib/database/types";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
@@ -161,9 +155,7 @@ export function IntakePhotoSlots({
   const slots = slotsFor(categories);
   const titleId = useId();
   const inputIdPrefix = useId();
-  const [chooserCategory, setChooserCategory] = useState<PhotoCategory | null>(
-    null
-  );
+  const [chooserCategory, setChooserCategory] = useState<PhotoCategory | null>(null);
 
   function cameraInputId(category: PhotoCategory) {
     return `${inputIdPrefix}-camera-${category}`;
@@ -202,8 +194,8 @@ export function IntakePhotoSlots({
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
   const chooserSlot = chooserCategory
-    ? slots.find((slot) => slot.category === chooserCategory) ??
-      CREATE_INTAKE_PHOTO_SLOTS.find((slot) => slot.category === chooserCategory)
+    ? (slots.find((slot) => slot.category === chooserCategory) ??
+      CREATE_INTAKE_PHOTO_SLOTS.find((slot) => slot.category === chooserCategory))
     : null;
 
   return (
@@ -226,9 +218,7 @@ export function IntakePhotoSlots({
                 className="intake-photo-slot-trigger"
                 disabled={disabled}
                 aria-label={
-                  filled
-                    ? `Retake ${slot.label} photo`
-                    : `Add ${slot.label} photo`
+                  filled ? `Retake ${slot.label} photo` : `Add ${slot.label} photo`
                 }
                 onClick={() => setChooserCategory(slot.category)}
               >
@@ -236,8 +226,7 @@ export function IntakePhotoSlots({
                   <span className="intake-photo-slot-title">
                     <SlotIcon category={slot.category} />
                     <span className="intake-photo-slot-title-text">
-                      {slot.label}{" "}
-                      <span className="intake-photo-slot-req">*</span>
+                      {slot.label} <span className="intake-photo-slot-req">*</span>
                     </span>
                   </span>
                   <span className="intake-photo-slot-badge">
@@ -248,28 +237,19 @@ export function IntakePhotoSlots({
                   {preview ? (
                     <>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={preview}
-                        alt={`${slot.label} preview`}
-                      />
+                      <img src={preview} alt={`${slot.label} preview`} />
                       <span className="intake-photo-slot-check">
                         <CheckIcon />
                       </span>
-                      <span className="intake-photo-slot-retake">
-                        Tap to retake
-                      </span>
+                      <span className="intake-photo-slot-retake">Tap to retake</span>
                     </>
                   ) : (
                     <span className="intake-photo-slot-empty">
                       <span className="intake-photo-slot-icon">
                         <CameraIcon />
                       </span>
-                      <span className="intake-photo-slot-hint">
-                        Tap to add photo
-                      </span>
-                      <span className="intake-photo-slot-subhint">
-                        Camera or Library
-                      </span>
+                      <span className="intake-photo-slot-hint">Tap to add photo</span>
+                      <span className="intake-photo-slot-subhint">Camera or Library</span>
                     </span>
                   )}
                 </span>

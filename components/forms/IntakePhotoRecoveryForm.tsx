@@ -56,11 +56,7 @@ export function IntakePhotoRecoveryForm({
           continue;
         }
 
-        const uploaded = await uploadSelectedIntakePhoto(
-          workOrderId,
-          original,
-          category
-        );
+        const uploaded = await uploadSelectedIntakePhoto(workOrderId, original, category);
         if (!uploaded) failed.push(category);
       }
 

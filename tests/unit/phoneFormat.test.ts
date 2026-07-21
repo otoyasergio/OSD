@@ -15,8 +15,6 @@ describe("formatCanadianPhoneInput", () => {
 
   it("preserves international numbers and extensions", () => {
     expect(formatCanadianPhoneInput("+44 20 7946 0958")).toBe("+44 20 7946 0958");
-    expect(formatCanadianPhoneInput("(416) 555-1234 ext 9")).toBe(
-      "(416) 555-1234 ext 9"
-    );
+    expect(formatCanadianPhoneInput("(416) 555-1234 ext 9")).toBe("(416) 555-1234 ext 9");
   });
 });

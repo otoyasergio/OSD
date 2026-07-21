@@ -1,10 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState } from "react";
-import {
-  CameraIcon,
-  LibraryIcon,
-} from "@/components/forms/IntakePhotoSlots";
+import { CameraIcon, LibraryIcon } from "@/components/forms/IntakePhotoSlots";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 
 type Props = {
@@ -36,11 +33,7 @@ export function mergeOptionalIntakePhotos(
   return next;
 }
 
-export function OptionalIntakePhotos({
-  value,
-  onChange,
-  disabled = false,
-}: Props) {
+export function OptionalIntakePhotos({ value, onChange, disabled = false }: Props) {
   const titleId = useId();
   const cameraInputId = `${useId()}-optional-camera`;
   const libraryInputId = `${useId()}-optional-library`;
@@ -108,7 +101,9 @@ export function OptionalIntakePhotos({
               className="optional-intake-photo-remove"
               disabled={disabled}
               aria-label={`Remove extra intake photo ${index + 1}`}
-              onClick={() => onChange(value.filter((_, itemIndex) => itemIndex !== index))}
+              onClick={() =>
+                onChange(value.filter((_, itemIndex) => itemIndex !== index))
+              }
             >
               Remove
             </button>

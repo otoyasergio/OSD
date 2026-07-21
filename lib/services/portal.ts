@@ -7,11 +7,7 @@ import { generatePortalToken, hashPortalToken } from "@/lib/portal/tokens";
 import { fileDropOffAgreementDocument } from "@/lib/services/customerDocuments";
 
 export type PortalTokenPurpose =
-  | "full"
-  | "estimate"
-  | "payment"
-  | "inspection"
-  | "contract";
+  "full" | "estimate" | "payment" | "inspection" | "contract";
 
 export type PortalSession = {
   token_id: string;
@@ -159,8 +155,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
       part_name: p.part_name,
       quantity: p.quantity,
       unit_price: p.unit_price,
-      job_name:
-        jobs.find((j) => j.job_id === p.job_id)?.name_snapshot ?? "Job",
+      job_name: jobs.find((j) => j.job_id === p.job_id)?.name_snapshot ?? "Job",
     }));
   }
 
@@ -198,10 +193,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
   };
 }
 
-export async function portalApproveJob(
-  token: string,
-  jobId: string
-): Promise<void> {
+export async function portalApproveJob(token: string, jobId: string): Promise<void> {
   const session = await resolvePortalSession(token);
   const admin = createAdminClient();
 
