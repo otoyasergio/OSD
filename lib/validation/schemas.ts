@@ -207,6 +207,7 @@ export const photoCategorySchema = z.enum([
   "inspection_forks",
   "inspection_item",
   "job_proof",
+  "job_work",
 ]);
 
 export const intakePhotoSchema = z.object({

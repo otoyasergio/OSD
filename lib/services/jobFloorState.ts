@@ -1,13 +1,16 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
+import { createAdminClient } from "@/lib/database/supabase-admin";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import type { FloorParkReason } from "@/lib/database/types";
+import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
 import {
   isUndefinedColumnError,
   OPTIONAL_COLUMNS,
   getOptionalColumnSupport,
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
+import { toRpcErrorCode } from "@/lib/services/errors";
 import { waitOwnerForParkReason } from "@/lib/technician/pitBoard";
 import { pauseJobTime, switchJobTime } from "@/lib/services/jobTimeClock";
 import { updateJobStatus } from "@/lib/services/jobs";
@@ -79,6 +82,40 @@ function assertAssignedToMe(job: JobFloorRow, userId: string) {
   }
 }
 
+/**
+ * Deterministic idempotency key for a floor intent so client double-taps and
+ * duplicate submissions replay in the V2 commands instead of re-running.
+ * Same intent + job + actor within one time bucket → same key.
+ */
+export function floorIdempotencyKey(
+  intent: "pull" | "park" | "complete",
+  jobId: string,
+  actorUserId: string,
+  options: { extra?: string; bucketMs?: number; nowMs?: number } = {}
+): string {
+  const bucketMs = options.bucketMs ?? (intent === "pull" ? 15_000 : 60_000);
+  const nowMs = options.nowMs ?? Date.now();
+  const bucket = Math.floor(nowMs / Math.max(1, bucketMs));
+  const parts = [intent, jobId, actorUserId];
+  if (options.extra) parts.push(options.extra);
+  parts.push(String(bucket));
+  return parts.join(":");
+}
+
+/**
+ * Invoke a V2 floor command as the service role, translating
+ * RAISE EXCEPTION codes into the same Error codes legacy paths throw.
+ */
+async function callFloorCommand(
+  fn: string,
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc(fn, args);
+  if (error) throw new Error(toRpcErrorCode(error));
+  return (data ?? {}) as Record<string, unknown>;
+}
+
 export async function acknowledgeDocketJob(jobId: string): Promise<JobFloorRow> {
   const user = await requireUser();
   const job = await loadJob(jobId);
@@ -128,6 +165,23 @@ export async function parkJob(
   reason: FloorParkReason
 ): Promise<JobFloorRow> {
   const user = await requireUser();
+
+  // V2: one transaction stops the timer, parks the job, and records the
+  // blocker + domain event — no partial states on retry.
+  if (v2WritesEnabled(readWorkflowV2Flags())) {
+    await callFloorCommand("workflow_v2_park_job", {
+      p_job_id: jobId,
+      p_actor_user_id: user.user_id,
+      p_reason: reason,
+      p_owner: waitOwnerForParkReason(reason),
+      p_note: null,
+      p_idempotency_key: floorIdempotencyKey("park", jobId, user.user_id, {
+        extra: reason,
+      }),
+    });
+    return loadJob(jobId);
+  }
+
   const job = await loadJob(jobId);
   assertAssignedToMe(job, user.user_id);
 
@@ -245,6 +299,21 @@ export async function pullOntoBench(jobId: string): Promise<{
   parked_job_id: string | null;
 }> {
   const user = await requireUser();
+
+  // V2: the command atomically parks the current bench job (only after the
+  // replacement validates), starts this job, and opens its timer.
+  if (v2WritesEnabled(readWorkflowV2Flags())) {
+    const result = await callFloorCommand("workflow_v2_pull_job_onto_bench", {
+      p_job_id: jobId,
+      p_actor_user_id: user.user_id,
+      p_idempotency_key: floorIdempotencyKey("pull", jobId, user.user_id),
+    });
+    return {
+      job: await loadJob(jobId),
+      parked_job_id: (result.parked_job_id as string | null) ?? null,
+    };
+  }
+
   const job = await loadJob(jobId);
   assertAssignedToMe(job, user.user_id);
 
@@ -285,15 +354,22 @@ export async function swapBenchJob(
   from: JobFloorRow;
   to: JobFloorRow;
 }> {
+  if (fromJobId === toJobId) {
+    throw new Error("SWAP_SAME_JOB");
+  }
+
+  // V2: pull parks the bench job in the same transaction, so a swap is a
+  // single pull of the target job.
+  if (v2WritesEnabled(readWorkflowV2Flags())) {
+    const pulled = await pullOntoBench(toJobId);
+    return { from: await loadJob(fromJobId), to: pulled.job };
+  }
+
   const user = await requireUser();
   const from = await loadJob(fromJobId);
   const to = await loadJob(toJobId);
   assertAssignedToMe(from, user.user_id);
   assertAssignedToMe(to, user.user_id);
-
-  if (from.job_id === to.job_id) {
-    throw new Error("SWAP_SAME_JOB");
-  }
 
   if (from.status === "in_progress" && !from.floor_parked_at) {
     await parkJob(fromJobId, "swapped");

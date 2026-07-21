@@ -64,7 +64,8 @@ export type PhotoCategory =
   | "inspection_brakes"
   | "inspection_forks"
   | "inspection_item"
-  | "job_proof";
+  | "job_proof"
+  | "job_work";
 
 export type TechnicianNoteType =
   | "general"

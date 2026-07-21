@@ -24,8 +24,35 @@ const MESSAGES: Record<string, string> = {
     "This work order belongs to another location. Switch location to make changes.",
   WORK_ORDER_LOCKED: "This work order is completed or cancelled and cannot be changed.",
   JOB_NOT_READY: "That job is not ready to pull yet.",
+  JOB_NOT_PULLABLE: "That job is not ready to pull yet.",
+  JOB_NOT_AUTHORIZED:
+    "Waiting on client approval — front desk will send it back to Perform work when approved.",
   JOB_AWAITING_CUSTOMER_APPROVAL:
     "Waiting on client approval — front desk will send it back to Perform work when approved.",
+  JOB_WAITING_FOR_PARTS:
+    "Parts are not here yet — this bike stays parked until parts arrive.",
+  JOB_ASSIGNED_TO_OTHER_TECH: "You can only start or complete jobs assigned to you.",
+  JOB_NOT_IN_PROGRESS: "Only a bike on the bench can be completed.",
+  WORK_ORDER_NOT_WORKABLE:
+    "This work order is on hold or closed and cannot take floor work right now.",
+  JOB_CHECKLIST_INCOMPLETE: "Check all checklist items before completing.",
+  JOB_PARTS_NOT_INSTALLED: "Install or clear all parts before completing.",
+  JOB_PROOF_REQUIRED: "Add an after photo or skip with a reason.",
+  QC_CANDIDATE_WORKED_ON_VISIT:
+    "That technician worked on this bike — pick someone who didn't touch it.",
+  QC_CANNOT_CHECK_OWN_WORK: "You cannot quality-check work you performed.",
+  SAFETY_REQUIRES_QC_PASS: "Pass the quality check before running the safety check.",
+  SAFETY_REQUIRED_BEFORE_PICKUP:
+    "Head tech safety check is required before marking ready for pickup.",
+  INVALID_PARK_REASON: "Choose a valid park reason.",
+  INVALID_WAIT_OWNER: "Choose a valid wait owner.",
+  INVALID_OUTCOME: "Choose pass or fail.",
+  ACTOR_NOT_FOUND: "Your staff account no longer exists. Sign in again.",
+  ACTOR_INACTIVE: "Your staff account is inactive. Ask an owner to reactivate it.",
+  NO_CONFIRMED_ESTIMATE: "Confirm the estimate before issuing an invoice.",
+  BILLING_NOT_PAID:
+    "Collect payment before completing, or have an owner/manager override with a reason.",
+  OVERRIDE_REASON_REQUIRED: "Enter a reason to override this gate.",
   JOB_NOT_ASSIGNED: "Assign a technician before completing this job.",
   JOB_NOT_ASSIGNED_TO_YOU: "You can only start or complete jobs assigned to you.",
   JOB_ALREADY_ASSIGNED: "That job is already assigned.",
@@ -233,4 +260,20 @@ export function toFormErrorMessage(error: unknown): string {
   }
 
   return "Something went wrong. Please try again.";
+}
+
+/**
+ * Workflow V2 SECURITY DEFINER commands signal domain errors with
+ * `RAISE EXCEPTION 'CODE_LIKE_THIS'`. PostgREST surfaces that text as the
+ * error message (sometimes with extra context around it) — extract the code
+ * so it maps through MESSAGES exactly like legacy service errors.
+ */
+export function toRpcErrorCode(
+  error: { message?: string | null } | null | undefined
+): string {
+  const raw = (error?.message ?? "").trim();
+  if (!raw) return "RPC_FAILED";
+  if (/^[A-Z][A-Z0-9_]*$/.test(raw)) return raw;
+  const match = raw.match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/);
+  return match ? match[0] : raw;
 }
