@@ -48,12 +48,8 @@ import {
 import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
 import { AgreementFollowUpNotice } from "@/components/work_orders/AgreementFollowUpNotice";
-import {
-  ComingSoonPanel,
-  WORK_ORDER_TABS,
-  WorkOrderTabs,
-  type WorkOrderTabId,
-} from "@/components/work_orders/WorkOrderTabs";
+import { ComingSoonPanel, WorkOrderTabs } from "@/components/work_orders/WorkOrderTabs";
+import { WORK_ORDER_TABS, type WorkOrderTabId } from "@/lib/workOrders/tabs";
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
 import { ServiceInfoTab } from "@/components/work_orders/ServiceInfoTab";
 import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
@@ -110,6 +106,7 @@ import {
   uploadPaperAgreementCopyAction,
 } from "@/app/(app)/work_orders/contract-actions";
 import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
+import { floorTechWorkOrderRedirect } from "@/lib/technician/assignmentHref";
 
 export const dynamic = "force-dynamic";
 
@@ -145,6 +142,10 @@ export default async function WorkOrderDetailPage({
       ? followUpParam
       : undefined;
 
+  if (isFloorTech(user.role)) {
+    redirect(floorTechWorkOrderRedirect(work_order_id, tabParam));
+  }
+
   const detail = await getWorkOrderDetail(work_order_id).catch((error: unknown) => {
     if (error instanceof Error && error.message === "FORBIDDEN") {
       redirect(staffHomePath(user.role));
@@ -158,6 +159,7 @@ export default async function WorkOrderDetailPage({
   const needsServices =
     !foreign && (activeTab === "jobs" || activeTab === "recommendations");
   const needsInspection =
+    activeTab === "overview" ||
     activeTab === "inspection" ||
     activeTab === "jobs" ||
     (activeTab === "recommendations" && Boolean(fromResultId));
@@ -313,6 +315,7 @@ export default async function WorkOrderDetailPage({
             canOverrideComplete={canOverrideComplete}
             canClearFlags={canClearFlags}
             canOverrideSafety={canOverrideSafety}
+            inspectionCompleted={Boolean(inspection?.completed_at)}
             readOnly={detail.is_foreign_location}
             assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
             setPrimaryAction={setPrimaryTechnicianAction.bind(null, detail.work_order_id)}

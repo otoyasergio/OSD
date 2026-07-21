@@ -133,7 +133,12 @@ export function RecommendationCard({
           ) : null}
           {isConverted && recommendation.converted_job_id ? (
             <p className="mt-2 text-sm font-medium text-emerald-800">
-              Converted to job (kept for history)
+              Approved — sent to tech as Perform work
+            </p>
+          ) : null}
+          {recommendation.status === "declined" ? (
+            <p className="mt-2 text-sm font-medium text-[var(--status-neutral)]">
+              Client declined — no job created
             </p>
           ) : null}
         </div>
@@ -148,17 +153,40 @@ export function RecommendationCard({
         <div className="mt-4 flex flex-col gap-3">
           {canUpdateStatus ? (
             <div className="flex flex-wrap gap-2">
-              {(["approved", "declined", "deferred"] as const).map((status) => (
-                <form key={status} action={statusFormAction} className="inline">
-                  <input type="hidden" name="status" value={status} />
+              {recommendation.status === "pending" ||
+              recommendation.status === "deferred" ? (
+                <>
+                  <form action={statusFormAction} className="inline">
+                    <input type="hidden" name="status" value="approved" />
+                    <button
+                      type="submit"
+                      className="min-h-11 rounded border border-[var(--chrome)] bg-[var(--chrome)] px-3 py-2 text-sm font-semibold text-white hover:bg-[var(--chrome-elevated)]"
+                    >
+                      Approve — send to tech
+                    </button>
+                  </form>
+                  <form action={statusFormAction} className="inline">
+                    <input type="hidden" name="status" value="declined" />
+                    <button
+                      type="submit"
+                      className="min-h-11 rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-sm font-semibold text-foreground hover:bg-[var(--surface-muted)]"
+                    >
+                      Decline — client said no
+                    </button>
+                  </form>
+                </>
+              ) : null}
+              {recommendation.status === "pending" ? (
+                <form action={statusFormAction} className="inline">
+                  <input type="hidden" name="status" value="deferred" />
                   <button
                     type="submit"
                     className="min-h-11 rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-sm font-semibold text-foreground hover:bg-[var(--surface-muted)]"
                   >
-                    {RECOMMENDATION_STATUS_LABELS[status]}
+                    {RECOMMENDATION_STATUS_LABELS.deferred}
                   </button>
                 </form>
-              ))}
+              ) : null}
               <FormError message={statusState.error} />
             </div>
           ) : null}

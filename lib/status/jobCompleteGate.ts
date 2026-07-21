@@ -51,7 +51,7 @@ export function evaluateJobCompleteGate(
     return {
       ok: false,
       code: "PROOF_REQUIRED",
-      reason: "Add an after photo or a proof exception note.",
+      reason: "Add an after photo or skip with a reason.",
     };
   }
 

@@ -5,17 +5,25 @@ import { canViewClients } from "@/lib/permissions";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { createCustomerAction } from "@/app/(app)/customers/actions";
 
-export default async function NewCustomerPage() {
+export default async function NewCustomerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ return_to?: string }>;
+}) {
   const user = await requireUser();
   if (!canViewClients(user.role)) redirect("/dashboard");
+
+  const { return_to = "" } = await searchParams;
+  const returnTo =
+    return_to.startsWith("/") && !return_to.startsWith("//") ? return_to : undefined;
 
   return (
     <div>
       <Link
-        href="/customers"
+        href={returnTo ?? "/customers"}
         className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
       >
-        ← Customers
+        ← {returnTo ? "Back to intake" : "Customers"}
       </Link>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
         New customer
@@ -24,6 +32,7 @@ export default async function NewCustomerPage() {
         <CustomerForm
           action={createCustomerAction}
           submitLabel="Create customer & add motorcycle"
+          returnTo={returnTo}
         />
       </div>
     </div>

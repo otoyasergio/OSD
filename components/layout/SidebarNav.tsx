@@ -33,6 +33,7 @@ import {
   canManageServiceCatalogue,
   canManageTimesheets,
   canManageUsers,
+  canSelfClock,
   canUseMessenger,
   canViewAuditLog,
   canViewBillingArea,
@@ -63,6 +64,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/settings/contract_template": ScrollText,
   "/settings/services": BookOpen,
   "/settings/users": Shield,
+  "/settings/logs": ScrollText,
   "/settings/audit": ScrollText,
   "/settings/reports": BarChart3,
   "/billing": Wallet,
@@ -130,25 +132,25 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     });
   }
 
-  const staffingLinks: NavLink[] = [
-    { href: "/technician", label: "Technician", icon: iconFor("/technician") },
+  const docketLinks: NavLink[] = [
+    { href: "/technician", label: "Jobs", icon: iconFor("/technician") },
   ];
-  if (isFloorTech(role)) {
-    staffingLinks.push({
+  if (canAssignTechnician(role)) {
+    docketLinks.push({
+      href: "/technician/docket",
+      label: "Assign docket",
+      icon: iconFor("/technician/docket"),
+    });
+  }
+  if (canSelfClock(role)) {
+    docketLinks.push({
       href: "/technician/clock",
       label: "Time clock",
       icon: iconFor("/technician/clock"),
     });
   }
-  if (canAssignTechnician(role)) {
-    staffingLinks.push({
-      href: "/technician/docket",
-      label: "Docket",
-      icon: iconFor("/technician/docket"),
-    });
-  }
   if (canManageTimesheets(role)) {
-    staffingLinks.push({
+    docketLinks.push({
       href: "/settings/timesheets",
       label: "Timesheets",
       icon: iconFor("/settings/timesheets"),
@@ -197,9 +199,9 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
   }
   if (canViewAuditLog(role)) {
     adminSettings.push({
-      href: "/settings/audit",
-      label: "Audit log",
-      icon: iconFor("/settings/audit"),
+      href: "/settings/logs",
+      label: "Logs",
+      icon: iconFor("/settings/logs"),
     });
   }
   if (canViewReports(role)) {
@@ -234,12 +236,12 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
     });
   }
 
-  const clientSubgroups: NavSubgroup[] = [
-    { heading: "Shop floor", links: shopFloorLinks },
-  ];
+  const workshopSubgroups: NavSubgroup[] = [];
+  if (shopFloorLinks.length > 0) {
+    workshopSubgroups.push({ links: shopFloorLinks });
+  }
   if (canViewClients(role)) {
-    clientSubgroups.push({
-      heading: "Records",
+    workshopSubgroups.push({
       links: [
         {
           href: "/customers",
@@ -262,19 +264,19 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
       subgroups: [{ links: financesLinks }],
     },
     {
-      id: "clients",
-      label: "Clients",
-      subgroups: clientSubgroups,
+      id: "workshop",
+      label: "Workshop",
+      subgroups: workshopSubgroups,
+    },
+    {
+      id: "docket",
+      label: "Docket",
+      subgroups: [{ links: docketLinks }],
     },
     {
       id: "communication",
       label: "Communication",
       subgroups: communicationLinks.length > 0 ? [{ links: communicationLinks }] : [],
-    },
-    {
-      id: "staffing",
-      label: "Staffing",
-      subgroups: [{ links: staffingLinks }],
     },
     {
       id: "settings",

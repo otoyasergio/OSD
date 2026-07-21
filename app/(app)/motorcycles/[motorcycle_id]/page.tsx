@@ -115,7 +115,8 @@ export default async function MotorcycleDetailPage({
             ? `Last updated ${formatDateTime(serviceInformation.last_updated)}`
             : "Not recorded yet."}
           {" · "}
-          Part numbers fill from fitment when blank.
+          Part numbers fill from fitment for blank fields and stay in sync with the
+          catalogue.
         </p>
         <div className="mt-3">
           <ServiceInformationForm

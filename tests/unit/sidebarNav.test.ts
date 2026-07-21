@@ -2,41 +2,52 @@ import { describe, expect, it } from "vitest";
 import { buildNavCategories } from "@/components/layout/SidebarNav";
 
 describe("buildNavCategories", () => {
-  it("orders owner nav Finances → Clients → Communication → Staffing → Settings", () => {
+  it("orders owner nav Finances → Workshop → Docket → Communication → Settings", () => {
     const categories = buildNavCategories("owner");
     expect(categories.map((c) => c.id)).toEqual([
       "finances",
-      "clients",
+      "workshop",
+      "docket",
       "communication",
-      "staffing",
       "settings",
     ]);
+    expect(categories.find((c) => c.id === "workshop")?.label).toBe("Workshop");
+    expect(
+      categories
+        .find((c) => c.id === "workshop")
+        ?.subgroups.some((g) => g.heading === "Shop floor")
+    ).toBe(false);
     const communication = categories.find((c) => c.id === "communication");
     expect(communication?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
       "/messages",
     ]);
   });
 
-  it("puts Timesheets under Staffing for owner/manager", () => {
+  it("puts Jobs and Timesheets under Docket for owner/manager", () => {
     const owner = buildNavCategories("owner");
-    const staffing = owner.find((c) => c.id === "staffing");
-    expect(staffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
+    const docket = owner.find((c) => c.id === "docket");
+    expect(docket?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
       expect.arrayContaining([
         "/technician",
         "/technician/docket",
         "/settings/timesheets",
       ])
     );
+    expect(docket?.subgroups.flatMap((g) => g.links).map((l) => l.label)).toEqual(
+      expect.arrayContaining(["Jobs", "Assign docket"])
+    );
 
     const tech = buildNavCategories("technician");
-    const techStaffing = tech.find((c) => c.id === "staffing");
-    expect(techStaffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
+    const techDocket = tech.find((c) => c.id === "docket");
+    expect(techDocket?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
       "/technician",
-      "/technician/clock",
+    ]);
+    expect(techDocket?.subgroups.flatMap((g) => g.links).map((l) => l.label)).toEqual([
+      "Jobs",
     ]);
   });
 
-  it("exposes Docket under Staffing for front office only", () => {
+  it("exposes Assign docket under Docket for front office only", () => {
     for (const role of ["owner", "manager", "service_advisor"] as const) {
       const hrefs = buildNavCategories(role).flatMap((c) =>
         c.subgroups.flatMap((g) => g.links.map((l) => l.href))
@@ -124,19 +135,20 @@ describe("buildNavCategories", () => {
     }
   });
 
-  it("exposes Time clock under Staffing for floor techs", () => {
-    for (const role of ["technician", "head_tech"] as const) {
-      const staffing = buildNavCategories(role).find((c) => c.id === "staffing");
-      expect(staffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
+  it("exposes Time clock under Docket only for owner/manager (self-clock)", () => {
+    for (const role of ["owner", "manager"] as const) {
+      const docket = buildNavCategories(role).find((c) => c.id === "docket");
+      expect(docket?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
         expect.arrayContaining(["/technician", "/technician/clock"])
       );
     }
-    const owner = buildNavCategories("owner");
-    const ownerStaffing = owner.find((c) => c.id === "staffing");
-    const ownerHrefs = ownerStaffing?.subgroups
-      .flatMap((g) => g.links)
-      .map((l) => l.href);
-    expect(ownerHrefs).not.toContain("/technician/clock");
+    for (const role of ["service_advisor", "technician", "head_tech", "admin"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).toContain("/technician");
+      expect(hrefs).not.toContain("/technician/clock");
+    }
   });
 
   it("does not expose Password as a sidebar nav item for any role", () => {

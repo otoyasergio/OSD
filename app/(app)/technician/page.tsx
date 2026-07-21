@@ -1,15 +1,26 @@
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
-import { getTechnicianFloorOs, type FloorOsMode } from "@/lib/services/technicianFloor";
+import {
+  emptyFloorOs,
+  getTechnicianFloorOs,
+  type FloorOsMode,
+} from "@/lib/services/technicianFloor";
 import { getTechnicianDocket } from "@/lib/services/technicianDocket";
 import { listReadyForPickup } from "@/lib/services/readyForPickup";
+import { getJobPacket } from "@/lib/services/jobPacket";
+import { listIntakePhotos } from "@/lib/services/photos";
 import { isFloorTech } from "@/lib/permissions";
 import { TechnicianFloorShell } from "@/components/technician/TechnicianFloorShell";
+import {
+  techJobPacketHref,
+  type JobPacketSection,
+} from "@/lib/technician/assignmentHref";
 import { deriveDefaultStage, type FloorStage } from "@/lib/technician/floorStage";
 
 export const dynamic = "force-dynamic";
 
 const STAGES = new Set<FloorStage>(["inspect", "work", "proof", "done", "qc", "safety"]);
+const PACKET_SECTIONS = new Set<JobPacketSection>(["notes", "photos", "jobs"]);
 
 function stageFromParams(params: { stage?: string; mode?: string }): FloorStage | null {
   if (params.stage && STAGES.has(params.stage as FloorStage)) {
@@ -40,27 +51,55 @@ function modeForFetch(stage: FloorStage | null): FloorOsMode {
   return "job";
 }
 
+function packetSectionFromParams(value: string | undefined): JobPacketSection | null {
+  if (value && PACKET_SECTIONS.has(value as JobPacketSection)) {
+    return value as JobPacketSection;
+  }
+  return null;
+}
+
 export default async function TechnicianPage({
   searchParams,
 }: {
-  searchParams: Promise<{ job?: string; wo?: string; mode?: string; stage?: string }>;
+  searchParams: Promise<{
+    job?: string;
+    wo?: string;
+    mode?: string;
+    stage?: string;
+    panel?: string;
+    packetSection?: string;
+  }>;
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
   const params = await searchParams;
   const requestedStage = stageFromParams(params);
+  const panel = params.panel === "packet" ? "packet" : null;
+  const packetSection = packetSectionFromParams(params.packetSection);
 
-  const [floor, docket, readyForPickup] = await Promise.all([
-    getTechnicianFloorOs({
-      jobId: params.job ?? null,
-      workOrderId: params.wo ?? null,
-      mode: modeForFetch(requestedStage),
-    }),
+  const hasSelection = Boolean(params.job || params.wo);
+  // Always load intake/proof photos with the packet so techs can open them
+  // any time the bike is on their docket — no second "Load photos" hop.
+  const loadPacket = panel === "packet" && Boolean(params.wo);
+
+  const [floor, docket, readyForPickup, packet, packetPhotos] = await Promise.all([
+    hasSelection
+      ? getTechnicianFloorOs({
+          jobId: params.job ?? null,
+          workOrderId: params.wo ?? null,
+          mode: modeForFetch(requestedStage),
+        })
+      : Promise.resolve(emptyFloorOs()),
     isFloorTech(user.role)
       ? getTechnicianDocket(user.user_id).catch(() => null)
       : Promise.resolve(null),
-    listReadyForPickup().catch(() => []),
+    // Pickup queue is front-office only — floor techs stay on their docket.
+    isFloorTech(user.role)
+      ? Promise.resolve([])
+      : listReadyForPickup({ hrefFor: (id) => techJobPacketHref(id) }).catch(() => []),
+    loadPacket ? getJobPacket(params.wo!).catch(() => null) : Promise.resolve(null),
+    loadPacket ? listIntakePhotos(params.wo!).catch(() => []) : Promise.resolve([]),
   ]);
 
   const stage =
@@ -72,6 +111,12 @@ export default async function TechnicianPage({
       stage={stage}
       docketItems={docket?.items ?? []}
       readyForPickup={readyForPickup}
+      panel={panel}
+      packet={packet}
+      packetSection={packetSection}
+      packetPhotos={packetPhotos}
+      packetWorkOrderId={params.wo ?? null}
+      packetJobId={params.job ?? null}
     />
   );
 }

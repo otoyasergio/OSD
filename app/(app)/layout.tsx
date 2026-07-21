@@ -7,13 +7,21 @@ import type { LocationOption } from "@/components/layout/LocationSwitcher";
 import { getSupabasePublicConfig } from "@/lib/database/config";
 import { createProfilePhotoSignedUrl } from "@/lib/profilePhotos/storage";
 import { SignOutButton } from "@/components/layout/SignOutButton";
-import { isFloorTech } from "@/lib/permissions/checks";
+import {
+  canUseTimeClockKiosk,
+  isFloorTech,
+  staffHomePath,
+} from "@/lib/permissions/checks";
 import { listUnreadStaffNotifications } from "@/lib/services/staffNotifications";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentAppUser();
   if (!user) {
     redirect("/login");
+  }
+
+  if (canUseTimeClockKiosk(user.role)) {
+    redirect(staffHomePath(user.role));
   }
 
   if (!user.active_location_id) {

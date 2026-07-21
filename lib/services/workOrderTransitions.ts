@@ -4,10 +4,7 @@ import type { DbClient, WorkOrderStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import {
-  canDropInColumn,
-  getTargetStatusForColumn,
-} from "@/lib/status/transitions";
+import { canDropInColumn, getTargetStatusForColumn } from "@/lib/status/transitions";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -36,10 +33,7 @@ function isActiveJob(status: string) {
   return status !== "cancelled" && status !== "declined";
 }
 
-async function assertAllActiveJobsCompleted(
-  supabase: DbClient,
-  workOrderId: string
-) {
+async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: string) {
   const { data: jobs, error } = await supabase
     .from("job")
     .select("job_id, status")
@@ -91,6 +85,12 @@ export async function moveWorkOrderOnBoard(
     if (!workOrder.quality_checked_at && !workOrder.quality_checked_by_user_id) {
       throw new Error("QC_REQUIRED");
     }
+  }
+
+  if (targetColumnId === "complete") {
+    const { completeWorkOrder } = await import("@/lib/services/quality");
+    await completeWorkOrder(workOrderId, null);
+    return;
   }
 
   if (targetStatus === workOrder.status) return;

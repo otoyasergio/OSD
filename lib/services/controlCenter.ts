@@ -6,15 +6,16 @@ import {
   getOptionalColumnSupport,
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
-import type { PhotoCategory, UserRole, WorkOrderStatus } from "@/lib/database/types";
+import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
 import { isControlCenterAtRisk, latestJobActivityAt } from "@/lib/control-center/atRisk";
 import {
   deriveTechAvailability,
   type TechAvailability,
 } from "@/lib/control-center/availability";
+import type { ControlCenterCohortKey } from "@/lib/control-center/cohorts";
 import { canViewReports, isFloorTech } from "@/lib/permissions";
 import { listOpenAdminFlagsForWorkOrders } from "@/lib/services/adminFlags";
-import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 import { getShopReportSummary } from "@/lib/services/reports";
 import { buildWorkOrderFlags, isOverdue } from "@/lib/status/flags";
 import { getGalleryStageForStatus } from "@/lib/status/pipeline";
@@ -70,6 +71,8 @@ export type ControlCenterKpi = {
   label: string;
   value: string;
   danger?: boolean;
+  /** When set, the KPI card links to `/control-center?cohort=…`. */
+  cohort?: ControlCenterCohortKey;
 };
 
 export type ControlCenterData = {
@@ -113,13 +116,6 @@ type RawRow = {
   job: RawJob[] | null;
   recommendation: Array<{ severity: string; status: string }> | null;
   drop_off_agreement: Array<{ agreement_id: string }> | null;
-  intake_photo: Array<{
-    photo_id: string;
-    storage_path: string;
-    photo_url: string | null;
-    category: PhotoCategory;
-    created_at: string;
-  }> | null;
   inspection: Array<{ completed_at: string | null }> | null;
 };
 
@@ -170,11 +166,11 @@ function toBike(
   row: RawRow,
   now: Date,
   primaryPhotoUrl: string | null,
+  photoCount: number,
   hasOpenAdminFlag: boolean
 ): ControlCenterBike {
   const jobs = row.job ?? [];
   const recommendations = row.recommendation ?? [];
-  const photos = row.intake_photo ?? [];
   const inspection = row.inspection?.[0] ?? null;
   const bike = row.motorcycle;
   const customer = row.customer;
@@ -184,7 +180,7 @@ function toBike(
     estimated_completion: row.estimated_completion,
     jobs,
     recommendations,
-    photoCount: photos.length,
+    photoCount,
     inspectionComplete: inspection ? Boolean(inspection.completed_at) : null,
     hasSignedAgreement: (row.drop_off_agreement?.length ?? 0) > 0,
     hasOpenAdminFlag,
@@ -305,6 +301,7 @@ function buildKpis(input: {
     label: "At risk",
     value: String(atRisk),
     danger: atRisk > 0,
+    cohort: "at_risk",
   };
 
   if (input.role === "owner" && input.ownerMetrics) {
@@ -316,6 +313,7 @@ function buildKpis(input: {
       {
         label: "Completed today",
         value: String(input.ownerMetrics.completedToday),
+        cohort: "completed_today",
       },
       {
         label: "Avg days in shop",
@@ -324,16 +322,16 @@ function buildKpis(input: {
             ? "—"
             : String(input.ownerMetrics.avgDaysInShop),
       },
-      { label: "In shop now", value: String(inShop) },
+      { label: "In shop now", value: String(inShop), cohort: "in_shop" },
       atRiskKpi,
     ];
   }
 
   if (input.role === "manager" || input.role === "owner" || input.role === "admin") {
     return [
-      { label: "In shop", value: String(inShop) },
-      { label: "In bay", value: String(inBay) },
-      { label: "Unassigned", value: String(unassigned) },
+      { label: "In shop", value: String(inShop), cohort: "in_shop" },
+      { label: "In bay", value: String(inBay), cohort: "in_bay" },
+      { label: "Unassigned", value: String(unassigned), cohort: "unassigned" },
       {
         label: "Techs available",
         value: `${available}/${totalTechs}`,
@@ -343,11 +341,19 @@ function buildKpis(input: {
   }
 
   return [
-    { label: "Unassigned", value: String(unassigned) },
-    { label: "Waiting approval", value: String(waitingApproval) },
-    { label: "Ready for pickup", value: String(readyPickup) },
+    { label: "Unassigned", value: String(unassigned), cohort: "unassigned" },
+    {
+      label: "Waiting approval",
+      value: String(waitingApproval),
+      cohort: "waiting_approval",
+    },
+    {
+      label: "Ready for pickup",
+      value: String(readyPickup),
+      cohort: "ready_for_pickup",
+    },
     atRiskKpi,
-    { label: "In shop", value: String(inShop) },
+    { label: "In shop", value: String(inShop), cohort: "in_shop" },
   ];
 }
 
@@ -378,7 +384,6 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
       ),
       job ( job_id, status, assigned_technician_id, started_at, updated_at, created_at ),
       recommendation ( severity, status ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
       inspection ( completed_at ),
       drop_off_agreement ( agreement_id )
     `;
@@ -403,7 +408,6 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
       ),
       job ( job_id, status, assigned_technician_id, started_at, updated_at, created_at ),
       recommendation ( severity, status ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
       inspection ( completed_at ),
       drop_off_agreement ( agreement_id )
     `;
@@ -424,7 +428,8 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
       .from("time_clock_entry")
       .select("user_id")
       .eq("location_id", locationId)
-      .is("clock_out_at", null),
+      .is("clock_out_at", null)
+      .is("voided_at", null),
   ]);
 
   let rawData: unknown[] | null = woResult.data as unknown[] | null;
@@ -457,21 +462,18 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
     user.user_id
   ) as unknown as RawRow[];
 
-  const photosByWorkOrder = new Map<string, IntakePhotoRef[]>();
-  for (const row of rawRows) {
-    photosByWorkOrder.set(row.work_order_id, row.intake_photo ?? []);
-  }
-  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(supabase, photosByWorkOrder);
-  const openFlags = await listOpenAdminFlagsForWorkOrders(
-    supabase,
-    rawRows.map((row) => row.work_order_id)
-  );
+  const workOrderIds = rawRows.map((row) => row.work_order_id);
+  const [{ urls: primaryPhotoUrls, counts: photoCounts }, openFlags] = await Promise.all([
+    resolveBoardPrimaryPhotos(supabase, workOrderIds),
+    listOpenAdminFlagsForWorkOrders(supabase, workOrderIds),
+  ]);
 
   const bikes = rawRows.map((row) =>
     toBike(
       row,
       now,
       primaryPhotoUrls.get(row.work_order_id) ?? null,
+      photoCounts.get(row.work_order_id) ?? 0,
       (openFlags.get(row.work_order_id) ?? []).length > 0
     )
   );
@@ -564,4 +566,69 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
     kpis,
     live_summary,
   };
+}
+
+/**
+ * Work orders completed since local midnight at the active location.
+ * Used by Control Center “Completed today” cohort list.
+ */
+export async function listControlCenterCompletedToday(): Promise<ControlCenterBike[]> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const locationId = user.active_location_id!;
+  const since = startOfTodayIso();
+  const now = new Date();
+
+  const select = `
+      work_order_id,
+      work_order_number,
+      status,
+      date_created,
+      estimated_completion,
+      completed_at,
+      customer:customer_id (
+        customer_id,
+        first_name,
+        last_name
+      ),
+      motorcycle:motorcycle_id (
+        motorcycle_id,
+        year,
+        make,
+        model,
+        vin
+      ),
+      job ( job_id, status, assigned_technician_id, started_at, updated_at, created_at ),
+      recommendation ( severity, status ),
+      inspection ( completed_at ),
+      drop_off_agreement ( agreement_id )
+    `;
+
+  const { data, error } = await supabase
+    .from("work_order")
+    .select(select)
+    .eq("location_id", locationId)
+    .eq("status", "completed")
+    .gte("completed_at", since)
+    .order("completed_at", { ascending: false, nullsFirst: false })
+    .limit(100);
+
+  if (error) throw error;
+
+  const rawRows = (data ?? []) as unknown as RawRow[];
+  const workOrderIds = rawRows.map((row) => row.work_order_id);
+  const [{ urls: primaryPhotoUrls, counts: photoCounts }, openFlags] = await Promise.all([
+    resolveBoardPrimaryPhotos(supabase, workOrderIds),
+    listOpenAdminFlagsForWorkOrders(supabase, workOrderIds),
+  ]);
+
+  return rawRows.map((row) =>
+    toBike(
+      row,
+      now,
+      primaryPhotoUrls.get(row.work_order_id) ?? null,
+      photoCounts.get(row.work_order_id) ?? 0,
+      (openFlags.get(row.work_order_id) ?? []).length > 0
+    )
+  );
 }

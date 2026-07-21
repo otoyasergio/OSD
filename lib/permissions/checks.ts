@@ -20,6 +20,11 @@ export function canEditWorkOrder(role: UserRole) {
 export function canAssignTechnician(role: UserRole) {
   return OWNERS_MANAGERS.includes(role) || role === "service_advisor";
 }
+
+/** Clock floor staff in/out from Control Center (front office + admin). */
+export function canClockStaff(role: UserRole) {
+  return canAssignTechnician(role) || role === "admin";
+}
 /** View a technician's ordered job-load docket (self if floor tech; any tech if assigner). */
 export function canViewTechnicianDocket(
   role: UserRole,
@@ -66,7 +71,31 @@ export function canViewDashboard(role: UserRole) {
 }
 /** Post-login / home redirect target by role. */
 export function staffHomePath(role: UserRole) {
+  if (role === "time_clock_kiosk") return "/kiosk";
   return isFloorTech(role) ? "/technician" : "/dashboard";
+}
+
+/** Tablet PIN kiosk session — punch others only, no messenger / shop UI. */
+export function canUseTimeClockKiosk(role: UserRole) {
+  return role === "time_clock_kiosk";
+}
+
+/** Set / clear staff time-clock PINs (owner/manager). */
+export function canManageTimeClockPins(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
+
+/** Staff EE employment record, notes, documents (owner/manager). */
+export function canManageStaffProfiles(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
+
+/**
+ * Self-service day clock (in/out/meal) in the app.
+ * Owner/manager only — floor staff and advisors punch via the tablet kiosk.
+ */
+export function canSelfClock(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
 }
 /** Manual Parts Canada inventory sync (owner/manager). */
 export function canSyncPartsCanadaCatalog(role: UserRole) {
@@ -123,6 +152,10 @@ export function canManageInspectionTemplate(role: UserRole) {
 }
 export function canManageContractTemplate(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
+}
+/** Capture drop-off agreement signature — front office + admin; never floor techs. */
+export function canSignContract(role: UserRole) {
+  return canEditWorkOrder(role) || canCreateWorkOrder(role);
 }
 export function canManageShopClosures(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
@@ -216,14 +249,14 @@ const ACTIVE_STAFF_ROLES: UserRole[] = [
   "admin",
 ];
 
-/** Company messenger — every active role can use it. */
+/** Company messenger — active shop staff only (not the kiosk tablet account). */
 export function canUseMessenger(role: UserRole) {
   return ACTIVE_STAFF_ROLES.includes(role);
 }
 
-/** Self-service password change in Settings — every active role. */
+/** Self-service password change — active staff plus kiosk tablet account. */
 export function canChangeOwnPassword(role: UserRole) {
-  return ACTIVE_STAFF_ROLES.includes(role);
+  return ACTIVE_STAFF_ROLES.includes(role) || role === "time_clock_kiosk";
 }
 
 /** Add/remove group members: the creator, or an owner/manager. */

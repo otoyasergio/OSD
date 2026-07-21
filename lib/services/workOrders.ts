@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { DbClient, JobStatus, WorkOrderStatus } from "@/lib/database/types";
+import type { JobStatus, WorkOrderStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
@@ -102,6 +102,8 @@ export type WorkOrderListItem = {
 export type CreateWorkOrderInput = {
   motorcycle_id: string;
   location_id: string;
+  /** Wix work order # — stored as work_order.work_order_number. */
+  work_order_number: string;
   external_invoice_number?: string | null;
   mileage: number;
   mileage_unit?: MileageUnit;
@@ -759,20 +761,6 @@ export async function setPrimaryTechnician(
   }
 }
 
-async function mintWorkOrderNumber(
-  supabase: DbClient,
-  locationId: string
-): Promise<string> {
-  const { data, error } = await supabase.rpc("mint_work_order_number", {
-    p_location_id: locationId,
-  });
-  if (error) throw error;
-  if (!data || typeof data !== "string") {
-    throw new Error("WORK_ORDER_NUMBER_FAILED");
-  }
-  return data;
-}
-
 export async function createWorkOrder(
   input: CreateWorkOrderInput
 ): Promise<{ work_order_id: string; work_order_number: string }> {
@@ -781,6 +769,7 @@ export async function createWorkOrder(
 
   const parsed = createWorkOrderSchema.parse({
     ...input,
+    work_order_number: input.work_order_number,
     external_invoice_number: normalizeOptional(input.external_invoice_number),
     internal_notes: normalizeOptional(input.internal_notes),
     primary_technician_id: normalizeOptional(input.primary_technician_id),
@@ -863,7 +852,18 @@ export async function createWorkOrder(
     if (unitPreferenceError) throw unitPreferenceError;
   }
 
-  const workOrderNumber = await mintWorkOrderNumber(supabase, parsed.location_id);
+  const workOrderNumber = parsed.work_order_number;
+  if (!workOrderNumber) throw new Error("WORK_ORDER_NUMBER_REQUIRED");
+
+  const { data: existingWo, error: existingError } = await supabase
+    .from("work_order")
+    .select("work_order_id")
+    .eq("location_id", parsed.location_id)
+    .eq("work_order_number", workOrderNumber)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existingWo) throw new Error("WORK_ORDER_NUMBER_TAKEN");
+
   const initialStatus: WorkOrderStatus = services.length > 0 ? "open" : "draft";
 
   const { data: workOrder, error: woError } = await supabase
@@ -885,7 +885,10 @@ export async function createWorkOrder(
     .select("work_order_id, work_order_number, location_id, status")
     .single();
 
-  if (woError) throw woError;
+  if (woError) {
+    if (woError.code === "23505") throw new Error("WORK_ORDER_NUMBER_TAKEN");
+    throw woError;
+  }
 
   const workOrderId = workOrder.work_order_id as string;
 

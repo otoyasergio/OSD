@@ -1,9 +1,9 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { PhotoCategory, WorkOrderStatus } from "@/lib/database/types";
+import type { WorkOrderStatus } from "@/lib/database/types";
 import { buildWorkOrderFlags, isOverdue } from "@/lib/status/flags";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
-import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 import { listOpenAdminFlagsForWorkOrders } from "@/lib/services/adminFlags";
 import { isFloorTech } from "@/lib/permissions";
 import { scopeWorkOrdersForViewer } from "@/lib/workOrders/assignmentVisibility";
@@ -117,7 +117,6 @@ type RawRow = {
     first_name: string;
     last_name: string;
     phone: string | null;
-    email: string | null;
   } | null;
   motorcycle: {
     motorcycle_id: string;
@@ -134,13 +133,6 @@ type RawRow = {
   }> | null;
   recommendation: Array<{ severity: string; status: string }> | null;
   drop_off_agreement: Array<{ agreement_id: string }> | null;
-  intake_photo: Array<{
-    photo_id: string;
-    storage_path: string;
-    photo_url: string | null;
-    category: PhotoCategory;
-    created_at: string;
-  }> | null;
   inspection: Array<{ completed_at: string | null }> | null;
 };
 
@@ -204,11 +196,11 @@ function toDashboardRow(
   row: RawRow,
   now: Date,
   primaryPhotoUrl: string | null = null,
+  photoCount = 0,
   hasOpenAdminFlag = false
 ): DashboardRow {
   const jobs = row.job ?? [];
   const recommendations = row.recommendation ?? [];
-  const photos = row.intake_photo ?? [];
   const inspection = row.inspection?.[0] ?? null;
   const bike = row.motorcycle;
 
@@ -226,7 +218,15 @@ function toDashboardRow(
           make: bike.make,
           model: bike.model,
           vin: bike.vin,
-          customer: row.customer,
+          customer: row.customer
+            ? {
+                customer_id: row.customer.customer_id,
+                first_name: row.customer.first_name,
+                last_name: row.customer.last_name,
+                phone: row.customer.phone,
+                email: null,
+              }
+            : null,
         }
       : null,
     primary_technician: row.primary_technician,
@@ -237,7 +237,7 @@ function toDashboardRow(
       estimated_completion: row.estimated_completion,
       jobs,
       recommendations,
-      photoCount: photos.length,
+      photoCount,
       inspectionComplete: inspection ? Boolean(inspection.completed_at) : null,
       hasSignedAgreement: (row.drop_off_agreement?.length ?? 0) > 0,
       hasOpenAdminFlag,
@@ -254,9 +254,8 @@ export async function getDashboardData(
   const now = new Date();
   const locationId = user.active_location_id!;
 
-  // Single nested select for board cards (no per-card fetches). Exclude
-  // completed/cancelled so the 300-row window stays on operational WOs.
-  // Technician filter options load in parallel with the board query.
+  // Lean nested select for board cards — photos resolved via RPC after filter.
+  // Exclude completed/cancelled so the 300-row window stays on operational WOs.
   const [woResult, membershipResult] = await Promise.all([
     supabase
       .from("work_order")
@@ -274,8 +273,7 @@ export async function getDashboardData(
         customer_id,
         first_name,
         last_name,
-        phone,
-        email
+        phone
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,
@@ -291,7 +289,6 @@ export async function getDashboardData(
       ),
       job ( job_id, status, assigned_technician_id ),
       recommendation ( severity, status ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at ),
       inspection ( completed_at ),
       drop_off_agreement ( agreement_id )
     `
@@ -364,16 +361,11 @@ export async function getDashboardData(
     );
   }
 
-  const photosByWorkOrder = new Map<string, IntakePhotoRef[]>();
-  for (const row of filtered) {
-    photosByWorkOrder.set(row.work_order_id, row.intake_photo ?? []);
-  }
-  const primaryPhotoUrls = await resolvePrimaryPhotoUrls(supabase, photosByWorkOrder);
-
-  const openFlags = await listOpenAdminFlagsForWorkOrders(
-    supabase,
-    filtered.map((row) => row.work_order_id)
-  );
+  const filteredIds = filtered.map((row) => row.work_order_id);
+  const [{ urls: primaryPhotoUrls, counts: photoCounts }, openFlags] = await Promise.all([
+    resolveBoardPrimaryPhotos(supabase, filteredIds),
+    listOpenAdminFlagsForWorkOrders(supabase, filteredIds),
+  ]);
 
   const rows = filtered
     .map((row) =>
@@ -381,6 +373,7 @@ export async function getDashboardData(
         row,
         now,
         primaryPhotoUrls.get(row.work_order_id) ?? null,
+        photoCounts.get(row.work_order_id) ?? 0,
         (openFlags.get(row.work_order_id) ?? []).length > 0
       )
     )
@@ -394,7 +387,6 @@ export async function getDashboardData(
         customer?.first_name,
         customer?.last_name,
         customer?.phone,
-        customer?.email,
         row.motorcycle?.make,
         row.motorcycle?.model,
         row.motorcycle?.vin,

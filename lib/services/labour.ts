@@ -1,20 +1,26 @@
 /**
  * Format estimated vs actual labour for display on jobs.
- * Actual hours = (completedAt ?? now) - startedAt in decimal hours.
- * overEstimate when actual > estimate × 1.1 (only when estimate is present).
+ * Prefer summed job_time_entry segments when provided; otherwise fall back to
+ * wall-clock (completedAt ?? now) - startedAt.
  */
 export function formatLabourComparison(
   estimatedHours: number | null,
   startedAt: string | null,
-  completedAt: string | null
+  completedAt: string | null,
+  options?: { actualMsFromSegments?: number | null }
 ): { label: string; overEstimate: boolean } | null {
-  if (!startedAt) return null;
+  let actualHours: number | null = null;
 
-  const startMs = new Date(startedAt).getTime();
-  const endMs = completedAt
-    ? new Date(completedAt).getTime()
-    : Date.now();
-  const actualHours = (endMs - startMs) / (1000 * 60 * 60);
+  if (options?.actualMsFromSegments != null && options.actualMsFromSegments >= 0) {
+    actualHours = options.actualMsFromSegments / (1000 * 60 * 60);
+  } else if (startedAt) {
+    const startMs = new Date(startedAt).getTime();
+    const endMs = completedAt ? new Date(completedAt).getTime() : Date.now();
+    actualHours = (endMs - startMs) / (1000 * 60 * 60);
+  }
+
+  if (actualHours == null) return null;
+
   const actualLabel = formatHours(actualHours);
 
   const parts: string[] = [];
@@ -23,8 +29,7 @@ export function formatLabourComparison(
   }
   parts.push(`Actual ${actualLabel}h`);
 
-  const overEstimate =
-    estimatedHours != null && actualHours > estimatedHours * 1.1;
+  const overEstimate = estimatedHours != null && actualHours > estimatedHours * 1.1;
 
   return {
     label: parts.join(" · "),

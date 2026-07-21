@@ -65,6 +65,14 @@ export default async function UsersAdminPage() {
                   {person.locations.map((loc) => loc.code).join(", ") || "No locations"}
                 </span>
               </summary>
+              <div className="mt-2">
+                <Link
+                  href={`/settings/staff/${person.user_id}`}
+                  className="text-sm font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+                >
+                  Staff profile · PIN & EE docs
+                </Link>
+              </div>
               <UserEditForm
                 user={person}
                 locations={locations}

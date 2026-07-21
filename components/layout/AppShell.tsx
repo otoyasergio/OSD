@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { AppUser } from "@/lib/auth/session";
+import { createClient } from "@/lib/database/supabase-browser";
 import { isFloorTech, staffHomePath } from "@/lib/permissions/checks";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { SidebarNav } from "@/components/layout/SidebarNav";
@@ -31,6 +32,7 @@ const ROLE_LABELS: Record<AppUser["role"], string> = {
   technician: "Technician",
   head_tech: "Head Tech",
   admin: "Admin",
+  time_clock_kiosk: "Time Clock Kiosk",
 };
 
 type Props = {
@@ -61,9 +63,15 @@ export function AppShell({
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [incomingNotification, setIncomingNotification] =
     useState<StaffAssignmentNotification | null>(null);
+  const [prevInitialNotifications, setPrevInitialNotifications] =
+    useState(initialNotifications);
   const knownNotificationIds = useRef(
     new Set(initialNotifications.map((notification) => notification.notification_id))
   );
+  if (initialNotifications !== prevInitialNotifications) {
+    setPrevInitialNotifications(initialNotifications);
+    setNotifications(initialNotifications);
+  }
   const hideChrome = isInspectionFullscreenPath(pathname);
   const displayName = `${user.first_name} ${user.last_name}`.trim();
   const homeHref = staffHomePath(user.role);
@@ -87,6 +95,13 @@ export function AppShell({
   }, []);
 
   useEffect(() => {
+    // Seed "already seen" ids when the server re-hydrates the layout list.
+    knownNotificationIds.current = new Set(
+      initialNotifications.map((notification) => notification.notification_id)
+    );
+  }, [initialNotifications]);
+
+  useEffect(() => {
     // Close drawer when navigating (e.g. back button) without leaving it open over new page.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional route-change reset
     setMobileNavOpen(false);
@@ -104,19 +119,37 @@ export function AppShell({
   useEffect(() => {
     if (!notificationsEnabled) return;
 
-    const poll = () => {
-      void refreshNotifications();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshNotifications();
+      }
     };
-    const timer = window.setInterval(poll, 5_000);
-    window.addEventListener("focus", poll);
-    document.addEventListener("visibilitychange", poll);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`staff-notifications:${user.user_id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "staff_notification",
+          filter: `recipient_user_id=eq.${user.user_id}`,
+        },
+        () => {
+          void refreshNotifications();
+        }
+      )
+      .subscribe();
 
     return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", poll);
-      document.removeEventListener("visibilitychange", poll);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+      void supabase.removeChannel(channel);
     };
-  }, [notificationsEnabled, refreshNotifications]);
+  }, [notificationsEnabled, refreshNotifications, user.user_id]);
 
   async function openNotification(notification: StaffAssignmentNotification) {
     setNotificationBusy(true);
@@ -159,7 +192,7 @@ export function AppShell({
       open={notificationOpen}
       busy={notificationBusy}
       error={notificationError}
-      onToggle={() => setNotificationOpen((open) => !open)}
+      onToggle={() => setNotificationOpen((current) => !current)}
       onOpenNotification={(notification) => void openNotification(notification)}
       onMarkAllRead={() => void markAllNotificationsRead()}
     />
@@ -189,9 +222,9 @@ export function AppShell({
           <Image
             src="/otomoto-logo.png"
             alt="OTOMOTO Toronto Moto"
-            width={150}
-            height={52}
-            className="h-8 w-auto"
+            width={240}
+            height={84}
+            className="brand-logo brand-logo--mobile"
             priority
           />
         </Link>
@@ -235,9 +268,9 @@ export function AppShell({
           <Image
             src="/otomoto-logo.png"
             alt="OTOMOTO Toronto Moto"
-            width={150}
-            height={52}
-            className="h-9 w-auto"
+            width={260}
+            height={90}
+            className="brand-logo"
             priority
           />
           <span className="brand-wordmark" aria-hidden>

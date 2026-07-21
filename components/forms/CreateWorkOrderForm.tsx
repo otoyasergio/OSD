@@ -156,6 +156,7 @@ export function CreateWorkOrderForm({
   const [motorcycleId, setMotorcycleId] = useState(initialMotorcycleId);
   const customerIdRef = useRef(resolvedInitialCustomerId);
   const bikeLoadRequestRef = useRef(0);
+  const [workOrderNumber, setWorkOrderNumber] = useState("");
   const [mileage, setMileage] = useState("");
   const [mileageUnit, setMileageUnit] = useState<MileageUnit>(() =>
     normalizeMileageUnit(
@@ -328,6 +329,7 @@ export function CreateWorkOrderForm({
   const stepData = {
     customerId,
     motorcycleId,
+    workOrderNumber,
     mileage,
     estimatedCompletion,
     selectedServiceIds,
@@ -496,6 +498,7 @@ export function CreateWorkOrderForm({
           stepId,
           customerId,
           motorcycleId,
+          workOrderNumber,
           mileage,
           estimatedCompletion,
           selectedServiceIds,
@@ -505,7 +508,7 @@ export function CreateWorkOrderForm({
         if (!ok) {
           setClientError(
             isLastStep
-              ? "Complete every required step, including all six intake photos, before creating the work order."
+              ? "Complete every required step, including the Wix work order number and all six intake photos, before creating the work order."
               : "Finish each step in order before creating the work order."
           );
           return;
@@ -525,6 +528,7 @@ export function CreateWorkOrderForm({
 
       {/* Persist values for submit regardless of which step is visible */}
       <input type="hidden" name="motorcycle_id" value={motorcycleId} />
+      <input type="hidden" name="work_order_number" value={workOrderNumber.trim()} />
       <input type="hidden" name="mileage" value={mileage} />
       <input type="hidden" name="mileage_unit" value={mileageUnit} />
       <input type="hidden" name="estimated_completion" value={estimatedCompletion} />
@@ -561,7 +565,10 @@ export function CreateWorkOrderForm({
             />
             <span className="mt-1 block text-xs text-[var(--status-neutral)]">
               Search by name, email, or phone. Need a new customer?{" "}
-              <Link href="/customers/new" className="underline underline-offset-2">
+              <Link
+                href="/customers/new?return_to=%2Fwork_orders%2Fnew"
+                className="underline underline-offset-2"
+              >
                 Create one first
               </Link>
               .
@@ -692,9 +699,29 @@ export function CreateWorkOrderForm({
         <section className="intake-wizard-panel">
           <h2 className="intake-wizard-panel-title">Visit details</h2>
           <p className="intake-wizard-panel-lede">
-            Mileage, services, and technician. Square invoicing is created later from the
-            work order Billing panel.
+            Enter the Wix work order number first — that becomes the shop work order #.
+            Then mileage, services, and technician. Square invoicing is created later from
+            the work order Billing panel.
           </p>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">
+              Wix work order # <span className="ml-1 text-red-600">*</span>
+            </span>
+            <input
+              className={INPUT_CLASS}
+              type="text"
+              inputMode="text"
+              autoComplete="off"
+              placeholder="e.g. WO-1042"
+              value={workOrderNumber}
+              onChange={(event) => setWorkOrderNumber(event.target.value)}
+              required
+            />
+            <span className="mt-1 block text-xs text-[var(--status-neutral)]">
+              Copy the number from Wix. We no longer assign work order numbers in the shop
+              app.
+            </span>
+          </label>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-foreground">
@@ -1137,6 +1164,7 @@ export function CreateWorkOrderForm({
                   : "—"
               }
             />
+            <ReviewCard label="Wix work order #" value={workOrderNumber.trim() || "—"} />
             <ReviewCard label="Mileage" value={formatMileage(mileage, mileageUnit)} />
             <ReviewCard
               label="Estimated completion"
@@ -1246,6 +1274,7 @@ export function CreateWorkOrderForm({
                   stepId,
                   customerId,
                   motorcycleId,
+                  workOrderNumber,
                   mileage,
                   estimatedCompletion,
                   selectedServiceIds,
