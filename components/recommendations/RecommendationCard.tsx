@@ -199,7 +199,7 @@ export function RecommendationCard({
                   onClick={() => setShowConvert(true)}
                   className="min-h-11 rounded border border-[var(--chrome)] bg-[var(--chrome)] px-3 py-2 text-sm font-semibold text-white hover:bg-[var(--chrome-elevated)]"
                 >
-                  Convert to job…
+                  Add to estimate…
                 </button>
               ) : (
                 <form
@@ -224,6 +224,24 @@ export function RecommendationCard({
                       ))}
                     </select>
                   </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-medium text-foreground">
+                      Quoted labour price (CAD)
+                    </span>
+                    <input
+                      type="number"
+                      name="price"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      placeholder="Catalogue price"
+                      className={SELECT_CLASS}
+                    />
+                    <span className="mt-1 block text-xs text-[var(--status-neutral)]">
+                      Leave blank to use the service catalogue price. Add parts on the
+                      Parts tab after converting.
+                    </span>
+                  </label>
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -236,7 +254,7 @@ export function RecommendationCard({
                     </span>
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    <SubmitButton label="Confirm convert" pendingLabel="Converting…" />
+                    <SubmitButton label="Add to estimate" pendingLabel="Adding…" />
                     <button
                       type="button"
                       onClick={() => setShowConvert(false)}

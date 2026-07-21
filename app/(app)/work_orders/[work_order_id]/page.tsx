@@ -33,6 +33,7 @@ import { listServices } from "@/lib/services/serviceCatalogue";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import {
   listOutstandingRecommendationsForMotorcycle,
+  listRecommendationEstimateLines,
   listRecommendationsForWorkOrder,
 } from "@/lib/services/recommendations";
 import { listPartsForWorkOrder } from "@/lib/services/parts";
@@ -79,6 +80,7 @@ import {
 import {
   convertRecommendationAction,
   createRecommendationAction,
+  sendRecommendationEstimateAction,
   updateRecommendationStatusAction,
 } from "@/app/(app)/work_orders/recommendation-actions";
 import {
@@ -172,6 +174,7 @@ export default async function WorkOrderDetailPage({
     inspection,
     recommendations,
     outstandingRecommendations,
+    recommendationEstimateLines,
     parts,
     notes,
     timeline,
@@ -189,6 +192,9 @@ export default async function WorkOrderDetailPage({
       : Promise.resolve([]),
     activeTab === "recommendations"
       ? listOutstandingRecommendationsForMotorcycle(detail.motorcycle_id, work_order_id)
+      : Promise.resolve([]),
+    activeTab === "recommendations"
+      ? listRecommendationEstimateLines(work_order_id)
       : Promise.resolve([]),
     needsParts ? listPartsForWorkOrder(work_order_id) : Promise.resolve([]),
     activeTab === "notes" ? listTechnicianNotes(work_order_id) : Promise.resolve([]),
@@ -415,6 +421,7 @@ export default async function WorkOrderDetailPage({
         <RecommendationsTab
           recommendations={recommendations}
           outstandingRecommendations={outstandingRecommendations}
+          estimateLines={recommendationEstimateLines}
           services={services}
           readOnly={detail.is_foreign_location}
           canCreate={canRecommend}
@@ -426,6 +433,10 @@ export default async function WorkOrderDetailPage({
             detail.work_order_id
           )}
           convertActionFor={convertRecommendationAction.bind(null, detail.work_order_id)}
+          sendEstimateAction={sendRecommendationEstimateAction.bind(
+            null,
+            detail.work_order_id
+          )}
           fromResultId={fromResultId ?? null}
           fromResultDefaults={fromResultDefaults}
         />

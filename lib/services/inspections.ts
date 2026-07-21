@@ -513,6 +513,21 @@ export async function saveInspectionResult(
       row.status === "future_attention" ||
       row.status === "immediate_attention");
 
+  // Tech flags a finding → client recommendation appears immediately (and is
+  // withdrawn again if the flag is cleared before anyone acts on it).
+  if (significant) {
+    const { syncRecommendationForInspectionResult } =
+      await import("@/lib/services/recommendations");
+    await syncRecommendationForInspectionResult({
+      work_order_id: workOrder.work_order_id,
+      inspection_result_id: inspectionResultId,
+      status: result.status,
+      item_name_snapshot: result.item_name_snapshot,
+      category_snapshot: result.category_snapshot,
+      notes: result.notes,
+    });
+  }
+
   if (significant || statusChanged) {
     await addTimelineEvent(supabase, {
       work_order_id: workOrder.work_order_id,

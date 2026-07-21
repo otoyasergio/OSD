@@ -73,6 +73,107 @@ export type AttentionFindingInput = {
   notes?: string | null;
 };
 
+export type RecommendationSyncPlan =
+  | { action: "none" }
+  | { action: "create"; severity: RecommendationSeverity }
+  | { action: "update_severity"; severity: RecommendationSeverity }
+  | { action: "withdraw" };
+
+/**
+ * Decide how a live inspection finding change maps onto its linked
+ * recommendation. Only untouched pending recommendations are mutated;
+ * anything staff acted on (approved / declined / deferred / converted)
+ * is left alone.
+ */
+export function planRecommendationSyncForFinding(
+  existing: Pick<Recommendation, "status" | "severity" | "converted_job_id"> | null,
+  findingStatus: string | null
+): RecommendationSyncPlan {
+  if (isAttentionInspectionStatus(findingStatus)) {
+    const severity = severityFromInspectionStatus(
+      findingStatus as InspectionResultStatus
+    );
+    if (!existing) return { action: "create", severity };
+    if (existing.status === "pending" && existing.severity !== severity) {
+      return { action: "update_severity", severity };
+    }
+    return { action: "none" };
+  }
+  if (existing && existing.status === "pending" && !existing.converted_job_id) {
+    return { action: "withdraw" };
+  }
+  return { action: "none" };
+}
+
+/**
+ * Live sync while the tech works the checklist: flagging an item yellow/red
+ * immediately creates a pending client recommendation; clearing the flag
+ * withdraws the auto-created recommendation if staff have not acted on it.
+ */
+export async function syncRecommendationForInspectionResult(input: {
+  work_order_id: string;
+  inspection_result_id: string;
+  status: string | null;
+  item_name_snapshot: string;
+  category_snapshot: string;
+  notes?: string | null;
+}): Promise<void> {
+  const user = await requireUser();
+  if (!canCreateRecommendation(user.role)) return;
+
+  const supabase = await createClient();
+  const { data: linked, error: linkedError } = await supabase
+    .from("recommendation")
+    .select(COLUMNS)
+    .eq("work_order_id", input.work_order_id)
+    .eq("inspection_result_id", input.inspection_result_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (linkedError) throw linkedError;
+  const existing = linked as Recommendation | null;
+
+  const plan = planRecommendationSyncForFinding(existing, input.status);
+
+  if (plan.action === "create") {
+    await createRecommendation(input.work_order_id, {
+      description: `${input.item_name_snapshot} (${input.category_snapshot})`,
+      severity: plan.severity,
+      notes: input.notes ?? null,
+      inspection_result_id: input.inspection_result_id,
+    });
+    return;
+  }
+
+  if (plan.action === "update_severity" && existing) {
+    const { error } = await supabase
+      .from("recommendation")
+      .update({ severity: plan.severity })
+      .eq("recommendation_id", existing.recommendation_id);
+    if (error) throw error;
+    return;
+  }
+
+  if (plan.action === "withdraw" && existing) {
+    const { error } = await supabase
+      .from("recommendation")
+      .delete()
+      .eq("recommendation_id", existing.recommendation_id)
+      .eq("status", "pending");
+    if (error) throw error;
+
+    await addTimelineEvent(supabase, {
+      work_order_id: input.work_order_id,
+      user_id: user.user_id,
+      event_type: TimelineEventType.RECOMMENDATION_WITHDRAWN,
+      entity_type: "recommendation",
+      entity_id: existing.recommendation_id,
+      description: `Recommendation withdrawn (finding cleared): ${existing.description}`,
+      old_value: { severity: existing.severity, status: existing.status },
+    });
+  }
+}
+
 /**
  * On inspection complete: create a pending recommendation for every yellow/red
  * finding that does not already have one linked.
@@ -220,6 +321,107 @@ export async function listOutstandingRecommendationsForMotorcycle(
       work_order: workOrder,
     };
   });
+}
+
+export type RecommendationEstimatePart = {
+  part_id: string;
+  part_name: string;
+  quantity: number;
+  unit_price: number | null;
+  status: string;
+};
+
+export type RecommendationEstimateLine = {
+  recommendation_id: string;
+  job_id: string;
+  title: string;
+  severity: RecommendationSeverity;
+  job_status: JobStatus;
+  labour_price: number | null;
+  parts: RecommendationEstimatePart[];
+  parts_total: number;
+  line_total: number;
+};
+
+/**
+ * Estimate lines for the work order's recommendation summary: every
+ * recommendation converted to a job that is still waiting for the client,
+ * with the job's labour price and its parts (retail pricing).
+ */
+export async function listRecommendationEstimateLines(
+  workOrderId: string
+): Promise<RecommendationEstimateLine[]> {
+  await requireUser();
+  const supabase = await createClient();
+
+  const { data: recs, error: recError } = await supabase
+    .from("recommendation")
+    .select("recommendation_id, severity, converted_job_id")
+    .eq("work_order_id", workOrderId)
+    .not("converted_job_id", "is", null);
+  if (recError) throw recError;
+
+  const jobIds = (recs ?? [])
+    .map((r) => r.converted_job_id as string | null)
+    .filter((id): id is string => Boolean(id));
+  if (jobIds.length === 0) return [];
+
+  const { data: jobs, error: jobError } = await supabase
+    .from("job")
+    .select("job_id, service_name_snapshot, status, standard_price_snapshot")
+    .in("job_id", jobIds)
+    .eq("status", "waiting_for_approval");
+  if (jobError) throw jobError;
+  if (!jobs || jobs.length === 0) return [];
+
+  const { data: parts, error: partError } = await supabase
+    .from("part")
+    .select("part_id, job_id, part_name, quantity, unit_price, status")
+    .in(
+      "job_id",
+      jobs.map((j) => j.job_id)
+    )
+    .not("status", "in", '("cancelled","not_required")');
+  if (partError) throw partError;
+
+  const partsByJob = new Map<string, RecommendationEstimatePart[]>();
+  for (const part of parts ?? []) {
+    const list = partsByJob.get(part.job_id as string) ?? [];
+    list.push({
+      part_id: part.part_id as string,
+      part_name: part.part_name as string,
+      quantity: Number(part.quantity ?? 0),
+      unit_price: part.unit_price === null ? null : Number(part.unit_price),
+      status: part.status as string,
+    });
+    partsByJob.set(part.job_id as string, list);
+  }
+
+  const jobById = new Map(jobs.map((j) => [j.job_id as string, j]));
+
+  return (recs ?? [])
+    .filter((rec) => jobById.has(rec.converted_job_id as string))
+    .map((rec) => {
+      const job = jobById.get(rec.converted_job_id as string)!;
+      const jobParts = partsByJob.get(job.job_id as string) ?? [];
+      const partsTotal = jobParts.reduce(
+        (sum, p) => sum + (p.unit_price ?? 0) * p.quantity,
+        0
+      );
+      const labour =
+        job.standard_price_snapshot === null ? null : Number(job.standard_price_snapshot);
+      return {
+        recommendation_id: rec.recommendation_id as string,
+        job_id: job.job_id as string,
+        title: job.service_name_snapshot as string,
+        severity: rec.severity as RecommendationSeverity,
+        job_status: job.status as JobStatus,
+        labour_price: labour,
+        parts: jobParts,
+        parts_total: partsTotal,
+        line_total: (labour ?? 0) + partsTotal,
+      };
+    });
 }
 
 export async function createRecommendation(
@@ -581,6 +783,8 @@ export async function convertRecommendationToJob(
     already_approved?: boolean;
     /** Prefer recommendation description as the job/service label on the floor. */
     use_recommendation_title?: boolean;
+    /** Quoted labour price for the estimate; overrides the catalogue price. */
+    price_override?: number | null;
   }
 ): Promise<{ job_id: string; recommendation_id: string }> {
   const user = await requireUser();
@@ -611,6 +815,14 @@ export async function convertRecommendationToJob(
 
   const service = await resolveServiceForRecommendation(supabase, input.service_id);
 
+  const priceOverride =
+    input.price_override === undefined || input.price_override === null
+      ? null
+      : Number(input.price_override);
+  if (priceOverride !== null && (!Number.isFinite(priceOverride) || priceOverride < 0)) {
+    throw new Error("INVALID_PRICE");
+  }
+
   const alreadyApproved =
     Boolean(input.already_approved) || existing.status === "approved";
   const jobStatus: JobStatus = alreadyApproved ? "approved" : "waiting_for_approval";
@@ -631,7 +843,7 @@ export async function convertRecommendationToJob(
       work_order_id: existing.work_order_id,
       service_id: service.service_id,
       service_name_snapshot: serviceNameSnapshot,
-      standard_price_snapshot: service.standard_price,
+      standard_price_snapshot: priceOverride ?? service.standard_price,
       estimated_labour_snapshot: service.estimated_labour,
       status: jobStatus,
       created_by_user_id: user.user_id,

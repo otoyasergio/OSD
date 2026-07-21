@@ -16,6 +16,7 @@ export const TimelineEventType = {
   RECOMMENDATION_CREATED: "Recommendation Created",
   RECOMMENDATION_STATUS_CHANGED: "Recommendation Status Changed",
   RECOMMENDATION_CONVERTED_TO_JOB: "Recommendation Converted To Job",
+  RECOMMENDATION_WITHDRAWN: "Recommendation Withdrawn",
   PART_ADDED: "Part Added",
   PART_STATUS_CHANGED: "Part Status Changed",
   TECHNICIAN_ASSIGNED: "Technician Assigned",
