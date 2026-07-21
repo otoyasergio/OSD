@@ -47,9 +47,7 @@ describe("shopRate", () => {
 describe("isFlatRateService", () => {
   it("treats Storage category as flat rate", async () => {
     const { isFlatRateService } = await import("@/lib/pricing/shopRate");
-    expect(isFlatRateService({ category: "Storage", name: "Winter Storage" })).toBe(
-      true
-    );
+    expect(isFlatRateService({ category: "Storage", name: "Winter Storage" })).toBe(true);
     expect(isFlatRateService({ category: "Maintenance", name: "Oil Change" })).toBe(
       false
     );

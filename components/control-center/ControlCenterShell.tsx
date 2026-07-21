@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { memo, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useNowTick } from "@/lib/client/useNowTick";
 import {
   DndContext,
   DragOverlay,
@@ -26,6 +27,7 @@ import {
 } from "@/app/(app)/control-center/actions";
 import { deriveTechAvailability } from "@/lib/control-center/availability";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
+import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
 import { createClient } from "@/lib/database/supabase-browser";
 import type { WorkOrderStatus } from "@/lib/database/types";
 import { controlCenterCohortHref } from "@/lib/control-center/cohorts";
@@ -104,17 +106,8 @@ function availabilityLabel(value: ControlCenterTech["availability"]) {
   return "Off shift";
 }
 
-function useNowTick(enabled: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!enabled) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [enabled]);
-  return now;
-}
-
-function BikeMedia({ bike, now }: { bike: ControlCenterBike; now: number }) {
+function BikeMedia({ bike }: { bike: ControlCenterBike }) {
+  const now = useNowTick(true);
   const elapsed = Math.max(0, now - new Date(bike.date_created).getTime());
   const tone = timeInShopTone(elapsed);
   return (
@@ -144,15 +137,13 @@ function BikeMedia({ bike, now }: { bike: ControlCenterBike; now: number }) {
   );
 }
 
-function PoolBikeCard({
+const PoolBikeCard = memo(function PoolBikeCard({
   bike,
-  now,
   dragging,
   canDrag,
   onOpenWork,
 }: {
   bike: ControlCenterBike;
-  now: number;
   dragging: boolean;
   canDrag: boolean;
   onOpenWork: (workOrderId: string) => void;
@@ -179,7 +170,7 @@ function PoolBikeCard({
       {...(canDrag ? { ...listeners, ...attributes } : {})}
       onClick={() => onOpenWork(bike.work_order_id)}
     >
-      <BikeMedia bike={bike} now={now} />
+      <BikeMedia bike={bike} />
       <div className="cc-bike-body">
         <div className="cc-bike-title-row">
           <p className="cc-bike-title">{bike.bike_title}</p>
@@ -201,11 +192,16 @@ function PoolBikeCard({
       </div>
     </button>
   );
+});
+
+function WorkElapsedLabel({ openedAt }: { openedAt: string }) {
+  const now = useNowTick(true);
+  const workElapsed = Math.max(0, now - new Date(openedAt).getTime());
+  return <>{formatElapsedTimer(workElapsed)}</>;
 }
 
-function MiniBikeCard({
+const MiniBikeCard = memo(function MiniBikeCard({
   bike,
-  now,
   canOpen,
   canDrag,
   onStartWork,
@@ -213,7 +209,6 @@ function MiniBikeCard({
   dragging,
 }: {
   bike: ControlCenterBike;
-  now: number;
   canOpen: boolean;
   canDrag: boolean;
   onStartWork: (workOrderId: string) => void;
@@ -225,9 +220,6 @@ function MiniBikeCard({
     data: { workOrderId: bike.work_order_id },
     disabled: !canDrag,
   });
-  const workElapsed = bike.opened_at
-    ? Math.max(0, now - new Date(bike.opened_at).getTime())
-    : 0;
 
   return (
     <div
@@ -262,7 +254,7 @@ function MiniBikeCard({
       {bike.opened_at ? (
         <span className="cc-work-timer">
           <span className="cc-work-timer-dot cc-pulse" />
-          {formatElapsedTimer(workElapsed)}
+          <WorkElapsedLabel openedAt={bike.opened_at} />
         </span>
       ) : (
         <button
@@ -282,11 +274,26 @@ function MiniBikeCard({
       )}
     </div>
   );
+});
+
+function TechOldestMeta({ bikes }: { bikes: ControlCenterBike[] }) {
+  const now = useNowTick(bikes.length > 0);
+  const oldestMs = bikes.reduce((max, bike) => {
+    const ms = now - new Date(bike.date_created).getTime();
+    return Math.max(max, ms);
+  }, 0);
+  return (
+    <div className="cc-tech-meta">
+      <span>
+        {bikes.length} bike{bikes.length === 1 ? "" : "s"}
+      </span>
+      <span>oldest {bikes.length > 0 ? formatElapsedTimer(oldestMs) : "—"}</span>
+    </div>
+  );
 }
 
-function TechCard({
+const TechCard = memo(function TechCard({
   tech,
-  now,
   canAssign,
   canClockStaff,
   clockPending,
@@ -296,7 +303,6 @@ function TechCard({
   activeId,
 }: {
   tech: ControlCenterTech;
-  now: number;
   canAssign: boolean;
   canClockStaff: boolean;
   clockPending: boolean;
@@ -309,10 +315,6 @@ function TechCard({
     id: tech.user_id,
     disabled: !canAssign,
   });
-  const oldestMs = tech.assigned_bikes.reduce((max, bike) => {
-    const ms = now - new Date(bike.date_created).getTime();
-    return Math.max(max, ms);
-  }, 0);
   const signedIn = tech.availability !== "off";
 
   return (
@@ -373,15 +375,7 @@ function TechCard({
           </span>
         )}
       </div>
-      <div className="cc-tech-meta">
-        <span>
-          {tech.assigned_bikes.length} bike
-          {tech.assigned_bikes.length === 1 ? "" : "s"}
-        </span>
-        <span>
-          oldest {tech.assigned_bikes.length > 0 ? formatElapsedTimer(oldestMs) : "—"}
-        </span>
-      </div>
+      <TechOldestMeta bikes={tech.assigned_bikes} />
       <div className="cc-tech-drop">
         {tech.assigned_bikes.length === 0 ? (
           <div className="cc-tech-empty">Drop a bike here</div>
@@ -390,7 +384,6 @@ function TechCard({
             <MiniBikeCard
               key={bike.work_order_id}
               bike={bike}
-              now={now}
               canOpen={canAssign}
               canDrag={canAssign}
               onStartWork={onStartWork}
@@ -402,7 +395,7 @@ function TechCard({
       </div>
     </section>
   );
-}
+});
 
 export function ControlCenterShell({
   data,
@@ -424,7 +417,6 @@ export function ControlCenterShell({
   recentlyCompleted?: ReadyForPickupItem[];
 }) {
   const router = useRouter();
-  const now = useNowTick(true);
   const carouselRef = useRef<HTMLDivElement>(null);
   const suppressNextBikeClick = useRef(false);
   const [pool, setPool] = useState(data.pool);
@@ -439,6 +431,24 @@ export function ControlCenterShell({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const activeIdRef = useRef<string | null>(null);
+  const isPendingRef = useRef(false);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+  useEffect(() => {
+    isPendingRef.current = isPending;
+  }, [isPending]);
+  const {
+    schedule: scheduleRefresh,
+    flush: flushRefresh,
+    cancel: cancelRefresh,
+  } = useDebouncedRouterRefresh({
+    delayMs: 1500,
+    // Pause while dragging or while a drop action is in flight so a stale
+    // router.refresh cannot overwrite optimistic placement.
+    isPaused: () => activeIdRef.current !== null || isPendingRef.current,
+  });
 
   const syncKey = useMemo(
     () =>
@@ -486,17 +496,17 @@ export function ControlCenterShell({
         "postgres_changes",
         { event: "*", schema: "public", table: "work_order" },
         () => {
-          router.refresh();
+          scheduleRefresh();
         }
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "job" }, () => {
-        router.refresh();
+        scheduleRefresh();
       })
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "time_clock_entry" },
         () => {
-          router.refresh();
+          scheduleRefresh();
         }
       )
       .subscribe();
@@ -504,7 +514,7 @@ export function ControlCenterShell({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [data.location_id, router]);
+  }, [data.location_id, scheduleRefresh]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -693,10 +703,15 @@ export function ControlCenterShell({
   }
 
   function handleDragEnd(event: DragEndEvent) {
+    activeIdRef.current = null;
     setActiveId(null);
     releaseSuppressBikeClick();
     const { active, over } = event;
-    if (!over) return;
+    if (!over) {
+      // No drop target — apply any realtime refresh deferred during the drag.
+      flushRefresh();
+      return;
+    }
 
     const workOrderId = normalizeControlCenterDragId(String(active.id));
     const techIds = techs.map((t) => t.user_id);
@@ -706,28 +721,53 @@ export function ControlCenterShell({
       techIds,
       containerForWorkOrder,
     });
-    if (!targetId) return;
+    if (!targetId) {
+      flushRefresh();
+      return;
+    }
 
     // Ignore drops that resolve back to the same dragged work order id.
-    if (targetId === workOrderId) return;
+    if (targetId === workOrderId) {
+      flushRefresh();
+      return;
+    }
 
     const fromAssign = findAssignmentOwner(workOrderId);
     const fromStage = findStageOwner(workOrderId);
     const currentStatus = statusForWorkOrder(workOrderId);
-    if (!currentStatus) return;
+    if (!currentStatus) {
+      flushRefresh();
+      return;
+    }
 
-    if (fromAssign && fromAssign === targetId) return;
-    if (fromStage && fromStage === targetId) return;
-    if (stageDropIdForStatus(currentStatus) === targetId) return;
+    if (fromAssign && fromAssign === targetId) {
+      flushRefresh();
+      return;
+    }
+    if (fromStage && fromStage === targetId) {
+      flushRefresh();
+      return;
+    }
+    if (stageDropIdForStatus(currentStatus) === targetId) {
+      flushRefresh();
+      return;
+    }
 
     if (isCcStageDropId(targetId)) {
       if (!canDropInColumn(data.role, targetId, currentStatus)) {
         setErrorMessage("You do not have permission to move this bike there.");
+        flushRefresh();
         return;
       }
 
+      // Dropping discards stale refreshes queued during drag; they would overwrite
+      // optimistic placement with pre-drop server props (snap-back).
+      cancelRefresh();
       const previous = applyOptimisticStatusMove(workOrderId, targetId);
-      if (!previous) return;
+      if (!previous) {
+        flushRefresh();
+        return;
+      }
 
       startTransition(async () => {
         const result = await moveWorkOrderOnBoardAction(workOrderId, targetId);
@@ -741,21 +781,28 @@ export function ControlCenterShell({
           setCompleteQueue(previous.completeQueue);
           setErrorMessage(result.error);
         }
+        scheduleRefresh();
       });
       return;
     }
 
     if (!canAssign) {
       setErrorMessage("You do not have permission to assign technicians.");
+      flushRefresh();
       return;
     }
     if (!fromAssign && !allBikes.has(workOrderId)) {
       setErrorMessage("Open the work order to assign a technician.");
+      flushRefresh();
       return;
     }
 
+    cancelRefresh();
     const previous = applyOptimisticAssign(workOrderId, targetId);
-    if (!previous) return;
+    if (!previous) {
+      flushRefresh();
+      return;
+    }
 
     startTransition(async () => {
       const result =
@@ -767,6 +814,7 @@ export function ControlCenterShell({
         setTechs(previous.techs);
         setErrorMessage(result.error);
       }
+      scheduleRefresh();
     });
   }
 
@@ -924,7 +972,9 @@ export function ControlCenterShell({
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={() => {
+          activeIdRef.current = null;
           setActiveId(null);
+          flushRefresh();
           releaseSuppressBikeClick();
         }}
       >
@@ -973,7 +1023,6 @@ export function ControlCenterShell({
                 <PoolBikeCard
                   key={bike.work_order_id}
                   bike={bike}
-                  now={now}
                   canDrag={canAssign}
                   dragging={activeId === bike.work_order_id}
                   onOpenWork={handleOpenWork}
@@ -988,7 +1037,6 @@ export function ControlCenterShell({
             <TechCard
               key={tech.user_id}
               tech={tech}
-              now={now}
               canAssign={canAssign}
               canClockStaff={canClockStaff}
               clockPending={isPending}
@@ -1047,7 +1095,7 @@ export function ControlCenterShell({
         <DragOverlay>
           {activeBike ? (
             <div className="cc-bike-card" style={{ width: "13.5rem" }}>
-              <BikeMedia bike={activeBike} now={now} />
+              <BikeMedia bike={activeBike} />
               <div className="cc-bike-body">
                 <p className="cc-bike-title">{activeBike.bike_title}</p>
                 <p className="cc-bike-subtitle">

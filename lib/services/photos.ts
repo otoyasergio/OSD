@@ -168,6 +168,55 @@ export async function resolvePrimaryPhotoUrls(
   return result;
 }
 
+type BoardPrimaryPhotoRow = {
+  work_order_id: string;
+  storage_path: string;
+  photo_url: string | null;
+  category: string | null;
+  photo_count: number | string;
+};
+
+/**
+ * Lean board helper: one preferred photo path + count per WO via Postgres RPC
+ * (avoids nesting every intake_photo on dashboard / control-center queries).
+ */
+export async function resolveBoardPrimaryPhotos(
+  supabase: DbClient,
+  workOrderIds: string[]
+): Promise<{
+  urls: Map<string, string | null>;
+  counts: Map<string, number>;
+}> {
+  const urls = new Map<string, string | null>();
+  const counts = new Map<string, number>();
+  const uniqueIds = [...new Set(workOrderIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return { urls, counts };
+
+  const { data, error } = await supabase.rpc("board_primary_intake_photos", {
+    p_work_order_ids: uniqueIds,
+  });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as BoardPrimaryPhotoRow[];
+  const paths: string[] = [];
+  for (const row of rows) {
+    counts.set(row.work_order_id, Number(row.photo_count) || 0);
+    if (row.storage_path) paths.push(row.storage_path);
+  }
+
+  const signed = await signStoragePaths(supabase, paths);
+  for (const row of rows) {
+    urls.set(row.work_order_id, signed.get(row.storage_path) ?? row.photo_url ?? null);
+  }
+
+  for (const id of uniqueIds) {
+    if (!counts.has(id)) counts.set(id, 0);
+  }
+
+  return { urls, counts };
+}
+
 async function signPaths(
   supabase: DbClient,
   photos: IntakePhoto[]

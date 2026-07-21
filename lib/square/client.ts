@@ -1,8 +1,4 @@
-import {
-  getSquareConfig,
-  isSquareConfigured,
-  squareApiBase,
-} from "@/lib/square/config";
+import { getSquareConfig, isSquareConfigured, squareApiBase } from "@/lib/square/config";
 
 type SquareCustomer = { id: string };
 type SquareInvoice = {
@@ -23,10 +19,7 @@ export function squareInvoiceDisplayNumber(invoice: {
   return id || null;
 }
 
-async function squareFetch<T>(
-  path: string,
-  init?: RequestInit
-): Promise<T> {
+async function squareFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const config = getSquareConfig();
   const base = squareApiBase(config.environment);
   const response = await fetch(`${base}${path}`, {
@@ -140,27 +133,24 @@ export async function createSquareInvoiceDraft(input: {
     input.dueDate ??
     new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const orderResponse = await squareFetch<{ order: { id: string } }>(
-    "/v2/orders",
-    {
-      method: "POST",
-      body: JSON.stringify({
-        idempotency_key: crypto.randomUUID(),
-        order: {
-          location_id: config.locationId,
-          customer_id: input.customerId,
-          line_items: input.lineItems.map((line) => ({
-            name: line.name,
-            quantity: line.quantity,
-            base_price_money: {
-              amount: Number(line.basePriceMoney.amount),
-              currency: line.basePriceMoney.currency,
-            },
-          })),
-        },
-      }),
-    }
-  );
+  const orderResponse = await squareFetch<{ order: { id: string } }>("/v2/orders", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: crypto.randomUUID(),
+      order: {
+        location_id: config.locationId,
+        customer_id: input.customerId,
+        line_items: input.lineItems.map((line) => ({
+          name: line.name,
+          quantity: line.quantity,
+          base_price_money: {
+            amount: Number(line.basePriceMoney.amount),
+            currency: line.basePriceMoney.currency,
+          },
+        })),
+      },
+    }),
+  });
 
   const invoiceResponse = await squareFetch<{ invoice: SquareInvoiceWithVersion }>(
     "/v2/invoices",

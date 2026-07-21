@@ -4,8 +4,7 @@ export type PhotoSource = "camera" | "library";
  * Prefer `image/*` first — Safari (iPad/Mac) keys off that for Photos vs Files.
  * Explicit types remain as hints for other browsers / HEIC from iPhone libraries.
  */
-const IMAGE_ACCEPT =
-  "image/*,image/jpeg,image/png,image/webp,image/heic,image/heif";
+const IMAGE_ACCEPT = "image/*,image/jpeg,image/png,image/webp,image/heic,image/heif";
 
 export type PhotoFileInputProps = {
   accept: string;

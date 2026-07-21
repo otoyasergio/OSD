@@ -24,9 +24,7 @@ describe("required intake photo slots", () => {
   });
 
   it("uses human-readable dash/odometer label", () => {
-    const odometer = CREATE_INTAKE_PHOTO_SLOTS.find(
-      (s) => s.category === "odometer"
-    );
+    const odometer = CREATE_INTAKE_PHOTO_SLOTS.find((s) => s.category === "odometer");
     expect(odometer?.label).toMatch(/dash/i);
     expect(odometer?.label).toMatch(/mileage/i);
   });

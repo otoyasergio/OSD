@@ -52,15 +52,11 @@ function parseDashboardViews(value: unknown): SavedDashboardView[] {
         view: typeof params.view === "string" ? params.view : undefined,
         status: typeof params.status === "string" ? params.status : undefined,
         technician_id:
-          typeof params.technician_id === "string"
-            ? params.technician_id
-            : undefined,
+          typeof params.technician_id === "string" ? params.technician_id : undefined,
         flag: typeof params.flag === "string" ? params.flag : undefined,
         q: typeof params.q === "string" ? params.q : undefined,
-        hide_empty:
-          typeof params.hide_empty === "string" ? params.hide_empty : undefined,
-        density:
-          typeof params.density === "string" ? params.density : undefined,
+        hide_empty: typeof params.hide_empty === "string" ? params.hide_empty : undefined,
+        density: typeof params.density === "string" ? params.density : undefined,
         card: typeof params.card === "string" ? params.card : undefined,
       },
     });
@@ -111,15 +107,11 @@ export async function getDashboardShellPreferences(): Promise<{
     savedViews: parseDashboardViews(byKey.get(DASHBOARD_VIEWS_KEY) ?? null),
     density: parseDensity(byKey.get(DASHBOARD_DENSITY_KEY) ?? null),
     viewMode: parseViewMode(byKey.get(DASHBOARD_VIEW_MODE_KEY) ?? null),
-    hiddenColumnIds: parseHiddenColumns(
-      byKey.get(DASHBOARD_HIDDEN_COLUMNS_KEY) ?? null
-    ),
+    hiddenColumnIds: parseHiddenColumns(byKey.get(DASHBOARD_HIDDEN_COLUMNS_KEY) ?? null),
   };
 }
 
-function parseDensity(
-  value: unknown
-): "compact" | "comfortable" | null {
+function parseDensity(value: unknown): "compact" | "comfortable" | null {
   if (value === "comfortable" || value === "compact") return value;
   const obj = asObject(value);
   if (obj?.density === "comfortable" || obj?.density === "compact") {
@@ -131,11 +123,7 @@ function parseDensity(
 function parseViewMode(value: unknown): DashboardViewMode | null {
   if (value === "board" || value === "list" || value === "cards") return value;
   const obj = asObject(value);
-  if (
-    obj?.view === "board" ||
-    obj?.view === "list" ||
-    obj?.view === "cards"
-  ) {
+  if (obj?.view === "board" || obj?.view === "list" || obj?.view === "cards") {
     return obj.view;
   }
   return null;

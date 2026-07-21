@@ -144,10 +144,8 @@ export async function listCustomerDocuments(
       storage_bucket: bucket,
       storage_path: path,
       mime_type: record.mime_type as string,
-      file_size:
-        record.file_size == null ? null : Number(record.file_size),
-      uploaded_by_user_id:
-        (record.uploaded_by_user_id as string | null) ?? null,
+      file_size: record.file_size == null ? null : Number(record.file_size),
+      uploaded_by_user_id: (record.uploaded_by_user_id as string | null) ?? null,
       created_at: record.created_at as string,
       signed_url: signed?.signedUrl ?? null,
       work_order_number: wo?.work_order_number ?? null,
@@ -389,9 +387,7 @@ export async function deleteCustomerDocument(
   // Contract-signature images stay with the agreement; files in the customer
   // documents bucket (including scanned paper agreements) are owned here.
   if (existing.storage_bucket === UPLOAD_BUCKET) {
-    await supabase.storage
-      .from(UPLOAD_BUCKET)
-      .remove([existing.storage_path as string]);
+    await supabase.storage.from(UPLOAD_BUCKET).remove([existing.storage_path as string]);
   }
 
   await addAuditLog(supabase, {

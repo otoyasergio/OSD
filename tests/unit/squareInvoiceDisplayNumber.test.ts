@@ -21,8 +21,6 @@ describe("squareInvoiceDisplayNumber", () => {
 
   it("returns null when neither is present", () => {
     expect(squareInvoiceDisplayNumber({})).toBeNull();
-    expect(
-      squareInvoiceDisplayNumber({ invoice_number: "  ", id: "" })
-    ).toBeNull();
+    expect(squareInvoiceDisplayNumber({ invoice_number: "  ", id: "" })).toBeNull();
   });
 });

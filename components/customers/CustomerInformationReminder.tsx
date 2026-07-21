@@ -20,7 +20,9 @@ export function CustomerInformationReminder({
   className = "",
 }: Props) {
   const missingItems = [
-    !phone?.trim() ? { label: "phone number", title: "Customer phone number needed" } : null,
+    !phone?.trim()
+      ? { label: "phone number", title: "Customer phone number needed" }
+      : null,
     !email?.trim() ? { label: "email address", title: "Customer email needed" } : null,
     !address?.trim()
       ? { label: "full address and postal code", title: "Customer address needed" }

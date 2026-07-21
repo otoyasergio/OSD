@@ -13,6 +13,7 @@ import {
   useTransition,
   type ReactNode,
 } from "react";
+import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import type { FloorOsSurface, TechnicianFloorOs } from "@/lib/services/technicianFloor";
 import type { DocketItem } from "@/lib/services/technicianDocket";
@@ -477,6 +478,14 @@ export function TechnicianFloorShell({
   const workNoteInputRef = useRef<HTMLTextAreaElement>(null);
   const [timerSecs, setTimerSecs] = useState(surface?.timer_secs ?? 0);
   const [, startTransition] = useTransition();
+  const overlayRef = useRef(overlay);
+  useEffect(() => {
+    overlayRef.current = overlay;
+  }, [overlay]);
+  const { schedule: scheduleRefresh, flush: flushRefresh } = useDebouncedRouterRefresh({
+    delayMs: 800,
+    isPaused: () => overlayRef.current !== null,
+  });
 
   const [ackState, ackAction, ackPending] = useActionState(
     acknowledgeDocketJobAction,
@@ -544,11 +553,11 @@ export function TechnicianFloorShell({
     if (installState?.success) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reflect install action result
       setWorkPartMessage(installState.success);
-      startTransition(() => router.refresh());
+      startTransition(() => scheduleRefresh());
     } else if (installState?.error) {
       setWorkPartMessage(installState.error);
     }
-  }, [installState, overlay, workPanel, router]);
+  }, [installState, overlay, workPanel, scheduleRefresh]);
 
   useEffect(() => {
     if (overlay !== "work" || workPanel !== "parts") return;
@@ -563,9 +572,9 @@ export function TechnicianFloorShell({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clear draft after successful note save
       setWorkNoteDraft("");
       setWorkNoteSaved(workNoteState.success);
-      startTransition(() => router.refresh());
+      startTransition(() => scheduleRefresh());
     }
-  }, [workNoteState, router]);
+  }, [workNoteState, scheduleRefresh]);
 
   useEffect(() => {
     const states = [
@@ -585,7 +594,7 @@ export function TechnicianFloorShell({
         // eslint-disable-next-line react-hooks/set-state-in-effect -- close overlays after floor actions succeed
         setNote(s.success);
         setOverlay(null);
-        startTransition(() => router.refresh());
+        startTransition(() => scheduleRefresh());
         break;
       }
       if (s?.error) {
@@ -604,8 +613,28 @@ export function TechnicianFloorShell({
     workState,
     passQcState,
     failQcState,
-    router,
+    scheduleRefresh,
   ]);
+
+  useEffect(() => {
+    if (overlay === null) {
+      flushRefresh();
+    }
+  }, [overlay, flushRefresh]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        scheduleRefresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [scheduleRefresh]);
 
   const selectedKey = useMemo(() => {
     if (!surface) return null;
@@ -730,7 +759,7 @@ export function TechnicianFloorShell({
       setNote(`Done: ${step.label}`);
       startTransition(() => {
         toggleAction(fd);
-        router.refresh();
+        scheduleRefresh();
       });
       return;
     }
@@ -740,7 +769,7 @@ export function TechnicianFloorShell({
       fd.set("work_order_id", surface.work_order_id);
       installAction(fd);
       setNote(`Done: ${step.label}`);
-      startTransition(() => router.refresh());
+      startTransition(() => scheduleRefresh());
       return;
     }
     if (step.kind === "proof") {
@@ -1022,7 +1051,7 @@ export function TechnicianFloorShell({
                           { error: null },
                           formData
                         );
-                        startTransition(() => router.refresh());
+                        startTransition(() => scheduleRefresh());
                       }}
                     >
                       <button type="submit" className="btn btn-primary pit-go">
@@ -1036,7 +1065,7 @@ export function TechnicianFloorShell({
                           { error: null },
                           formData
                         );
-                        startTransition(() => router.refresh());
+                        startTransition(() => scheduleRefresh());
                       }}
                     >
                       <input

@@ -12,9 +12,7 @@ type Props = {
 export function PhoneField({ defaultValue, error, onValueChange }: Props) {
   const inputId = "phone";
   const errorId = error ? `${inputId}-error` : undefined;
-  const [value, setValue] = useState(() =>
-    formatCanadianPhoneInput(defaultValue ?? "")
-  );
+  const [value, setValue] = useState(() => formatCanadianPhoneInput(defaultValue ?? ""));
 
   return (
     <div className="block">

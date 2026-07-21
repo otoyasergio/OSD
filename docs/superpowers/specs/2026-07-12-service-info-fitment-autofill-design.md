@@ -15,17 +15,17 @@ Auto-populate motorcycle service information fields from `fitment_vehicle` part/
 
 ## Mapping (fitment → service info)
 
-| Service field | Fitment sources (priority) |
-|---|---|
-| oil_filter | oilFilterHF, oilFilterKN |
-| oil_type | recommendedOil |
-| air_filter | airFilterHFA, airFilterKN |
-| spark_plugs | ngkPlug |
+| Service field    | Fitment sources (priority)   |
+| ---------------- | ---------------------------- |
+| oil_filter       | oilFilterHF, oilFilterKN     |
+| oil_type         | recommendedOil               |
+| air_filter       | airFilterHFA, airFilterKN    |
+| spark_plugs      | ngkPlug                      |
 | front_brake_pads | brakePadFront, frontBrakePad |
-| rear_brake_pads | brakePadRear, rearBrakePad |
-| front_tire_size | frontTireSize |
-| rear_tire_size | rearTireSize |
-| chain | chain |
-| battery | battery, lithiumBattery |
+| rear_brake_pads  | brakePadRear, rearBrakePad   |
+| front_tire_size  | frontTireSize                |
+| rear_tire_size   | rearTireSize                 |
+| chain            | chain                        |
+| battery          | battery, lithiumBattery      |
 
 Vehicle match: same make (case-insensitive), year in range, model normalized (strip spaces/hyphens); prefer richest part+spec payload.
