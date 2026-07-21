@@ -1,109 +1,161 @@
 import { test, expect } from "@playwright/test";
 import { storageStatePath } from "./fixtures/auth";
-import { ESTIMATE_TOTALS, FIXTURE_WORK_ORDER, JOB_C } from "./fixtures/ids";
+import { createServiceRoleClient } from "./fixtures/seedSyntheticShop";
+import { generatePortalToken } from "../../lib/portal/tokens";
+import { FIXTURE_USERS, FIXTURE_WORK_ORDER, JOB_A, JOB_B, JOB_C } from "./fixtures/ids";
 
 /**
- * Customer portal estimate journey. Stateful QA only. The advisor presents
- * the estimate through the workspace, generates a portal link, and the
- * customer decides each job and confirms once.
+ * Customer portal estimate journey (stateful QA runs only):
+ * the advisor presents the estimate through the workspace UI, a portal
+ * token is minted with the service-role fixture client (no staff UI issues
+ * portal links yet), and the customer decides every job then confirms once.
+ *
+ * Requires JOBS_ESTIMATE_V2_WRITE_MODE=dual|v2 on the app under test; the
+ * journey skips cleanly when the workspace is disabled.
+ *
+ * NOTE: estimate versions/decisions/confirmations are append-only evidence
+ * (database triggers). Teardown's row deletes cannot remove them — reset the
+ * isolated QA database (`supabase db reset`) to fully clean up after runs.
  */
 
-function dollars(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+test.use({ storageState: storageStatePath("advisor") });
+
+function parseConfirmTotal(text: string): number {
+  const match = text.match(/\$([\d,]+\.\d{2})/);
+  if (!match) throw new Error(`no dollar amount in: ${text}`);
+  return Number(match[1].replace(/,/g, ""));
 }
 
 test.describe("portal estimate decisions", () => {
-  test("advisor presents, customer decides per job and confirms once", async ({
+  test("advisor presents, customer decides every job and confirms once", async ({
+    page,
     browser,
+    baseURL,
   }) => {
-    // 1. Advisor presents the estimate and creates a portal link.
-    const advisorContext = await browser.newContext({
-      storageState: storageStatePath("advisor"),
-    });
-    const advisor = await advisorContext.newPage();
-    await advisor.goto("/work_orders");
-    await advisor.getByText(FIXTURE_WORK_ORDER.number).first().click();
-    const estimateTab = advisor
-      .getByRole("link", { name: /estimate/i })
-      .or(advisor.getByRole("tab", { name: /estimate/i }))
-      .first();
-    await estimateTab.click();
+    const supabase = createServiceRoleClient();
 
-    const present = advisor.getByRole("button", { name: /present/i }).first();
-    if (await present.isEnabled().catch(() => false)) {
-      await present.click();
-      await expect(advisor.getByText(/presented/i).first()).toBeVisible({
-        timeout: 15_000,
-      });
-    }
+    // Every fixture job must still need authorization so presenting freezes
+    // all three onto the version (the seed pre-approves JOB_A/JOB_B for the
+    // legacy specs; confirming below dual-writes them back to approved).
+    const { error: statusError } = await supabase
+      .from("job")
+      .update({
+        status: "waiting_for_approval",
+        approved_by_customer_at: null,
+        approval_method: null,
+        approval_recorded_by_user_id: null,
+        declined_at: null,
+        decline_reason: null,
+      })
+      .in("job_id", [JOB_A.id, JOB_B.id, JOB_C.id]);
+    expect(statusError).toBeNull();
 
-    // Portal link creation UI lives on the work order; find a portal URL.
-    const linkButton = advisor
-      .getByRole("button", { name: /portal|share|send estimate/i })
-      .first();
-    let portalUrl: string | null = null;
-    if (await linkButton.isVisible().catch(() => false)) {
-      await linkButton.click();
-      const linkText = await advisor
-        .getByText(/\/c\/[A-Za-z0-9_-]+/)
-        .first()
-        .innerText()
-        .catch(() => null);
-      portalUrl = linkText?.match(/\/c\/[A-Za-z0-9_-]+/)?.[0] ?? null;
-    }
-    await advisorContext.close();
+    // 1. Advisor presents the estimate through the workspace UI.
+    await page.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=estimate`);
+    const present = page.getByRole("button", { name: /^present/i }).first();
+    const workspaceEnabled = await present
+      .waitFor({ state: "visible", timeout: 10_000 })
+      .then(() => true)
+      .catch(() => false);
+    test.skip(
+      !workspaceEnabled,
+      "Estimate workspace disabled — set JOBS_ESTIMATE_V2_WRITE_MODE=dual to run"
+    );
 
-    if (!portalUrl) {
-      test.fixme(
-        true,
-        "portal link surface not yet exposed in workspace UI — generate token via fixture in follow-up"
-      );
-      return;
-    }
-
-    // 2. Customer opens the portal anonymously and decides.
-    const customerContext = await browser.newContext();
-    const customer = await customerContext.newPage();
-    await customer.goto(portalUrl);
-
+    await expect(present).toBeEnabled();
+    await present.click();
     await expect(
-      customer.getByRole("heading", { name: /review your estimate/i })
-    ).toBeVisible();
-
-    // Confirm is blocked until every job has a decision.
-    const confirm = customer.getByRole("button", {
-      name: /confirm my decisions|choose approve or decline/i,
-    });
-    await expect(confirm).toBeDisabled();
-
-    const groups = customer.getByRole("group");
-    const groupCount = await groups.count();
-    for (let i = 0; i < groupCount; i += 1) {
-      const group = groups.nth(i);
-      const title = await group.innerText();
-      if (title.includes(JOB_C.name)) {
-        await group.getByRole("button", { name: /decline/i }).click();
-      } else {
-        await group.getByRole("button", { name: /approve/i }).click();
-      }
-    }
-
-    // Accepted total reflects approve A+B, decline C.
-    await expect(
-      customer.getByText(dollars(ESTIMATE_TOTALS.acceptedTotalCents))
-    ).toBeVisible();
-
-    await customer.getByRole("button", { name: /confirm my decisions/i }).click();
-    await expect(
-      customer.getByRole("heading", { name: /estimate confirmed/i })
+      page.getByRole("region", { name: "Record customer decisions" })
     ).toBeVisible({ timeout: 15_000 });
 
-    // 3. Replay safety: reloading shows the confirmed summary, not the form.
-    await customer.reload();
-    await expect(
-      customer.getByRole("heading", { name: /estimate confirmed/i })
-    ).toBeVisible();
+    // 2. Mint an estimate-purpose portal token scoped to the fixture WO.
+    const { token, hash } = generatePortalToken();
+    const { error: tokenError } = await supabase.from("customer_portal_token").insert({
+      work_order_id: FIXTURE_WORK_ORDER.id,
+      token_hash: hash,
+      purpose: "estimate",
+      expires_at: new Date(Date.now() + 7 * 24 * 3_600_000).toISOString(),
+      created_by_user_id: FIXTURE_USERS.advisor.id,
+    });
+    expect(tokenError).toBeNull();
 
-    await customerContext.close();
+    // 3. Customer decides in an unauthenticated context.
+    const customerContext = await browser.newContext({ baseURL });
+    try {
+      const customer = await customerContext.newPage();
+      await customer.goto(`/c/${token}`);
+
+      await expect(
+        customer.getByRole("heading", { name: /review your estimate/i })
+      ).toBeVisible();
+      // The V2 card replaces the legacy per-job approve buttons.
+      await expect(
+        customer.getByRole("heading", { name: /approve recommended work/i })
+      ).toHaveCount(0);
+
+      for (const job of [JOB_A, JOB_B, JOB_C]) {
+        await expect(customer.getByRole("group", { name: job.name })).toBeVisible();
+      }
+
+      // Confirm stays blocked until every job is decided and a name is given.
+      const confirm = customer.getByRole("button", {
+        name: /confirm my decisions|choose approve or decline/i,
+      });
+      await expect(confirm).toBeDisabled();
+
+      // Read each frozen per-job total from its card (the last <dd> row).
+      const jobTotal = async (jobName: string) =>
+        parseConfirmTotal(
+          await customer
+            .getByRole("group", { name: jobName })
+            .locator("dd")
+            .last()
+            .innerText()
+        );
+      const totalA = await jobTotal(JOB_A.name);
+      const totalB = await jobTotal(JOB_B.name);
+
+      const decide = (jobName: string, decision: "Approve" | "Decline") =>
+        customer
+          .getByRole("group", { name: jobName })
+          .getByRole("button", { name: decision, exact: true })
+          .click();
+
+      await decide(JOB_A.name, "Approve");
+      await decide(JOB_B.name, "Approve");
+      await expect(confirm).toBeDisabled(); // JOB_C still undecided
+
+      await decide(JOB_C.name, "Decline");
+      // Accepted total recomputes client-side: approved A + B only.
+      await expect(customer.getByText(/total if confirmed/i)).toHaveText(
+        new RegExp(`\\$${(totalA + totalB).toFixed(2).replace(".", "\\.")}`)
+      );
+
+      // Name is required before confirming.
+      const nameInput = customer.getByLabel("Full name");
+      await nameInput.fill("");
+      await expect(confirm).toBeDisabled();
+      await nameInput.fill("Quinn Appleseed");
+      await expect(confirm).toBeEnabled();
+      await confirm.click();
+
+      await expect(
+        customer.getByRole("heading", { name: /estimate confirmed/i })
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(customer.getByText(/approved ·/i)).toHaveCount(2);
+      await expect(customer.getByText("Declined", { exact: true })).toHaveCount(1);
+
+      // 4. Replay safety: reloading shows the summary, never the form again.
+      await customer.reload();
+      await expect(
+        customer.getByRole("heading", { name: /estimate confirmed/i })
+      ).toBeVisible();
+      await expect(
+        customer.getByRole("button", { name: /confirm my decisions/i })
+      ).toHaveCount(0);
+    } finally {
+      await customerContext.close();
+      await supabase.from("customer_portal_token").delete().eq("token_hash", hash);
+    }
   });
 });

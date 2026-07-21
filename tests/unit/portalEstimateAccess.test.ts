@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   portalDeclineAllowed,
+  portalEstimateErrorMessage,
   portalPurposeAllowsContract,
   portalPurposeAllowsEstimate,
+  portalPurposeAllowsPayment,
   type PortalTokenPurpose,
 } from "@/lib/services/portal";
 import { validateConfirmation } from "@/lib/services/estimateAuthorization";
@@ -25,6 +27,11 @@ describe("portal token purpose gating", () => {
     expect(portalPurposeAllowsEstimate("payment")).toBe(false);
     expect(portalPurposeAllowsEstimate("inspection")).toBe(false);
     expect(portalPurposeAllowsEstimate("contract")).toBe(false);
+  });
+
+  it("only payment and full tokens may act on payment surfaces", () => {
+    const allowed = ALL_PURPOSES.filter(portalPurposeAllowsPayment);
+    expect(allowed).toEqual(["full", "payment"]);
   });
 
   it("only contract and full tokens may sign the agreement", () => {
@@ -66,6 +73,38 @@ describe("portal confirmation pre-validation", () => {
     if (!result.ok) expect(result.errors).toContain("DECISION_MISSING");
   });
 
+  it("rejects decisions for jobs not on the token's presented version", () => {
+    const result = validateConfirmation({
+      presentedJobIds: presented,
+      decisions: [
+        { jobId: "job-a", decision: "approved" },
+        { jobId: "job-b", decision: "declined" },
+        { jobId: "job-smuggled", decision: "approved" },
+      ],
+      expectedContentHash: "h",
+      actualContentHash: "h",
+      versionStatus: "presented",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors).toContain("DECISION_FOR_UNKNOWN_JOB");
+  });
+
+  it("rejects duplicate decisions for the same job", () => {
+    const result = validateConfirmation({
+      presentedJobIds: presented,
+      decisions: [
+        { jobId: "job-a", decision: "approved" },
+        { jobId: "job-a", decision: "declined" },
+        { jobId: "job-b", decision: "declined" },
+      ],
+      expectedContentHash: "h",
+      actualContentHash: "h",
+      versionStatus: "presented",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors).toContain("DUPLICATE_DECISION");
+  });
+
   it("maps a price change since render to a stale-content rejection", () => {
     const result = validateConfirmation({
       presentedJobIds: presented,
@@ -79,5 +118,41 @@ describe("portal confirmation pre-validation", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.errors).toContain("ESTIMATE_CONTENT_STALE");
+  });
+
+  it("flags an already-confirmed version distinctly so replays can succeed", () => {
+    const result = validateConfirmation({
+      presentedJobIds: presented,
+      decisions: [
+        { jobId: "job-a", decision: "approved" },
+        { jobId: "job-b", decision: "declined" },
+      ],
+      expectedContentHash: "h",
+      actualContentHash: "h",
+      versionStatus: "confirmed",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.errors).toContain("ESTIMATE_ALREADY_CONFIRMED");
+  });
+});
+
+describe("portal estimate error copy", () => {
+  it("maps stale-content rejections to a refresh instruction", () => {
+    expect(portalEstimateErrorMessage("ESTIMATE_CONTENT_STALE")).toBe(
+      "This estimate changed — refresh to see the latest version."
+    );
+  });
+
+  it("maps missing decisions and replay conflicts to customer copy", () => {
+    expect(portalEstimateErrorMessage("DECISION_MISSING")).toMatch(/every item/i);
+    expect(portalEstimateErrorMessage("ESTIMATE_ALREADY_CONFIRMED")).toMatch(
+      /already recorded/i
+    );
+    expect(portalEstimateErrorMessage("FORBIDDEN")).toMatch(/link/i);
+  });
+
+  it("leaves unknown codes to the shared error map", () => {
+    expect(portalEstimateErrorMessage("RATE_LIMITED")).toBeNull();
+    expect(portalEstimateErrorMessage("SOMETHING_ELSE")).toBeNull();
   });
 });
