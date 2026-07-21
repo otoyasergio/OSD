@@ -16,6 +16,7 @@ import {
 import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
 import { createClient } from "@/lib/database/supabase-browser";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import type { FloorOsSurface, TechnicianFloorOs } from "@/lib/services/technicianFloor";
 import type { DocketItem } from "@/lib/services/technicianDocket";
 import type { ReadyForPickupItem } from "@/lib/services/readyForPickup";
@@ -298,20 +299,28 @@ const PitPhotoField = forwardRef<
     onPhotoReady?.(label);
   }
 
-  function applyPickedFile(input: HTMLInputElement) {
-    const file = input.files?.[0] ?? null;
+  async function applyPickedFile(input: HTMLInputElement) {
+    const original = input.files?.[0] ?? null;
     const target = fileInputRef.current;
     if (!target) return;
-    if (!file) {
+    if (!original) {
       target.value = "";
       notifyPhotoReady(null);
       return;
     }
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    target.files = transfer.files;
-    notifyPhotoReady(file.name);
-    input.value = "";
+    try {
+      // Clone/compress before clearing the input — iOS library File refs can
+      // become invalid as soon as the input value is reset.
+      const file = await preparePhotoFileForUpload(original);
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      target.files = transfer.files;
+      notifyPhotoReady(file.name);
+    } catch {
+      notifyPhotoReady(null);
+    } finally {
+      input.value = "";
+    }
   }
 
   const dock = variant === "dock";
@@ -343,7 +352,7 @@ const PitPhotoField = forwardRef<
         className="photo-file-input"
         tabIndex={-1}
         aria-label="Add photo"
-        onChange={(event) => applyPickedFile(event.currentTarget)}
+        onChange={(event) => void applyPickedFile(event.currentTarget)}
       />
       <input
         ref={libraryInputRef}
@@ -352,7 +361,7 @@ const PitPhotoField = forwardRef<
         className="photo-file-input"
         tabIndex={-1}
         aria-label="Choose from library"
-        onChange={(event) => applyPickedFile(event.currentTarget)}
+        onChange={(event) => void applyPickedFile(event.currentTarget)}
       />
       {dock ? null : (
         <>
@@ -397,6 +406,16 @@ function PitDockIcon({ children, label }: { children: ReactNode; label: string }
 }
 
 const WORK_NOTES_PREVIEW = 1;
+
+/** Notes arrive newest-first; preview must take from the FRONT of the list. */
+function latestNotesPreview<T extends { created_at: string }>(
+  notes: T[],
+  limit: number
+): T[] {
+  return [...notes]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, limit);
+}
 
 type PerformWorkPanel = "work" | "parts" | "notes";
 
@@ -1708,24 +1727,23 @@ export function TechnicianFloorShell({
                       {surface.work_brief?.technician_notes &&
                       surface.work_brief.technician_notes.length > 0 ? (
                         <ul className="pit-work-note-list pit-work-note-list--compact">
-                          {surface.work_brief.technician_notes
-                            .slice(-WORK_NOTES_PREVIEW)
-                            .map((techNote) => (
-                              <li
-                                key={techNote.technician_note_id}
-                                className="pit-work-note-item"
-                              >
-                                <p className="pit-work-note-meta">
-                                  {formatDateTime(techNote.created_at)}
-                                  {techNote.author_name
-                                    ? ` · ${techNote.author_name}`
-                                    : ""}
-                                </p>
-                                <p className="pit-work-note-body pit-work-note-body--clamp">
-                                  {techNote.note}
-                                </p>
-                              </li>
-                            ))}
+                          {latestNotesPreview(
+                            surface.work_brief.technician_notes,
+                            WORK_NOTES_PREVIEW
+                          ).map((techNote) => (
+                            <li
+                              key={techNote.technician_note_id}
+                              className="pit-work-note-item"
+                            >
+                              <p className="pit-work-note-meta">
+                                {formatDateTime(techNote.created_at)}
+                                {techNote.author_name ? ` · ${techNote.author_name}` : ""}
+                              </p>
+                              <p className="pit-work-note-body pit-work-note-body--clamp">
+                                {techNote.note}
+                              </p>
+                            </li>
+                          ))}
                         </ul>
                       ) : null}
                       {surface.work_brief?.technician_notes &&

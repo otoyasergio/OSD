@@ -731,7 +731,7 @@ export async function getTechnicianFloorOs(input: {
           .eq("job_id", job.job_id)
           .order("created_at", { ascending: false })
           .limit(20),
-        listPeerQcPickerOptions(user.user_id).catch(() => []),
+        listPeerQcPickerOptions(user.user_id, wo.work_order_id).catch(() => []),
       ]);
       const { data: parts } = partsResult;
       const { data: proofs } = proofsResult;
