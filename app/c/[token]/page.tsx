@@ -23,9 +23,15 @@ export default async function CustomerPortalPage({
   }
 
   // Anonymous-safe template read (the staff-authenticated variant would
-  // reject portal visitors who still need to sign).
-  const template = view.has_signed_contract ? null : await getPortalContractTemplate();
-  const estimate = await getPortalEstimate(token).catch(() => null);
+  // reject portal visitors who still need to sign). Only fetched when the
+  // token's purpose actually allows signing.
+  const template =
+    view.has_signed_contract || !view.can_sign_contract
+      ? null
+      : await getPortalContractTemplate();
+  const estimate = view.can_decide_estimate
+    ? await getPortalEstimate(token).catch(() => null)
+    : null;
 
   return (
     <div className="min-h-dvh bg-zinc-100 px-4 py-8 portal-page">

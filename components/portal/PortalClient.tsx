@@ -32,11 +32,13 @@ export function PortalClient({ token, view, contractTemplate, estimate }: Props)
   const [pending, startTransition] = useTransition();
 
   // The V2 estimate flow replaces the legacy per-job approve buttons whenever
-  // a presented/confirmed estimate version exists for this work order.
+  // a presented/confirmed estimate version exists for this work order. Tokens
+  // whose purpose does not allow estimate decisions never see approve buttons.
   const hasV2Estimate = Boolean(estimate);
-  const pendingJobs = hasV2Estimate
-    ? []
-    : view.jobs.filter((j) => j.status === "waiting_for_approval");
+  const pendingJobs =
+    hasV2Estimate || !view.can_decide_estimate
+      ? []
+      : view.jobs.filter((j) => j.status === "waiting_for_approval");
   const merchandiseSubtotal = [...view.jobs, ...view.parts.map((p) => p)].reduce(
     (sum, item) => {
       if ("standard_price_snapshot" in item) {
@@ -65,7 +67,7 @@ export function PortalClient({ token, view, contractTemplate, estimate }: Props)
         <PortalEstimateDecision
           estimate={estimate}
           defaultSignerName={`${view.customer.first_name} ${view.customer.last_name}`.trim()}
-          confirmAction={async (payload) => portalConfirmEstimateAction(token, payload)}
+          action={async (formData) => portalConfirmEstimateAction(token, formData)}
         />
       ) : null}
 

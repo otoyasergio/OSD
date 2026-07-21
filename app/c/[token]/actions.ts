@@ -8,25 +8,12 @@ import {
   portalApproveJob,
   portalConfirmEstimate,
   portalDeclineJob,
+  portalEstimateErrorMessage,
   portalSignContract,
 } from "@/lib/services/portal";
-import { getActiveAgreementTemplate } from "@/lib/services/contracts";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { dropOffAgreementSchema } from "@/lib/validation/schemas";
 import { rateLimit } from "@/lib/security/rateLimit";
-
-const PORTAL_ESTIMATE_ERRORS: Record<string, string> = {
-  ESTIMATE_NOT_PRESENTED: "This estimate is no longer open for decisions.",
-  ESTIMATE_ALREADY_CONFIRMED:
-    "Your decisions were already recorded. Refresh to see the summary.",
-  ESTIMATE_CONTENT_STALE:
-    "This estimate changed — refresh the page to review the latest version.",
-  DECISION_MISSING: "Choose approve or decline for every item before confirming.",
-  DECISION_FOR_UNKNOWN_JOB:
-    "This estimate changed — refresh the page to review the latest version.",
-  DUPLICATE_DECISION: "Something duplicated a decision. Refresh and try again.",
-  FORBIDDEN: "This link cannot record estimate decisions.",
-};
 
 const portalConfirmEstimateSchema = z.object({
   signerName: z.string().trim().min(1, "Enter your full name").max(120),
@@ -40,6 +27,14 @@ const portalConfirmEstimateSchema = z.object({
     )
     .min(1),
 });
+
+function toPortalEstimateError(error: unknown): string {
+  if (error instanceof Error) {
+    const mapped = portalEstimateErrorMessage(error.message);
+    if (mapped) return mapped;
+  }
+  return toFormErrorMessage(error);
+}
 
 async function assertPortalRateLimit(token: string): Promise<void> {
   const h = await headers();
@@ -132,21 +127,24 @@ export async function portalAckInspectionAction(
   }
 }
 
-export async function loadPortalContractTemplateAction() {
-  return getActiveAgreementTemplate();
-}
-
 export async function portalConfirmEstimateAction(
   token: string,
-  payload: {
-    decisions: Array<{ jobId: string; decision: "approved" | "declined" }>;
-    expectedContentHash: string;
-    signerName: string;
-  }
+  formData: FormData
 ): Promise<{ error: string | null }> {
   try {
     await assertPortalRateLimit(token);
-    const parsed = portalConfirmEstimateSchema.parse(payload);
+
+    let decisions: unknown = [];
+    try {
+      decisions = JSON.parse(String(formData.get("decisions") ?? "[]"));
+    } catch {
+      throw new Error("DECISION_MISSING");
+    }
+    const parsed = portalConfirmEstimateSchema.parse({
+      signerName: String(formData.get("signer_name") ?? ""),
+      expectedContentHash: String(formData.get("expected_content_hash") ?? ""),
+      decisions,
+    });
 
     const h = await headers();
     const forwarded = h.get("x-forwarded-for");
@@ -161,9 +159,6 @@ export async function portalConfirmEstimateAction(
     revalidatePath(`/c/${token}`);
     return { error: null };
   } catch (error) {
-    if (error instanceof Error && PORTAL_ESTIMATE_ERRORS[error.message]) {
-      return { error: PORTAL_ESTIMATE_ERRORS[error.message] };
-    }
-    return { error: toFormErrorMessage(error) };
+    return { error: toPortalEstimateError(error) };
   }
 }
