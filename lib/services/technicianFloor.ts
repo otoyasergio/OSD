@@ -43,6 +43,7 @@ import {
   type PitBoardStamp,
   type PitBoardStep,
 } from "@/lib/technician/pitBoard";
+import { isTerminalWorkOrderStatus } from "@/lib/technician/floorActionModel";
 
 export type FloorOsMode = "job" | "inspection" | "parts" | "qc" | "notes" | "safety";
 
@@ -521,6 +522,8 @@ export async function getTechnicianFloorOs(input: {
     for (const flag of flagRows) {
       const wo = byId.get(flag.work_order_id);
       if (!wo) continue;
+      // Uncleared flags on completed/cancelled work orders are stale — skip.
+      if (isTerminalWorkOrderStatus(wo.status)) continue;
       const moto = Array.isArray(wo.motorcycle) ? wo.motorcycle[0] : wo.motorcycle;
       const customerRaw = moto?.customer;
       const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw;
@@ -645,10 +648,13 @@ export async function getTechnicianFloorOs(input: {
       work_order: unknown;
     } | null;
     const wo = unwrapWo(job?.work_order);
+    // Stale direct links (?job=&wo=) to completed/cancelled work orders show
+    // the empty "Pick a bike" state instead of a dead surface.
     if (
       job &&
       wo &&
       wo.location_id === locationId &&
+      !isTerminalWorkOrderStatus(wo.status) &&
       job.assigned_technician_id === user.user_id
     ) {
       const labels = bikeCustomerLabel(unwrapMoto(wo));
@@ -989,6 +995,7 @@ export async function getTechnicianFloorOs(input: {
     if (
       wo &&
       wo.location_id === locationId &&
+      !isTerminalWorkOrderStatus(wo.status) &&
       canViewerAccessWorkOrder(
         {
           primary_technician_id: wo.primary_technician_id,
@@ -1031,8 +1038,10 @@ export async function getTechnicianFloorOs(input: {
       const returnTo = encodeURIComponent(`/technician?wo=${wo.work_order_id}`);
       const isSafety = wo.status === "safety_check";
       const isQc = wo.status === "quality_check";
+      // A work-order-only selection is only a QC surface when the WO is
+      // actually in quality_check — everything else is a view-only wait.
       const boardStatus = derivePitBoardStatus({
-        kind: isSafety ? "safety" : "qc",
+        kind: isSafety ? "safety" : isQc ? "qc" : "flag",
         job_status: null,
         floor_acknowledged_at: null,
         floor_parked_at: null,
@@ -1046,7 +1055,7 @@ export async function getTechnicianFloorOs(input: {
         qc_checks_done: false,
       });
       selected = {
-        mode: mode === "job" ? (isSafety ? "safety" : "qc") : mode,
+        mode: mode === "job" && (isSafety || isQc) ? (isSafety ? "safety" : "qc") : mode,
         job_id: null,
         work_order_id: wo.work_order_id,
         work_order_number: wo.work_order_number,

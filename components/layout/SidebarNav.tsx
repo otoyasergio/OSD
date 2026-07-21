@@ -133,7 +133,7 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
   }
 
   const docketLinks: NavLink[] = [
-    { href: "/technician", label: "Jobs", icon: iconFor("/technician") },
+    { href: "/technician", label: "Tech Floor", icon: iconFor("/technician") },
   ];
   if (canAssignTechnician(role)) {
     docketLinks.push({
@@ -290,9 +290,15 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
   );
 }
 
-function isActivePath(pathname: string, href: string) {
-  if (href === "/settings") {
-    return pathname === "/settings";
+/**
+ * Hrefs that also exist as prefixes of sibling nav links must match exactly,
+ * otherwise e.g. /technician/docket would co-activate "Tech Floor".
+ */
+const EXACT_MATCH_HREFS = new Set(["/settings", "/technician"]);
+
+export function isActiveNavPath(pathname: string, href: string): boolean {
+  if (EXACT_MATCH_HREFS.has(href)) {
+    return pathname === href;
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -320,7 +326,7 @@ export function SidebarNav({ role, onNavigate }: Props) {
                 <p className="sidebar-nav-subheading">{group.heading}</p>
               ) : null}
               {group.links.map((link) => {
-                const active = isActivePath(pathname, link.href);
+                const active = isActiveNavPath(pathname, link.href);
                 const Icon = link.icon;
                 return (
                   <Link

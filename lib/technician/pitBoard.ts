@@ -166,6 +166,7 @@ export type GoAction =
   | "advance_step"
   | "complete"
   | "pass_qc"
+  | "pass_safety"
   | "none";
 
 export type GoLabelResult = {
