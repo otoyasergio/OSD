@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listWorkOrdersForActiveLocation } from "@/lib/services/workOrders";
 import { canCreateWorkOrder, isFloorTech, staffHomePath } from "@/lib/permissions";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -10,12 +10,13 @@ import { WorkOrderCard } from "@/components/work_orders/WorkOrderCard";
 export const dynamic = "force-dynamic";
 
 export default async function WorkOrdersPage() {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (isFloorTech(user.role)) redirect(staffHomePath(user.role));
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  const { role: viewRole } = preview;
+  if (isFloorTech(viewRole)) redirect(staffHomePath(viewRole));
 
   const workOrders = await listWorkOrdersForActiveLocation();
-  const canCreate = canCreateWorkOrder(user.role);
+  const canCreate = canCreateWorkOrder(viewRole);
 
   return (
     <div className="page-stack">

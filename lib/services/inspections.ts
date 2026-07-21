@@ -1,4 +1,5 @@
 import { requireUser, type AppUser } from "@/lib/auth/session";
+import { resolveReadSubject, type ReadView } from "@/lib/auth/role-preview-shared";
 import { createClient } from "@/lib/database/supabase-server";
 import type { DbClient, InspectionResultStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
@@ -191,9 +192,14 @@ async function ensureInspectionSeeded(
 }
 
 export async function getInspectionForWorkOrder(
-  workOrderId: string
+  workOrderId: string,
+  options?: {
+    /** Trusted presentation principal (owner "view as") — read shaping only. */
+    view?: ReadView;
+  }
 ): Promise<InspectionDetail | null> {
   const user = await requireUser();
+  const subject = resolveReadSubject(user, options?.view);
   const supabase = await createClient();
 
   const { data: workOrder, error: woError } = await supabase
@@ -237,8 +243,8 @@ export async function getInspectionForWorkOrder(
       jobs:
         (workOrder.job as Array<{ assigned_technician_id: string | null }> | null) ?? [],
     },
-    user.role,
-    user.user_id
+    subject.role,
+    subject.userId
   );
 
   const firstLoad = await supabase
@@ -365,7 +371,7 @@ export async function getInspectionForWorkOrder(
     is_foreign_location: workOrder.location_id !== user.active_location_id,
     header: {
       customer_name:
-        canViewClients(user.role) && customer
+        canViewClients(subject.role) && customer
           ? `${customer.first_name} ${customer.last_name}`
           : null,
       motorcycle_label: motorcycle

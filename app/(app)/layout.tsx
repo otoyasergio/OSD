@@ -1,9 +1,15 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentAppUser } from "@/lib/auth/session";
+import {
+  getRolePreviewContext,
+  listRolePreviewTechnicians,
+} from "@/lib/auth/role-preview";
+import type { RolePreviewRole } from "@/lib/auth/role-preview-shared";
 import { createClient } from "@/lib/database/supabase-server";
 import { AppShell } from "@/components/layout/AppShell";
 import type { LocationOption } from "@/components/layout/LocationSwitcher";
+import type { RolePreviewState } from "@/components/layout/RolePreviewSwitcher";
 import { getSupabasePublicConfig } from "@/lib/database/config";
 import { createProfilePhotoSignedUrl } from "@/lib/profilePhotos/storage";
 import { SignOutButton } from "@/components/layout/SignOutButton";
@@ -20,9 +26,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/login");
   }
 
+  // Kiosk lockout keys off the persisted role — never a preview.
   if (canUseTimeClockKiosk(user.role)) {
     redirect(staffHomePath(user.role));
   }
+
+  const preview = await getRolePreviewContext();
+  const viewRole = preview?.role ?? user.role;
 
   if (!user.active_location_id) {
     return (
@@ -56,14 +66,33 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const supabase = await createClient();
-  const [profilePhotoUrl, initialNotifications] = await Promise.all([
+  const [profilePhotoUrl, initialNotifications, previewTechnicians] = await Promise.all([
     createProfilePhotoSignedUrl(supabase, user.profile_photo_path),
     isFloorTech(user.role) ? listUnreadStaffNotifications() : Promise.resolve([]),
+    user.role === "owner"
+      ? listRolePreviewTechnicians().catch(() => [])
+      : Promise.resolve([]),
   ]);
+
+  const rolePreview: RolePreviewState | null =
+    user.role === "owner"
+      ? {
+          role: (preview?.isPreviewing ? viewRole : "owner") as RolePreviewRole,
+          isPreviewing: Boolean(preview?.isPreviewing),
+          subjectLabel: preview?.subjectLabel ?? null,
+          subjectUserId:
+            preview?.isPreviewing && preview.role === "technician"
+              ? preview.subjectUserId
+              : null,
+          technicians: previewTechnicians,
+        }
+      : null;
 
   return (
     <AppShell
       user={user}
+      viewRole={viewRole}
+      rolePreview={rolePreview}
       locations={locations}
       profilePhotoUrl={profilePhotoUrl}
       initialNotifications={initialNotifications}

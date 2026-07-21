@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   getClockWidgetState,
   getMyShiftMonth,
@@ -21,7 +22,9 @@ export default async function TechnicianClockPage({
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
-  if (!canSelfClock(user.role)) redirect(staffHomePath(user.role));
+  const preview = await getRolePreviewContext();
+  const viewRole = preview?.role ?? user.role;
+  if (!canSelfClock(viewRole)) redirect(staffHomePath(viewRole));
 
   const params = await searchParams;
   const month = params.month?.trim() || "";

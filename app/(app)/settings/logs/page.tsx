@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canViewAuditLog } from "@/lib/permissions";
 import { listAuditFilterOptions, listAuditLogs } from "@/lib/services/audit";
 import { listUxEvents, summarizeUxCodes } from "@/lib/services/uxEvents";
@@ -24,9 +24,9 @@ export default async function OwnerLogsPage({
     code?: string;
   }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canViewAuditLog(user.role)) redirect("/settings");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canViewAuditLog(preview.role)) redirect("/settings");
 
   const params = await searchParams;
   const tab = params.tab === "ux" ? "ux" : "audit";

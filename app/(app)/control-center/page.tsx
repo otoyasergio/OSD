@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canAssignTechnician,
   canClockStaff,
@@ -32,9 +32,10 @@ export default async function ControlCenterPage({
 }: {
   searchParams: Promise<{ cohort?: string }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canViewDashboard(user.role)) redirect(staffHomePath(user.role));
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  const { role: viewRole } = preview;
+  if (!canViewDashboard(viewRole)) redirect(staffHomePath(viewRole));
 
   const params = await searchParams;
   const cohort = parseControlCenterCohort(params.cohort);
@@ -45,7 +46,7 @@ export default async function ControlCenterPage({
       return <ControlCenterCohortView cohort={cohort} bikes={bikes} />;
     }
 
-    const data = await getControlCenterData();
+    const data = await getControlCenterData({ presentationRole: viewRole });
     const bikes = filterControlCenterCohort(flattenControlCenterBikes(data), cohort);
     return <ControlCenterCohortView cohort={cohort} bikes={bikes} />;
   }
@@ -58,7 +59,7 @@ export default async function ControlCenterPage({
     readyForPickup,
     recentlyCompleted,
   ] = await Promise.all([
-    getControlCenterData(),
+    getControlCenterData({ presentationRole: viewRole }),
     listWaitingForParts().catch(() => []),
     listReadyForQc().catch(() => []),
     listReadyForSafetyInspection().catch(() => []),
@@ -69,8 +70,8 @@ export default async function ControlCenterPage({
   return (
     <ControlCenterShell
       data={data}
-      canAssign={canAssignTechnician(user.role)}
-      canClockStaff={canClockStaff(user.role)}
+      canAssign={canAssignTechnician(viewRole)}
+      canClockStaff={canClockStaff(viewRole)}
       waitingForParts={waitingForParts}
       readyForQc={readyForQc}
       readyForSafety={readyForSafety}

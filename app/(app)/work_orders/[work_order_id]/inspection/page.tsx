@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canCompleteInspection,
   canCreateRecommendation,
@@ -35,8 +35,9 @@ export default async function InspectionPage({
   params: Promise<{ work_order_id: string }>;
   searchParams: Promise<{ returnTo?: string | string[] }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  const { role: viewRole } = preview;
 
   const { work_order_id } = await params;
   const query = await searchParams;
@@ -44,19 +45,19 @@ export default async function InspectionPage({
   const backHref = floorReturn ?? `/work_orders/${work_order_id}?tab=inspection`;
   const backLabel = floorReturn ? "← Back to Tech floor" : "← Back";
 
-  const inspection = await getInspectionForWorkOrder(work_order_id).catch(
-    (error: unknown) => {
-      if (error instanceof Error && error.message === "FORBIDDEN") {
-        redirect(isFloorTech(user.role) ? staffHomePath(user.role) : "/dashboard");
-      }
-      throw error;
+  const inspection = await getInspectionForWorkOrder(work_order_id, {
+    view: { role: viewRole, subjectUserId: preview.subjectUserId },
+  }).catch((error: unknown) => {
+    if (error instanceof Error && error.message === "FORBIDDEN") {
+      redirect(isFloorTech(viewRole) ? staffHomePath(viewRole) : "/dashboard");
     }
-  );
+    throw error;
+  });
   if (!inspection) notFound();
 
-  const canEdit = canCompleteInspection(user.role);
-  const canForce = canOverrideWorkOrderStatus(user.role);
-  const canRecommend = canCreateRecommendation(user.role);
+  const canEdit = canCompleteInspection(viewRole);
+  const canForce = canOverrideWorkOrderStatus(viewRole);
+  const canRecommend = canCreateRecommendation(viewRole);
   const readOnly = isInspectionReadOnly({
     is_foreign_location: inspection.is_foreign_location,
     completed_at: inspection.completed_at,

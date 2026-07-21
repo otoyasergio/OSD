@@ -463,6 +463,41 @@ function StepRow({
 
 type Overlay = null | "park" | "fail" | "swap" | "proof" | "work" | "qc_pick";
 
+/**
+ * Identity-bound floor actions: acknowledgement, bench/timer flows, and QC or
+ * safety judgements belong to the technician, so an owner previewing their
+ * floor gets them disabled. Everything else stays interactive as a clearly
+ * owner-attributed override.
+ */
+const PREVIEW_LOCKED_ACTIONS = new Set([
+  "acknowledge",
+  "pull_onto_bench",
+  "resume",
+  "pass_qc",
+  "fail_qc",
+  "pass_safety",
+  "fail_safety",
+  "park",
+  "swap",
+]);
+
+const PREVIEW_LOCK_REASON =
+  "Preview only — this action belongs to the technician you are viewing.";
+
+function applyPreviewLock(model: FloorActionModel): FloorActionModel {
+  return {
+    ...model,
+    primary: PREVIEW_LOCKED_ACTIONS.has(model.primary.action)
+      ? { ...model.primary, enabled: false, disabledReason: PREVIEW_LOCK_REASON }
+      : model.primary,
+    secondary: model.secondary.map((control) =>
+      PREVIEW_LOCKED_ACTIONS.has(control.action)
+        ? { ...control, enabled: false, disabledReason: PREVIEW_LOCK_REASON }
+        : control
+    ),
+  };
+}
+
 const WORK_STAGES: Array<{ stage: FloorStage; label: string }> = [
   { stage: "inspect", label: "Inspect" },
   { stage: "work", label: "Work" },
@@ -489,6 +524,7 @@ export function TechnicianFloorShell({
   floor,
   stage,
   viewerUserId,
+  previewMode = false,
   docketItems,
   readyForPickup,
   panel,
@@ -500,8 +536,10 @@ export function TechnicianFloorShell({
 }: {
   floor: TechnicianFloorOs;
   stage?: FloorStage;
-  /** Signed-in tech — scopes the realtime job subscription. */
+  /** Read-subject tech — scopes the realtime job subscription. */
   viewerUserId?: string;
+  /** Owner "view as technician" — disables identity-bound floor actions. */
+  previewMode?: boolean;
   docketItems: DocketItem[];
   readyForPickup: ReadyForPickupItem[];
   panel?: "packet" | null;
@@ -784,7 +822,7 @@ export function TechnicianFloorShell({
     failQcPending;
 
   // One honest next action (or an explicit wait with a named owner).
-  const model: FloorActionModel | null = surface
+  const builtModel: FloorActionModel | null = surface
     ? buildFloorActionModel({
         surface: surface.is_safety
           ? "safety"
@@ -806,6 +844,7 @@ export function TechnicianFloorShell({
         pending_action: pending,
       })
     : null;
+  const model = builtModel && previewMode ? applyPreviewLock(builtModel) : builtModel;
   const parkControl = model?.secondary.find((control) => control.action === "park");
   const swapControl = model?.secondary.find((control) => control.action === "swap");
   const failQcControl = model?.secondary.find((control) => control.action === "fail_qc");
@@ -948,6 +987,12 @@ export function TechnicianFloorShell({
     <div className="pit-shell">
       <header className="pit-topbar">
         <p className="pit-wordmark">OTOMOTO · TECH FLOOR</p>
+        {previewMode ? (
+          <p className="pit-preview-note" role="status">
+            Owner preview — the technician&apos;s bench, timer, and QC controls are
+            disabled.
+          </p>
+        ) : null}
         {readyForPickup.length > 0 ? (
           <div className="pit-pickup-strip">
             <ReadyForPickupCarousel items={readyForPickup} />
@@ -1228,7 +1273,7 @@ export function TechnicianFloorShell({
                   <SurfacePlate surface={surface} />
                 )}
 
-                {surface.can_safety ? (
+                {surface.can_safety && !previewMode ? (
                   <div className="pit-safety-actions">
                     <form
                       action={async (formData) => {

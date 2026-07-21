@@ -225,7 +225,8 @@ function toBike(
   return result;
 }
 
-function subtitleForRole(role: UserRole): string {
+/** Exported for role-preview shaping tests. */
+export function subtitleForRole(role: UserRole): string {
   if (role === "owner") {
     return "Shop pulse — revenue, throughput, and bikes that need attention.";
   }
@@ -277,7 +278,8 @@ function formatMoneyCents(cents: number): string {
   }).format(cents / 100);
 }
 
-function buildKpis(input: {
+/** Exported for role-preview shaping tests. */
+export function buildKpis(input: {
   role: UserRole;
   bikes: ControlCenterBike[];
   techs: ControlCenterTech[];
@@ -357,11 +359,23 @@ function buildKpis(input: {
   ];
 }
 
-export async function getControlCenterData(): Promise<ControlCenterData> {
+export async function getControlCenterData(options?: {
+  /**
+   * Presentation role from the owner's validated "view as" context.
+   * Shapes subtitle, KPI selection, financial loading, and the returned
+   * capability role; work-order visibility stays scoped to the real user.
+   */
+  presentationRole?: UserRole;
+}): Promise<ControlCenterData> {
   const user = await requireUser();
   const supabase = await createClient();
   const now = new Date();
   const locationId = user.active_location_id!;
+  // Floor techs never reach this surface and must not reshape it either.
+  const presentationRole =
+    options?.presentationRole && !isFloorTech(user.role)
+      ? options.presentationRole
+      : user.role;
 
   const selectWithOpened = `
       work_order_id,
@@ -539,13 +553,15 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
     }
   }
 
-  const canMoney = canViewReports(user.role) && !isFloorTech(user.role);
+  const canMoney = canViewReports(presentationRole) && !isFloorTech(presentationRole);
   const ownerMetrics =
-    user.role === "owner" && canMoney ? await loadOwnerTodayMetrics(locationId) : null;
+    presentationRole === "owner" && canMoney
+      ? await loadOwnerTodayMetrics(locationId)
+      : null;
 
   // Owners without report access still get manager KPI strip.
   const kpiRole: UserRole =
-    user.role === "owner" && !ownerMetrics ? "manager" : user.role;
+    presentationRole === "owner" && !ownerMetrics ? "manager" : presentationRole;
 
   const kpis = buildKpis({
     role: kpiRole,
@@ -559,8 +575,8 @@ export async function getControlCenterData(): Promise<ControlCenterData> {
 
   return {
     location_id: locationId,
-    role: user.role,
-    subtitle: subtitleForRole(user.role),
+    role: presentationRole,
+    subtitle: subtitleForRole(presentationRole),
     pool,
     techs,
     kpis,

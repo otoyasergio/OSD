@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canAssignTechnician,
   canCompleteInspection,
@@ -139,8 +139,11 @@ export default async function WorkOrderDetailPage({
     follow_up?: string;
   }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  // currentUserId below stays the signed-in actor — mutations and identity
+  // checks never follow the preview role.
+  const { actor: user, role: viewRole } = preview;
 
   const { work_order_id } = await params;
   const {
@@ -156,13 +159,13 @@ export default async function WorkOrderDetailPage({
       ? followUpParam
       : undefined;
 
-  if (isFloorTech(user.role)) {
+  if (isFloorTech(viewRole)) {
     redirect(floorTechWorkOrderRedirect(work_order_id, tabParam));
   }
 
   const detail = await getWorkOrderDetail(work_order_id).catch((error: unknown) => {
     if (error instanceof Error && error.message === "FORBIDDEN") {
-      redirect(staffHomePath(user.role));
+      redirect(staffHomePath(viewRole));
     }
     throw error;
   });
@@ -180,7 +183,7 @@ export default async function WorkOrderDetailPage({
   // the old Jobs + Recommendations content (merged onto this tab) unchanged.
   const workflowFlags = readWorkflowV2Flags();
   const showV2Workspace =
-    isEstimateTab && v2WritesEnabled(workflowFlags) && canViewPricing(user.role);
+    isEstimateTab && v2WritesEnabled(workflowFlags) && canViewPricing(viewRole);
 
   const [
     photos,
@@ -232,36 +235,34 @@ export default async function WorkOrderDetailPage({
       : Promise.resolve([]),
   ]);
 
-  const canAssign = canAssignTechnician(user.role);
-  const canEdit = canEditWorkOrder(user.role);
-  const canApprove = canRecordCustomerApproval(user.role);
-  const canComplete = canCompleteJob(user.role);
-  const canInspect = canCompleteInspection(user.role);
-  const canForceInspect = canOverrideWorkOrderStatus(user.role);
-  const canRecommend = canCreateRecommendation(user.role);
-  const canConvert = canConvertRecommendation(user.role);
-  const canManageParts = canOrderPart(user.role) || canEditWorkOrder(user.role);
-  const canSeePartCost = canViewPartCost(user.role);
-  const canSeePricing = canViewPricing(user.role);
-  const canSeeClients = canViewClients(user.role);
-  const canAdd = canCreateWorkOrder(user.role) || canEditWorkOrder(user.role);
+  const canAssign = canAssignTechnician(viewRole);
+  const canEdit = canEditWorkOrder(viewRole);
+  const canApprove = canRecordCustomerApproval(viewRole);
+  const canComplete = canCompleteJob(viewRole);
+  const canInspect = canCompleteInspection(viewRole);
+  const canForceInspect = canOverrideWorkOrderStatus(viewRole);
+  const canRecommend = canCreateRecommendation(viewRole);
+  const canConvert = canConvertRecommendation(viewRole);
+  const canManageParts = canOrderPart(viewRole) || canEditWorkOrder(viewRole);
+  const canSeePartCost = canViewPartCost(viewRole);
+  const canSeePricing = canViewPricing(viewRole);
+  const canSeeClients = canViewClients(viewRole);
+  const canAdd = canCreateWorkOrder(viewRole) || canEditWorkOrder(viewRole);
   const canUploadPhotos =
-    canEditWorkOrder(user.role) ||
-    canCreateWorkOrder(user.role) ||
-    isFloorTech(user.role);
-  const canDeletePhotos = canDeleteIntakePhoto(user.role);
+    canEditWorkOrder(viewRole) || canCreateWorkOrder(viewRole) || isFloorTech(viewRole);
+  const canDeletePhotos = canDeleteIntakePhoto(viewRole);
   const canAddNotes = canComplete || canEdit || canAdd;
-  const canRunQc = canRunQualityCheck(user.role);
-  const canClearFlags = canClearAdminFlag(user.role);
-  const canOverrideSafety = canOverrideSafetyRequirement(user.role);
-  const canMarkReady = canMarkReadyForPickup(user.role);
-  const canCompleteWo = canCompleteWorkOrder(user.role);
+  const canRunQc = canRunQualityCheck(viewRole);
+  const canClearFlags = canClearAdminFlag(viewRole);
+  const canOverrideSafety = canOverrideSafetyRequirement(viewRole);
+  const canMarkReady = canMarkReadyForPickup(viewRole);
+  const canCompleteWo = canCompleteWorkOrder(viewRole);
   const canHoldOrCancel =
-    canCompleteWorkOrder(user.role) || canOverrideWorkOrderStatus(user.role);
-  const canResumeHold = canOverrideWorkOrderStatus(user.role);
-  const canOverrideComplete = canOverrideWorkOrderStatus(user.role);
+    canCompleteWorkOrder(viewRole) || canOverrideWorkOrderStatus(viewRole);
+  const canResumeHold = canOverrideWorkOrderStatus(viewRole);
+  const canOverrideComplete = canOverrideWorkOrderStatus(viewRole);
   const canEditServiceInfo =
-    !detail.is_foreign_location && canUpdateServiceInformation(user.role);
+    !detail.is_foreign_location && canUpdateServiceInformation(viewRole);
 
   const merchandiseDollars =
     detail.jobs
@@ -373,10 +374,10 @@ export default async function WorkOrderDetailPage({
   return (
     <div className="page-stack page-stack--narrow">
       <Link
-        href={isFloorTech(user.role) ? "/technician" : "/work_orders"}
+        href={isFloorTech(viewRole) ? "/technician" : "/work_orders"}
         className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
       >
-        {isFloorTech(user.role) ? "← Tech floor" : "← Work orders"}
+        {isFloorTech(viewRole) ? "← Tech floor" : "← Work orders"}
       </Link>
 
       {intake === "complete" ? <IntakeCompleteNotice followUp={intakeFollowUp} /> : null}

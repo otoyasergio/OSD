@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canManageContractTemplate,
   canManageInspectionTemplate,
@@ -17,8 +17,9 @@ import { EmptyState } from "@/components/ui/EmptyState";
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  const viewRole = preview.role;
 
   const links = [
     {
@@ -31,49 +32,49 @@ export default async function SettingsPage() {
       href: "/settings/timesheets",
       label: "Timesheets",
       description: "Who is punched in, weekly hours, and punch corrections.",
-      visible: canManageTimesheets(user.role),
+      visible: canManageTimesheets(viewRole),
     },
     {
       href: "/settings/services",
       label: "Service catalogue",
       description: "Manage the services jobs are created from.",
-      visible: canManageServiceCatalogue(user.role),
+      visible: canManageServiceCatalogue(viewRole),
     },
     {
       href: "/settings/inspection_template",
       label: "Inspection template",
       description: "Edit the checklist used for new inspections.",
-      visible: canManageInspectionTemplate(user.role),
+      visible: canManageInspectionTemplate(viewRole),
     },
     {
       href: "/settings/contract_template",
       label: "Drop-off contract",
       description: "Edit the agreement customers sign at intake.",
-      visible: canManageContractTemplate(user.role),
+      visible: canManageContractTemplate(viewRole),
     },
     {
       href: "/settings/closures",
       label: "Shop closures",
       description: "Set holidays and special closed dates used by intake.",
-      visible: canManageShopClosures(user.role),
+      visible: canManageShopClosures(viewRole),
     },
     {
       href: "/settings/locations",
       label: "Locations",
       description: "Create shops and assign staff to them.",
-      visible: canManageLocations(user.role),
+      visible: canManageLocations(viewRole),
     },
     {
       href: "/settings/users",
       label: "Users",
       description: "Manage staff accounts, roles, and status.",
-      visible: canManageUsers(user.role),
+      visible: canManageUsers(viewRole),
     },
     {
       href: "/settings/logs",
       label: "Logs",
       description: "Every action recorded across the company.",
-      visible: canViewAuditLog(user.role),
+      visible: canViewAuditLog(viewRole),
     },
   ].filter((link) => link.visible);
 

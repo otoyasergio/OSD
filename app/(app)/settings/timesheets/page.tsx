@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canManageTimesheets } from "@/lib/permissions";
 import {
   getClockWidgetState,
@@ -22,7 +23,8 @@ export default async function TimesheetsPage({
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
-  if (!canManageTimesheets(user.role)) redirect("/settings");
+  const preview = await getRolePreviewContext();
+  if (!canManageTimesheets(preview?.role ?? user.role)) redirect("/settings");
 
   const params = await searchParams;
   const week = params.week?.trim() || "";

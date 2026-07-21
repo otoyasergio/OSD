@@ -13,6 +13,7 @@ const STATEFUL_SPECS = [
   "**/jobs-estimate.spec.ts",
   "**/portal-estimate.spec.ts",
   "**/permissions.spec.ts",
+  "**/owner-role-preview.spec.ts",
   "**/realtime-races.spec.ts",
   "**/photo-contract-regression.spec.ts",
   "**/accessibility.spec.ts",

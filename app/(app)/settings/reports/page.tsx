@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canViewReports } from "@/lib/permissions";
 import { getShopReportSummary, type ShopReportPeriod } from "@/lib/services/reports";
 import {
@@ -25,9 +25,9 @@ export default async function ReportsPage({
 }: {
   searchParams: Promise<{ period?: string; attendance?: string }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canViewReports(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canViewReports(preview.role)) redirect("/dashboard");
 
   const { period: periodParam, attendance: attendanceParam } = await searchParams;
   const period: ShopReportPeriod = periodParam === "7d" ? "7d" : "30d";

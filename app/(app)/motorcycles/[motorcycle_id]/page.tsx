@@ -4,6 +4,7 @@ import { getMotorcycleById, getServiceInformation } from "@/lib/services/motorcy
 import { getCustomerById, searchCustomers } from "@/lib/services/customers";
 import { listOutstandingRecommendationsForMotorcycle } from "@/lib/services/recommendations";
 import { requireUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canEditWorkOrder,
   canUpdateServiceInformation,
@@ -27,7 +28,9 @@ export default async function MotorcycleDetailPage({
 }) {
   const { motorcycle_id } = await params;
   const user = await requireUser();
-  if (!canViewClients(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  const viewRole = preview?.role ?? user.role;
+  if (!canViewClients(viewRole)) redirect("/dashboard");
   const motorcycle = await getMotorcycleById(motorcycle_id);
   if (!motorcycle) notFound();
 
@@ -50,8 +53,8 @@ export default async function MotorcycleDetailPage({
     motorcycle_id,
     null
   );
-  const canEditServiceInfo = canUpdateServiceInformation(user.role);
-  const canTransfer = canEditWorkOrder(user.role);
+  const canEditServiceInfo = canUpdateServiceInformation(viewRole);
+  const canTransfer = canEditWorkOrder(viewRole);
   const ownerName = motorcycle.customer
     ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
     : "Unknown";

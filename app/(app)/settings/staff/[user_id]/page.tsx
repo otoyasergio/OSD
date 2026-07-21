@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canManageStaffProfiles } from "@/lib/permissions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import {
@@ -34,9 +34,9 @@ export default async function StaffProfilePage({
 }: {
   params: Promise<{ user_id: string }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canManageStaffProfiles(user.role)) redirect("/settings");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canManageStaffProfiles(preview.role)) redirect("/settings");
 
   const { user_id: userId } = await params;
   const [profile, employment, notes, documents, punches] = await Promise.all([

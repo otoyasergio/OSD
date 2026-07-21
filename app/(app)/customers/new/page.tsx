@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canViewClients } from "@/lib/permissions";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { createCustomerAction } from "@/app/(app)/customers/actions";
@@ -11,7 +12,8 @@ export default async function NewCustomerPage({
   searchParams: Promise<{ return_to?: string }>;
 }) {
   const user = await requireUser();
-  if (!canViewClients(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  if (!canViewClients(preview?.role ?? user.role)) redirect("/dashboard");
 
   const { return_to = "" } = await searchParams;
   const returnTo =

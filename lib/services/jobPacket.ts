@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth/session";
+import { resolveReadSubject, type ReadView } from "@/lib/auth/role-preview-shared";
 import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, WorkOrderStatus } from "@/lib/database/types";
 import { JOB_STATUS_LABELS, WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
@@ -73,8 +74,15 @@ function motorcycleLabel(
  * Lightweight work-order context for the in-floor Job packet.
  * Does not load intake/proof photos — those load when the photos section opens.
  */
-export async function getJobPacket(workOrderId: string): Promise<JobPacket | null> {
+export async function getJobPacket(
+  workOrderId: string,
+  options?: {
+    /** Trusted presentation principal (owner "view as") — read shaping only. */
+    view?: ReadView;
+  }
+): Promise<JobPacket | null> {
   const user = await requireUser();
+  const subject = resolveReadSubject(user, options?.view);
   const supabase = await createClient();
   const locationId = user.active_location_id!;
 
@@ -108,8 +116,8 @@ export async function getJobPacket(workOrderId: string): Promise<JobPacket | nul
       status: wo.status,
       jobs: jobRows,
     },
-    user.role,
-    user.user_id
+    subject.role,
+    subject.userId
   );
 
   const moto = Array.isArray(wo.motorcycle) ? wo.motorcycle[0] : wo.motorcycle;
@@ -123,7 +131,7 @@ export async function getJobPacket(workOrderId: string): Promise<JobPacket | nul
     motorcycle_label: motorcycleLabel(
       moto ? { year: moto.year, make: moto.make, model: moto.model } : null
     ),
-    jobs: mapJobPacketJobs(jobRows, wo.work_order_id, user.user_id),
+    jobs: mapJobPacketJobs(jobRows, wo.work_order_id, subject.userId),
     notes,
   };
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canManageUsers } from "@/lib/permissions";
 import { listLocationOptions, listManagedUsers } from "@/lib/services/users";
 import { UserEditForm, UserLinkForm } from "@/components/forms/UserForms";
@@ -13,9 +13,9 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function UsersAdminPage() {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canManageUsers(user.role)) redirect("/settings");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canManageUsers(preview.role)) redirect("/settings");
 
   const [users, locations] = await Promise.all([
     listManagedUsers(),

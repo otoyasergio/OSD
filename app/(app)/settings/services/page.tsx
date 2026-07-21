@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canManageServiceCatalogue } from "@/lib/permissions";
 import {
   groupServicesByCategory,
@@ -22,9 +22,9 @@ function formatNumber(value: number | null, suffix = "") {
 }
 
 export default async function ServiceCataloguePage() {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canManageServiceCatalogue(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canManageServiceCatalogue(preview.role)) redirect("/dashboard");
 
   const [services, activeVersions] = await Promise.all([
     listServices({ includeInactive: true }),

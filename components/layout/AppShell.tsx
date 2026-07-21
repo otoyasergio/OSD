@@ -11,6 +11,11 @@ import { isFloorTech, staffHomePath } from "@/lib/permissions/checks";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { SidebarNav } from "@/components/layout/SidebarNav";
 import {
+  RolePreviewBanner,
+  RolePreviewSwitcher,
+  type RolePreviewState,
+} from "@/components/layout/RolePreviewSwitcher";
+import {
   LocationSwitcher,
   type LocationOption,
 } from "@/components/layout/LocationSwitcher";
@@ -37,6 +42,10 @@ const ROLE_LABELS: Record<AppUser["role"], string> = {
 
 type Props = {
   user: AppUser;
+  /** Presentation role — drives nav, home link, and role label. */
+  viewRole: AppUser["role"];
+  /** Owner-only "view as" state; null for every other persisted role. */
+  rolePreview: RolePreviewState | null;
   locations: LocationOption[];
   profilePhotoUrl: string | null;
   initialNotifications: StaffAssignmentNotification[];
@@ -49,6 +58,8 @@ function isInspectionFullscreenPath(pathname: string) {
 
 export function AppShell({
   user,
+  viewRole,
+  rolePreview,
   locations,
   profilePhotoUrl,
   initialNotifications,
@@ -74,7 +85,9 @@ export function AppShell({
   }
   const hideChrome = isInspectionFullscreenPath(pathname);
   const displayName = `${user.first_name} ${user.last_name}`.trim();
-  const homeHref = staffHomePath(user.role);
+  const homeHref = staffHomePath(viewRole);
+  // Notifications stay bound to the signed-in user — a preview never reads
+  // or marks another technician's alerts.
   const notificationsEnabled = isFloorTech(user.role);
 
   const refreshNotifications = useCallback(async () => {
@@ -280,10 +293,14 @@ export function AppShell({
             OTOMOTO
           </span>
         </Link>
-        <SidebarNav role={user.role} onNavigate={() => setMobileNavOpen(false)} />
+        {rolePreview ? <RolePreviewSwitcher preview={rolePreview} /> : null}
+        <SidebarNav role={viewRole} onNavigate={() => setMobileNavOpen(false)} />
       </aside>
 
       <div className="main-content">
+        {rolePreview ? (
+          <RolePreviewBanner preview={rolePreview} ownerName={displayName} />
+        ) : null}
         <header className="main-topbar">
           <GlobalSearch />
           <div className="main-topbar-actions">
@@ -310,7 +327,7 @@ export function AppShell({
                   {displayName}
                 </span>
                 <span className="mx-1.5 opacity-40">·</span>
-                <span>{ROLE_LABELS[user.role]}</span>
+                <span>{ROLE_LABELS[viewRole]}</span>
               </span>
             </Link>
             <SignOutButton />

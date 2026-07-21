@@ -186,6 +186,43 @@ describe("buildNavCategories", () => {
     expect(isActiveNavPath("/settings", "/settings")).toBe(true);
   });
 
+  it("shapes navigation for each owner preview role", () => {
+    const hrefsFor = (role: Parameters<typeof buildNavCategories>[0]) =>
+      buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+
+    // Owner preview = full nav including owner-only admin surfaces.
+    const owner = hrefsFor("owner");
+    expect(owner).toEqual(
+      expect.arrayContaining(["/billing", "/settings/users", "/settings/logs"])
+    );
+
+    // Service advisor preview keeps billing but loses owner-only admin.
+    const advisor = hrefsFor("service_advisor");
+    expect(advisor).toContain("/billing");
+    expect(advisor).not.toContain("/settings/users");
+    expect(advisor).not.toContain("/settings/logs");
+    expect(advisor).not.toContain("/settings/reports");
+
+    // Admin preview loses billing/parts/assign-docket but keeps work orders.
+    const admin = hrefsFor("admin");
+    expect(admin).not.toContain("/billing");
+    expect(admin).not.toContain("/parts");
+    expect(admin).not.toContain("/technician/docket");
+    expect(admin).toContain("/work_orders");
+    expect(admin).toContain("/customers");
+
+    // Technician preview collapses to the floor set.
+    const technician = hrefsFor("technician");
+    expect(technician).toEqual(
+      expect.arrayContaining(["/technician", "/parts", "/messages", "/settings"])
+    );
+    for (const hidden of ["/dashboard", "/work_orders", "/billing", "/customers"]) {
+      expect(technician).not.toContain(hidden);
+    }
+  });
+
   it("does not expose Password as a sidebar nav item for any role", () => {
     for (const role of [
       "owner",

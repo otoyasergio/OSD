@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth/session";
+import { resolveReadSubject, type ReadView } from "@/lib/auth/role-preview-shared";
 import { createClient } from "@/lib/database/supabase-server";
 import type {
   FloorParkReason,
@@ -209,8 +210,15 @@ export async function getTechnicianFloorOs(input: {
   jobId?: string | null;
   workOrderId?: string | null;
   mode?: FloorOsMode | null;
+  /**
+   * Trusted presentation principal (owner "view as"). Read shaping only:
+   * assignments, queues, and access mirror the subject technician while the
+   * actor stays the mutation/audit identity everywhere else.
+   */
+  view?: ReadView;
 }): Promise<TechnicianFloorOs> {
   const user = await requireUser();
+  const subject = resolveReadSubject(user, input.view);
   const supabase = await createClient();
   const locationId = user.active_location_id!;
 
@@ -260,13 +268,13 @@ export async function getTechnicianFloorOs(input: {
       ? supabase
           .from("job")
           .select(jobFloorSelectWithoutPosition)
-          .eq("assigned_technician_id", user.user_id)
+          .eq("assigned_technician_id", subject.userId)
           .not("status", "in", '("completed","cancelled","declined")')
           .order("created_at", { ascending: true })
       : supabase
           .from("job")
           .select(jobFloorSelectWithPosition)
-          .eq("assigned_technician_id", user.user_id)
+          .eq("assigned_technician_id", subject.userId)
           .not("status", "in", '("completed","cancelled","declined")')
           .order("created_at", { ascending: true });
 
@@ -286,8 +294,8 @@ export async function getTechnicianFloorOs(input: {
         )
         .eq("location_id", locationId)
         .eq("status", "quality_check")
-        .eq("quality_check_assigned_to", user.user_id),
-      canPerformSafetyCheck(user.role)
+        .eq("quality_check_assigned_to", subject.userId),
+      canPerformSafetyCheck(subject.role)
         ? supabase
             .from("work_order")
             .select(
@@ -307,7 +315,7 @@ export async function getTechnicianFloorOs(input: {
         .select(
           "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
         )
-        .eq("created_by_user_id", user.user_id)
+        .eq("created_by_user_id", subject.userId)
         .is("cleared_at", null),
     ]),
   ]);
@@ -321,7 +329,7 @@ export async function getTechnicianFloorOs(input: {
     const withoutPosition = await supabase
       .from("job")
       .select(jobFloorSelectWithoutPosition)
-      .eq("assigned_technician_id", user.user_id)
+      .eq("assigned_technician_id", subject.userId)
       .not("status", "in", '("completed","cancelled","declined")')
       .order("created_at", { ascending: true });
     if (withoutPosition.error) throw withoutPosition.error;
@@ -655,7 +663,7 @@ export async function getTechnicianFloorOs(input: {
       wo &&
       wo.location_id === locationId &&
       !isTerminalWorkOrderStatus(wo.status) &&
-      job.assigned_technician_id === user.user_id
+      job.assigned_technician_id === subject.userId
     ) {
       const labels = bikeCustomerLabel(unwrapMoto(wo));
       const { listPeerQcPickerOptions } = await import("@/lib/services/peerQc");
@@ -731,7 +739,7 @@ export async function getTechnicianFloorOs(input: {
           .eq("job_id", job.job_id)
           .order("created_at", { ascending: false })
           .limit(20),
-        listPeerQcPickerOptions(user.user_id, wo.work_order_id).catch(() => []),
+        listPeerQcPickerOptions(subject.userId, wo.work_order_id).catch(() => []),
       ]);
       const { data: parts } = partsResult;
       const { data: proofs } = proofsResult;
@@ -779,7 +787,7 @@ export async function getTechnicianFloorOs(input: {
         .select("started_at, ended_at, user_id, job_id")
         .eq("job_id", job.job_id);
       const segmentMs = sumJobTimeMs(jobTimeRows ?? []);
-      const openJobTimer = await getOpenJobTimeEntry(user.user_id).catch(() => null);
+      const openJobTimer = await getOpenJobTimeEntry(subject.userId).catch(() => null);
       const labour = formatLabourComparison(
         job.estimated_labour_snapshot as number | null,
         job.started_at,
@@ -923,7 +931,7 @@ export async function getTechnicianFloorOs(input: {
           status: workOrderJob.status as JobStatus,
           status_label:
             JOB_STATUS_LABELS[workOrderJob.status as JobStatus] ?? workOrderJob.status,
-          assigned_to_me: workOrderJob.assigned_technician_id === user.user_id,
+          assigned_to_me: workOrderJob.assigned_technician_id === subject.userId,
           is_selected: workOrderJob.job_id === job.job_id,
         })),
         checklist,
@@ -933,16 +941,16 @@ export async function getTechnicianFloorOs(input: {
         complete_gate_ok: gate.ok,
         complete_gate_reason: gate.ok ? null : gate.reason,
         can_start:
-          job.assigned_technician_id === user.user_id &&
+          job.assigned_technician_id === subject.userId &&
           (job.status === "approved" || job.status === "ready_to_start"),
         can_complete:
-          job.assigned_technician_id === user.user_id && job.status === "in_progress",
+          job.assigned_technician_id === subject.userId && job.status === "in_progress",
         can_pull: false,
         job_timer_running: timerRunning,
         is_qc: false,
         qc_assignee_is_me: false,
         is_safety: wo.status === "safety_check",
-        can_safety: canPerformSafetyCheck(user.role) && wo.status === "safety_check",
+        can_safety: canPerformSafetyCheck(subject.role) && wo.status === "safety_check",
         flags: (openFlags as AdminFlag[]) ?? [],
         board_status: boardStatus,
         board_stamp: stampForBoard({
@@ -1003,8 +1011,8 @@ export async function getTechnicianFloorOs(input: {
           status: wo.status,
           jobs: (wo.job as Array<{ assigned_technician_id: string | null }> | null) ?? [],
         },
-        user.role,
-        user.user_id
+        subject.role,
+        subject.userId
       )
     ) {
       const moto = Array.isArray(wo.motorcycle) ? wo.motorcycle[0] : wo.motorcycle;
@@ -1095,7 +1103,7 @@ export async function getTechnicianFloorOs(input: {
             service_name: workOrderJob.service_name_snapshot,
             status: workOrderJob.status,
             status_label: JOB_STATUS_LABELS[workOrderJob.status] ?? workOrderJob.status,
-            assigned_to_me: workOrderJob.assigned_technician_id === user.user_id,
+            assigned_to_me: workOrderJob.assigned_technician_id === subject.userId,
             is_selected: false,
           })),
         checklist: [],
@@ -1109,9 +1117,9 @@ export async function getTechnicianFloorOs(input: {
         can_pull: false,
         job_timer_running: false,
         is_qc: isQc,
-        qc_assignee_is_me: wo.quality_check_assigned_to === user.user_id,
+        qc_assignee_is_me: wo.quality_check_assigned_to === subject.userId,
         is_safety: isSafety,
-        can_safety: canPerformSafetyCheck(user.role) && isSafety,
+        can_safety: canPerformSafetyCheck(subject.role) && isSafety,
         flags: (openFlags as AdminFlag[]) ?? [],
         board_status: boardStatus,
         board_stamp: stampForBoard({
