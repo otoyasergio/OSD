@@ -105,9 +105,24 @@ export function seedPricingState(job: WorkspaceJob): JobPricingFormState {
   };
 }
 
-/** Jobs that belong on the estimate document (cancelled work never bills). */
+/** Jobs that belong on the estimate workspace list (cancelled never bills). */
 export function estimableJobs<T extends { status: JobStatus }>(jobs: T[]): T[] {
   return jobs.filter((job) => job.status !== "cancelled");
+}
+
+/**
+ * Only jobs still awaiting a customer decision go onto a NEW presented
+ * version. Approved / in-progress / completed work is already authorized —
+ * re-presenting it would make estimate confirmation rewrite its legacy
+ * status (the confirm command dual-writes approved/declined) and yank
+ * in-flight work back to planned. Declined jobs may be re-asked.
+ */
+export function jobNeedsAuthorization(status: JobStatus): boolean {
+  return status === "draft" || status === "waiting_for_approval" || status === "declined";
+}
+
+export function presentableJobs<T extends { status: JobStatus }>(jobs: T[]): T[] {
+  return jobs.filter((job) => jobNeedsAuthorization(job.status));
 }
 
 export function buildJobDraft(
@@ -149,7 +164,7 @@ export function buildWorkspaceDrafts(
   parts: WorkspacePart[],
   stateByJob: Record<string, JobPricingFormState>
 ): EstimateJobDraft[] {
-  return estimableJobs(jobs).map((job) =>
+  return presentableJobs(jobs).map((job) =>
     buildJobDraft(
       job,
       rollupPartsForJob(parts, job.job_id),

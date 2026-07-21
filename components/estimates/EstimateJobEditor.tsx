@@ -36,6 +36,7 @@ export function EstimateJobEditor({
   liveDecision,
   onPresentedVersion,
   disabled,
+  lockedNote = null,
   onChange,
 }: {
   job: WorkspaceJob;
@@ -45,6 +46,7 @@ export function EstimateJobEditor({
   liveDecision: AuthorizationDecision | null | undefined;
   onPresentedVersion: boolean;
   disabled: boolean;
+  lockedNote?: string | null;
   onChange: (next: JobPricingFormState) => void;
 }) {
   const auth = authorizationChip(job.status, liveDecision, onPresentedVersion);
@@ -181,6 +183,10 @@ export function EstimateJobEditor({
         <p className="mt-1 text-xs text-[var(--status-neutral)]">
           No-charge work stays visible on the estimate at $0.
         </p>
+      ) : null}
+
+      {lockedNote ? (
+        <p className="mt-1 text-xs text-[var(--status-neutral)]">{lockedNote}</p>
       ) : null}
     </article>
   );

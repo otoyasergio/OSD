@@ -7,7 +7,9 @@ import {
   computeWorkspaceTotals,
   decisionsComplete,
   estimableJobs,
+  jobNeedsAuthorization,
   parseMoneyInputToCents,
+  presentableJobs,
   rollupPartsForJob,
   seedPricingState,
   toDecisionList,
@@ -126,6 +128,23 @@ describe("draft assembly", () => {
   it("excludes cancelled jobs from the estimate document", () => {
     const jobs = [job(), job({ job_id: "job-2", status: "cancelled" })];
     expect(estimableJobs(jobs).map((j) => j.job_id)).toEqual(["job-1"]);
+    expect(buildWorkspaceDrafts(jobs, [], {})).toHaveLength(1);
+  });
+
+  it("only presents jobs that still need a customer decision", () => {
+    expect(jobNeedsAuthorization("draft")).toBe(true);
+    expect(jobNeedsAuthorization("waiting_for_approval")).toBe(true);
+    expect(jobNeedsAuthorization("declined")).toBe(true);
+    expect(jobNeedsAuthorization("approved")).toBe(false);
+    expect(jobNeedsAuthorization("in_progress")).toBe(false);
+    expect(jobNeedsAuthorization("completed")).toBe(false);
+
+    const jobs = [
+      job(),
+      job({ job_id: "job-approved", status: "approved" }),
+      job({ job_id: "job-done", status: "completed" }),
+    ];
+    expect(presentableJobs(jobs).map((j) => j.job_id)).toEqual(["job-1"]);
     expect(buildWorkspaceDrafts(jobs, [], {})).toHaveLength(1);
   });
 });

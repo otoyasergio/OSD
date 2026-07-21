@@ -24,6 +24,7 @@ import {
   estimableJobs,
   estimateStatusChip,
   formatCents,
+  jobNeedsAuthorization,
   priceDraft,
   rollupPartsForJob,
   seedPricingState,
@@ -132,10 +133,20 @@ export function EstimateJobsWorkspace({
     const state = pricingState[job.job_id] ?? seedPricingState(job);
     const rollup = rollupPartsForJob(parts, job.job_id);
     const draft = buildJobDraft(job, rollup, state);
-    return { job, state, rollup, draft, breakdown: priceDraft(draft) };
+    return {
+      job,
+      state,
+      rollup,
+      draft,
+      breakdown: priceDraft(draft),
+      // Already-authorized / in-flight work never goes on a new version:
+      // confirming would dual-write its legacy status back to approved.
+      needsAuthorization: jobNeedsAuthorization(job.status),
+    };
   });
 
-  const drafts = rows.map((row) => row.draft);
+  const presentRows = rows.filter((row) => row.needsAuthorization);
+  const drafts = presentRows.map((row) => row.draft);
   const totals = computeWorkspaceTotals(drafts);
   const blockers = workspacePresentationBlockers(drafts, totals);
   const notice = amendmentNotice(liveEstimate, dirty);
@@ -206,7 +217,12 @@ export function EstimateJobsWorkspace({
               breakdown={row.breakdown}
               liveDecision={decisionByJob.get(row.job.job_id) ?? null}
               onPresentedVersion={presentedJobIds.has(row.job.job_id)}
-              disabled={actionsDisabled}
+              disabled={actionsDisabled || !row.needsAuthorization}
+              lockedNote={
+                row.needsAuthorization
+                  ? null
+                  : "Pricing locked — this job is already authorized."
+              }
               onChange={(next) => updateJobPricing(row.job.job_id, next)}
             />
           ))
@@ -214,6 +230,13 @@ export function EstimateJobsWorkspace({
       </section>
 
       <EstimateTotals totals={totals} />
+      {rows.length > presentRows.length ? (
+        <p className="-mt-2 text-xs text-[var(--status-neutral)]">
+          Totals cover the {presentRows.length} job
+          {presentRows.length === 1 ? "" : "s"} pending authorization; already-authorized
+          work keeps its confirmed pricing.
+        </p>
+      ) : null}
 
       <section aria-label="Present estimate" className="card card-body">
         <h3 className="text-base font-semibold text-[var(--foreground)]">
