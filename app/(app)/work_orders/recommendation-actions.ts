@@ -97,15 +97,36 @@ export async function convertRecommendationAction(
   try {
     const serviceId = String(formData.get("service_id") ?? "").trim();
     if (!serviceId) throw new Error("SERVICE_NOT_FOUND");
+    const priceRaw = String(formData.get("price") ?? "").trim();
     await convertRecommendationToJob(recommendationId, {
       service_id: serviceId,
       already_approved: formData.get("already_approved") === "true",
       use_recommendation_title: true,
+      price_override: priceRaw ? Number(priceRaw) : null,
     });
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
 
   revalidateRecommendations(workOrderId);
+  return { error: null };
+}
+
+export async function sendRecommendationEstimateAction(
+  workOrderId: string,
+  _prevState: RecommendationFormState,
+  formData: FormData
+): Promise<RecommendationFormState> {
+  try {
+    const channel = formData.get("channel") === "sms" ? "sms" : "email";
+    const { sendWorkOrderEstimateApproval } =
+      await import("@/lib/services/squareBilling");
+    await sendWorkOrderEstimateApproval(workOrderId, channel);
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+
+  revalidateRecommendations(workOrderId);
+  revalidatePath("/billing");
   return { error: null };
 }

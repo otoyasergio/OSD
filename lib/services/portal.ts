@@ -5,9 +5,30 @@ import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { generatePortalToken, hashPortalToken } from "@/lib/portal/tokens";
 import { fileDropOffAgreementDocument } from "@/lib/services/customerDocuments";
+import {
+  isUndefinedColumnError,
+  isUndefinedTableError,
+} from "@/lib/database/schemaCompat";
+import { confirmEstimate } from "@/lib/services/estimates";
+import type { AuthorizationDecision, JobStatus } from "@/lib/database/types";
 
 export type PortalTokenPurpose =
   "full" | "estimate" | "payment" | "inspection" | "contract";
+
+/** Token purposes allowed to view estimates and record customer decisions. */
+export function portalPurposeAllowsEstimate(purpose: PortalTokenPurpose): boolean {
+  return purpose === "estimate" || purpose === "full";
+}
+
+/** Token purposes allowed to sign the drop-off contract. */
+export function portalPurposeAllowsContract(purpose: PortalTokenPurpose): boolean {
+  return purpose === "contract" || purpose === "full";
+}
+
+/** Legacy per-job decline is only valid while the job awaits a decision. */
+export function portalDeclineAllowed(status: JobStatus | string): boolean {
+  return status === "waiting_for_approval";
+}
 
 export type PortalSession = {
   token_id: string;
@@ -195,6 +216,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
 
 export async function portalApproveJob(token: string, jobId: string): Promise<void> {
   const session = await resolvePortalSession(token);
+  if (!portalPurposeAllowsEstimate(session.purpose)) throw new Error("FORBIDDEN");
   const admin = createAdminClient();
 
   const { data: job } = await admin
@@ -237,6 +259,7 @@ export async function portalDeclineJob(
   reason: string
 ): Promise<void> {
   const session = await resolvePortalSession(token);
+  if (!portalPurposeAllowsEstimate(session.purpose)) throw new Error("FORBIDDEN");
   const admin = createAdminClient();
 
   const { data: job } = await admin
@@ -247,6 +270,9 @@ export async function portalDeclineJob(
     .maybeSingle();
 
   if (!job) throw new Error("JOB_NOT_FOUND");
+  if (!portalDeclineAllowed(job.status)) {
+    throw new Error("JOB_NOT_AWAITING_APPROVAL");
+  }
 
   await admin
     .from("job")
@@ -267,6 +293,201 @@ export async function portalDeclineJob(
     description: "Customer declined via portal",
     new_value: { approval_method: "email", reason },
   });
+}
+
+export type PortalEstimateJobView = {
+  job_id: string;
+  title: string;
+  pricing_mode: string;
+  labor_cents: number;
+  parts_cents: number;
+  fees_cents: number;
+  discount_cents: number;
+  tax_cents: number;
+  total_cents: number;
+  decision: AuthorizationDecision | null;
+};
+
+export type PortalEstimateView = {
+  estimate_version_id: string;
+  version_no: number;
+  status: string;
+  content_hash: string;
+  subtotal_cents: number;
+  tax_cents: number;
+  total_cents: number;
+  jobs: PortalEstimateJobView[];
+  confirmed: boolean;
+};
+
+/**
+ * Token-scoped read of the live presented/confirmed estimate version.
+ * Returns null when the token's work order has no V2 estimate (legacy data
+ * or pre-migration databases) so the portal falls back to the legacy view.
+ */
+export async function getPortalEstimate(
+  token: string
+): Promise<PortalEstimateView | null> {
+  const session = await resolvePortalSession(token);
+  if (!portalPurposeAllowsEstimate(session.purpose)) return null;
+
+  const admin = createAdminClient();
+  try {
+    const { data: estimate, error } = await admin
+      .from("estimate")
+      .select("estimate_id, status, current_version_id")
+      .eq("work_order_id", session.work_order_id)
+      .in("status", ["presented", "confirmed"])
+      .maybeSingle();
+    if (error) throw error;
+    if (!estimate?.current_version_id) return null;
+
+    const { data: version, error: versionError } = await admin
+      .from("estimate_version")
+      .select(
+        "estimate_version_id, version_no, status, content_hash, subtotal_cents, tax_cents, total_cents"
+      )
+      .eq("estimate_version_id", estimate.current_version_id)
+      .in("status", ["presented", "confirmed"])
+      .maybeSingle();
+    if (versionError) throw versionError;
+    if (!version?.content_hash) return null;
+
+    const [
+      { data: jobs, error: jobsError },
+      { data: decisions },
+      { data: confirmation },
+    ] = await Promise.all([
+      admin
+        .from("estimate_job")
+        .select(
+          "job_id, display_order, title_snapshot, pricing_mode_snapshot, labor_cents, parts_cents, fees_cents, discount_cents, tax_cents, total_cents"
+        )
+        .eq("estimate_version_id", version.estimate_version_id)
+        .order("display_order"),
+      admin
+        .from("estimate_job_decision")
+        .select("job_id, decision")
+        .eq("estimate_version_id", version.estimate_version_id),
+      admin
+        .from("estimate_confirmation")
+        .select("confirmation_id")
+        .eq("estimate_version_id", version.estimate_version_id)
+        .maybeSingle(),
+    ]);
+    if (jobsError) throw jobsError;
+
+    const decisionByJob = new Map(
+      (decisions ?? []).map((d) => [
+        d.job_id as string,
+        d.decision as AuthorizationDecision,
+      ])
+    );
+
+    return {
+      estimate_version_id: version.estimate_version_id,
+      version_no: version.version_no,
+      status: version.status,
+      content_hash: version.content_hash,
+      subtotal_cents: version.subtotal_cents,
+      tax_cents: version.tax_cents,
+      total_cents: version.total_cents,
+      jobs: (jobs ?? []).map((job) => ({
+        job_id: job.job_id as string,
+        title: job.title_snapshot as string,
+        pricing_mode: job.pricing_mode_snapshot as string,
+        labor_cents: job.labor_cents as number,
+        parts_cents: job.parts_cents as number,
+        fees_cents: job.fees_cents as number,
+        discount_cents: job.discount_cents as number,
+        tax_cents: job.tax_cents as number,
+        total_cents: job.total_cents as number,
+        decision: decisionByJob.get(job.job_id as string) ?? null,
+      })),
+      confirmed: Boolean(confirmation),
+    };
+  } catch (error) {
+    // Pre-migration databases have no estimate tables — legacy view applies.
+    const dbError = error as { code?: string; message?: string } | null;
+    if (isUndefinedTableError(dbError) || isUndefinedColumnError(dbError)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Customer records a decision for every presented job and confirms once.
+ * Every ID is validated against the token's work order before the
+ * transactional command re-validates under lock.
+ */
+export async function portalConfirmEstimate(
+  token: string,
+  input: {
+    decisions: Array<{ jobId: string; decision: "approved" | "declined" }>;
+    expectedContentHash: string;
+    signerName: string;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+  }
+): Promise<{ replayed: boolean }> {
+  const session = await resolvePortalSession(token);
+  if (!portalPurposeAllowsEstimate(session.purpose)) throw new Error("FORBIDDEN");
+
+  const view = await getPortalEstimate(token);
+  if (!view) throw new Error("ESTIMATE_NOT_PRESENTED");
+
+  const presentedIds = new Set(view.jobs.map((job) => job.job_id));
+  for (const decision of input.decisions) {
+    if (!presentedIds.has(decision.jobId)) {
+      throw new Error("DECISION_FOR_UNKNOWN_JOB");
+    }
+  }
+
+  const result = await confirmEstimate({
+    estimateVersionId: view.estimate_version_id,
+    decisions: input.decisions,
+    expectedContentHash: input.expectedContentHash,
+    actorType: "customer_portal",
+    method: "portal",
+    portalTokenId: session.token_id,
+    signerName: input.signerName,
+    ipAddress: input.ipAddress ?? null,
+    userAgent: input.userAgent ?? null,
+  });
+
+  // Refresh legacy billing stage from the recorded decisions.
+  const anyApproved = input.decisions.some((d) => d.decision === "approved");
+  if (anyApproved && !result.replayed) {
+    const { recomputeWorkOrderBillingStage } =
+      await import("@/lib/services/squareBilling");
+    await recomputeWorkOrderBillingStage(session.work_order_id).catch(() => {
+      // Billing stage refresh is a projection; confirmation already succeeded.
+    });
+  }
+
+  return { replayed: result.replayed };
+}
+
+/** Active agreement template for anonymous portal signing (admin read). */
+export async function getPortalContractTemplate(): Promise<{
+  template_id: string;
+  version: string;
+  title: string;
+  body_html: string;
+  initial_fields: string[];
+} | null> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("drop_off_agreement_template")
+    .select("template_id, version, title, body_html, initial_fields")
+    .eq("active", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return { ...data, initial_fields: (data.initial_fields as string[]) ?? [] };
 }
 
 export async function portalSignContract(

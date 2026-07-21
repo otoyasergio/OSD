@@ -84,12 +84,16 @@ export const motorcycleSchema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+export const jobPricingModeSchema = z.enum(["itemized", "fixed_package", "no_charge"]);
+
 export const serviceSchema = z.object({
   name: z.string().min(1, "Service name is required"),
   category: z.string().nullable().optional(),
   standard_price: z.number().nonnegative().nullable().optional(),
   estimated_labour: z.number().nonnegative().nullable().optional(),
   active: z.boolean().default(true),
+  /** V2 catalogue versioning snapshot; ignored until the migration lands. */
+  pricing_mode: jobPricingModeSchema.optional(),
 });
 
 export const shopClosureSchema = z.object({
@@ -168,6 +172,8 @@ export const recommendationSchema = z.object({
   severity: z.enum(["future_attention", "immediate_attention", "safety_critical"]),
   notes: z.string().nullable().optional(),
   inspection_result_id: z.string().uuid().nullable().optional(),
+  /** Durable service_finding link (Workflow V2); optional until backfilled. */
+  finding_id: z.string().uuid().nullable().optional(),
 });
 
 export const partSchema = z.object({
@@ -207,6 +213,7 @@ export const photoCategorySchema = z.enum([
   "inspection_forks",
   "inspection_item",
   "job_proof",
+  "job_work",
 ]);
 
 export const intakePhotoSchema = z.object({
@@ -281,6 +288,57 @@ export const locationSchema = z.object({
     .max(16, "Code must be 16 characters or fewer")
     .regex(/^[A-Za-z0-9_-]+$/, "Use letters, numbers, hyphens, or underscores"),
   status: z.enum(["active", "inactive"]).default("active"),
+});
+
+const centsSchema = z.number().int("Amounts must be integer cents");
+
+export const estimateJobDraftSchema = z.object({
+  jobId: z.string().uuid(),
+  title: z.string().min(1),
+  description: z.string().nullable().default(null),
+  pricing: z.object({
+    pricingMode: jobPricingModeSchema,
+    fixedPackagePriceCents: centsSchema.nonnegative().nullable(),
+    laborLines: z.array(
+      z.object({
+        amountCents: centsSchema.nonnegative(),
+        billable: z.boolean(),
+        includedInPackage: z.boolean(),
+      })
+    ),
+    partLines: z.array(
+      z.object({
+        quantity: z.number().positive(),
+        sellPriceCents: centsSchema.nonnegative().nullable(),
+        includedInPackage: z.boolean(),
+      })
+    ),
+    feeLines: z.array(
+      z.object({
+        amountCents: centsSchema.nonnegative(),
+        includedInPackage: z.boolean().optional(),
+      })
+    ),
+    discountLines: z.array(z.object({ amountCents: centsSchema.nonnegative() })),
+  }),
+});
+
+export const presentEstimateSchema = z.object({
+  drafts: z.array(estimateJobDraftSchema).min(1, "Add at least one job to the estimate"),
+});
+
+export const confirmEstimateSchema = z.object({
+  estimateVersionId: z.string().uuid(),
+  expectedContentHash: z.string().min(1),
+  method: z.enum(["in_person", "phone"]),
+  decisions: z
+    .array(
+      z.object({
+        jobId: z.string().uuid(),
+        decision: z.enum(["approved", "declined", "deferred"]),
+      })
+    )
+    .min(1, "Record a decision for every job"),
 });
 
 export const appUserLinkSchema = z.object({

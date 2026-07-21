@@ -186,8 +186,11 @@ export function AppShell({
     }
   }
 
-  const notificationBell = (
+  // One controller, two responsive mount points. Only the visible slot
+  // renders the dialog portal, so duplicate dialogs cannot appear.
+  const notificationBellFor = (slot: "mobile" | "desktop") => (
     <StaffNotificationBell
+      slot={slot}
       notifications={notifications}
       open={notificationOpen}
       busy={notificationBusy}
@@ -229,7 +232,7 @@ export function AppShell({
           />
         </Link>
         <div className="flex items-center gap-2">
-          {notificationsEnabled ? notificationBell : null}
+          {notificationsEnabled ? notificationBellFor("mobile") : null}
           <Link href="/account" aria-label="Open my account">
             <UserAvatar
               firstName={user.first_name}
@@ -284,7 +287,7 @@ export function AppShell({
         <header className="main-topbar">
           <GlobalSearch />
           <div className="main-topbar-actions">
-            {notificationsEnabled ? notificationBell : null}
+            {notificationsEnabled ? notificationBellFor("desktop") : null}
             {user.active_location_id ? (
               <LocationSwitcher
                 locations={locations}

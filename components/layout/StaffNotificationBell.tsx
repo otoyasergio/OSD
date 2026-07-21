@@ -12,6 +12,8 @@ import {
 import { createPortal } from "react-dom";
 import type { StaffAssignmentNotification } from "@/lib/services/staffNotifications";
 
+type BellSlot = "mobile" | "desktop";
+
 type Props = {
   notifications: StaffAssignmentNotification[];
   open: boolean;
@@ -20,6 +22,13 @@ type Props = {
   onToggle: () => void;
   onOpenNotification: (notification: StaffAssignmentNotification) => void;
   onMarkAllRead: () => void;
+  /**
+   * Responsive slot this bell instance lives in. The shell mounts one bell in
+   * the mobile header and one in the desktop topbar sharing a single
+   * controller; only the visible slot renders the dialog portal and owns the
+   * document-level listeners, so a duplicate dialog can never appear.
+   */
+  slot?: BellSlot;
 };
 
 type PanelCoords = {
@@ -27,6 +36,27 @@ type PanelCoords = {
   right: number;
   maxHeight: number;
 };
+
+const MOBILE_MEDIA_QUERY = "(max-width: 768px)";
+
+function useSlotVisible(slot: BellSlot | undefined): boolean {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (!slot || typeof window.matchMedia !== "function") return () => {};
+      const mql = window.matchMedia(MOBILE_MEDIA_QUERY);
+      mql.addEventListener("change", onStoreChange);
+      return () => mql.removeEventListener("change", onStoreChange);
+    },
+    () => {
+      if (!slot) return true;
+      if (typeof window.matchMedia !== "function") return slot === "desktop";
+      const mobile = window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+      return slot === "mobile" ? mobile : !mobile;
+    },
+    // Server snapshot — portals only exist after hydration anyway.
+    () => !slot
+  );
+}
 
 export function StaffNotificationBell({
   notifications,
@@ -36,12 +66,16 @@ export function StaffNotificationBell({
   onToggle,
   onOpenNotification,
   onMarkAllRead,
+  slot,
 }: Props) {
   const unreadCount = notifications.length;
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const wasOpenRef = useRef(false);
   const panelId = useId();
   const [coords, setCoords] = useState<PanelCoords | null>(null);
+  const slotVisible = useSlotVisible(slot);
+  const active = open && slotVisible;
   const mounted = useSyncExternalStore(
     () => () => {},
     () => true,
@@ -49,7 +83,7 @@ export function StaffNotificationBell({
   );
 
   useLayoutEffect(() => {
-    if (!open || !buttonRef.current) {
+    if (!active || !buttonRef.current) {
       setCoords(null);
       return;
     }
@@ -72,10 +106,10 @@ export function StaffNotificationBell({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [open]);
+  }, [active]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!active) return;
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") onToggle();
@@ -97,10 +131,18 @@ export function StaffNotificationBell({
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("touchstart", onPointerDown);
     };
-  }, [open, onToggle]);
+  }, [active, onToggle]);
+
+  useEffect(() => {
+    // Return focus to the bell when its dialog closes (Escape/outside click).
+    if (wasOpenRef.current && !open && slotVisible) {
+      buttonRef.current?.focus();
+    }
+    wasOpenRef.current = open;
+  }, [open, slotVisible]);
 
   const panel =
-    open && mounted && coords
+    active && mounted && coords
       ? createPortal(
           <div
             ref={panelRef}
@@ -186,8 +228,8 @@ export function StaffNotificationBell({
             ? `${unreadCount} unread assignment ${unreadCount === 1 ? "alert" : "alerts"}`
             : "Assignment alerts"
         }
-        aria-expanded={open}
-        aria-controls={open ? panelId : undefined}
+        aria-expanded={active}
+        aria-controls={active ? panelId : undefined}
         onClick={onToggle}
       >
         <Bell size={19} aria-hidden />

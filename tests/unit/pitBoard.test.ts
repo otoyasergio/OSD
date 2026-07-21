@@ -3,9 +3,11 @@ import {
   buildPitBoardSteps,
   deriveGoAction,
   derivePitBoardStatus,
+  isFloorJobFinished,
   isPitBoardStepActionableWhileParked,
   isPitBoardStepTappable,
   isPitBoardStepViewableWhileParked,
+  parkReasonLabel,
   stampForBoard,
   waitOwnerForParkReason,
 } from "@/lib/technician/pitBoard";
@@ -343,5 +345,49 @@ describe("pitBoard", () => {
       inspectionComplete: true,
     });
     expect(gate.ok).toBe(true);
+  });
+
+  it("stamps parked bikes HOLD and keeps park reason labels plain", () => {
+    expect(
+      stampForBoard({
+        status: "waiting",
+        floor_parked_at: "2026-07-17T13:00:00Z",
+        job_timer_running: false,
+      })
+    ).toBe("HOLD");
+    expect(parkReasonLabel("parts")).toBe("Parts not here");
+    expect(parkReasonLabel("tool")).toBe("Tool or lift busy");
+    expect(parkReasonLabel(null)).toBe("Parked");
+  });
+
+  it("flags finished wrench work from board status, job status, or timestamps", () => {
+    expect(
+      isFloorJobFinished({
+        board_status: "done",
+        job_status: "in_progress",
+        completed_at: null,
+      })
+    ).toBe(true);
+    expect(
+      isFloorJobFinished({
+        board_status: "bench",
+        job_status: "completed",
+        completed_at: null,
+      })
+    ).toBe(true);
+    expect(
+      isFloorJobFinished({
+        board_status: "bench",
+        job_status: "in_progress",
+        completed_at: "2026-07-17T15:00:00Z",
+      })
+    ).toBe(true);
+    expect(
+      isFloorJobFinished({
+        board_status: "bench",
+        job_status: "in_progress",
+        completed_at: null,
+      })
+    ).toBe(false);
   });
 });

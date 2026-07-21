@@ -1,7 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { toFormErrorMessage } from "@/lib/services/errors";
+import { requireUser } from "@/lib/auth/session";
+import { createClient } from "@/lib/database/supabase-server";
+import { createAdminClient } from "@/lib/database/supabase-admin";
+import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
+import { toFormErrorMessage, toRpcErrorCode } from "@/lib/services/errors";
 import { pullJob, updateJobStatus } from "@/lib/services/jobs";
 import { toggleJobChecklistItem } from "@/lib/services/jobChecklist";
 import { createAdminFlag } from "@/lib/services/adminFlags";
@@ -9,11 +13,14 @@ import { failPeerQualityCheck, passPeerQualityCheck } from "@/lib/services/peerQ
 import { uploadIntakePhoto } from "@/lib/services/photos";
 import { addTechnicianNote } from "@/lib/services/notes";
 import { updatePartStatus } from "@/lib/services/parts";
+import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
+import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import type { AdminFlagReason, FloorParkReason } from "@/lib/database/types";
 import { chooseNextFloorItem } from "@/lib/technician/nextFloorItem";
 import {
   acknowledgeDocketJob,
   clearParkOnComplete,
+  floorIdempotencyKey,
   parkJob,
   pullOntoBench,
   resumeParkedJob,
@@ -55,7 +62,13 @@ export async function startJobFloorAction(
   try {
     const jobId = String(formData.get("job_id") ?? "");
     const workOrderId = String(formData.get("work_order_id") ?? "");
-    await updateJobStatus(jobId, "in_progress");
+    if (v2WritesEnabled(readWorkflowV2Flags())) {
+      // Starting a job on the floor is a bench pull: one transaction parks
+      // any current bench job, starts this one, and opens its timer.
+      await pullOntoBench(jobId);
+    } else {
+      await updateJobStatus(jobId, "in_progress");
+    }
     revalidateFloor(workOrderId);
     return { success: "Job started." };
   } catch (error) {
@@ -171,6 +184,48 @@ export async function skipProofAction(
   }
 }
 
+/**
+ * V2 path: gate-checked completion + peer QC assignment in ONE transaction
+ * (workflow_v2_complete_job_and_assign_qc). The inspection gate stays
+ * app-side because inspections are outside the V2 command's domain.
+ */
+async function completeJobViaWorkflowV2(
+  jobId: string,
+  workOrderId: string,
+  qcAssigneeId: string | null
+): Promise<void> {
+  const user = await requireUser();
+  const supabase = await createClient();
+
+  const [{ data: inspection }, { data: exceptions }] = await Promise.all([
+    supabase
+      .from("inspection")
+      .select("completed_at")
+      .eq("work_order_id", workOrderId)
+      .maybeSingle(),
+    supabase
+      .from("technician_note")
+      .select("technician_note_id")
+      .eq("job_id", jobId)
+      .eq("note_type", "proof_exception")
+      .limit(1),
+  ]);
+  assertInspectionCompletedForJobFinish(inspection?.completed_at);
+
+  const admin = createAdminClient();
+  const { error } = await admin.rpc("workflow_v2_complete_job_and_assign_qc", {
+    p_job_id: jobId,
+    p_actor_user_id: user.user_id,
+    p_qc_candidate_id: qcAssigneeId,
+    p_proof_exception: (exceptions ?? []).length > 0,
+    p_idempotency_key: floorIdempotencyKey("complete", jobId, user.user_id),
+  });
+  if (error) throw new Error(toRpcErrorCode(error));
+
+  // Keep the legacy work-order status projection (quality_check, …) in sync.
+  await recalculateWorkOrderStatus(admin, workOrderId, user.user_id);
+}
+
 export async function completeJobFloorAction(
   _prev: FloorActionState,
   formData: FormData
@@ -179,11 +234,15 @@ export async function completeJobFloorAction(
     const jobId = String(formData.get("job_id") ?? "");
     const workOrderId = String(formData.get("work_order_id") ?? "");
     const qcAssigneeId = String(formData.get("qc_assignee_id") ?? "").trim();
-    await updateJobStatus(jobId, "completed");
-    await clearParkOnComplete(jobId);
-    if (qcAssigneeId) {
-      const { assignPeerQcByTechnician } = await import("@/lib/services/peerQc");
-      await assignPeerQcByTechnician(workOrderId, qcAssigneeId);
+    if (v2WritesEnabled(readWorkflowV2Flags())) {
+      await completeJobViaWorkflowV2(jobId, workOrderId, qcAssigneeId || null);
+    } else {
+      await updateJobStatus(jobId, "completed");
+      await clearParkOnComplete(jobId);
+      if (qcAssigneeId) {
+        const { assignPeerQcByTechnician } = await import("@/lib/services/peerQc");
+        await assignPeerQcByTechnician(workOrderId, qcAssigneeId);
+      }
     }
     revalidateFloor(workOrderId);
 
@@ -269,6 +328,33 @@ export async function uploadJobProofAction(
     });
     revalidateFloor(workOrderId);
     return { success: "Proof photo uploaded." };
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+}
+
+/**
+ * Work-journal photo: in-progress shot stored as 'job_work'. It documents
+ * the work but never satisfies the after-photo proof gate.
+ */
+export async function uploadJobWorkPhotoAction(
+  _prev: FloorActionState,
+  formData: FormData
+): Promise<FloorActionState> {
+  try {
+    const workOrderId = String(formData.get("work_order_id") ?? "");
+    const jobId = String(formData.get("job_id") ?? "");
+    const note = String(formData.get("note") ?? "").trim() || null;
+    const file = formData.get("file");
+    if (!(file instanceof File)) throw new Error("PHOTO_REQUIRED");
+    await uploadIntakePhoto(workOrderId, {
+      category: "job_work",
+      job_id: jobId,
+      notes: note,
+      file,
+    });
+    revalidateFloor(workOrderId);
+    return { success: "Work photo added to the journal." };
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

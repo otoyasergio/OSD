@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildNavCategories } from "@/components/layout/SidebarNav";
+import { buildNavCategories, isActiveNavPath } from "@/components/layout/SidebarNav";
 
 describe("buildNavCategories", () => {
   it("orders owner nav Finances → Workshop → Docket → Communication → Settings", () => {
@@ -23,7 +23,7 @@ describe("buildNavCategories", () => {
     ]);
   });
 
-  it("puts Jobs and Timesheets under Docket for owner/manager", () => {
+  it("puts Tech Floor and Timesheets under Docket for owner/manager", () => {
     const owner = buildNavCategories("owner");
     const docket = owner.find((c) => c.id === "docket");
     expect(docket?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
@@ -34,7 +34,7 @@ describe("buildNavCategories", () => {
       ])
     );
     expect(docket?.subgroups.flatMap((g) => g.links).map((l) => l.label)).toEqual(
-      expect.arrayContaining(["Jobs", "Assign docket"])
+      expect.arrayContaining(["Tech Floor", "Assign docket"])
     );
 
     const tech = buildNavCategories("technician");
@@ -43,8 +43,26 @@ describe("buildNavCategories", () => {
       "/technician",
     ]);
     expect(techDocket?.subgroups.flatMap((g) => g.links).map((l) => l.label)).toEqual([
-      "Jobs",
+      "Tech Floor",
     ]);
+  });
+
+  it("labels /technician as Tech Floor (never Jobs) for every role", () => {
+    for (const role of [
+      "owner",
+      "manager",
+      "service_advisor",
+      "technician",
+      "head_tech",
+      "admin",
+    ] as const) {
+      const links = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links)
+      );
+      const techFloor = links.find((l) => l.href === "/technician");
+      expect(techFloor?.label).toBe("Tech Floor");
+      expect(links.map((l) => l.label)).not.toContain("Jobs");
+    }
   });
 
   it("exposes Assign docket under Docket for front office only", () => {
@@ -149,6 +167,23 @@ describe("buildNavCategories", () => {
       expect(hrefs).toContain("/technician");
       expect(hrefs).not.toContain("/technician/clock");
     }
+  });
+
+  it("activates Tech Floor only on the exact /technician path", () => {
+    expect(isActiveNavPath("/technician", "/technician")).toBe(true);
+    expect(isActiveNavPath("/technician/docket", "/technician")).toBe(false);
+    expect(isActiveNavPath("/technician/clock", "/technician")).toBe(false);
+
+    // Sibling links keep their own prefix matching.
+    expect(isActiveNavPath("/technician/docket", "/technician/docket")).toBe(true);
+    expect(isActiveNavPath("/technician/clock", "/technician/clock")).toBe(true);
+  });
+
+  it("keeps prefix matching for non-exclusive nav paths", () => {
+    expect(isActiveNavPath("/work_orders/abc", "/work_orders")).toBe(true);
+    expect(isActiveNavPath("/settings/users", "/settings/users")).toBe(true);
+    expect(isActiveNavPath("/settings/users", "/settings")).toBe(false);
+    expect(isActiveNavPath("/settings", "/settings")).toBe(true);
   });
 
   it("does not expose Password as a sidebar nav item for any role", () => {

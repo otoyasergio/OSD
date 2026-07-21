@@ -11,38 +11,14 @@ import { getJobPacket } from "@/lib/services/jobPacket";
 import { listIntakePhotos } from "@/lib/services/photos";
 import { isFloorTech } from "@/lib/permissions";
 import { TechnicianFloorShell } from "@/components/technician/TechnicianFloorShell";
+import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import {
-  techJobPacketHref,
-  type JobPacketSection,
-} from "@/lib/technician/assignmentHref";
-import { deriveDefaultStage, type FloorStage } from "@/lib/technician/floorStage";
+  parseTechnicianRouteState,
+  type TechnicianRouteParams,
+} from "@/lib/technician/routeState";
+import type { FloorStage } from "@/lib/technician/floorStage";
 
 export const dynamic = "force-dynamic";
-
-const STAGES = new Set<FloorStage>(["inspect", "work", "proof", "done", "qc", "safety"]);
-const PACKET_SECTIONS = new Set<JobPacketSection>(["notes", "photos", "jobs"]);
-
-function stageFromParams(params: { stage?: string; mode?: string }): FloorStage | null {
-  if (params.stage && STAGES.has(params.stage as FloorStage)) {
-    return params.stage as FloorStage;
-  }
-  // Legacy mode → stage mapping
-  switch (params.mode) {
-    case "inspection":
-      return "inspect";
-    case "parts":
-    case "job":
-      return "work";
-    case "qc":
-      return "qc";
-    case "safety":
-      return "safety";
-    case "notes":
-      return "done";
-    default:
-      return null;
-  }
-}
 
 function modeForFetch(stage: FloorStage | null): FloorOsMode {
   if (stage === "inspect") return "inspection";
@@ -51,44 +27,28 @@ function modeForFetch(stage: FloorStage | null): FloorOsMode {
   return "job";
 }
 
-function packetSectionFromParams(value: string | undefined): JobPacketSection | null {
-  if (value && PACKET_SECTIONS.has(value as JobPacketSection)) {
-    return value as JobPacketSection;
-  }
-  return null;
-}
-
 export default async function TechnicianPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    job?: string;
-    wo?: string;
-    mode?: string;
-    stage?: string;
-    panel?: string;
-    packetSection?: string;
-  }>;
+  searchParams: Promise<TechnicianRouteParams>;
 }) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
 
   const params = await searchParams;
-  const requestedStage = stageFromParams(params);
-  const panel = params.panel === "packet" ? "packet" : null;
-  const packetSection = packetSectionFromParams(params.packetSection);
+  const route = parseTechnicianRouteState(params);
 
-  const hasSelection = Boolean(params.job || params.wo);
+  const hasSelection = Boolean(route.jobId || route.workOrderId);
   // Always load intake/proof photos with the packet so techs can open them
   // any time the bike is on their docket — no second "Load photos" hop.
-  const loadPacket = panel === "packet" && Boolean(params.wo);
+  const loadPacket = route.panel === "packet" && Boolean(route.workOrderId);
 
   const [floor, docket, readyForPickup, packet, packetPhotos] = await Promise.all([
     hasSelection
       ? getTechnicianFloorOs({
-          jobId: params.job ?? null,
-          workOrderId: params.wo ?? null,
-          mode: modeForFetch(requestedStage),
+          jobId: route.jobId,
+          workOrderId: route.workOrderId,
+          mode: modeForFetch(route.stage),
         })
       : Promise.resolve(emptyFloorOs()),
     isFloorTech(user.role)
@@ -98,25 +58,29 @@ export default async function TechnicianPage({
     isFloorTech(user.role)
       ? Promise.resolve([])
       : listReadyForPickup({ hrefFor: (id) => techJobPacketHref(id) }).catch(() => []),
-    loadPacket ? getJobPacket(params.wo!).catch(() => null) : Promise.resolve(null),
-    loadPacket ? listIntakePhotos(params.wo!).catch(() => []) : Promise.resolve([]),
+    loadPacket
+      ? getJobPacket(route.workOrderId!).catch(() => null)
+      : Promise.resolve(null),
+    loadPacket
+      ? listIntakePhotos(route.workOrderId!).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
-  const stage =
-    requestedStage ?? (floor.selected ? deriveDefaultStage(floor.selected) : "work");
-
+  // Explicit stage only — the shell derives the default per surface, so URLs
+  // never pin a stage the tech didn't choose.
   return (
     <TechnicianFloorShell
       floor={floor}
-      stage={stage}
+      stage={route.stage ?? undefined}
+      viewerUserId={user.user_id}
       docketItems={docket?.items ?? []}
       readyForPickup={readyForPickup}
-      panel={panel}
+      panel={route.panel}
       packet={packet}
-      packetSection={packetSection}
+      packetSection={route.packetSection}
       packetPhotos={packetPhotos}
-      packetWorkOrderId={params.wo ?? null}
-      packetJobId={params.job ?? null}
+      packetWorkOrderId={route.workOrderId}
+      packetJobId={route.jobId}
     />
   );
 }

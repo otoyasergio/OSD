@@ -2,12 +2,14 @@
 
 import { useState, useTransition } from "react";
 import type { AgreementTemplate } from "@/lib/services/contracts";
-import type { PortalWorkOrderView } from "@/lib/services/portal";
+import type { PortalEstimateView, PortalWorkOrderView } from "@/lib/services/portal";
 import { withHst, HST_PERCENT } from "@/lib/pricing/hst";
 import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
+import { PortalEstimateDecision } from "@/components/portal/PortalEstimateDecision";
 import {
   portalAckInspectionAction,
   portalApproveJobAction,
+  portalConfirmEstimateAction,
   portalDeclineJobAction,
   portalSignContractAction,
 } from "@/app/c/[token]/actions";
@@ -17,9 +19,10 @@ type Props = {
   token: string;
   view: PortalWorkOrderView;
   contractTemplate: AgreementTemplate | null;
+  estimate?: PortalEstimateView | null;
 };
 
-export function PortalClient({ token, view, contractTemplate }: Props) {
+export function PortalClient({ token, view, contractTemplate, estimate }: Props) {
   const [declineJobId, setDeclineJobId] = useState<string | null>(null);
   const [declineReason, setDeclineReason] = useState("");
   const [ackName, setAckName] = useState(
@@ -28,7 +31,12 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const pendingJobs = view.jobs.filter((j) => j.status === "waiting_for_approval");
+  // The V2 estimate flow replaces the legacy per-job approve buttons whenever
+  // a presented/confirmed estimate version exists for this work order.
+  const hasV2Estimate = Boolean(estimate);
+  const pendingJobs = hasV2Estimate
+    ? []
+    : view.jobs.filter((j) => j.status === "waiting_for_approval");
   const merchandiseSubtotal = [...view.jobs, ...view.parts.map((p) => p)].reduce(
     (sum, item) => {
       if ("standard_price_snapshot" in item) {
@@ -51,6 +59,14 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
             action={async (formData) => portalSignContractAction(token, formData)}
           />
         </section>
+      ) : null}
+
+      {estimate ? (
+        <PortalEstimateDecision
+          estimate={estimate}
+          defaultSignerName={`${view.customer.first_name} ${view.customer.last_name}`.trim()}
+          confirmAction={async (payload) => portalConfirmEstimateAction(token, payload)}
+        />
       ) : null}
 
       {pendingJobs.length > 0 ? (
@@ -135,49 +151,51 @@ export function PortalClient({ token, view, contractTemplate }: Props) {
         </section>
       ) : null}
 
-      <section className="rounded-lg bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold">Estimate summary</h2>
-        <ul className="mb-4 divide-y divide-zinc-100 text-sm">
-          {view.jobs.map((job) => (
-            <li key={job.job_id} className="flex justify-between py-2">
-              <span>{job.name_snapshot}</span>
-              <span>
-                {job.standard_price_snapshot != null
-                  ? `$${Number(job.standard_price_snapshot).toFixed(2)}`
-                  : "—"}
-              </span>
-            </li>
-          ))}
-          {view.parts.map((part, i) => (
-            <li key={`${part.part_name}-${i}`} className="flex justify-between py-2">
-              <span>
-                {part.part_name} × {part.quantity}
-              </span>
-              <span>
-                {part.unit_price != null
-                  ? `$${(part.unit_price * part.quantity).toFixed(2)}`
-                  : "—"}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <div className="space-y-1 text-right text-sm">
-          <p>Subtotal: ${subtotal.toFixed(2)}</p>
-          <p>
-            HST ({HST_PERCENT}%): ${hst.toFixed(2)}
-          </p>
-          <p className="font-semibold">Total (est.): ${estimateTotal.toFixed(2)}</p>
-        </div>
-        {view.square_payment_status === "paid" ? (
-          <p className="mt-3 text-center font-medium text-emerald-700">
-            Paid — thank you!
-          </p>
-        ) : (
-          <p className="mt-3 text-center text-sm text-zinc-600">
-            Payment link will be sent when your bike is ready for pickup.
-          </p>
-        )}
-      </section>
+      {hasV2Estimate ? null : (
+        <section className="rounded-lg bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-semibold">Estimate summary</h2>
+          <ul className="mb-4 divide-y divide-zinc-100 text-sm">
+            {view.jobs.map((job) => (
+              <li key={job.job_id} className="flex justify-between py-2">
+                <span>{job.name_snapshot}</span>
+                <span>
+                  {job.standard_price_snapshot != null
+                    ? `$${Number(job.standard_price_snapshot).toFixed(2)}`
+                    : "—"}
+                </span>
+              </li>
+            ))}
+            {view.parts.map((part, i) => (
+              <li key={`${part.part_name}-${i}`} className="flex justify-between py-2">
+                <span>
+                  {part.part_name} × {part.quantity}
+                </span>
+                <span>
+                  {part.unit_price != null
+                    ? `$${(part.unit_price * part.quantity).toFixed(2)}`
+                    : "—"}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="space-y-1 text-right text-sm">
+            <p>Subtotal: ${subtotal.toFixed(2)}</p>
+            <p>
+              HST ({HST_PERCENT}%): ${hst.toFixed(2)}
+            </p>
+            <p className="font-semibold">Total (est.): ${estimateTotal.toFixed(2)}</p>
+          </div>
+          {view.square_payment_status === "paid" ? (
+            <p className="mt-3 text-center font-medium text-emerald-700">
+              Paid — thank you!
+            </p>
+          ) : (
+            <p className="mt-3 text-center text-sm text-zinc-600">
+              Payment link will be sent when your bike is ready for pickup.
+            </p>
+          )}
+        </section>
+      )}
 
       {view.inspection_completed && !view.has_inspection_ack ? (
         <section className="rounded-lg bg-white p-6 shadow-sm">

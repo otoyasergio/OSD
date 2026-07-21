@@ -1,30 +1,39 @@
 import Link from "next/link";
 import type { DocketItem } from "@/lib/services/technicianDocket";
+import { waitOwnerDisplayLabel } from "@/lib/technician/floorActionModel";
 import {
   docketCardAccessibleName,
   docketCardJobLine,
   docketCardToneClass,
+  isWaitingStamp,
   stampClass,
+  stampDisplayLabel,
 } from "@/lib/technician/docketCardDisplay";
 
-function DocketJobLine({
-  item,
-}: {
-  item: Pick<
-    DocketItem,
-    "subtitle" | "service_label" | "board_stamp" | "park_reason_label"
-  >;
-}) {
-  const jobPart =
-    item.board_stamp === "HOLD" && item.park_reason_label
-      ? item.park_reason_label
-      : item.service_label;
-
+function DocketWaitLine({ item }: { item: DocketItem }) {
+  if (!isWaitingStamp(item.board_stamp)) return null;
+  const reason = item.wait_reason ?? item.park_reason_label ?? "Waiting";
+  const owner = item.wait_owner_kind
+    ? waitOwnerDisplayLabel(item.wait_owner_kind)
+    : item.wait_owner_label || "Front desk";
   return (
-    <span className="pit-queue-sub">
-      <span className="pit-queue-wo">{item.subtitle}</span>
+    <span className="pit-queue-wait">
+      {reason}
       <span aria-hidden> · </span>
-      {jobPart}
+      <span className="pit-queue-wait-owner">{owner}</span>
+    </span>
+  );
+}
+
+function DocketServiceLines({ item }: { item: DocketItem }) {
+  const names = item.service_names.length > 0 ? item.service_names : [item.service_label];
+  return (
+    <span className="pit-queue-services">
+      {names.map((name) => (
+        <span key={name} className="pit-queue-service">
+          {name}
+        </span>
+      ))}
     </span>
   );
 }
@@ -76,13 +85,15 @@ export function TechnicianDocketList({
                   <span className="floor-docket-pos" aria-hidden>
                     {item.position}
                   </span>
-                  <span className={stampClass(item.board_stamp)}>{item.board_stamp}</span>
+                  <span className={stampClass(item.board_stamp)}>
+                    {stampDisplayLabel(item.board_stamp)}
+                  </span>
                 </div>
                 <p className="floor-bike-card-bike">{item.motorcycle_label}</p>
                 <p className="floor-bike-card-wo">
                   <span className="pit-queue-wo">{item.subtitle}</span>
                   <span aria-hidden> · </span>
-                  {item.board_stamp === "HOLD" && item.park_reason_label
+                  {isWaitingStamp(item.board_stamp) && item.park_reason_label
                     ? item.park_reason_label
                     : item.service_label}
                 </p>
@@ -149,10 +160,21 @@ export function TechnicianDocketList({
                 {item.position}
               </span>
               <span className="pit-queue-body">
-                <span className="pit-queue-bike">{item.motorcycle_label}</span>
-                <DocketJobLine item={item} />
+                <span className="pit-queue-bike">
+                  {item.motorcycle_label}
+                  {item.awaiting_customer ? (
+                    <span className="pit-queue-badge">Awaiting customer</span>
+                  ) : null}
+                </span>
+                <span className="pit-queue-sub">
+                  <span className="pit-queue-wo">{item.subtitle}</span>
+                </span>
+                <DocketServiceLines item={item} />
+                <DocketWaitLine item={item} />
               </span>
-              <span className={stampClass(item.board_stamp)}>{item.board_stamp}</span>
+              <span className={stampClass(item.board_stamp)}>
+                {stampDisplayLabel(item.board_stamp)}
+              </span>
             </Link>
             {reorderable ? (
               <form action={reorderAction} className="floor-docket-reorder">

@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
+import { createAdminClient } from "@/lib/database/supabase-admin";
 import type { DbClient } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
@@ -9,9 +10,17 @@ import {
   canPerformPeerQualityCheck,
   canRunQualityCheck,
 } from "@/lib/permissions";
+import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
+import { computeQcScopeHash } from "@/lib/jobs-v2/scopeHash";
+import {
+  buildLegacyReworkJobUpdate,
+  collectVisitWorkerIds,
+  filterEligibleQcCandidates,
+} from "@/lib/jobs-v2/peerQcCompletion";
 import { pickPeerQcAssignee } from "@/lib/status/peerQcAssigner";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { createAdminFlag } from "@/lib/services/adminFlags";
+import { toRpcErrorCode } from "@/lib/services/errors";
 import { completeQualityCheck } from "@/lib/services/quality";
 
 export type PeerQcPickerOption = {
@@ -57,16 +66,57 @@ async function listClockedInTechnicianIds(
   return techs.map((row) => row.user_id);
 }
 
-/** Clocked-in peers a tech can ask to check their work (excludes themselves). */
+/**
+ * Every user who worked ANY job on the visit — assigned technicians plus
+ * job_time_entry contributors. None of them may peer-QC the visit.
+ */
+async function listVisitWorkerIds(
+  supabase: DbClient,
+  workOrderId: string
+): Promise<Set<string>> {
+  const { data: jobs, error: jobsError } = await supabase
+    .from("job")
+    .select("job_id, status, assigned_technician_id")
+    .eq("work_order_id", workOrderId);
+  if (jobsError) throw jobsError;
+
+  const jobRows = (jobs ?? []) as Array<{
+    job_id: string;
+    status: string;
+    assigned_technician_id: string | null;
+  }>;
+
+  let timeEntries: Array<{ job_id: string; user_id: string }> = [];
+  const jobIds = jobRows.map((job) => job.job_id);
+  if (jobIds.length > 0) {
+    const { data: entries, error: entriesError } = await supabase
+      .from("job_time_entry")
+      .select("job_id, user_id")
+      .in("job_id", jobIds);
+    if (entriesError) throw entriesError;
+    timeEntries = (entries ?? []) as Array<{ job_id: string; user_id: string }>;
+  }
+
+  return collectVisitWorkerIds(jobRows, timeEntries);
+}
+
+/**
+ * Clocked-in peers a tech can ask to check their work. Excludes the asking
+ * tech and — when the work order is known — EVERYONE who worked any job on
+ * that visit (assigned or logged time), not just the finisher.
+ */
 export async function listPeerQcPickerOptions(
-  excludeUserId: string
+  excludeUserId: string,
+  workOrderId?: string | null
 ): Promise<PeerQcPickerOption[]> {
   const user = await requireUser();
   const supabase = await createClient();
   const locationId = user.active_location_id!;
   const techs = await listClockedInTechnicians(supabase, locationId);
-  return techs
-    .filter((tech) => tech.user_id !== excludeUserId)
+  const workedUserIds = workOrderId
+    ? await listVisitWorkerIds(supabase, workOrderId)
+    : new Set<string>();
+  return filterEligibleQcCandidates(techs, workedUserIds, excludeUserId)
     .map((tech) => ({
       user_id: tech.user_id,
       display_name: `${tech.first_name} ${tech.last_name}`.trim() || "Technician",
@@ -100,6 +150,13 @@ export async function assignPeerQcByTechnician(
   const clockedIn = await listClockedInTechnicianIds(supabase, locationId);
   if (!clockedIn.includes(assigneeUserId)) {
     throw new Error("QC_ASSIGNEE_NOT_AVAILABLE");
+  }
+
+  // The candidate must not have touched the visit — neither assigned to a
+  // job nor a job_time_entry contributor (same rule the V2 command enforces).
+  const workedUserIds = await listVisitWorkerIds(supabase, workOrderId);
+  if (workedUserIds.has(assigneeUserId)) {
+    throw new Error("QC_CANDIDATE_WORKED_ON_VISIT");
   }
 
   const { data: assignee, error: assigneeError } = await supabase
@@ -313,6 +370,47 @@ export async function autoAssignPeerQc(
   return assignee;
 }
 
+/**
+ * V2: record an immutable QC attempt against the exact scope of currently
+ * completed jobs. The command validates the performer, stamps/clears
+ * quality fields, reopens rework jobs (keeping their original completion
+ * timestamps), and appends the domain event — all in one transaction.
+ */
+async function recordQcAttemptV2(input: {
+  workOrderId: string;
+  actorUserId: string;
+  outcome: "passed" | "failed";
+  notes: string | null;
+  reworkJobIds?: string[] | null;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { data: completedJobs, error } = await admin
+    .from("job")
+    .select("job_id, completed_at")
+    .eq("work_order_id", input.workOrderId)
+    .eq("status", "completed");
+  if (error) throw error;
+
+  const scopeHash = computeQcScopeHash(
+    (completedJobs ?? []).map((job) => ({
+      jobId: job.job_id as string,
+      completedAt: (job.completed_at as string | null) ?? null,
+    }))
+  );
+
+  const { error: rpcError } = await admin.rpc("workflow_v2_record_qc_attempt", {
+    p_work_order_id: input.workOrderId,
+    p_actor_user_id: input.actorUserId,
+    p_outcome: input.outcome,
+    p_scope_hash: scopeHash,
+    p_notes: input.notes,
+    p_checklist: null,
+    p_rework_job_ids: input.reworkJobIds ?? null,
+    p_idempotency_key: `qc:${input.workOrderId}:${input.outcome}:${scopeHash}`,
+  });
+  if (rpcError) throw new Error(toRpcErrorCode(rpcError));
+}
+
 export async function passPeerQualityCheck(
   workOrderId: string,
   notes?: string | null
@@ -332,28 +430,84 @@ export async function passPeerQualityCheck(
     throw new Error("FOREIGN_LOCATION");
   }
 
-  if (canRunQualityCheck(user.role)) {
-    await completeQualityCheck(workOrderId, notes);
+  const useV2 = v2WritesEnabled(readWorkflowV2Flags());
+  const isFrontOffice = canRunQualityCheck(user.role);
+
+  if (!isFrontOffice) {
+    if (workOrder.quality_check_assigned_to !== user.user_id) {
+      throw new Error("QC_NOT_ASSIGNED_TO_YOU");
+    }
+    if (workOrder.status !== "quality_check") {
+      throw new Error("INVALID_STATUS");
+    }
+
+    const { data: jobs, error: jobsError } = await supabase
+      .from("job")
+      .select("assigned_technician_id, status")
+      .eq("work_order_id", workOrderId);
+    if (jobsError) throw jobsError;
+    const worked = (jobs ?? []).some(
+      (job: { assigned_technician_id: string | null; status: string }) =>
+        job.status === "completed" && job.assigned_technician_id === user.user_id
+    );
+    if (worked) throw new Error("CANNOT_QC_OWN_WORK");
+  }
+
+  if (useV2) {
+    // Legacy parity: terminal work orders reject QC writes.
+    if (workOrder.status === "completed" || workOrder.status === "cancelled") {
+      throw new Error("WORK_ORDER_LOCKED");
+    }
+
+    // Same gate the legacy completeQualityCheck enforces: nothing passes QC
+    // while active work remains open.
+    const { data: gateJobs, error: gateError } = await supabase
+      .from("job")
+      .select("status")
+      .eq("work_order_id", workOrderId);
+    if (gateError) throw gateError;
+    const activeJobs = (gateJobs ?? []).filter(
+      (job: { status: string }) => job.status !== "cancelled" && job.status !== "declined"
+    );
+    if (activeJobs.length === 0) throw new Error("NO_ACTIVE_JOBS");
+    if (activeJobs.some((job: { status: string }) => job.status !== "completed")) {
+      throw new Error("JOBS_NOT_COMPLETE");
+    }
+
+    const trimmedNotes = notes?.trim() || null;
+    await recordQcAttemptV2({
+      workOrderId,
+      actorUserId: user.user_id,
+      outcome: "passed",
+      notes: trimmedNotes,
+    });
+
+    await addTimelineEvent(supabase, {
+      work_order_id: workOrderId,
+      user_id: user.user_id,
+      event_type: TimelineEventType.QUALITY_CHECK_COMPLETED,
+      entity_type: "work_order",
+      entity_id: workOrderId,
+      description: "Quality check completed",
+      new_value: { quality_check_notes: trimmedNotes },
+    });
+    await addAuditLog(supabase, {
+      actor_user_id: user.user_id,
+      location_id: workOrder.location_id,
+      action: "quality_check_completed",
+      entity_type: "work_order",
+      entity_id: workOrderId,
+      description: "Quality check completed",
+      new_value: { quality_check_notes: trimmedNotes },
+    });
+    await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
     return;
   }
 
-  if (workOrder.quality_check_assigned_to !== user.user_id) {
-    throw new Error("QC_NOT_ASSIGNED_TO_YOU");
+  if (isFrontOffice) {
+    await completeQualityCheck(workOrderId, notes);
+    return;
   }
-  if (workOrder.status !== "quality_check") {
-    throw new Error("INVALID_STATUS");
-  }
-
-  const { data: jobs, error: jobsError } = await supabase
-    .from("job")
-    .select("assigned_technician_id, status")
-    .eq("work_order_id", workOrderId);
-  if (jobsError) throw jobsError;
-  const worked = (jobs ?? []).some(
-    (job: { assigned_technician_id: string | null; status: string }) =>
-      job.status === "completed" && job.assigned_technician_id === user.user_id
-  );
-  if (worked) throw new Error("CANNOT_QC_OWN_WORK");
 
   await completeQualityCheck(workOrderId, notes, { allowPeerTechnician: true });
 }
@@ -409,30 +563,39 @@ export async function failPeerQualityCheck(
     (job: { status: string }) => job.status === "completed"
   );
 
-  for (const job of completedJobs) {
-    const { error: jobError } = await supabase
-      .from("job")
+  if (v2WritesEnabled(readWorkflowV2Flags())) {
+    // One transaction: immutable failed attempt + targeted rework reopen
+    // (original completion timestamps preserved) + quality fields cleared.
+    await recordQcAttemptV2({
+      workOrderId,
+      actorUserId: user.user_id,
+      outcome: "failed",
+      notes: trimmed,
+      reworkJobIds: completedJobs.map((job) => (job as { job_id: string }).job_id),
+    });
+  } else {
+    // Rework reopens jobs WITHOUT erasing when they were originally
+    // started/completed — that history is evidence for the fail record.
+    for (const job of completedJobs) {
+      const { error: jobError } = await supabase
+        .from("job")
+        .update(buildLegacyReworkJobUpdate(now))
+        .eq("job_id", (job as { job_id: string }).job_id);
+      if (jobError) throw jobError;
+    }
+
+    const { error: woError } = await supabase
+      .from("work_order")
       .update({
-        status: "ready_to_start",
-        completed_at: null,
-        started_at: null,
+        quality_checked_at: null,
+        quality_checked_by_user_id: null,
+        quality_check_notes: null,
+        quality_check_assigned_to: null,
         updated_at: now,
       })
-      .eq("job_id", (job as { job_id: string }).job_id);
-    if (jobError) throw jobError;
+      .eq("work_order_id", workOrderId);
+    if (woError) throw woError;
   }
-
-  const { error: woError } = await supabase
-    .from("work_order")
-    .update({
-      quality_checked_at: null,
-      quality_checked_by_user_id: null,
-      quality_check_notes: null,
-      quality_check_assigned_to: null,
-      updated_at: now,
-    })
-    .eq("work_order_id", workOrderId);
-  if (woError) throw woError;
 
   await createAdminFlag({
     workOrderId,

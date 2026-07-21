@@ -32,9 +32,17 @@ import {
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import {
+  isRecommendationOpenForEstimate,
   listOutstandingRecommendationsForMotorcycle,
+  listRecommendationEstimateLines,
   listRecommendationsForWorkOrder,
 } from "@/lib/services/recommendations";
+import {
+  getLiveEstimateForWorkOrder,
+  listEstimateVersionHistory,
+  type EstimateVersionView,
+} from "@/lib/services/estimates";
+import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
 import { listPartsForWorkOrder } from "@/lib/services/parts";
 import { listIntakePhotos } from "@/lib/services/photos";
 import { listTechnicianNotes } from "@/lib/services/notes";
@@ -49,7 +57,10 @@ import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
 import { AgreementFollowUpNotice } from "@/components/work_orders/AgreementFollowUpNotice";
 import { ComingSoonPanel, WorkOrderTabs } from "@/components/work_orders/WorkOrderTabs";
-import { WORK_ORDER_TABS, type WorkOrderTabId } from "@/lib/workOrders/tabs";
+import { resolveWorkOrderTabId, type WorkOrderTabId } from "@/lib/workOrders/tabs";
+import { EstimateJobsWorkspace } from "@/components/estimates/EstimateJobsWorkspace";
+import type { EstimateVersionHistoryEntry } from "@/components/estimates/EstimateVersionHistory";
+import type { WorkspaceJob, WorkspacePart } from "@/components/estimates/workspaceModel";
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
 import { ServiceInfoTab } from "@/components/work_orders/ServiceInfoTab";
 import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
@@ -79,8 +90,14 @@ import {
 import {
   convertRecommendationAction,
   createRecommendationAction,
+  sendRecommendationEstimateAction,
   updateRecommendationStatusAction,
 } from "@/app/(app)/work_orders/recommendation-actions";
+import {
+  addRecommendationToEstimateAction,
+  confirmEstimateAction,
+  presentEstimateAction,
+} from "@/app/(app)/work_orders/estimate-actions";
 import {
   addPartAction,
   updatePartPriceAction,
@@ -110,10 +127,6 @@ import { floorTechWorkOrderRedirect } from "@/lib/technician/assignmentHref";
 
 export const dynamic = "force-dynamic";
 
-function isTabId(value: string | undefined): value is WorkOrderTabId {
-  return WORK_ORDER_TABS.some((tab) => tab.id === value);
-}
-
 export default async function WorkOrderDetailPage({
   params,
   searchParams,
@@ -136,7 +149,8 @@ export default async function WorkOrderDetailPage({
     intake,
     follow_up: followUpParam,
   } = await searchParams;
-  const activeTab: WorkOrderTabId = isTabId(tabParam) ? tabParam : "overview";
+  // Old ?tab=jobs / ?tab=recommendations bookmarks route to Estimate & Jobs.
+  const activeTab: WorkOrderTabId = resolveWorkOrderTabId(tabParam);
   const intakeFollowUp: IntakeFollowUp | undefined =
     followUpParam === "signature" || followUpParam === "paper_copy"
       ? followUpParam
@@ -155,15 +169,18 @@ export default async function WorkOrderDetailPage({
   if (!detail) notFound();
 
   const foreign = detail.is_foreign_location;
-  const needsTechs = !foreign && (activeTab === "overview" || activeTab === "jobs");
-  const needsServices =
-    !foreign && (activeTab === "jobs" || activeTab === "recommendations");
+  const isEstimateTab = activeTab === "estimate";
+  const needsTechs = !foreign && (activeTab === "overview" || isEstimateTab);
+  const needsServices = !foreign && isEstimateTab;
   const needsInspection =
-    activeTab === "overview" ||
-    activeTab === "inspection" ||
-    activeTab === "jobs" ||
-    (activeTab === "recommendations" && Boolean(fromResultId));
-  const needsParts = activeTab === "overview" || activeTab === "parts";
+    activeTab === "overview" || activeTab === "inspection" || isEstimateTab;
+  const needsParts = activeTab === "overview" || activeTab === "parts" || isEstimateTab;
+
+  // The V2 workspace serves only when writes are enabled; legacy mode keeps
+  // the old Jobs + Recommendations content (merged onto this tab) unchanged.
+  const workflowFlags = readWorkflowV2Flags();
+  const showV2Workspace =
+    isEstimateTab && v2WritesEnabled(workflowFlags) && canViewPricing(user.role);
 
   const [
     photos,
@@ -172,6 +189,7 @@ export default async function WorkOrderDetailPage({
     inspection,
     recommendations,
     outstandingRecommendations,
+    recommendationEstimateLines,
     parts,
     notes,
     timeline,
@@ -179,17 +197,18 @@ export default async function WorkOrderDetailPage({
     agreement,
     agreementTemplate,
     communicationLogs,
+    liveEstimate,
+    estimateVersionRows,
   ] = await Promise.all([
     listIntakePhotos(work_order_id),
     needsTechs ? listTechniciansForActiveLocation() : Promise.resolve([]),
     needsServices ? listServices({ includeInactive: false }) : Promise.resolve([]),
     needsInspection ? getInspectionForWorkOrder(work_order_id) : Promise.resolve(null),
-    activeTab === "recommendations"
-      ? listRecommendationsForWorkOrder(work_order_id)
-      : Promise.resolve([]),
-    activeTab === "recommendations"
+    isEstimateTab ? listRecommendationsForWorkOrder(work_order_id) : Promise.resolve([]),
+    isEstimateTab
       ? listOutstandingRecommendationsForMotorcycle(detail.motorcycle_id, work_order_id)
       : Promise.resolve([]),
+    isEstimateTab ? listRecommendationEstimateLines(work_order_id) : Promise.resolve([]),
     needsParts ? listPartsForWorkOrder(work_order_id) : Promise.resolve([]),
     activeTab === "notes" ? listTechnicianNotes(work_order_id) : Promise.resolve([]),
     activeTab === "timeline" ? listTimelineEvents(work_order_id) : Promise.resolve([]),
@@ -199,6 +218,18 @@ export default async function WorkOrderDetailPage({
     activeTab === "contract" ? getDropOffAgreement(work_order_id) : Promise.resolve(null),
     activeTab === "contract" ? getActiveAgreementTemplate() : Promise.resolve(null),
     activeTab === "messages" ? listCommunicationLog(work_order_id) : Promise.resolve([]),
+    showV2Workspace
+      ? getLiveEstimateForWorkOrder(work_order_id).catch((error: unknown) => {
+          console.warn("live estimate read skipped", error);
+          return null as EstimateVersionView | null;
+        })
+      : Promise.resolve(null),
+    showV2Workspace
+      ? listEstimateVersionHistory(work_order_id).catch((error: unknown) => {
+          console.warn("estimate history read skipped", error);
+          return [];
+        })
+      : Promise.resolve([]),
   ]);
 
   const canAssign = canAssignTechnician(user.role);
@@ -260,6 +291,84 @@ export default async function WorkOrderDetailPage({
             : "future_attention",
       }
     : null;
+
+  const workspaceJobs: WorkspaceJob[] = detail.jobs.map((job) => ({
+    job_id: job.job_id,
+    title: job.service_name_snapshot,
+    status: job.status,
+    standard_price_snapshot:
+      job.standard_price_snapshot == null ? null : Number(job.standard_price_snapshot),
+    assigned_technician_name: job.assigned_technician
+      ? `${job.assigned_technician.first_name} ${job.assigned_technician.last_name}`
+      : null,
+  }));
+  const workspaceParts: WorkspacePart[] = parts.map((part) => ({
+    part_id: part.part_id,
+    job_id: part.job_id,
+    part_name: part.part_name,
+    quantity: Number(part.quantity ?? 0),
+    unit_price: part.unit_price == null ? null : Number(part.unit_price),
+    status: part.status,
+  }));
+  const estimateVersionHistory: EstimateVersionHistoryEntry[] = (
+    estimateVersionRows as Array<Record<string, unknown>>
+  ).map((row) => ({
+    estimate_version_id: String(row.estimate_version_id),
+    version_no: Number(row.version_no),
+    status: String(row.status),
+    subtotal_cents: Number(row.subtotal_cents ?? 0),
+    tax_cents: Number(row.tax_cents ?? 0),
+    total_cents: Number(row.total_cents ?? 0),
+    presented_at: (row.presented_at as string | null) ?? null,
+    finalized_at: (row.finalized_at as string | null) ?? null,
+    created_at: String(row.created_at ?? ""),
+  }));
+  const openRecommendations = recommendations.filter(isRecommendationOpenForEstimate);
+
+  const legacyJobsContent = (
+    <JobsTab
+      jobs={detail.jobs}
+      services={services}
+      technicians={technicians}
+      readOnly={detail.is_foreign_location}
+      canAdd={canAdd}
+      canApprove={canApprove}
+      canEdit={canEdit}
+      canComplete={canComplete}
+      canViewPricing={canSeePricing}
+      currentUserId={user.user_id}
+      inspectionComplete={Boolean(inspection?.completed_at)}
+      inspectionHref={`/work_orders/${detail.work_order_id}/inspection`}
+      addAction={addJobAction.bind(null, detail.work_order_id)}
+      assignActionFor={assignJobTechnicianAction.bind(null, detail.work_order_id)}
+      statusActionFor={updateJobStatusAction.bind(null, detail.work_order_id)}
+      approveActionFor={approveJobAction.bind(null, detail.work_order_id)}
+      declineActionFor={declineJobAction.bind(null, detail.work_order_id)}
+      cancelActionFor={cancelJobAction.bind(null, detail.work_order_id)}
+    />
+  );
+
+  const legacyRecommendationsContent = (
+    <RecommendationsTab
+      recommendations={recommendations}
+      outstandingRecommendations={outstandingRecommendations}
+      estimateLines={recommendationEstimateLines}
+      services={services}
+      readOnly={detail.is_foreign_location}
+      canCreate={canRecommend}
+      canUpdateStatus={canApprove || canRecommend}
+      canConvert={canConvert}
+      createAction={createRecommendationAction.bind(null, detail.work_order_id)}
+      statusActionFor={updateRecommendationStatusAction.bind(null, detail.work_order_id)}
+      convertActionFor={convertRecommendationAction.bind(null, detail.work_order_id)}
+      sendEstimateAction={sendRecommendationEstimateAction.bind(
+        null,
+        detail.work_order_id
+      )}
+      fromResultId={fromResultId ?? null}
+      fromResultDefaults={fromResultDefaults}
+    />
+  );
 
   return (
     <div className="page-stack page-stack--narrow">
@@ -352,27 +461,56 @@ export default async function WorkOrderDetailPage({
         </>
       ) : null}
 
-      {activeTab === "jobs" ? (
-        <JobsTab
-          jobs={detail.jobs}
-          services={services}
-          technicians={technicians}
-          readOnly={detail.is_foreign_location}
-          canAdd={canAdd}
-          canApprove={canApprove}
-          canEdit={canEdit}
-          canComplete={canComplete}
-          canViewPricing={canSeePricing}
-          currentUserId={user.user_id}
-          inspectionComplete={Boolean(inspection?.completed_at)}
-          inspectionHref={`/work_orders/${detail.work_order_id}/inspection`}
-          addAction={addJobAction.bind(null, detail.work_order_id)}
-          assignActionFor={assignJobTechnicianAction.bind(null, detail.work_order_id)}
-          statusActionFor={updateJobStatusAction.bind(null, detail.work_order_id)}
-          approveActionFor={approveJobAction.bind(null, detail.work_order_id)}
-          declineActionFor={declineJobAction.bind(null, detail.work_order_id)}
-          cancelActionFor={cancelJobAction.bind(null, detail.work_order_id)}
-        />
+      {activeTab === "estimate" ? (
+        showV2Workspace ? (
+          <div className="flex flex-col gap-4">
+            <EstimateJobsWorkspace
+              jobs={workspaceJobs}
+              parts={workspaceParts}
+              openRecommendations={openRecommendations}
+              liveEstimate={liveEstimate}
+              versionHistory={estimateVersionHistory}
+              readOnly={detail.is_foreign_location}
+              writesEnabled
+              canPresent={canConvert}
+              canConfirm={canApprove}
+              presentAction={presentEstimateAction.bind(null, detail.work_order_id)}
+              confirmAction={confirmEstimateAction.bind(null, detail.work_order_id)}
+              addToEstimateActionFor={addRecommendationToEstimateAction.bind(
+                null,
+                detail.work_order_id
+              )}
+              recommendationStatusActionFor={updateRecommendationStatusAction.bind(
+                null,
+                detail.work_order_id
+              )}
+            />
+            <details className="rounded border border-[var(--border)] bg-white">
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[var(--foreground)]">
+                Job management (add, assign, start, complete)
+              </summary>
+              <div className="border-t border-[var(--border)] p-4">
+                {legacyJobsContent}
+              </div>
+            </details>
+            <details
+              className="rounded border border-[var(--border)] bg-white"
+              open={Boolean(fromResultId)}
+            >
+              <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-[var(--foreground)]">
+                All advisories (legacy view)
+              </summary>
+              <div className="border-t border-[var(--border)] p-4">
+                {legacyRecommendationsContent}
+              </div>
+            </details>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {legacyJobsContent}
+            {legacyRecommendationsContent}
+          </div>
+        )
       ) : null}
 
       {activeTab === "inspection" ? (
@@ -409,26 +547,6 @@ export default async function WorkOrderDetailPage({
         ) : (
           <ComingSoonPanel title="Inspection" />
         )
-      ) : null}
-
-      {activeTab === "recommendations" ? (
-        <RecommendationsTab
-          recommendations={recommendations}
-          outstandingRecommendations={outstandingRecommendations}
-          services={services}
-          readOnly={detail.is_foreign_location}
-          canCreate={canRecommend}
-          canUpdateStatus={canApprove || canRecommend}
-          canConvert={canConvert}
-          createAction={createRecommendationAction.bind(null, detail.work_order_id)}
-          statusActionFor={updateRecommendationStatusAction.bind(
-            null,
-            detail.work_order_id
-          )}
-          convertActionFor={convertRecommendationAction.bind(null, detail.work_order_id)}
-          fromResultId={fromResultId ?? null}
-          fromResultDefaults={fromResultDefaults}
-        />
       ) : null}
 
       {activeTab === "parts" ? (

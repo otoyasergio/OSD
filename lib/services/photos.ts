@@ -22,6 +22,7 @@ export type IntakePhoto = {
   category: PhotoCategory;
   notes: string | null;
   inspection_result_id: string | null;
+  job_id: string | null;
   created_at: string;
   signed_url?: string | null;
   uploaded_by?: {
@@ -32,7 +33,7 @@ export type IntakePhoto = {
 };
 
 const COLUMNS =
-  "photo_id, work_order_id, uploaded_by_user_id, storage_path, photo_url, category, notes, inspection_result_id, created_at";
+  "photo_id, work_order_id, uploaded_by_user_id, storage_path, photo_url, category, notes, inspection_result_id, job_id, created_at";
 
 const BUCKET = "intake-photos";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -303,7 +304,13 @@ export async function uploadIntakePhoto(
     throw new Error("INSPECTION_RESULT_NOT_FOUND");
   }
 
-  if (parsed.category === "job_proof" && !parsed.job_id) {
+  // job_proof is the after photo that satisfies the completion gate;
+  // job_work is the in-progress work journal and never counts as proof.
+  // Both must be pinned to a job.
+  if (
+    (parsed.category === "job_proof" || parsed.category === "job_work") &&
+    !parsed.job_id
+  ) {
     throw new Error("JOB_NOT_FOUND");
   }
 

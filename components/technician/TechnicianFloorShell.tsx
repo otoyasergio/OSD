@@ -14,7 +14,9 @@ import {
   type ReactNode,
 } from "react";
 import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
+import { createClient } from "@/lib/database/supabase-browser";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import type { FloorOsSurface, TechnicianFloorOs } from "@/lib/services/technicianFloor";
 import type { DocketItem } from "@/lib/services/technicianDocket";
 import type { ReadyForPickupItem } from "@/lib/services/readyForPickup";
@@ -41,10 +43,12 @@ import {
   failSafetyCheckAction,
   passSafetyCheckAction,
 } from "@/app/(app)/work_orders/safety-actions";
+import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import {
-  techJobPacketHref,
+  technicianClosePacketHref,
+  technicianFloorHref,
   type JobPacketSection,
-} from "@/lib/technician/assignmentHref";
+} from "@/lib/technician/routeState";
 import type { JobPacket } from "@/lib/services/jobPacket";
 import type { IntakePhoto } from "@/lib/services/photos";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
@@ -59,17 +63,17 @@ import {
   isPitBoardStepTappable,
   type PitBoardStep,
 } from "@/lib/technician/pitBoard";
+import {
+  buildFloorActionModel,
+  isTerminalWorkOrderStatus,
+  splitDocketByWait,
+  waitOwnerDisplayLabel,
+  type FloorActionModel,
+} from "@/lib/technician/floorActionModel";
 import { buildFloorCompletionSummary } from "@/lib/technician/floorCompletionSummary";
 
 export type { FloorStage };
 export { deriveDefaultStage };
-
-function closePacketHref(workOrderId: string, jobId: string | null | undefined): string {
-  const params = new URLSearchParams();
-  params.set("wo", workOrderId);
-  if (jobId) params.set("job", jobId);
-  return `/technician?${params.toString()}`;
-}
 
 function formatTimer(secs: number): string {
   const h = Math.floor(secs / 3600);
@@ -295,20 +299,28 @@ const PitPhotoField = forwardRef<
     onPhotoReady?.(label);
   }
 
-  function applyPickedFile(input: HTMLInputElement) {
-    const file = input.files?.[0] ?? null;
+  async function applyPickedFile(input: HTMLInputElement) {
+    const original = input.files?.[0] ?? null;
     const target = fileInputRef.current;
     if (!target) return;
-    if (!file) {
+    if (!original) {
       target.value = "";
       notifyPhotoReady(null);
       return;
     }
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    target.files = transfer.files;
-    notifyPhotoReady(file.name);
-    input.value = "";
+    try {
+      // Clone/compress before clearing the input — iOS library File refs can
+      // become invalid as soon as the input value is reset.
+      const file = await preparePhotoFileForUpload(original);
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      target.files = transfer.files;
+      notifyPhotoReady(file.name);
+    } catch {
+      notifyPhotoReady(null);
+    } finally {
+      input.value = "";
+    }
   }
 
   const dock = variant === "dock";
@@ -340,7 +352,7 @@ const PitPhotoField = forwardRef<
         className="photo-file-input"
         tabIndex={-1}
         aria-label="Add photo"
-        onChange={(event) => applyPickedFile(event.currentTarget)}
+        onChange={(event) => void applyPickedFile(event.currentTarget)}
       />
       <input
         ref={libraryInputRef}
@@ -349,7 +361,7 @@ const PitPhotoField = forwardRef<
         className="photo-file-input"
         tabIndex={-1}
         aria-label="Choose from library"
-        onChange={(event) => applyPickedFile(event.currentTarget)}
+        onChange={(event) => void applyPickedFile(event.currentTarget)}
       />
       {dock ? null : (
         <>
@@ -394,6 +406,16 @@ function PitDockIcon({ children, label }: { children: ReactNode; label: string }
 }
 
 const WORK_NOTES_PREVIEW = 1;
+
+/** Notes arrive newest-first; preview must take from the FRONT of the list. */
+function latestNotesPreview<T extends { created_at: string }>(
+  notes: T[],
+  limit: number
+): T[] {
+  return [...notes]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, limit);
+}
 
 type PerformWorkPanel = "work" | "parts" | "notes";
 
@@ -441,9 +463,32 @@ function StepRow({
 
 type Overlay = null | "park" | "fail" | "swap" | "proof" | "work" | "qc_pick";
 
+const WORK_STAGES: Array<{ stage: FloorStage; label: string }> = [
+  { stage: "inspect", label: "Inspect" },
+  { stage: "work", label: "Work" },
+  { stage: "proof", label: "Proof" },
+  { stage: "done", label: "Done" },
+];
+
+function stepMatchesStage(step: PitBoardStep, stage: FloorStage): boolean {
+  switch (stage) {
+    case "inspect":
+      return step.kind === "inspect";
+    case "work":
+      return step.kind === "work" || step.kind === "checklist" || step.kind === "part";
+    case "proof":
+      return step.kind === "proof";
+    case "done":
+      return step.kind === "complete";
+    default:
+      return false;
+  }
+}
+
 export function TechnicianFloorShell({
   floor,
-  stage: _stage,
+  stage,
+  viewerUserId,
   docketItems,
   readyForPickup,
   panel,
@@ -455,6 +500,8 @@ export function TechnicianFloorShell({
 }: {
   floor: TechnicianFloorOs;
   stage?: FloorStage;
+  /** Signed-in tech — scopes the realtime job subscription. */
+  viewerUserId?: string;
   docketItems: DocketItem[];
   readyForPickup: ReadyForPickupItem[];
   panel?: "packet" | null;
@@ -466,6 +513,10 @@ export function TechnicianFloorShell({
 }) {
   const router = useRouter();
   const surface = floor.selected;
+  // The stage param controls the visible work-surface emphasis; without it we
+  // fall back to the derived default for this surface.
+  const activeStage: FloorStage | null =
+    stage ?? (surface ? deriveDefaultStage(surface) : null);
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [qcChecks, setQcChecks] = useState<boolean[]>([false, false, false]);
   const [note, setNote] = useState<string | null>(null);
@@ -636,6 +687,52 @@ export function TechnicianFloorShell({
     };
   }, [scheduleRefresh]);
 
+  // Stable membership key so we only resubscribe when the docket changes.
+  const docketWoKey = useMemo(() => {
+    const ids = new Set(docketItems.map((item) => item.work_order_id));
+    if (surface) ids.add(surface.work_order_id);
+    return [...ids].sort().join(",");
+  }, [docketItems, surface]);
+
+  useEffect(() => {
+    // Live invalidation: cancelled/held/reassigned work disappears from
+    // already-open floors without a manual reload. Refreshes are debounced
+    // and paused while an overlay sheet is open.
+    if (!viewerUserId) return;
+    const supabase = createClient();
+    const channel = supabase.channel(`tech-floor:${viewerUserId}`);
+    channel.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "job",
+        filter: `assigned_technician_id=eq.${viewerUserId}`,
+      },
+      () => {
+        scheduleRefresh();
+      }
+    );
+    if (docketWoKey.length > 0) {
+      channel.on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "work_order",
+          filter: `work_order_id=in.(${docketWoKey})`,
+        },
+        () => {
+          scheduleRefresh();
+        }
+      );
+    }
+    channel.subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [viewerUserId, docketWoKey, scheduleRefresh]);
+
   const selectedKey = useMemo(() => {
     if (!surface) return null;
     if (surface.is_qc) return `qc-${surface.work_order_id}`;
@@ -643,9 +740,8 @@ export function TechnicianFloorShell({
     return `work-order-${surface.work_order_id}`;
   }, [surface]);
 
-  const waitingItems = docketItems.filter(
-    (item) => item.board_status === "waiting" || item.board_stamp === "HOLD"
-  );
+  // A bike appears in exactly one list: working or honestly waiting.
+  const { workNow: workNowItems, waiting: waitingItems } = splitDocketByWait(docketItems);
   const swapTargets = docketItems.filter(
     (item) =>
       item.job_id &&
@@ -655,7 +751,6 @@ export function TechnicianFloorShell({
         item.board_status === "offered")
   );
 
-  const go = surface?.go;
   const onBench = surface?.board_status === "bench";
   const parked = surface?.board_status === "waiting";
   const openPerformWorkStep = surface?.steps.find(
@@ -673,8 +768,6 @@ export function TechnicianFloorShell({
     (surface?.steps.length ?? 0) > 0;
 
   const qcAllDone = qcChecks.every(Boolean);
-  const goEnabled =
-    go?.action === "pass_qc" ? qcAllDone && !passQcPending : Boolean(go?.enabled);
 
   // Park actions manage their own disabled state — don't lock the whole floor.
   const pending =
@@ -690,6 +783,33 @@ export function TechnicianFloorShell({
     passQcPending ||
     failQcPending;
 
+  // One honest next action (or an explicit wait with a named owner).
+  const model: FloorActionModel | null = surface
+    ? buildFloorActionModel({
+        surface: surface.is_safety
+          ? "safety"
+          : surface.is_qc && !surface.job_id
+            ? "qc"
+            : "job",
+        job_status: surface.job_status,
+        work_order_status: surface.wo_status,
+        floor_acknowledged_at: surface.floor_acknowledged_at,
+        floor_parked_at: surface.floor_parked_at,
+        floor_park_reason: surface.floor_park_reason,
+        job_timer_running: surface.job_timer_running,
+        steps: surface.steps,
+        complete_gate_ok: surface.complete_gate_ok,
+        qc_checks_done: qcAllDone,
+        qc_assignee_is_me: surface.qc_assignee_is_me,
+        can_safety: surface.can_safety,
+        has_swap_targets: swapTargets.length > 0,
+        pending_action: pending,
+      })
+    : null;
+  const parkControl = model?.secondary.find((control) => control.action === "park");
+  const swapControl = model?.secondary.find((control) => control.action === "swap");
+  const failQcControl = model?.secondary.find((control) => control.action === "fail_qc");
+
   function dispatchFloorAction(
     action: (payload: FormData) => void,
     fields: Record<string, string>
@@ -704,40 +824,41 @@ export function TechnicianFloorShell({
   }
 
   function runGo() {
-    if (!surface || !go) return;
-    if (go.action === "acknowledge" && surface.job_id) {
+    if (!surface || !model || !model.primary.enabled) return;
+    const primary = model.primary;
+    if (primary.action === "acknowledge" && surface.job_id) {
       dispatchFloorAction(ackAction, {
         job_id: surface.job_id,
         work_order_id: surface.work_order_id,
       });
       return;
     }
-    if (go.action === "pull_onto_bench" && surface.job_id) {
+    if (primary.action === "pull_onto_bench" && surface.job_id) {
       dispatchFloorAction(pullAction, {
         job_id: surface.job_id,
         work_order_id: surface.work_order_id,
       });
       return;
     }
-    if (go.action === "resume" && surface.job_id) {
+    if (primary.action === "resume" && surface.job_id) {
       dispatchFloorAction(resumeAction, {
         job_id: surface.job_id,
         work_order_id: surface.work_order_id,
       });
       return;
     }
-    if (go.action === "complete" && surface.job_id) {
+    if (primary.action === "complete" && surface.job_id) {
       setOverlay("qc_pick");
       return;
     }
-    if (go.action === "pass_qc") {
+    if (primary.action === "pass_qc") {
       dispatchFloorAction(passQcAction, {
         work_order_id: surface.work_order_id,
       });
       return;
     }
-    if (go.action === "advance_step" && go.step) {
-      advanceStep(go.step);
+    if (primary.action === "advance_step" && primary.step) {
+      advanceStep(primary.step);
     }
   }
 
@@ -804,6 +925,10 @@ export function TechnicianFloorShell({
 
   function stepToggleHandler(step: PitBoardStep): (() => void) | undefined {
     if (!surface) return undefined;
+    // Held / closed work orders are read-only — front desk owns them.
+    if (surface.wo_status === "on_hold" || isTerminalWorkOrderStatus(surface.wo_status)) {
+      return undefined;
+    }
     if (parked) {
       if (!isPitBoardStepActionableWhileParked(step)) return undefined;
       if (step.kind === "checklist" && step.state === "open") {
@@ -832,23 +957,18 @@ export function TechnicianFloorShell({
 
       <div className="pit-layout">
         <aside className="pit-rail">
-          <h2 className="pit-rail-title">Your line</h2>
-          <TechnicianDocketList items={docketItems} selectedKey={selectedKey} />
+          <section className="pit-rail-group" aria-label="Work now">
+            <h2 className="pit-rail-title">Work now</h2>
+            {workNowItems.length > 0 ? (
+              <TechnicianDocketList items={workNowItems} selectedKey={selectedKey} />
+            ) : (
+              <p className="floor-muted">Nothing to wrench right now.</p>
+            )}
+          </section>
           {waitingItems.length > 0 ? (
-            <section className="pit-wait-panel" aria-label="Who owns the wait">
-              <h3 className="pit-rail-title">Who owns the wait</h3>
-              <ul className="pit-wait-list">
-                {waitingItems.map((item) => (
-                  <li key={item.key} className="pit-wait-row">
-                    <p className="pit-wait-title">
-                      {item.park_reason_label || "Waiting"} — {item.motorcycle_label}
-                    </p>
-                    <p className="pit-wait-sub">
-                      {item.wait_owner_label || "Front desk"}
-                    </p>
-                  </li>
-                ))}
-              </ul>
+            <section className="pit-rail-group" aria-label="Waiting">
+              <h2 className="pit-rail-title">Waiting</h2>
+              <TechnicianDocketList items={waitingItems} selectedKey={selectedKey} />
             </section>
           ) : null}
         </aside>
@@ -858,15 +978,23 @@ export function TechnicianFloorShell({
             packet ? (
               <JobPacketPanel
                 packet={packet}
-                section={packetSection ?? "notes"}
+                section={packetSection ?? null}
                 photos={packetPhotos ?? []}
                 selectedJobId={packetJobId ?? null}
-                closeHref={closePacketHref(packetWorkOrderId, packetJobId)}
-                stage="done"
+                closeHref={technicianClosePacketHref({
+                  workOrderId: packetWorkOrderId,
+                  jobId: packetJobId,
+                  stage,
+                })}
+                stage={stage ?? null}
               />
             ) : (
               <JobPacketErrorState
-                backHref={closePacketHref(packetWorkOrderId, packetJobId)}
+                backHref={technicianClosePacketHref({
+                  workOrderId: packetWorkOrderId,
+                  jobId: packetJobId,
+                  stage,
+                })}
               />
             )
           ) : !surface ? (
@@ -878,12 +1006,33 @@ export function TechnicianFloorShell({
             </div>
           ) : (
             <>
+              {model ? (
+                model.primary.enabled ? (
+                  <p className="pit-next-banner" role="status">
+                    <span className="pit-next-banner-kicker">NEXT</span>
+                    {model.primary.label}
+                  </p>
+                ) : (
+                  <p className="pit-next-banner pit-next-banner--wait" role="status">
+                    <span className="pit-next-banner-kicker">
+                      {model.waitReason ? "WAITING" : model.stateLabel.toUpperCase()}
+                    </span>
+                    {model.waitReason ?? model.primary.disabledReason ?? ""}
+                    {model.waitOwner ? (
+                      <span className="pit-next-banner-owner">
+                        {" · "}
+                        {waitOwnerDisplayLabel(model.waitOwner)}
+                      </span>
+                    ) : null}
+                  </p>
+                )
+              ) : null}
               <div className="pit-surface-header">
                 <div className="pit-surface-heading">
                   <Link
                     href={techJobPacketHref(surface.work_order_id, {
                       jobId: surface.job_id ?? undefined,
-                      section: "notes",
+                      stage,
                     })}
                     className="pit-surface-heading-link"
                     title="Open notes & intake photos"
@@ -904,6 +1053,7 @@ export function TechnicianFloorShell({
                       href={techJobPacketHref(surface.work_order_id, {
                         jobId: surface.job_id ?? undefined,
                         section: "notes",
+                        stage,
                       })}
                       className="pit-header-access-link"
                     >
@@ -913,6 +1063,7 @@ export function TechnicianFloorShell({
                       href={techJobPacketHref(surface.work_order_id, {
                         jobId: surface.job_id ?? undefined,
                         section: "photos",
+                        stage,
                       })}
                       className="pit-header-access-link"
                     >
@@ -926,6 +1077,30 @@ export function TechnicianFloorShell({
                   </span>
                 ) : null}
               </div>
+
+              {surface.job_id && !surface.is_qc && !surface.is_safety ? (
+                <nav className="pit-stage-strip" aria-label="Work surface stage">
+                  {WORK_STAGES.map((entry) => (
+                    <Link
+                      key={entry.stage}
+                      href={technicianFloorHref({
+                        workOrderId: surface.work_order_id,
+                        jobId: surface.job_id,
+                        stage: entry.stage,
+                      })}
+                      className={[
+                        "pit-stage-chip",
+                        activeStage === entry.stage ? "pit-stage-chip--active" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      aria-current={activeStage === entry.stage ? "page" : undefined}
+                    >
+                      {entry.label}
+                    </Link>
+                  ))}
+                </nav>
+              ) : null}
 
               {note ? (
                 <p
@@ -965,7 +1140,10 @@ export function TechnicianFloorShell({
                     .map((job) => (
                       <Link
                         key={job.job_id}
-                        href={`/technician?job=${job.job_id}&wo=${surface.work_order_id}`}
+                        href={technicianFloorHref({
+                          workOrderId: surface.work_order_id,
+                          jobId: job.job_id,
+                        })}
                         className={[
                           "pit-job-chip",
                           job.is_selected ? "pit-job-chip--active" : "",
@@ -1012,7 +1190,15 @@ export function TechnicianFloorShell({
                 ) : showWorkSurface && onBench ? (
                   <div className="pit-steps">
                     {surface.steps.map((step) => {
-                      const nextOpen = surface.steps.find((s) => s.state === "open");
+                      // The stage param steers which open step is emphasised;
+                      // without a matching open step, fall back to the first.
+                      const stageOpen = activeStage
+                        ? surface.steps.find(
+                            (s) => s.state === "open" && stepMatchesStage(s, activeStage)
+                          )
+                        : undefined;
+                      const nextOpen =
+                        stageOpen ?? surface.steps.find((s) => s.state === "open");
                       const active = nextOpen?.id === step.id;
                       return (
                         <StepRow
@@ -1086,6 +1272,7 @@ export function TechnicianFloorShell({
                       href={techJobPacketHref(surface.work_order_id, {
                         jobId: surface.job_id ?? undefined,
                         section: "notes",
+                        stage,
                       })}
                       className="pit-secondary-link"
                     >
@@ -1095,6 +1282,7 @@ export function TechnicianFloorShell({
                       href={techJobPacketHref(surface.work_order_id, {
                         jobId: surface.job_id ?? undefined,
                         section: "photos",
+                        stage,
                       })}
                       className="pit-secondary-link"
                     >
@@ -1125,42 +1313,60 @@ export function TechnicianFloorShell({
 
               <div className="pit-dock">
                 <div className="pit-command">
-                  <button
-                    type="button"
-                    className="pit-cmd pit-cmd--park"
-                    disabled={!onBench || pending}
-                    onClick={() => setOverlay("park")}
-                  >
-                    Park
-                  </button>
-                  <button
-                    type="button"
-                    className="pit-cmd pit-cmd--swap"
-                    disabled={!surface.job_id || swapTargets.length === 0 || pending}
-                    onClick={() => setOverlay("swap")}
-                  >
-                    Swap
-                  </button>
-                  {surface.is_qc && surface.qc_assignee_is_me ? (
+                  {parkControl ? (
+                    <button
+                      type="button"
+                      className="pit-cmd pit-cmd--park"
+                      disabled={!parkControl.enabled}
+                      title={parkControl.disabledReason}
+                      onClick={() => setOverlay("park")}
+                    >
+                      {parkControl.label}
+                    </button>
+                  ) : null}
+                  {swapControl ? (
+                    <button
+                      type="button"
+                      className="pit-cmd pit-cmd--swap"
+                      disabled={!swapControl.enabled}
+                      title={swapControl.disabledReason}
+                      onClick={() => setOverlay("swap")}
+                    >
+                      {swapControl.label}
+                    </button>
+                  ) : null}
+                  {failQcControl ? (
                     <button
                       type="button"
                       className="pit-cmd pit-cmd--fail"
-                      disabled={pending}
+                      disabled={!failQcControl.enabled}
+                      title={failQcControl.disabledReason}
                       onClick={() => setOverlay("fail")}
                     >
                       Fail ✗
                     </button>
                   ) : null}
-                  <button
-                    type="button"
-                    className="pit-go"
-                    disabled={!goEnabled || pending || go?.action === "none"}
-                    onClick={runGo}
-                  >
-                    {go?.label ?? "Go"}
-                  </button>
+                  {model &&
+                  model.primary.action !== "none" &&
+                  model.primary.action !== "pass_safety" ? (
+                    <button
+                      type="button"
+                      className="pit-go"
+                      disabled={!model.primary.enabled}
+                      title={model.primary.disabledReason}
+                      onClick={runGo}
+                    >
+                      {model.primary.label}
+                    </button>
+                  ) : null}
                 </div>
-                {go?.sub ? <p className="pit-dock-sub">{go.sub}</p> : null}
+                {model?.primary.disabledReason ? (
+                  <p className="pit-dock-sub pit-dock-sub--reason" role="status">
+                    {model.primary.disabledReason}
+                  </p>
+                ) : model?.primary.hint ? (
+                  <p className="pit-dock-sub">{model.primary.hint}</p>
+                ) : null}
                 <ActionMessage
                   state={
                     pullState?.error
@@ -1521,24 +1727,23 @@ export function TechnicianFloorShell({
                       {surface.work_brief?.technician_notes &&
                       surface.work_brief.technician_notes.length > 0 ? (
                         <ul className="pit-work-note-list pit-work-note-list--compact">
-                          {surface.work_brief.technician_notes
-                            .slice(-WORK_NOTES_PREVIEW)
-                            .map((techNote) => (
-                              <li
-                                key={techNote.technician_note_id}
-                                className="pit-work-note-item"
-                              >
-                                <p className="pit-work-note-meta">
-                                  {formatDateTime(techNote.created_at)}
-                                  {techNote.author_name
-                                    ? ` · ${techNote.author_name}`
-                                    : ""}
-                                </p>
-                                <p className="pit-work-note-body pit-work-note-body--clamp">
-                                  {techNote.note}
-                                </p>
-                              </li>
-                            ))}
+                          {latestNotesPreview(
+                            surface.work_brief.technician_notes,
+                            WORK_NOTES_PREVIEW
+                          ).map((techNote) => (
+                            <li
+                              key={techNote.technician_note_id}
+                              className="pit-work-note-item"
+                            >
+                              <p className="pit-work-note-meta">
+                                {formatDateTime(techNote.created_at)}
+                                {techNote.author_name ? ` · ${techNote.author_name}` : ""}
+                              </p>
+                              <p className="pit-work-note-body pit-work-note-body--clamp">
+                                {techNote.note}
+                              </p>
+                            </li>
+                          ))}
                         </ul>
                       ) : null}
                       {surface.work_brief?.technician_notes &&
