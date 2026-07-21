@@ -59,11 +59,20 @@ export function useDebouncedRouterRefresh(options: Options = {}) {
     }, delayMsRef.current);
   }, []);
 
+  /** Drop a queued refresh without calling `router.refresh()` (e.g. before an optimistic write). */
+  const cancel = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    pendingRef.current = false;
+  }, []);
+
   useEffect(() => {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
 
-  return { schedule, flush };
+  return { schedule, flush, cancel };
 }

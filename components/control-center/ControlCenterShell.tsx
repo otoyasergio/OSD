@@ -3,6 +3,7 @@
 import { memo, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useNowTick } from "@/lib/client/useNowTick";
 import {
   DndContext,
   DragOverlay,
@@ -103,16 +104,6 @@ function availabilityLabel(value: ControlCenterTech["availability"]) {
   if (value === "available") return "Available";
   if (value === "busy") return "Busy";
   return "Off shift";
-}
-
-function useNowTick(enabled: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!enabled) return;
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [enabled]);
-  return now;
 }
 
 function BikeMedia({ bike }: { bike: ControlCenterBike }) {
@@ -441,12 +432,22 @@ export function ControlCenterShell({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const activeIdRef = useRef<string | null>(null);
+  const isPendingRef = useRef(false);
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
-  const { schedule: scheduleRefresh, flush: flushRefresh } = useDebouncedRouterRefresh({
+  useEffect(() => {
+    isPendingRef.current = isPending;
+  }, [isPending]);
+  const {
+    schedule: scheduleRefresh,
+    flush: flushRefresh,
+    cancel: cancelRefresh,
+  } = useDebouncedRouterRefresh({
     delayMs: 1500,
-    isPaused: () => activeIdRef.current !== null,
+    // Pause while dragging or while a drop action is in flight so a stale
+    // router.refresh cannot overwrite optimistic placement.
+    isPaused: () => activeIdRef.current !== null || isPendingRef.current,
   });
 
   const syncKey = useMemo(
@@ -704,10 +705,13 @@ export function ControlCenterShell({
   function handleDragEnd(event: DragEndEvent) {
     activeIdRef.current = null;
     setActiveId(null);
-    flushRefresh();
     releaseSuppressBikeClick();
     const { active, over } = event;
-    if (!over) return;
+    if (!over) {
+      // No drop target — apply any realtime refresh deferred during the drag.
+      flushRefresh();
+      return;
+    }
 
     const workOrderId = normalizeControlCenterDragId(String(active.id));
     const techIds = techs.map((t) => t.user_id);
@@ -717,28 +721,53 @@ export function ControlCenterShell({
       techIds,
       containerForWorkOrder,
     });
-    if (!targetId) return;
+    if (!targetId) {
+      flushRefresh();
+      return;
+    }
 
     // Ignore drops that resolve back to the same dragged work order id.
-    if (targetId === workOrderId) return;
+    if (targetId === workOrderId) {
+      flushRefresh();
+      return;
+    }
 
     const fromAssign = findAssignmentOwner(workOrderId);
     const fromStage = findStageOwner(workOrderId);
     const currentStatus = statusForWorkOrder(workOrderId);
-    if (!currentStatus) return;
+    if (!currentStatus) {
+      flushRefresh();
+      return;
+    }
 
-    if (fromAssign && fromAssign === targetId) return;
-    if (fromStage && fromStage === targetId) return;
-    if (stageDropIdForStatus(currentStatus) === targetId) return;
+    if (fromAssign && fromAssign === targetId) {
+      flushRefresh();
+      return;
+    }
+    if (fromStage && fromStage === targetId) {
+      flushRefresh();
+      return;
+    }
+    if (stageDropIdForStatus(currentStatus) === targetId) {
+      flushRefresh();
+      return;
+    }
 
     if (isCcStageDropId(targetId)) {
       if (!canDropInColumn(data.role, targetId, currentStatus)) {
         setErrorMessage("You do not have permission to move this bike there.");
+        flushRefresh();
         return;
       }
 
+      // Dropping discards stale refreshes queued during drag; they would overwrite
+      // optimistic placement with pre-drop server props (snap-back).
+      cancelRefresh();
       const previous = applyOptimisticStatusMove(workOrderId, targetId);
-      if (!previous) return;
+      if (!previous) {
+        flushRefresh();
+        return;
+      }
 
       startTransition(async () => {
         const result = await moveWorkOrderOnBoardAction(workOrderId, targetId);
@@ -752,21 +781,28 @@ export function ControlCenterShell({
           setCompleteQueue(previous.completeQueue);
           setErrorMessage(result.error);
         }
+        scheduleRefresh();
       });
       return;
     }
 
     if (!canAssign) {
       setErrorMessage("You do not have permission to assign technicians.");
+      flushRefresh();
       return;
     }
     if (!fromAssign && !allBikes.has(workOrderId)) {
       setErrorMessage("Open the work order to assign a technician.");
+      flushRefresh();
       return;
     }
 
+    cancelRefresh();
     const previous = applyOptimisticAssign(workOrderId, targetId);
-    if (!previous) return;
+    if (!previous) {
+      flushRefresh();
+      return;
+    }
 
     startTransition(async () => {
       const result =
@@ -778,6 +814,7 @@ export function ControlCenterShell({
         setTechs(previous.techs);
         setErrorMessage(result.error);
       }
+      scheduleRefresh();
     });
   }
 

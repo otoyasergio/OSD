@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { renderToStaticMarkup } from "react-dom/server";
+/** @vitest-environment jsdom */
+import { createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { act } from "react";
+import { afterEach, describe, expect, it } from "vitest";
 import { StaffNotificationBell } from "@/components/layout/StaffNotificationBell";
 import {
   formatNotificationAge,
@@ -8,6 +11,18 @@ import {
 import { staffAssignmentHref } from "@/lib/technician/assignmentHref";
 
 describe("staff assignment notifications", () => {
+  let container: HTMLDivElement | null = null;
+  let root: Root | null = null;
+
+  afterEach(() => {
+    act(() => {
+      root?.unmount();
+    });
+    container?.remove();
+    root = null;
+    container = null;
+  });
+
   it("formats the assigned motorcycle for a quick scan", () => {
     expect(
       motorcycleNotificationLabel({ year: 2024, make: "Honda", model: "CB650R" })
@@ -28,28 +43,35 @@ describe("staff assignment notifications", () => {
   });
 
   it("renders a scannable unread assignment in the bell menu", () => {
-    const markup = renderToStaticMarkup(
-      StaffNotificationBell({
-        notifications: [
-          {
-            notification_id: "notification-1",
-            kind: "work_order_assigned",
-            work_order_id: "work-order-1",
-            work_order_number: "WO-1042",
-            motorcycle_label: "2024 Honda CB650R",
-            actor_name: "Alex Advisor",
-            created_at: "2026-07-15T17:45:00.000Z",
-          },
-        ],
-        open: true,
-        busy: false,
-        error: null,
-        onToggle: () => undefined,
-        onOpenNotification: () => undefined,
-        onMarkAllRead: () => undefined,
-      })
-    );
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
 
+    act(() => {
+      root!.render(
+        createElement(StaffNotificationBell, {
+          notifications: [
+            {
+              notification_id: "notification-1",
+              kind: "work_order_assigned",
+              work_order_id: "work-order-1",
+              work_order_number: "WO-1042",
+              motorcycle_label: "2024 Honda CB650R",
+              actor_name: "Alex Advisor",
+              created_at: "2026-07-15T17:45:00.000Z",
+            },
+          ],
+          open: true,
+          busy: false,
+          error: null,
+          onToggle: () => undefined,
+          onOpenNotification: () => undefined,
+          onMarkAllRead: () => undefined,
+        })
+      );
+    });
+
+    const markup = document.body.innerHTML;
     expect(markup).toContain('aria-label="1 unread assignment alert"');
     expect(markup).toContain("WO-1042 · 2024 Honda CB650R");
     expect(markup).toContain("Assigned by Alex Advisor");

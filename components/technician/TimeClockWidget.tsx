@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useSyncExternalStore } from "react";
+import { useActionState } from "react";
 import type { ClockFormState } from "@/app/(app)/technician/clock-actions";
 import {
   clockInAction,
@@ -13,25 +13,13 @@ import { formatElapsedMs } from "@/lib/services/timeClockShared";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { formatTime } from "@/lib/datetime/format";
+import { useNowTick } from "@/lib/client/useNowTick";
 
 type Props = {
   openEntry: TimeClockEntry | null;
   openBreak?: TimeClockBreak | null;
   mealBreakNudge?: boolean;
 };
-
-function subscribeClock(onStoreChange: () => void) {
-  const id = window.setInterval(onStoreChange, 1000);
-  return () => window.clearInterval(id);
-}
-
-function getClockNow() {
-  return Date.now();
-}
-
-function getServerClockNow() {
-  return 0;
-}
 
 export function TimeClockWidget({
   openEntry,
@@ -51,11 +39,7 @@ export function TimeClockWidget({
     error: null,
   } satisfies ClockFormState);
 
-  const nowMs = useSyncExternalStore(
-    openEntry ? subscribeClock : () => () => {},
-    getClockNow,
-    getServerClockNow
-  );
+  const nowMs = useNowTick(Boolean(openEntry));
 
   const elapsed = openEntry
     ? nowMs > 0
