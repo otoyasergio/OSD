@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canAssignTechnician } from "@/lib/permissions";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
 import {
@@ -17,9 +17,9 @@ export default async function TechnicianDocketPage({
 }: {
   searchParams: Promise<{ tech?: string }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canAssignTechnician(user.role)) redirect("/technician");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canAssignTechnician(preview.role)) redirect("/technician");
 
   const params = await searchParams;
   const technicians = await listTechniciansForActiveLocation();

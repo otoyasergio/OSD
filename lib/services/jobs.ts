@@ -18,7 +18,12 @@ import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspection
 import { seedDefaultJobChecklist } from "@/lib/services/jobChecklist";
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 import { nextDocketPosition } from "@/lib/technician/docketOrder";
-import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
+import {
+  getOptionalColumnSupport,
+  isUndefinedColumnError,
+  OPTIONAL_COLUMNS,
+  setOptionalColumnSupport,
+} from "@/lib/database/schemaCompat";
 
 type JobRow = {
   job_id: string;
@@ -264,8 +269,12 @@ export async function assignAllActiveJobsOnWorkOrderToTechnician(
     .order("created_at", { ascending: true });
   if (error) throw error;
 
+  if (!jobs?.length) {
+    throw new Error("NO_JOBS_TO_ASSIGN");
+  }
+
   let assigned_count = 0;
-  for (const row of jobs ?? []) {
+  for (const row of jobs) {
     await assignTechnicianToJob(row.job_id as string, technicianId);
     assigned_count += 1;
   }
@@ -575,6 +584,10 @@ export async function pullJob(
 
   if (options.andStart) {
     await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+    if (isFloorTech(user.role)) {
+      const { startJobTime } = await import("@/lib/services/jobTimeClock");
+      await startJobTime(jobId);
+    }
   }
 }
 
@@ -628,16 +641,46 @@ export async function updateJobStatus(
   assertStatusTransition(user, job, nextStatus, options.note);
 
   if (nextStatus === "in_progress") {
+    const floorSupport = getOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck);
+    const activeSelect = floorSupport === false ? "job_id" : "job_id, floor_parked_at";
     const { data: otherActive, error: activeError } = await supabase
       .from("job")
-      .select("job_id")
+      .select(activeSelect)
       .eq("assigned_technician_id", user.user_id)
       .eq("status", "in_progress")
-      .neq("job_id", jobId)
-      .limit(1);
-    if (activeError) throw activeError;
-    if ((otherActive ?? []).length > 0) {
-      throw new Error("OTHER_JOB_IN_PROGRESS");
+      .neq("job_id", jobId);
+    if (
+      activeError &&
+      floorSupport !== false &&
+      isUndefinedColumnError(activeError, "floor_parked")
+    ) {
+      setOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck, false);
+      const retry = await supabase
+        .from("job")
+        .select("job_id")
+        .eq("assigned_technician_id", user.user_id)
+        .eq("status", "in_progress")
+        .neq("job_id", jobId)
+        .limit(1);
+      if (retry.error) throw retry.error;
+      if ((retry.data ?? []).length > 0) {
+        throw new Error("OTHER_JOB_IN_PROGRESS");
+      }
+    } else if (activeError) {
+      throw activeError;
+    } else {
+      if (floorSupport !== false) {
+        setOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck, true);
+      }
+      const blocking = (
+        (otherActive ?? []) as unknown as Array<{
+          job_id: string;
+          floor_parked_at?: string | null;
+        }>
+      ).filter((row) => !row.floor_parked_at);
+      if (blocking.length > 0) {
+        throw new Error("OTHER_JOB_IN_PROGRESS");
+      }
     }
   }
 
@@ -713,6 +756,18 @@ export async function updateJobStatus(
 
   const { error } = await supabase.from("job").update(updates).eq("job_id", jobId);
   if (error) throw error;
+
+  if (nextStatus === "in_progress" && isFloorTech(user.role)) {
+    const { switchJobTime } = await import("@/lib/services/jobTimeClock");
+    await switchJobTime(jobId);
+  }
+  if (
+    (nextStatus === "completed" || nextStatus === "cancelled") &&
+    isFloorTech(user.role)
+  ) {
+    const { endOpenJobTime } = await import("@/lib/services/jobTimeClock");
+    await endOpenJobTime({ jobId }).catch(() => null);
+  }
 
   await addTimelineEvent(supabase, {
     work_order_id: job.work_order_id,

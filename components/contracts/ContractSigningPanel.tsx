@@ -9,7 +9,12 @@ import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
 import { withIntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { sanitizeContractHtml } from "@/lib/security/sanitizeHtml";
+import { parseContractSections } from "@/lib/contracts/parseContractSections";
 import { PaperAgreementCopyUpload } from "@/components/contracts/PaperAgreementCopyUpload";
+
+function initialFieldLabel(key: string): string {
+  return key.replace(/[_-]+/g, " ").trim();
+}
 
 type Props = {
   template: AgreementTemplate;
@@ -40,11 +45,42 @@ export function ContractSigningPanel({
   const [signature, setSignature] = useState<string | null>(null);
   const [signedOnPaper, setSignedOnPaper] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stepIndex, setStepIndex] = useState(0);
   const [pending, startTransition] = useTransition();
   const safeHtml = useMemo(
     () => sanitizeContractHtml(template.body_html),
     [template.body_html]
   );
+  const parsedSections = useMemo(() => parseContractSections(safeHtml), [safeHtml]);
+  const steps = useMemo(() => parsedSections?.steps ?? [], [parsedSections]);
+  // Wizard only when the template declares data-initial sections; custom
+  // templates without markers keep the single-scroll flow.
+  const isWizard = steps.length > 0 && !signedOnPaper;
+  const onSignatureStep = !isWizard || stepIndex >= steps.length;
+  const currentStep = isWizard && !onSignatureStep ? steps[stepIndex] : null;
+  // Safety net: initial_fields keys with no matching data-initial section
+  // are still collected on the signature step so server validation passes.
+  const extraInitialKeys = useMemo(
+    () =>
+      steps.length > 0
+        ? template.initial_fields.filter((key) => !steps.some((s) => s.key === key))
+        : template.initial_fields,
+    [steps, template.initial_fields]
+  );
+
+  const currentInitialFilled = currentStep
+    ? Boolean(initials[currentStep.key]?.trim())
+    : true;
+
+  function advanceStep() {
+    if (!currentStep) return;
+    if (!initials[currentStep.key]?.trim()) {
+      setError("Enter your initials to confirm you have read this section.");
+      return;
+    }
+    setError(null);
+    setStepIndex((index) => Math.min(index + 1, steps.length));
+  }
 
   if (existing) {
     const isPaper = existing.signature_method === "paper";
@@ -75,6 +111,25 @@ export function ContractSigningPanel({
             alt="Customer signature"
             className="max-h-32 rounded border border-[var(--border)] bg-white"
           />
+        ) : null}
+        {Object.keys(existing.initials).length > 0 ? (
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
+              Section initials
+            </p>
+            <ul className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+              {Object.entries(existing.initials).map(([key, value]) => (
+                <li key={key} className="flex items-baseline justify-between gap-3">
+                  <span className="capitalize text-[var(--status-neutral)]">
+                    {initialFieldLabel(key)}
+                  </span>
+                  <span className="font-semibold uppercase tracking-widest text-foreground">
+                    {value}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
         {isPaper && existing.paper_copy_url ? (
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
@@ -121,6 +176,11 @@ export function ContractSigningPanel({
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // Enter inside a wizard step advances instead of submitting the form.
+    if (isWizard && !onSignatureStep) {
+      advanceStep();
+      return;
+    }
     setError(null);
     if (!signedOnPaper && !signature) {
       setError("Draw your signature before submitting.");
@@ -154,11 +214,6 @@ export function ContractSigningPanel({
 
   return (
     <form onSubmit={submit} className="contract-signing-form flex flex-col gap-6">
-      <div
-        className="contract-signing-prose prose prose-sm max-w-none rounded border border-[var(--border)] bg-white p-4"
-        dangerouslySetInnerHTML={{ __html: safeHtml }}
-      />
-
       {allowPaperSignature ? (
         <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-[var(--border)] bg-white p-4">
           <input
@@ -169,6 +224,7 @@ export function ContractSigningPanel({
             disabled={pending}
             onChange={(event) => {
               setSignedOnPaper(event.target.checked);
+              if (event.target.checked) setSignature(null);
               setError(null);
             }}
           />
@@ -193,16 +249,90 @@ export function ContractSigningPanel({
         </label>
       ) : null}
 
+      {isWizard ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p
+              className="text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]"
+              aria-live="polite"
+            >
+              {onSignatureStep
+                ? "Review complete — sign below"
+                : `Section ${stepIndex + 1} of ${steps.length}`}
+            </p>
+            {currentStep?.heading ? (
+              <p className="text-sm font-medium text-foreground">{currentStep.heading}</p>
+            ) : null}
+          </div>
+          <div
+            className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-muted)]"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={steps.length + 1}
+            aria-valuenow={Math.min(stepIndex + 1, steps.length + 1)}
+            aria-label="Contract reading progress"
+          >
+            <div
+              className="h-full rounded-full bg-[var(--chrome)] transition-all"
+              style={{
+                width: `${(Math.min(stepIndex + 1, steps.length + 1) / (steps.length + 1)) * 100}%`,
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {isWizard ? (
+        onSignatureStep ? (
+          parsedSections!.trailingHtml ? (
+            <div
+              className="contract-signing-prose prose prose-sm max-w-none rounded border border-[var(--border)] bg-white p-4"
+              dangerouslySetInnerHTML={{ __html: parsedSections!.trailingHtml }}
+            />
+          ) : null
+        ) : (
+          <div
+            className="contract-signing-prose prose prose-sm max-w-none rounded border border-[var(--border)] bg-white p-4"
+            dangerouslySetInnerHTML={{ __html: currentStep!.html }}
+          />
+        )
+      ) : (
+        <div
+          className="contract-signing-prose prose prose-sm max-w-none rounded border border-[var(--border)] bg-white p-4"
+          dangerouslySetInnerHTML={{ __html: safeHtml }}
+        />
+      )}
+
       {signedOnPaper ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
           Saving will mark this agreement as signed on paper. No digital signature is
           required. After saving, you can photograph or upload the paper copy.
         </div>
+      ) : !onSignatureStep ? (
+        <label key={currentStep!.key} className="block w-full max-w-md">
+          <span className="field-label">
+            Initial to confirm you have read this section
+          </span>
+          <input
+            type="text"
+            maxLength={8}
+            required
+            value={initials[currentStep!.key] ?? ""}
+            onChange={(e) =>
+              setInitials((prev) => ({ ...prev, [currentStep!.key]: e.target.value }))
+            }
+            className="min-h-12 w-full rounded border border-[var(--border-strong)] px-3 text-lg uppercase tracking-widest"
+            autoComplete="off"
+            autoFocus
+          />
+        </label>
       ) : (
         <>
-          {template.initial_fields.map((field) => (
+          {extraInitialKeys.map((field) => (
             <label key={field} className="block w-full max-w-md">
-              <span className="field-label capitalize">Initial — {field}</span>
+              <span className="field-label capitalize">
+                Initial — {initialFieldLabel(field)}
+              </span>
               <input
                 type="text"
                 maxLength={8}
@@ -238,17 +368,41 @@ export function ContractSigningPanel({
       {error ? <FormError message={error} /> : null}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="btn btn-primary min-h-14 text-lg"
-        >
-          {pending
-            ? "Saving…"
-            : signedOnPaper
-              ? "Save paper signature"
-              : "Sign drop-off agreement"}
-        </button>
+        {isWizard && stepIndex > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              if (onSignatureStep) setSignature(null);
+              setStepIndex((index) => Math.max(index - 1, 0));
+            }}
+            className="btn btn-secondary min-h-14 text-lg"
+          >
+            Back
+          </button>
+        ) : null}
+        {!signedOnPaper && isWizard && !onSignatureStep ? (
+          <button
+            type="button"
+            onClick={advanceStep}
+            disabled={!currentInitialFilled}
+            className="btn btn-primary min-h-14 text-lg"
+          >
+            {stepIndex === steps.length - 1 ? "Continue to signature" : "Next section"}
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={pending}
+            className="btn btn-primary min-h-14 text-lg"
+          >
+            {pending
+              ? "Saving…"
+              : signedOnPaper
+                ? "Save paper signature"
+                : "Sign drop-off agreement"}
+          </button>
+        )}
         {continueHref ? (
           <Link
             href={withIntakeFollowUp(continueHref, "signature")}

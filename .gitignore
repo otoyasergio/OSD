@@ -28,6 +28,7 @@
 *.pem
 .superpowers/
 .worktrees/
+/tmp/
 
 # debug
 npm-debug.log*

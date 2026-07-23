@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
-import { getPortalWorkOrder } from "@/lib/services/portal";
-import { getActiveAgreementTemplate } from "@/lib/services/contracts";
+import {
+  getPortalContractTemplate,
+  getPortalEstimate,
+  getPortalWorkOrder,
+} from "@/lib/services/portal";
 import { PortalClient } from "@/components/portal/PortalClient";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +22,16 @@ export default async function CustomerPortalPage({
     notFound();
   }
 
-  const template = view.has_signed_contract ? null : await getActiveAgreementTemplate();
+  // Anonymous-safe template read (the staff-authenticated variant would
+  // reject portal visitors who still need to sign). Only fetched when the
+  // token's purpose actually allows signing.
+  const template =
+    view.has_signed_contract || !view.can_sign_contract
+      ? null
+      : await getPortalContractTemplate();
+  const estimate = view.can_decide_estimate
+    ? await getPortalEstimate(token).catch(() => null)
+    : null;
 
   return (
     <div className="min-h-dvh bg-zinc-100 px-4 py-8 portal-page">
@@ -32,11 +44,16 @@ export default async function CustomerPortalPage({
             {view.work_order_number}
           </h1>
           <p className="text-sm text-zinc-600">
-            {view.customer.first_name} {view.customer.last_name} ·{" "}
-            {view.motorcycle.year} {view.motorcycle.make} {view.motorcycle.model}
+            {view.customer.first_name} {view.customer.last_name} · {view.motorcycle.year}{" "}
+            {view.motorcycle.make} {view.motorcycle.model}
           </p>
         </header>
-        <PortalClient token={token} view={view} contractTemplate={template} />
+        <PortalClient
+          token={token}
+          view={view}
+          contractTemplate={template}
+          estimate={estimate}
+        />
       </div>
     </div>
   );

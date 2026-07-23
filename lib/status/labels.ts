@@ -83,6 +83,7 @@ export const PHOTO_CATEGORY_LABELS: Record<PhotoCategory, string> = {
   inspection_forks: "Inspection — Forks",
   inspection_item: "Inspection — Needs work",
   job_proof: "Job proof",
+  job_work: "Work photo",
 };
 
 /** Categories required at work-order create (also shown as missing on Photos tab). */

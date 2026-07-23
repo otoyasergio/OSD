@@ -3,6 +3,7 @@
 import type {
   OutstandingRecommendation,
   Recommendation,
+  RecommendationEstimateLine,
 } from "@/lib/services/recommendations";
 import type { Service } from "@/lib/services/serviceCatalogueShared";
 import type { RecommendationFormState } from "@/app/(app)/work_orders/recommendation-actions";
@@ -11,6 +12,7 @@ import {
   RecommendationCreateForm,
 } from "@/components/recommendations/RecommendationCard";
 import { OutstandingRecommendations } from "@/components/recommendations/OutstandingRecommendations";
+import { RecommendationsSummary } from "@/components/recommendations/RecommendationsSummary";
 
 type Action = (
   state: RecommendationFormState,
@@ -28,6 +30,7 @@ type RecommendationAction = (
 export function RecommendationsTab({
   recommendations,
   outstandingRecommendations = [],
+  estimateLines = [],
   services,
   readOnly,
   canCreate,
@@ -36,11 +39,13 @@ export function RecommendationsTab({
   createAction,
   statusActionFor,
   convertActionFor,
+  sendEstimateAction,
   fromResultId,
   fromResultDefaults,
 }: {
   recommendations: Recommendation[];
   outstandingRecommendations?: OutstandingRecommendation[];
+  estimateLines?: RecommendationEstimateLine[];
   services: Service[];
   readOnly: boolean;
   canCreate: boolean;
@@ -49,6 +54,7 @@ export function RecommendationsTab({
   createAction: Action;
   statusActionFor: RecommendationAction;
   convertActionFor: RecommendationAction;
+  sendEstimateAction: Action;
   fromResultId?: string | null;
   fromResultDefaults?: {
     description: string;
@@ -57,6 +63,13 @@ export function RecommendationsTab({
 }) {
   return (
     <div className="flex flex-col gap-6">
+      <RecommendationsSummary
+        recommendations={recommendations}
+        estimateLines={estimateLines}
+        canSendEstimate={!readOnly && canConvert}
+        sendEstimateAction={sendEstimateAction}
+      />
+
       <OutstandingRecommendations
         recommendations={outstandingRecommendations}
         title="Previously deferred on this motorcycle"

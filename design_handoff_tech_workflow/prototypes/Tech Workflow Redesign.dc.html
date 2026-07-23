@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #27272a; }
+  a { color: #e4e4e7; } a:hover { color: #ffffff; }
+</style>
+</helmet>
+<section style="padding: 40px; font-family: 'Space Grotesk', ui-sans-serif, sans-serif; color: #0a0a0a;">
+  <div style="max-width: 900px; margin-bottom: 28px; color: #fafafa;">
+    <h1 style="margin: 0 0 8px; font-size: 28px; font-weight: 700; letter-spacing: -.02em;">Tech workflow — assigned → complete</h1>
+    <p style="margin: 0 0 10px; font-size: 15px; line-height: 1.5; color: #d4d4d8;">Three interactive takes, iPad portrait, monochrome. One reframe shared by all: <strong style="color: #fafafa;">the tech works bikes, not work orders</strong> — one line the front desk fills and orders, one next action, every wait has an owner, and QC is just another card in your line. Try each: the KTM the front desk just dropped in, wrench the Ninja through to complete, park the Harley, QC the Honda. Compare with the <a href="Current Tech Floor.dc.html">current screen</a>.</p>
+    <p style="margin: 0; font-size: 12px; font-family: 'IBM Plex Mono', monospace; letter-spacing: .04em; color: #a1a1aa;">ASSIGNED → ACCEPT → PULL ONTO BENCH → WORK → PROOF → COMPLETE → (PEER QC → SAFETY → PICKUP)</p>
+  </div>
+  <div style="display: flex; gap: 40px; align-items: flex-start;">
+
+    <div id="1a" style="width: 820px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: baseline; gap: 10px; color: #fafafa;">
+        <span style="background: #0a0a0a; border: 1px solid #a1a1aa; color: #fafafa; font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 13px; padding: 3px 9px; border-radius: 6px;">1a</span>
+        <span style="font-size: 18px; font-weight: 700;">The Spine</span>
+        <span style="font-size: 13px; color: #a1a1aa;">3 phases, one big button — the dock always says the next move</span>
+      </div>
+      <div style="position: relative; width: 820px; height: 1180px; background: #fafafa; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgb(0 0 0 / .6); display: flex; flex-direction: column; font-family: 'Space Grotesk', ui-sans-serif, sans-serif;">
+        <header style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; background: #0a0a0a; padding: 14px 20px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 14px; letter-spacing: .14em; color: #ffffff;">OTOMOTO · TECH FLOOR</span>
+          <span style="display: inline-flex; align-items: center; gap: 8px; color: #a1a1aa; font-size: 14px;"><span style="width: 30px; height: 30px; border-radius: 999px; background: #27272a; color: #fafafa; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; border: 1px solid #52525b;">SN</span><span style="color: #fafafa; font-weight: 600;">Sam</span> · Technician</span>
+        </header>
+        <sc-if value="{{ aHasBanner }}" hint-placeholder-val="{{ true }}">
+          <div style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #18181b; border-bottom: 1px solid #3f3f46; padding: 12px 20px;">
+            <div style="min-width: 0;">
+              <p style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #a1a1aa;">{{ aBanner.from }} ADDED A BIKE TO YOUR LINE</p>
+              <p style="margin: 2px 0 0; font-size: 17px; font-weight: 700; color: #ffffff;">{{ aBanner.model }} — {{ aBanner.job }}</p>
+            </div>
+            <button onClick="{{ aBanner.onAccept }}" style="flex-shrink: 0; min-height: 52px; padding: 8px 20px; border-radius: 10px; border: none; background: #ffffff; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer;" style-active="transform: scale(.97);">Got it →</button>
+          </div>
+        </sc-if>
+        <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: 296px 1fr; gap: 14px; padding: 14px;">
+          <aside style="min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px;">
+            <div>
+              <p style="margin: 0 0 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #52525b;">ON THE BENCH</p>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <sc-for list="{{ aLaneNow }}" as="q" hint-placeholder-count="1">
+                  <div onClick="{{ q.onTap }}" style="cursor: pointer; border-radius: 12px; border: 2px solid #0a0a0a; background: #0a0a0a; color: #fafafa; padding: 14px; box-shadow: {{ q.ring }};">
+                    <p style="margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2;">{{ q.model }}</p>
+                    <p style="margin: 3px 0 0; font-size: 13px; color: #d4d4d8;">{{ q.job }}</p>
+                    <p style="margin: 8px 0 0; font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; color: #a1a1aa;">{{ q.wo }} · ⏱ {{ q.timer }}</p>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div>
+              <p style="margin: 0 0 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #52525b;">UP NEXT <span style="color: #a1a1aa; letter-spacing: 0; font-weight: 400;">— order set by front desk</span></p>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <sc-for list="{{ aLaneNext }}" as="q" hint-placeholder-count="2">
+                  <div onClick="{{ q.onTap }}" style="cursor: pointer; border-radius: 12px; border: 2px solid #d4d4d8; background: #ffffff; padding: 12px 14px; box-shadow: {{ q.ring }};">
+                    <p style="margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; color: #0a0a0a;">{{ q.model }}</p>
+                    <p style="margin: 3px 0 0; font-size: 13px; color: #52525b;">{{ q.job }}</p>
+                    <p style="margin: 6px 0 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #71717a;">{{ q.wo }}</p>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div>
+              <p style="margin: 0 0 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #52525b;">WAITING <span style="color: #a1a1aa; letter-spacing: 0; font-weight: 400;">— nothing for you</span></p>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <sc-for list="{{ aLaneWaiting }}" as="q" hint-placeholder-count="1">
+                  <div onClick="{{ q.onTap }}" style="cursor: pointer; border-radius: 12px; border: 2px dashed #a1a1aa; background: #f4f4f5; padding: 12px 14px; box-shadow: {{ q.ring }};">
+                    <p style="margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; color: #52525b;">{{ q.model }}</p>
+                    <p style="margin: 3px 0 0; font-size: 13px; font-weight: 600; color: #3f3f46;">{{ q.sub }}</p>
+                    <p style="margin: 6px 0 0; font-size: 12px; color: #71717a;">{{ q.owner }}</p>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <div>
+              <p style="margin: 0 0 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #52525b;">CHECKS FOR YOU</p>
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <sc-for list="{{ aLaneCheck }}" as="q" hint-placeholder-count="1">
+                  <div onClick="{{ q.onTap }}" style="cursor: pointer; border-radius: 12px; border: 2px solid #0a0a0a; background: #ffffff; padding: 12px 14px; box-shadow: {{ q.ring }};">
+                    <p style="margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; color: #0a0a0a;">⚑ {{ q.model }}</p>
+                    <p style="margin: 3px 0 0; font-size: 13px; font-weight: 600; color: #3f3f46;">{{ q.sub }}</p>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <sc-if value="{{ aHasDone }}" hint-placeholder-val="{{ false }}">
+              <div>
+                <p style="margin: 0 0 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #52525b;">DONE TODAY</p>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <sc-for list="{{ aLaneDone }}" as="q" hint-placeholder-count="1">
+                    <div onClick="{{ q.onTap }}" style="cursor: pointer; border-radius: 12px; border: 2px solid #e4e4e7; background: #f4f4f5; padding: 10px 14px; box-shadow: {{ q.ring }};">
+                      <p style="margin: 0; font-size: 15px; font-weight: 700; color: #52525b;">✓ {{ q.model }}</p>
+                      <p style="margin: 2px 0 0; font-size: 12px; color: #71717a;">{{ q.sub }}</p>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </aside>
+          <section style="min-height: 0; display: flex; flex-direction: column; border-radius: 14px; border: 2px solid #0a0a0a; background: #ffffff; overflow: hidden;">
+            <sc-if value="{{ aHasSel }}" hint-placeholder-val="{{ true }}">
+              <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 20px 20px 12px;">
+                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+                  <div style="min-width: 0;">
+                    <h2 style="margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; color: #0a0a0a;">{{ aSel.model }}</h2>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                      <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; background: #0a0a0a; color: #fafafa; border-radius: 6px; padding: 3px 8px;">{{ aSel.wo }}</span>
+                      <span style="font-size: 12px; font-weight: 600; background: #f4f4f5; color: #3f3f46; border-radius: 6px; padding: 3px 8px; border: 1px solid #e4e4e7;">{{ aSel.customer }}</span>
+                      <sc-if value="{{ aSel.hasPromised }}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; font-weight: 700; background: #ffffff; color: #0a0a0a; border-radius: 6px; padding: 3px 8px; border: 2px solid #0a0a0a;">{{ aSel.promised }}</span></sc-if>
+                    </div>
+                  </div>
+                  <sc-if value="{{ aSel.showTimer }}" hint-placeholder-val="{{ false }}">
+                    <span style="flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: #18181b; background: #f4f4f5; border: 1px solid #d4d4d8; border-radius: 8px; padding: 6px 10px;">⏱ {{ aSel.timer }}</span>
+                  </sc-if>
+                </div>
+                <sc-if value="{{ aSel.hasOthers }}" hint-placeholder-val="{{ false }}">
+                  <p style="margin: 10px 0 0; font-size: 13px; color: #52525b; background: #fafafa; border: 1px dashed #d4d4d8; border-radius: 8px; padding: 8px 10px;">Also on this bike: {{ aSel.othersLine }}</p>
+                </sc-if>
+                <sc-if value="{{ aHasNote }}" hint-placeholder-val="{{ false }}">
+                  <p style="margin: 10px 0 0; font-size: 13px; font-weight: 600; color: #18181b; background: #f4f4f5; border-left: 4px solid #0a0a0a; border-radius: 6px; padding: 8px 10px;">{{ aNote }}</p>
+                </sc-if>
+                <sc-if value="{{ aIsWork }}" hint-placeholder-val="{{ true }}">
+                  <div style="margin-top: 18px; display: flex; flex-direction: column;">
+                    <sc-for list="{{ aPhases }}" as="ph" hint-placeholder-count="3">
+                      <div style="display: flex; gap: 14px;">
+                        <div style="display: flex; flex-direction: column; align-items: center; width: 46px; flex-shrink: 0;">
+                          <span style="width: 46px; height: 46px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 800; background: {{ ph.circleBg }}; color: {{ ph.circleFg }}; border: 2px solid {{ ph.circleBorder }};">{{ ph.glyph }}</span>
+                          <sc-if value="{{ ph.showLine }}" hint-placeholder-val="{{ true }}"><span style="flex: 1; width: 3px; min-height: 14px; background: {{ ph.lineColor }}; margin: 4px 0;"></span></sc-if>
+                        </div>
+                        <div style="flex: 1; min-width: 0; padding-bottom: 18px;">
+                          <div style="display: flex; align-items: baseline; gap: 10px; min-height: 46px; padding-top: 9px;">
+                            <p style="margin: 0; font-size: 19px; font-weight: 700; color: {{ ph.nameColor }};">{{ ph.name }}</p>
+                            <p style="margin: 0; font-size: 13px; color: #71717a;">{{ ph.sub }}</p>
+                          </div>
+                          <sc-if value="{{ ph.isActive }}" hint-placeholder-val="{{ true }}">
+                            <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
+                              <sc-for list="{{ ph.rows }}" as="row" hint-placeholder-count="2">
+                                <div onClick="{{ row.onTap }}" style="cursor: pointer; display: flex; align-items: center; gap: 12px; min-height: 58px; border-radius: 10px; border: 2px solid {{ row.border }}; background: {{ row.bg }}; padding: 8px 12px;">
+                                  <span style="flex-shrink: 0; width: 40px; height: 40px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 800; border: 2px solid {{ row.boxBorder }}; background: {{ row.boxBg }}; color: {{ row.boxFg }};">{{ row.glyph }}</span>
+                                  <span style="flex: 1; min-width: 0;">
+                                    <span style="display: block; font-size: 16px; font-weight: 600; line-height: 1.25; color: {{ row.labelColor }};">{{ row.label }}</span>
+                                    <sc-if value="{{ row.hasSub }}" hint-placeholder-val="{{ false }}"><span style="display: block; font-size: 12.5px; margin-top: 2px; color: {{ row.subColor }};">{{ row.sub }}</span></sc-if>
+                                  </span>
+                                  <sc-if value="{{ row.hasTag }}" hint-placeholder-val="{{ false }}"><span style="flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: .08em; border-radius: 5px; padding: 3px 7px; background: {{ row.tagBg }}; color: {{ row.tagFg }}; border: 1px solid {{ row.tagBorder }};">{{ row.tag }}</span></sc-if>
+                                </div>
+                              </sc-for>
+                              <sc-if value="{{ aShowSkip }}" hint-placeholder-val="{{ false }}">
+                                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 2px 0;">
+                                  <span style="font-size: 12.5px; font-weight: 600; color: #71717a;">Can't take one? Skip with a reason:</span>
+                                  <sc-for list="{{ aSkipChips }}" as="chip" hint-placeholder-count="3">
+                                    <button onClick="{{ chip.onTap }}" style="min-height: 36px; border-radius: 999px; border: 1.5px solid #d4d4d8; background: #ffffff; color: #3f3f46; font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 12px; cursor: pointer;" style-active="background: #f4f4f5;">{{ chip.label }}</button>
+                                  </sc-for>
+                                </div>
+                              </sc-if>
+                            </div>
+                          </sc-if>
+                        </div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ aIsPlate }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top: 26px; border-radius: 14px; border: 2px dashed #d4d4d8; background: #fafafa; padding: 26px 22px; text-align: center;">
+                    <p style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .12em; color: #52525b;">{{ aPlate.kicker }}</p>
+                    <p style="margin: 8px 0 0; font-size: 21px; font-weight: 700; color: #0a0a0a; line-height: 1.25;">{{ aPlate.title }}</p>
+                    <p style="margin: 8px 0 0; font-size: 15px; color: #52525b; line-height: 1.5;">{{ aPlate.body }}</p>
+                    <sc-if value="{{ aPlate.showPipe }}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 18px; flex-wrap: wrap;">
+                        <sc-for list="{{ aPlate.pipe }}" as="st" hint-placeholder-count="4">
+                          <span style="display: inline-flex; align-items: center; gap: 6px;">
+                            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 6px 12px; background: {{ st.bg }}; color: {{ st.fg }}; border: 2px solid {{ st.border }};">{{ st.label }}</span>
+                            <sc-if value="{{ st.arrow }}" hint-placeholder-val="{{ false }}"><span style="color: #a1a1aa; font-weight: 700;">→</span></sc-if>
+                          </span>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-if>
+              </div>
+              <div style="flex-shrink: 0; border-top: 2px solid #0a0a0a; background: #ffffff; padding: 12px 16px 16px;">
+                <div style="display: flex; gap: 10px; align-items: stretch;">
+                  <sc-if value="{{ aDock.showPark }}" hint-placeholder-val="{{ true }}">
+                    <button onClick="{{ aDock.onPark }}" style="flex-shrink: 0; min-height: 64px; padding: 8px 18px; border-radius: 12px; border: 2px solid #d4d4d8; background: #f4f4f5; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer;" style-active="background: #e4e4e7;">Park ⏸</button>
+                  </sc-if>
+                  <sc-if value="{{ aDock.showFail }}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{ aDock.onFail }}" style="flex-shrink: 0; min-height: 64px; padding: 8px 18px; border-radius: 12px; border: 2px solid #0a0a0a; background: #ffffff; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer;" style-active="background: #f4f4f5;">Fail ✗</button>
+                  </sc-if>
+                  <button onClick="{{ aDock.onTap }}" style="flex: 1; min-height: 64px; border-radius: 12px; border: none; background: {{ aDock.bg }}; color: {{ aDock.fg }}; font-family: inherit; font-size: 18px; font-weight: 700; letter-spacing: -.01em; cursor: pointer; padding: 8px 16px; box-shadow: 0 4px 0 0 {{ aDock.shadow }};" style-active="transform: translateY(2px); box-shadow: none;">{{ aDock.label }}</button>
+                </div>
+                <sc-if value="{{ aDock.hasSub }}" hint-placeholder-val="{{ false }}"><p style="margin: 8px 2px 0; font-size: 12.5px; color: #71717a; text-align: right;">{{ aDock.sub }}</p></sc-if>
+              </div>
+            </sc-if>
+          </section>
+        </div>
+        <sc-if value="{{ aOvPark }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ aCloseOv }}" style="position: absolute; inset: 0; background: rgb(10 10 10 / .6); display: flex; align-items: flex-end; z-index: 20;">
+            <div style="width: 100%; background: #ffffff; border-radius: 18px 18px 0 0; padding: 20px 20px 28px;">
+              <p style="margin: 0 0 4px; font-size: 21px; font-weight: 700; color: #0a0a0a;">Park this bike — why?</p>
+              <p style="margin: 0 0 14px; font-size: 14px; color: #71717a;">Your spot is saved and the timer pauses. The front desk sees the reason.</p>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <sc-for list="{{ aParkTiles }}" as="tile" hint-placeholder-count="4">
+                  <button onClick="{{ tile.onTap }}" style="min-height: 68px; border-radius: 12px; border: 2px solid #d4d4d8; background: #fafafa; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer; padding: 10px;" style-active="background: #e4e4e7;">{{ tile.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ aOvFail }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ aCloseOv }}" style="position: absolute; inset: 0; background: rgb(10 10 10 / .6); display: flex; align-items: flex-end; z-index: 20;">
+            <div style="width: 100%; background: #ffffff; border-radius: 18px 18px 0 0; padding: 20px 20px 28px;">
+              <p style="margin: 0 0 4px; font-size: 21px; font-weight: 700; color: #0a0a0a;">Fail this check — what's wrong?</p>
+              <p style="margin: 0 0 14px; font-size: 14px; color: #71717a;">It goes back to the tech who did the work, with your reason.</p>
+              <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                <sc-for list="{{ aFailChips }}" as="chip" hint-placeholder-count="3">
+                  <button onClick="{{ chip.onTap }}" style="min-height: 60px; border-radius: 12px; border: 2px solid #0a0a0a; background: #ffffff; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer; padding: 10px;" style-active="background: #f4f4f5;">✗ {{ chip.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div id="1b" style="width: 820px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: baseline; gap: 10px; color: #fafafa;">
+        <span style="background: #0a0a0a; border: 1px solid #a1a1aa; color: #fafafa; font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 13px; padding: 3px 9px; border-radius: 6px;">1b</span>
+        <span style="font-size: 18px; font-weight: 700;">The Run Sheet</span>
+        <span style="font-size: 13px; color: #a1a1aa;">no stages — one numbered list, top to bottom, order is the guide</span>
+      </div>
+      <div style="position: relative; width: 820px; height: 1180px; background: #fafafa; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgb(0 0 0 / .6); display: flex; flex-direction: column; font-family: 'Space Grotesk', ui-sans-serif, sans-serif;">
+        <header style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; background: #0a0a0a; padding: 14px 20px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 14px; letter-spacing: .14em; color: #ffffff;">OTOMOTO · TECH FLOOR</span>
+          <span style="display: inline-flex; align-items: center; gap: 8px; color: #a1a1aa; font-size: 14px;"><span style="width: 30px; height: 30px; border-radius: 999px; background: #27272a; color: #fafafa; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; border: 1px solid #52525b;">SN</span><span style="color: #fafafa; font-weight: 600;">Sam</span> · Technician</span>
+        </header>
+        <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr; gap: 14px; padding: 14px;">
+          <aside style="min-height: 0; overflow-y: auto;">
+            <p style="margin: 0 0 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #52525b;">MY LINE <span style="color: #a1a1aa; letter-spacing: 0; font-weight: 400;">— work top to bottom</span></p>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <sc-for list="{{ bQueue }}" as="q" hint-placeholder-count="5">
+                <div onClick="{{ q.onTap }}" style="cursor: pointer; display: flex; align-items: center; gap: 10px; border-radius: 12px; border: {{ q.border }}; background: {{ q.cardBg }}; padding: 12px; box-shadow: {{ q.ring }};">
+                  <span style="flex-shrink: 0; width: 30px; height: 30px; border-radius: 999px; background: {{ q.posBg }}; color: {{ q.posFg }}; font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; border: 1px solid {{ q.posBorder }};">{{ q.pos }}</span>
+                  <span style="flex: 1; min-width: 0;">
+                    <span style="display: block; font-size: 16px; font-weight: 700; line-height: 1.2; color: {{ q.modelColor }};">{{ q.model }}</span>
+                    <span style="display: block; font-size: 12.5px; margin-top: 2px; color: {{ q.subColor }};">{{ q.sub }}</span>
+                  </span>
+                  <span style="flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 800; letter-spacing: .06em; border-radius: 6px; padding: 5px 8px; background: {{ q.stampBg }}; color: {{ q.stampFg }}; border: 1.5px solid {{ q.stampBorder }};">{{ q.stamp }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <p style="margin: 12px 0 0; font-size: 12px; color: #71717a; line-height: 1.5;">One list. NOW is on your bench. HOLD needs nothing from you. CHECK is you checking someone else's work.</p>
+          </aside>
+          <section style="min-height: 0; display: flex; flex-direction: column; border-radius: 14px; border: 2px solid #0a0a0a; background: #ffffff; overflow: hidden;">
+            <sc-if value="{{ bHasSel }}" hint-placeholder-val="{{ true }}">
+              <div style="flex-shrink: 0; padding: 18px 20px 12px; border-bottom: 1px solid #e4e4e7;">
+                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
+                  <h2 style="margin: 0; font-size: 25px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; color: #0a0a0a;">{{ bSel.model }}</h2>
+                  <sc-if value="{{ bSel.showTimer }}" hint-placeholder-val="{{ false }}"><span style="flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: #18181b; background: #f4f4f5; border: 1px solid #d4d4d8; border-radius: 8px; padding: 6px 10px;">⏱ {{ bSel.timer }}</span></sc-if>
+                </div>
+                <p style="margin: 6px 0 0; font-size: 13.5px; color: #52525b;"><span style="font-family: 'IBM Plex Mono', monospace; font-weight: 700; color: #0a0a0a;">{{ bSel.wo }}</span> · {{ bSel.job }} · {{ bSel.customer }}<sc-if value="{{ bSel.hasPromised }}" hint-placeholder-val="{{ false }}"> · <span style="color: #0a0a0a; font-weight: 700; border-bottom: 2px solid #0a0a0a;">{{ bSel.promised }}</span></sc-if></p>
+                <sc-if value="{{ bHasNote }}" hint-placeholder-val="{{ false }}"><p style="margin: 8px 0 0; font-size: 13px; font-weight: 600; color: #18181b; background: #f4f4f5; border-left: 4px solid #0a0a0a; border-radius: 6px; padding: 7px 10px;">{{ bNote }}</p></sc-if>
+              </div>
+              <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 14px 20px;">
+                <sc-if value="{{ bIsWork }}" hint-placeholder-val="{{ true }}">
+                  <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <sc-for list="{{ bRows }}" as="row" hint-placeholder-count="5">
+                      <div onClick="{{ row.onTap }}" style="cursor: pointer; border-radius: 10px; border: 2px solid {{ row.border }}; background: {{ row.bg }}; padding: 10px 14px;">
+                        <div style="display: flex; align-items: center; gap: 12px; min-height: 40px;">
+                          <span style="flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: {{ row.numColor }}; width: 22px; text-align: right;">{{ row.num }}</span>
+                          <span style="flex-shrink: 0; width: 36px; height: 36px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 800; border: 2px solid {{ row.boxBorder }}; background: {{ row.boxBg }}; color: {{ row.boxFg }};">{{ row.glyph }}</span>
+                          <span style="flex: 1; min-width: 0;">
+                            <span style="display: block; font-size: 16.5px; font-weight: 600; line-height: 1.25; color: {{ row.labelColor }};">{{ row.label }}</span>
+                            <sc-if value="{{ row.hasSub }}" hint-placeholder-val="{{ false }}"><span style="display: block; font-size: 12.5px; margin-top: 2px; color: {{ row.subColor }};">{{ row.sub }}</span></sc-if>
+                          </span>
+                          <sc-if value="{{ row.hasTag }}" hint-placeholder-val="{{ false }}"><span style="flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: .08em; border-radius: 5px; padding: 3px 7px; background: {{ row.tagBg }}; color: {{ row.tagFg }}; border: 1px solid {{ row.tagBorder }};">{{ row.tag }}</span></sc-if>
+                        </div>
+                        <sc-if value="{{ row.isActive }}" hint-placeholder-val="{{ false }}">
+                          <div style="padding: 8px 0 4px 34px;">
+                            <button onClick="{{ row.actionTap }}" style="width: 100%; min-height: 58px; border-radius: 10px; border: none; background: #0a0a0a; color: #ffffff; font-family: inherit; font-size: 17px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 0 0 #71717a;" style-active="transform: translateY(2px); box-shadow: none;">{{ row.actionLabel }}</button>
+                            <sc-if value="{{ bShowSkip }}" hint-placeholder-val="{{ false }}">
+                              <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+                                <sc-for list="{{ bSkipChips }}" as="chip" hint-placeholder-count="3">
+                                  <button onClick="{{ chip.onTap }}" style="min-height: 36px; border-radius: 999px; border: 1.5px solid #d4d4d8; background: #ffffff; color: #3f3f46; font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 12px; cursor: pointer;" style-active="background: #f4f4f5;">Skip — {{ chip.label }}</button>
+                                </sc-for>
+                              </div>
+                            </sc-if>
+                          </div>
+                        </sc-if>
+                      </div>
+                    </sc-for>
+                    <sc-if value="{{ bSel.hasOthers }}" hint-placeholder-val="{{ false }}">
+                      <div style="border-radius: 10px; border: 2px dashed #e4e4e7; background: #fafafa; padding: 10px 14px; display: flex; align-items: center; gap: 12px;">
+                        <span style="flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: #a1a1aa; width: 22px; text-align: right;">—</span>
+                        <span style="font-size: 14px; color: #71717a;">Not yours: {{ bSel.othersLine }}</span>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ bIsPlate }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top: 12px; border-radius: 14px; border: 2px dashed #d4d4d8; background: #fafafa; padding: 26px 22px; text-align: center;">
+                    <p style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .12em; color: #52525b;">{{ bPlate.kicker }}</p>
+                    <p style="margin: 8px 0 0; font-size: 21px; font-weight: 700; color: #0a0a0a; line-height: 1.25;">{{ bPlate.title }}</p>
+                    <p style="margin: 8px 0 0; font-size: 15px; color: #52525b; line-height: 1.5;">{{ bPlate.body }}</p>
+                    <sc-if value="{{ bPlate.showPipe }}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 18px; flex-wrap: wrap;">
+                        <sc-for list="{{ bPlate.pipe }}" as="st" hint-placeholder-count="4">
+                          <span style="display: inline-flex; align-items: center; gap: 6px;">
+                            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 6px 12px; background: {{ st.bg }}; color: {{ st.fg }}; border: 2px solid {{ st.border }};">{{ st.label }}</span>
+                            <sc-if value="{{ st.arrow }}" hint-placeholder-val="{{ false }}"><span style="color: #a1a1aa; font-weight: 700;">→</span></sc-if>
+                          </span>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-if>
+              </div>
+              <div style="flex-shrink: 0; border-top: 2px solid #0a0a0a; background: #ffffff; padding: 12px 16px 16px;">
+                <sc-if value="{{ bIsWork }}" hint-placeholder-val="{{ true }}">
+                  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="flex: 1; height: 10px; border-radius: 999px; background: #e4e4e7; overflow: hidden;"><div style="height: 100%; border-radius: 999px; background: #0a0a0a; width: {{ bProgress.pct }};"></div></div>
+                    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 700; color: #3f3f46;">{{ bProgress.text }}</span>
+                  </div>
+                </sc-if>
+                <div style="display: flex; gap: 10px; align-items: stretch;">
+                  <sc-if value="{{ bDock.showPark }}" hint-placeholder-val="{{ true }}">
+                    <button onClick="{{ bDock.onPark }}" style="flex-shrink: 0; min-height: 64px; padding: 8px 18px; border-radius: 12px; border: 2px solid #d4d4d8; background: #f4f4f5; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer;" style-active="background: #e4e4e7;">Park ⏸</button>
+                  </sc-if>
+                  <sc-if value="{{ bDock.showFail }}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{ bDock.onFail }}" style="flex-shrink: 0; min-height: 64px; padding: 8px 18px; border-radius: 12px; border: 2px solid #0a0a0a; background: #ffffff; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer;" style-active="background: #f4f4f5;">Fail ✗</button>
+                  </sc-if>
+                  <button onClick="{{ bDock.onTap }}" style="flex: 1; min-height: 64px; border-radius: 12px; border: none; background: {{ bDock.bg }}; color: {{ bDock.fg }}; font-family: inherit; font-size: 18px; font-weight: 700; letter-spacing: -.01em; cursor: pointer; padding: 8px 16px; box-shadow: 0 4px 0 0 {{ bDock.shadow }};" style-active="transform: translateY(2px); box-shadow: none;">{{ bDock.label }}</button>
+                </div>
+                <sc-if value="{{ bDock.hasSub }}" hint-placeholder-val="{{ false }}"><p style="margin: 8px 2px 0; font-size: 12.5px; color: #71717a; text-align: right;">{{ bDock.sub }}</p></sc-if>
+              </div>
+            </sc-if>
+          </section>
+        </div>
+        <sc-if value="{{ bOvPark }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ bCloseOv }}" style="position: absolute; inset: 0; background: rgb(10 10 10 / .6); display: flex; align-items: flex-end; z-index: 20;">
+            <div style="width: 100%; background: #ffffff; border-radius: 18px 18px 0 0; padding: 20px 20px 28px;">
+              <p style="margin: 0 0 4px; font-size: 21px; font-weight: 700; color: #0a0a0a;">Park this bike — why?</p>
+              <p style="margin: 0 0 14px; font-size: 14px; color: #71717a;">Your spot is saved and the timer pauses. The front desk sees the reason.</p>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <sc-for list="{{ bParkTiles }}" as="tile" hint-placeholder-count="4">
+                  <button onClick="{{ tile.onTap }}" style="min-height: 68px; border-radius: 12px; border: 2px solid #d4d4d8; background: #fafafa; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer; padding: 10px;" style-active="background: #e4e4e7;">{{ tile.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ bOvFail }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ bCloseOv }}" style="position: absolute; inset: 0; background: rgb(10 10 10 / .6); display: flex; align-items: flex-end; z-index: 20;">
+            <div style="width: 100%; background: #ffffff; border-radius: 18px 18px 0 0; padding: 20px 20px 28px;">
+              <p style="margin: 0 0 4px; font-size: 21px; font-weight: 700; color: #0a0a0a;">Fail this check — what's wrong?</p>
+              <p style="margin: 0 0 14px; font-size: 14px; color: #71717a;">It goes back to the tech who did the work, with your reason.</p>
+              <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                <sc-for list="{{ bFailChips }}" as="chip" hint-placeholder-count="3">
+                  <button onClick="{{ chip.onTap }}" style="min-height: 60px; border-radius: 12px; border: 2px solid #0a0a0a; background: #ffffff; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer; padding: 10px;" style-active="background: #f4f4f5;">✗ {{ chip.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+    <div id="1c" style="width: 820px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: baseline; gap: 10px; color: #fafafa;">
+        <span style="background: #0a0a0a; border: 1px solid #a1a1aa; color: #fafafa; font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 13px; padding: 3px 9px; border-radius: 6px;">1c</span>
+        <span style="font-size: 18px; font-weight: 700;">The Pit Board</span>
+        <span style="font-size: 13px; color: #a1a1aa;">built for interruptions — same 3 commands, always: Go · Park · Swap</span>
+      </div>
+      <div style="position: relative; width: 820px; height: 1180px; background: #fafafa; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px -20px rgb(0 0 0 / .6); display: flex; flex-direction: column; font-family: 'Space Grotesk', ui-sans-serif, sans-serif;">
+        <header style="flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; background: #0a0a0a; padding: 14px 20px;">
+          <span style="font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 14px; letter-spacing: .14em; color: #ffffff;">OTOMOTO · TECH FLOOR</span>
+          <span style="display: inline-flex; align-items: center; gap: 8px; color: #a1a1aa; font-size: 14px;"><span style="width: 30px; height: 30px; border-radius: 999px; background: #27272a; color: #fafafa; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; border: 1px solid #52525b;">SN</span><span style="color: #fafafa; font-weight: 600;">Sam</span> · Technician</span>
+        </header>
+        <div style="flex-shrink: 0; display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 14px 14px 0;">
+          <button onClick="{{ cCmd1.onTap }}" style="min-height: 76px; border-radius: 14px; border: none; background: {{ cCmd1.bg }}; color: {{ cCmd1.fg }}; font-family: inherit; cursor: pointer; padding: 10px 18px; text-align: left; box-shadow: 0 5px 0 0 {{ cCmd1.shadow }};" style-active="transform: translateY(3px); box-shadow: none;">
+            <span style="display: block; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; opacity: .7;">{{ cCmd1.kicker }}</span>
+            <span style="display: block; font-size: 19px; font-weight: 700; letter-spacing: -.01em; margin-top: 2px; line-height: 1.15;">{{ cCmd1.label }}</span>
+          </button>
+          <button onClick="{{ cCmd2.onTap }}" style="min-height: 76px; min-width: 110px; border-radius: 14px; border: 2px solid #d4d4d8; background: #ffffff; color: #0a0a0a; font-family: inherit; font-size: 17px; font-weight: 700; cursor: pointer; padding: 10px 14px;" style-active="background: #e4e4e7;">Park<br>⏸</button>
+          <button onClick="{{ cCmd3.onTap }}" style="min-height: 76px; min-width: 110px; border-radius: 14px; border: 2px solid #d4d4d8; background: #ffffff; color: #0a0a0a; font-family: inherit; font-size: 17px; font-weight: 700; cursor: pointer; padding: 10px 14px;" style-active="background: #e4e4e7;">Swap<br>⇄</button>
+        </div>
+        <div style="flex: 1; min-height: 0; display: grid; grid-template-columns: 312px 1fr; gap: 14px; padding: 14px;">
+          <aside style="min-height: 0; overflow-y: auto;">
+            <p style="margin: 0 0 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #52525b;">PIT BOARD</p>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <sc-for list="{{ cQueue }}" as="q" hint-placeholder-count="5">
+                <div onClick="{{ q.onTap }}" style="cursor: pointer; border-radius: 12px; border: {{ q.border }}; background: {{ q.cardBg }}; padding: 12px 14px; box-shadow: {{ q.ring }};">
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: {{ q.woColor }};">{{ q.wo }}</span>
+                    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 800; letter-spacing: .08em; border-radius: 6px; padding: 5px 9px; background: {{ q.stampBg }}; color: {{ q.stampFg }}; border: 1.5px solid {{ q.stampBorder }};">{{ q.stamp }}</span>
+                  </div>
+                  <p style="margin: 4px 0 0; font-size: 18px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; color: {{ q.modelColor }};">{{ q.model }}</p>
+                  <p style="margin: 3px 0 0; font-size: 13px; color: {{ q.subColor }};">{{ q.sub }}</p>
+                </div>
+              </sc-for>
+            </div>
+            <div style="margin-top: 16px;">
+              <p style="margin: 0 0 6px; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #52525b;">WHO OWNS THE WAIT</p>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <sc-for list="{{ cBlocked }}" as="blk" hint-placeholder-count="2">
+                  <div style="border-radius: 10px; border: 2px dashed #a1a1aa; background: #f4f4f5; padding: 9px 12px;">
+                    <p style="margin: 0; font-size: 13.5px; font-weight: 700; color: #18181b;">{{ blk.title }}</p>
+                    <p style="margin: 2px 0 0; font-size: 12.5px; color: #52525b;">{{ blk.sub }}</p>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </aside>
+          <section style="min-height: 0; display: flex; flex-direction: column; border-radius: 14px; border: 2px solid #0a0a0a; background: #ffffff; overflow: hidden;">
+            <sc-if value="{{ cHasSel }}" hint-placeholder-val="{{ true }}">
+              <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 20px;">
+                <p style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; letter-spacing: .08em; color: #52525b;">{{ cSel.stateLine }}</p>
+                <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-top: 4px;">
+                  <h2 style="margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.05; color: #0a0a0a;">{{ cSel.model }}</h2>
+                  <sc-if value="{{ cSel.showTimer }}" hint-placeholder-val="{{ false }}"><span style="flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 700; color: #18181b; background: #f4f4f5; border: 1px solid #d4d4d8; border-radius: 8px; padding: 6px 10px;">⏱ {{ cSel.timer }}</span></sc-if>
+                </div>
+                <p style="margin: 6px 0 0; font-size: 14px; color: #52525b;"><span style="font-family: 'IBM Plex Mono', monospace; font-weight: 700; color: #0a0a0a;">{{ cSel.wo }}</span> · {{ cSel.job }} · {{ cSel.customer }}<sc-if value="{{ cSel.hasPromised }}" hint-placeholder-val="{{ false }}"> · <span style="color: #0a0a0a; font-weight: 700; border-bottom: 2px solid #0a0a0a;">{{ cSel.promised }}</span></sc-if></p>
+                <sc-if value="{{ cHasNote }}" hint-placeholder-val="{{ false }}"><p style="margin: 10px 0 0; font-size: 13px; font-weight: 600; color: #18181b; background: #f4f4f5; border-left: 4px solid #0a0a0a; border-radius: 6px; padding: 8px 10px;">{{ cNote }}</p></sc-if>
+                <sc-if value="{{ cIsWork }}" hint-placeholder-val="{{ true }}">
+                  <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 16px;">
+                    <sc-for list="{{ cRows }}" as="row" hint-placeholder-count="5">
+                      <div onClick="{{ row.onTap }}" style="cursor: pointer; display: flex; align-items: center; gap: 12px; min-height: 52px; border-radius: 10px; border: 2px solid {{ row.border }}; background: {{ row.bg }}; padding: 6px 12px;">
+                        <span style="flex-shrink: 0; width: 34px; height: 34px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; border: 2px solid {{ row.boxBorder }}; background: {{ row.boxBg }}; color: {{ row.boxFg }};">{{ row.glyph }}</span>
+                        <span style="flex: 1; min-width: 0;">
+                          <span style="display: block; font-size: 15.5px; font-weight: 600; line-height: 1.25; color: {{ row.labelColor }};">{{ row.label }}</span>
+                          <sc-if value="{{ row.hasSub }}" hint-placeholder-val="{{ false }}"><span style="display: block; font-size: 12px; margin-top: 1px; color: {{ row.subColor }};">{{ row.sub }}</span></sc-if>
+                        </span>
+                        <sc-if value="{{ row.hasTag }}" hint-placeholder-val="{{ false }}"><span style="flex-shrink: 0; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: .08em; border-radius: 5px; padding: 3px 7px; background: {{ row.tagBg }}; color: {{ row.tagFg }}; border: 1px solid {{ row.tagBorder }};">{{ row.tag }}</span></sc-if>
+                      </div>
+                    </sc-for>
+                    <sc-if value="{{ cShowSkip }}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 2px 0;">
+                        <span style="font-size: 12.5px; font-weight: 600; color: #71717a;">Skip photo:</span>
+                        <sc-for list="{{ cSkipChips }}" as="chip" hint-placeholder-count="3">
+                          <button onClick="{{ chip.onTap }}" style="min-height: 36px; border-radius: 999px; border: 1.5px solid #d4d4d8; background: #ffffff; color: #3f3f46; font-family: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 12px; cursor: pointer;" style-active="background: #f4f4f5;">{{ chip.label }}</button>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ cIsPlate }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top: 22px; border-radius: 14px; border: 2px dashed #d4d4d8; background: #fafafa; padding: 26px 22px; text-align: center;">
+                    <p style="margin: 0; font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 700; letter-spacing: .12em; color: #52525b;">{{ cPlate.kicker }}</p>
+                    <p style="margin: 8px 0 0; font-size: 21px; font-weight: 700; color: #0a0a0a; line-height: 1.25;">{{ cPlate.title }}</p>
+                    <p style="margin: 8px 0 0; font-size: 15px; color: #52525b; line-height: 1.5;">{{ cPlate.body }}</p>
+                    <sc-if value="{{ cPlate.showPipe }}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 18px; flex-wrap: wrap;">
+                        <sc-for list="{{ cPlate.pipe }}" as="st" hint-placeholder-count="4">
+                          <span style="display: inline-flex; align-items: center; gap: 6px;">
+                            <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 6px 12px; background: {{ st.bg }}; color: {{ st.fg }}; border: 2px solid {{ st.border }};">{{ st.label }}</span>
+                            <sc-if value="{{ st.arrow }}" hint-placeholder-val="{{ false }}"><span style="color: #a1a1aa; font-weight: 700;">→</span></sc-if>
+                          </span>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-if>
+              </div>
+              <div style="flex-shrink: 0; border-top: 1px solid #e4e4e7; background: #fafafa; padding: 10px 16px;">
+                <p style="margin: 0; font-size: 12.5px; color: #71717a;">Pulled away? <strong style="color: #3f3f46;">Park</strong> saves your spot and pauses the clock. <strong style="color: #3f3f46;">Swap</strong> parks this and pulls the next bike in one tap.</p>
+              </div>
+            </sc-if>
+          </section>
+        </div>
+        <sc-if value="{{ cOvPark }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ cCloseOv }}" style="position: absolute; inset: 0; background: rgb(10 10 10 / .6); display: flex; align-items: flex-end; z-index: 20;">
+            <div style="width: 100%; background: #ffffff; border-radius: 18px 18px 0 0; padding: 20px 20px 28px;">
+              <p style="margin: 0 0 4px; font-size: 21px; font-weight: 700; color: #0a0a0a;">Park this bike — why?</p>
+              <p style="margin: 0 0 14px; font-size: 14px; color: #71717a;">Your spot is saved and the timer pauses. The front desk sees the reason.</p>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <sc-for list="{{ cParkTiles }}" as="tile" hint-placeholder-count="4">
+                  <button onClick="{{ tile.onTap }}" style="min-height: 68px; border-radius: 12px; border: 2px solid #d4d4d8; background: #fafafa; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer; padding: 10px;" style-active="background: #e4e4e7;">{{ tile.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ cOvSwap }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ cCloseOv }}" style="position: absolute; inset: 0; background: rgb(10 10 10 / .6); display: flex; align-items: flex-end; z-index: 20;">
+            <div style="width: 100%; background: #ffffff; border-radius: 18px 18px 0 0; padding: 20px 20px 28px;">
+              <p style="margin: 0 0 4px; font-size: 21px; font-weight: 700; color: #0a0a0a;">Swap to which bike?</p>
+              <p style="margin: 0 0 14px; font-size: 14px; color: #71717a;">Parks what's on the bench and starts the one you pick.</p>
+              <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                <sc-for list="{{ cSwapItems }}" as="sw" hint-placeholder-count="2">
+                  <button onClick="{{ sw.onTap }}" style="display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 64px; border-radius: 12px; border: 2px solid #d4d4d8; background: #fafafa; color: #0a0a0a; font-family: inherit; cursor: pointer; padding: 10px 16px;" style-active="background: #e4e4e7;">
+                    <span style="font-size: 17px; font-weight: 700;">{{ sw.model }}</span>
+                    <span style="font-size: 13px; color: #52525b;">{{ sw.sub }}</span>
+                  </button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{ cOvFail }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ cCloseOv }}" style="position: absolute; inset: 0; background: rgb(10 10 10 / .6); display: flex; align-items: flex-end; z-index: 20;">
+            <div style="width: 100%; background: #ffffff; border-radius: 18px 18px 0 0; padding: 20px 20px 28px;">
+              <p style="margin: 0 0 4px; font-size: 21px; font-weight: 700; color: #0a0a0a;">Fail this check — what's wrong?</p>
+              <p style="margin: 0 0 14px; font-size: 14px; color: #71717a;">It goes back to the tech who did the work, with your reason.</p>
+              <div style="display: grid; grid-template-columns: 1fr; gap: 10px;">
+                <sc-for list="{{ cFailChips }}" as="chip" hint-placeholder-count="3">
+                  <button onClick="{{ chip.onTap }}" style="min-height: 60px; border-radius: 12px; border: 2px solid #0a0a0a; background: #ffffff; color: #0a0a0a; font-family: inherit; font-size: 16px; font-weight: 700; cursor: pointer; padding: 10px;" style-active="background: #f4f4f5;">✗ {{ chip.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    this.state = { a: this.mkOpt(), b: this.mkOpt(), c: this.mkOpt() };
+  }
+  componentDidMount() {
+    this._tick = setInterval(() => {
+      let changed = false;
+      const next = {};
+      for (const k of ["a", "b", "c"]) {
+        const o = this.state[k];
+        const bench = o.bikes[o.benchId];
+        if (bench && bench.status === "bench" && !bench.paused) {
+          changed = true;
+          next[k] = { ...o, bikes: { ...o.bikes, [o.benchId]: { ...bench, secs: bench.secs + 1 } } };
+        } else next[k] = o;
+      }
+      if (changed) this.setState(next);
+    }, 1000);
+  }
+  componentWillUnmount() { clearInterval(this._tick); }
+
+  mkSteps(list) { return list.map((s, i) => ({ id: "s" + i, ...s })); }
+  mkOpt() {
+    return {
+      benchId: "ninja", sel: "ninja", note: null, overlay: null,
+      bikes: {
+        ninja: {
+          id: "ninja", model: "2019 Kawasaki Ninja 400", wo: "WO-1204", job: "Chain & sprocket kit", customer: "M. Carvalho",
+          promised: "Promised today 5:00 PM", status: "bench", paused: false, secs: 5892,
+          steps: this.mkSteps([
+            { phase: 0, label: "Walk-around inspection", sub: "12 points · no new issues found", state: "done" },
+            { phase: 1, label: "Remove chain guard & worn chain", state: "done" },
+            { phase: 1, label: "Fit new sprockets — torque 78 lb·ft", state: "done" },
+            { phase: 1, label: "Install DID 520VX3 chain kit", sub: "Part staged at your bench", tag: "PART · IN STOCK", state: "open" },
+            { phase: 1, label: "Set chain slack 30–40 mm & lube", state: "open" },
+            { phase: 2, label: "After photo of the finished work", sub: "One shot proves the job — or skip with a reason", tag: "PHOTO", state: "open", photo: true },
+          ]),
+          others: "Coolant flush (T. Ruiz) · Rear tire (waiting on approval)",
+        },
+        mt07: {
+          id: "mt07", model: "2022 Yamaha MT-07", wo: "WO-1209", job: "Annual safety inspection", customer: "J. Whitfield",
+          promised: null, status: "next", paused: false, secs: 0,
+          steps: this.mkSteps([
+            { phase: 0, label: "Walk-around inspection", sub: "12 points before wrenching", state: "open" },
+            { phase: 1, label: "Lights, signals, horn", state: "open" },
+            { phase: 1, label: "Brakes — pads, discs, lever feel", state: "open" },
+            { phase: 1, label: "Tires — tread depth & pressure", state: "open" },
+            { phase: 2, label: "After photo of the finished work", sub: "Or skip with a reason", tag: "PHOTO", state: "open", photo: true },
+          ]),
+          others: null,
+        },
+        harley: {
+          id: "harley", model: "2017 Harley-Davidson Street Bob", wo: "WO-1198", job: "Front brake pads & rotors", customer: "D. Kim",
+          promised: null, status: "waiting", paused: true, secs: 1240,
+          waitReason: "Rotors on order", waitOwner: "Front desk owns this · ETA Tue", steps: this.mkSteps([
+            { phase: 0, label: "Walk-around inspection", sub: "Done 8:55 AM", state: "done" },
+            { phase: 1, label: "Remove worn pads & rotors", state: "done" },
+            { phase: 1, label: "Install new rotors & pads", sub: "Waiting on part", tag: "PART · ORDERED", state: "open" },
+            { phase: 2, label: "After photo of the finished work", tag: "PHOTO", state: "open", photo: true },
+          ]),
+          others: null,
+        },
+        honda: {
+          id: "honda", model: "2021 Honda CB500X", wo: "WO-1195", job: "Peer QC — T. Ruiz's brake service", customer: "A. Moreau",
+          promised: null, status: "check", paused: true, secs: 0,
+          qc: [
+            { id: "q0", label: "Work matches what the customer approved", state: "open" },
+            { id: "q1", label: "Proof photos tell the story", state: "open" },
+            { id: "q2", label: "Safe to ride out the door", state: "open" },
+          ],
+          steps: [], others: null,
+        },
+        ktm: {
+          id: "ktm", model: "2024 KTM 390 Duke", wo: "WO-1212", job: "Oil & filter service", customer: "R. Osei",
+          promised: "Promised tomorrow 12:00 PM", status: "offered", paused: true, secs: 0,
+          steps: this.mkSteps([
+            { phase: 0, label: "Walk-around inspection", sub: "12 points before wrenching", state: "open" },
+            { phase: 1, label: "Drain oil, replace filter, fill 10W-50", state: "open" },
+            { phase: 1, label: "Check for leaks, reset service light", state: "open" },
+            { phase: 2, label: "After photo of the finished work", tag: "PHOTO", state: "open", photo: true },
+          ]),
+          others: null,
+        },
+      },
+    };
+  }
+
+  up(k, fn) { this.setState((s) => ({ [k]: fn(structuredClone(s[k])) })); }
+  fmt(secs) {
+    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), x = secs % 60;
+    return h + ":" + String(m).padStart(2, "0") + ":" + String(x).padStart(2, "0");
+  }
+  nextOpen(b) { return (b.steps || []).find((s) => s.state === "open") || null; }
+  openCount(b) { return (b.steps || []).filter((s) => s.state === "open").length; }
+  shortLabel(s) {
+    if (!s) return "";
+    if (s.photo) return "Add after photo";
+    const t = s.label;
+    return t.length > 34 ? t.slice(0, 32) + "…" : t;
+  }
+
+  sel(k, id) { this.up(k, (o) => { o.sel = id; o.note = null; return o; }); }
+  accept(k) {
+    this.up(k, (o) => {
+      o.bikes.ktm.status = "next"; o.sel = "ktm";
+      o.note = "Priya dropped the KTM into your line — it sits after the MT-07. Pull it onto the bench when you're ready.";
+      return o;
+    });
+  }
+  pull(k, id) {
+    this.up(k, (o) => {
+      const cur = o.benchId && o.bikes[o.benchId];
+      if (cur && cur.status === "bench") { cur.status = "waiting"; cur.paused = true; cur.waitReason = "Parked — swapped bikes"; cur.waitOwner = "You parked it · spot saved"; }
+      o.bikes[id].status = "bench"; o.bikes[id].paused = false; o.benchId = id; o.sel = id;
+      o.note = cur && cur.id !== id ? "On the bench. " + cur.model + " is parked with your spot saved." : "On the bench — clock running.";
+      return o;
+    });
+  }
+  resume(k, id) {
+    this.up(k, (o) => {
+      const cur = o.benchId && o.bikes[o.benchId];
+      if (cur && cur.status === "bench" && cur.id !== id) { cur.status = "waiting"; cur.paused = true; cur.waitReason = "Parked — swapped bikes"; cur.waitOwner = "You parked it · spot saved"; }
+      const b = o.bikes[id]; b.status = "bench"; b.paused = false; b.waitReason = null; o.benchId = id; o.sel = id;
+      o.note = "Back on the bench — clock running again.";
+      return o;
+    });
+  }
+  tapStep(k, bikeId, stepId) {
+    this.up(k, (o) => {
+      const b = o.bikes[bikeId]; if (b.status !== "bench") return o;
+      const s = b.steps.find((x) => x.id === stepId); if (!s) return o;
+      if (s.state === "done" || s.state === "skipped") { s.state = "open"; s.skipReason = null; }
+      else { s.state = "done"; if (s.photo) s.sub = "Photo added · 1 shot on file"; }
+      o.note = null;
+      return o;
+    });
+  }
+  doNext(k) {
+    this.up(k, (o) => {
+      const b = o.bikes[o.benchId]; if (!b) return o;
+      const s = this.nextOpen(b);
+      if (s) { s.state = "done"; if (s.photo) s.sub = "Photo added · 1 shot on file"; o.note = null; }
+      return o;
+    });
+  }
+  skipPhoto(k, reason) {
+    this.up(k, (o) => {
+      const b = o.bikes[o.benchId]; if (!b) return o;
+      const s = (b.steps || []).find((x) => x.photo && x.state === "open");
+      if (s) { s.state = "skipped"; s.sub = "Skipped — " + reason; o.note = "Photo skipped: “" + reason + ".” The front desk sees the reason."; }
+      return o;
+    });
+  }
+  complete(k) {
+    this.up(k, (o) => {
+      const b = o.bikes[o.benchId]; if (!b || this.openCount(b) > 0) return o;
+      b.status = "done"; b.paused = true; b.doneIn = this.fmt(b.secs);
+      o.benchId = null;
+      o.note = "Done in " + b.doneIn + ". It moves to peer QC — nothing else from you.";
+      return o;
+    });
+  }
+  parkOpen(k) { this.up(k, (o) => { if (o.bikes[o.benchId]) o.overlay = "park"; return o; }); }
+  parkWith(k, reason) {
+    this.up(k, (o) => {
+      const b = o.bikes[o.benchId]; if (!b) return o;
+      b.status = "waiting"; b.paused = true; b.waitReason = reason;
+      b.waitOwner = reason === "Other interruption" ? "You parked it · spot saved" : "Front desk notified · they own the wait";
+      o.overlay = null; o.benchId = null; o.sel = b.id;
+      o.note = "Parked: “" + reason + ".” Your spot is saved and the clock is paused.";
+      return o;
+    });
+  }
+  swapOpen(k) { this.up(k, (o) => { o.overlay = "swap"; return o; }); }
+  swapTo(k, id) {
+    this.up(k, (o) => { o.overlay = null; return o; });
+    this.pull(k, id);
+  }
+  failOpen(k) { this.up(k, (o) => { o.overlay = "fail"; return o; }); }
+  qcToggle(k, qid) {
+    this.up(k, (o) => {
+      const q = o.bikes.honda.qc.find((x) => x.id === qid);
+      if (q) q.state = q.state === "done" ? "open" : "done";
+      return o;
+    });
+  }
+  qcPass(k) {
+    this.up(k, (o) => {
+      const h = o.bikes.honda; if (h.qc.some((q) => q.state !== "done")) return o;
+      h.status = "qcpassed";
+      o.note = "QC passed. The Honda heads to head-tech safety, then pickup.";
+      return o;
+    });
+  }
+  qcFail(k, reason) {
+    this.up(k, (o) => {
+      o.bikes.honda.status = "qcfailed"; o.bikes.honda.failReason = reason; o.overlay = null;
+      o.note = "Failed: “" + reason + ".” It goes back to T. Ruiz's line with your reason.";
+      return o;
+    });
+  }
+  closeOv(k) { this.up(k, (o) => { o.overlay = null; return o; }); }
+
+  // ── view-model builders ──
+  ring(on) { return on ? "0 0 0 3px #fafafa, 0 0 0 6px #0a0a0a" : "none"; }
+  stepRow(k, b, s, compact) {
+    const done = s.state === "done", skipped = s.state === "skipped";
+    const isNext = !done && !skipped && this.nextOpen(b) === s && b.status === "bench";
+    return {
+      onTap: () => this.tapStep(k, b.id, s.id),
+      border: isNext ? "#0a0a0a" : "#e4e4e7",
+      bg: isNext ? "#f4f4f5" : "#ffffff",
+      glyph: done ? "✓" : skipped ? "→" : "",
+      boxBorder: done || skipped ? "#0a0a0a" : "#a1a1aa",
+      boxBg: done ? "#0a0a0a" : "#ffffff",
+      boxFg: done ? "#ffffff" : "#0a0a0a",
+      label: s.label,
+      labelColor: done || skipped ? "#71717a" : "#0a0a0a",
+      hasSub: Boolean(s.sub), sub: s.sub || "", subColor: "#71717a",
+      hasTag: Boolean(s.tag), tag: s.tag || "",
+      tagBg: done || skipped ? "#f4f4f5" : "#0a0a0a", tagFg: done || skipped ? "#71717a" : "#ffffff",
+      tagBorder: done || skipped ? "#d4d4d8" : "#0a0a0a",
+    };
+  }
+  qcRow(k, q) {
+    const done = q.state === "done";
+    return {
+      onTap: () => this.qcToggle(k, q.id),
+      border: done ? "#e4e4e7" : "#0a0a0a", bg: "#ffffff",
+      glyph: done ? "✓" : "", boxBorder: done ? "#0a0a0a" : "#a1a1aa",
+      boxBg: done ? "#0a0a0a" : "#ffffff", boxFg: "#ffffff",
+      label: q.label, labelColor: done ? "#71717a" : "#0a0a0a",
+      hasSub: false, sub: "", subColor: "#71717a", hasTag: false, tag: "", tagBg: "#0a0a0a", tagFg: "#fff", tagBorder: "#0a0a0a",
+    };
+  }
+  parkTiles(k) {
+    return ["Parts not here", "Needs approval", "Tool or lift busy", "Other interruption"].map((label) => ({ label, onTap: (e) => { e.stopPropagation(); this.parkWith(k, label); } }));
+  }
+  failChips(k) {
+    return ["Work doesn't match the approval", "Proof photos missing or unclear", "Not safe — needs another look"].map((label) => ({ label, onTap: (e) => { e.stopPropagation(); this.qcFail(k, label); } }));
+  }
+  skipChips(k) {
+    return ["Nothing visible to show", "Camera busy", "Customer in a hurry"].map((label) => ({ label, onTap: () => this.skipPhoto(k, label) }));
+  }
+  pipe(stage) {
+    const steps = ["WRENCH", "PEER QC", "SAFETY", "PICKUP"];
+    return steps.map((label, i) => ({
+      label: i < stage ? label + " ✓" : label,
+      bg: i < stage ? "#0a0a0a" : i === stage ? "#ffffff" : "#f4f4f5",
+      fg: i < stage ? "#ffffff" : i === stage ? "#0a0a0a" : "#a1a1aa",
+      border: i <= stage ? "#0a0a0a" : "#e4e4e7",
+      arrow: i < steps.length - 1,
+    }));
+  }
+  plateFor(b, o) {
+    if (b.status === "offered") return { kicker: "ASSIGNED BY PRIYA · FRONT DESK", title: b.job + " — " + (b.promised || "no promise time"), body: "Priya added this to your line. It waits here until you pull it onto the bench — that's when your clock starts.", showPipe: false, pipe: [] };
+    if (b.status === "waiting") return { kicker: "PARKED — " + (b.waitReason || "").toUpperCase(), title: "Nothing for you on this bike right now", body: (b.waitOwner || "") + ". Your steps and clock are saved — resume anytime.", showPipe: false, pipe: [] };
+    if (b.status === "done") return { kicker: "COMPLETE — CLOCKED " + (b.doneIn || ""), title: "Your wrench work is done ✓", body: "Here's the rest of its trip — none of it is yours unless it bounces back.", showPipe: true, pipe: this.pipe(1) };
+    if (b.status === "qcpassed") return { kicker: "PEER QC PASSED", title: "You vouched for this bike ✓", body: "Head tech does the final safety call, then the front desk books pickup.", showPipe: true, pipe: this.pipe(2) };
+    if (b.status === "qcfailed") return { kicker: "PEER QC FAILED", title: "Sent back: " + (b.failReason || ""), body: "It returns to T. Ruiz's line with your reason. You're done with it for now.", showPipe: false, pipe: [] };
+    if (b.status === "next") return { kicker: "IN YOUR LINE — NOT STARTED", title: "Ready when you are", body: "Pull it onto the bench to start the clock. Anything already on the bench parks itself with the spot saved.", showPipe: false, pipe: [] };
+    return null;
+  }
+  dockFor(k, o) {
+    const sel = o.bikes[o.sel];
+    const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+    const black = { bg: "#0a0a0a", fg: "#ffffff", shadow: "#71717a" };
+    if (!sel) return null;
+    if (sel.status === "offered") return { ...black, label: "Got it — it's in my line →", onTap: stop(() => this.accept(k)), showPark: false, showFail: false, hasSub: true, sub: "Priya placed it after the MT-07" };
+    if (sel.status === "check") {
+      const ready = sel.qc.every((q) => q.state === "done");
+      return { bg: ready ? "#0a0a0a" : "#e4e4e7", fg: ready ? "#ffffff" : "#71717a", shadow: ready ? "#71717a" : "#e4e4e7", label: ready ? "Pass QC — vouch for it ✓" : "Tap the 3 checks first", onTap: stop(() => this.qcPass(k)), showPark: false, showFail: true, onFail: stop(() => this.failOpen(k)), hasSub: true, sub: "Pass puts your name on it · Fail sends it back with a reason" };
+    }
+    if (sel.status === "waiting") return { ...black, label: "Resume — back on the bench ▶", onTap: stop(() => this.resume(k, sel.id)), showPark: false, showFail: false, hasSub: true, sub: "Spot and clock pick up where you left off" };
+    if (sel.status === "next") return { ...black, label: "Pull onto the bench ▶", onTap: stop(() => this.pull(k, sel.id)), showPark: false, showFail: false, hasSub: true, sub: "Starts your clock on " + sel.wo };
+    if (sel.status === "bench") {
+      const nxt = this.nextOpen(sel);
+      if (nxt) {
+        const remaining = this.openCount(sel);
+        return { ...black, label: nxt.photo ? "Add after photo ✓" : "Done: " + this.shortLabel(nxt) + " ✓", onTap: stop(() => this.doNext(k)), showPark: true, onPark: stop(() => this.parkOpen(k)), showFail: false, hasSub: true, sub: remaining === 1 ? "Last step — then complete" : remaining + " steps to go" };
+      }
+      return { ...black, label: "Complete job ✓✓", onTap: stop(() => this.complete(k)), showPark: true, onPark: stop(() => this.parkOpen(k)), showFail: false, hasSub: true, sub: "Hands it to peer QC — your clock stops" };
+    }
+    if (sel.status === "done" || sel.status === "qcpassed" || sel.status === "qcfailed") {
+      const nextUp = Object.values(o.bikes).find((b) => b.status === "next");
+      if (nextUp) return { ...black, label: "Pull next: " + nextUp.model.replace(/^\d{4} /, "") + " ▶", onTap: stop(() => this.pull(k, nextUp.id)), showPark: false, showFail: false, hasSub: false, sub: "" };
+      return { bg: "#e4e4e7", fg: "#71717a", shadow: "#e4e4e7", label: "Line's clear — nice work", onTap: () => {}, showPark: false, showFail: false, hasSub: false, sub: "" };
+    }
+    return null;
+  }
+
+  optionVals(k, prefix) {
+    const o = this.state[k];
+    const bikes = o.bikes;
+    const sel = bikes[o.sel] || null;
+    const stopSel = (id) => () => this.sel(k, id);
+    const v = {};
+    const P = (name, val) => { v[prefix + name] = val; };
+
+    // queue lanes (A)
+    const laneNow = [], laneNext = [], laneWaiting = [], laneCheck = [], laneDone = [];
+    const order = ["ninja", "mt07", "harley", "honda", "ktm"];
+    for (const id of order) {
+      const b = bikes[id];
+      const isSel = o.sel === id;
+      if (b.status === "bench") laneNow.push({ onTap: stopSel(id), model: b.model, job: b.job + (b.paused ? " · paused" : ""), wo: b.wo, timer: this.fmt(b.secs), ring: this.ring(isSel) });
+      else if (b.status === "next") laneNext.push({ onTap: stopSel(id), model: b.model, job: b.job, wo: b.wo, ring: this.ring(isSel) });
+      else if (b.status === "waiting") laneWaiting.push({ onTap: stopSel(id), model: b.model, sub: b.waitReason || "Waiting", owner: b.waitOwner || "", ring: this.ring(isSel) });
+      else if (b.status === "check") laneCheck.push({ onTap: stopSel(id), model: b.model, sub: b.job, ring: this.ring(isSel) });
+      else if (b.status === "done" || b.status === "qcpassed" || b.status === "qcfailed") laneDone.push({ onTap: stopSel(id), model: b.model, sub: b.status === "done" ? "Complete · in QC" : b.status === "qcpassed" ? "QC passed · at safety" : "QC failed · back to T. Ruiz", ring: this.ring(isSel) });
+    }
+    P("LaneNow", laneNow); P("LaneNext", laneNext); P("LaneWaiting", laneWaiting); P("LaneCheck", laneCheck);
+    P("HasDone", laneDone.length > 0); P("LaneDone", laneDone);
+    P("HasBanner", bikes.ktm.status === "offered");
+    P("Banner", { from: "PRIYA · FRONT DESK", model: bikes.ktm.model, job: bikes.ktm.job, onAccept: () => this.accept(k) });
+
+    // flat queue (B, C)
+    const stampFor = (b) => {
+      if (b.status === "bench") return b.paused ? ["PAUSED", "#ffffff", "#0a0a0a", "#0a0a0a"] : ["NOW", "#0a0a0a", "#ffffff", "#0a0a0a"];
+      if (b.status === "next") return ["NEXT", "#ffffff", "#0a0a0a", "#a1a1aa"];
+      if (b.status === "waiting") return ["HOLD", "#f4f4f5", "#71717a", "#d4d4d8"];
+      if (b.status === "check") return ["CHECK", "#ffffff", "#0a0a0a", "#0a0a0a"];
+      if (b.status === "offered") return ["NEW", "#0a0a0a", "#ffffff", "#0a0a0a"];
+      return ["DONE", "#f4f4f5", "#71717a", "#e4e4e7"];
+    };
+    const flatOrder = Object.values(bikes).slice().sort((x, y) => {
+      const rank = { bench: 0, offered: 1, next: 2, check: 3, waiting: 4, done: 5, qcpassed: 5, qcfailed: 5 };
+      return rank[x.status] - rank[y.status];
+    });
+    const bQueue = flatOrder.map((b, i) => {
+      const isSel = o.sel === b.id;
+      const [stamp, sBg, sFg, sBorder] = stampFor(b);
+      const dim = b.status === "waiting" || b.status === "done" || b.status === "qcpassed" || b.status === "qcfailed";
+      return {
+        onTap: stopSel(b.id), pos: String(i + 1),
+        border: b.status === "bench" ? "2px solid #0a0a0a" : b.status === "waiting" ? "2px dashed #a1a1aa" : "2px solid #d4d4d8",
+        cardBg: b.status === "bench" ? "#ffffff" : dim ? "#f4f4f5" : "#ffffff",
+        ring: this.ring(isSel),
+        posBg: dim ? "#e4e4e7" : "#0a0a0a", posFg: dim ? "#71717a" : "#ffffff", posBorder: dim ? "#d4d4d8" : "#0a0a0a",
+        wo: b.wo, woColor: dim ? "#a1a1aa" : "#71717a",
+        model: b.model, modelColor: dim ? "#52525b" : "#0a0a0a",
+        sub: b.status === "waiting" ? (b.waitReason || "Waiting") : b.status === "check" ? b.job : b.status === "done" ? "Complete · in QC" : b.status === "qcpassed" ? "QC passed · at safety" : b.status === "qcfailed" ? "Back to T. Ruiz" : b.job,
+        subColor: "#71717a",
+        stamp, stampBg: sBg, stampFg: sFg, stampBorder: sBorder,
+      };
+    });
+    P("Queue", bQueue);
+    P("Blocked", Object.values(bikes).filter((b) => b.status === "waiting").map((b) => ({ title: b.waitReason + " — " + b.model.replace(/^\d{4} /, ""), sub: b.waitOwner || "" })));
+
+    // selection header
+    P("HasSel", Boolean(sel));
+    if (sel) {
+      P("Sel", {
+        model: sel.model, wo: sel.wo, job: sel.job, customer: sel.customer,
+        hasPromised: Boolean(sel.promised), promised: sel.promised || "",
+        showTimer: sel.status === "bench" || sel.status === "waiting", timer: this.fmt(sel.secs) + (sel.paused ? " ⏸" : ""),
+        hasOthers: Boolean(sel.others), othersLine: sel.others || "",
+        stateLine: sel.status === "bench" ? (sel.paused ? "ON THE BENCH · PAUSED" : "ON THE BENCH · CLOCK RUNNING") : sel.status === "next" ? "IN YOUR LINE · NOT STARTED" : sel.status === "waiting" ? "PARKED · " + (sel.waitReason || "").toUpperCase() : sel.status === "check" ? "PEER QC · YOU'RE THE CHECKER" : sel.status === "offered" ? "JUST ASSIGNED TO YOU" : "DONE · OFF YOUR BENCH",
+        stateColor: "#52525b",
+      });
+    } else {
+      P("Sel", { model: "", wo: "", job: "", customer: "", hasPromised: false, promised: "", showTimer: false, timer: "", hasOthers: false, othersLine: "", stateLine: "", stateColor: "#52525b" });
+    }
+    P("HasNote", Boolean(o.note)); P("Note", o.note || "");
+
+    // surface body
+    const isWork = sel && (sel.status === "bench" || sel.status === "check");
+    P("IsWork", Boolean(isWork));
+    P("IsPlate", Boolean(sel) && !isWork);
+    P("Plate", sel && !isWork ? this.plateFor(sel, o) : { kicker: "", title: "", body: "", showPipe: false, pipe: [] });
+
+    // rows
+    let rows = [];
+    if (sel && sel.status === "check") rows = sel.qc.map((q) => this.qcRow(k, q));
+    else if (sel && sel.status === "bench") rows = sel.steps.map((s) => this.stepRow(k, sel, s));
+    const nxt = sel && sel.status === "bench" ? this.nextOpen(sel) : null;
+    P("ShowSkip", Boolean(nxt && nxt.photo));
+    P("SkipChips", this.skipChips(k));
+
+    // A: phases
+    if (prefix === "a") {
+      const phaseDefs = [{ name: "Check in", }, { name: "Wrench" }, { name: "Wrap up" }];
+      const phases = phaseDefs.map((pd, pi) => {
+        const steps = sel && sel.status === "bench" ? sel.steps.filter((s) => s.phase === pi) : [];
+        const qcMode = sel && sel.status === "check";
+        const useSteps = qcMode ? (pi === 1 ? sel.qc : []) : steps;
+        const doneCount = useSteps.filter((s) => s.state === "done" || s.state === "skipped").length;
+        const allDone = useSteps.length > 0 && doneCount === useSteps.length;
+        const activeIdx = (() => {
+          if (qcMode) return 1;
+          if (!sel || sel.status !== "bench") return -1;
+          for (let i = 0; i < 3; i++) {
+            const ss = sel.steps.filter((s) => s.phase === i);
+            if (ss.some((s) => s.state === "open")) return i;
+          }
+          return 2;
+        })();
+        const isActive = pi === activeIdx;
+        const names = qcMode ? ["Look it over", "Judge the work", "Call it"] : ["Check in", "Wrench", "Wrap up"];
+        return {
+          glyph: allDone && !isActive ? "✓" : String(pi + 1),
+          circleBg: allDone && !isActive ? "#0a0a0a" : isActive ? "#ffffff" : "#f4f4f5",
+          circleFg: allDone && !isActive ? "#ffffff" : isActive ? "#0a0a0a" : "#a1a1aa",
+          circleBorder: allDone || isActive ? "#0a0a0a" : "#e4e4e7",
+          showLine: pi < 2, lineColor: allDone ? "#0a0a0a" : "#e4e4e7",
+          name: names[pi], nameColor: isActive ? "#0a0a0a" : allDone ? "#3f3f46" : "#a1a1aa",
+          sub: useSteps.length ? doneCount + " of " + useSteps.length : (qcMode && pi !== 1 ? "" : ""),
+          isActive,
+          rows: isActive ? (qcMode ? sel.qc.map((q) => this.qcRow(k, q)) : useSteps.map((s) => this.stepRow(k, sel, s))) : [],
+        };
+      });
+      P("Phases", phases);
+    }
+
+    // B: numbered rows + progress
+    if (prefix === "b") {
+      const bRows = rows.map((r, i) => {
+        const src = sel && sel.status === "bench" ? sel.steps[i] : null;
+        const isActive = Boolean(src && nxt && src === nxt);
+        return {
+          ...r, num: String(i + 1), numColor: r.labelColor === "#71717a" ? "#a1a1aa" : "#0a0a0a",
+          isActive,
+          actionLabel: isActive ? (src.photo ? "Add after photo ✓" : "Mark done ✓") : "",
+          actionTap: isActive ? (e) => { e.stopPropagation(); this.tapStep(k, sel.id, src.id); } : () => {},
+        };
+      });
+      P("Rows", bRows);
+      const total = sel && sel.status === "bench" ? sel.steps.length : sel && sel.status === "check" ? sel.qc.length : 0;
+      const doneN = sel && sel.status === "bench" ? sel.steps.filter((s) => s.state !== "open").length : sel && sel.status === "check" ? sel.qc.filter((q) => q.state === "done").length : 0;
+      P("Progress", { pct: total ? Math.round((doneN / total) * 100) + "%" : "0%", text: doneN + "/" + total });
+    }
+    if (prefix === "c") P("Rows", rows);
+    if (prefix === "a") P("Rows", rows);
+
+    // dock
+    let dock = this.dockFor(k, o) || { bg: "#e4e4e7", fg: "#71717a", shadow: "#e4e4e7", label: "", onTap: () => {}, showPark: false, showFail: false, hasSub: false, sub: "" };
+    if (prefix === "b" && sel && sel.status === "bench" && this.openCount(sel) > 0) {
+      dock = { ...dock, bg: "#e4e4e7", fg: "#71717a", shadow: "#e4e4e7", label: "Complete job — " + this.openCount(sel) + " left", onTap: () => {}, hasSub: true, sub: "Work the highlighted step above" };
+    }
+    P("Dock", dock);
+
+    // C command bar
+    if (prefix === "c") {
+      P("Cmd1", { kicker: sel ? "GO · " + sel.wo : "GO", label: dock.label || "Pick a bike", onTap: dock.onTap, bg: dock.bg, fg: dock.fg, shadow: dock.shadow });
+      P("Cmd2", { onTap: (e) => { e.stopPropagation(); this.parkOpen(k); } });
+      P("Cmd3", { onTap: (e) => { e.stopPropagation(); this.swapOpen(k); } });
+      P("SwapItems", Object.values(bikes).filter((b) => b.status === "next" || (b.status === "waiting")).map((b) => ({ model: b.model, sub: b.status === "next" ? "Not started" : "Parked — " + (b.waitReason || ""), onTap: (e) => { e.stopPropagation(); this.swapTo(k, b.id); } })));
+    }
+
+    // overlays
+    P("OvPark", o.overlay === "park"); P("OvFail", o.overlay === "fail"); P("OvSwap", o.overlay === "swap");
+    P("ParkTiles", this.parkTiles(k)); P("FailChips", this.failChips(k));
+    P("CloseOv", () => this.closeOv(k));
+    return v;
+  }
+
+  renderVals() {
+    return { ...this.optionVals("a", "a"), ...this.optionVals("b", "b"), ...this.optionVals("c", "c") };
+  }
+}
+</script>
+</body>
+</html>

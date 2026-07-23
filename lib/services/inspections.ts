@@ -1,4 +1,5 @@
 import { requireUser, type AppUser } from "@/lib/auth/session";
+import { resolveReadSubject, type ReadView } from "@/lib/auth/role-preview-shared";
 import { createClient } from "@/lib/database/supabase-server";
 import type { DbClient, InspectionResultStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
@@ -191,9 +192,14 @@ async function ensureInspectionSeeded(
 }
 
 export async function getInspectionForWorkOrder(
-  workOrderId: string
+  workOrderId: string,
+  options?: {
+    /** Trusted presentation principal (owner "view as") — read shaping only. */
+    view?: ReadView;
+  }
 ): Promise<InspectionDetail | null> {
   const user = await requireUser();
+  const subject = resolveReadSubject(user, options?.view);
   const supabase = await createClient();
 
   const { data: workOrder, error: woError } = await supabase
@@ -237,8 +243,8 @@ export async function getInspectionForWorkOrder(
       jobs:
         (workOrder.job as Array<{ assigned_technician_id: string | null }> | null) ?? [],
     },
-    user.role,
-    user.user_id
+    subject.role,
+    subject.userId
   );
 
   const firstLoad = await supabase
@@ -365,7 +371,7 @@ export async function getInspectionForWorkOrder(
     is_foreign_location: workOrder.location_id !== user.active_location_id,
     header: {
       customer_name:
-        canViewClients(user.role) && customer
+        canViewClients(subject.role) && customer
           ? `${customer.first_name} ${customer.last_name}`
           : null,
       motorcycle_label: motorcycle
@@ -513,6 +519,21 @@ export async function saveInspectionResult(
       row.status === "future_attention" ||
       row.status === "immediate_attention");
 
+  // Tech flags a finding → client recommendation appears immediately (and is
+  // withdrawn again if the flag is cleared before anyone acts on it).
+  if (significant) {
+    const { syncRecommendationForInspectionResult } =
+      await import("@/lib/services/recommendations");
+    await syncRecommendationForInspectionResult({
+      work_order_id: workOrder.work_order_id,
+      inspection_result_id: inspectionResultId,
+      status: result.status,
+      item_name_snapshot: result.item_name_snapshot,
+      category_snapshot: result.category_snapshot,
+      notes: result.notes,
+    });
+  }
+
   if (significant || statusChanged) {
     await addTimelineEvent(supabase, {
       work_order_id: workOrder.work_order_id,
@@ -571,7 +592,8 @@ export async function completeInspection(
         inspection_result_id,
         status,
         category_snapshot,
-        item_name_snapshot
+        item_name_snapshot,
+        notes
       )
     `
     )
@@ -588,6 +610,7 @@ export async function completeInspection(
       status: string | null;
       category_snapshot: string;
       item_name_snapshot: string;
+      notes: string | null;
     }> | null) ?? [];
   const incompleteCount = countIncompleteInspectionResults(results);
 
@@ -658,6 +681,26 @@ export async function completeInspection(
       forced: Boolean(options.force && incompleteCount > 0),
     },
   });
+
+  // Yellow / red findings become recommendations immediately on complete.
+  const { ensureRecommendationsForAttentionFindings } =
+    await import("@/lib/services/recommendations");
+  const recommendationCount = await ensureRecommendationsForAttentionFindings(
+    workOrderId,
+    results
+  );
+
+  if (recommendationCount > 0) {
+    await addTimelineEvent(supabase, {
+      work_order_id: workOrderId,
+      user_id: user.user_id,
+      event_type: TimelineEventType.RECOMMENDATION_CREATED,
+      entity_type: "inspection",
+      entity_id: inspection.inspection_id,
+      description: `${recommendationCount} recommendation(s) created from inspection findings`,
+      new_value: { recommendation_count: recommendationCount },
+    });
+  }
 
   await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
 }

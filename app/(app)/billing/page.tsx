@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canViewBillingArea,
   canViewBillingTab,
@@ -30,16 +30,17 @@ export default async function BillingPage({
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canViewBillingArea(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  const { actor: user, role: viewRole } = preview;
+  if (!canViewBillingArea(viewRole)) redirect("/dashboard");
   if (!user.active_location_id) redirect("/dashboard");
 
   const params = await searchParams;
   const requested = parseTab(params.tab);
-  const fallback = defaultBillingTab(user.role);
+  const fallback = defaultBillingTab(viewRole);
   const active =
-    requested && canViewBillingTab(user.role, requested) ? requested : fallback;
+    requested && canViewBillingTab(viewRole, requested) ? requested : fallback;
 
   if (requested && requested !== active) {
     redirect(`/billing?tab=${active}`);
@@ -47,11 +48,11 @@ export default async function BillingPage({
 
   const allowed: BillingTab[] = (
     ["collections", "money_desk", "ledger"] as BillingTab[]
-  ).filter((tab) => canViewBillingTab(user.role, tab));
+  ).filter((tab) => canViewBillingTab(viewRole, tab));
 
   const items = await listBillingBoardForLocation(user.active_location_id);
   const stats = buildBillingDeskStats(items);
-  const showQuickActions = canViewBillingTab(user.role, "money_desk");
+  const showQuickActions = canViewBillingTab(viewRole, "money_desk");
 
   return (
     <div className="page-stack page-stack--wide">

@@ -14,13 +14,8 @@ import { motorcycleSchema } from "@/lib/validation/schemas";
 import { escapeSearchTerm } from "@/lib/services/customers";
 import { normalizeVin } from "@/lib/vin";
 import type { MileageUnit } from "@/lib/mileage/format";
-import {
-  isServiceInfoEmpty,
-  mapFitmentToServiceInfo,
-  mergeServiceInfoFill,
-  pickBestFitmentVehicle,
-  type FitmentPayload,
-} from "@/lib/fitment/serviceInfoFromFitment";
+import { applyFitmentFillToServiceInfo } from "@/lib/services/syncServiceInfoFromFitment";
+import type { FitmentPayload } from "@/lib/fitment/serviceInfoFromFitment";
 
 export type Motorcycle = {
   motorcycle_id: string;
@@ -336,11 +331,15 @@ export async function getServiceInformation(
   const supabase = await createClient();
 
   let info = await loadServiceInformation(supabase, motorcycleId);
-  if (info && isServiceInfoEmpty(info)) {
+  if (info) {
     const motorcycle = await getMotorcycleById(motorcycleId);
     if (motorcycle) {
-      await fillServiceInformationFromFitment(supabase, motorcycle, info);
-      info = await loadServiceInformation(supabase, motorcycleId);
+      const filled = await fillServiceInformationFromFitment(supabase, motorcycle, info, {
+        refreshFitmentValues: true,
+      });
+      if (filled > 0) {
+        info = await loadServiceInformation(supabase, motorcycleId);
+      }
     }
   }
   return info;
@@ -363,56 +362,35 @@ async function loadServiceInformation(
 async function fillServiceInformationFromFitment(
   supabase: DbClient,
   motorcycle: Pick<Motorcycle, "motorcycle_id" | "year" | "make" | "model">,
-  existing: ServiceInformation
+  existing: ServiceInformation,
+  options: { refreshFitmentValues?: boolean } = {}
 ): Promise<number> {
-  const { data, error } = await supabase
-    .from("fitment_vehicle")
-    .select("make, model, year_start, year_end, spec_data, part_data")
-    .ilike("make", motorcycle.make);
+  const rows: FitmentPayload[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .from("fitment_vehicle")
+      .select("make, model, year_start, year_end, spec_data, part_data")
+      .ilike("make", motorcycle.make)
+      .order("vehicle_id", { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+    const page = data ?? [];
+    for (const row of page) {
+      rows.push({
+        make: row.make as string,
+        model: row.model as string,
+        year_start: row.year_start as number,
+        year_end: row.year_end as number,
+        spec_data: (row.spec_data as Record<string, string>) ?? {},
+        part_data: (row.part_data as Record<string, string>) ?? {},
+      });
+    }
+    if (page.length < pageSize) break;
+  }
 
-  if (error) throw error;
-
-  const rows = (data ?? []).map((row) => ({
-    make: row.make as string,
-    model: row.model as string,
-    year_start: row.year_start as number,
-    year_end: row.year_end as number,
-    spec_data: (row.spec_data as Record<string, string>) ?? {},
-    part_data: (row.part_data as Record<string, string>) ?? {},
-  })) satisfies FitmentPayload[];
-
-  const match = pickBestFitmentVehicle(
-    rows,
-    motorcycle.year,
-    motorcycle.make,
-    motorcycle.model
-  );
-  if (!match) return 0;
-
-  const mapped = mapFitmentToServiceInfo(match);
-  const { next, filledCount } = mergeServiceInfoFill(existing, mapped);
-  if (filledCount === 0) return 0;
-
-  const { error: updateError } = await supabase
-    .from("motorcycle_service_information")
-    .update({
-      oil_filter: next.oil_filter,
-      oil_type: next.oil_type,
-      oil_capacity: next.oil_capacity ?? existing.oil_capacity,
-      air_filter: next.air_filter,
-      spark_plugs: next.spark_plugs,
-      front_brake_pads: next.front_brake_pads,
-      rear_brake_pads: next.rear_brake_pads,
-      front_tire_size: next.front_tire_size,
-      rear_tire_size: next.rear_tire_size,
-      chain: next.chain,
-      battery: next.battery,
-      last_updated: new Date().toISOString(),
-    })
-    .eq("motorcycle_id", motorcycle.motorcycle_id);
-
-  if (updateError) throw updateError;
-  return filledCount;
+  return applyFitmentFillToServiceInfo(supabase, motorcycle, existing, rows, options);
 }
 
 export async function createMotorcycle(input: MotorcycleInput): Promise<Motorcycle> {
@@ -516,6 +494,19 @@ export async function updateMotorcycle(
 
   if (error) throw error;
   const motorcycle = data as Motorcycle;
+
+  const ymmChanged =
+    previous.year !== motorcycle.year ||
+    previous.make !== motorcycle.make ||
+    previous.model !== motorcycle.model;
+  if (ymmChanged) {
+    const info = await loadServiceInformation(supabase, motorcycleId);
+    if (info) {
+      await fillServiceInformationFromFitment(supabase, motorcycle, info, {
+        refreshFitmentValues: true,
+      });
+    }
+  }
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,

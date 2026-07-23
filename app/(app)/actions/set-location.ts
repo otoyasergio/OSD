@@ -3,6 +3,10 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { ACTIVE_LOCATION_COOKIE } from "@/lib/auth/location-cookie";
+import {
+  ROLE_PREVIEW_ROLE_COOKIE,
+  ROLE_PREVIEW_TECHNICIAN_COOKIE,
+} from "@/lib/auth/role-preview-shared";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { createClient } from "@/lib/database/supabase-server";
@@ -20,6 +24,13 @@ export async function setActiveLocation(locationId: string) {
     secure: process.env.NODE_ENV === "production",
     path: "/",
   });
+
+  // A mirrored technician belongs to the previous location — drop the
+  // technician preview so the switch can't carry a stale subject across.
+  if (cookieStore.get(ROLE_PREVIEW_ROLE_COOKIE)?.value === "technician") {
+    cookieStore.delete(ROLE_PREVIEW_ROLE_COOKIE);
+  }
+  cookieStore.delete(ROLE_PREVIEW_TECHNICIAN_COOKIE);
 
   const supabase = await createClient();
   await addAuditLog(supabase, {

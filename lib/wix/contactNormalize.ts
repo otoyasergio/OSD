@@ -64,6 +64,8 @@ export function fieldsToWebhookPayload(
 
 export type CustomerMatchRow = {
   customer_id: string;
+  first_name: string;
+  last_name: string;
   email: string | null;
   phone: string | null;
   wix_contact_id: string | null;
@@ -91,4 +93,31 @@ export function findMatchingCustomer<T extends CustomerMatchRow>(
   }
 
   return null;
+}
+
+function sameOptionalText(
+  left: string | null | undefined,
+  right: string | null | undefined
+): boolean {
+  return (normalizeOptional(left) ?? null) === (normalizeOptional(right) ?? null);
+}
+
+/**
+ * True when local customer already mirrors the Wix contact fields we sync.
+ * Used to skip no-op updates so daily cron can finish under Vercel maxDuration.
+ */
+export function isCustomerInSyncWithWix(
+  existing: CustomerMatchRow,
+  fields: WixContactMatchFields
+): boolean {
+  if (existing.wix_contact_id !== fields.wixContactId) return false;
+  if (existing.first_name !== fields.firstName) return false;
+  if (existing.last_name !== fields.lastName) return false;
+
+  const nextEmail = fields.email ?? existing.email;
+  const nextPhone = fields.phone ?? existing.phone;
+  return (
+    sameOptionalText(existing.email, nextEmail) &&
+    sameOptionalText(existing.phone, nextPhone)
+  );
 }

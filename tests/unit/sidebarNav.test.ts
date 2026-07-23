@@ -1,42 +1,71 @@
 import { describe, expect, it } from "vitest";
-import { buildNavCategories } from "@/components/layout/SidebarNav";
+import { buildNavCategories, isActiveNavPath } from "@/components/layout/SidebarNav";
 
 describe("buildNavCategories", () => {
-  it("orders owner nav Finances → Clients → Communication → Staffing → Settings", () => {
+  it("orders owner nav Finances → Workshop → Docket → Communication → Settings", () => {
     const categories = buildNavCategories("owner");
     expect(categories.map((c) => c.id)).toEqual([
       "finances",
-      "clients",
+      "workshop",
+      "docket",
       "communication",
-      "staffing",
       "settings",
     ]);
+    expect(categories.find((c) => c.id === "workshop")?.label).toBe("Workshop");
+    expect(
+      categories
+        .find((c) => c.id === "workshop")
+        ?.subgroups.some((g) => g.heading === "Shop floor")
+    ).toBe(false);
     const communication = categories.find((c) => c.id === "communication");
     expect(communication?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
       "/messages",
     ]);
   });
 
-  it("puts Timesheets under Staffing for owner/manager", () => {
+  it("puts Tech Floor and Timesheets under Docket for owner/manager", () => {
     const owner = buildNavCategories("owner");
-    const staffing = owner.find((c) => c.id === "staffing");
-    expect(staffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
+    const docket = owner.find((c) => c.id === "docket");
+    expect(docket?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
       expect.arrayContaining([
         "/technician",
         "/technician/docket",
         "/settings/timesheets",
       ])
     );
+    expect(docket?.subgroups.flatMap((g) => g.links).map((l) => l.label)).toEqual(
+      expect.arrayContaining(["Tech Floor", "Assign docket"])
+    );
 
     const tech = buildNavCategories("technician");
-    const techStaffing = tech.find((c) => c.id === "staffing");
-    expect(techStaffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
+    const techDocket = tech.find((c) => c.id === "docket");
+    expect(techDocket?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual([
       "/technician",
-      "/technician/clock",
+    ]);
+    expect(techDocket?.subgroups.flatMap((g) => g.links).map((l) => l.label)).toEqual([
+      "Tech Floor",
     ]);
   });
 
-  it("exposes Docket under Staffing for front office only", () => {
+  it("labels /technician as Tech Floor (never Jobs) for every role", () => {
+    for (const role of [
+      "owner",
+      "manager",
+      "service_advisor",
+      "technician",
+      "head_tech",
+      "admin",
+    ] as const) {
+      const links = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links)
+      );
+      const techFloor = links.find((l) => l.href === "/technician");
+      expect(techFloor?.label).toBe("Tech Floor");
+      expect(links.map((l) => l.label)).not.toContain("Jobs");
+    }
+  });
+
+  it("exposes Assign docket under Docket for front office only", () => {
     for (const role of ["owner", "manager", "service_advisor"] as const) {
       const hrefs = buildNavCategories(role).flatMap((c) =>
         c.subgroups.flatMap((g) => g.links.map((l) => l.href))
@@ -124,19 +153,74 @@ describe("buildNavCategories", () => {
     }
   });
 
-  it("exposes Time clock under Staffing for floor techs", () => {
-    for (const role of ["technician", "head_tech"] as const) {
-      const staffing = buildNavCategories(role).find((c) => c.id === "staffing");
-      expect(staffing?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
+  it("exposes Time clock under Docket only for owner/manager (self-clock)", () => {
+    for (const role of ["owner", "manager"] as const) {
+      const docket = buildNavCategories(role).find((c) => c.id === "docket");
+      expect(docket?.subgroups.flatMap((g) => g.links).map((l) => l.href)).toEqual(
         expect.arrayContaining(["/technician", "/technician/clock"])
       );
     }
-    const owner = buildNavCategories("owner");
-    const ownerStaffing = owner.find((c) => c.id === "staffing");
-    const ownerHrefs = ownerStaffing?.subgroups
-      .flatMap((g) => g.links)
-      .map((l) => l.href);
-    expect(ownerHrefs).not.toContain("/technician/clock");
+    for (const role of ["service_advisor", "technician", "head_tech", "admin"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).toContain("/technician");
+      expect(hrefs).not.toContain("/technician/clock");
+    }
+  });
+
+  it("activates Tech Floor only on the exact /technician path", () => {
+    expect(isActiveNavPath("/technician", "/technician")).toBe(true);
+    expect(isActiveNavPath("/technician/docket", "/technician")).toBe(false);
+    expect(isActiveNavPath("/technician/clock", "/technician")).toBe(false);
+
+    // Sibling links keep their own prefix matching.
+    expect(isActiveNavPath("/technician/docket", "/technician/docket")).toBe(true);
+    expect(isActiveNavPath("/technician/clock", "/technician/clock")).toBe(true);
+  });
+
+  it("keeps prefix matching for non-exclusive nav paths", () => {
+    expect(isActiveNavPath("/work_orders/abc", "/work_orders")).toBe(true);
+    expect(isActiveNavPath("/settings/users", "/settings/users")).toBe(true);
+    expect(isActiveNavPath("/settings/users", "/settings")).toBe(false);
+    expect(isActiveNavPath("/settings", "/settings")).toBe(true);
+  });
+
+  it("shapes navigation for each owner preview role", () => {
+    const hrefsFor = (role: Parameters<typeof buildNavCategories>[0]) =>
+      buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+
+    // Owner preview = full nav including owner-only admin surfaces.
+    const owner = hrefsFor("owner");
+    expect(owner).toEqual(
+      expect.arrayContaining(["/billing", "/settings/users", "/settings/logs"])
+    );
+
+    // Service advisor preview keeps billing but loses owner-only admin.
+    const advisor = hrefsFor("service_advisor");
+    expect(advisor).toContain("/billing");
+    expect(advisor).not.toContain("/settings/users");
+    expect(advisor).not.toContain("/settings/logs");
+    expect(advisor).not.toContain("/settings/reports");
+
+    // Admin preview loses billing/parts/assign-docket but keeps work orders.
+    const admin = hrefsFor("admin");
+    expect(admin).not.toContain("/billing");
+    expect(admin).not.toContain("/parts");
+    expect(admin).not.toContain("/technician/docket");
+    expect(admin).toContain("/work_orders");
+    expect(admin).toContain("/customers");
+
+    // Technician preview collapses to the floor set.
+    const technician = hrefsFor("technician");
+    expect(technician).toEqual(
+      expect.arrayContaining(["/technician", "/parts", "/messages", "/settings"])
+    );
+    for (const hidden of ["/dashboard", "/work_orders", "/billing", "/customers"]) {
+      expect(technician).not.toContain(hidden);
+    }
   });
 
   it("does not expose Password as a sidebar nav item for any role", () => {

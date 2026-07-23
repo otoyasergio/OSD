@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canManageUsers } from "@/lib/permissions";
 import { listLocationOptions, listManagedUsers } from "@/lib/services/users";
 import { UserEditForm, UserLinkForm } from "@/components/forms/UserForms";
@@ -13,9 +13,9 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function UsersAdminPage() {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canManageUsers(user.role)) redirect("/settings");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canManageUsers(preview.role)) redirect("/settings");
 
   const [users, locations] = await Promise.all([
     listManagedUsers(),
@@ -65,6 +65,14 @@ export default async function UsersAdminPage() {
                   {person.locations.map((loc) => loc.code).join(", ") || "No locations"}
                 </span>
               </summary>
+              <div className="mt-2">
+                <Link
+                  href={`/settings/staff/${person.user_id}`}
+                  className="text-sm font-medium text-[var(--accent)] underline-offset-2 hover:underline"
+                >
+                  Staff profile · PIN & EE docs
+                </Link>
+              </div>
               <UserEditForm
                 user={person}
                 locations={locations}

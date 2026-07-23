@@ -4,11 +4,7 @@ import type { DbClient, TechnicianNoteType } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import {
-  canCompleteJob,
-  canCreateWorkOrder,
-  canEditWorkOrder,
-} from "@/lib/permissions";
+import { canCompleteJob, canCreateWorkOrder, canEditWorkOrder } from "@/lib/permissions";
 import { technicianNoteSchema } from "@/lib/validation/schemas";
 import { TECHNICIAN_NOTE_TYPE_LABELS } from "@/lib/status/labels";
 
@@ -35,11 +31,7 @@ const COLUMNS =
   "technician_note_id, work_order_id, job_id, created_by_user_id, note, note_type, created_at";
 
 function canAddNotes(role: AppUser["role"]) {
-  return (
-    canCompleteJob(role) ||
-    canEditWorkOrder(role) ||
-    canCreateWorkOrder(role)
-  );
+  return canCompleteJob(role) || canEditWorkOrder(role) || canCreateWorkOrder(role);
 }
 
 async function requireMutableWorkOrder(
@@ -62,10 +54,7 @@ async function requireMutableWorkOrder(
   if (workOrder.location_id !== user.active_location_id) {
     throw new Error("FOREIGN_LOCATION");
   }
-  if (
-    workOrder.status === "completed" ||
-    workOrder.status === "cancelled"
-  ) {
+  if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
 
@@ -76,6 +65,23 @@ async function requireMutableWorkOrder(
   };
 }
 
+/**
+ * Ordering contract: technician notes are returned NEWEST FIRST
+ * (created_at descending). To preview the latest N notes take them from the
+ * FRONT of the list (or use latestTechnicianNotes) — `slice(-N)` on this
+ * list returns the oldest notes.
+ */
+export function latestTechnicianNotes<T extends { created_at: string }>(
+  notes: T[],
+  limit: number
+): T[] {
+  if (limit <= 0) return [];
+  return [...notes]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, limit);
+}
+
+/** Technician notes for a work order (optionally one job), newest first. */
 export async function listTechnicianNotes(
   workOrderId: string,
   jobId?: string | null
@@ -130,8 +136,10 @@ export async function addTechnicianNote(
 
   if (!parsed.note.trim()) throw new Error("NOTE_REQUIRED");
 
-  const { supabase, locationId, workOrderNumber } =
-    await requireMutableWorkOrder(user, workOrderId);
+  const { supabase, locationId, workOrderNumber } = await requireMutableWorkOrder(
+    user,
+    workOrderId
+  );
 
   if (parsed.job_id) {
     const { data: job, error: jobError } = await supabase
@@ -159,8 +167,7 @@ export async function addTechnicianNote(
 
   if (error) throw error;
   const note = data as TechnicianNote;
-  const typeLabel =
-    TECHNICIAN_NOTE_TYPE_LABELS[note.note_type] ?? note.note_type;
+  const typeLabel = TECHNICIAN_NOTE_TYPE_LABELS[note.note_type] ?? note.note_type;
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,

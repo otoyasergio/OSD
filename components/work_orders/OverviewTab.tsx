@@ -11,6 +11,7 @@ import { SubmitButton } from "@/components/forms/SubmitButton";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import { formatDateTime } from "@/lib/datetime/format";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
+import { getWorkOrderNextAction } from "@/lib/work-orders/nextAction";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
@@ -47,6 +48,7 @@ export function OverviewTab({
   canOverrideComplete,
   canClearFlags = false,
   canOverrideSafety = false,
+  inspectionCompleted = false,
   readOnly,
   assignAction,
   setPrimaryAction,
@@ -70,6 +72,7 @@ export function OverviewTab({
   canOverrideComplete: boolean;
   canClearFlags?: boolean;
   canOverrideSafety?: boolean;
+  inspectionCompleted?: boolean;
   readOnly: boolean;
   assignAction: Action;
   setPrimaryAction: Action;
@@ -137,8 +140,41 @@ export function OverviewTab({
   const showCompletion =
     !readOnly && !locked && (canRunQc || canMarkReady || canComplete || canHoldOrCancel);
 
+  const nextAction = getWorkOrderNextAction({
+    workOrderId: detail.work_order_id,
+    status: detail.status,
+    qualityChecked: qcDone,
+    safetyChecked: safetyDone,
+    readyForPickup: readyDone,
+    safety_required: detail.safety_required,
+    safety_waived: detail.safety_waived,
+    jobs: detail.jobs.map((job) => ({
+      status: job.status,
+      service_name_snapshot: job.service_name_snapshot,
+    })),
+    hasAssignedTech: detail.technicians.length > 0,
+    inspectionCompleted,
+  });
+
   return (
     <div className="flex flex-col gap-6">
+      {nextAction ? (
+        <section className="rounded border border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_8%,white)] p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
+            Next action
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-foreground">
+            {nextAction.title}
+          </h2>
+          <p className="mt-1 text-sm text-foreground">{nextAction.detail}</p>
+          {nextAction.href && nextAction.cta ? (
+            <Link href={nextAction.href} className="btn btn-primary mt-3 min-h-11">
+              {nextAction.cta}
+            </Link>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="rounded border border-[var(--border)] bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

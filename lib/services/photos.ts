@@ -22,6 +22,7 @@ export type IntakePhoto = {
   category: PhotoCategory;
   notes: string | null;
   inspection_result_id: string | null;
+  job_id: string | null;
   created_at: string;
   signed_url?: string | null;
   uploaded_by?: {
@@ -32,7 +33,7 @@ export type IntakePhoto = {
 };
 
 const COLUMNS =
-  "photo_id, work_order_id, uploaded_by_user_id, storage_path, photo_url, category, notes, inspection_result_id, created_at";
+  "photo_id, work_order_id, uploaded_by_user_id, storage_path, photo_url, category, notes, inspection_result_id, job_id, created_at";
 
 const BUCKET = "intake-photos";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -168,6 +169,55 @@ export async function resolvePrimaryPhotoUrls(
   return result;
 }
 
+type BoardPrimaryPhotoRow = {
+  work_order_id: string;
+  storage_path: string;
+  photo_url: string | null;
+  category: string | null;
+  photo_count: number | string;
+};
+
+/**
+ * Lean board helper: one preferred photo path + count per WO via Postgres RPC
+ * (avoids nesting every intake_photo on dashboard / control-center queries).
+ */
+export async function resolveBoardPrimaryPhotos(
+  supabase: DbClient,
+  workOrderIds: string[]
+): Promise<{
+  urls: Map<string, string | null>;
+  counts: Map<string, number>;
+}> {
+  const urls = new Map<string, string | null>();
+  const counts = new Map<string, number>();
+  const uniqueIds = [...new Set(workOrderIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return { urls, counts };
+
+  const { data, error } = await supabase.rpc("board_primary_intake_photos", {
+    p_work_order_ids: uniqueIds,
+  });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as BoardPrimaryPhotoRow[];
+  const paths: string[] = [];
+  for (const row of rows) {
+    counts.set(row.work_order_id, Number(row.photo_count) || 0);
+    if (row.storage_path) paths.push(row.storage_path);
+  }
+
+  const signed = await signStoragePaths(supabase, paths);
+  for (const row of rows) {
+    urls.set(row.work_order_id, signed.get(row.storage_path) ?? row.photo_url ?? null);
+  }
+
+  for (const id of uniqueIds) {
+    if (!counts.has(id)) counts.set(id, 0);
+  }
+
+  return { urls, counts };
+}
+
 async function signPaths(
   supabase: DbClient,
   photos: IntakePhoto[]
@@ -254,7 +304,13 @@ export async function uploadIntakePhoto(
     throw new Error("INSPECTION_RESULT_NOT_FOUND");
   }
 
-  if (parsed.category === "job_proof" && !parsed.job_id) {
+  // job_proof is the after photo that satisfies the completion gate;
+  // job_work is the in-progress work journal and never counts as proof.
+  // Both must be pinned to a job.
+  if (
+    (parsed.category === "job_proof" || parsed.category === "job_work") &&
+    !parsed.job_id
+  ) {
     throw new Error("JOB_NOT_FOUND");
   }
 

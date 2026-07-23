@@ -4,6 +4,7 @@ import {
   extractWixContactFields,
   findMatchingCustomer,
   firstNonEmpty,
+  isCustomerInSyncWithWix,
   normalizeOptional,
 } from "@/lib/wix/contactNormalize";
 import type { WixContact } from "@/lib/wix/types";
@@ -80,18 +81,24 @@ describe("contactNormalize", () => {
     const rows = [
       {
         customer_id: "c1",
+        first_name: "Ada",
+        last_name: "Lovelace",
         email: "old@example.com",
         phone: "111",
         wix_contact_id: "wix-a",
       },
       {
         customer_id: "c2",
+        first_name: "Ada",
+        last_name: "Lovelace",
         email: "Ada@Example.com",
         phone: "222",
         wix_contact_id: null,
       },
       {
         customer_id: "c3",
+        first_name: "No",
+        last_name: "Email",
         email: null,
         phone: "333",
         wix_contact_id: null,
@@ -129,5 +136,31 @@ describe("contactNormalize", () => {
         phone: "999",
       })
     ).toBeNull();
+  });
+
+  it("isCustomerInSyncWithWix skips no-op updates", () => {
+    const existing = {
+      customer_id: "c1",
+      first_name: "Ada",
+      last_name: "Lovelace",
+      email: "ada@example.com",
+      phone: "555-0100",
+      wix_contact_id: "wix-1",
+    };
+    const fields = {
+      wixContactId: "wix-1",
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+      phone: "555-0100",
+    };
+
+    expect(isCustomerInSyncWithWix(existing, fields)).toBe(true);
+    expect(isCustomerInSyncWithWix(existing, { ...fields, firstName: "Augusta" })).toBe(
+      false
+    );
+    expect(isCustomerInSyncWithWix({ ...existing, wix_contact_id: null }, fields)).toBe(
+      false
+    );
   });
 });
