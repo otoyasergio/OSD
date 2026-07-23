@@ -11,6 +11,7 @@ import { listAllWixContacts } from "../lib/wix/client";
 import {
   extractWixContactFields,
   findMatchingCustomer,
+  isCustomerInSyncWithWix,
   type CustomerMatchRow,
 } from "../lib/wix/contactNormalize";
 
@@ -30,7 +31,7 @@ function loadEnvLocal() {
 
 loadEnvLocal();
 
-const MATCH_COLUMNS = "customer_id, email, phone, wix_contact_id";
+const MATCH_COLUMNS = "customer_id, first_name, last_name, email, phone, wix_contact_id";
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -72,6 +73,7 @@ async function main() {
     scanned: wixContacts.length,
     created: 0,
     updated: 0,
+    unchanged: 0,
     skipped: 0,
     failed: 0,
     triggered_by: "manual",
@@ -92,7 +94,9 @@ async function main() {
         phone: fields.phone,
       });
 
-      if (existing) {
+      if (existing && isCustomerInSyncWithWix(existing, fields)) {
+        stats.unchanged += 1;
+      } else if (existing) {
         const { error } = await supabase
           .from("customer")
           .update({
@@ -112,6 +116,8 @@ async function main() {
         if (idx >= 0) {
           localRows[idx] = {
             ...localRows[idx],
+            first_name: fields.firstName,
+            last_name: fields.lastName,
             email: fields.email ?? localRows[idx].email,
             phone: fields.phone ?? localRows[idx].phone,
             wix_contact_id: fields.wixContactId,
@@ -133,6 +139,8 @@ async function main() {
         stats.created += 1;
         localRows.push({
           customer_id: data.customer_id as string,
+          first_name: fields.firstName,
+          last_name: fields.lastName,
           email: fields.email,
           phone: fields.phone,
           wix_contact_id: fields.wixContactId,
@@ -144,7 +152,7 @@ async function main() {
 
     if ((i + 1) % 100 === 0 || i + 1 === wixContacts.length) {
       console.log(
-        `Progress ${i + 1}/${wixContacts.length} created=${stats.created} updated=${stats.updated} skipped=${stats.skipped} failed=${stats.failed}`
+        `Progress ${i + 1}/${wixContacts.length} created=${stats.created} updated=${stats.updated} unchanged=${stats.unchanged} skipped=${stats.skipped} failed=${stats.failed}`
       );
     }
   }
