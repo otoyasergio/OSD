@@ -22,9 +22,16 @@ test.describe("production read-only smoke", () => {
     await page.getByLabel(/email/i).fill("nobody@example.invalid");
     await page.getByLabel(/password/i).fill("definitely-wrong-password-123!");
     await page.getByRole("button", { name: /^sign in$/i }).click();
+    // Prefer the form error — Next.js also mounts a route announcer with role=alert.
     await expect(page.locator("p.alert-error")).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator("p.alert-error")).toContainText(/invalid|credentials/i);
+    // Against production Supabase this is "Invalid login credentials". Against CI's
+    // placeholder host it may be a network error; either way the form must not hang.
+    const base = process.env.PLAYWRIGHT_BASE_URL ?? "";
+    if (/torontomoto\.com/i.test(base)) {
+      await expect(page.locator("p.alert-error")).toContainText(/invalid|credentials/i);
+    }
     await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByRole("button", { name: /^sign in$/i })).toBeEnabled();
   });
 
   test("staff surfaces require authentication", async ({ page }) => {
