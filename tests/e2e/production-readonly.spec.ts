@@ -17,6 +17,16 @@ test.describe("production read-only smoke", () => {
     await expect(page.getByRole("heading", { name: /workshop sign in/i })).toBeVisible();
   });
 
+  test("login rejects invalid credentials without leaving /login", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByLabel(/email/i).fill("nobody@example.invalid");
+    await page.getByLabel(/password/i).fill("definitely-wrong-password-123!");
+    await page.getByRole("button", { name: /^sign in$/i }).click();
+    await expect(page.locator("p.alert-error")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("p.alert-error")).toContainText(/invalid|credentials/i);
+    await expect(page).toHaveURL(/\/login/);
+  });
+
   test("staff surfaces require authentication", async ({ page }) => {
     for (const path of [
       "/technician",
