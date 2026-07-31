@@ -25,6 +25,7 @@ export function InspectionPhotoSlot({
   required,
   existingUrl,
   readOnly,
+  onExpand,
 }: {
   workOrderId: string;
   category: PhotoCategory;
@@ -33,6 +34,7 @@ export function InspectionPhotoSlot({
   required?: boolean;
   existingUrl?: string | null;
   readOnly?: boolean;
+  onExpand?: () => void;
 }) {
   const titleId = useId();
   const cameraInputId = useId();
@@ -91,8 +93,20 @@ export function InspectionPhotoSlot({
     >
       <div className="inspection-photo-slot-preview">
         {existingUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={existingUrl} alt={label} />
+          onExpand ? (
+            <button
+              type="button"
+              className="inspection-photo-slot-expand"
+              onClick={onExpand}
+              aria-label={`View ${label} larger`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
+              <img src={existingUrl} alt={label} />
+            </button>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
+            <img src={existingUrl} alt={label} />
+          )
         ) : (
           <span className="inspection-photo-slot-placeholder">
             {required ? "Photo required" : "Optional photo"}

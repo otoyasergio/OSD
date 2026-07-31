@@ -68,6 +68,7 @@ export function InspectionItemRow({
   readOnly,
   photoUrl,
   photoRequired,
+  onExpandPhoto,
   onRecommend,
   onBusyChange,
   onLocalStatusChange,
@@ -78,6 +79,7 @@ export function InspectionItemRow({
   readOnly: boolean;
   photoUrl?: string | null;
   photoRequired?: boolean;
+  onExpandPhoto?: () => void;
   onRecommend?: (result: InspectionResultRow) => void;
   onBusyChange?: (resultId: string, busy: boolean) => void;
   onLocalStatusChange?: (resultId: string, status: InspectionResultStatus | null) => void;
@@ -400,6 +402,7 @@ export function InspectionItemRow({
             required={photoRequired !== false}
             existingUrl={photoUrl}
             readOnly={readOnly}
+            onExpand={onExpandPhoto}
           />
           {!readOnly && onRecommend ? (
             <button

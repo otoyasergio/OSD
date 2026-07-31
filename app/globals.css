@@ -2379,6 +2379,27 @@ button.board-control-link {
   object-fit: cover;
 }
 
+.inspection-photo-slot-expand {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.inspection-photo-slot-expand:hover img,
+.inspection-photo-slot-expand:focus-visible img {
+  opacity: 0.92;
+}
+
+.inspection-photo-slot-expand:focus-visible {
+  outline: 2px solid var(--accent, #0f766e);
+  outline-offset: 2px;
+}
+
 .inspection-photo-slot-placeholder {
   font-size: 0.6875rem;
   font-weight: 700;

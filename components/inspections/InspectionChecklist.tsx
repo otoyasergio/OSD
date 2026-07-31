@@ -4,6 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
 import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
+import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { completeInspectionAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
 import {
   countIncompleteInspectionResults,
@@ -14,6 +15,7 @@ import { SubmitButton } from "@/components/forms/SubmitButton";
 import type { InspectionResultStatus, PhotoCategory } from "@/lib/database/types";
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
+import { toLightboxPhotos } from "@/lib/photos/lightbox";
 
 const SECTION_PHOTO: Record<
   string,
@@ -58,6 +60,7 @@ export function InspectionChecklist({
     { error: null }
   );
   const [forceConfirm, setForceConfirm] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
   const [localStatuses, setLocalStatuses] = useState<
     Record<string, InspectionResultStatus | null>
@@ -95,6 +98,17 @@ export function InspectionChecklist({
       ),
     [inspection.results, localStatuses]
   );
+
+  const lightboxPhotos = useMemo(
+    () => toLightboxPhotos(inspection.photos),
+    [inspection.photos]
+  );
+
+  function openPhotoBySrc(src: string | null | undefined) {
+    if (!src) return;
+    const index = lightboxPhotos.findIndex((photo) => photo.src === src);
+    if (index >= 0) setLightboxIndex(index);
+  }
 
   const photosByResult = useMemo(() => {
     const map = new Map<string, string | null>();
@@ -331,6 +345,11 @@ export function InspectionChecklist({
                 required
                 existingUrl={sectionPhotoUrl.get("inspection_tires")}
                 readOnly={readOnly}
+                onExpand={
+                  sectionPhotoUrl.get("inspection_tires")
+                    ? () => openPhotoBySrc(sectionPhotoUrl.get("inspection_tires"))
+                    : undefined
+                }
               />
             ) : null}
             {!readOnly || sectionPhotoUrl.get("inspection_brakes") ? (
@@ -341,6 +360,11 @@ export function InspectionChecklist({
                 required
                 existingUrl={sectionPhotoUrl.get("inspection_brakes")}
                 readOnly={readOnly}
+                onExpand={
+                  sectionPhotoUrl.get("inspection_brakes")
+                    ? () => openPhotoBySrc(sectionPhotoUrl.get("inspection_brakes"))
+                    : undefined
+                }
               />
             ) : null}
           </div>
@@ -401,47 +425,66 @@ export function InspectionChecklist({
                     required
                     existingUrl={sectionPhotoUrl.get(sectionPhoto.category)}
                     readOnly={readOnly}
+                    onExpand={
+                      sectionPhotoUrl.get(sectionPhoto.category)
+                        ? () => openPhotoBySrc(sectionPhotoUrl.get(sectionPhoto.category))
+                        : undefined
+                    }
                   />
                 </div>
               ) : null}
               <div className="inspection-section-items">
-                {results.map((result) => (
-                  <InspectionItemRow
-                    key={result.inspection_result_id}
-                    workOrderId={inspection.work_order_id}
-                    result={result}
-                    readOnly={readOnly}
-                    compact={
-                      !result.requires_measurement_snapshot &&
-                      !category.startsWith("Comments")
-                    }
-                    photoUrl={photosByResult.get(result.inspection_result_id)}
-                    photoRequired={inspection.missing_photos.some(
-                      (p) => p.inspection_result_id === result.inspection_result_id
-                    )}
-                    onBusyChange={(resultId, busy) => {
-                      setBusyIds((current) => ({ ...current, [resultId]: busy }));
-                    }}
-                    onLocalStatusChange={(resultId, status) => {
-                      setLocalStatuses((current) => ({
-                        ...current,
-                        [resultId]: status,
-                      }));
-                    }}
-                    onRecommend={
-                      canRecommend
-                        ? (r) => {
-                            window.location.href = `/work_orders/${inspection.work_order_id}?tab=recommendations&from_result=${r.inspection_result_id}`;
-                          }
-                        : undefined
-                    }
-                  />
-                ))}
+                {results.map((result) => {
+                  const itemPhotoUrl = photosByResult.get(result.inspection_result_id);
+                  return (
+                    <InspectionItemRow
+                      key={result.inspection_result_id}
+                      workOrderId={inspection.work_order_id}
+                      result={result}
+                      readOnly={readOnly}
+                      compact={
+                        !result.requires_measurement_snapshot &&
+                        !category.startsWith("Comments")
+                      }
+                      photoUrl={itemPhotoUrl}
+                      photoRequired={inspection.missing_photos.some(
+                        (p) => p.inspection_result_id === result.inspection_result_id
+                      )}
+                      onExpandPhoto={
+                        itemPhotoUrl ? () => openPhotoBySrc(itemPhotoUrl) : undefined
+                      }
+                      onBusyChange={(resultId, busy) => {
+                        setBusyIds((current) => ({ ...current, [resultId]: busy }));
+                      }}
+                      onLocalStatusChange={(resultId, status) => {
+                        setLocalStatuses((current) => ({
+                          ...current,
+                          [resultId]: status,
+                        }));
+                      }}
+                      onRecommend={
+                        canRecommend
+                          ? (r) => {
+                              window.location.href = `/work_orders/${inspection.work_order_id}?tab=recommendations&from_result=${r.inspection_result_id}`;
+                            }
+                          : undefined
+                      }
+                    />
+                  );
+                })}
               </div>
             </section>
           );
         })}
       </div>
+
+      {lightboxIndex !== null && lightboxPhotos.length > 0 ? (
+        <PhotoLightbox
+          photos={lightboxPhotos}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      ) : null}
     </div>
   );
 }
