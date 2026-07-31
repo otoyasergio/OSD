@@ -372,7 +372,7 @@ async function fillServiceInformationFromFitment(
     const { data, error } = await supabase
       .from("fitment_vehicle")
       .select("make, model, year_start, year_end, spec_data, part_data")
-      .ilike("make", motorcycle.make)
+      .ilike("make", motorcycle.make.trim())
       .order("vehicle_id", { ascending: true })
       .range(from, to);
     if (error) throw error;

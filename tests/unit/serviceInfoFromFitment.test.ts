@@ -128,6 +128,68 @@ describe("fitmentModelAffinity", () => {
     expect(fitmentModelAffinity("V-Strom 1000", "DL1000 V-Strom")).toBeGreaterThan(0);
     expect(fitmentModelAffinity("Ninja 500 SE", "EX500 Ninja 500")).toBeGreaterThan(0);
   });
+
+  it("matches Ducati Monster short codes to catalogue family names", () => {
+    expect(fitmentModelAffinity("M750", "750 Monster (all)")).toBeGreaterThan(0);
+    expect(fitmentModelAffinity("900M", "900 Monster")).toBeGreaterThan(0);
+    expect(fitmentModelAffinity("900M", "900M Monster/S/ Cromo/ City")).toBeGreaterThan(
+      0
+    );
+    // Same displacement, different family — must not match
+    expect(fitmentModelAffinity("M750", "750 SS")).toBe(0);
+    expect(fitmentModelAffinity("M750", "Supersport 750")).toBe(0);
+    expect(fitmentModelAffinity("M750", "400 Monster (Japan Only)")).toBe(0);
+  });
+});
+
+describe("buildServiceInfoFromFitmentRows Ducati short codes", () => {
+  it("fills M750 from 750 Monster catalogue row", () => {
+    const mapped = buildServiceInfoFromFitmentRows(
+      [
+        {
+          make: "DUCATI",
+          model: "750 Monster (all)",
+          year_start: 1997,
+          year_end: 2002,
+          spec_data: {
+            chain: "530x100",
+            battery: "YB16AL-A2",
+            ngkPlug: "DPR8EA-9",
+            rearTireSize: "160/70-17",
+            frontTireSize: "120/70-17",
+            recommendedOil: "15W-50",
+          },
+          part_data: {
+            oilFilterHF: "HF153",
+            oilFilterKN: "10-99200",
+            airFilterHFA: "HFA6002",
+            brakePadRear: "010-047",
+            brakePadFront: "1721-1450",
+          },
+        },
+        {
+          make: "DUCATI",
+          model: "750 SS",
+          year_start: 1991,
+          year_end: 2002,
+          spec_data: {},
+          part_data: { oilFilterHF: "HF153", airFilterHFA: "HFA6002" },
+        },
+      ],
+      1999,
+      "DUCATI",
+      "M750"
+    );
+
+    expect(mapped?.oil_filter).toContain("HF153");
+    expect(mapped?.oil_type).toBe("15W-50");
+    expect(mapped?.air_filter).toContain("HFA6002");
+    expect(mapped?.spark_plugs).toBe("DPR8EA-9");
+    expect(mapped?.front_brake_pads).toBe("1721-1450");
+    expect(mapped?.rear_brake_pads).toBe("010-047");
+    expect(mapped?.front_tire_size).toBe("120/70-17");
+    expect(mapped?.battery).toContain("YB16AL-A2");
+  });
 });
 
 describe("pickBestFitmentVehicle", () => {

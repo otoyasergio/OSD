@@ -46,11 +46,28 @@ const FITMENT_MODEL_PREFIX_SOURCE =
   "YZFR|YZF|YZ|MT|FZ|XSR|XVS|XV|WR|XT|TW|SR|TMAX|NMAX|CBR|CB|CRF|CR|XR|DRZ|DR|GSXRS|GSXR|GSX|SV|DL|RC";
 const FITMENT_MODEL_PREFIX = new RegExp(`^(?:${FITMENT_MODEL_PREFIX_SOURCE})`);
 
+/**
+ * Staff short codes → catalogue family words.
+ * e.g. Ducati "M750" ↔ "750 Monster (all)", "900M" ↔ "900 Monster".
+ * Single-letter codes require a family word (not the letter alone) to avoid
+ * false hits like "M" inside unrelated tokens.
+ */
+const MODEL_CODE_FAMILIES: Record<string, string[]> = {
+  M: ["MONSTER"],
+  SS: ["SUPERSPORT", "SS"],
+  ST: ["ST"],
+};
+
 export function normalizeFitmentModelKey(value: string): string {
   return value
     .trim()
     .toUpperCase()
     .replace(/[\s\-_/]+/g, "");
+}
+
+/** Drop parenthetical notes like "(all)" / "(Japan Only)" from catalogue names. */
+export function stripFitmentModelNotes(value: string): string {
+  return value.replace(/\s*\([^)]*\)\s*/g, " ").trim();
 }
 
 function stripFitmentModelPrefix(key: string): string {
@@ -101,7 +118,7 @@ function affinityAgainstNormalized(bike: string, catalogue: string): number {
  */
 /** "V-Strom 1000" ↔ "DL1000 V-Strom": every meaningful token appears in catalogue key. */
 function tokenCoverageAffinity(bikeModel: string, fitmentModel: string): number {
-  const catalogue = normalizeFitmentModelKey(fitmentModel);
+  const catalogue = normalizeFitmentModelKey(stripFitmentModelNotes(fitmentModel));
   const words = bikeModel
     .replace(/\([^)]*\)/g, " ")
     .toUpperCase()
@@ -113,13 +130,55 @@ function tokenCoverageAffinity(bikeModel: string, fitmentModel: string): number 
   return 0;
 }
 
+/**
+ * "M750" / "900M" ↔ catalogue "750 Monster (all)" / "900 Monster".
+ * Requires the same displacement plus a known family alias (or compact code).
+ */
+function modelCodeFamilyAffinity(bikeModel: string, fitmentModel: string): number {
+  const bikeKey = normalizeFitmentModelKey(stripFitmentModelNotes(bikeModel));
+  const catalogue = normalizeFitmentModelKey(stripFitmentModelNotes(fitmentModel));
+  if (!bikeKey || !catalogue) return 0;
+
+  let prefix = "";
+  let displacement = "";
+
+  const leading = bikeKey.match(/^([A-Z]{1,4})(\d{3,4})([A-Z]{0,4})$/);
+  if (leading) {
+    prefix = leading[1];
+    displacement = leading[2];
+  } else {
+    const trailing = bikeKey.match(/^(\d{3,4})([A-Z]{1,4})$/);
+    if (!trailing) return 0;
+    displacement = trailing[1];
+    prefix = trailing[2];
+  }
+
+  if (!catalogue.includes(displacement)) return 0;
+
+  const families = MODEL_CODE_FAMILIES[prefix] ?? [];
+  if (families.some((family) => catalogue.includes(family))) return 75;
+
+  // Compact catalogue forms: "900M…", "SS750…"
+  if (
+    catalogue.includes(`${prefix}${displacement}`) ||
+    catalogue.includes(`${displacement}${prefix}`)
+  ) {
+    return 70;
+  }
+
+  // Multi-letter codes without a family map still match when the code appears.
+  if (prefix.length >= 2 && catalogue.includes(prefix)) return 65;
+
+  return 0;
+}
+
 export function fitmentModelAffinity(bikeModel: string, fitmentModel: string): number {
-  const catalogue = normalizeFitmentModelKey(fitmentModel);
+  const catalogue = normalizeFitmentModelKey(stripFitmentModelNotes(fitmentModel));
   const parenContents = [...bikeModel.matchAll(/\(([^)]+)\)/g)].map((m) => m[1].trim());
   const variants = [
     bikeModel,
     // "NPS50 (Ruckus)" / "VT750 (Shadow Spirit 750)"
-    bikeModel.replace(/\s*\([^)]*\)\s*/g, " ").trim(),
+    stripFitmentModelNotes(bikeModel),
     // Nickname inside parens ("Ruckus")
     ...parenContents,
     // "Ninja 500 SE" → drop trim-level suffixes
@@ -131,7 +190,8 @@ export function fitmentModelAffinity(bikeModel: string, fitmentModel: string): n
     best = Math.max(
       best,
       affinityAgainstNormalized(normalizeFitmentModelKey(variant), catalogue),
-      tokenCoverageAffinity(variant, fitmentModel)
+      tokenCoverageAffinity(variant, fitmentModel),
+      modelCodeFamilyAffinity(variant, fitmentModel)
     );
   }
   return best;
