@@ -16,23 +16,61 @@ const MESSAGES: Record<string, string> = {
   TECHNICIAN_NOT_FOUND: "That technician is not available at this location.",
   WORK_ORDER_NOT_FOUND: "That work order no longer exists.",
   WORK_ORDER_NUMBER_FAILED: "Could not mint a work order number. Try again.",
+  WORK_ORDER_NUMBER_REQUIRED: "Enter the Wix work order number.",
+  WORK_ORDER_NUMBER_TAKEN:
+    "That Wix work order number is already used at this location. Check the number and try again.",
   JOB_NOT_FOUND: "That job no longer exists.",
   FOREIGN_LOCATION:
     "This work order belongs to another location. Switch location to make changes.",
   WORK_ORDER_LOCKED: "This work order is completed or cancelled and cannot be changed.",
   JOB_NOT_READY: "That job is not ready to pull yet.",
+  JOB_NOT_PULLABLE: "That job is not ready to pull yet.",
+  JOB_NOT_AUTHORIZED:
+    "Waiting on client approval — front desk will send it back to Perform work when approved.",
+  JOB_AWAITING_CUSTOMER_APPROVAL:
+    "Waiting on client approval — front desk will send it back to Perform work when approved.",
+  JOB_WAITING_FOR_PARTS:
+    "Parts are not here yet — this bike stays parked until parts arrive.",
+  JOB_ASSIGNED_TO_OTHER_TECH: "You can only start or complete jobs assigned to you.",
+  JOB_NOT_IN_PROGRESS: "Only a bike on the bench can be completed.",
+  WORK_ORDER_NOT_WORKABLE:
+    "This work order is on hold or closed and cannot take floor work right now.",
+  JOB_CHECKLIST_INCOMPLETE: "Check all checklist items before completing.",
+  JOB_PARTS_NOT_INSTALLED: "Install or clear all parts before completing.",
+  JOB_PROOF_REQUIRED: "Add an after photo or skip with a reason.",
+  QC_CANDIDATE_WORKED_ON_VISIT:
+    "That technician worked on this bike — pick someone who didn't touch it.",
+  QC_CANNOT_CHECK_OWN_WORK: "You cannot quality-check work you performed.",
+  SAFETY_REQUIRES_QC_PASS: "Pass the quality check before running the safety check.",
+  SAFETY_REQUIRED_BEFORE_PICKUP:
+    "Head tech safety check is required before marking ready for pickup.",
+  INVALID_PARK_REASON: "Choose a valid park reason.",
+  INVALID_WAIT_OWNER: "Choose a valid wait owner.",
+  INVALID_OUTCOME: "Choose pass or fail.",
+  ACTOR_NOT_FOUND: "Your staff account no longer exists. Sign in again.",
+  ACTOR_INACTIVE: "Your staff account is inactive. Ask an owner to reactivate it.",
+  NO_CONFIRMED_ESTIMATE: "Confirm the estimate before issuing an invoice.",
+  BILLING_NOT_PAID:
+    "Collect payment before completing, or have an owner/manager override with a reason.",
+  OVERRIDE_REASON_REQUIRED: "Enter a reason to override this gate.",
   JOB_NOT_ASSIGNED: "Assign a technician before completing this job.",
   JOB_NOT_ASSIGNED_TO_YOU: "You can only start or complete jobs assigned to you.",
   JOB_ALREADY_ASSIGNED: "That job is already assigned.",
-  OTHER_JOB_IN_PROGRESS: "Finish or flag your current job before starting another.",
+  OTHER_JOB_IN_PROGRESS: "Park or finish the bike on your bench before starting another.",
+  JOB_NOT_ON_BENCH: "Only a bike on the bench can be parked.",
+  SWAP_SAME_JOB: "Pick a different bike to swap onto.",
+  PROOF_SKIP_REASON_REQUIRED: "Choose a reason to skip the after photo.",
   INVALID_STATUS: "This work order is not in the right status for that action.",
   CHECKLIST_REQUIRED: "Complete the standard work checklist first.",
   CHECKLIST_INCOMPLETE: "Check all checklist items before completing.",
   PARTS_NOT_INSTALLED: "Install or clear all parts before completing.",
-  PROOF_REQUIRED: "Add an after photo or a proof exception note.",
+  PROOF_REQUIRED: "Add an after photo or skip with a reason.",
   QC_NOT_ASSIGNED_TO_YOU: "This quality check is assigned to another technician.",
   CANNOT_QC_OWN_WORK: "You cannot quality-check work you performed.",
   QC_FAIL_REASON_REQUIRED: "Enter a reason when failing quality check.",
+  QC_ASSIGNEE_REQUIRED: "Choose who should check your work.",
+  QC_ASSIGNEE_NOT_AVAILABLE:
+    "That technician is not clocked in or available for peer QC.",
   INVALID_FLAG_REASON: "Choose a valid flag reason.",
   ADMIN_FLAG_NOT_FOUND: "That admin flag no longer exists.",
   ADMIN_FLAG_ALREADY_CLEARED: "That admin flag was already cleared.",
@@ -51,6 +89,8 @@ const MESSAGES: Record<string, string> = {
   INSPECTION_PHOTOS_REQUIRED:
     "Add required inspection photos (tires, brakes, forks, and any items marked needing work) before completing the report.",
   RECOMMENDATION_NOT_FOUND: "That recommendation no longer exists.",
+  RECOMMENDATION_DECLINED:
+    "That recommendation was declined and can’t be sent to the floor.",
   RECOMMENDATION_ALREADY_CONVERTED:
     "That recommendation has already been converted to a job.",
   PART_NOT_FOUND: "That part no longer exists.",
@@ -81,6 +121,7 @@ const MESSAGES: Record<string, string> = {
     "The work order was created, but some intake photos failed to upload. Finish the missing photos below.",
   NOTE_REQUIRED: "Enter a note before saving.",
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
+  NO_JOBS_TO_ASSIGN: "This work order has no active jobs to assign. Add a job first.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
   QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
   SAFETY_FAIL_RECOMMENDATIONS_REQUIRED:
@@ -151,12 +192,35 @@ const MESSAGES: Record<string, string> = {
   FITMENT_IMPORT_FAILED: "Fitment import failed.",
   ALREADY_CLOCKED_IN: "That person already has an open punch. Clock them out first.",
   NOT_CLOCKED_IN: "Not clocked in.",
+  ALREADY_ON_BREAK: "You are already on a break.",
+  NOT_ON_BREAK: "You are not on a break.",
+  TIMESHEET_WEEK_LOCKED:
+    "That timesheet week is approved. Reopen it before editing punches.",
+  INVALID_WEEK: "Choose a valid week.",
+  NOT_CLOCKED_IN_FOR_JOB: "Clock in for your shift before starting job time.",
+  JOB_TIME_ALREADY_OPEN: "Pause or finish your current job timer first.",
+  JOB_TIME_NOT_OPEN: "No open job timer to pause.",
+  JOB_TIME_WRONG_JOB: "That job timer is not yours or already closed.",
+  OPENED_AT_UNAVAILABLE:
+    "Open timer is not available until the database migration is applied.",
   INVALID_CLOCK_IN: "Enter a valid clock-in date and time.",
   INVALID_CLOCK_OUT: "Enter a valid clock-out date and time.",
   CLOCK_OUT_BEFORE_IN: "Clock-out must be after clock-in.",
   CORRECTION_REQUIRES_CLOCK_OUT: "Missed punches need both clock-in and clock-out times.",
   TIME_CLOCK_ENTRY_NOT_FOUND: "That time clock entry no longer exists.",
+  INVALID_BREAK_START: "Enter a valid break start date and time.",
+  INVALID_BREAK_END: "Enter a valid break end date and time.",
+  BREAK_END_BEFORE_START: "Break end must be after break start.",
+  BREAK_OUTSIDE_PUNCH: "Break must fall within the punch clock-in and clock-out.",
+  BREAK_NOT_FOUND: "That break slot no longer exists.",
   RATE_LIMITED: "Too many requests. Please wait a moment and try again.",
+  INVALID_PIN: "Enter a valid 4-digit PIN.",
+  PIN_LOCKED: "Too many incorrect PIN attempts. Wait 60 seconds and try again.",
+  PIN_NOT_SET: "This person does not have a time clock PIN yet.",
+  PIN_ALREADY_IN_USE: "That PIN is already assigned to another active staff member.",
+  STAFF_NOT_FOUND: "That staff member is not available for the time clock.",
+  DOCUMENT_CATEGORY_INVALID: "Choose a valid document category.",
+  NOTE_NOT_FOUND: "That note no longer exists.",
   INVALID_INITIALS: "Could not read initials. Refresh and try again.",
   CONVERSATION_NOT_FOUND: "That conversation no longer exists.",
   NOT_A_PARTICIPANT: "You're not part of this conversation.",
@@ -196,4 +260,20 @@ export function toFormErrorMessage(error: unknown): string {
   }
 
   return "Something went wrong. Please try again.";
+}
+
+/**
+ * Workflow V2 SECURITY DEFINER commands signal domain errors with
+ * `RAISE EXCEPTION 'CODE_LIKE_THIS'`. PostgREST surfaces that text as the
+ * error message (sometimes with extra context around it) — extract the code
+ * so it maps through MESSAGES exactly like legacy service errors.
+ */
+export function toRpcErrorCode(
+  error: { message?: string | null } | null | undefined
+): string {
+  const raw = (error?.message ?? "").trim();
+  if (!raw) return "RPC_FAILED";
+  if (/^[A-Z][A-Z0-9_]*$/.test(raw)) return raw;
+  const match = raw.match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/);
+  return match ? match[0] : raw;
 }

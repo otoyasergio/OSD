@@ -1,8 +1,12 @@
-import type { WorkOrderStatus } from "@/lib/database/types";
-import { getTargetStatusForColumn } from "@/lib/status/transitions";
+import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
+import {
+  canDragWorkOrderOnBoard,
+  canDropInColumn,
+  getTargetStatusForColumn,
+} from "@/lib/status/transitions";
 
 /** Droppable ids for Control Center stage carousels (Shop Board column ids). */
-export const CC_STAGE_DROP_IDS = ["parts", "qc", "safety", "pickup"] as const;
+export const CC_STAGE_DROP_IDS = ["parts", "qc", "safety", "pickup", "complete"] as const;
 
 export type CcStageDropId = (typeof CC_STAGE_DROP_IDS)[number];
 
@@ -20,6 +24,8 @@ export function stageDropIdForStatus(status: WorkOrderStatus): CcStageDropId | n
       return "safety";
     case "ready_for_pickup":
       return "pickup";
+    case "completed":
+      return "complete";
     default:
       return null;
   }
@@ -31,6 +37,32 @@ export function statusForCcStage(stageId: CcStageDropId): WorkOrderStatus {
     throw new Error(`Missing target status for Control Center stage ${stageId}`);
   }
   return status;
+}
+
+/**
+ * Whether a stage lane should accept drops for this role.
+ * QC / safety stay owner/manager-only via canDropInColumn.
+ */
+export function isCcStageDropEnabledForRole(
+  role: UserRole,
+  stageId: CcStageDropId
+): boolean {
+  // Complete accepts ready-for-pickup bikes; probe that status for advisors.
+  const probeStatus: WorkOrderStatus =
+    stageId === "complete" ? "ready_for_pickup" : "in_progress";
+  return canDropInColumn(role, stageId, probeStatus);
+}
+
+/** Pool / tech cards: assign drag. Stage cards: board status drag. */
+export function canDragCcBike(
+  role: UserRole,
+  status: WorkOrderStatus,
+  options: { mode: "assign" | "stage"; canAssign: boolean }
+): boolean {
+  if (options.mode === "assign") {
+    return options.canAssign;
+  }
+  return canDragWorkOrderOnBoard(role, status, false);
 }
 
 /**

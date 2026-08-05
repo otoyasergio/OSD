@@ -15,6 +15,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import type { CustomerWorkOrderSummary } from "@/lib/services/filedWorkOrders";
 import { requireUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canDeleteCustomerDocuments,
   canEditWorkOrder,
@@ -97,23 +98,25 @@ export default async function CustomerDetailPage({
 }) {
   const { customer_id } = await params;
   const user = await requireUser();
-  if (!canViewClients(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  const viewRole = preview?.role ?? user.role;
+  if (!canViewClients(viewRole)) redirect("/dashboard");
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 
   const [garage, history, documents] = await Promise.all([
     listGarageForCustomer(customer_id),
     listWorkOrdersForCustomer(customer_id),
-    canViewCustomerDocuments(user.role)
+    canViewCustomerDocuments(viewRole)
       ? listCustomerDocuments(customer_id)
       : Promise.resolve([]),
   ]);
   const updateAction = updateCustomerAction.bind(null, customer_id);
-  const canTransfer = canEditWorkOrder(user.role);
-  const canUploadDocs = canUploadCustomerDocuments(user.role);
-  const canDeleteDocs = canDeleteCustomerDocuments(user.role);
-  const canViewDocs = canViewCustomerDocuments(user.role);
-  const canSyncWix = canSyncWixContacts(user.role);
+  const canTransfer = canEditWorkOrder(viewRole);
+  const canUploadDocs = canUploadCustomerDocuments(viewRole);
+  const canDeleteDocs = canDeleteCustomerDocuments(viewRole);
+  const canViewDocs = canViewCustomerDocuments(viewRole);
+  const canSyncWix = canSyncWixContacts(viewRole);
   const wixConfigured = isWixSyncAvailable();
 
   return (

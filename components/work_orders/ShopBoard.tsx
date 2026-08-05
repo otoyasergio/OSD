@@ -24,6 +24,7 @@ import {
   WorkOrderCard,
   type WorkOrderCardData,
 } from "@/components/work_orders/WorkOrderCard";
+import { VirtualColumnList } from "@/components/ui/VirtualColumnList";
 
 function BoardColumn({
   columnId,
@@ -56,20 +57,22 @@ function BoardColumn({
         <h2 className="shop-board-column-title">{label}</h2>
         <span className="shop-board-column-count">{cards.length}</span>
       </header>
-      <div ref={setNodeRef} className="shop-board-column-body">
-        {cards.length === 0 ? (
-          <p className="shop-board-empty">No orders</p>
-        ) : (
-          cards.map((wo) => (
-            <DraggableWorkOrderCard
-              key={wo.work_order_id}
-              workOrder={wo}
-              compact={compact}
-              disabled={!canDragWorkOrderOnBoard(role, wo.status, isForeignLocation)}
-            />
-          ))
+      <VirtualColumnList
+        scrollRef={setNodeRef}
+        className="shop-board-column-body"
+        items={cards}
+        estimateSize={compact ? 88 : 140}
+        threshold={12}
+        getKey={(wo) => wo.work_order_id}
+        empty={<p className="shop-board-empty">No orders</p>}
+        renderItem={(wo) => (
+          <DraggableWorkOrderCard
+            workOrder={wo}
+            compact={compact}
+            disabled={!canDragWorkOrderOnBoard(role, wo.status, isForeignLocation)}
+          />
         )}
-      </div>
+      />
     </section>
   );
 }

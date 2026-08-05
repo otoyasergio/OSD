@@ -1,10 +1,15 @@
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
-import { canEditWorkOrder, canOverrideWorkOrderStatus } from "@/lib/permissions";
+import {
+  canCompleteWorkOrder,
+  canEditWorkOrder,
+  canOverrideWorkOrderStatus,
+} from "@/lib/permissions";
 import type { GALLERY_BOARD_COLUMNS, SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
 
 export type ShopBoardColumnId =
   | (typeof SHOP_BOARD_COLUMNS)[number]["id"]
-  | (typeof GALLERY_BOARD_COLUMNS)[number]["id"];
+  | (typeof GALLERY_BOARD_COLUMNS)[number]["id"]
+  | "complete";
 
 /** Primary status applied when a card is dropped into a board column. */
 const COLUMN_TARGET_STATUS: Record<ShopBoardColumnId, WorkOrderStatus | null> = {
@@ -17,6 +22,7 @@ const COLUMN_TARGET_STATUS: Record<ShopBoardColumnId, WorkOrderStatus | null> = 
   qc: "quality_check",
   safety: "safety_check",
   pickup: "ready_for_pickup",
+  complete: "completed",
   on_hold: null,
   gallery_intake: "open",
   gallery_in_bay: "in_progress",
@@ -63,6 +69,11 @@ export function canDropInColumn(
     columnId === "gallery_safety"
   ) {
     return canOverrideWorkOrderStatus(role);
+  }
+
+  // Control Center complete box — front office who can release a bike.
+  if (columnId === "complete") {
+    return canCompleteWorkOrder(role);
   }
 
   // Remaining columns: front-office editors, or override roles.

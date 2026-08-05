@@ -6,6 +6,10 @@ import type { InspectionResultStatus } from "@/lib/database/types";
 import { saveInspectionResultAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import { BRAKE_INSPECTION_SKIP_ITEM } from "@/lib/services/inspectionGate";
+import {
+  shouldApplyServerInspectionText,
+  textSaveStillMatchesLocal,
+} from "@/lib/inspections/inspectionItemTextSync";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -64,7 +68,10 @@ export function InspectionItemRow({
   readOnly,
   photoUrl,
   photoRequired,
+  onExpandPhoto,
   onRecommend,
+  onBusyChange,
+  onLocalStatusChange,
   compact,
 }: {
   workOrderId: string;
@@ -72,7 +79,10 @@ export function InspectionItemRow({
   readOnly: boolean;
   photoUrl?: string | null;
   photoRequired?: boolean;
+  onExpandPhoto?: () => void;
   onRecommend?: (result: InspectionResultRow) => void;
+  onBusyChange?: (resultId: string, busy: boolean) => void;
+  onLocalStatusChange?: (resultId: string, status: InspectionResultStatus | null) => void;
   compact?: boolean;
 }) {
   const [status, setStatus] = useState<InspectionResultStatus | null>(result.status);
@@ -80,13 +90,19 @@ export function InspectionItemRow({
   const [notes, setNotes] = useState(result.notes ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [textDirty, setTextDirty] = useState(false);
+  const [textFocused, setTextFocused] = useState(false);
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measurementRef = useRef(measurement);
   const notesRef = useRef(notes);
+  const statusBeforeSaveRef = useRef<InspectionResultStatus | null>(result.status);
+  const saveSeqRef = useRef(0);
 
   // Re-sync local edits when the server row changes (adjust-state-during-render
   // pattern, https://react.dev/learn/you-might-not-need-an-effect).
+  // Never overwrite note/measurement drafts while the tech is still typing —
+  // autosave revalidatePath can return props older than the local draft.
   const [prevResult, setPrevResult] = useState(result);
   if (
     prevResult.status !== result.status ||
@@ -96,8 +112,15 @@ export function InspectionItemRow({
   ) {
     setPrevResult(result);
     setStatus(result.status);
-    setMeasurement(result.measurement ?? "");
-    setNotes(result.notes ?? "");
+    if (
+      shouldApplyServerInspectionText({
+        focused: textFocused,
+        dirty: textDirty,
+      })
+    ) {
+      setMeasurement(result.measurement ?? "");
+      setNotes(result.notes ?? "");
+    }
   }
 
   useEffect(() => {
@@ -116,28 +139,62 @@ export function InspectionItemRow({
     measurement?: string | null;
     notes?: string | null;
   }) {
+    const resultId = result.inspection_result_id;
+    const seq = ++saveSeqRef.current;
     setSaveState("saving");
+    onBusyChange?.(resultId, true);
     setError(null);
     startTransition(async () => {
-      const response = await saveInspectionResultAction(
-        workOrderId,
-        result.inspection_result_id,
-        input
-      );
-      if (!response.ok) {
-        setSaveState("error");
-        setError(response.error);
+      const response = await saveInspectionResultAction(workOrderId, resultId, input);
+      if (seq !== saveSeqRef.current) {
+        // A newer save superseded this one; leave UI to the latest request.
         return;
       }
+      if (!response.ok) {
+        if ("status" in input) {
+          const reverted = statusBeforeSaveRef.current;
+          setStatus(reverted);
+          onLocalStatusChange?.(resultId, reverted);
+        }
+        setSaveState("error");
+        setError(response.error);
+        onBusyChange?.(resultId, false);
+        return;
+      }
+      if ("status" in input) {
+        statusBeforeSaveRef.current = input.status ?? null;
+      }
+      if (
+        ("notes" in input || "measurement" in input) &&
+        textSaveStillMatchesLocal({
+          localNotes: notesRef.current,
+          localMeasurement: measurementRef.current,
+          savedNotes: input.notes,
+          savedMeasurement: input.measurement,
+        })
+      ) {
+        setTextDirty(false);
+      }
       setSaveState("saved");
-      window.setTimeout(() => setSaveState("idle"), 1200);
+      onBusyChange?.(resultId, false);
+      window.setTimeout(() => {
+        if (seq === saveSeqRef.current) setSaveState("idle");
+      }, 1200);
     });
   }
 
   function saveStatus(next: InspectionResultStatus | null) {
     const value = status === next ? null : next;
+    statusBeforeSaveRef.current = status;
     setStatus(value);
-    persist({ status: value });
+    onLocalStatusChange?.(result.inspection_result_id, value);
+    // Include current text so a status-only save + revalidate cannot wipe an
+    // unsaved note/measurement draft from the database snapshot.
+    persist({
+      status: value,
+      measurement: measurementRef.current.trim() || null,
+      notes: notesRef.current.trim() || null,
+    });
   }
 
   function scheduleTextSave() {
@@ -147,7 +204,7 @@ export function InspectionItemRow({
         measurement: measurementRef.current.trim() || null,
         notes: notesRef.current.trim() || null,
       });
-    }, 400);
+    }, 700);
   }
 
   function flushTextSave() {
@@ -156,6 +213,15 @@ export function InspectionItemRow({
       measurement: measurementRef.current.trim() || null,
       notes: notesRef.current.trim() || null,
     });
+  }
+
+  function onTextFocus() {
+    setTextFocused(true);
+  }
+
+  function onTextBlur() {
+    setTextFocused(false);
+    flushTextSave();
   }
 
   const needsAttention =
@@ -283,10 +349,12 @@ export function InspectionItemRow({
                 inputMode="decimal"
                 placeholder={unit ?? ""}
                 onChange={(e) => {
+                  setTextDirty(true);
                   setMeasurement(e.target.value);
                   scheduleTextSave();
                 }}
-                onBlur={flushTextSave}
+                onFocus={onTextFocus}
+                onBlur={onTextBlur}
               />
             </label>
           ) : null}
@@ -306,10 +374,12 @@ export function InspectionItemRow({
                       : "Notes"
                 }
                 onChange={(e) => {
+                  setTextDirty(true);
                   setNotes(e.target.value);
                   scheduleTextSave();
                 }}
-                onBlur={flushTextSave}
+                onFocus={onTextFocus}
+                onBlur={onTextBlur}
               />
             </label>
           ) : null}
@@ -332,6 +402,7 @@ export function InspectionItemRow({
             required={photoRequired !== false}
             existingUrl={photoUrl}
             readOnly={readOnly}
+            onExpand={onExpandPhoto}
           />
           {!readOnly && onRecommend ? (
             <button

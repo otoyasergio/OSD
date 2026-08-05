@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useSyncExternalStore } from "react";
+import { useRef } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { WaitingStageBike } from "@/lib/services/readyForPickup";
 import { formatElapsedTimer } from "@/lib/control-center/formatTimer";
+import { useNowTick } from "@/lib/client/useNowTick";
 import styles from "./ReadyForPickupCarousel.module.css";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -24,27 +25,6 @@ function waitTone(
   if (elapsedMs >= lateAfterMs) return "late";
   if (elapsedMs >= warnAfterMs) return "warn";
   return "ok";
-}
-
-function subscribeNowTick(onStoreChange: () => void) {
-  const id = window.setInterval(onStoreChange, 1000);
-  return () => window.clearInterval(id);
-}
-
-function getNowTick() {
-  return Date.now();
-}
-
-function getServerNowTick() {
-  return 0;
-}
-
-function useNowTick(enabled: boolean) {
-  return useSyncExternalStore(
-    enabled ? subscribeNowTick : () => () => {},
-    enabled ? getNowTick : getServerNowTick,
-    getServerNowTick
-  );
 }
 
 export type WaitingBikeCarouselDnd = {
@@ -411,6 +391,23 @@ export function ReadyForSafetyInspectionCarousel({ items, dnd }: StageCarouselPr
       approxCaption="In queue (approx)"
       warnAfterMs={SAFETY_YELLOW_MS}
       lateAfterMs={SAFETY_RED_MS}
+      dnd={dnd}
+    />
+  );
+}
+
+/** Control Center — recently completed / released bikes (drop to complete). */
+export function CompleteCarousel({ items, dnd }: StageCarouselProps) {
+  return (
+    <WaitingBikeCarousel
+      items={items}
+      title="Complete"
+      subtitle={dnd ? "Drop to mark picked up / complete" : "Recently completed"}
+      emptyMessage="No recently completed bikes."
+      readyCaption="Completed"
+      approxCaption="Completed (approx)"
+      warnAfterMs={PICKUP_YELLOW_MS}
+      lateAfterMs={PICKUP_RED_MS}
       dnd={dnd}
     />
   );

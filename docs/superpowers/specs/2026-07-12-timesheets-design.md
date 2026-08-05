@@ -30,4 +30,5 @@ Reuse `time_clock_entry`. RLS update: owner/manager may insert, update, and dele
 
 ## Out of scope
 
-WO-level job clocking, break types, commissions, kiosks, flat-rate engines.
+WO-level job clocking (see Phase B), commissions, kiosks, flat-rate engines.
+Break types, OT flags, and timesheet approval are covered in the attendance ESA Phase A design.

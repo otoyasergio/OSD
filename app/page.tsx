@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { staffHomePath } from "@/lib/permissions";
 
 export default async function Home() {
-  const user = await getCurrentAppUser();
-  if (user) {
-    redirect(staffHomePath(user.role));
+  const preview = await getRolePreviewContext();
+  if (preview) {
+    redirect(staffHomePath(preview.role));
   }
   redirect("/login");
 }

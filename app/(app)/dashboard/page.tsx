@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   DASHBOARD_CARDS,
   getDashboardData,
@@ -60,11 +60,12 @@ export default async function DashboardPage({
     density?: string;
   }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canViewDashboard(user.role)) redirect(staffHomePath(user.role));
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  const { role: viewRole } = preview;
+  if (!canViewDashboard(viewRole)) redirect(staffHomePath(viewRole));
 
-  const canCreate = canCreateWorkOrder(user.role);
+  const canCreate = canCreateWorkOrder(viewRole);
   const params = await searchParams;
   const [data, prefs] = await Promise.all([
     getDashboardData({
@@ -253,7 +254,7 @@ export default async function DashboardPage({
           hideEmpty={hideEmpty}
           compact={density === "compact"}
           hiddenColumnIds={hiddenColumnIds}
-          role={user.role}
+          role={viewRole}
           isForeignLocation={false}
           variant="gallery"
         />

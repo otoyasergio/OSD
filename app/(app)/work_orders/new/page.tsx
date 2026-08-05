@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canCreateWorkOrder } from "@/lib/permissions";
 import { getCustomerById, searchCustomers } from "@/lib/services/customers";
 import { getMotorcycleById, searchMotorcycles } from "@/lib/services/motorcycles";
@@ -16,9 +16,9 @@ export default async function NewWorkOrderPage({
 }: {
   searchParams: Promise<{ customer_id?: string; motorcycle_id?: string }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canCreateWorkOrder(user.role)) redirect("/work_orders");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canCreateWorkOrder(preview.role)) redirect("/work_orders");
 
   const { customer_id = "", motorcycle_id = "" } = await searchParams;
 

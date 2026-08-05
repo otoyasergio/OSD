@@ -15,6 +15,7 @@ import {
   extractWixContactFields,
   findMatchingCustomer,
   firstNonEmpty,
+  isCustomerInSyncWithWix,
   normalizeOptional,
   type CustomerMatchRow,
   type WixContactMatchFields,
@@ -24,7 +25,7 @@ import type { WixWebhookContactPayload } from "@/lib/wix/types";
 const CUSTOMER_COLUMNS =
   "customer_id, first_name, last_name, phone, email, notes, wix_contact_id, created_at, updated_at";
 
-const MATCH_COLUMNS = "customer_id, email, phone, wix_contact_id";
+const MATCH_COLUMNS = "customer_id, first_name, last_name, email, phone, wix_contact_id";
 
 export type CustomerWithWix = {
   customer_id: string;
@@ -258,6 +259,7 @@ export type WixContactsReconcileStats = {
   scanned: number;
   created: number;
   updated: number;
+  unchanged: number;
   skipped: number;
   failed: number;
   triggered_by: string;
@@ -265,7 +267,7 @@ export type WixContactsReconcileStats = {
 
 /**
  * Bulk pull: list all Wix contacts and upsert into local `customer`.
- * Skips contacts with neither email nor phone.
+ * Skips contacts with neither email nor phone, and skips no-op updates.
  */
 export async function reconcileWixContactsToApp(options?: {
   triggeredBy?: string;
@@ -283,6 +285,7 @@ export async function reconcileWixContactsToApp(options?: {
     scanned: 0,
     created: 0,
     updated: 0,
+    unchanged: 0,
     skipped: 0,
     failed: 0,
     triggered_by: options?.triggeredBy ?? "manual",
@@ -319,12 +322,20 @@ export async function reconcileWixContactsToApp(options?: {
         email: fields.email,
         phone: fields.phone,
       });
+
+      if (existing && isCustomerInSyncWithWix(existing, fields)) {
+        stats.unchanged += 1;
+        continue;
+      }
+
       const result = await applyWixContactUpsert(supabase, fields, existing);
 
       if (result.created) {
         stats.created += 1;
         localRows.push({
           customer_id: result.customer_id,
+          first_name: fields.firstName,
+          last_name: fields.lastName,
           email: fields.email,
           phone: fields.phone,
           wix_contact_id: fields.wixContactId,
@@ -335,6 +346,8 @@ export async function reconcileWixContactsToApp(options?: {
         if (idx >= 0) {
           localRows[idx] = {
             ...localRows[idx],
+            first_name: fields.firstName,
+            last_name: fields.lastName,
             email: fields.email ?? localRows[idx].email,
             phone: fields.phone ?? localRows[idx].phone,
             wix_contact_id: fields.wixContactId,

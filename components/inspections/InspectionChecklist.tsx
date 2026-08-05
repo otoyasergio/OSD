@@ -4,13 +4,18 @@ import { useActionState, useMemo, useState } from "react";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
 import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
+import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { completeInspectionAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
-import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
+import {
+  countIncompleteInspectionResults,
+  isInspectionReadOnly,
+} from "@/lib/services/inspectionGate";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-import type { PhotoCategory } from "@/lib/database/types";
+import type { InspectionResultStatus, PhotoCategory } from "@/lib/database/types";
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
+import { toLightboxPhotos } from "@/lib/photos/lightbox";
 
 const SECTION_PHOTO: Record<
   string,
@@ -55,6 +60,13 @@ export function InspectionChecklist({
     { error: null }
   );
   const [forceConfirm, setForceConfirm] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
+  const [localStatuses, setLocalStatuses] = useState<
+    Record<string, InspectionResultStatus | null>
+  >(() =>
+    Object.fromEntries(inspection.results.map((r) => [r.inspection_result_id, r.status]))
+  );
   const readOnly = isInspectionReadOnly({
     is_foreign_location: inspection.is_foreign_location,
     completed_at: inspection.completed_at,
@@ -73,6 +85,30 @@ export function InspectionChecklist({
       {}
     );
   }, [inspection.results]);
+
+  const saving = Object.values(busyIds).some(Boolean);
+  const localIncompleteCount = useMemo(
+    () =>
+      countIncompleteInspectionResults(
+        inspection.results.map((r) => ({
+          status: localStatuses[r.inspection_result_id] ?? r.status,
+          category_snapshot: r.category_snapshot,
+          item_name_snapshot: r.item_name_snapshot,
+        }))
+      ),
+    [inspection.results, localStatuses]
+  );
+
+  const lightboxPhotos = useMemo(
+    () => toLightboxPhotos(inspection.photos),
+    [inspection.photos]
+  );
+
+  function openPhotoBySrc(src: string | null | undefined) {
+    if (!src) return;
+    const index = lightboxPhotos.findIndex((photo) => photo.src === src);
+    if (index >= 0) setLightboxIndex(index);
+  }
 
   const photosByResult = useMemo(() => {
     const map = new Map<string, string | null>();
@@ -96,7 +132,7 @@ export function InspectionChecklist({
 
   const missingPhotoLabels = inspection.missing_photos.map((p) => p.label);
   const totalCount = inspection.results.length;
-  const checkedCount = totalCount - inspection.incomplete_count;
+  const checkedCount = totalCount - localIncompleteCount;
   const statusTotals = useMemo(() => {
     let ok = 0;
     let future = 0;
@@ -242,14 +278,20 @@ export function InspectionChecklist({
 
         {!readOnly ? (
           <div className="flex flex-col items-end gap-2">
-            {inspection.incomplete_count > 0 && canForceComplete ? (
+            {saving ? (
+              <p className="text-sm text-[var(--status-neutral)]">
+                Saving checklist changes…
+              </p>
+            ) : null}
+            {localIncompleteCount > 0 && canForceComplete ? (
               !forceConfirm ? (
                 <button
                   type="button"
                   onClick={() => setForceConfirm(true)}
+                  disabled={saving}
                   className="btn btn-secondary min-h-12 border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100"
                 >
-                  Force complete ({inspection.incomplete_count} incomplete)…
+                  Force complete ({localIncompleteCount} incomplete)…
                 </button>
               ) : (
                 <form action={completeAction} className="flex flex-wrap gap-2">
@@ -257,6 +299,7 @@ export function InspectionChecklist({
                   <SubmitButton
                     label="Confirm force complete"
                     pendingLabel="Completing…"
+                    disabled={saving}
                   />
                   <button
                     type="button"
@@ -269,9 +312,19 @@ export function InspectionChecklist({
               )
             ) : (
               <form action={completeAction}>
-                <SubmitButton label="Complete inspection" pendingLabel="Completing…" />
+                <SubmitButton
+                  label="Complete inspection"
+                  pendingLabel="Completing…"
+                  disabled={saving || localIncompleteCount > 0}
+                />
               </form>
             )}
+            {localIncompleteCount > 0 && !canForceComplete ? (
+              <p className="text-sm text-amber-900">
+                Check all fields ({localIncompleteCount} still open)
+                {saving ? " — wait for saves to finish" : ""}.
+              </p>
+            ) : null}
             <FormError message={completeState.error} />
           </div>
         ) : null}
@@ -292,6 +345,11 @@ export function InspectionChecklist({
                 required
                 existingUrl={sectionPhotoUrl.get("inspection_tires")}
                 readOnly={readOnly}
+                onExpand={
+                  sectionPhotoUrl.get("inspection_tires")
+                    ? () => openPhotoBySrc(sectionPhotoUrl.get("inspection_tires"))
+                    : undefined
+                }
               />
             ) : null}
             {!readOnly || sectionPhotoUrl.get("inspection_brakes") ? (
@@ -302,6 +360,11 @@ export function InspectionChecklist({
                 required
                 existingUrl={sectionPhotoUrl.get("inspection_brakes")}
                 readOnly={readOnly}
+                onExpand={
+                  sectionPhotoUrl.get("inspection_brakes")
+                    ? () => openPhotoBySrc(sectionPhotoUrl.get("inspection_brakes"))
+                    : undefined
+                }
               />
             ) : null}
           </div>
@@ -362,38 +425,66 @@ export function InspectionChecklist({
                     required
                     existingUrl={sectionPhotoUrl.get(sectionPhoto.category)}
                     readOnly={readOnly}
+                    onExpand={
+                      sectionPhotoUrl.get(sectionPhoto.category)
+                        ? () => openPhotoBySrc(sectionPhotoUrl.get(sectionPhoto.category))
+                        : undefined
+                    }
                   />
                 </div>
               ) : null}
               <div className="inspection-section-items">
-                {results.map((result) => (
-                  <InspectionItemRow
-                    key={result.inspection_result_id}
-                    workOrderId={inspection.work_order_id}
-                    result={result}
-                    readOnly={readOnly}
-                    compact={
-                      !result.requires_measurement_snapshot &&
-                      !category.startsWith("Comments")
-                    }
-                    photoUrl={photosByResult.get(result.inspection_result_id)}
-                    photoRequired={inspection.missing_photos.some(
-                      (p) => p.inspection_result_id === result.inspection_result_id
-                    )}
-                    onRecommend={
-                      canRecommend
-                        ? (r) => {
-                            window.location.href = `/work_orders/${inspection.work_order_id}?tab=recommendations&from_result=${r.inspection_result_id}`;
-                          }
-                        : undefined
-                    }
-                  />
-                ))}
+                {results.map((result) => {
+                  const itemPhotoUrl = photosByResult.get(result.inspection_result_id);
+                  return (
+                    <InspectionItemRow
+                      key={result.inspection_result_id}
+                      workOrderId={inspection.work_order_id}
+                      result={result}
+                      readOnly={readOnly}
+                      compact={
+                        !result.requires_measurement_snapshot &&
+                        !category.startsWith("Comments")
+                      }
+                      photoUrl={itemPhotoUrl}
+                      photoRequired={inspection.missing_photos.some(
+                        (p) => p.inspection_result_id === result.inspection_result_id
+                      )}
+                      onExpandPhoto={
+                        itemPhotoUrl ? () => openPhotoBySrc(itemPhotoUrl) : undefined
+                      }
+                      onBusyChange={(resultId, busy) => {
+                        setBusyIds((current) => ({ ...current, [resultId]: busy }));
+                      }}
+                      onLocalStatusChange={(resultId, status) => {
+                        setLocalStatuses((current) => ({
+                          ...current,
+                          [resultId]: status,
+                        }));
+                      }}
+                      onRecommend={
+                        canRecommend
+                          ? (r) => {
+                              window.location.href = `/work_orders/${inspection.work_order_id}?tab=recommendations&from_result=${r.inspection_result_id}`;
+                            }
+                          : undefined
+                      }
+                    />
+                  );
+                })}
               </div>
             </section>
           );
         })}
       </div>
+
+      {lightboxIndex !== null && lightboxPhotos.length > 0 ? (
+        <PhotoLightbox
+          photos={lightboxPhotos}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,11 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import {
-  completeInspection,
-  saveInspectionResult,
-} from "@/lib/services/inspections";
+import { completeInspection, saveInspectionResult } from "@/lib/services/inspections";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { recordUxFailure } from "@/lib/services/uxEvents";
 import type { InspectionResultStatus } from "@/lib/database/types";
 
 export type InspectionFormState = { error: string | null };
@@ -45,7 +43,11 @@ export async function completeInspectionAction(
       force: formData.get("force") === "true",
     });
   } catch (error) {
-    return { error: toFormErrorMessage(error) };
+    const message = await recordUxFailure(error, {
+      source: "inspection.complete",
+      context: { work_order_id: workOrderId },
+    });
+    return { error: message };
   }
 
   revalidateInspection(workOrderId);

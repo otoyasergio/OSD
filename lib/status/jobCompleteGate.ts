@@ -1,11 +1,23 @@
 export type JobCompleteGateInput = {
   checklistItems: Array<{ checked_at: string | null }>;
   parts: Array<{ status: string }>;
+  /**
+   * Count of 'job_proof' photos ONLY. Work-journal photos ('job_work') and
+   * other categories never satisfy the proof gate — derive this with
+   * countProofPhotos when starting from a mixed photo list.
+   */
   proofPhotoCount: number;
   hasProofException: boolean;
   /** When false, block complete (matches server inspectionGate). */
   inspectionComplete?: boolean;
 };
+
+/** Only after photos ('job_proof') count toward the proof-of-work gate. */
+export function countProofPhotos(
+  photos: Array<{ category: string | null | undefined }>
+): number {
+  return photos.filter((photo) => photo.category === "job_proof").length;
+}
 
 export type JobCompleteGateResult =
   { ok: true } | { ok: false; reason: string; code: string };
@@ -51,7 +63,7 @@ export function evaluateJobCompleteGate(
     return {
       ok: false,
       code: "PROOF_REQUIRED",
-      reason: "Add an after photo or a proof exception note.",
+      reason: "Add an after photo or skip with a reason.",
     };
   }
 
