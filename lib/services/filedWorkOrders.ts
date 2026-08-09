@@ -3,18 +3,12 @@ import { canViewClients } from "@/lib/permissions";
 import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, PhotoCategory, WorkOrderStatus } from "@/lib/database/types";
 import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import {
+  matchesWorkOrderSearch,
+  type WorkOrderSearchFields,
+} from "@/lib/services/workOrderSearch";
 
-export type FiledWorkOrderSearchFields = {
-  work_order_number: string;
-  external_invoice_number?: string | null;
-  customer_first_name?: string | null;
-  customer_last_name?: string | null;
-  customer_phone?: string | null;
-  bike_year?: number | null;
-  bike_make?: string | null;
-  bike_model?: string | null;
-  bike_vin?: string | null;
-};
+export type FiledWorkOrderSearchFields = WorkOrderSearchFields;
 
 export type CustomerWorkOrderJobSummary = {
   service_name_snapshot: string;
@@ -64,25 +58,7 @@ export function matchesFiledWorkOrderSearch(
   fields: FiledWorkOrderSearchFields,
   query: string
 ): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-
-  const haystack = [
-    fields.work_order_number,
-    fields.external_invoice_number,
-    fields.customer_first_name,
-    fields.customer_last_name,
-    fields.customer_phone,
-    fields.bike_year != null ? String(fields.bike_year) : null,
-    fields.bike_make,
-    fields.bike_model,
-    fields.bike_vin,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return haystack.includes(q);
+  return matchesWorkOrderSearch(fields, query);
 }
 
 export function partitionCustomerWorkOrders(rows: CustomerWorkOrderSummary[]): {

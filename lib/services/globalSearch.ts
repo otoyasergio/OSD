@@ -1,6 +1,11 @@
+import { createClient } from "@/lib/database/supabase-server";
+import type { WorkOrderStatus } from "@/lib/database/types";
 import { searchCustomers } from "@/lib/services/customers";
-import { getDashboardData } from "@/lib/services/dashboard";
 import { searchMotorcycles } from "@/lib/services/motorcycles";
+import {
+  isWoNumberPrefixMatch,
+  searchWorkOrdersAtLocation,
+} from "@/lib/services/workOrderSearch";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 
 export type SearchResult =
@@ -17,19 +22,6 @@ export type SearchAllOptions = {
 
 function normalizeQuery(query: string): string {
   return query.trim().toLowerCase();
-}
-
-/** Collapse optional hyphen after WO so `WO1001` and `WO-1001` compare equally. */
-function normalizeWoToken(value: string): string {
-  return value.trim().toLowerCase().replace(/^wo-?/, "wo");
-}
-
-function isWoNumberPrefixMatch(query: string, workOrderNumber: string): boolean {
-  const q = normalizeQuery(query);
-  if (!q) return false;
-  const label = workOrderNumber.toLowerCase();
-  if (label.startsWith(q)) return true;
-  return normalizeWoToken(workOrderNumber).startsWith(normalizeWoToken(query));
 }
 
 function isExactCustomerName(query: string, label: string): boolean {
@@ -79,10 +71,55 @@ function customerMeta(phone: string | null, email: string | null): string {
   return phone?.trim() || email?.trim() || "Customer";
 }
 
+type SearchWoRow = {
+  work_order_id: string;
+  work_order_number: string;
+  external_invoice_number: string | null;
+  status: WorkOrderStatus;
+  date_created: string;
+  customer: {
+    first_name: string;
+    last_name: string;
+  } | null;
+  motorcycle: {
+    year: number;
+    make: string;
+    model: string;
+    vin: string | null;
+  } | null;
+};
+
+const WO_SEARCH_SELECT = `
+  work_order_id,
+  work_order_number,
+  external_invoice_number,
+  status,
+  date_created,
+  customer:customer_id ( first_name, last_name ),
+  motorcycle:motorcycle_id ( year, make, model, vin )
+`;
+
+/**
+ * Lean WO typeahead query — never loads the full dashboard board graph.
+ * Matches WO/invoice via SQL ilike, plus customer/bike/VIN via related ID lookups.
+ */
+async function searchWorkOrders(
+  query: string,
+  locationId: string,
+  limit: number
+): Promise<SearchWoRow[]> {
+  const supabase = await createClient();
+  return searchWorkOrdersAtLocation<SearchWoRow>(
+    supabase,
+    locationId,
+    query,
+    WO_SEARCH_SELECT,
+    { limit, fetchLimit: Math.min(Math.max(limit * 4, 24), 60) }
+  );
+}
+
 /**
  * Unified typeahead search across work orders (active location), customers, and motorcycles.
- * `locationId` documents the WO scope; dashboard query uses the session active location
- * (callers should pass `user.active_location_id`).
  */
 export async function searchAll(
   query: string,
@@ -94,34 +131,32 @@ export async function searchAll(
 
   const includeClients = options.includeClients !== false;
 
-  const [customers, motorcycles, dashboard] = await Promise.all([
+  const [customers, motorcycles, workOrders] = await Promise.all([
     includeClients ? searchCustomers(trimmed) : Promise.resolve([]),
     includeClients ? searchMotorcycles(trimmed) : Promise.resolve([]),
-    getDashboardData({ q: trimmed }),
+    searchWorkOrders(trimmed, options.locationId, limit),
   ]);
 
-  const results: SearchResult[] = [
-    ...dashboard.rows.map((row) => {
-      const customer = row.motorcycle?.customer;
-      const bike = row.motorcycle
-        ? `${row.motorcycle.year} ${row.motorcycle.make} ${row.motorcycle.model}`
+  const results: SearchResult[] = workOrders.map((row) => {
+    const customer = row.customer;
+    const bike = row.motorcycle
+      ? `${row.motorcycle.year} ${row.motorcycle.make} ${row.motorcycle.model}`
+      : null;
+    const customerName =
+      includeClients && customer
+        ? `${customer.first_name} ${customer.last_name}`.trim()
         : null;
-      const customerName =
-        includeClients && customer
-          ? `${customer.first_name} ${customer.last_name}`.trim()
-          : null;
-      const statusLabel = WORK_ORDER_STATUS_LABELS[row.status] ?? row.status;
-      const metaParts = [customerName, bike, statusLabel].filter(Boolean);
+    const statusLabel = WORK_ORDER_STATUS_LABELS[row.status] ?? row.status;
+    const metaParts = [customerName, bike, statusLabel].filter(Boolean);
 
-      return {
-        type: "work_order" as const,
-        id: row.work_order_id,
-        label: row.work_order_number,
-        href: `/work_orders/${row.work_order_id}`,
-        meta: metaParts.join(" · "),
-      };
-    }),
-  ];
+    return {
+      type: "work_order" as const,
+      id: row.work_order_id,
+      label: row.work_order_number,
+      href: `/work_orders/${row.work_order_id}`,
+      meta: metaParts.join(" · "),
+    };
+  });
 
   if (includeClients) {
     results.push(

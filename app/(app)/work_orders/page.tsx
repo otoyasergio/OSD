@@ -9,12 +9,17 @@ import { WorkOrderCard } from "@/components/work_orders/WorkOrderCard";
 
 export const dynamic = "force-dynamic";
 
-export default async function WorkOrdersPage() {
+export default async function WorkOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
   const user = await getCurrentAppUser();
   if (!user) redirect("/login");
   if (isFloorTech(user.role)) redirect(staffHomePath(user.role));
 
-  const workOrders = await listWorkOrdersForActiveLocation();
+  const { q = "" } = await searchParams;
+  const workOrders = await listWorkOrdersForActiveLocation(q);
   const canCreate = canCreateWorkOrder(user.role);
 
   return (
@@ -31,13 +36,41 @@ export default async function WorkOrdersPage() {
         }
       />
 
+      <form method="get" className="filter-panel sm:grid-cols-1 lg:grid-cols-2">
+        <label className="block sm:col-span-2 lg:col-span-1">
+          <span className="field-label">Search</span>
+          <input
+            type="search"
+            name="q"
+            defaultValue={q}
+            placeholder="Customer, work order, bike, or VIN"
+            aria-label="Search work orders"
+            className="input"
+          />
+        </label>
+        <div className="flex items-end gap-2">
+          <button type="submit" className="btn btn-primary">
+            Search
+          </button>
+          {q ? (
+            <Link href="/work_orders" className="btn btn-secondary">
+              Clear
+            </Link>
+          ) : null}
+        </div>
+      </form>
+
       {workOrders.length === 0 ? (
         <EmptyState
-          variant="work-orders"
-          title="No work orders yet"
-          description="Create the first work order to start tracking a visit."
+          variant={q ? "search" : "work-orders"}
+          title={q ? "No matches" : "No work orders yet"}
+          description={
+            q
+              ? `No work orders match “${q}”.`
+              : "Create the first work order to start tracking a visit."
+          }
           action={
-            canCreate
+            !q && canCreate
               ? { href: "/work_orders/new", label: "Create work order" }
               : undefined
           }
