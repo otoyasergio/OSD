@@ -21,6 +21,7 @@ import { buildWorkOrderFlags } from "@/lib/status/flags";
 import { getAgreementFollowUp } from "@/lib/status/agreementFollowUp";
 import { assignUnassignedJobsOnWorkOrderToTechnician } from "@/lib/services/jobs";
 import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
+import { searchWorkOrdersAtLocation } from "@/lib/services/workOrderSearch";
 
 export type WorkOrder = {
   work_order_id: string;
@@ -226,60 +227,74 @@ export async function listTechniciansForActiveLocation(): Promise<TechnicianOpti
   return (data ?? []) as TechnicianOption[];
 }
 
-export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListItem[]> {
+const WORK_ORDER_LIST_SELECT = `
+  work_order_id,
+  work_order_number,
+  external_invoice_number,
+  status,
+  mileage,
+  mileage_unit,
+  date_created,
+  estimated_completion,
+  primary_technician_id,
+  quality_check_assigned_to,
+  customer:customer_id (
+    customer_id,
+    first_name,
+    last_name,
+    phone,
+    email,
+    sms_opted_out_at
+  ),
+  motorcycle:motorcycle_id (
+    motorcycle_id,
+    year,
+    make,
+    model,
+    vin
+  ),
+  primary_technician:primary_technician_id (
+    user_id,
+    first_name,
+    last_name
+  ),
+  job ( status, assigned_technician_id ),
+  recommendation ( severity, status ),
+  drop_off_agreement (
+    agreement_id,
+    signature_method,
+    customer_document ( document_id )
+  )
+`;
+
+export async function listWorkOrdersForActiveLocation(
+  query = ""
+): Promise<WorkOrderListItem[]> {
   const user = await requireUser();
   const supabase = await createClient();
+  const locationId = user.active_location_id!;
+  const trimmed = query.trim();
 
-  const { data, error } = await supabase
-    .from("work_order")
-    .select(
-      `
-      work_order_id,
-      work_order_number,
-      external_invoice_number,
-      status,
-      mileage,
-      mileage_unit,
-      date_created,
-      estimated_completion,
-      primary_technician_id,
-      quality_check_assigned_to,
-      customer:customer_id (
-        customer_id,
-        first_name,
-        last_name,
-        phone,
-        email,
-        sms_opted_out_at
-      ),
-      motorcycle:motorcycle_id (
-        motorcycle_id,
-        year,
-        make,
-        model,
-        vin
-      ),
-      primary_technician:primary_technician_id (
-        user_id,
-        first_name,
-        last_name
-      ),
-      job ( status, assigned_technician_id ),
-      recommendation ( severity, status ),
-      drop_off_agreement (
-        agreement_id,
-        signature_method,
-        customer_document ( document_id )
-      )
-    `
-    )
-    .eq("location_id", user.active_location_id!)
-    .order("date_created", { ascending: false })
-    .limit(100);
+  let rows: Array<Record<string, unknown>>;
+  if (!trimmed) {
+    const { data, error } = await supabase
+      .from("work_order")
+      .select(WORK_ORDER_LIST_SELECT)
+      .eq("location_id", locationId)
+      .order("date_created", { ascending: false })
+      .limit(100);
 
-  if (error) throw error;
+    if (error) throw error;
+    rows = (data ?? []) as Array<Record<string, unknown>>;
+  } else {
+    rows = (await searchWorkOrdersAtLocation<
+      Record<string, unknown> & { work_order_id: string; date_created?: string | null }
+    >(supabase, locationId, trimmed, WORK_ORDER_LIST_SELECT, {
+      limit: 100,
+    })) as Array<Record<string, unknown>>;
+  }
 
-  const mapped = ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+  const mapped = rows.map((row) => {
     const bike = row.motorcycle as {
       motorcycle_id: string;
       year: number;

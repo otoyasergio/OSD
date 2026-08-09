@@ -31,6 +31,7 @@ describe("matchesFiledWorkOrderSearch", () => {
 
   it("matches work order number, customer, and bike", () => {
     expect(matchesFiledWorkOrderSearch(fields(), "WO-1001")).toBe(true);
+    expect(matchesFiledWorkOrderSearch(fields(), "WO1001")).toBe(true);
     expect(matchesFiledWorkOrderSearch(fields(), "ada")).toBe(true);
     expect(matchesFiledWorkOrderSearch(fields(), "honda")).toBe(true);
     expect(matchesFiledWorkOrderSearch(fields(), "cbr")).toBe(true);
