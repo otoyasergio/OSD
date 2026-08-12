@@ -76,7 +76,7 @@ function CardBody({
       <div className={styles.media}>
         {item.primary_photo_url ? (
           // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-          <img src={item.primary_photo_url} alt="" />
+          <img src={item.primary_photo_url} alt="" draggable={false} />
         ) : (
           <div className={styles.placeholder} aria-hidden>
             <svg viewBox="0 0 48 32" width="40" height="26">

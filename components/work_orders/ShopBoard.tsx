@@ -1,22 +1,27 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  closestCenter,
+  pointerWithin,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
 import { SHOP_BOARD_COLUMNS, GALLERY_BOARD_COLUMNS } from "@/lib/status/pipeline";
 import {
+  boardColumnIdForStatus,
   canDragWorkOrderOnBoard,
   canDropInColumn,
   getTargetStatusForColumn,
+  resolveShopBoardDropColumnId,
 } from "@/lib/status/transitions";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
 import { DraggableWorkOrderCard } from "@/components/work_orders/DraggableWorkOrderCard";
@@ -25,6 +30,12 @@ import {
   type WorkOrderCardData,
 } from "@/components/work_orders/WorkOrderCard";
 import { VirtualColumnList } from "@/components/ui/VirtualColumnList";
+
+const shopBoardCollision: CollisionDetection = (args) => {
+  const hits = pointerWithin(args);
+  if (hits.length > 0) return hits;
+  return closestCenter(args);
+};
 
 function BoardColumn({
   columnId,
@@ -101,6 +112,7 @@ export function ShopBoard({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const suppressClickRef = useRef(false);
 
   // Sync when server revalidates with new props
   const rowsKey = rows.map((r) => `${r.work_order_id}:${r.status}`).join("|");
@@ -141,19 +153,36 @@ export function ShopBoard({
     : null;
 
   function handleDragStart(event: DragStartEvent) {
+    suppressClickRef.current = true;
     setErrorMessage(null);
     setActiveId(String(event.active.id));
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveId(null);
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 50);
     const { active, over } = event;
     if (!over) return;
 
     const workOrderId = String(active.id);
-    const targetColumnId = String(over.id);
+    const columnIds = new Set(visibleColumns.map((column) => column.id));
+    const targetColumnId = resolveShopBoardDropColumnId({
+      overId: String(over.id),
+      columnIds,
+      columnIdForWorkOrder: (id) => {
+        const row = boardRows.find((item) => item.work_order_id === id);
+        return row ? boardColumnIdForStatus(row.status, columns) : null;
+      },
+    });
+    if (!targetColumnId) return;
+
     const card = boardRows.find((row) => row.work_order_id === workOrderId);
     if (!card) return;
+
+    const sourceColumnId = boardColumnIdForStatus(card.status, columns);
+    if (sourceColumnId === targetColumnId) return;
 
     const targetStatus = getTargetStatusForColumn(targetColumnId);
     if (targetStatus === null) {
@@ -187,10 +216,20 @@ export function ShopBoard({
 
   function handleDragCancel() {
     setActiveId(null);
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 50);
   }
 
   return (
-    <div className="shop-board-wrap">
+    <div
+      className="shop-board-wrap"
+      onClickCapture={(event) => {
+        if (!suppressClickRef.current) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
       <p className="shop-board-summary" aria-live="polite">
         {boardRows.length === 0
           ? "No work orders on the board"
@@ -204,6 +243,7 @@ export function ShopBoard({
       ) : null}
       <DndContext
         sensors={sensors}
+        collisionDetection={shopBoardCollision}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}

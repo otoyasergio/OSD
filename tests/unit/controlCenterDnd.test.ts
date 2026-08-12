@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  assignBoardColumnForTarget,
   canDragCcBike,
   isCcStageDropEnabledForRole,
   isCcStageDropId,
+  isControlCenterDispatchStatus,
+  partitionControlCenterDispatchBikes,
+  removeWorkOrderFromControlCenterLists,
   resolveControlCenterDropTarget,
   stageDropIdForStatus,
   statusForCcStage,
@@ -95,6 +99,61 @@ describe("control center dnd helpers", () => {
     expect(isCcStageDropEnabledForRole("service_advisor", "complete")).toBe(true);
     expect(isCcStageDropEnabledForRole("admin", "complete")).toBe(false);
     expect(isCcStageDropEnabledForRole("technician", "complete")).toBe(false);
+  });
+
+  it("keeps dispatch cards off stage-status bikes so a drop actually moves them", () => {
+    expect(isControlCenterDispatchStatus("in_progress")).toBe(true);
+    expect(isControlCenterDispatchStatus("ready_for_technician")).toBe(true);
+    expect(isControlCenterDispatchStatus("open")).toBe(true);
+    expect(isControlCenterDispatchStatus("waiting_for_parts")).toBe(false);
+    expect(isControlCenterDispatchStatus("quality_check")).toBe(false);
+    expect(isControlCenterDispatchStatus("safety_check")).toBe(false);
+    expect(isControlCenterDispatchStatus("ready_for_pickup")).toBe(false);
+    expect(isControlCenterDispatchStatus("completed")).toBe(false);
+  });
+
+  it("partitions stage-status bikes out of the pool and tech cards", () => {
+    const { pool, assignedByTech } = partitionControlCenterDispatchBikes(
+      [
+        { work_order_id: "wo-pool", status: "in_progress", technician_id: null },
+        { work_order_id: "wo-tech", status: "in_progress", technician_id: "tech-a" },
+        { work_order_id: "wo-parts", status: "waiting_for_parts", technician_id: null },
+        { work_order_id: "wo-qc", status: "quality_check", technician_id: "tech-a" },
+      ],
+      new Set(["tech-a"])
+    );
+
+    expect(pool.map((bike) => bike.work_order_id)).toEqual(["wo-pool"]);
+    expect(assignedByTech.get("tech-a")?.map((bike) => bike.work_order_id)).toEqual([
+      "wo-tech",
+    ]);
+  });
+
+  it("maps pool vs tech drops to board columns so stage cards can return to dispatch", () => {
+    expect(assignBoardColumnForTarget("pool", "pool")).toBe("ready");
+    expect(assignBoardColumnForTarget("tech-a", "pool")).toBe("in_progress");
+  });
+
+  it("removes a card from every list so it lives in only one place after a move", () => {
+    const result = removeWorkOrderFromControlCenterLists({
+      workOrderId: "wo-1",
+      pool: [{ work_order_id: "wo-1" }, { work_order_id: "wo-2" }],
+      techs: [{ assigned_bikes: [{ work_order_id: "wo-1" }, { work_order_id: "wo-3" }] }],
+      stages: {
+        parts: [{ work_order_id: "wo-1" }],
+        qc: [{ work_order_id: "wo-4" }],
+        safety: [],
+        pickup: [],
+        complete: [],
+      },
+    });
+
+    expect(result.pool.map((bike) => bike.work_order_id)).toEqual(["wo-2"]);
+    expect(result.techs[0].assigned_bikes.map((bike) => bike.work_order_id)).toEqual([
+      "wo-3",
+    ]);
+    expect(result.stages.parts).toEqual([]);
+    expect(result.stages.qc.map((bike) => bike.work_order_id)).toEqual(["wo-4"]);
   });
 
   it("gates assign vs stage drag affordances", () => {

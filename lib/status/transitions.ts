@@ -36,6 +36,29 @@ export function getTargetStatusForColumn(columnId: string): WorkOrderStatus | nu
   return COLUMN_TARGET_STATUS[columnId as ShopBoardColumnId];
 }
 
+export function boardColumnIdForStatus(
+  status: WorkOrderStatus,
+  columns: readonly { id: string; statuses: readonly WorkOrderStatus[] }[]
+): string | null {
+  for (const column of columns) {
+    if (column.statuses.includes(status)) return column.id;
+  }
+  return null;
+}
+
+/**
+ * Resolve a dnd-kit `over.id` to a board column.
+ * Dropping onto another card uses that card's column.
+ */
+export function resolveShopBoardDropColumnId(input: {
+  overId: string;
+  columnIds: ReadonlySet<string>;
+  columnIdForWorkOrder: (workOrderId: string) => string | null;
+}): string | null {
+  if (input.columnIds.has(input.overId)) return input.overId;
+  return input.columnIdForWorkOrder(input.overId);
+}
+
 export function isBoardDraggableStatus(status: WorkOrderStatus): boolean {
   return status !== "completed" && status !== "cancelled";
 }

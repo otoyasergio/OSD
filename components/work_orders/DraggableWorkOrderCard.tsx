@@ -1,8 +1,7 @@
 "use client";
 
-import { memo } from "react";
+import { memo, useEffect, useRef } from "react";
 import { useDraggable } from "@dnd-kit/core";
-import { CSS } from "@dnd-kit/utilities";
 import {
   WorkOrderCard,
   type WorkOrderCardData,
@@ -17,30 +16,33 @@ export const DraggableWorkOrderCard = memo(function DraggableWorkOrderCard({
   compact?: boolean;
   disabled?: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: workOrder.work_order_id,
     data: { workOrder },
     disabled,
   });
-
-  const style = transform
-    ? {
-        transform: CSS.Translate.toString(transform),
-        opacity: isDragging ? 0.55 : 1,
-        zIndex: isDragging ? 20 : undefined,
-      }
-    : undefined;
+  const didDragRef = useRef(false);
+  useEffect(() => {
+    if (isDragging) didDragRef.current = true;
+  }, [isDragging]);
 
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={isDragging ? { opacity: 0 } : undefined}
       className={
         disabled ? "wo-card-drag-wrap" : "wo-card-drag-wrap wo-card-drag-wrap--draggable"
       }
       {...listeners}
       {...attributes}
       aria-roledescription={disabled ? undefined : "draggable work order"}
+      onDragStart={(event) => event.preventDefault()}
+      onClickCapture={(event) => {
+        if (!didDragRef.current) return;
+        event.preventDefault();
+        event.stopPropagation();
+        didDragRef.current = false;
+      }}
     >
       <WorkOrderCard workOrder={workOrder} compact={compact} />
     </div>

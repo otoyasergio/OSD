@@ -28,6 +28,8 @@ export function PhotoActionCard({
   return (
     <Link
       href={href}
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
       className={[
         "photo-action-card",
         compact ? "photo-action-card--compact" : "",
@@ -39,7 +41,13 @@ export function PhotoActionCard({
       <div className="photo-action-card-media" aria-hidden={!photoUrl}>
         {photoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-          <img src={photoUrl} alt="" className="photo-action-card-img" loading="lazy" />
+          <img
+            src={photoUrl}
+            alt=""
+            className="photo-action-card-img"
+            loading="lazy"
+            draggable={false}
+          />
         ) : (
           <div className="photo-action-card-placeholder">
             <svg viewBox="0 0 48 32" className="photo-action-card-bike" aria-hidden>

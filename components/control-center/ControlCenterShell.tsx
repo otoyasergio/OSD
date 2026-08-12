@@ -32,10 +32,13 @@ import { createClient } from "@/lib/database/supabase-browser";
 import type { WorkOrderStatus } from "@/lib/database/types";
 import { controlCenterCohortHref } from "@/lib/control-center/cohorts";
 import {
+  assignBoardColumnForTarget,
   canDragCcBike,
   isCcStageDropEnabledForRole,
   isCcStageDropId,
+  isControlCenterDispatchStatus,
   normalizeControlCenterDragId,
+  removeWorkOrderFromControlCenterLists,
   resolveControlCenterDropTarget,
   stageDropIdForStatus,
   statusForCcStage,
@@ -48,6 +51,7 @@ import type {
   ControlCenterTech,
 } from "@/lib/services/controlCenter";
 import type { ReadyForPickupItem, WaitingStageBike } from "@/lib/services/readyForPickup";
+import { getGalleryStageForStatus } from "@/lib/status/pipeline";
 import { canDropInColumn } from "@/lib/status/transitions";
 import {
   CompleteCarousel,
@@ -114,7 +118,7 @@ function BikeMedia({ bike }: { bike: ControlCenterBike }) {
     <div className="cc-bike-media">
       {bike.primary_photo_url ? (
         // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-        <img src={bike.primary_photo_url} alt="" />
+        <img src={bike.primary_photo_url} alt="" draggable={false} />
       ) : (
         <div className="cc-bike-placeholder" aria-hidden>
           <svg viewBox="0 0 48 32" width="40" height="26">
@@ -548,6 +552,11 @@ export function ControlCenterShell({
     return map;
   }, [pool, techs]);
 
+  const visiblePool = useMemo(
+    () => pool.filter((bike) => isControlCenterDispatchStatus(bike.status)),
+    [pool]
+  );
+
   const stageBikeMap = useMemo(() => {
     const map = new Map<string, WaitingStageBike>();
     for (const items of Object.values(stageQueues)) {
@@ -563,9 +572,20 @@ export function ControlCenterShell({
     : null;
 
   function findAssignmentOwner(workOrderId: string): string | null {
-    if (pool.some((b) => b.work_order_id === workOrderId)) return POOL_ID;
+    if (
+      pool.some(
+        (b) => b.work_order_id === workOrderId && isControlCenterDispatchStatus(b.status)
+      )
+    ) {
+      return POOL_ID;
+    }
     for (const tech of techs) {
-      if (tech.assigned_bikes.some((b) => b.work_order_id === workOrderId)) {
+      if (
+        tech.assigned_bikes.some(
+          (b) =>
+            b.work_order_id === workOrderId && isControlCenterDispatchStatus(b.status)
+        )
+      ) {
         return tech.user_id;
       }
     }
@@ -600,41 +620,8 @@ export function ControlCenterShell({
     else setCompleteQueue(items);
   }
 
-  function applyOptimisticAssign(workOrderId: string, targetId: string) {
-    const bike = allBikes.get(workOrderId);
-    if (!bike) return null;
-    const previous = { pool, techs };
-    const without = {
-      pool: pool.filter((b) => b.work_order_id !== workOrderId),
-      techs: techs.map((tech) => ({
-        ...tech,
-        assigned_bikes: tech.assigned_bikes.filter(
-          (b) => b.work_order_id !== workOrderId
-        ),
-      })),
-    };
-
-    if (targetId === POOL_ID) {
-      const moved = { ...bike, technician_id: null };
-      setPool([moved, ...without.pool]);
-      setTechs(without.techs);
-    } else {
-      const moved = { ...bike, technician_id: targetId };
-      setPool(without.pool);
-      setTechs(
-        without.techs.map((tech) =>
-          tech.user_id === targetId
-            ? { ...tech, assigned_bikes: [...tech.assigned_bikes, moved] }
-            : tech
-        )
-      );
-    }
-    return previous;
-  }
-
-  function applyOptimisticStatusMove(workOrderId: string, stageId: CcStageDropId) {
-    const nextStatus = statusForCcStage(stageId);
-    const previous = {
+  function snapshotBoard() {
+    return {
       pool,
       techs,
       partsQueue,
@@ -643,42 +630,147 @@ export function ControlCenterShell({
       pickupQueue,
       completeQueue,
     };
+  }
 
+  function restoreBoard(previous: ReturnType<typeof snapshotBoard>) {
+    setPool(previous.pool);
+    setTechs(previous.techs);
+    setPartsQueue(previous.partsQueue);
+    setQcQueue(previous.qcQueue);
+    setSafetyQueue(previous.safetyQueue);
+    setPickupQueue(previous.pickupQueue);
+    setCompleteQueue(previous.completeQueue);
+  }
+
+  function toDispatchBike(
+    source: ControlCenterBike | WaitingStageBike,
+    status: WorkOrderStatus,
+    technicianId: string | null
+  ): ControlCenterBike {
+    if ("bike_title" in source) {
+      const stage = getGalleryStageForStatus(status);
+      return {
+        ...source,
+        status,
+        technician_id: technicianId,
+        stage_label: stage.label,
+        stage_tone: stage.tone,
+      };
+    }
+    const stage = getGalleryStageForStatus(status);
+    return {
+      work_order_id: source.work_order_id,
+      work_order_number: source.work_order_number,
+      status,
+      date_created: source.ready_since,
+      opened_at: null,
+      technician_id: technicianId,
+      customer_name: "",
+      bike_title: source.motorcycle_label,
+      primary_photo_url: source.primary_photo_url,
+      stage_label: stage.label,
+      stage_tone: stage.tone,
+      flags: [],
+      flag_badge: null,
+      at_risk: false,
+      status_dot: "green",
+      last_job_activity_at: null,
+    };
+  }
+
+  function applyOptimisticAssign(workOrderId: string, targetId: string) {
+    const bike = allBikes.get(workOrderId);
+    if (!bike) return null;
+    const previous = snapshotBoard();
+    const lists = removeWorkOrderFromControlCenterLists({
+      workOrderId,
+      pool,
+      techs,
+      stages: stageQueues,
+    });
+    const moved = {
+      ...bike,
+      technician_id: targetId === POOL_ID ? null : targetId,
+    };
+    if (targetId === POOL_ID) {
+      setPool([moved, ...lists.pool]);
+      setTechs(lists.techs);
+    } else {
+      setPool(lists.pool);
+      setTechs(
+        lists.techs.map((tech) =>
+          tech.user_id === targetId
+            ? { ...tech, assigned_bikes: [...tech.assigned_bikes, moved] }
+            : tech
+        )
+      );
+    }
+    setPartsQueue(lists.stages.parts);
+    setQcQueue(lists.stages.qc);
+    setSafetyQueue(lists.stages.safety);
+    setPickupQueue(lists.stages.pickup);
+    setCompleteQueue(lists.stages.complete);
+    return previous;
+  }
+
+  function applyOptimisticStatusMove(workOrderId: string, stageId: CcStageDropId) {
+    const previous = snapshotBoard();
     const source = allBikes.get(workOrderId) ?? stageBikeMap.get(workOrderId) ?? null;
     if (!source) return null;
 
-    if (stageId === "complete") {
-      setPool((current) => current.filter((bike) => bike.work_order_id !== workOrderId));
-      setTechs((current) =>
-        current.map((tech) => ({
-          ...tech,
-          assigned_bikes: tech.assigned_bikes.filter(
-            (bike) => bike.work_order_id !== workOrderId
-          ),
-        }))
+    const lists = removeWorkOrderFromControlCenterLists({
+      workOrderId,
+      pool,
+      techs,
+      stages: stageQueues,
+    });
+    const nextItem = toStageBike(source, stageId);
+    setPool(lists.pool);
+    setTechs(lists.techs);
+    for (const id of Object.keys(lists.stages) as CcStageDropId[]) {
+      setStageQueue(
+        id,
+        id === stageId ? [nextItem, ...lists.stages[id]] : lists.stages[id]
       );
+    }
+    return previous;
+  }
+
+  function applyOptimisticStageToAssign(workOrderId: string, targetId: string) {
+    const source = allBikes.get(workOrderId) ?? stageBikeMap.get(workOrderId) ?? null;
+    if (!source) return null;
+    const previous = snapshotBoard();
+    const lists = removeWorkOrderFromControlCenterLists({
+      workOrderId,
+      pool,
+      techs,
+      stages: stageQueues,
+    });
+    const nextStatus: WorkOrderStatus =
+      targetId === POOL_ID ? "ready_for_technician" : "in_progress";
+    const moved = toDispatchBike(
+      source,
+      nextStatus,
+      targetId === POOL_ID ? null : targetId
+    );
+    setPartsQueue(lists.stages.parts);
+    setQcQueue(lists.stages.qc);
+    setSafetyQueue(lists.stages.safety);
+    setPickupQueue(lists.stages.pickup);
+    setCompleteQueue(lists.stages.complete);
+    if (targetId === POOL_ID) {
+      setPool([moved, ...lists.pool]);
+      setTechs(lists.techs);
     } else {
-      setPool((current) =>
-        current.map((bike) =>
-          bike.work_order_id === workOrderId ? { ...bike, status: nextStatus } : bike
+      setPool(lists.pool);
+      setTechs(
+        lists.techs.map((tech) =>
+          tech.user_id === targetId
+            ? { ...tech, assigned_bikes: [...tech.assigned_bikes, moved] }
+            : tech
         )
       );
-      setTechs((current) =>
-        current.map((tech) => ({
-          ...tech,
-          assigned_bikes: tech.assigned_bikes.map((bike) =>
-            bike.work_order_id === workOrderId ? { ...bike, status: nextStatus } : bike
-          ),
-        }))
-      );
     }
-
-    const nextItem = toStageBike(source, stageId);
-    for (const id of Object.keys(stageQueues) as CcStageDropId[]) {
-      const filtered = stageQueues[id].filter((b) => b.work_order_id !== workOrderId);
-      setStageQueue(id, id === stageId ? [nextItem, ...filtered] : filtered);
-    }
-
     return previous;
   }
 
@@ -772,13 +864,7 @@ export function ControlCenterShell({
       startTransition(async () => {
         const result = await moveWorkOrderOnBoardAction(workOrderId, targetId);
         if (result.error) {
-          setPool(previous.pool);
-          setTechs(previous.techs);
-          setPartsQueue(previous.partsQueue);
-          setQcQueue(previous.qcQueue);
-          setSafetyQueue(previous.safetyQueue);
-          setPickupQueue(previous.pickupQueue);
-          setCompleteQueue(previous.completeQueue);
+          restoreBoard(previous);
           setErrorMessage(result.error);
         }
         scheduleRefresh();
@@ -791,6 +877,43 @@ export function ControlCenterShell({
       flushRefresh();
       return;
     }
+
+    if (fromStage && !fromAssign) {
+      const columnId = assignBoardColumnForTarget(targetId, POOL_ID);
+      if (!canDropInColumn(data.role, columnId, currentStatus)) {
+        setErrorMessage("You do not have permission to move this bike there.");
+        flushRefresh();
+        return;
+      }
+
+      cancelRefresh();
+      const previous = applyOptimisticStageToAssign(workOrderId, targetId);
+      if (!previous) {
+        flushRefresh();
+        return;
+      }
+
+      startTransition(async () => {
+        const statusResult = await moveWorkOrderOnBoardAction(workOrderId, columnId);
+        if (statusResult.error) {
+          restoreBoard(previous);
+          setErrorMessage(statusResult.error);
+          scheduleRefresh();
+          return;
+        }
+        const assignResult =
+          targetId === POOL_ID
+            ? await unassignWorkOrderJobsAction(workOrderId)
+            : await dispatchWorkOrderToTechnicianAction(workOrderId, targetId);
+        if (assignResult.error) {
+          restoreBoard(previous);
+          setErrorMessage(assignResult.error);
+        }
+        scheduleRefresh();
+      });
+      return;
+    }
+
     if (!fromAssign && !allBikes.has(workOrderId)) {
       setErrorMessage("Open the work order to assign a technician.");
       flushRefresh();
@@ -810,8 +933,7 @@ export function ControlCenterShell({
           ? await unassignWorkOrderJobsAction(workOrderId)
           : await dispatchWorkOrderToTechnicianAction(workOrderId, targetId);
       if (result.error) {
-        setPool(previous.pool);
-        setTechs(previous.techs);
+        restoreBoard(previous);
         setErrorMessage(result.error);
       }
       scheduleRefresh();
@@ -987,7 +1109,7 @@ export function ControlCenterShell({
           <div className="cc-pool-header">
             <div className="cc-pool-title-row">
               <h2 className="cc-pool-title">Waiting for tech</h2>
-              <span className="shop-board-column-count">{pool.length}</span>
+              <span className="shop-board-column-count">{visiblePool.length}</span>
               <span className="cc-pool-caption">
                 {canAssign
                   ? "Unassigned — drag onto a tech to dispatch"
@@ -1014,12 +1136,12 @@ export function ControlCenterShell({
             </div>
           </div>
           <div ref={carouselRef} className="cc-carousel">
-            {pool.length === 0 ? (
+            {visiblePool.length === 0 ? (
               <div className="cc-pool-empty">
                 All bikes are dispatched. Drag one back here to unassign.
               </div>
             ) : (
-              pool.map((bike) => (
+              visiblePool.map((bike) => (
                 <PoolBikeCard
                   key={bike.work_order_id}
                   bike={bike}
@@ -1036,7 +1158,12 @@ export function ControlCenterShell({
           {techs.map((tech) => (
             <TechCard
               key={tech.user_id}
-              tech={tech}
+              tech={{
+                ...tech,
+                assigned_bikes: tech.assigned_bikes.filter((bike) =>
+                  isControlCenterDispatchStatus(bike.status)
+                ),
+              }}
               canAssign={canAssign}
               canClockStaff={canClockStaff}
               clockPending={isPending}
@@ -1108,7 +1235,7 @@ export function ControlCenterShell({
               <div className="cc-bike-media">
                 {activeStageBike.primary_photo_url ? (
                   // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-                  <img src={activeStageBike.primary_photo_url} alt="" />
+                  <img src={activeStageBike.primary_photo_url} alt="" draggable={false} />
                 ) : (
                   <div className="cc-bike-placeholder" aria-hidden>
                     <svg viewBox="0 0 48 32" width="40" height="26">

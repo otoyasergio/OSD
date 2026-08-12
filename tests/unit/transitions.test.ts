@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { getTargetStatusForColumn, canDropInColumn } from "@/lib/status/transitions";
+import { GALLERY_BOARD_COLUMNS } from "@/lib/status/pipeline";
+import {
+  boardColumnIdForStatus,
+  canDropInColumn,
+  getTargetStatusForColumn,
+  resolveShopBoardDropColumnId,
+} from "@/lib/status/transitions";
 
 describe("board transitions", () => {
   it("maps intake column drop to open", () => {
@@ -19,5 +25,33 @@ describe("board transitions", () => {
     expect(canDropInColumn("service_advisor", "complete", "ready_for_pickup")).toBe(true);
     expect(canDropInColumn("technician", "complete", "ready_for_pickup")).toBe(false);
     expect(canDropInColumn("service_advisor", "complete", "completed")).toBe(false);
+  });
+
+  it("resolves a drop onto another card to that card's column", () => {
+    expect(
+      resolveShopBoardDropColumnId({
+        overId: "gallery_qc",
+        columnIds: new Set(["gallery_intake", "gallery_qc"]),
+        columnIdForWorkOrder: () => null,
+      })
+    ).toBe("gallery_qc");
+
+    expect(
+      resolveShopBoardDropColumnId({
+        overId: "wo-1",
+        columnIds: new Set(["gallery_intake", "gallery_in_bay"]),
+        columnIdForWorkOrder: (id) => (id === "wo-1" ? "gallery_in_bay" : null),
+      })
+    ).toBe("gallery_in_bay");
+  });
+
+  it("maps gallery statuses to the column the card currently sits in", () => {
+    expect(boardColumnIdForStatus("waiting_for_parts", GALLERY_BOARD_COLUMNS)).toBe(
+      "gallery_in_bay"
+    );
+    expect(boardColumnIdForStatus("open", GALLERY_BOARD_COLUMNS)).toBe("gallery_intake");
+    expect(boardColumnIdForStatus("ready_for_pickup", GALLERY_BOARD_COLUMNS)).toBe(
+      "gallery_ready"
+    );
   });
 });

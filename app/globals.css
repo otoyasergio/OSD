@@ -4562,6 +4562,8 @@ label.photo-source-sheet-action {
   height: 100%;
   object-fit: cover;
   display: block;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .photo-action-card-placeholder {
@@ -4986,6 +4988,8 @@ a.cc-kpi-link:focus-visible {
   height: 100%;
   object-fit: cover;
   display: block;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .cc-bike-placeholder {

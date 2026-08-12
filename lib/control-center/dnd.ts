@@ -39,6 +39,74 @@ export function statusForCcStage(stageId: CcStageDropId): WorkOrderStatus {
   return status;
 }
 
+/** True when a bike should sit on the pool / tech grid, not a stage carousel. */
+export function isControlCenterDispatchStatus(status: WorkOrderStatus): boolean {
+  return stageDropIdForStatus(status) === null;
+}
+
+/** Board column used when a stage card is dropped back onto pool or a tech. */
+export function assignBoardColumnForTarget(
+  targetId: string,
+  poolId: string
+): "ready" | "in_progress" {
+  return targetId === poolId ? "ready" : "in_progress";
+}
+
+export function partitionControlCenterDispatchBikes<
+  T extends { status: WorkOrderStatus; technician_id: string | null },
+>(
+  bikes: T[],
+  knownTechIds: ReadonlySet<string>
+): { pool: T[]; assignedByTech: Map<string, T[]> } {
+  const assignedByTech = new Map<string, T[]>();
+  const pool: T[] = [];
+
+  for (const bike of bikes) {
+    if (!isControlCenterDispatchStatus(bike.status)) continue;
+    if (bike.technician_id && knownTechIds.has(bike.technician_id)) {
+      const list = assignedByTech.get(bike.technician_id) ?? [];
+      list.push(bike);
+      assignedByTech.set(bike.technician_id, list);
+    } else {
+      pool.push(bike.technician_id ? { ...bike, technician_id: null } : bike);
+    }
+  }
+
+  return { pool, assignedByTech };
+}
+
+/** Strip a work order from pool, tech cards, and every stage so it can sit in one place. */
+export function removeWorkOrderFromControlCenterLists<
+  TBike extends { work_order_id: string },
+  TTech extends { assigned_bikes: TBike[] },
+  TStage extends { work_order_id: string },
+>(input: {
+  workOrderId: string;
+  pool: TBike[];
+  techs: TTech[];
+  stages: Record<CcStageDropId, TStage[]>;
+}): { pool: TBike[]; techs: TTech[]; stages: Record<CcStageDropId, TStage[]> } {
+  const { workOrderId } = input;
+  return {
+    pool: input.pool.filter((bike) => bike.work_order_id !== workOrderId),
+    techs: input.techs.map((tech) => ({
+      ...tech,
+      assigned_bikes: tech.assigned_bikes.filter(
+        (bike) => bike.work_order_id !== workOrderId
+      ),
+    })),
+    stages: {
+      parts: input.stages.parts.filter((bike) => bike.work_order_id !== workOrderId),
+      qc: input.stages.qc.filter((bike) => bike.work_order_id !== workOrderId),
+      safety: input.stages.safety.filter((bike) => bike.work_order_id !== workOrderId),
+      pickup: input.stages.pickup.filter((bike) => bike.work_order_id !== workOrderId),
+      complete: input.stages.complete.filter(
+        (bike) => bike.work_order_id !== workOrderId
+      ),
+    },
+  };
+}
+
 /**
  * Whether a stage lane should accept drops for this role.
  * QC / safety stay owner/manager-only via canDropInColumn.
