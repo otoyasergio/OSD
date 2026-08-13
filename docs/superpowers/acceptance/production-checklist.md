@@ -76,6 +76,20 @@ rolls the live site back to whatever that branch last contained.
 7. Smoke on **Safari Mac** and **Safari iPad**.
 8. CI must be green: `npm run typecheck && npm run lint && npm test && npm run build`.
 
+### Compute (Vercel Functions)
+
+Repo (`vercel.json`) — these ship with the app:
+
+- **Fluid compute** is on (`fluid: true`) so function instances are reused and concurrent shop requests share CPU instead of cold-starting a new lambda per click.
+- Functions are pinned to **`iad1`** (Washington, D.C.). Live traffic already executes there (`x-vercel-id: …::iad1::…`). A single region stays Hobby-compatible and keeps SSR next to typical US-East Supabase.
+
+Dashboard (cannot be set in `vercel.json` when Fluid is on):
+
+- **Hobby:** memory/CPU is fixed at 2 GB / 1 vCPU. Fluid + `iad1` is the maximum you can allocate from git.
+- **Pro / Enterprise:** Vercel → Project → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**. Use this for Control Center / dashboard SSR. Do **not** add `functions.*.memory` in `vercel.json` — Fluid rejects it at build time.
+
+Cron routes already export `maxDuration = 300` (plan maximum on Hobby).
+
 ---
 
 ## 5. Pre-cutover checklist
