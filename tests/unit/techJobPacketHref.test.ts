@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   techJobPacketHref,
   floorTechWorkOrderRedirect,
+  floorInspectionHrefs,
+  safeFloorReturnTo,
+  floorWorkReturnFromInspectBack,
 } from "@/lib/technician/assignmentHref";
 
 describe("techJobPacketHref", () => {
@@ -22,10 +25,44 @@ describe("techJobPacketHref", () => {
   });
 });
 
+describe("floorInspectionHrefs", () => {
+  it("sends Back to inspect and Complete to work, with job when present", () => {
+    const hrefs = floorInspectionHrefs({ workOrderId: "w1", jobId: "j1" });
+    expect(hrefs.back).toBe("/technician?job=j1&wo=w1&stage=inspect");
+    expect(hrefs.complete).toBe("/technician?job=j1&wo=w1&stage=work");
+    expect(hrefs.inspectPage).toBe(
+      `/work_orders/w1/inspection?returnTo=${encodeURIComponent(hrefs.back)}`
+    );
+  });
+
+  it("omits job from the floor return when it is missing", () => {
+    const hrefs = floorInspectionHrefs({ workOrderId: "w1" });
+    expect(hrefs.back).toBe("/technician?wo=w1&stage=inspect");
+    expect(hrefs.complete).toBe("/technician?wo=w1&stage=work");
+  });
+});
+
+describe("safeFloorReturnTo", () => {
+  it("allows only /technician paths", () => {
+    expect(safeFloorReturnTo("/technician?wo=w1&stage=work")).toBe(
+      "/technician?wo=w1&stage=work"
+    );
+    expect(safeFloorReturnTo("//evil.example/technician")).toBeNull();
+    expect(safeFloorReturnTo("/work_orders/w1")).toBeNull();
+    expect(safeFloorReturnTo("https://example.com/technician")).toBeNull();
+  });
+
+  it("maps an inspect-stage back URL to Work", () => {
+    expect(floorWorkReturnFromInspectBack("/technician?job=j1&wo=w1&stage=inspect")).toBe(
+      "/technician?job=j1&wo=w1&stage=work"
+    );
+  });
+});
+
 describe("floorTechWorkOrderRedirect", () => {
   it("sends inspection tab to inspection with returnTo floor", () => {
     expect(floorTechWorkOrderRedirect("w1", "inspection")).toBe(
-      "/work_orders/w1/inspection?returnTo=%2Ftechnician%3Fwo%3Dw1"
+      `/work_orders/w1/inspection?returnTo=${encodeURIComponent("/technician?wo=w1&stage=inspect")}`
     );
   });
 

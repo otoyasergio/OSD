@@ -11,22 +11,12 @@ import {
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
+import {
+  floorWorkReturnFromInspectBack,
+  safeFloorReturnTo,
+} from "@/lib/technician/assignmentHref";
 
 export const dynamic = "force-dynamic";
-
-function safeFloorReturnTo(raw: string | string[] | undefined): string | null {
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return null;
-  try {
-    const url = new URL(trimmed, "https://example.invalid");
-    if (url.pathname !== "/technician") return null;
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return null;
-  }
-}
 
 export default async function InspectionPage({
   params,
@@ -44,6 +34,9 @@ export default async function InspectionPage({
   const floorReturn = safeFloorReturnTo(query.returnTo);
   const backHref = floorReturn ?? `/work_orders/${work_order_id}?tab=inspection`;
   const backLabel = floorReturn ? "← Back to Tech floor" : "← Back";
+  const completeReturnTo = floorReturn
+    ? floorWorkReturnFromInspectBack(floorReturn)
+    : null;
 
   const inspection = await getInspectionForWorkOrder(work_order_id, {
     view: { role: viewRole, subjectUserId: preview.subjectUserId },
@@ -73,18 +66,15 @@ export default async function InspectionPage({
         </Link>
         <div className="inspection-fullscreen-title">
           <span className="inspection-fullscreen-wo">{inspection.work_order_number}</span>
-          <span className="inspection-fullscreen-label">
-            Visual Motorcycle Inspection Report
-          </span>
+          <span className="inspection-fullscreen-label">Inspection</span>
         </div>
       </header>
 
       <div className="inspection-fullscreen-body">
         {!readOnly ? (
           <p className="inspection-fullscreen-hint">
-            Tap green / yellow / red to mark each item. Status saves immediately. Add
-            required photos for tires, brakes, forks, and anything marked needing work
-            before completing the report.
+            Tap OK / Future / Now / N/A on each item. Status saves immediately. Add
+            required photos before completing the report.
           </p>
         ) : null}
 
@@ -102,6 +92,7 @@ export default async function InspectionPage({
           canEdit={canEdit}
           canForceComplete={canForce}
           canRecommend={canRecommend}
+          completeReturnTo={completeReturnTo}
         />
       </div>
     </>

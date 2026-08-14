@@ -183,6 +183,31 @@ describe("buildFloorActionModel matrix", () => {
     assertInvariant(safetyTheirs, "safety theirs");
   });
 
+  it("starts an offered or next bike in one tap", () => {
+    const offered = modelFor({
+      job_status: "ready_to_start",
+      floor_acknowledged_at: null,
+      job_timer_running: false,
+    });
+    expect(offered.primary).toMatchObject({
+      action: "pull_onto_bench",
+      label: "Start this bike",
+      enabled: true,
+    });
+    expect(offered.primary.label).not.toMatch(/Got it/i);
+
+    const next = modelFor({
+      job_status: "ready_to_start",
+      floor_acknowledged_at: TS,
+      job_timer_running: false,
+    });
+    expect(next.primary).toMatchObject({
+      action: "pull_onto_bench",
+      label: "Start this bike",
+      enabled: true,
+    });
+  });
+
   it("hides park/swap everywhere except the bench, and never on QC/safety", () => {
     const bench = modelFor({ job_status: "in_progress", has_swap_targets: true });
     expect(bench.secondary.map((control) => control.action)).toEqual(["park", "swap"]);

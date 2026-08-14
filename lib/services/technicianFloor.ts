@@ -20,7 +20,7 @@ import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 import type { AdminFlag } from "@/lib/services/adminFlags";
 import { canPerformSafetyCheck } from "@/lib/permissions";
 import { canViewerAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
-import { techJobPacketHref } from "@/lib/technician/assignmentHref";
+import { floorInspectionHrefs, techJobPacketHref } from "@/lib/technician/assignmentHref";
 import { sortByDocketPosition } from "@/lib/technician/docketOrder";
 import { groupAssignedJobsByWorkOrder } from "@/lib/technician/groupAssignedWorkOrders";
 import {
@@ -796,9 +796,10 @@ export async function getTechnicianFloorOs(input: {
           actualMsFromSegments: (jobTimeRows ?? []).length > 0 ? segmentMs : null,
         }
       );
-      const returnTo = encodeURIComponent(
-        `/technician?job=${job.job_id}&wo=${wo.work_order_id}`
-      );
+      const inspectionHrefs = floorInspectionHrefs({
+        workOrderId: wo.work_order_id,
+        jobId: job.job_id,
+      });
 
       const floorAck =
         (job as { floor_acknowledged_at?: string | null }).floor_acknowledged_at ?? null;
@@ -915,7 +916,7 @@ export async function getTechnicianFloorOs(input: {
         wo_status_label:
           WORK_ORDER_STATUS_LABELS[wo.status as WorkOrderStatus] ?? wo.status,
         inspection_complete: inspectionComplete,
-        inspection_href: `/work_orders/${wo.work_order_id}/inspection?returnTo=${returnTo}`,
+        inspection_href: inspectionHrefs.inspectPage,
         overview_href: techJobPacketHref(wo.work_order_id, {
           jobId: job.job_id,
           section: "notes",
@@ -1043,7 +1044,9 @@ export async function getTechnicianFloorOs(input: {
           .eq("status", "pending")
           .order("created_at", { ascending: true }),
       ]);
-      const returnTo = encodeURIComponent(`/technician?wo=${wo.work_order_id}`);
+      const inspectionHrefs = floorInspectionHrefs({
+        workOrderId: wo.work_order_id,
+      });
       const isSafety = wo.status === "safety_check";
       const isQc = wo.status === "quality_check";
       // A work-order-only selection is only a QC surface when the WO is
@@ -1078,7 +1081,7 @@ export async function getTechnicianFloorOs(input: {
         inspection_complete: hasCompletedInspection(
           wo.inspection as InspectionCompletionRelation
         ),
-        inspection_href: `/work_orders/${wo.work_order_id}/inspection?returnTo=${returnTo}`,
+        inspection_href: inspectionHrefs.inspectPage,
         overview_href: techJobPacketHref(wo.work_order_id, { section: "notes" }),
         started_at: null,
         completed_at: null,

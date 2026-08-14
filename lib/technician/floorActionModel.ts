@@ -451,31 +451,20 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
     };
   }
 
-  if (state.board === "offered") {
+  if (state.board === "offered" || state.board === "next") {
+    const start = deriveGoAction({
+      status: state.board,
+      steps: input.steps,
+      complete_gate_ok: input.complete_gate_ok,
+    });
     return applyPending(
       {
         ...base,
         primary: {
-          action: "acknowledge",
-          label: "Got it — it's in my line →",
-          enabled: true,
-          hint: "No clock starts until you pull it onto the bench.",
-        },
-        secondary: [],
-      },
-      pending
-    );
-  }
-
-  if (state.board === "next") {
-    return applyPending(
-      {
-        ...base,
-        primary: {
-          action: "pull_onto_bench",
-          label: "Pull onto the bench ▶",
-          enabled: true,
-          hint: "Starts your job clock. Anything on the bench parks itself.",
+          action: start.action,
+          label: start.label,
+          enabled: start.enabled,
+          hint: start.sub,
         },
         secondary: [],
       },

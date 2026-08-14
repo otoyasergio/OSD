@@ -18,6 +18,27 @@ test.describe("tech floor journey", () => {
   test("navigation names the technician home Tech Floor, not Jobs", async ({ page }) => {
     await openTechFloor(page);
     await expect(page.getByRole("link", { name: "Tech Floor" }).first()).toBeVisible();
+    await expect(page.locator("#app-sidebar-nav")).toHaveCount(0);
+  });
+
+  test("Start this bike and the four-stage spine are the forward path", async ({
+    page,
+  }) => {
+    await openTechFloor(page);
+    await page.getByText(FIXTURE_WORK_ORDER.number).first().click();
+
+    const spine = page.getByRole("navigation", { name: "Job stages" });
+    await expect(spine).toBeVisible();
+    await expect(spine.getByText("Inspect", { exact: true })).toBeVisible();
+    await expect(spine.getByText("Work", { exact: true })).toBeVisible();
+    await expect(spine.getByText("Photo", { exact: true })).toBeVisible();
+    await expect(spine.getByText("Done", { exact: true })).toBeVisible();
+
+    await expect(page.getByRole("button", { name: /Got it/i })).toHaveCount(0);
+    const start = page.getByRole("button", { name: /Start this bike/i }).first();
+    if (await start.isVisible().catch(() => false)) {
+      await expect(start).toBeEnabled();
+    }
   });
 
   test("the assigned bike appears once with an explicit next action or wait", async ({
@@ -34,12 +55,17 @@ test.describe("tech floor journey", () => {
 
     await bikeCard.click();
 
-    // Exactly one of: a NEXT action banner, or an explicit wait with owner.
-    const next = page.getByText(/NEXT:/i).first();
-    const waiting = page.getByText(/WAITING FOR/i).first();
-    const hasNext = await next.isVisible().catch(() => false);
+    const start = page.getByRole("button", { name: /Start this bike/i }).first();
+    const go = page
+      .getByRole("button", {
+        name: /Open inspection|Perform work|Add after photo|Complete job|Resume/i,
+      })
+      .first();
+    const waiting = page.getByText(/Waiting —|WAITING FOR|Front desk owns/i).first();
+    const hasStart = await start.isVisible().catch(() => false);
+    const hasGo = await go.isVisible().catch(() => false);
     const hasWait = await waiting.isVisible().catch(() => false);
-    expect(hasNext || hasWait).toBe(true);
+    expect(hasStart || hasGo || hasWait).toBe(true);
 
     // Internal jargon never reaches the technician.
     await expect(page.getByText(/^quality$/i)).toHaveCount(0);
@@ -50,6 +76,11 @@ test.describe("tech floor journey", () => {
   test("packet tabs are exclusive and photos open in the lightbox", async ({ page }) => {
     await openTechFloor(page);
     await page.getByText(FIXTURE_WORK_ORDER.number).first().click();
+
+    const notesIcon = page.getByRole("link", { name: "Notes" }).first();
+    if (await notesIcon.isVisible().catch(() => false)) {
+      await notesIcon.click();
+    }
 
     const notesTab = page.getByRole("tab", { name: /notes/i }).first();
     const photosTab = page.getByRole("tab", { name: /photos/i }).first();
@@ -69,7 +100,9 @@ test.describe("tech floor journey", () => {
     await openTechFloor(page);
     await page.getByText(FIXTURE_WORK_ORDER.number).first().click();
 
-    const primary = page.getByRole("button", { name: /NEXT:|start|pull/i }).first();
+    const primary = page
+      .getByRole("button", { name: /Start this bike|Open inspection|NEXT:|start|pull/i })
+      .first();
     if (!(await primary.isVisible().catch(() => false))) {
       test.skip(true, "no enabled primary action in current fixture state");
     }

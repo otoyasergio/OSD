@@ -11,6 +11,7 @@ import {
   stampForBoard,
   waitOwnerForParkReason,
 } from "@/lib/technician/pitBoard";
+import { currentPitStep, floorSpineStates } from "@/lib/technician/floorStage";
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 
 describe("pitBoard", () => {
@@ -76,22 +77,23 @@ describe("pitBoard", () => {
     ).toBe("PAUSED");
   });
 
-  it("builds Go labels for acknowledge, pull, resume, complete", () => {
-    expect(
-      deriveGoAction({
-        status: "offered",
-        steps: [],
-        complete_gate_ok: false,
-      }).action
-    ).toBe("acknowledge");
+  it("builds Go labels for start, resume, complete", () => {
+    const offered = deriveGoAction({
+      status: "offered",
+      steps: [],
+      complete_gate_ok: false,
+    });
+    expect(offered.action).toBe("pull_onto_bench");
+    expect(offered.label).toBe("Start this bike");
+    expect(offered.enabled).toBe(true);
 
-    expect(
-      deriveGoAction({
-        status: "next",
-        steps: [],
-        complete_gate_ok: false,
-      }).label
-    ).toContain("Pull onto the bench");
+    const next = deriveGoAction({
+      status: "next",
+      steps: [],
+      complete_gate_ok: false,
+    });
+    expect(next.action).toBe("pull_onto_bench");
+    expect(next.label).toBe("Start this bike");
 
     expect(
       deriveGoAction({
@@ -389,5 +391,55 @@ describe("pitBoard", () => {
         completed_at: null,
       })
     ).toBe(false);
+  });
+
+  it("picks only the current open step for the active stage", () => {
+    const steps = buildPitBoardSteps({
+      inspection_complete: true,
+      service_name: "Oil change",
+      checklist: [
+        {
+          job_checklist_item_id: "c1",
+          title: "Perform work per SOP",
+          checked_at: null,
+        },
+        {
+          job_checklist_item_id: "c2",
+          title: "Verify fasteners/fluids/function",
+          checked_at: null,
+        },
+      ],
+      parts: [],
+      proof_count: 0,
+      has_proof_exception: false,
+      complete_gate_ok: false,
+    });
+    const current = currentPitStep(steps, "work");
+    expect(current?.kind).toBe("work");
+    expect(current?.label).toBe("Perform work");
+    expect(currentPitStep(steps, "inspect")?.kind).toBe("work");
+  });
+
+  it("marks spine nodes done, current, or future", () => {
+    const steps = buildPitBoardSteps({
+      inspection_complete: true,
+      checklist: [
+        {
+          job_checklist_item_id: "c1",
+          title: "Perform work",
+          checked_at: "2026-07-17T12:00:00Z",
+        },
+      ],
+      parts: [],
+      proof_count: 0,
+      has_proof_exception: false,
+      complete_gate_ok: false,
+    });
+    expect(floorSpineStates(steps, "proof")).toEqual({
+      inspect: "done",
+      work: "done",
+      proof: "current",
+      done: "future",
+    });
   });
 });

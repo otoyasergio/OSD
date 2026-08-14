@@ -16,6 +16,18 @@ import type { InspectionResultStatus, PhotoCategory } from "@/lib/database/types
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
+import {
+  AlertTriangle,
+  Bike,
+  Check,
+  ClipboardList,
+  Clock,
+  Gauge,
+  Lightbulb,
+  MessageSquare,
+  Minus,
+  type LucideIcon,
+} from "lucide-react";
 
 const SECTION_PHOTO: Record<
   string,
@@ -35,6 +47,15 @@ function formatInspectionDate(value: string | null) {
   return formatDate(value);
 }
 
+function sectionIcon(category: string): LucideIcon {
+  if (category.startsWith("Brakes") || /tire/i.test(category)) return Bike;
+  if (/fork|frame|chassis|suspension/i.test(category)) return Gauge;
+  if (/light/i.test(category)) return Lightbulb;
+  if (/control/i.test(category)) return Gauge;
+  if (/comment/i.test(category)) return MessageSquare;
+  return ClipboardList;
+}
+
 function sectionPhotoForCategory(
   category: string
 ): { category: PhotoCategory; label: string } | null {
@@ -49,11 +70,13 @@ export function InspectionChecklist({
   canEdit,
   canForceComplete,
   canRecommend,
+  completeReturnTo,
 }: {
   inspection: InspectionDetail;
   canEdit: boolean;
   canForceComplete: boolean;
   canRecommend?: boolean;
+  completeReturnTo?: string | null;
 }) {
   const [completeState, completeAction] = useActionState(
     completeInspectionAction.bind(null, inspection.work_order_id),
@@ -175,20 +198,28 @@ export function InspectionChecklist({
 
         <div className="inspection-report-legend" aria-label="Status legend">
           <span className="inspection-legend-item">
-            <span className="inspection-status-swatch inspection-status-ok is-selected" />
-            Checked and OK
+            <span className="inspection-status-swatch inspection-status-ok is-selected">
+              <Check size={16} aria-hidden />
+            </span>
+            OK
           </span>
           <span className="inspection-legend-item">
-            <span className="inspection-status-swatch inspection-status-future is-selected" />
-            May need future attention
+            <span className="inspection-status-swatch inspection-status-future is-selected">
+              <Clock size={16} aria-hidden />
+            </span>
+            Future
           </span>
           <span className="inspection-legend-item">
-            <span className="inspection-status-swatch inspection-status-immediate is-selected" />
-            Requires immediate attention
+            <span className="inspection-status-swatch inspection-status-immediate is-selected">
+              <AlertTriangle size={16} aria-hidden />
+            </span>
+            Now
           </span>
           <span className="inspection-legend-item">
-            <span className="inspection-status-swatch inspection-status-na is-selected" />
-            Not applicable
+            <span className="inspection-status-swatch inspection-status-na is-selected">
+              <Minus size={16} aria-hidden />
+            </span>
+            N/A
           </span>
         </div>
 
@@ -283,42 +314,6 @@ export function InspectionChecklist({
                 Saving checklist changes…
               </p>
             ) : null}
-            {localIncompleteCount > 0 && canForceComplete ? (
-              !forceConfirm ? (
-                <button
-                  type="button"
-                  onClick={() => setForceConfirm(true)}
-                  disabled={saving}
-                  className="btn btn-secondary min-h-12 border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100"
-                >
-                  Force complete ({localIncompleteCount} incomplete)…
-                </button>
-              ) : (
-                <form action={completeAction} className="flex flex-wrap gap-2">
-                  <input type="hidden" name="force" value="true" />
-                  <SubmitButton
-                    label="Confirm force complete"
-                    pendingLabel="Completing…"
-                    disabled={saving}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setForceConfirm(false)}
-                    className="btn btn-secondary min-h-12"
-                  >
-                    Cancel
-                  </button>
-                </form>
-              )
-            ) : (
-              <form action={completeAction}>
-                <SubmitButton
-                  label="Complete inspection"
-                  pendingLabel="Completing…"
-                  disabled={saving || localIncompleteCount > 0}
-                />
-              </form>
-            )}
             {localIncompleteCount > 0 && !canForceComplete ? (
               <p className="text-sm text-amber-900">
                 Check all fields ({localIncompleteCount} still open)
@@ -397,11 +392,19 @@ export function InspectionChecklist({
               : sectionDone
                 ? "inspection-section-count--done"
                 : "";
+          const SectionIcon = sectionIcon(category);
 
           return (
             <section key={category} className="inspection-section">
               <h2 className="inspection-section-header">
-                <span className="inspection-section-header-title">{category}</span>
+                <span className="inspection-section-header-title">
+                  <SectionIcon
+                    size={18}
+                    aria-hidden
+                    className="inspection-section-icon"
+                  />
+                  {category}
+                </span>
                 <span
                   className={`inspection-section-count ${countClass}`}
                   aria-label={`${sectionChecked} of ${results.length} items checked${
@@ -477,6 +480,65 @@ export function InspectionChecklist({
           );
         })}
       </div>
+
+      {!readOnly ? (
+        <div className="inspection-complete-dock">
+          <p className="inspection-complete-dock-count">
+            <strong>{checkedCount}</strong> / {totalCount}
+            {localIncompleteCount > 0 ? (
+              <span className="inspection-complete-dock-left">
+                {" "}
+                · {localIncompleteCount} left
+              </span>
+            ) : null}
+          </p>
+          {localIncompleteCount > 0 && canForceComplete ? (
+            !forceConfirm ? (
+              <button
+                type="button"
+                onClick={() => setForceConfirm(true)}
+                disabled={saving}
+                className="btn btn-secondary inspection-complete-dock-go"
+              >
+                Force complete ({localIncompleteCount} incomplete)…
+              </button>
+            ) : (
+              <form action={completeAction} className="inspection-complete-dock-form">
+                <input type="hidden" name="force" value="true" />
+                {completeReturnTo ? (
+                  <input type="hidden" name="return_to" value={completeReturnTo} />
+                ) : null}
+                <SubmitButton
+                  label="Confirm force complete"
+                  pendingLabel="Completing…"
+                  disabled={saving}
+                  className="inspection-complete-dock-go"
+                />
+                <button
+                  type="button"
+                  onClick={() => setForceConfirm(false)}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </form>
+            )
+          ) : (
+            <form action={completeAction} className="inspection-complete-dock-form">
+              {completeReturnTo ? (
+                <input type="hidden" name="return_to" value={completeReturnTo} />
+              ) : null}
+              <SubmitButton
+                label="Complete report"
+                pendingLabel="Completing…"
+                disabled={saving || localIncompleteCount > 0}
+                className="inspection-complete-dock-go"
+              />
+            </form>
+          )}
+          <FormError message={completeState.error} />
+        </div>
+      ) : null}
 
       {lightboxIndex !== null && lightboxPhotos.length > 0 ? (
         <PhotoLightbox

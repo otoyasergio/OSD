@@ -188,19 +188,10 @@ export function deriveGoAction(input: {
 }): GoLabelResult {
   const { status, steps } = input;
 
-  if (status === "offered") {
-    return {
-      action: "acknowledge",
-      label: "Got it — it's in my line →",
-      sub: "No clock starts until you pull it onto the bench.",
-      enabled: true,
-    };
-  }
-
-  if (status === "next") {
+  if (status === "offered" || status === "next") {
     return {
       action: "pull_onto_bench",
-      label: "Pull onto the bench ▶",
+      label: "Start this bike",
       sub: "Starts your job clock. Anything on the bench parks itself.",
       enabled: true,
     };
