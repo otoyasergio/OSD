@@ -308,8 +308,12 @@ export async function pullOntoBench(jobId: string): Promise<{
       p_actor_user_id: user.user_id,
       p_idempotency_key: floorIdempotencyKey("pull", jobId, user.user_id),
     });
+    let job = await loadJob(jobId);
+    if (!job.floor_acknowledged_at) {
+      job = await acknowledgeDocketJob(jobId);
+    }
     return {
-      job: await loadJob(jobId),
+      job,
       parked_job_id: (result.parked_job_id as string | null) ?? null,
     };
   }

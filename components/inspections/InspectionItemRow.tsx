@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { InspectionResultRow } from "@/lib/services/inspections";
+import { Check, Clock, AlertTriangle, Minus } from "lucide-react";
 import type { InspectionResultStatus } from "@/lib/database/types";
 import { saveInspectionResultAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
@@ -18,30 +19,35 @@ const STATUS_OPTIONS: Array<{
   short: string;
   long: string;
   className: string;
+  Icon: typeof Check;
 }> = [
   {
     value: "ok",
     short: "OK",
     long: "Checked and OK",
     className: "inspection-status-ok",
+    Icon: Check,
   },
   {
     value: "future_attention",
     short: "Future",
     long: "May need future attention",
     className: "inspection-status-future",
+    Icon: Clock,
   },
   {
     value: "immediate_attention",
     short: "Now",
     long: "Requires immediate attention",
     className: "inspection-status-immediate",
+    Icon: AlertTriangle,
   },
   {
     value: "not_applicable",
     short: "N/A",
     long: "Not applicable",
     className: "inspection-status-na",
+    Icon: Minus,
   },
 ];
 
@@ -297,6 +303,7 @@ export function InspectionItemRow({
           <div className="inspection-status-group" role="group" aria-label="Status">
             {STATUS_OPTIONS.map((option) => {
               const selected = status === option.value;
+              const Icon = option.Icon;
               return (
                 <button
                   key={option.value}
@@ -309,6 +316,7 @@ export function InspectionItemRow({
                   aria-label={option.long}
                   title={option.long}
                 >
+                  <Icon className="inspection-status-swatch-icon" aria-hidden size={18} />
                   <span className="inspection-status-swatch-label" aria-hidden>
                     {option.short}
                   </span>

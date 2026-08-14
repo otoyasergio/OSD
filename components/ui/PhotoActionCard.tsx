@@ -29,7 +29,6 @@ export function PhotoActionCard({
     <Link
       href={href}
       draggable={false}
-      onDragStart={(event) => event.preventDefault()}
       className={[
         "photo-action-card",
         compact ? "photo-action-card--compact" : "",

@@ -1,5 +1,15 @@
 import Link from "next/link";
+import {
+  ArrowRight,
+  Check,
+  Pause,
+  Play,
+  ShieldCheck,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import type { DocketItem } from "@/lib/services/technicianDocket";
+import type { PitBoardStamp } from "@/lib/technician/pitBoard";
 import { waitOwnerDisplayLabel } from "@/lib/technician/floorActionModel";
 import {
   docketCardAccessibleName,
@@ -9,6 +19,26 @@ import {
   stampClass,
   stampDisplayLabel,
 } from "@/lib/technician/docketCardDisplay";
+
+const STAMP_ICONS: Record<PitBoardStamp, LucideIcon> = {
+  NOW: Play,
+  NEXT: ArrowRight,
+  NEW: Sparkles,
+  HOLD: Pause,
+  PAUSED: Pause,
+  CHECK: ShieldCheck,
+  DONE: Check,
+};
+
+function DocketStamp({ stamp }: { stamp: PitBoardStamp }) {
+  const Icon = STAMP_ICONS[stamp];
+  return (
+    <span className={`${stampClass(stamp)} docket-stamp-icon`}>
+      <Icon size={12} aria-hidden />
+      {stampDisplayLabel(stamp)}
+    </span>
+  );
+}
 
 function DocketWaitLine({ item }: { item: DocketItem }) {
   if (!isWaitingStamp(item.board_stamp)) return null;
@@ -85,9 +115,7 @@ export function TechnicianDocketList({
                   <span className="floor-docket-pos" aria-hidden>
                     {item.position}
                   </span>
-                  <span className={stampClass(item.board_stamp)}>
-                    {stampDisplayLabel(item.board_stamp)}
-                  </span>
+                  <DocketStamp stamp={item.board_stamp} />
                 </div>
                 <p className="floor-bike-card-bike">{item.motorcycle_label}</p>
                 <p className="floor-bike-card-wo">
@@ -172,9 +200,7 @@ export function TechnicianDocketList({
                 <DocketServiceLines item={item} />
                 <DocketWaitLine item={item} />
               </span>
-              <span className={stampClass(item.board_stamp)}>
-                {stampDisplayLabel(item.board_stamp)}
-              </span>
+              <DocketStamp stamp={item.board_stamp} />
             </Link>
             {reorderable ? (
               <form action={reorderAction} className="floor-docket-reorder">
