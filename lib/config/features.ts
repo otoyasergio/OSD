@@ -62,6 +62,17 @@ export function v2WritesEnabled(flags: WorkflowV2Flags): boolean {
   return !flags.killSwitch && flags.writeMode !== "legacy";
 }
 
+/**
+ * True once rollout flags are allowed to reference V2 tables or columns.
+ * Fully legacy mode must not probe pending schema: Postgres logs those failed
+ * compatibility probes even when the caller catches and retries them.
+ */
+export function v2SchemaExpected(flags: WorkflowV2Flags): boolean {
+  return (
+    !flags.killSwitch && (flags.readMode !== "legacy" || flags.writeMode !== "legacy")
+  );
+}
+
 /** True when V2 rows should be read for parity logging without serving them. */
 export function v2ShadowReadEnabled(flags: WorkflowV2Flags): boolean {
   return !flags.killSwitch && flags.readMode === "shadow";

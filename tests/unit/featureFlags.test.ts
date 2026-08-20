@@ -3,6 +3,7 @@ import {
   legacyWritesRequired,
   readWorkflowV2Flags,
   v2ReadEnabledForLocation,
+  v2SchemaExpected,
   v2ShadowReadEnabled,
   v2WritesEnabled,
 } from "@/lib/config/features";
@@ -51,6 +52,25 @@ describe("workflow V2 feature flags", () => {
     expect(v2ShadowReadEnabled(flags)).toBe(false);
     expect(v2ReadEnabledForLocation(flags, "QA")).toBe(false);
     expect(legacyWritesRequired(flags)).toBe(true);
+  });
+
+  it("expects the V2 schema only after rollout leaves fully legacy mode", () => {
+    expect(v2SchemaExpected(readWorkflowV2Flags({}))).toBe(false);
+    expect(
+      v2SchemaExpected(readWorkflowV2Flags({ JOBS_ESTIMATE_V2_WRITE_MODE: "dual" }))
+    ).toBe(true);
+    expect(
+      v2SchemaExpected(readWorkflowV2Flags({ JOBS_ESTIMATE_V2_READ_MODE: "shadow" }))
+    ).toBe(true);
+    expect(
+      v2SchemaExpected(
+        readWorkflowV2Flags({
+          JOBS_ESTIMATE_V2_KILL_SWITCH: "1",
+          JOBS_ESTIMATE_V2_READ_MODE: "v2",
+          JOBS_ESTIMATE_V2_WRITE_MODE: "v2",
+        })
+      )
+    ).toBe(false);
   });
 
   it("enables writes in dual and v2 modes only", () => {

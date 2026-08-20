@@ -24,6 +24,11 @@ import {
   isUndefinedColumnError,
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
+import {
+  readWorkflowV2Flags,
+  v2SchemaExpected,
+  v2WritesEnabled,
+} from "@/lib/config/features";
 
 export type RecommendationDisposition =
   "open" | "deferred" | "declined" | "scheduled" | "resolved" | "void";
@@ -72,6 +77,17 @@ const COLUMNS =
 
 /** Process-local schemaCompat key for the V2 recommendation columns. */
 const RECOMMENDATION_DISPOSITION_KEY = "recommendation.disposition";
+
+function recommendationV2SchemaAvailable(): boolean {
+  return (
+    v2SchemaExpected(readWorkflowV2Flags()) &&
+    getOptionalColumnSupport(RECOMMENDATION_DISPOSITION_KEY) !== false
+  );
+}
+
+function recommendationV2WritesEnabled(): boolean {
+  return v2WritesEnabled(readWorkflowV2Flags());
+}
 
 export function severityFromInspectionStatus(
   status: InspectionResultStatus | null
@@ -219,6 +235,7 @@ async function applyRecommendationV2Columns(
   },
   options: { pendingOnly?: boolean } = {}
 ): Promise<boolean> {
+  if (!recommendationV2WritesEnabled()) return false;
   if (getOptionalColumnSupport(RECOMMENDATION_DISPOSITION_KEY) === false) return false;
   const admin = tryCreateAdminClient();
   if (!admin) return false;
@@ -257,6 +274,7 @@ export async function syncServiceFindingForInspectionResult(input: {
   notes?: string | null;
   actor_user_id: string | null;
 }): Promise<string | null> {
+  if (!recommendationV2WritesEnabled()) return null;
   const admin = tryCreateAdminClient();
   if (!admin) return null;
 
@@ -371,6 +389,7 @@ async function linkJobToRecommendation(
   jobId: string,
   recommendationId: string
 ): Promise<void> {
+  if (!recommendationV2WritesEnabled()) return;
   const admin = tryCreateAdminClient();
   if (!admin) return;
   const { error } = await admin
@@ -391,8 +410,7 @@ async function loadLinkedRecommendation(
   workOrderId: string,
   inspectionResultId: string
 ): Promise<Recommendation | null> {
-  const withDisposition =
-    getOptionalColumnSupport(RECOMMENDATION_DISPOSITION_KEY) !== false;
+  const withDisposition = recommendationV2SchemaAvailable();
   const columns: string = withDisposition
     ? `${COLUMNS}, motorcycle_id, finding_id, disposition`
     : COLUMNS;
@@ -537,8 +555,7 @@ export async function ensureRecommendationsForAttentionFindings(
   const { supabase } = await requireMutableWorkOrder(user, workOrderId);
 
   const resultIds = attention.map((f) => f.inspection_result_id);
-  const withDisposition =
-    getOptionalColumnSupport(RECOMMENDATION_DISPOSITION_KEY) !== false;
+  const withDisposition = recommendationV2SchemaAvailable();
   const existingColumns: string = withDisposition
     ? "inspection_result_id, disposition"
     : "inspection_result_id";
@@ -652,8 +669,7 @@ export async function listRecommendationsForWorkOrder(
       )
     `;
 
-  const withDisposition =
-    getOptionalColumnSupport(RECOMMENDATION_DISPOSITION_KEY) !== false;
+  const withDisposition = recommendationV2SchemaAvailable();
   let result = await supabase
     .from("recommendation")
     .select(withDisposition ? v2Select : baseSelect)
@@ -694,7 +710,7 @@ async function listOutstandingByDisposition(
   supabase: DbClient,
   motorcycleId: string
 ): Promise<OutstandingRecommendation[] | null> {
-  if (getOptionalColumnSupport(RECOMMENDATION_DISPOSITION_KEY) === false) return null;
+  if (!recommendationV2SchemaAvailable()) return null;
 
   const { data, error } = await supabase
     .from("recommendation")
