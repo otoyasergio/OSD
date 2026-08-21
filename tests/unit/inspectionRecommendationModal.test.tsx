@@ -119,6 +119,15 @@ function recommendationDraft(
   };
 }
 
+function loadedRecommendationDraft(
+  overrides: Parameters<typeof recommendationDraft>[0] = {}
+) {
+  return {
+    draft: recommendationDraft(overrides),
+    error: null,
+  };
+}
+
 function inspectionDetail(overrides: Partial<InspectionDetail> = {}): InspectionDetail {
   return {
     inspection_id: result.inspection_id,
@@ -159,7 +168,7 @@ async function openChecklistRecommendation(options?: {
 
   actionMocks.getInspectionRecommendationDraftAction.mockImplementation(
     async (workOrderId: string, inspectionResultId: string) =>
-      recommendationDraft({
+      loadedRecommendationDraft({
         description:
           workOrderId === "work-order-1" &&
           inspectionResultId === result.inspection_result_id
@@ -218,7 +227,7 @@ describe("InspectionRecommendationModal", () => {
     const onClose = vi.fn();
     const onSaved = vi.fn();
     const action = vi.fn(async () => ({ error: null, saved: true }));
-    const loadDraft = vi.fn(async () => recommendationDraft());
+    const loadDraft = vi.fn(async () => loadedRecommendationDraft());
 
     mount(
       <InspectionRecommendationModal
@@ -260,7 +269,7 @@ describe("InspectionRecommendationModal", () => {
     mount(
       <InspectionRecommendationModal
         result={result}
-        loadDraft={vi.fn(async () => recommendationDraft())}
+        loadDraft={vi.fn(async () => loadedRecommendationDraft())}
         action={action}
         onClose={vi.fn()}
         onSaved={vi.fn()}
@@ -276,6 +285,52 @@ describe("InspectionRecommendationModal", () => {
     expect(document.body.textContent).toContain("Could not save recommendation.");
   });
 
+  it("keeps the dialog open and shows a mapped draft-load error result", async () => {
+    const recovery =
+      "The automatic recommendation is missing or withdrawn. Re-flag this inspection item and try again.";
+
+    mount(
+      <InspectionRecommendationModal
+        result={result}
+        loadDraft={vi.fn(async () => ({ draft: null, error: recovery }))}
+        action={vi.fn(async () => ({ error: null, saved: true }))}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />
+    );
+
+    await flushAsyncWork();
+
+    expect(currentDialog()).not.toBeNull();
+    expect(document.body.textContent).toContain(recovery);
+    expect(currentDialog()?.querySelector("form")).toBeNull();
+  });
+
+  it("does not rely on a production-redacted thrown message for draft guidance", async () => {
+    const redacted =
+      "An error occurred in the Server Components render. The specific message is omitted in production builds.";
+
+    mount(
+      <InspectionRecommendationModal
+        result={result}
+        loadDraft={vi.fn(async () => {
+          throw new Error(redacted);
+        })}
+        action={vi.fn(async () => ({ error: null, saved: true }))}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />
+    );
+
+    await flushAsyncWork();
+
+    expect(currentDialog()).not.toBeNull();
+    expect(document.body.textContent).toContain(
+      "Could not load this recommendation. Close and try again."
+    );
+    expect(document.body.textContent).not.toContain(redacted);
+  });
+
   it("disables the modal form controls while a save is pending", async () => {
     let resolveAction:
       ((value: { error: string | null; saved: boolean }) => void) | undefined;
@@ -289,7 +344,7 @@ describe("InspectionRecommendationModal", () => {
     mount(
       <InspectionRecommendationModal
         result={result}
-        loadDraft={vi.fn(async () => recommendationDraft())}
+        loadDraft={vi.fn(async () => loadedRecommendationDraft())}
         action={action}
         onClose={vi.fn()}
         onSaved={vi.fn()}
@@ -312,6 +367,60 @@ describe("InspectionRecommendationModal", () => {
     });
   });
 
+  it("keeps Tab on the dialog while every form control is fieldset-disabled", async () => {
+    let resolveAction:
+      ((value: { error: string | null; saved: boolean }) => void) | undefined;
+    const action = vi.fn(
+      () =>
+        new Promise<{ error: string | null; saved: boolean }>((resolve) => {
+          resolveAction = resolve;
+        })
+    );
+
+    mount(
+      <InspectionRecommendationModal
+        result={result}
+        loadDraft={vi.fn(async () => loadedRecommendationDraft())}
+        action={action}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />
+    );
+
+    await flushAsyncWork();
+    act(() => {
+      (document.querySelector("form") as HTMLFormElement).requestSubmit();
+    });
+    await flushAsyncWork();
+
+    const dialog = currentDialog()!;
+    const fieldsetControls = [
+      ...dialog.querySelectorAll<HTMLElement>(
+        "fieldset button, fieldset input, fieldset select, fieldset textarea"
+      ),
+    ];
+    expect(fieldsetControls.length).toBeGreaterThan(0);
+    expect(fieldsetControls.every((control) => control.matches(":disabled"))).toBe(true);
+
+    dialog.focus();
+    const tab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      document.dispatchEvent(tab);
+    });
+
+    expect(tab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(dialog);
+
+    await act(async () => {
+      resolveAction?.({ error: null, saved: true });
+      await Promise.resolve();
+    });
+  });
+
   it("restores focus and body scroll state when closed", async () => {
     const opener = document.createElement("button");
     opener.textContent = "Open recommendation";
@@ -322,7 +431,7 @@ describe("InspectionRecommendationModal", () => {
     mount(
       <InspectionRecommendationModal
         result={result}
-        loadDraft={vi.fn(async () => recommendationDraft())}
+        loadDraft={vi.fn(async () => loadedRecommendationDraft())}
         action={vi.fn(async () => ({ error: null, saved: true }))}
         onClose={vi.fn()}
         onSaved={vi.fn()}
@@ -347,7 +456,7 @@ describe("InspectionRecommendationModal", () => {
     mount(
       <InspectionRecommendationModal
         result={result}
-        loadDraft={vi.fn(async () => recommendationDraft())}
+        loadDraft={vi.fn(async () => loadedRecommendationDraft())}
         action={vi.fn(async () => ({ error: null, saved: true }))}
         onClose={onClose}
         onSaved={vi.fn()}
@@ -371,7 +480,7 @@ describe("InspectionRecommendationModal", () => {
     mount(
       <InspectionRecommendationModal
         result={result}
-        loadDraft={vi.fn(async () => recommendationDraft())}
+        loadDraft={vi.fn(async () => loadedRecommendationDraft())}
         action={vi.fn(async () => ({ error: null, saved: true }))}
         onClose={vi.fn()}
         onSaved={vi.fn()}
@@ -399,14 +508,14 @@ describe("InspectionRecommendationModal", () => {
     const loadDraft = vi
       .fn()
       .mockResolvedValueOnce(
-        recommendationDraft({
+        loadedRecommendationDraft({
           description: "Existing pending recommendation",
           severity: "safety_critical",
           notes: "Linked recommendation notes",
         })
       )
       .mockResolvedValueOnce(
-        recommendationDraft({
+        loadedRecommendationDraft({
           description: "Edited elsewhere after the first open",
           severity: "future_attention",
           notes: "Newest linked notes",
@@ -511,7 +620,7 @@ describe("InspectionRecommendationModal", () => {
       setTextareaValue(modalNotes, "Unsaved modal edit");
     });
     actionMocks.getInspectionRecommendationDraftAction.mockResolvedValue(
-      recommendationDraft({ notes: "Reloaded server value" })
+      loadedRecommendationDraft({ notes: "Reloaded server value" })
     );
 
     act(() => {

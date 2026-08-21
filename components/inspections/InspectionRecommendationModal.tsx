@@ -3,7 +3,10 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
-import type { RecommendationFormState } from "@/app/(app)/work_orders/recommendation-actions";
+import type {
+  InspectionRecommendationDraftActionResult,
+  RecommendationFormState,
+} from "@/app/(app)/work_orders/recommendation-actions";
 import {
   FormError,
   SELECT_CLASS,
@@ -11,9 +14,7 @@ import {
   TextField,
 } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-import type { RecommendationSeverity } from "@/lib/database/types";
 import type { InspectionResultRow } from "@/lib/services/inspections";
-import { toFormErrorMessage } from "@/lib/services/errors";
 import { RECOMMENDATION_SEVERITY_LABELS } from "@/lib/status/labels";
 
 type Action = (
@@ -21,11 +22,10 @@ type Action = (
   formData: FormData
 ) => Promise<RecommendationFormState>;
 
-type DraftLoader = () => Promise<{
-  description: string;
-  severity: RecommendationSeverity;
-  notes: string;
-}>;
+type DraftLoader = () => Promise<InspectionRecommendationDraftActionResult>;
+
+const DRAFT_LOAD_FALLBACK_ERROR =
+  "Could not load this recommendation. Close and try again.";
 
 const SEVERITIES = [
   "future_attention",
@@ -59,7 +59,8 @@ export function InspectionRecommendationModal({
     error: null,
     saved: false,
   });
-  const [draft, setDraft] = useState<Awaited<ReturnType<DraftLoader>> | null>(null);
+  const [draft, setDraft] =
+    useState<InspectionRecommendationDraftActionResult["draft"]>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const restoreFocusToRef = useRef<Element | null>(null);
@@ -68,14 +69,15 @@ export function InspectionRecommendationModal({
     let active = true;
 
     void loadDraft()
-      .then((nextDraft) => {
+      .then((result) => {
         if (!active) return;
-        setLoadError(null);
-        setDraft(nextDraft);
+        setLoadError(result.error);
+        setDraft(result.draft);
       })
-      .catch((error) => {
+      .catch(() => {
         if (!active) return;
-        setLoadError(toFormErrorMessage(error));
+        setDraft(null);
+        setLoadError(DRAFT_LOAD_FALLBACK_ERROR);
       });
 
     return () => {
@@ -117,7 +119,7 @@ export function InspectionRecommendationModal({
 
       const focusable = [
         ...dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      ].filter((element) => !element.hasAttribute("disabled"));
+      ].filter((element) => !element.matches(":disabled"));
 
       if (focusable.length === 0) {
         event.preventDefault();

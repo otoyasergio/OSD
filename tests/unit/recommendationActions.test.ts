@@ -72,12 +72,39 @@ describe("saveInspectionRecommendationAction", () => {
     await expect(
       getInspectionRecommendationDraftAction("work-order-1", "inspection-result-1")
     ).resolves.toEqual({
-      description: "Front brake pads",
-      severity: "immediate_attention",
-      notes: "Replace now",
+      draft: {
+        description: "Front brake pads",
+        severity: "immediate_attention",
+        notes: "Replace now",
+      },
+      error: null,
     });
     expect(mocks.getDraft).toHaveBeenCalledWith("work-order-1", "inspection-result-1");
   });
+
+  it.each([
+    [
+      "INSPECTION_RECOMMENDATION_MISSING",
+      "The automatic recommendation is missing or withdrawn. Re-flag this inspection item and try again.",
+    ],
+    [
+      "RECOMMENDATION_ALREADY_ACTIONED",
+      "This recommendation has already been acted on and can no longer be edited.",
+    ],
+    ["FORBIDDEN", "You do not have permission to perform this action."],
+  ])(
+    "maps %s before a production Server Action boundary can redact it",
+    async (code, message) => {
+      mocks.getDraft.mockRejectedValue(new Error(code));
+
+      await expect(
+        getInspectionRecommendationDraftAction("work-order-1", "inspection-result-1")
+      ).resolves.toEqual({
+        draft: null,
+        error: message,
+      });
+    }
+  );
 
   it("keeps the older create action inspection branch bound to the verified work order", async () => {
     mocks.save.mockResolvedValue({

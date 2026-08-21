@@ -20,6 +20,11 @@ export type RecommendationFormState = {
   saved?: boolean;
 };
 
+export type InspectionRecommendationDraftActionResult = {
+  draft: InspectionRecommendationDraft | null;
+  error: string | null;
+};
+
 export async function getOutstandingRecommendationsAction(
   motorcycleId: string
 ): Promise<OutstandingRecommendation[]> {
@@ -30,8 +35,18 @@ export async function getOutstandingRecommendationsAction(
 export async function getInspectionRecommendationDraftAction(
   workOrderId: string,
   inspectionResultId: string
-): Promise<InspectionRecommendationDraft> {
-  return getInspectionRecommendationDraft(workOrderId, inspectionResultId);
+): Promise<InspectionRecommendationDraftActionResult> {
+  try {
+    return {
+      draft: await getInspectionRecommendationDraft(workOrderId, inspectionResultId),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      draft: null,
+      error: toFormErrorMessage(error),
+    };
+  }
 }
 
 function revalidateRecommendations(workOrderId: string) {
