@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { PhotoCategory, WorkOrderStatus } from "@/lib/database/types";
-import { resolvePrimaryPhotoUrls, type IntakePhotoRef } from "@/lib/services/photos";
+import type { WorkOrderStatus } from "@/lib/database/types";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 
 /** Bike waiting in a shop-floor stage queue (pickup, safety, etc.). */
 export type WaitingStageBike = {
@@ -25,14 +25,6 @@ type NestedMotorcycle = {
   model: string;
 } | null;
 
-type NestedPhoto = {
-  photo_id: string;
-  storage_path: string;
-  photo_url: string | null;
-  category: PhotoCategory;
-  created_at: string;
-};
-
 type StageRow = {
   work_order_id: string;
   work_order_number: string;
@@ -40,7 +32,6 @@ type StageRow = {
   quality_checked_at: string | null;
   updated_at: string;
   motorcycle: NestedMotorcycle | NestedMotorcycle[];
-  intake_photo: NestedPhoto[] | null;
 };
 
 function asOne<T>(value: T | T[] | null | undefined): T | null {
@@ -69,8 +60,7 @@ async function listWaitingStageBikes(input: {
       ready_for_pickup_at,
       quality_checked_at,
       updated_at,
-      motorcycle:motorcycle_id ( year, make, model ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at )
+      motorcycle:motorcycle_id ( year, make, model )
     `
     )
     .eq("location_id", locationId)
@@ -80,21 +70,10 @@ async function listWaitingStageBikes(input: {
   if (error) throw error;
 
   const rows = (data ?? []) as StageRow[];
-  const photoMap = new Map<string, IntakePhotoRef[]>();
-  for (const row of rows) {
-    photoMap.set(
-      row.work_order_id,
-      (row.intake_photo ?? []).map((p) => ({
-        photo_id: p.photo_id,
-        storage_path: p.storage_path,
-        photo_url: p.photo_url,
-        category: p.category,
-        created_at: p.created_at,
-      }))
-    );
-  }
-
-  const urls = await resolvePrimaryPhotoUrls(supabase, photoMap);
+  const { urls } = await resolveBoardPrimaryPhotos(
+    supabase,
+    rows.map((row) => row.work_order_id)
+  );
 
   return rows.map((row) => {
     const motorcycle = asOne(row.motorcycle);
@@ -118,7 +97,10 @@ async function listWaitingStageBikes(input: {
  * Primary surface: Control Center (below tech columns). Also shown on the
  * tech floor for shop awareness (no customer PII).
  */
-export async function listReadyForPickup(): Promise<WaitingStageBike[]> {
+export async function listReadyForPickup(input?: {
+  /** Defaults to work-order overview (Control Center / office). */
+  hrefFor?: (workOrderId: string) => string;
+}): Promise<WaitingStageBike[]> {
   return listWaitingStageBikes({
     status: "ready_for_pickup",
     orderColumn: "ready_for_pickup_at",
@@ -126,6 +108,7 @@ export async function listReadyForPickup(): Promise<WaitingStageBike[]> {
       at: row.ready_for_pickup_at,
       inferredFallback: row.updated_at,
     }),
+    hrefFor: input?.hrefFor,
   });
 }
 
@@ -176,5 +159,61 @@ export async function listReadyForSafetyInspection(): Promise<WaitingStageBike[]
       at: row.quality_checked_at,
       inferredFallback: row.updated_at,
     }),
+  });
+}
+
+/**
+ * Recently completed work orders for Control Center "Complete" box.
+ * Last 7 days at the active location, newest first (capped).
+ */
+export async function listRecentlyCompleted(): Promise<WaitingStageBike[]> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const locationId = user.active_location_id!;
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - 7);
+
+  const { data, error } = await supabase
+    .from("work_order")
+    .select(
+      `
+      work_order_id,
+      work_order_number,
+      ready_for_pickup_at,
+      quality_checked_at,
+      updated_at,
+      completed_at,
+      motorcycle:motorcycle_id ( year, make, model )
+    `
+    )
+    .eq("location_id", locationId)
+    .eq("status", "completed")
+    .gte("completed_at", since.toISOString())
+    .order("completed_at", { ascending: false, nullsFirst: false })
+    .limit(24);
+
+  if (error) throw error;
+
+  type CompletedRow = StageRow & { completed_at: string | null };
+  const rows = (data ?? []) as CompletedRow[];
+  const { urls } = await resolveBoardPrimaryPhotos(
+    supabase,
+    rows.map((row) => row.work_order_id)
+  );
+
+  return rows.map((row) => {
+    const motorcycle = asOne(row.motorcycle);
+    const completedAt = row.completed_at ?? row.updated_at;
+    return {
+      work_order_id: row.work_order_id,
+      work_order_number: row.work_order_number,
+      motorcycle_label: motorcycle
+        ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
+        : "—",
+      ready_since: completedAt,
+      ready_since_inferred: !row.completed_at,
+      primary_photo_url: urls.get(row.work_order_id) ?? null,
+      overview_href: `/work_orders/${row.work_order_id}`,
+    };
   });
 }

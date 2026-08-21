@@ -6,9 +6,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { AppUser } from "@/lib/auth/session";
+import { createClient } from "@/lib/database/supabase-browser";
 import { isFloorTech, staffHomePath } from "@/lib/permissions/checks";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import {
+  RolePreviewBanner,
+  RolePreviewSwitcher,
+  type RolePreviewState,
+} from "@/components/layout/RolePreviewSwitcher";
 import {
   LocationSwitcher,
   type LocationOption,
@@ -23,6 +29,7 @@ import {
 } from "@/app/(app)/notifications/actions";
 import type { StaffAssignmentNotification } from "@/lib/services/staffNotifications";
 import { staffAssignmentHref } from "@/lib/technician/assignmentHref";
+import { FloorTopBar } from "@/components/technician/FloorTopBar";
 
 const ROLE_LABELS: Record<AppUser["role"], string> = {
   owner: "Owner",
@@ -31,10 +38,15 @@ const ROLE_LABELS: Record<AppUser["role"], string> = {
   technician: "Technician",
   head_tech: "Head Tech",
   admin: "Admin",
+  time_clock_kiosk: "Time Clock Kiosk",
 };
 
 type Props = {
   user: AppUser;
+  /** Presentation role — drives nav, home link, and role label. */
+  viewRole: AppUser["role"];
+  /** Owner-only "view as" state; null for every other persisted role. */
+  rolePreview: RolePreviewState | null;
   locations: LocationOption[];
   profilePhotoUrl: string | null;
   initialNotifications: StaffAssignmentNotification[];
@@ -45,8 +57,14 @@ function isInspectionFullscreenPath(pathname: string) {
   return /\/work_orders\/[^/]+\/inspection\/?$/.test(pathname);
 }
 
+function isCompactFloorPath(pathname: string) {
+  return pathname === "/technician" || pathname === "/technician/";
+}
+
 export function AppShell({
   user,
+  viewRole,
+  rolePreview,
   locations,
   profilePhotoUrl,
   initialNotifications,
@@ -61,12 +79,21 @@ export function AppShell({
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [incomingNotification, setIncomingNotification] =
     useState<StaffAssignmentNotification | null>(null);
+  const [prevInitialNotifications, setPrevInitialNotifications] =
+    useState(initialNotifications);
   const knownNotificationIds = useRef(
     new Set(initialNotifications.map((notification) => notification.notification_id))
   );
+  if (initialNotifications !== prevInitialNotifications) {
+    setPrevInitialNotifications(initialNotifications);
+    setNotifications(initialNotifications);
+  }
   const hideChrome = isInspectionFullscreenPath(pathname);
+  const compactFloor = isFloorTech(viewRole) && isCompactFloorPath(pathname);
   const displayName = `${user.first_name} ${user.last_name}`.trim();
-  const homeHref = staffHomePath(user.role);
+  const homeHref = staffHomePath(viewRole);
+  // Notifications stay bound to the signed-in user — a preview never reads
+  // or marks another technician's alerts.
   const notificationsEnabled = isFloorTech(user.role);
 
   const refreshNotifications = useCallback(async () => {
@@ -87,6 +114,13 @@ export function AppShell({
   }, []);
 
   useEffect(() => {
+    // Seed "already seen" ids when the server re-hydrates the layout list.
+    knownNotificationIds.current = new Set(
+      initialNotifications.map((notification) => notification.notification_id)
+    );
+  }, [initialNotifications]);
+
+  useEffect(() => {
     // Close drawer when navigating (e.g. back button) without leaving it open over new page.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional route-change reset
     setMobileNavOpen(false);
@@ -104,19 +138,37 @@ export function AppShell({
   useEffect(() => {
     if (!notificationsEnabled) return;
 
-    const poll = () => {
-      void refreshNotifications();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshNotifications();
+      }
     };
-    const timer = window.setInterval(poll, 5_000);
-    window.addEventListener("focus", poll);
-    document.addEventListener("visibilitychange", poll);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`staff-notifications:${user.user_id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "staff_notification",
+          filter: `recipient_user_id=eq.${user.user_id}`,
+        },
+        () => {
+          void refreshNotifications();
+        }
+      )
+      .subscribe();
 
     return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", poll);
-      document.removeEventListener("visibilitychange", poll);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+      void supabase.removeChannel(channel);
     };
-  }, [notificationsEnabled, refreshNotifications]);
+  }, [notificationsEnabled, refreshNotifications, user.user_id]);
 
   async function openNotification(notification: StaffAssignmentNotification) {
     setNotificationBusy(true);
@@ -153,13 +205,16 @@ export function AppShell({
     }
   }
 
-  const notificationBell = (
+  // One controller, two responsive mount points. Only the visible slot
+  // renders the dialog portal, so duplicate dialogs cannot appear.
+  const notificationBellFor = (slot: "mobile" | "desktop") => (
     <StaffNotificationBell
+      slot={slot}
       notifications={notifications}
       open={notificationOpen}
       busy={notificationBusy}
       error={notificationError}
-      onToggle={() => setNotificationOpen((open) => !open)}
+      onToggle={() => setNotificationOpen((current) => !current)}
       onOpenNotification={(notification) => void openNotification(notification)}
       onMarkAllRead={() => void markAllNotificationsRead()}
     />
@@ -169,6 +224,58 @@ export function AppShell({
     return (
       <div className="flex min-h-full flex-1 flex-col bg-background">
         <main className="inspection-fullscreen-main">{children}</main>
+      </div>
+    );
+  }
+
+  if (compactFloor) {
+    return (
+      <div className="app-shell app-shell--floor-compact bg-background">
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
+        <FloorTopBar
+          trailing={notificationsEnabled ? notificationBellFor("mobile") : null}
+        />
+        {rolePreview ? (
+          <RolePreviewBanner preview={rolePreview} ownerName={displayName} />
+        ) : null}
+        <main id="main-content" className="main-body" tabIndex={-1}>
+          {children}
+        </main>
+        {incomingNotification ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-white p-4 text-slate-900 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">New motorcycle assignment</p>
+                <p className="mt-1 text-sm text-slate-700">
+                  {incomingNotification.work_order_number} ·{" "}
+                  {incomingNotification.motorcycle_label}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                aria-label="Dismiss alert"
+                onClick={() => setIncomingNotification(null)}
+              >
+                <X size={18} aria-hidden />
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary mt-3 w-full"
+              disabled={notificationBusy}
+              onClick={() => void openNotification(incomingNotification)}
+            >
+              Open assigned motorcycle
+            </button>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -189,14 +296,14 @@ export function AppShell({
           <Image
             src="/otomoto-logo.png"
             alt="OTOMOTO Toronto Moto"
-            width={150}
-            height={52}
-            className="h-8 w-auto"
+            width={240}
+            height={84}
+            className="brand-logo brand-logo--mobile"
             priority
           />
         </Link>
         <div className="flex items-center gap-2">
-          {notificationsEnabled ? notificationBell : null}
+          {notificationsEnabled ? notificationBellFor("mobile") : null}
           <Link href="/account" aria-label="Open my account">
             <UserAvatar
               firstName={user.first_name}
@@ -235,23 +342,27 @@ export function AppShell({
           <Image
             src="/otomoto-logo.png"
             alt="OTOMOTO Toronto Moto"
-            width={150}
-            height={52}
-            className="h-9 w-auto"
+            width={260}
+            height={90}
+            className="brand-logo"
             priority
           />
           <span className="brand-wordmark" aria-hidden>
             OTOMOTO
           </span>
         </Link>
-        <SidebarNav role={user.role} onNavigate={() => setMobileNavOpen(false)} />
+        {rolePreview ? <RolePreviewSwitcher preview={rolePreview} /> : null}
+        <SidebarNav role={viewRole} onNavigate={() => setMobileNavOpen(false)} />
       </aside>
 
       <div className="main-content">
+        {rolePreview ? (
+          <RolePreviewBanner preview={rolePreview} ownerName={displayName} />
+        ) : null}
         <header className="main-topbar">
           <GlobalSearch />
           <div className="main-topbar-actions">
-            {notificationsEnabled ? notificationBell : null}
+            {notificationsEnabled ? notificationBellFor("desktop") : null}
             {user.active_location_id ? (
               <LocationSwitcher
                 locations={locations}
@@ -274,7 +385,7 @@ export function AppShell({
                   {displayName}
                 </span>
                 <span className="mx-1.5 opacity-40">·</span>
-                <span>{ROLE_LABELS[user.role]}</span>
+                <span>{ROLE_LABELS[viewRole]}</span>
               </span>
             </Link>
             <SignOutButton />

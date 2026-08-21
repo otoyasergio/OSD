@@ -12,6 +12,8 @@ type TextFieldProps = {
   autoFocus?: boolean;
   minLength?: number;
   maxLength?: number;
+  inputMode?:
+    "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
 };
 
@@ -29,6 +31,7 @@ export function TextField({
   autoFocus,
   minLength,
   maxLength,
+  inputMode,
   autoCapitalize,
 }: TextFieldProps) {
   const inputId = id ?? name;
@@ -54,6 +57,7 @@ export function TextField({
         autoFocus={autoFocus}
         minLength={minLength}
         maxLength={maxLength}
+        inputMode={inputMode}
         autoCapitalize={autoCapitalize}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
@@ -82,6 +86,7 @@ type TextAreaFieldProps = {
   id?: string;
   defaultValue?: string | null;
   rows?: number;
+  required?: boolean;
   error?: string | null;
 };
 
@@ -91,6 +96,7 @@ export function TextAreaField({
   id,
   defaultValue,
   rows = 3,
+  required,
   error,
 }: TextAreaFieldProps) {
   const inputId = id ?? name;
@@ -100,12 +106,14 @@ export function TextAreaField({
     <div className="block">
       <label htmlFor={inputId} className="field-label">
         {label}
+        {required ? <span className="ml-1 text-[var(--status-danger)]">*</span> : null}
       </label>
       <textarea
         id={inputId}
         className="textarea"
         name={name}
         rows={rows}
+        required={required}
         defaultValue={defaultValue ?? undefined}
         aria-invalid={error ? true : undefined}
         aria-describedby={errorId}
@@ -123,14 +131,7 @@ export function TextAreaField({
   );
 }
 
-export function FormError({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <p role="alert" className="alert-error">
-      {message}
-    </p>
-  );
-}
+export { FormError } from "@/components/forms/FormError";
 
 /** Shared class for selects outside Field components */
 export const SELECT_CLASS = "select";

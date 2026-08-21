@@ -5,6 +5,7 @@ import {
   createService,
   updateService,
   setServiceActive,
+  type ServicePricingMode,
 } from "@/lib/services/serviceCatalogue";
 import { toFormErrorMessage } from "@/lib/services/errors";
 
@@ -17,6 +18,15 @@ function readNumber(formData: FormData, key: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+const PRICING_MODES: ServicePricingMode[] = ["itemized", "fixed_package", "no_charge"];
+
+function readPricingMode(formData: FormData): ServicePricingMode | undefined {
+  const raw = String(formData.get("pricing_mode") ?? "").trim();
+  return PRICING_MODES.includes(raw as ServicePricingMode)
+    ? (raw as ServicePricingMode)
+    : undefined;
+}
+
 export async function createServiceAction(
   _prevState: ServiceFormState,
   formData: FormData
@@ -27,6 +37,7 @@ export async function createServiceAction(
       category: String(formData.get("category") ?? "").trim() || null,
       standard_price: readNumber(formData, "standard_price"),
       estimated_labour: readNumber(formData, "estimated_labour"),
+      pricing_mode: readPricingMode(formData),
     });
   } catch (error) {
     return { error: toFormErrorMessage(error) };
@@ -47,6 +58,7 @@ export async function updateServiceAction(
       category: String(formData.get("category") ?? "").trim() || null,
       standard_price: readNumber(formData, "standard_price"),
       estimated_labour: readNumber(formData, "estimated_labour"),
+      pricing_mode: readPricingMode(formData),
     });
   } catch (error) {
     return { error: toFormErrorMessage(error) };

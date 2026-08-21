@@ -10,6 +10,7 @@ import { rowCoversYear } from "@/lib/fitment/fitmentRange";
 import { fitmentFieldLabel, FITMENT_SPEC_FIELDS } from "@/lib/fitment/fieldLabels";
 import { canOrderPart } from "@/lib/permissions";
 import type { PartsCanadaSearchHit } from "@/lib/services/partsCanadaCatalog";
+import { syncAllMotorcycleServiceInfoFromFitment } from "@/lib/services/syncServiceInfoFromFitment";
 
 export type FitmentVehicle = {
   vehicle_id: string;
@@ -43,9 +44,7 @@ export async function getFitmentImportStatus(): Promise<{
   await requireUser();
   const supabase = await createClient();
   const [{ count }, { data: lastRun }] = await Promise.all([
-    supabase
-      .from("fitment_vehicle")
-      .select("vehicle_id", { count: "exact", head: true }),
+    supabase.from("fitment_vehicle").select("vehicle_id", { count: "exact", head: true }),
     supabase
       .from("fitment_import_run")
       .select("status, started_at, row_count")
@@ -123,10 +122,7 @@ export async function listFitmentMakes(year: number): Promise<string[]> {
   return [...makes].sort((a, b) => a.localeCompare(b));
 }
 
-export async function listFitmentModels(
-  year: number,
-  make: string
-): Promise<string[]> {
+export async function listFitmentModels(year: number, make: string): Promise<string[]> {
   await requireUser();
   const supabase = await createClient();
   const models = new Set<string>();
@@ -163,7 +159,9 @@ export async function getFitmentVehicle(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("fitment_vehicle")
-    .select("vehicle_id, make, model, year_start, year_end, category, spec_data, part_data")
+    .select(
+      "vehicle_id, make, model, year_start, year_end, category, spec_data, part_data"
+    )
     .ilike("make", make)
     .ilike("model", model);
 
@@ -228,9 +226,7 @@ export async function getFitmentPartsWithCatalog(
   if (skus.length > 0) {
     const { data: catalogRows, error } = await supabase
       .from("parts_canada_catalog")
-      .select(
-        "part_number, brand, description_en, msrp, dealer_price, qty_cal, qty_lon"
-      )
+      .select("part_number, brand, description_en, msrp, dealer_price, qty_cal, qty_lon")
       .in("part_number", skus.slice(0, 100));
 
     if (error) throw error;
@@ -367,7 +363,10 @@ export async function importFitmentRows(
 
     const vehicleRows = Array.from(deduped.values());
 
-    await admin.from("fitment_vehicle").delete().neq("vehicle_id", "00000000-0000-0000-0000-000000000000");
+    await admin
+      .from("fitment_vehicle")
+      .delete()
+      .neq("vehicle_id", "00000000-0000-0000-0000-000000000000");
 
     for (let i = 0; i < vehicleRows.length; i += BATCH) {
       const slice = vehicleRows.slice(i, i + BATCH);
@@ -383,6 +382,9 @@ export async function importFitmentRows(
         row_count: vehicleRows.length,
       })
       .eq("import_run_id", run.import_run_id);
+
+    // Keep every bike's service card in sync with the new catalogue.
+    await syncAllMotorcycleServiceInfoFromFitment(admin);
 
     return { row_count: vehicleRows.length };
   } catch (error) {

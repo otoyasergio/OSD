@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "coverage/**",
     // Local Codex/Claude worktrees can contain their own source and build output.
     ".worktrees/**",
+    // Design handoff prototypes (standalone HTML/JS, not app code).
+    "design_handoff_tech_workflow/**",
   ]),
   {
     rules: {

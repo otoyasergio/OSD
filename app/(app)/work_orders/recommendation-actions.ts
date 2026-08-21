@@ -2,20 +2,28 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  approveRecommendationAndSendToFloor,
   convertRecommendationToJob,
   createRecommendation,
-  createRecommendationFromInspectionResult,
+  getInspectionRecommendationDraft,
+  type InspectionRecommendationDraft,
   listOutstandingRecommendationsForMotorcycle,
   type OutstandingRecommendation,
+  saveRecommendationFromInspectionResult,
   updateRecommendationStatus,
 } from "@/lib/services/recommendations";
 import { toFormErrorMessage } from "@/lib/services/errors";
-import type {
-  RecommendationSeverity,
-  RecommendationStatus,
-} from "@/lib/database/types";
+import type { RecommendationSeverity, RecommendationStatus } from "@/lib/database/types";
 
-export type RecommendationFormState = { error: string | null };
+export type RecommendationFormState = {
+  error: string | null;
+  saved?: boolean;
+};
+
+export type InspectionRecommendationDraftActionResult = {
+  draft: InspectionRecommendationDraft | null;
+  error: string | null;
+};
 
 export async function getOutstandingRecommendationsAction(
   motorcycleId: string
@@ -24,10 +32,29 @@ export async function getOutstandingRecommendationsAction(
   return listOutstandingRecommendationsForMotorcycle(motorcycleId);
 }
 
+export async function getInspectionRecommendationDraftAction(
+  workOrderId: string,
+  inspectionResultId: string
+): Promise<InspectionRecommendationDraftActionResult> {
+  try {
+    return {
+      draft: await getInspectionRecommendationDraft(workOrderId, inspectionResultId),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      draft: null,
+      error: toFormErrorMessage(error),
+    };
+  }
+}
+
 function revalidateRecommendations(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath(`/work_orders/${workOrderId}/inspection`);
   revalidatePath("/work_orders");
+  revalidatePath("/technician");
+  revalidatePath("/dashboard");
 }
 
 export async function createRecommendationAction(
@@ -35,17 +62,21 @@ export async function createRecommendationAction(
   _prevState: RecommendationFormState,
   formData: FormData
 ): Promise<RecommendationFormState> {
+  let verifiedWorkOrderId = workOrderId;
   try {
     const fromResult = String(formData.get("inspection_result_id") ?? "").trim();
     if (fromResult) {
       const severityRaw = String(formData.get("severity") ?? "").trim();
-      await createRecommendationFromInspectionResult(fromResult, {
-        description: String(formData.get("description") ?? "").trim() || undefined,
-        severity: severityRaw
-          ? (severityRaw as RecommendationSeverity)
-          : undefined,
-        notes: String(formData.get("notes") ?? "").trim() || null,
-      });
+      const saved = await saveRecommendationFromInspectionResult(
+        workOrderId,
+        fromResult,
+        {
+          description: String(formData.get("description") ?? "").trim() || undefined,
+          severity: severityRaw ? (severityRaw as RecommendationSeverity) : undefined,
+          notes: String(formData.get("notes") ?? "").trim() || null,
+        }
+      );
+      verifiedWorkOrderId = saved.work_order_id;
     } else {
       await createRecommendation(workOrderId, {
         description: String(formData.get("description") ?? "").trim(),
@@ -57,8 +88,35 @@ export async function createRecommendationAction(
     return { error: toFormErrorMessage(error) };
   }
 
-  revalidateRecommendations(workOrderId);
+  revalidateRecommendations(verifiedWorkOrderId);
   return { error: null };
+}
+
+export async function saveInspectionRecommendationAction(
+  workOrderId: string,
+  inspectionResultId: string,
+  _prevState: RecommendationFormState,
+  formData: FormData
+): Promise<RecommendationFormState> {
+  let verifiedWorkOrderId = workOrderId;
+  try {
+    const severityRaw = String(formData.get("severity") ?? "").trim();
+    const saved = await saveRecommendationFromInspectionResult(
+      workOrderId,
+      inspectionResultId,
+      {
+        description: String(formData.get("description") ?? "").trim() || undefined,
+        severity: severityRaw ? (severityRaw as RecommendationSeverity) : undefined,
+        notes: String(formData.get("notes") ?? "").trim() || null,
+      }
+    );
+    verifiedWorkOrderId = saved.work_order_id;
+  } catch (error) {
+    return { error: toFormErrorMessage(error), saved: false };
+  }
+
+  revalidateRecommendations(verifiedWorkOrderId);
+  return { error: null, saved: true };
 }
 
 export async function updateRecommendationStatusAction(
@@ -72,11 +130,16 @@ export async function updateRecommendationStatusAction(
       RecommendationStatus,
       "converted_to_job" | "pending"
     >;
-    await updateRecommendationStatus(
-      recommendationId,
-      status,
-      String(formData.get("notes") ?? "").trim() || null
-    );
+    // Client approved → create approved job and put it on the tech's Perform work.
+    if (status === "approved") {
+      await approveRecommendationAndSendToFloor(recommendationId);
+    } else {
+      await updateRecommendationStatus(
+        recommendationId,
+        status,
+        String(formData.get("notes") ?? "").trim() || null
+      );
+    }
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -92,14 +155,38 @@ export async function convertRecommendationAction(
   formData: FormData
 ): Promise<RecommendationFormState> {
   try {
+    const serviceId = String(formData.get("service_id") ?? "").trim();
+    if (!serviceId) throw new Error("SERVICE_NOT_FOUND");
+    const priceRaw = String(formData.get("price") ?? "").trim();
     await convertRecommendationToJob(recommendationId, {
-      service_id: String(formData.get("service_id") ?? ""),
+      service_id: serviceId,
       already_approved: formData.get("already_approved") === "true",
+      use_recommendation_title: true,
+      price_override: priceRaw ? Number(priceRaw) : null,
     });
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
 
   revalidateRecommendations(workOrderId);
+  return { error: null };
+}
+
+export async function sendRecommendationEstimateAction(
+  workOrderId: string,
+  _prevState: RecommendationFormState,
+  formData: FormData
+): Promise<RecommendationFormState> {
+  try {
+    const channel = formData.get("channel") === "sms" ? "sms" : "email";
+    const { sendWorkOrderEstimateApproval } =
+      await import("@/lib/services/squareBilling");
+    await sendWorkOrderEstimateApproval(workOrderId, channel);
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+
+  revalidateRecommendations(workOrderId);
+  revalidatePath("/billing");
   return { error: null };
 }

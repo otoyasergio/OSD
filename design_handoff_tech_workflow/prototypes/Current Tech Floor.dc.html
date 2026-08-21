@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #64748b; }
+  a { color: #0f172a; } a:hover { color: #0f766e; }
+  @keyframes pickupPulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+</style>
+</helmet>
+<div style="width: 820px; min-height: 1180px; margin: 0 auto; background: #f8fafc; color: #0f172a; font-family: 'Space Grotesk', ui-sans-serif, sans-serif; display: flex; align-items: stretch;">
+  <aside style="display: flex; width: 240px; flex-shrink: 0; flex-direction: column; border-right: 1px solid #1f2937; background: #0b1220;">
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 5.6px; min-height: 44px; padding: 16px 16px 12px;">
+      <img src="assets/otomoto-logo.png" alt="OTOMOTO Toronto Moto" style="height: 36px; width: auto;">
+      <span style="font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 700; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: #14b8a6;">OTOMOTO</span>
+    </div>
+    <nav style="display: flex; flex: 1; flex-direction: column; gap: 13.6px; padding: 8px 12px 16px; overflow-y: auto;">
+      <div style="display: flex; flex-direction: column; gap: 5.6px;">
+        <p style="margin: 0; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #94a3b8; padding: 0 12px;">Clients</p>
+        <p style="margin: 0; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #64748b; padding: 0 12px;">Shop floor</p>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; border-radius: 7px; padding: 8px 12px; font-size: 14px; font-weight: 500; color: #94a3b8; text-decoration: none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"></path><path d="M12 22V12"></path><polyline points="3.29 7 12 12 20.71 7"></polyline><path d="m7.5 4.27 9 5.15"></path></svg>
+          Parts
+        </a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 5.6px; padding-top: 10.4px; border-top: 1px solid #1f2937;">
+        <p style="margin: 0; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #94a3b8; padding: 0 12px;">Docket</p>
+        <a href="#" aria-current="page" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; border-radius: 7px; padding: 8px 12px; font-size: 14px; font-weight: 600; color: #0b1220; background: #f8fafc; text-decoration: none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"></path></svg>
+          Jobs
+        </a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 5.6px; padding-top: 10.4px; border-top: 1px solid #1f2937;">
+        <p style="margin: 0; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #94a3b8; padding: 0 12px;">Communication</p>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; border-radius: 7px; padding: 8px 12px; font-size: 14px; font-weight: 500; color: #94a3b8; text-decoration: none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"></path></svg>
+          Messages
+        </a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 5.6px; padding-top: 10.4px; border-top: 1px solid #1f2937;">
+        <p style="margin: 0; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #94a3b8; padding: 0 12px;">Settings</p>
+        <a href="#" style="display: inline-flex; align-items: center; gap: 8px; min-height: 44px; border-radius: 7px; padding: 8px 12px; font-size: 14px; font-weight: 500; color: #94a3b8; text-decoration: none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          Settings
+        </a>
+      </div>
+    </nav>
+  </aside>
+  <div style="display: flex; flex: 1; min-width: 0; flex-direction: column;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #1f2937; background: #0b1220; padding: 12px 16px;">
+      <div style="display: flex; flex: 1 1 auto; min-width: 204px; max-width: 384px;">
+        <input type="text" placeholder="Name, bike, WO #, VIN…" style="width: 100%; min-width: 176px; min-height: 44px; border-radius: 7px; border: 1px solid #1f2937; background: #111827; padding: 8px 12px; font-size: 14px; color: #f8fafc; font-family: inherit; box-sizing: border-box;">
+      </div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px;">
+        <button style="position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; border-radius: 7px; border: 1px solid #1f2937; background: #111827; color: #94a3b8; cursor: pointer;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path></svg>
+          <span style="position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px; border-radius: 999px; background: #f97316; color: #111827; font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; padding: 0 3px;">1</span>
+        </button>
+        <div style="display: inline-flex; align-items: center; min-height: 44px; border-radius: 7px; border: 1px solid #1f2937; background: #111827; color: #f8fafc; font-size: 14px; padding: 8px 12px; gap: 6px;">
+          Toronto
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>
+        </div>
+        <div style="display: inline-flex; align-items: center; gap: 8px; border-radius: 7px; border: 1px solid #1f2937; background: #111827; padding: 6px 8px; font-size: 14px; color: #94a3b8;">
+          <span style="width: 28px; height: 28px; border-radius: 999px; background: #0f766e; color: #ecfdf5; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">SN</span>
+          <span><span style="font-weight: 600; color: #f8fafc;">Sam Nakagawa</span><span style="margin: 0 6px; opacity: .4;">·</span><span>Technician</span></span>
+        </div>
+        <button style="display: inline-flex; min-height: 44px; align-items: center; justify-content: center; border-radius: 7px; padding: 8px 16px; font-size: 14px; font-weight: 600; border: 1px solid transparent; background: transparent; color: #94a3b8; font-family: inherit; cursor: pointer;">Sign out</button>
+      </div>
+    </header>
+    <main style="flex: 1; width: 100%; padding: 24px 16px; box-sizing: border-box;">
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <header><h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -.02em; color: #0f172a;">Tech floor</h1></header>
+        <div style="display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0;">
+          <aside style="width: 100%; border-radius: 10px; border: 1px solid #e2e8f0; background: #f1f5f9; padding: 12px; box-sizing: border-box;">
+            <div style="padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid #e2e8f0;">
+              <p style="margin: 0 0 6px; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #64748b;">My motorcycles</p>
+              <ol style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: 12px;">
+                <li>
+                  <a href="#" aria-current="true" style="display: flex; flex-direction: column; gap: 4px; min-height: 88px; border-radius: 7px; border: 1px solid #0f766e; background: #0f766e; padding: 14px 16px; text-decoration: none; color: #ecfdf5; box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px;">
+                      <span style="flex-shrink: 0; width: 24px; height: 24px; border-radius: 999px; background: rgb(236 253 245 / .2); color: #ecfdf5; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;">1</span>
+                      <span style="display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .1em; color: #111827;">NOW</span>
+                    </div>
+                    <p style="margin: 0; font-size: 18px; font-weight: 700; line-height: 1.25; letter-spacing: -.01em;">2019 Kawasaki Ninja 400</p>
+                    <p style="margin: 0; font-size: 13px; font-weight: 600; opacity: .9;">WO-1204</p>
+                    <p style="margin: 2px 0 0; font-size: 12px; opacity: .9; line-height: 1.35;">Chain &amp; sprocket replacement<span aria-hidden> · </span>In Progress</p>
+                  </a>
+                </li>
+                <li>
+                  <a href="#" style="display: flex; flex-direction: column; gap: 4px; min-height: 88px; border-radius: 7px; border: 1px solid #e2e8f0; background: #ffffff; padding: 14px 16px; text-decoration: none; color: inherit; box-shadow: 0 1px 2px rgb(0 0 0 / .04); box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px;">
+                      <span style="flex-shrink: 0; width: 24px; height: 24px; border-radius: 999px; background: #0b1220; color: #ffffff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;">2</span>
+                    </div>
+                    <p style="margin: 0; font-size: 18px; font-weight: 700; line-height: 1.25; letter-spacing: -.01em;">2022 Yamaha MT-07</p>
+                    <p style="margin: 0; font-size: 13px; font-weight: 600; opacity: .85;">WO-1209</p>
+                    <p style="margin: 2px 0 0; font-size: 12px; opacity: .75; line-height: 1.35;">Annual safety inspection<span aria-hidden> · </span>Ready To Start</p>
+                  </a>
+                </li>
+                <li>
+                  <a href="#" style="display: flex; flex-direction: column; gap: 4px; min-height: 88px; border-radius: 7px; border: 1px solid #e2e8f0; background: #ffffff; padding: 14px 16px; text-decoration: none; color: inherit; box-shadow: 0 1px 2px rgb(0 0 0 / .04); box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px;">
+                      <span style="flex-shrink: 0; width: 24px; height: 24px; border-radius: 999px; background: #0b1220; color: #ffffff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;">3</span>
+                    </div>
+                    <p style="margin: 0; font-size: 18px; font-weight: 700; line-height: 1.25; letter-spacing: -.01em;">2017 Harley-Davidson Street Bob</p>
+                    <p style="margin: 0; font-size: 13px; font-weight: 600; opacity: .85;">WO-1198</p>
+                    <p style="margin: 2px 0 0; font-size: 12px; opacity: .75; line-height: 1.35;">Front brake pads &amp; rotors<span aria-hidden> · </span>Waiting For Parts</p>
+                  </a>
+                </li>
+                <li>
+                  <a href="#" style="display: flex; flex-direction: column; gap: 4px; min-height: 88px; border-radius: 7px; border: 1px solid rgb(249 115 22 / .45); background: #ffedd5; padding: 14px 16px; text-decoration: none; color: inherit; box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 2px;">
+                      <span style="flex-shrink: 0; width: 24px; height: 24px; border-radius: 999px; background: #0b1220; color: #ffffff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;">4</span>
+                    </div>
+                    <p style="margin: 0; font-size: 18px; font-weight: 700; line-height: 1.25; letter-spacing: -.01em;">2021 Honda CB500X</p>
+                    <p style="margin: 0; font-size: 13px; font-weight: 600; opacity: .85;">WO-1195</p>
+                    <p style="margin: 2px 0 0; font-size: 12px; opacity: .75; line-height: 1.35;">Peer QC<span aria-hidden> · </span>Quality Check</p>
+                  </a>
+                </li>
+              </ol>
+            </div>
+          </aside>
+          <section style="flex: 1; min-width: 0; min-height: 320px; display: flex; flex-direction: column; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; overflow: hidden;">
+            <div style="flex: 1; min-height: 0; overflow: auto; padding: 16px 16px 8px;">
+              <div style="margin-bottom: 14px;">
+                <p style="margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #64748b;">WO-1204 · In Progress</p>
+                <h2 style="margin: 2px 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em;">2019 Kawasaki Ninja 400</h2>
+                <p style="margin: 0; font-size: 14px; color: #64748b;">Chain &amp; sprocket replacement · Est 2h · Actual 1.4h</p>
+              </div>
+              <section style="margin-bottom: 16px;">
+                <h3 style="margin: 0 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #64748b;">Services on this motorcycle</h3>
+                <ul style="display: flex; flex-direction: column; gap: 8px; list-style: none; margin: 0; padding: 0;">
+                  <li><a href="#" aria-current="true" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; border: 1px solid #0f766e; border-radius: 7px; background: #eef7f5; padding: 10px 12px; color: inherit; text-decoration: none; box-sizing: border-box;">
+                    <span style="display: flex; min-width: 0; flex-direction: column; gap: 2px;"><span style="font-size: 15px; font-weight: 650;">Chain &amp; sprocket replacement</span><span style="font-size: 12px; color: #64748b;">In Progress</span></span>
+                    <span style="flex-shrink: 0; font-weight: 650; font-size: 12px; color: #64748b;">Open</span>
+                  </a></li>
+                  <li><a href="#" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; border: 1px solid #e2e8f0; border-radius: 7px; background: #ffffff; padding: 10px 12px; color: inherit; text-decoration: none; box-sizing: border-box;">
+                    <span style="display: flex; min-width: 0; flex-direction: column; gap: 2px;"><span style="font-size: 15px; font-weight: 650;">Rear tire replacement</span><span style="font-size: 12px; color: #64748b;">Ready To Start</span></span>
+                    <span style="flex-shrink: 0; font-weight: 650; font-size: 12px; color: #64748b;">My service</span>
+                  </a></li>
+                  <li><div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f1f5f9; opacity: .78; padding: 10px 12px; box-sizing: border-box;">
+                    <span style="display: flex; min-width: 0; flex-direction: column; gap: 2px;"><span style="font-size: 15px; font-weight: 650;">Coolant flush</span><span style="font-size: 12px; color: #64748b;">Waiting For Approval</span></span>
+                    <span style="flex-shrink: 0; font-weight: 650; font-size: 12px; color: #64748b;">Other tech</span>
+                  </div></li>
+                </ul>
+              </section>
+              <nav aria-label="Job stages" style="display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                  <a href="#" style="display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border-radius: 999px; border: 1px solid rgb(34 197 94 / .35); background: #dcfce7; padding: 8px 14px; font-size: 13px; font-weight: 650; text-decoration: none; color: #14532d; white-space: nowrap;"><span style="display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 999px; background: rgb(0 0 0 / .08); font-size: 11px; font-weight: 800;">1</span>Inspect ✓</a>
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                  <span aria-hidden style="color: #64748b; opacity: .45; padding: 0 2px;">→</span>
+                  <a href="#" aria-current="step" style="display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border-radius: 999px; border: 1px solid #0b1220; background: #0b1220; padding: 8px 14px; font-size: 13px; font-weight: 650; text-decoration: none; color: #f8fafc; white-space: nowrap;"><span style="display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 999px; background: rgb(255 255 255 / .15); font-size: 11px; font-weight: 800;">2</span>Work</a>
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                  <span aria-hidden style="color: #64748b; opacity: .45; padding: 0 2px;">→</span>
+                  <a href="#" style="display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border-radius: 999px; border: 1px solid #e2e8f0; background: #f1f5f9; padding: 8px 14px; font-size: 13px; font-weight: 650; text-decoration: none; color: #334155; white-space: nowrap;"><span style="display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 999px; background: rgb(0 0 0 / .08); font-size: 11px; font-weight: 800;">3</span>Proof</a>
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                  <span aria-hidden style="color: #64748b; opacity: .45; padding: 0 2px;">→</span>
+                  <a href="#" style="display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border-radius: 999px; border: 1px solid #e2e8f0; background: #f1f5f9; padding: 8px 14px; font-size: 13px; font-weight: 650; text-decoration: none; color: #334155; white-space: nowrap;"><span style="display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 999px; background: rgb(0 0 0 / .08); font-size: 11px; font-weight: 800;">4</span>Done</a>
+                </div>
+              </nav>
+              <div style="display: flex; flex-direction: column; gap: 20px; padding-bottom: 16px;">
+                <section>
+                  <h3 style="margin: 0 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #64748b;">Standard work</h3>
+                  <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px;">
+                    <li><div style="display: flex; align-items: center; gap: 12px; min-height: 48px;">
+                      <button aria-pressed="true" style="flex-shrink: 0; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; border: 2px solid #0b1220; background: #0b1220; font-size: 18px; font-weight: 700; color: #f8fafc; cursor: pointer;">✓</button>
+                      <span style="font-size: 15px; font-weight: 500; line-height: 1.3;">Remove chain guard and worn chain</span>
+                    </div></li>
+                    <li><div style="display: flex; align-items: center; gap: 12px; min-height: 48px;">
+                      <button aria-pressed="true" style="flex-shrink: 0; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; border: 2px solid #0b1220; background: #0b1220; font-size: 18px; font-weight: 700; color: #f8fafc; cursor: pointer;">✓</button>
+                      <span style="font-size: 15px; font-weight: 500; line-height: 1.3;">Fit new sprockets, torque to spec</span>
+                    </div></li>
+                    <li><div style="display: flex; align-items: center; gap: 12px; min-height: 48px;">
+                      <button aria-pressed="false" style="flex-shrink: 0; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; border: 2px solid #cbd5e1; background: #ffffff; font-size: 18px; font-weight: 700; color: #f8fafc; cursor: pointer;"></button>
+                      <span style="font-size: 15px; font-weight: 500; line-height: 1.3;">Set chain slack and lube</span>
+                    </div></li>
+                  </ul>
+                </section>
+                <section>
+                  <h3 style="margin: 0 0 8px; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #64748b;">Parts</h3>
+                  <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px;">
+                    <li style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; border-radius: 7px; border: 1px solid #e2e8f0; padding: 10px 12px; box-sizing: border-box;">
+                      <div><div style="font-size: 14px; font-weight: 600;">DID 520VX3 chain kit</div><div style="margin: 0; font-size: 14px; color: #64748b;">in_stock</div></div>
+                      <button style="display: inline-flex; min-height: 44px; align-items: center; justify-content: center; border-radius: 7px; padding: 8px 16px; font-size: 14px; font-weight: 600; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; font-family: inherit; cursor: pointer;">Install</button>
+                    </li>
+                    <li style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; border-radius: 7px; border: 1px solid #e2e8f0; padding: 10px 12px; box-sizing: border-box;">
+                      <div><div style="font-size: 14px; font-weight: 600;">JT front sprocket 14T</div><div style="margin: 0; font-size: 14px; color: #64748b;">installed</div></div>
+                      <span style="font-size: 12px; font-weight: 650; color: #14532d;">Done</span>
+                    </li>
+                  </ul>
+                </section>
+                <a href="#" style="display: inline-flex; min-height: 44px; width: 100%; align-items: center; justify-content: center; border-radius: 7px; padding: 8px 16px; font-size: 14px; font-weight: 600; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; text-decoration: none; box-sizing: border-box;">Continue to Proof →</a>
+              </div>
+            </div>
+            <div style="flex-shrink: 0; border-top: 1px solid #e2e8f0; background: #ffffff; padding: 12px 16px 16px; box-shadow: 0 -6px 16px -8px rgb(0 0 0 / .08);">
+              <p style="margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #78350f;">Check all checklist items before completing.</p>
+              <div style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;">
+                <button style="display: inline-flex; align-items: center; justify-content: center; min-height: 52px; min-width: 88px; border-radius: 7px; border: 1px solid #cbd5e1; background: #f1f5f9; padding: 8px 14px; font-size: 14px; font-weight: 650; font-family: inherit; cursor: pointer;">Flag</button>
+                <div style="flex: 1 1 192px; display: flex; flex-direction: column; gap: 6px;">
+                  <button disabled style="width: 100%; min-height: 52px; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: 7px; padding: 8px 16px; font-weight: 600; border: 1px solid #f97316; background: #f97316; color: #111827; font-family: inherit; opacity: .6; cursor: not-allowed;">Complete job</button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+        <section data-carousel="qc" style="border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; box-shadow: 0 1px 2px 0 rgb(0 0 0 / .04); padding: 13.6px 14.4px 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 11.2px;">
+            <div style="display: flex; align-items: baseline; gap: 8.8px; flex-wrap: wrap;">
+              <h2 style="margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #0f172a; font-family: 'IBM Plex Mono', ui-monospace, monospace;">Waiting for peer QC</h2>
+              <span style="font-size: 13px; color: #64748b;">Waiting on quality check</span>
+            </div>
+            <div style="display: flex; gap: 6.4px; flex-shrink: 0;">
+              <button aria-label="Scroll left" style="display: inline-flex; align-items: center; justify-content: center; width: 33.6px; height: 33.6px; border-radius: 7px; border: 1px solid #cbd5e1; background: #ffffff; color: #334155; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg></button>
+              <button aria-label="Scroll right" style="display: inline-flex; align-items: center; justify-content: center; width: 33.6px; height: 33.6px; border-radius: 7px; border: 1px solid #cbd5e1; background: #ffffff; color: #334155; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></button>
+            </div>
+          </div>
+          <div style="display: flex; gap: 12px; overflow-x: auto; padding-bottom: 2.4px;">
+            <a href="#" style="flex: 0 0 200px; border: 1px solid #e2e8f0; border-radius: 9px; background: #ffffff; overflow: hidden; text-decoration: none; color: inherit;">
+              <div style="position: relative; aspect-ratio: 16 / 10; background: #f1f5f9; overflow: hidden;">
+                <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #64748b;"><svg viewBox="0 0 48 32" width="40" height="26"><path d="M8 22c2-6 6-10 10-11 3 4 7 6 12 6 2 0 4-.4 6-1.2L40 22H8z" fill="currentColor" opacity="0.4"></path><circle cx="16" cy="12" r="3" fill="currentColor" opacity="0.5"></circle><path d="M6 24h36v2H6z" fill="currentColor" opacity="0.3"></path></svg></div>
+                <span style="position: absolute; left: 7.2px; bottom: 7.2px; display: inline-flex; align-items: center; gap: 5.6px; padding: 3.2px 7.2px; border-radius: 999px; font-size: 12px; font-weight: 700; font-family: 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: .02em; background: rgb(15 23 42 / .82); color: #f8fafc;"><span style="width: 6.4px; height: 6.4px; border-radius: 999px; background: #f59e0b; box-shadow: 0 0 0 3px rgb(245 158 11 / .28); animation: pickupPulse 1.6s ease-in-out infinite;"></span><span>2:05:33</span></span>
+              </div>
+              <div style="padding: 8.8px 10.4px 11.2px;">
+                <p style="margin: 0; font-size: 14px; font-weight: 700; line-height: 1.25; color: #0f172a;">2018 Ducati Monster 821</p>
+                <p style="margin: 2.4px 0 0; font-size: 12px; font-weight: 600; color: #64748b; font-family: 'IBM Plex Mono', ui-monospace, monospace;">WO-1203</p>
+                <p style="margin: 5.6px 0 0; font-size: 12px; color: #64748b;">In queue · 2h 05m</p>
+              </div>
+            </a>
+            <a href="#" style="flex: 0 0 200px; border: 1px solid #e2e8f0; border-radius: 9px; background: #ffffff; overflow: hidden; text-decoration: none; color: inherit;">
+              <div style="position: relative; aspect-ratio: 16 / 10; background: #f1f5f9; overflow: hidden;">
+                <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #64748b;"><svg viewBox="0 0 48 32" width="40" height="26"><path d="M8 22c2-6 6-10 10-11 3 4 7 6 12 6 2 0 4-.4 6-1.2L40 22H8z" fill="currentColor" opacity="0.4"></path><circle cx="16" cy="12" r="3" fill="currentColor" opacity="0.5"></circle><path d="M6 24h36v2H6z" fill="currentColor" opacity="0.3"></path></svg></div>
+                <span style="position: absolute; left: 7.2px; bottom: 7.2px; display: inline-flex; align-items: center; gap: 5.6px; padding: 3.2px 7.2px; border-radius: 999px; font-size: 12px; font-weight: 700; font-family: 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: .02em; background: rgb(15 23 42 / .82); color: #f8fafc;"><span style="width: 6.4px; height: 6.4px; border-radius: 999px; background: #22c55e; box-shadow: 0 0 0 3px rgb(34 197 94 / .25); animation: pickupPulse 1.6s ease-in-out infinite;"></span><span>0:38:12</span></span>
+              </div>
+              <div style="padding: 8.8px 10.4px 11.2px;">
+                <p style="margin: 0; font-size: 14px; font-weight: 700; line-height: 1.25; color: #0f172a;">2022 Honda Grom</p>
+                <p style="margin: 2.4px 0 0; font-size: 12px; font-weight: 600; color: #64748b; font-family: 'IBM Plex Mono', ui-monospace, monospace;">WO-1207</p>
+                <p style="margin: 5.6px 0 0; font-size: 12px; color: #64748b;">In queue · 0h 38m</p>
+              </div>
+            </a>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 852, &quot;height&quot;: 1400}}"></script>
+</body>
+</html>

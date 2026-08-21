@@ -114,6 +114,9 @@ export async function createAdminFlag(input: {
         .eq("job_id", input.jobId);
       if (jobError) throw jobError;
 
+      const { endOpenJobTime } = await import("@/lib/services/jobTimeClock");
+      await endOpenJobTime({ jobId: input.jobId }).catch(() => null);
+
       await addTimelineEvent(supabase, {
         work_order_id: input.workOrderId,
         user_id: user.user_id,

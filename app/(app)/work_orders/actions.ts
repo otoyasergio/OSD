@@ -124,6 +124,7 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
   return createWorkOrder({
     motorcycle_id: String(formData.get("motorcycle_id") ?? ""),
     location_id: user.active_location_id!,
+    work_order_number: String(formData.get("work_order_number") ?? "").trim(),
     // Square assigns invoice_number when staff sync/publish from Billing
     external_invoice_number: null,
     mileage: readRequiredMileage(formData),

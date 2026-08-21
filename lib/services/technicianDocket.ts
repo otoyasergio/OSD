@@ -1,6 +1,13 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { JobStatus, UserRole, WorkOrderStatus } from "@/lib/database/types";
+import type {
+  FloorParkReason,
+  FloorWaitOwner,
+  JobStatus,
+  PitBoardStatus,
+  UserRole,
+  WorkOrderStatus,
+} from "@/lib/database/types";
 import {
   canAssignTechnician,
   canPerformSafetyCheck,
@@ -20,6 +27,21 @@ import {
   getOptionalColumnSupport,
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
+import {
+  parkReasonLabel,
+  stampForBoard,
+  waitOwnerLabel,
+  type PitBoardStamp,
+} from "@/lib/technician/pitBoard";
+import {
+  deriveFloorWorkState,
+  isTerminalJobStatus,
+  isTerminalWorkOrderStatus,
+  type FloorWaitOwnerKind,
+} from "@/lib/technician/floorActionModel";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
+import { techJobPacketHref } from "@/lib/technician/assignmentHref";
+import type { DbClient } from "@/lib/database/types";
 
 export type DocketItemKind = "now" | "assigned" | "qc" | "safety" | "flag";
 
@@ -31,6 +53,8 @@ export type DocketItem = {
   motorcycle_label: string;
   /** Supporting line — service / Peer QC / Safety / flag reason. */
   service_label: string;
+  /** One line per job on this bike (the card lists them beneath the bike). */
+  service_names: string[];
   title: string;
   subtitle: string;
   status_label: string;
@@ -38,6 +62,21 @@ export type DocketItem = {
   work_order_id: string;
   href: string;
   overview_href: string;
+  /** Signed intake front/primary photo for the line-up thumb. */
+  primary_photo_url: string | null;
+  board_status: PitBoardStatus;
+  board_stamp: PitBoardStamp;
+  floor_park_reason: FloorParkReason | null;
+  floor_wait_owner: FloorWaitOwner | null;
+  wait_owner_label: string;
+  park_reason_label: string;
+  /** Plain-language state for the card (never internal jargon). */
+  state_label: string;
+  /** Why this bike waits, when it does. */
+  wait_reason: string | null;
+  wait_owner_kind: FloorWaitOwnerKind | null;
+  /** Estimate decision pending with the customer — badge only, never a freeze. */
+  awaiting_customer: boolean;
 };
 
 export type TechnicianDocket = {
@@ -58,8 +97,15 @@ export type DocketAssignedJobInput = {
   motorcycle_label: string;
   status: string;
   status_label: string;
+  /** Work-order status — hold/terminal/parts states change the card. */
+  work_order_status?: WorkOrderStatus | null;
   /** Advisor-set order within this tech's docket; unpositioned jobs sort last. */
   docket_position?: number | null;
+  floor_acknowledged_at?: string | null;
+  floor_parked_at?: string | null;
+  floor_park_reason?: FloorParkReason | null;
+  floor_wait_owner?: FloorWaitOwner | null;
+  job_timer_running?: boolean;
 };
 
 export type DocketQcInput = {
@@ -78,6 +124,8 @@ export type DocketFlagInput = {
   admin_flag_id: string;
   work_order_id: string;
   work_order_number: string;
+  /** Flags on completed/cancelled work orders never reach the floor. */
+  work_order_status?: WorkOrderStatus | null;
   job_id: string | null;
   motorcycle_label: string;
   reason: string;
@@ -107,6 +155,27 @@ function motorcycleLabel(
   return `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`;
 }
 
+/** Pure filter — assigned job rows on completed/cancelled work orders (or
+ * cancelled/declined jobs) never reach the docket. */
+export function filterActiveAssignedJobs(
+  jobs: readonly DocketAssignedJobInput[]
+): DocketAssignedJobInput[] {
+  return jobs.filter(
+    (job) =>
+      !isTerminalWorkOrderStatus(job.work_order_status ?? null) &&
+      !isTerminalJobStatus(job.status)
+  );
+}
+
+/** Pure filter — flags whose work order is completed/cancelled are stale. */
+export function filterActiveDocketFlags(
+  flags: readonly DocketFlagInput[]
+): DocketFlagInput[] {
+  return flags.filter(
+    (flag) => !isTerminalWorkOrderStatus(flag.work_order_status ?? null)
+  );
+}
+
 /** Pure builder — numbered What’s next list for one tech’s load. */
 export function buildTechnicianDocketItems(input: {
   assignedJobs: DocketAssignedJobInput[];
@@ -116,9 +185,10 @@ export function buildTechnicianDocketItems(input: {
   includeSafeties: boolean;
 }): DocketItem[] {
   const items: Omit<DocketItem, "position">[] = [];
+  const activeFlags = filterActiveDocketFlags(input.flags);
 
   const orderedJobs = sortByDocketPosition(
-    input.assignedJobs.map((job) => ({
+    filterActiveAssignedJobs(input.assignedJobs).map((job) => ({
       ...job,
       docket_position: job.docket_position ?? null,
     }))
@@ -129,25 +199,74 @@ export function buildTechnicianDocketItems(input: {
     const job = group.representative;
     const serviceNames = [...new Set(group.jobs.map((row) => row.service_name))];
     const serviceLabel = serviceNames.join(" · ");
-    const hasOpenFlag = input.flags.some(
+    const hasOpenFlag = activeFlags.some(
       (flag) => flag.work_order_id === job.work_order_id
     );
     const baseStatusLabel =
       group.jobs.length === 1
         ? job.status_label
         : `${group.jobs.length} services · ${job.status_label}`;
+    // Only the surface job awaiting approval freezes this bike. Sibling jobs
+    // (or pending recommendations that later become jobs) must not park an
+    // in-progress / approved original job.
+    const awaitingClient = job.status === "waiting_for_approval";
+    const workOrderStatus = (job.work_order_status ?? "in_progress") as WorkOrderStatus;
+    const state = deriveFloorWorkState({
+      job_status: job.status as JobStatus,
+      work_order_status: workOrderStatus,
+      floor_acknowledged_at: job.floor_acknowledged_at ?? null,
+      floor_parked_at: job.floor_parked_at ?? null,
+      floor_park_reason: job.floor_park_reason ?? null,
+      job_timer_running: Boolean(job.job_timer_running),
+    });
+    // DocketItem keeps the legacy PitBoardStatus vocabulary; the richer
+    // held/terminal states collapse to "waiting" (terminal is filtered above).
+    const boardStatus: PitBoardStatus =
+      state.board === "held" || state.board === "terminal" ? "waiting" : state.board;
+    const boardStamp: PitBoardStamp =
+      boardStatus === "waiting"
+        ? "HOLD"
+        : stampForBoard({
+            status: boardStatus,
+            floor_parked_at: job.floor_parked_at ?? null,
+            job_timer_running: Boolean(job.job_timer_running),
+          });
+    const effectiveParkReason = awaitingClient
+      ? ("approval" as const)
+      : (job.floor_park_reason ?? null);
+    const effectiveWaitOwner = awaitingClient
+      ? ("front_desk" as const)
+      : (job.floor_wait_owner ?? null);
     items.push({
-      kind: group.is_active ? "now" : "assigned",
+      kind: group.is_active && boardStatus === "bench" ? "now" : "assigned",
       key: `work-order-${job.work_order_id}`,
       motorcycle_label: job.motorcycle_label,
       service_label: serviceLabel,
+      service_names: serviceNames,
       title: `${job.motorcycle_label} · ${serviceLabel}`,
       subtitle: job.work_order_number,
       status_label: hasOpenFlag ? `${baseStatusLabel} · Flagged` : baseStatusLabel,
       job_id: job.job_id,
       work_order_id: job.work_order_id,
       href: floorHref({ jobId: job.job_id, workOrderId: job.work_order_id }),
-      overview_href: `/work_orders/${job.work_order_id}`,
+      overview_href: techJobPacketHref(job.work_order_id, {
+        jobId: job.job_id,
+        section: "notes",
+      }),
+      board_status: boardStatus,
+      board_stamp: boardStamp,
+      floor_park_reason: effectiveParkReason,
+      floor_wait_owner: effectiveWaitOwner,
+      wait_owner_label: waitOwnerLabel(effectiveWaitOwner),
+      park_reason_label:
+        state.board === "held"
+          ? (state.waitReason ?? parkReasonLabel(effectiveParkReason))
+          : parkReasonLabel(effectiveParkReason),
+      state_label: state.stateLabel,
+      wait_reason: state.waitReason,
+      wait_owner_kind: state.waitOwner,
+      awaiting_customer: workOrderStatus === "waiting_for_customer_approval",
+      primary_photo_url: null,
     });
   }
 
@@ -157,13 +276,25 @@ export function buildTechnicianDocketItems(input: {
       key: `qc-${qc.work_order_id}`,
       motorcycle_label: qc.motorcycle_label,
       service_label: "Peer QC",
+      service_names: ["Peer QC"],
       title: `${qc.motorcycle_label} · Peer QC`,
       subtitle: qc.work_order_number,
       status_label: WORK_ORDER_STATUS_LABELS.quality_check,
       job_id: null,
       work_order_id: qc.work_order_id,
       href: floorHref({ workOrderId: qc.work_order_id, stage: "qc" }),
-      overview_href: `/work_orders/${qc.work_order_id}`,
+      overview_href: techJobPacketHref(qc.work_order_id, { section: "notes" }),
+      board_status: "check",
+      board_stamp: "CHECK",
+      floor_park_reason: null,
+      floor_wait_owner: null,
+      wait_owner_label: "",
+      park_reason_label: "",
+      state_label: "Ready for QC",
+      wait_reason: null,
+      wait_owner_kind: null,
+      awaiting_customer: false,
+      primary_photo_url: null,
     });
   }
 
@@ -174,20 +305,34 @@ export function buildTechnicianDocketItems(input: {
         key: `safety-${safety.work_order_id}`,
         motorcycle_label: safety.motorcycle_label,
         service_label: "Safety",
+        service_names: ["Safety"],
         title: `${safety.motorcycle_label} · Safety`,
         subtitle: safety.work_order_number,
         status_label: WORK_ORDER_STATUS_LABELS.safety_check,
         job_id: null,
         work_order_id: safety.work_order_id,
         href: floorHref({ workOrderId: safety.work_order_id, stage: "safety" }),
-        overview_href: `/work_orders/${safety.work_order_id}`,
+        overview_href: techJobPacketHref(safety.work_order_id, {
+          section: "notes",
+        }),
+        board_status: "safety",
+        board_stamp: "CHECK",
+        floor_park_reason: null,
+        floor_wait_owner: null,
+        wait_owner_label: "",
+        park_reason_label: "",
+        state_label: "Final safety check",
+        wait_reason: null,
+        wait_owner_kind: null,
+        awaiting_customer: false,
+        primary_photo_url: null,
       });
     }
   }
 
   const representedWorkOrders = new Set(items.map((item) => item.work_order_id));
 
-  for (const flag of input.flags) {
+  for (const flag of activeFlags) {
     // The selected motorcycle surface shows its open flags; avoid duplicating the
     // same motorcycle as both an assigned card and a separate flag card.
     if (representedWorkOrders.has(flag.work_order_id)) continue;
@@ -196,8 +341,9 @@ export function buildTechnicianDocketItems(input: {
       key: `flag-${flag.admin_flag_id}`,
       motorcycle_label: flag.motorcycle_label,
       service_label: flag.reason,
+      service_names: [flag.reason],
       title: `${flag.motorcycle_label} · ${flag.reason}`,
-      subtitle: flag.note?.trim() || flag.work_order_number,
+      subtitle: flag.work_order_number,
       status_label: "Admin flag",
       job_id: flag.job_id,
       work_order_id: flag.work_order_id,
@@ -205,12 +351,37 @@ export function buildTechnicianDocketItems(input: {
         jobId: flag.job_id,
         workOrderId: flag.work_order_id,
       }),
-      overview_href: `/work_orders/${flag.work_order_id}`,
+      overview_href: techJobPacketHref(flag.work_order_id, { section: "notes" }),
+      board_status: "waiting",
+      board_stamp: "HOLD",
+      floor_park_reason: null,
+      floor_wait_owner: "front_desk",
+      wait_owner_label: waitOwnerLabel("front_desk"),
+      park_reason_label: flag.reason,
+      state_label: "Flagged for admin",
+      wait_reason: flag.note ?? flag.reason,
+      wait_owner_kind: "front_desk",
+      awaiting_customer: false,
+      primary_photo_url: null,
     });
     representedWorkOrders.add(flag.work_order_id);
   }
 
   return items.map((item, index) => ({ ...item, position: index + 1 }));
+}
+
+async function attachDocketPrimaryPhotos(
+  supabase: DbClient,
+  items: DocketItem[]
+): Promise<DocketItem[]> {
+  const woIds = [...new Set(items.map((item) => item.work_order_id))];
+  if (woIds.length === 0) return items;
+
+  const { urls } = await resolveBoardPrimaryPhotos(supabase, woIds);
+  return items.map((item) => ({
+    ...item,
+    primary_photo_url: urls.get(item.work_order_id) ?? null,
+  }));
 }
 
 export async function getTechnicianDocket(
@@ -243,14 +414,23 @@ export async function getTechnicianDocket(
   if (membershipError) throw membershipError;
   if (!membership) throw new Error("TECHNICIAN_NOT_FOUND");
 
+  const floorCols = `
+        floor_acknowledged_at, floor_parked_at, floor_park_reason, floor_wait_owner`;
   const jobDocketSelectWithPosition = `
-        job_id, service_name_snapshot, status, created_at, docket_position,
+        job_id, service_name_snapshot, status, created_at, docket_position,${floorCols},
         work_order:work_order_id (
           work_order_id, work_order_number, status, location_id,
           motorcycle:motorcycle_id ( year, make, model )
         )
       `;
   const jobDocketSelectWithoutPosition = `
+        job_id, service_name_snapshot, status, created_at,${floorCols},
+        work_order:work_order_id (
+          work_order_id, work_order_number, status, location_id,
+          motorcycle:motorcycle_id ( year, make, model )
+        )
+      `;
+  const jobDocketSelectLegacy = `
         job_id, service_name_snapshot, status, created_at,
         work_order:work_order_id (
           work_order_id, work_order_number, status, location_id,
@@ -264,6 +444,10 @@ export async function getTechnicianDocket(
     status: string;
     created_at: string;
     docket_position?: number | null;
+    floor_acknowledged_at?: string | null;
+    floor_parked_at?: string | null;
+    floor_park_reason?: FloorParkReason | null;
+    floor_wait_owner?: FloorWaitOwner | null;
     work_order: unknown;
   };
 
@@ -329,13 +513,50 @@ export async function getTechnicianDocket(
       .eq("assigned_technician_id", technicianUserId)
       .not("status", "in", '("completed","cancelled","declined")')
       .order("created_at", { ascending: true });
-    if (withoutPosition.error) throw withoutPosition.error;
-    myJobsRaw = withoutPosition.data;
+    if (
+      withoutPosition.error &&
+      isUndefinedColumnError(withoutPosition.error, "floor_acknowledged")
+    ) {
+      setOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck, false);
+      const legacy = await supabase
+        .from("job")
+        .select(jobDocketSelectLegacy)
+        .eq("assigned_technician_id", technicianUserId)
+        .not("status", "in", '("completed","cancelled","declined")')
+        .order("created_at", { ascending: true });
+      if (legacy.error) throw legacy.error;
+      myJobsRaw = legacy.data;
+    } else if (withoutPosition.error) {
+      throw withoutPosition.error;
+    } else {
+      myJobsRaw = withoutPosition.data;
+    }
+  } else if (first.error && isUndefinedColumnError(first.error, "floor_acknowledged")) {
+    setOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck, false);
+    const legacy = await supabase
+      .from("job")
+      .select(
+        docketSupport === false
+          ? jobDocketSelectLegacy
+          : `
+        job_id, service_name_snapshot, status, created_at, docket_position,
+        work_order:work_order_id (
+          work_order_id, work_order_number, status, location_id,
+          motorcycle:motorcycle_id ( year, make, model )
+        )
+      `
+      )
+      .eq("assigned_technician_id", technicianUserId)
+      .not("status", "in", '("completed","cancelled","declined")')
+      .order("created_at", { ascending: true });
+    if (legacy.error) throw legacy.error;
+    myJobsRaw = legacy.data;
   } else {
     if (first.error) throw first.error;
     if (docketSupport !== false) {
       setOptionalColumnSupport(OPTIONAL_COLUMNS.jobDocketPosition, true);
     }
+    setOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck, true);
     myJobsRaw = first.data;
   }
 
@@ -375,6 +596,8 @@ export async function getTechnicianDocket(
   for (const row of myJobs) {
     const wo = unwrapWo(row.work_order);
     if (!wo || wo.location_id !== locationId) continue;
+    // Job rows can linger after the WO is closed — keep those off the floor line.
+    if (wo.status === "completed" || wo.status === "cancelled") continue;
     assignedJobs.push({
       job_id: row.job_id,
       work_order_id: wo.work_order_id,
@@ -383,7 +606,12 @@ export async function getTechnicianDocket(
       motorcycle_label: motorcycleLabel(unwrapMoto(wo)),
       status: row.status as JobStatus,
       status_label: JOB_STATUS_LABELS[row.status as JobStatus] ?? row.status,
+      work_order_status: wo.status,
       docket_position: row.docket_position ?? null,
+      floor_acknowledged_at: row.floor_acknowledged_at ?? null,
+      floor_parked_at: row.floor_parked_at ?? null,
+      floor_park_reason: row.floor_park_reason ?? null,
+      floor_wait_owner: row.floor_wait_owner ?? null,
     });
   }
 
@@ -423,7 +651,7 @@ export async function getTechnicianDocket(
       .from("work_order")
       .select(
         `
-        work_order_id, work_order_number, location_id,
+        work_order_id, work_order_number, status, location_id,
         motorcycle:motorcycle_id ( year, make, model )
       `
       )
@@ -438,6 +666,7 @@ export async function getTechnicianDocket(
         admin_flag_id: flag.admin_flag_id,
         work_order_id: flag.work_order_id,
         work_order_number: wo.work_order_number,
+        work_order_status: wo.status as WorkOrderStatus,
         job_id: flag.job_id,
         motorcycle_label: motorcycleLabel(moto ?? null),
         reason: flag.reason,
@@ -446,13 +675,14 @@ export async function getTechnicianDocket(
     }
   }
 
-  const items = buildTechnicianDocketItems({
+  const bareItems = buildTechnicianDocketItems({
     assignedJobs,
     qcItems,
     safetyItems,
     flags,
     includeSafeties: canPerformSafetyCheck(tech.role as UserRole),
   });
+  const items = await attachDocketPrimaryPhotos(supabase, bareItems);
 
   return {
     technician: {
