@@ -188,7 +188,9 @@ export async function searchAll(
   const includeClients = options.includeClients !== false;
 
   const [customers, motorcycles, workOrders] = await Promise.all([
-    includeClients ? searchCustomers(trimmed) : Promise.resolve([]),
+    includeClients
+      ? searchCustomers(trimmed, { preferShopCustomers: true })
+      : Promise.resolve([]),
     includeClients ? searchMotorcycles(trimmed) : Promise.resolve([]),
     searchWorkOrders(trimmed, options.locationId, limit),
   ]);

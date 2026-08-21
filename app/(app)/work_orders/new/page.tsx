@@ -24,7 +24,7 @@ export default async function NewWorkOrderPage({
 
   const [customers, motorcycles, services, technicians, closureDates] = await Promise.all(
     [
-      searchCustomers(""),
+      searchCustomers("", { preferShopCustomers: true }),
       searchMotorcycles(""),
       listServices({ includeInactive: false }),
       listTechniciansForActiveLocation(),
