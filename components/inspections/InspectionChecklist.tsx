@@ -3,9 +3,11 @@
 import { useActionState, useMemo, useState } from "react";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
 import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
+import { InspectionRecommendationModal } from "@/components/inspections/InspectionRecommendationModal";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { completeInspectionAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
+import { saveInspectionRecommendationAction } from "@/app/(app)/work_orders/recommendation-actions";
 import {
   countIncompleteInspectionResults,
   isInspectionReadOnly,
@@ -84,6 +86,8 @@ export function InspectionChecklist({
   );
   const [forceConfirm, setForceConfirm] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [recommendationResult, setRecommendationResult] =
+    useState<InspectionResultRow | null>(null);
   const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
   const [localStatuses, setLocalStatuses] = useState<
     Record<string, InspectionResultStatus | null>
@@ -187,6 +191,13 @@ export function InspectionChecklist({
       ));
 
   const header = inspection.header;
+  const recommendationAction = recommendationResult
+    ? saveInspectionRecommendationAction.bind(
+        null,
+        inspection.work_order_id,
+        recommendationResult.inspection_result_id
+      )
+    : null;
 
   return (
     <div className="inspection-report">
@@ -468,7 +479,7 @@ export function InspectionChecklist({
                       onRecommend={
                         canRecommend
                           ? (r) => {
-                              window.location.href = `/work_orders/${inspection.work_order_id}?tab=recommendations&from_result=${r.inspection_result_id}`;
+                              setRecommendationResult(r);
                             }
                           : undefined
                       }
@@ -545,6 +556,14 @@ export function InspectionChecklist({
           photos={lightboxPhotos}
           initialIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
+        />
+      ) : null}
+      {recommendationResult && recommendationAction ? (
+        <InspectionRecommendationModal
+          result={recommendationResult}
+          action={recommendationAction}
+          onSaved={() => undefined}
+          onClose={() => setRecommendationResult(null)}
         />
       ) : null}
     </div>

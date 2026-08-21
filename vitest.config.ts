@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     environment: "node",
     passWithNoTests: true,
-    include: ["tests/unit/**/*.test.ts"],
+    include: ["tests/unit/**/*.test.ts", "tests/unit/**/*.test.tsx"],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
