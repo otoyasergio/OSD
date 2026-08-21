@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canManageLocations } from "@/lib/permissions";
 import { listLocations, listUsersForLocationAssignment } from "@/lib/services/locations";
 import { LocationCreateForm, LocationEditForm } from "@/components/forms/LocationForms";
@@ -13,9 +13,9 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function LocationsAdminPage() {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canManageLocations(user.role)) redirect("/settings");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canManageLocations(preview.role)) redirect("/settings");
 
   const [locations, users] = await Promise.all([
     listLocations(),

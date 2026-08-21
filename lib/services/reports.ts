@@ -13,6 +13,8 @@ export type ShopReportSummary = {
   revenue_collected_cents: number;
   avg_days_in_shop: number | null;
   tech_hours: number;
+  job_hours: number;
+  efficiency_pct: number | null;
   parts_waiting: number;
   by_status: Array<{ status: WorkOrderStatus; count: number }>;
 };
@@ -35,7 +37,7 @@ export async function getShopReportSummary(
   const since = periodStart(period).toISOString();
   const supabase = await createClient();
 
-  const [createdRes, completedRes, openRes, clockRes] = await Promise.all([
+  const [createdRes, completedRes, openRes, clockRes, jobTimeRes] = await Promise.all([
     supabase
       .from("work_order")
       .select("work_order_id, status, created_at, completed_at, billing_collected_cents")
@@ -54,15 +56,22 @@ export async function getShopReportSummary(
       .not("status", "in", '("completed","cancelled")'),
     supabase
       .from("time_clock_entry")
-      .select("clock_in_at, clock_out_at")
+      .select("clock_in_at, clock_out_at, voided_at")
       .eq("location_id", locationId)
+      .is("voided_at", null)
       .gte("clock_in_at", since),
+    supabase
+      .from("job_time_entry")
+      .select("started_at, ended_at")
+      .eq("location_id", locationId)
+      .gte("started_at", since),
   ]);
 
   if (createdRes.error) throw createdRes.error;
   if (completedRes.error) throw completedRes.error;
   if (openRes.error) throw openRes.error;
   if (clockRes.error) throw clockRes.error;
+  if (jobTimeRes.error) throw jobTimeRes.error;
 
   const { count: partsWaitingCount, error: partsError } = await supabase
     .from("part")
@@ -103,6 +112,18 @@ export async function getShopReportSummary(
   }
   techHours = Math.round(techHours * 10) / 10;
 
+  let jobHours = 0;
+  for (const entry of jobTimeRes.data ?? []) {
+    if (!entry.started_at) continue;
+    const end = entry.ended_at ? new Date(entry.ended_at).getTime() : Date.now();
+    const start = new Date(entry.started_at).getTime();
+    if (end > start) jobHours += (end - start) / (1000 * 60 * 60);
+  }
+  jobHours = Math.round(jobHours * 10) / 10;
+
+  const efficiency_pct =
+    techHours > 0 ? Math.round((jobHours / techHours) * 1000) / 10 : null;
+
   const statusCounts = new Map<string, number>();
   for (const row of openRes.data ?? []) {
     const status = String(row.status);
@@ -117,6 +138,8 @@ export async function getShopReportSummary(
     revenue_collected_cents: revenue,
     avg_days_in_shop: avgDays,
     tech_hours: techHours,
+    job_hours: jobHours,
+    efficiency_pct,
     parts_waiting: partsWaiting,
     by_status: Array.from(statusCounts.entries())
       .map(([status, count]) => ({

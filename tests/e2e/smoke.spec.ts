@@ -14,6 +14,22 @@ test.describe("smoke", () => {
     expect(accessibility.violations).toEqual([]);
   });
 
+  test("login form surfaces an error and stays on /login for bad credentials", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+    await page.getByLabel(/email/i).fill("nobody@example.invalid");
+    await page.getByLabel(/password/i).fill("definitely-wrong-password-123!");
+    await page.getByRole("button", { name: /^sign in$/i }).click();
+
+    // Prefer the form error — Next.js also mounts a route announcer with role=alert.
+    // Against CI's placeholder Supabase host this may be a network/config message
+    // instead of "Invalid login credentials"; either way the form must not hang.
+    await expect(page.locator("p.alert-error")).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByRole("button", { name: /^sign in$/i })).toBeEnabled();
+  });
+
   test("unauthenticated dashboard redirects to login", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/login/);
