@@ -119,6 +119,12 @@ export type RecommendationSyncPlan =
 
 export type InspectionRecommendationSavePlan = "create" | "update" | "blocked";
 
+export type InspectionRecommendationDraft = {
+  description: string;
+  severity: RecommendationSeverity;
+  notes: string;
+};
+
 /**
  * Decide how a live inspection finding change maps onto its linked
  * recommendation. Only untouched pending recommendations are mutated;
@@ -1107,6 +1113,66 @@ export async function saveRecommendationFromInspectionResult(
   });
 
   return updated as Recommendation;
+}
+
+export async function getInspectionRecommendationDraft(
+  inspectionResultId: string,
+  fallback: {
+    status?: InspectionResultStatus | null;
+    notes?: string | null;
+  } = {}
+): Promise<InspectionRecommendationDraft> {
+  const user = await requireUser();
+  if (!canCreateRecommendation(user.role)) throw new Error("FORBIDDEN");
+
+  const supabase = await createClient();
+  const { data: result, error } = await supabase
+    .from("inspection_result")
+    .select(
+      `
+      inspection_result_id,
+      item_name_snapshot,
+      category_snapshot,
+      status,
+      notes,
+      inspection:inspection_id ( work_order_id )
+    `
+    )
+    .eq("inspection_result_id", inspectionResultId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!result) throw new Error("INSPECTION_RESULT_NOT_FOUND");
+
+  const inspection = result.inspection as unknown as {
+    work_order_id: string;
+  } | null;
+  if (!inspection) throw new Error("INSPECTION_NOT_FOUND");
+
+  const access = await requireMutableWorkOrder(user, inspection.work_order_id);
+  const existing = await loadLinkedRecommendation(
+    access.supabase,
+    inspection.work_order_id,
+    inspectionResultId
+  );
+
+  if (planInspectionRecommendationSave(existing) === "update") {
+    return {
+      description: existing!.description,
+      severity: existing!.severity,
+      notes: existing!.notes ?? "",
+    };
+  }
+
+  return {
+    description: `${result.item_name_snapshot} (${result.category_snapshot})`,
+    severity: severityFromInspectionStatus(
+      fallback.status !== undefined
+        ? fallback.status
+        : (result.status as InspectionResultStatus | null)
+    ),
+    notes: fallback.notes ?? result.notes ?? "",
+  };
 }
 
 export async function updateRecommendationStatus(

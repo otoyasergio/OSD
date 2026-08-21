@@ -5,13 +5,19 @@ import {
   approveRecommendationAndSendToFloor,
   convertRecommendationToJob,
   createRecommendation,
+  getInspectionRecommendationDraft,
+  type InspectionRecommendationDraft,
   listOutstandingRecommendationsForMotorcycle,
   type OutstandingRecommendation,
   saveRecommendationFromInspectionResult,
   updateRecommendationStatus,
 } from "@/lib/services/recommendations";
 import { toFormErrorMessage } from "@/lib/services/errors";
-import type { RecommendationSeverity, RecommendationStatus } from "@/lib/database/types";
+import type {
+  InspectionResultStatus,
+  RecommendationSeverity,
+  RecommendationStatus,
+} from "@/lib/database/types";
 
 export type RecommendationFormState = {
   error: string | null;
@@ -23,6 +29,17 @@ export async function getOutstandingRecommendationsAction(
 ): Promise<OutstandingRecommendation[]> {
   if (!motorcycleId) return [];
   return listOutstandingRecommendationsForMotorcycle(motorcycleId);
+}
+
+export async function getInspectionRecommendationDraftAction(
+  inspectionResultId: string,
+  fallbackStatus: InspectionResultStatus | null,
+  fallbackNotes: string | null
+): Promise<InspectionRecommendationDraft> {
+  return getInspectionRecommendationDraft(inspectionResultId, {
+    status: fallbackStatus,
+    notes: fallbackNotes,
+  });
 }
 
 function revalidateRecommendations(workOrderId: string) {

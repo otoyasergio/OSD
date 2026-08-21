@@ -14,6 +14,12 @@ import {
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
+export type InspectionRecommendationSelection = {
+  result: InspectionResultRow;
+  status: InspectionResultStatus | null;
+  notes: string | null;
+};
+
 const STATUS_OPTIONS: Array<{
   value: InspectionResultStatus;
   short: string;
@@ -86,7 +92,7 @@ export function InspectionItemRow({
   photoUrl?: string | null;
   photoRequired?: boolean;
   onExpandPhoto?: () => void;
-  onRecommend?: (result: InspectionResultRow) => void;
+  onRecommend?: (selection: InspectionRecommendationSelection) => void;
   onBusyChange?: (resultId: string, busy: boolean) => void;
   onLocalStatusChange?: (resultId: string, status: InspectionResultStatus | null) => void;
   compact?: boolean;
@@ -415,7 +421,13 @@ export function InspectionItemRow({
           {!readOnly && onRecommend ? (
             <button
               type="button"
-              onClick={() => onRecommend(result)}
+              onClick={() =>
+                onRecommend({
+                  result,
+                  status,
+                  notes: notes.trim() || null,
+                })
+              }
               className="btn btn-secondary min-h-12"
             >
               Create recommendation

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import type { RecommendationFormState } from "@/app/(app)/work_orders/recommendation-actions";
@@ -11,13 +11,21 @@ import {
   TextField,
 } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import type { RecommendationSeverity } from "@/lib/database/types";
 import type { InspectionResultRow } from "@/lib/services/inspections";
+import { toFormErrorMessage } from "@/lib/services/errors";
 import { RECOMMENDATION_SEVERITY_LABELS } from "@/lib/status/labels";
 
 type Action = (
   state: RecommendationFormState,
   formData: FormData
 ) => Promise<RecommendationFormState>;
+
+type DraftLoader = () => Promise<{
+  description: string;
+  severity: RecommendationSeverity;
+  notes: string;
+}>;
 
 const SEVERITIES = [
   "future_attention",
@@ -36,11 +44,13 @@ const FOCUSABLE_SELECTOR = [
 
 export function InspectionRecommendationModal({
   result,
+  loadDraft,
   action,
   onClose,
   onSaved,
 }: {
   result: InspectionResultRow;
+  loadDraft: DraftLoader;
   action: Action;
   onClose: () => void;
   onSaved: () => void;
@@ -49,8 +59,29 @@ export function InspectionRecommendationModal({
     error: null,
     saved: false,
   });
+  const [draft, setDraft] = useState<Awaited<ReturnType<DraftLoader>> | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const restoreFocusToRef = useRef<Element | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    void loadDraft()
+      .then((nextDraft) => {
+        if (!active) return;
+        setLoadError(null);
+        setDraft(nextDraft);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setLoadError(toFormErrorMessage(error));
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [loadDraft]);
 
   useEffect(() => {
     if (!state.saved) return;
@@ -110,9 +141,6 @@ export function InspectionRecommendationModal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose, pending]);
 
-  const defaultSeverity =
-    result.status === "immediate_attention" ? "immediate_attention" : "future_attention";
-
   return createPortal(
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/55 p-4"
@@ -148,49 +176,65 @@ export function InspectionRecommendationModal({
           </button>
         </div>
 
-        <form action={formAction} className="flex flex-col gap-4">
-          <FormError message={state.error} />
-          <TextField
-            label="Description"
-            name="description"
-            required
-            defaultValue={`${result.item_name_snapshot} (${result.category_snapshot})`}
-          />
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-foreground">
-              Severity <span className="text-red-600">*</span>
-            </span>
-            <select
-              name="severity"
-              required
-              defaultValue={defaultSeverity}
-              className={SELECT_CLASS}
-            >
-              {SEVERITIES.map((severity) => (
-                <option key={severity} value={severity}>
-                  {RECOMMENDATION_SEVERITY_LABELS[severity]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <TextAreaField
-            label="Notes"
-            name="notes"
-            rows={3}
-            defaultValue={result.notes ?? ""}
-          />
-          <div className="flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={pending}
-              className="btn btn-secondary"
-            >
-              Cancel
-            </button>
-            <SubmitButton label="Save recommendation" pendingLabel="Saving..." />
+        {!draft && !loadError ? (
+          <div className="py-6">
+            <p role="status" className="text-sm text-[var(--status-neutral)]">
+              Loading recommendation...
+            </p>
           </div>
-        </form>
+        ) : null}
+
+        {loadError ? <FormError message={loadError} /> : null}
+
+        {draft ? (
+          <form
+            key={`${result.inspection_result_id}:${draft.description}:${draft.severity}:${draft.notes}`}
+            action={formAction}
+            className="flex flex-col gap-4"
+          >
+            <FormError message={state.error} />
+            <TextField
+              label="Description"
+              name="description"
+              required
+              defaultValue={draft.description}
+            />
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-foreground">
+                Severity <span className="text-red-600">*</span>
+              </span>
+              <select
+                name="severity"
+                required
+                defaultValue={draft.severity}
+                className={SELECT_CLASS}
+              >
+                {SEVERITIES.map((severity) => (
+                  <option key={severity} value={severity}>
+                    {RECOMMENDATION_SEVERITY_LABELS[severity]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <TextAreaField
+              label="Notes"
+              name="notes"
+              rows={3}
+              defaultValue={draft.notes}
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={pending}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <SubmitButton label="Save recommendation" pendingLabel="Saving..." />
+            </div>
+          </form>
+        ) : null}
       </div>
     </div>,
     document.body

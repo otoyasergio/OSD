@@ -2,12 +2,18 @@
 
 import { useActionState, useMemo, useState } from "react";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
-import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
+import {
+  InspectionItemRow,
+  type InspectionRecommendationSelection,
+} from "@/components/inspections/InspectionItemRow";
 import { InspectionRecommendationModal } from "@/components/inspections/InspectionRecommendationModal";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { completeInspectionAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
-import { saveInspectionRecommendationAction } from "@/app/(app)/work_orders/recommendation-actions";
+import {
+  getInspectionRecommendationDraftAction,
+  saveInspectionRecommendationAction,
+} from "@/app/(app)/work_orders/recommendation-actions";
 import {
   countIncompleteInspectionResults,
   isInspectionReadOnly,
@@ -86,8 +92,8 @@ export function InspectionChecklist({
   );
   const [forceConfirm, setForceConfirm] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [recommendationResult, setRecommendationResult] =
-    useState<InspectionResultRow | null>(null);
+  const [recommendationSelection, setRecommendationSelection] =
+    useState<InspectionRecommendationSelection | null>(null);
   const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
   const [localStatuses, setLocalStatuses] = useState<
     Record<string, InspectionResultStatus | null>
@@ -191,11 +197,19 @@ export function InspectionChecklist({
       ));
 
   const header = inspection.header;
-  const recommendationAction = recommendationResult
+  const recommendationAction = recommendationSelection
     ? saveInspectionRecommendationAction.bind(
         null,
         inspection.work_order_id,
-        recommendationResult.inspection_result_id
+        recommendationSelection.result.inspection_result_id
+      )
+    : null;
+  const recommendationDraftLoader = recommendationSelection
+    ? getInspectionRecommendationDraftAction.bind(
+        null,
+        recommendationSelection.result.inspection_result_id,
+        recommendationSelection.status,
+        recommendationSelection.notes
       )
     : null;
 
@@ -479,7 +493,7 @@ export function InspectionChecklist({
                       onRecommend={
                         canRecommend
                           ? (r) => {
-                              setRecommendationResult(r);
+                              setRecommendationSelection(r);
                             }
                           : undefined
                       }
@@ -558,12 +572,13 @@ export function InspectionChecklist({
           onClose={() => setLightboxIndex(null)}
         />
       ) : null}
-      {recommendationResult && recommendationAction ? (
+      {recommendationSelection && recommendationAction && recommendationDraftLoader ? (
         <InspectionRecommendationModal
-          result={recommendationResult}
+          result={recommendationSelection.result}
+          loadDraft={recommendationDraftLoader}
           action={recommendationAction}
           onSaved={() => undefined}
-          onClose={() => setRecommendationResult(null)}
+          onClose={() => setRecommendationSelection(null)}
         />
       ) : null}
     </div>
