@@ -20,6 +20,8 @@ import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderSta
 import { buildWorkOrderFlags } from "@/lib/status/flags";
 import { getAgreementFollowUp } from "@/lib/status/agreementFollowUp";
 import { assignUnassignedJobsOnWorkOrderToTechnician } from "@/lib/services/jobs";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
+import { withPrimaryPhotoUrls } from "@/lib/workOrders/listPhotos";
 import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
 
 export type WorkOrder = {
@@ -97,6 +99,7 @@ export type WorkOrderListItem = {
   } | null;
   flags: string[];
   agreement_follow_up: "signature" | "paper_copy" | null;
+  primary_photo_url: string | null;
 };
 
 export type CreateWorkOrderInput = {
@@ -339,7 +342,7 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
     };
   });
 
-  return scopeWorkOrdersForViewer(mapped, user.role, user.user_id).map(
+  const scoped = scopeWorkOrdersForViewer(mapped, user.role, user.user_id).map(
     ({
       primary_technician_id: _p,
       quality_check_assigned_to: _q,
@@ -347,6 +350,11 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
       ...item
     }) => item
   );
+  const { urls } = await resolveBoardPrimaryPhotos(
+    supabase,
+    scoped.map((item) => item.work_order_id)
+  );
+  return withPrimaryPhotoUrls(scoped, urls);
 }
 
 export type WorkOrderJob = {
