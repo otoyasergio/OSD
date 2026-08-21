@@ -82,6 +82,7 @@ export function InspectionItemRow({
   photoRequired,
   onExpandPhoto,
   onRecommend,
+  recommendationSaved,
   onBusyChange,
   onLocalStatusChange,
   compact,
@@ -93,6 +94,7 @@ export function InspectionItemRow({
   photoRequired?: boolean;
   onExpandPhoto?: () => void;
   onRecommend?: (selection: InspectionRecommendationSelection) => void;
+  recommendationSaved?: boolean;
   onBusyChange?: (resultId: string, busy: boolean) => void;
   onLocalStatusChange?: (resultId: string, status: InspectionResultStatus | null) => void;
   compact?: boolean;
@@ -419,19 +421,27 @@ export function InspectionItemRow({
             onExpand={onExpandPhoto}
           />
           {!readOnly && onRecommend ? (
-            <button
-              type="button"
-              onClick={() =>
-                onRecommend({
-                  result,
-                  status,
-                  notes: notes.trim() || null,
-                })
-              }
-              className="btn btn-secondary min-h-12"
-            >
-              Create recommendation
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={saveState === "saving"}
+                onClick={() =>
+                  onRecommend({
+                    result,
+                    status,
+                    notes: notes.trim() || null,
+                  })
+                }
+                className="btn btn-secondary min-h-12"
+              >
+                {recommendationSaved ? "Edit recommendation" : "Create recommendation"}
+              </button>
+              {recommendationSaved ? (
+                <span role="status" className="text-sm font-medium text-emerald-700">
+                  Recommendation saved
+                </span>
+              ) : null}
+            </>
           ) : null}
         </div>
       ) : null}

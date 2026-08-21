@@ -459,5 +459,11 @@ describe("InspectionRecommendationModal", () => {
     expect(currentDialog()).toBeNull();
     expect(window.location.href).toBe(hrefBefore);
     expect(noteField.value).toBe(draftNotes);
+    expect(document.body.textContent).toContain("Recommendation saved");
+    expect(
+      [...document.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Edit recommendation"
+      )
+    ).toBeInstanceOf(HTMLButtonElement);
   });
 });

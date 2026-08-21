@@ -94,6 +94,9 @@ export function InspectionChecklist({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [recommendationSelection, setRecommendationSelection] =
     useState<InspectionRecommendationSelection | null>(null);
+  const [savedRecommendationIds, setSavedRecommendationIds] = useState<
+    Record<string, boolean>
+  >({});
   const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
   const [localStatuses, setLocalStatuses] = useState<
     Record<string, InspectionResultStatus | null>
@@ -497,6 +500,9 @@ export function InspectionChecklist({
                             }
                           : undefined
                       }
+                      recommendationSaved={
+                        savedRecommendationIds[result.inspection_result_id] === true
+                      }
                     />
                   );
                 })}
@@ -574,10 +580,16 @@ export function InspectionChecklist({
       ) : null}
       {recommendationSelection && recommendationAction && recommendationDraftLoader ? (
         <InspectionRecommendationModal
+          key={recommendationSelection.result.inspection_result_id}
           result={recommendationSelection.result}
           loadDraft={recommendationDraftLoader}
           action={recommendationAction}
-          onSaved={() => undefined}
+          onSaved={() => {
+            setSavedRecommendationIds((current) => ({
+              ...current,
+              [recommendationSelection.result.inspection_result_id]: true,
+            }));
+          }}
           onClose={() => setRecommendationSelection(null)}
         />
       ) : null}
