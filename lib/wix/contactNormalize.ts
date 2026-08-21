@@ -121,3 +121,37 @@ export function isCustomerInSyncWithWix(
     sameOptionalText(existing.phone, nextPhone)
   );
 }
+
+/** Local customers that still need a Wix Contacts create/match. */
+export function customersNeedingWixPush<T extends CustomerMatchRow>(
+  rows: readonly T[]
+): T[] {
+  return rows.filter((row) => !row.wix_contact_id);
+}
+
+/** Strip junk phones and trailing spaces so Wix create/update does not reject the payload. */
+export function sanitizeWixPushProfile(row: CustomerMatchRow): {
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+} {
+  const phone = normalizeOptional(row.phone);
+  const digits = phone?.replace(/\D/g, "") ?? "";
+  return {
+    firstName: firstNonEmpty(row.first_name, "Customer"),
+    lastName: firstNonEmpty(row.last_name, "Unknown"),
+    email: normalizeOptional(row.email),
+    phone: digits.length >= 10 ? phone : null,
+  };
+}
+
+export function wixContactAlreadyLinkedToOtherCustomer(
+  rows: readonly CustomerMatchRow[],
+  input: { customerId: string; wixContactId: string }
+): boolean {
+  return rows.some(
+    (row) =>
+      row.wix_contact_id === input.wixContactId && row.customer_id !== input.customerId
+  );
+}

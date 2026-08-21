@@ -21,7 +21,7 @@ export type CustomerFormState = {
 
 /** Typeahead search for intake and other customer pickers. */
 export async function searchCustomersAction(query: string): Promise<Customer[]> {
-  return searchCustomers(query);
+  return searchCustomers(query, { preferShopCustomers: true });
 }
 
 function readCustomerInput(formData: FormData) {

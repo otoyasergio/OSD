@@ -32,7 +32,7 @@ export default async function NewMotorcyclePage({
     model = "",
     return_to = "",
   } = await searchParams;
-  const customers = await searchCustomers("");
+  const customers = await searchCustomers("", { preferShopCustomers: true });
   const vin = vinRaw ? normalizeVin(vinRaw).slice(0, 17) : "";
 
   // searchCustomers caps at 50; always include the preselected customer from garage/deep links.

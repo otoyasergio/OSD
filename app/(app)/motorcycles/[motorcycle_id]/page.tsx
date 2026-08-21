@@ -36,7 +36,7 @@ export default async function MotorcycleDetailPage({
 
   const [serviceInformation, customers, outstandingRecommendations] = await Promise.all([
     getServiceInformation(motorcycle_id),
-    searchCustomers(""),
+    searchCustomers("", { preferShopCustomers: true }),
     listOutstandingRecommendationsForMotorcycle(motorcycle_id),
   ]);
 

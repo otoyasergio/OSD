@@ -7,11 +7,19 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createClient } from "@supabase/supabase-js";
-import { listAllWixContacts } from "../lib/wix/client";
 import {
+  createWixContact,
+  findWixContactByEmailOrPhone,
+  listAllWixContacts,
+  updateWixContact,
+} from "../lib/wix/client";
+import {
+  customersNeedingWixPush,
   extractWixContactFields,
   findMatchingCustomer,
   isCustomerInSyncWithWix,
+  sanitizeWixPushProfile,
+  wixContactAlreadyLinkedToOtherCustomer,
   type CustomerMatchRow,
 } from "../lib/wix/contactNormalize";
 
@@ -76,6 +84,7 @@ async function main() {
     unchanged: 0,
     skipped: 0,
     failed: 0,
+    pushed: 0,
     triggered_by: "manual",
   };
 
@@ -153,6 +162,58 @@ async function main() {
     if ((i + 1) % 100 === 0 || i + 1 === wixContacts.length) {
       console.log(
         `Progress ${i + 1}/${wixContacts.length} created=${stats.created} updated=${stats.updated} unchanged=${stats.unchanged} skipped=${stats.skipped} failed=${stats.failed}`
+      );
+    }
+  }
+
+  const unlinked = customersNeedingWixPush(localRows);
+  console.log(`Pushing ${unlinked.length} local customers missing a Wix id…`);
+  for (const local of unlinked) {
+    if (!local.email && !local.phone) {
+      stats.skipped += 1;
+      continue;
+    }
+    try {
+      const profile = sanitizeWixPushProfile(local);
+      const existing = await findWixContactByEmailOrPhone({
+        email: profile.email,
+        phone: profile.phone,
+      });
+      let wixContactId = existing?.id ?? null;
+      if (
+        wixContactId &&
+        wixContactAlreadyLinkedToOtherCustomer(localRows, {
+          customerId: local.customer_id,
+          wixContactId,
+        })
+      ) {
+        stats.skipped += 1;
+        continue;
+      }
+      if (existing?.id) {
+        await updateWixContact(existing.id, {
+          ...profile,
+          revision: existing.revision,
+        });
+      } else {
+        const created = await createWixContact(profile);
+        wixContactId = created.id;
+      }
+      if (!wixContactId) throw new Error("WIX_CONTACT_SYNC_FAILED");
+      const { error } = await supabase
+        .from("customer")
+        .update({
+          wix_contact_id: wixContactId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("customer_id", local.customer_id);
+      if (error) throw error;
+      stats.pushed += 1;
+    } catch (error) {
+      stats.failed += 1;
+      console.error(
+        `Push failed for ${local.first_name} ${local.last_name}:`,
+        error instanceof Error ? error.message : error
       );
     }
   }
