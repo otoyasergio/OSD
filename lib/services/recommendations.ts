@@ -117,6 +117,8 @@ export type RecommendationSyncPlan =
   | { action: "update_severity"; severity: RecommendationSeverity }
   | { action: "withdraw" };
 
+export type InspectionRecommendationSavePlan = "create" | "update" | "blocked";
+
 /**
  * Decide how a live inspection finding change maps onto its linked
  * recommendation. Only untouched pending recommendations are mutated;
@@ -147,6 +149,21 @@ export function planRecommendationSyncForFinding(
     return { action: "withdraw" };
   }
   return { action: "none" };
+}
+
+export function planInspectionRecommendationSave(
+  existing:
+    | (Pick<Recommendation, "status" | "converted_job_id"> & {
+        disposition?: RecommendationDisposition | null;
+      })
+    | null
+): InspectionRecommendationSavePlan {
+  if (!existing || existing.disposition === "void") return "create";
+  const dispositionOpen = existing.disposition == null || existing.disposition === "open";
+  if (existing.status === "pending" && !existing.converted_job_id && dispositionOpen) {
+    return "update";
+  }
+  return "blocked";
 }
 
 // ---------------------------------------------------------------------------
@@ -993,7 +1010,7 @@ export async function createRecommendation(
   return recommendation;
 }
 
-export async function createRecommendationFromInspectionResult(
+export async function saveRecommendationFromInspectionResult(
   inspectionResultId: string,
   input: {
     description?: string;
@@ -1028,18 +1045,68 @@ export async function createRecommendationFromInspectionResult(
   } | null;
   if (!inspection) throw new Error("INSPECTION_NOT_FOUND");
 
-  const defaultSeverity = severityFromInspectionStatus(
-    result.status as InspectionResultStatus | null
-  );
-
-  return createRecommendation(inspection.work_order_id, {
+  const parsed = recommendationSchema.parse({
     description:
       input.description?.trim() ||
       `${result.item_name_snapshot} (${result.category_snapshot})`,
-    severity: input.severity ?? defaultSeverity,
+    severity:
+      input.severity ??
+      severityFromInspectionStatus(result.status as InspectionResultStatus | null),
     notes: input.notes ?? result.notes,
     inspection_result_id: inspectionResultId,
   });
+
+  const access = await requireMutableWorkOrder(user, inspection.work_order_id);
+  const existing = await loadLinkedRecommendation(
+    access.supabase,
+    inspection.work_order_id,
+    inspectionResultId
+  );
+  const plan = planInspectionRecommendationSave(existing);
+
+  if (plan === "blocked") {
+    throw new Error("RECOMMENDATION_ALREADY_ACTIONED");
+  }
+  if (plan === "create") {
+    return createRecommendation(inspection.work_order_id, parsed);
+  }
+
+  const { data: updated, error: updateError } = await access.supabase
+    .from("recommendation")
+    .update({
+      description: parsed.description,
+      severity: parsed.severity,
+      notes: parsed.notes ?? null,
+    })
+    .eq("recommendation_id", existing!.recommendation_id)
+    .eq("status", "pending")
+    .is("converted_job_id", null)
+    .select(COLUMNS)
+    .maybeSingle();
+
+  if (updateError) throw updateError;
+  if (!updated) throw new Error("RECOMMENDATION_ALREADY_ACTIONED");
+
+  await addAuditLog(access.supabase, {
+    actor_user_id: user.user_id,
+    location_id: access.locationId,
+    action: "recommendation_updated",
+    entity_type: "recommendation",
+    entity_id: existing!.recommendation_id,
+    description: `Recommendation updated on ${access.workOrderNumber}`,
+    old_value: {
+      description: existing!.description,
+      severity: existing!.severity,
+      notes: existing!.notes,
+    },
+    new_value: {
+      description: parsed.description,
+      severity: parsed.severity,
+      notes: parsed.notes ?? null,
+    },
+  });
+
+  return updated as Recommendation;
 }
 
 export async function updateRecommendationStatus(

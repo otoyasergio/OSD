@@ -5,15 +5,18 @@ import {
   approveRecommendationAndSendToFloor,
   convertRecommendationToJob,
   createRecommendation,
-  createRecommendationFromInspectionResult,
   listOutstandingRecommendationsForMotorcycle,
   type OutstandingRecommendation,
+  saveRecommendationFromInspectionResult,
   updateRecommendationStatus,
 } from "@/lib/services/recommendations";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import type { RecommendationSeverity, RecommendationStatus } from "@/lib/database/types";
 
-export type RecommendationFormState = { error: string | null };
+export type RecommendationFormState = {
+  error: string | null;
+  saved?: boolean;
+};
 
 export async function getOutstandingRecommendationsAction(
   motorcycleId: string
@@ -39,7 +42,7 @@ export async function createRecommendationAction(
     const fromResult = String(formData.get("inspection_result_id") ?? "").trim();
     if (fromResult) {
       const severityRaw = String(formData.get("severity") ?? "").trim();
-      await createRecommendationFromInspectionResult(fromResult, {
+      await saveRecommendationFromInspectionResult(fromResult, {
         description: String(formData.get("description") ?? "").trim() || undefined,
         severity: severityRaw ? (severityRaw as RecommendationSeverity) : undefined,
         notes: String(formData.get("notes") ?? "").trim() || null,
@@ -57,6 +60,27 @@ export async function createRecommendationAction(
 
   revalidateRecommendations(workOrderId);
   return { error: null };
+}
+
+export async function saveInspectionRecommendationAction(
+  workOrderId: string,
+  inspectionResultId: string,
+  _prevState: RecommendationFormState,
+  formData: FormData
+): Promise<RecommendationFormState> {
+  try {
+    const severityRaw = String(formData.get("severity") ?? "").trim();
+    await saveRecommendationFromInspectionResult(inspectionResultId, {
+      description: String(formData.get("description") ?? "").trim() || undefined,
+      severity: severityRaw ? (severityRaw as RecommendationSeverity) : undefined,
+      notes: String(formData.get("notes") ?? "").trim() || null,
+    });
+  } catch (error) {
+    return { error: toFormErrorMessage(error), saved: false };
+  }
+
+  revalidateRecommendations(workOrderId);
+  return { error: null, saved: true };
 }
 
 export async function updateRecommendationStatusAction(

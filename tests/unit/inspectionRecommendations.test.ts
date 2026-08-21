@@ -5,6 +5,7 @@ import {
   isAttentionInspectionStatus,
   isRecommendationOpenForEstimate,
   pickAssigneeForRecommendationJob,
+  planInspectionRecommendationSave,
   planFindingSyncForInspectionResult,
   planRecommendationSyncForFinding,
   severityFromInspectionStatus,
@@ -289,5 +290,52 @@ describe("estimate inbox membership", () => {
         disposition: "open",
       })
     ).toBe(false);
+  });
+});
+
+describe("inspection recommendation editor save", () => {
+  it("updates the existing untouched pending recommendation", () => {
+    expect(
+      planInspectionRecommendationSave({
+        status: "pending",
+        converted_job_id: null,
+        disposition: "open",
+      })
+    ).toBe("update");
+  });
+
+  it("creates only when no live linked recommendation exists", () => {
+    expect(planInspectionRecommendationSave(null)).toBe("create");
+    expect(
+      planInspectionRecommendationSave({
+        status: "pending",
+        converted_job_id: null,
+        disposition: "void",
+      })
+    ).toBe("create");
+  });
+
+  it("blocks edits after staff or customer action", () => {
+    expect(
+      planInspectionRecommendationSave({
+        status: "deferred",
+        converted_job_id: null,
+        disposition: "deferred",
+      })
+    ).toBe("blocked");
+    expect(
+      planInspectionRecommendationSave({
+        status: "converted_to_job",
+        converted_job_id: "job-1",
+        disposition: "scheduled",
+      })
+    ).toBe("blocked");
+    expect(
+      planInspectionRecommendationSave({
+        status: "pending",
+        converted_job_id: null,
+        disposition: "declined",
+      })
+    ).toBe("blocked");
   });
 });

@@ -93,6 +93,8 @@ const MESSAGES: Record<string, string> = {
     "That recommendation was declined and can’t be sent to the floor.",
   RECOMMENDATION_ALREADY_CONVERTED:
     "That recommendation has already been converted to a job.",
+  RECOMMENDATION_ALREADY_ACTIONED:
+    "This recommendation has already been acted on and can no longer be edited.",
   PART_NOT_FOUND: "That part no longer exists.",
   PARTS_ORDER_BEFORE_APPROVAL: "Parts cannot be ordered before customer approval.",
   PART_INSTALL_REQUIRES_TECHNICIAN:
