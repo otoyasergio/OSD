@@ -434,7 +434,7 @@ export function InspectionItemRow({
                 }
                 className="btn btn-secondary min-h-12"
               >
-                {recommendationSaved ? "Edit recommendation" : "Create recommendation"}
+                {recommendationSaved ? "Edit recommendation" : "Review recommendation"}
               </button>
               {recommendationSaved ? (
                 <span role="status" className="text-sm font-medium text-emerald-700">

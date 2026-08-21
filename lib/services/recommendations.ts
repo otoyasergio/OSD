@@ -29,6 +29,7 @@ import {
   v2SchemaExpected,
   v2WritesEnabled,
 } from "@/lib/config/features";
+import { assertViewerCanAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
 
 export type RecommendationDisposition =
   "open" | "deferred" | "declined" | "scheduled" | "resolved" | "void";
@@ -117,7 +118,7 @@ export type RecommendationSyncPlan =
   | { action: "update_severity"; severity: RecommendationSeverity }
   | { action: "withdraw" };
 
-export type InspectionRecommendationSavePlan = "create" | "update" | "blocked";
+export type InspectionRecommendationSavePlan = "update" | "missing" | "blocked";
 
 export type InspectionRecommendationDraft = {
   description: string;
@@ -164,7 +165,7 @@ export function planInspectionRecommendationSave(
       })
     | null
 ): InspectionRecommendationSavePlan {
-  if (!existing || existing.disposition === "void") return "create";
+  if (!existing || existing.disposition === "void") return "missing";
   const dispositionOpen = existing.disposition == null || existing.disposition === "open";
   if (existing.status === "pending" && !existing.converted_job_id && dispositionOpen) {
     return "update";
@@ -637,7 +638,8 @@ export async function ensureRecommendationsForAttentionFindings(
 
 async function requireMutableWorkOrder(
   user: AppUser,
-  workOrderId: string
+  workOrderId: string,
+  options: { enforceAssignmentVisibility?: boolean } = {}
 ): Promise<{
   supabase: DbClient;
   locationId: string;
@@ -647,7 +649,18 @@ async function requireMutableWorkOrder(
   const supabase = await createClient();
   const { data: workOrder, error } = await supabase
     .from("work_order")
-    .select("work_order_id, location_id, work_order_number, status, motorcycle_id")
+    .select(
+      `
+      work_order_id,
+      location_id,
+      work_order_number,
+      status,
+      motorcycle_id,
+      primary_technician_id,
+      quality_check_assigned_to,
+      job ( assigned_technician_id )
+    `
+    )
     .eq("work_order_id", workOrderId)
     .maybeSingle();
 
@@ -658,6 +671,20 @@ async function requireMutableWorkOrder(
   }
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
+  }
+  if (options.enforceAssignmentVisibility) {
+    assertViewerCanAccessWorkOrder(
+      {
+        primary_technician_id: workOrder.primary_technician_id as string | null,
+        quality_check_assigned_to: workOrder.quality_check_assigned_to as string | null,
+        status: workOrder.status as string,
+        jobs:
+          (workOrder.job as Array<{ assigned_technician_id: string | null }> | null) ??
+          [],
+      },
+      user.role,
+      user.user_id
+    );
   }
 
   return {
@@ -1017,6 +1044,7 @@ export async function createRecommendation(
 }
 
 export async function saveRecommendationFromInspectionResult(
+  expectedWorkOrderId: string,
   inspectionResultId: string,
   input: {
     description?: string;
@@ -1050,6 +1078,12 @@ export async function saveRecommendationFromInspectionResult(
     work_order_id: string;
   } | null;
   if (!inspection) throw new Error("INSPECTION_NOT_FOUND");
+  if (inspection.work_order_id !== expectedWorkOrderId) {
+    throw new Error("INSPECTION_RESULT_NOT_FOUND");
+  }
+  if (!isAttentionInspectionStatus(result.status as string | null)) {
+    throw new Error("INSPECTION_RECOMMENDATION_NOT_ACTIONABLE");
+  }
 
   const parsed = recommendationSchema.parse({
     description:
@@ -1062,22 +1096,24 @@ export async function saveRecommendationFromInspectionResult(
     inspection_result_id: inspectionResultId,
   });
 
-  const access = await requireMutableWorkOrder(user, inspection.work_order_id);
+  const access = await requireMutableWorkOrder(user, expectedWorkOrderId, {
+    enforceAssignmentVisibility: true,
+  });
   const existing = await loadLinkedRecommendation(
     access.supabase,
-    inspection.work_order_id,
+    expectedWorkOrderId,
     inspectionResultId
   );
   const plan = planInspectionRecommendationSave(existing);
 
+  if (plan === "missing") {
+    throw new Error("INSPECTION_RECOMMENDATION_MISSING");
+  }
   if (plan === "blocked") {
     throw new Error("RECOMMENDATION_ALREADY_ACTIONED");
   }
-  if (plan === "create") {
-    return createRecommendation(inspection.work_order_id, parsed);
-  }
 
-  const { data: updated, error: updateError } = await access.supabase
+  let updateQuery = access.supabase
     .from("recommendation")
     .update({
       description: parsed.description,
@@ -1085,13 +1121,29 @@ export async function saveRecommendationFromInspectionResult(
       notes: parsed.notes ?? null,
     })
     .eq("recommendation_id", existing!.recommendation_id)
+    .eq("work_order_id", expectedWorkOrderId)
+    .eq("inspection_result_id", inspectionResultId)
     .eq("status", "pending")
-    .is("converted_job_id", null)
+    .is("converted_job_id", null);
+  if (recommendationV2SchemaAvailable()) {
+    updateQuery = updateQuery.or("disposition.eq.open,disposition.is.null");
+  }
+  const { data: updated, error: updateError } = await updateQuery
     .select(COLUMNS)
     .maybeSingle();
 
   if (updateError) throw updateError;
-  if (!updated) throw new Error("RECOMMENDATION_ALREADY_ACTIONED");
+  if (!updated) {
+    const latest = await loadLinkedRecommendation(
+      access.supabase,
+      expectedWorkOrderId,
+      inspectionResultId
+    );
+    if (planInspectionRecommendationSave(latest) === "missing") {
+      throw new Error("INSPECTION_RECOMMENDATION_MISSING");
+    }
+    throw new Error("RECOMMENDATION_ALREADY_ACTIONED");
+  }
 
   await addAuditLog(access.supabase, {
     actor_user_id: user.user_id,
@@ -1116,11 +1168,8 @@ export async function saveRecommendationFromInspectionResult(
 }
 
 export async function getInspectionRecommendationDraft(
-  inspectionResultId: string,
-  fallback: {
-    status?: InspectionResultStatus | null;
-    notes?: string | null;
-  } = {}
+  expectedWorkOrderId: string,
+  inspectionResultId: string
 ): Promise<InspectionRecommendationDraft> {
   const user = await requireUser();
   if (!canCreateRecommendation(user.role)) throw new Error("FORBIDDEN");
@@ -1148,31 +1197,34 @@ export async function getInspectionRecommendationDraft(
     work_order_id: string;
   } | null;
   if (!inspection) throw new Error("INSPECTION_NOT_FOUND");
+  if (inspection.work_order_id !== expectedWorkOrderId) {
+    throw new Error("INSPECTION_RESULT_NOT_FOUND");
+  }
+  if (!isAttentionInspectionStatus(result.status as string | null)) {
+    throw new Error("INSPECTION_RECOMMENDATION_NOT_ACTIONABLE");
+  }
 
-  const access = await requireMutableWorkOrder(user, inspection.work_order_id);
+  const access = await requireMutableWorkOrder(user, expectedWorkOrderId, {
+    enforceAssignmentVisibility: true,
+  });
   const existing = await loadLinkedRecommendation(
     access.supabase,
-    inspection.work_order_id,
+    expectedWorkOrderId,
     inspectionResultId
   );
 
-  if (planInspectionRecommendationSave(existing) === "update") {
+  const plan = planInspectionRecommendationSave(existing);
+  if (plan === "update") {
     return {
       description: existing!.description,
       severity: existing!.severity,
       notes: existing!.notes ?? "",
     };
   }
-
-  return {
-    description: `${result.item_name_snapshot} (${result.category_snapshot})`,
-    severity: severityFromInspectionStatus(
-      fallback.status !== undefined
-        ? fallback.status
-        : (result.status as InspectionResultStatus | null)
-    ),
-    notes: fallback.notes ?? result.notes ?? "",
-  };
+  if (plan === "missing") {
+    throw new Error("INSPECTION_RECOMMENDATION_MISSING");
+  }
+  throw new Error("RECOMMENDATION_ALREADY_ACTIONED");
 }
 
 export async function updateRecommendationStatus(

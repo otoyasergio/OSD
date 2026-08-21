@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useCallback, useMemo, useState } from "react";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
 import {
   InspectionItemRow,
@@ -200,21 +200,40 @@ export function InspectionChecklist({
       ));
 
   const header = inspection.header;
-  const recommendationAction = recommendationSelection
-    ? saveInspectionRecommendationAction.bind(
-        null,
-        inspection.work_order_id,
-        recommendationSelection.result.inspection_result_id
-      )
-    : null;
-  const recommendationDraftLoader = recommendationSelection
-    ? getInspectionRecommendationDraftAction.bind(
-        null,
-        recommendationSelection.result.inspection_result_id,
-        recommendationSelection.status,
-        recommendationSelection.notes
-      )
-    : null;
+  const selectedRecommendationResultId =
+    recommendationSelection?.result.inspection_result_id ?? null;
+  const recommendationAction = useMemo(
+    () =>
+      selectedRecommendationResultId
+        ? saveInspectionRecommendationAction.bind(
+            null,
+            inspection.work_order_id,
+            selectedRecommendationResultId
+          )
+        : null,
+    [inspection.work_order_id, selectedRecommendationResultId]
+  );
+  const recommendationDraftLoader = useMemo(
+    () =>
+      selectedRecommendationResultId
+        ? getInspectionRecommendationDraftAction.bind(
+            null,
+            inspection.work_order_id,
+            selectedRecommendationResultId
+          )
+        : null,
+    [inspection.work_order_id, selectedRecommendationResultId]
+  );
+  const closeRecommendation = useCallback(() => {
+    setRecommendationSelection(null);
+  }, []);
+  const markRecommendationSaved = useCallback(() => {
+    if (!selectedRecommendationResultId) return;
+    setSavedRecommendationIds((current) => ({
+      ...current,
+      [selectedRecommendationResultId]: true,
+    }));
+  }, [selectedRecommendationResultId]);
 
   return (
     <div className="inspection-report">
@@ -584,13 +603,8 @@ export function InspectionChecklist({
           result={recommendationSelection.result}
           loadDraft={recommendationDraftLoader}
           action={recommendationAction}
-          onSaved={() => {
-            setSavedRecommendationIds((current) => ({
-              ...current,
-              [recommendationSelection.result.inspection_result_id]: true,
-            }));
-          }}
-          onClose={() => setRecommendationSelection(null)}
+          onSaved={markRecommendationSaved}
+          onClose={closeRecommendation}
         />
       ) : null}
     </div>

@@ -190,49 +190,50 @@ export function InspectionRecommendationModal({
           <form
             key={`${result.inspection_result_id}:${draft.description}:${draft.severity}:${draft.notes}`}
             action={formAction}
-            className="flex flex-col gap-4"
           >
-            <FormError message={state.error} />
-            <TextField
-              label="Description"
-              name="description"
-              required
-              defaultValue={draft.description}
-            />
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-foreground">
-                Severity <span className="text-red-600">*</span>
-              </span>
-              <select
-                name="severity"
+            <fieldset disabled={pending} className="flex min-w-0 flex-col gap-4">
+              <FormError message={state.error} />
+              <TextField
+                label="Description"
+                name="description"
                 required
-                defaultValue={draft.severity}
-                className={SELECT_CLASS}
-              >
-                {SEVERITIES.map((severity) => (
-                  <option key={severity} value={severity}>
-                    {RECOMMENDATION_SEVERITY_LABELS[severity]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <TextAreaField
-              label="Notes"
-              name="notes"
-              rows={3}
-              defaultValue={draft.notes}
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={pending}
-                className="btn btn-secondary"
-              >
-                Cancel
-              </button>
-              <SubmitButton label="Save recommendation" pendingLabel="Saving..." />
-            </div>
+                defaultValue={draft.description}
+              />
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium text-foreground">
+                  Severity <span className="text-red-600">*</span>
+                </span>
+                <select
+                  name="severity"
+                  required
+                  defaultValue={draft.severity}
+                  className={SELECT_CLASS}
+                >
+                  {SEVERITIES.map((severity) => (
+                    <option key={severity} value={severity}>
+                      {RECOMMENDATION_SEVERITY_LABELS[severity]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <TextAreaField
+                label="Notes"
+                name="notes"
+                rows={3}
+                defaultValue={draft.notes}
+              />
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={pending}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <SubmitButton label="Save recommendation" pendingLabel="Saving..." />
+              </div>
+            </fieldset>
           </form>
         ) : null}
       </div>

@@ -82,6 +82,10 @@ const MESSAGES: Record<string, string> = {
   TEMPLATE_ITEM_NOT_FOUND: "That inspection template item no longer exists.",
   INSPECTION_NOT_FOUND: "That inspection no longer exists.",
   INSPECTION_RESULT_NOT_FOUND: "That inspection result no longer exists.",
+  INSPECTION_RECOMMENDATION_MISSING:
+    "The automatic recommendation is missing or withdrawn. Re-flag this inspection item and try again.",
+  INSPECTION_RECOMMENDATION_NOT_ACTIONABLE:
+    "This inspection item is no longer flagged for attention. Re-flag it and try again.",
   INSPECTION_ALREADY_COMPLETE: "This inspection is already complete.",
   INSPECTION_INCOMPLETE:
     "Some checklist items are still incomplete. An owner or manager can force completion.",

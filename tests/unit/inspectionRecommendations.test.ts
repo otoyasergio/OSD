@@ -304,15 +304,15 @@ describe("inspection recommendation editor save", () => {
     ).toBe("update");
   });
 
-  it("creates only when no live linked recommendation exists", () => {
-    expect(planInspectionRecommendationSave(null)).toBe("create");
+  it("reports a missing editable link instead of planning a modal insert", () => {
+    expect(planInspectionRecommendationSave(null)).toBe("missing");
     expect(
       planInspectionRecommendationSave({
         status: "pending",
         converted_job_id: null,
         disposition: "void",
       })
-    ).toBe("create");
+    ).toBe("missing");
   });
 
   it("blocks edits after staff or customer action", () => {

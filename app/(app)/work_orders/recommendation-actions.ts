@@ -13,11 +13,7 @@ import {
   updateRecommendationStatus,
 } from "@/lib/services/recommendations";
 import { toFormErrorMessage } from "@/lib/services/errors";
-import type {
-  InspectionResultStatus,
-  RecommendationSeverity,
-  RecommendationStatus,
-} from "@/lib/database/types";
+import type { RecommendationSeverity, RecommendationStatus } from "@/lib/database/types";
 
 export type RecommendationFormState = {
   error: string | null;
@@ -32,14 +28,10 @@ export async function getOutstandingRecommendationsAction(
 }
 
 export async function getInspectionRecommendationDraftAction(
-  inspectionResultId: string,
-  fallbackStatus: InspectionResultStatus | null,
-  fallbackNotes: string | null
+  workOrderId: string,
+  inspectionResultId: string
 ): Promise<InspectionRecommendationDraft> {
-  return getInspectionRecommendationDraft(inspectionResultId, {
-    status: fallbackStatus,
-    notes: fallbackNotes,
-  });
+  return getInspectionRecommendationDraft(workOrderId, inspectionResultId);
 }
 
 function revalidateRecommendations(workOrderId: string) {
@@ -55,15 +47,21 @@ export async function createRecommendationAction(
   _prevState: RecommendationFormState,
   formData: FormData
 ): Promise<RecommendationFormState> {
+  let verifiedWorkOrderId = workOrderId;
   try {
     const fromResult = String(formData.get("inspection_result_id") ?? "").trim();
     if (fromResult) {
       const severityRaw = String(formData.get("severity") ?? "").trim();
-      await saveRecommendationFromInspectionResult(fromResult, {
-        description: String(formData.get("description") ?? "").trim() || undefined,
-        severity: severityRaw ? (severityRaw as RecommendationSeverity) : undefined,
-        notes: String(formData.get("notes") ?? "").trim() || null,
-      });
+      const saved = await saveRecommendationFromInspectionResult(
+        workOrderId,
+        fromResult,
+        {
+          description: String(formData.get("description") ?? "").trim() || undefined,
+          severity: severityRaw ? (severityRaw as RecommendationSeverity) : undefined,
+          notes: String(formData.get("notes") ?? "").trim() || null,
+        }
+      );
+      verifiedWorkOrderId = saved.work_order_id;
     } else {
       await createRecommendation(workOrderId, {
         description: String(formData.get("description") ?? "").trim(),
@@ -75,7 +73,7 @@ export async function createRecommendationAction(
     return { error: toFormErrorMessage(error) };
   }
 
-  revalidateRecommendations(workOrderId);
+  revalidateRecommendations(verifiedWorkOrderId);
   return { error: null };
 }
 
@@ -85,18 +83,24 @@ export async function saveInspectionRecommendationAction(
   _prevState: RecommendationFormState,
   formData: FormData
 ): Promise<RecommendationFormState> {
+  let verifiedWorkOrderId = workOrderId;
   try {
     const severityRaw = String(formData.get("severity") ?? "").trim();
-    await saveRecommendationFromInspectionResult(inspectionResultId, {
-      description: String(formData.get("description") ?? "").trim() || undefined,
-      severity: severityRaw ? (severityRaw as RecommendationSeverity) : undefined,
-      notes: String(formData.get("notes") ?? "").trim() || null,
-    });
+    const saved = await saveRecommendationFromInspectionResult(
+      workOrderId,
+      inspectionResultId,
+      {
+        description: String(formData.get("description") ?? "").trim() || undefined,
+        severity: severityRaw ? (severityRaw as RecommendationSeverity) : undefined,
+        notes: String(formData.get("notes") ?? "").trim() || null,
+      }
+    );
+    verifiedWorkOrderId = saved.work_order_id;
   } catch (error) {
     return { error: toFormErrorMessage(error), saved: false };
   }
 
-  revalidateRecommendations(workOrderId);
+  revalidateRecommendations(verifiedWorkOrderId);
   return { error: null, saved: true };
 }
 

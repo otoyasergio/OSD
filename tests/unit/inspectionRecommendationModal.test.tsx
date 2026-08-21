@@ -158,19 +158,15 @@ async function openChecklistRecommendation(options?: {
   const draftNotes = options?.draftNotes ?? "Local draft finding note";
 
   actionMocks.getInspectionRecommendationDraftAction.mockImplementation(
-    async (
-      inspectionResultId: string,
-      status: InspectionResultStatus | null,
-      notes: string | null
-    ) =>
+    async (workOrderId: string, inspectionResultId: string) =>
       recommendationDraft({
         description:
+          workOrderId === "work-order-1" &&
           inspectionResultId === result.inspection_result_id
             ? `${result.item_name_snapshot} (${result.category_snapshot})`
             : "Unexpected result",
-        severity:
-          status === "immediate_attention" ? "immediate_attention" : "future_attention",
-        notes: notes ?? "",
+        severity: nextStatus,
+        notes: draftNotes,
       })
   );
 
@@ -208,7 +204,7 @@ async function openChecklistRecommendation(options?: {
   act(() => {
     (
       [...document.querySelectorAll("button")].find(
-        (button) => button.textContent?.trim() === "Create recommendation"
+        (button) => button.textContent?.trim() === "Review recommendation"
       ) as HTMLButtonElement
     ).click();
   });
@@ -278,6 +274,42 @@ describe("InspectionRecommendationModal", () => {
 
     expect(currentDialog()).not.toBeNull();
     expect(document.body.textContent).toContain("Could not save recommendation.");
+  });
+
+  it("disables the modal form controls while a save is pending", async () => {
+    let resolveAction:
+      ((value: { error: string | null; saved: boolean }) => void) | undefined;
+    const action = vi.fn(
+      () =>
+        new Promise<{ error: string | null; saved: boolean }>((resolve) => {
+          resolveAction = resolve;
+        })
+    );
+
+    mount(
+      <InspectionRecommendationModal
+        result={result}
+        loadDraft={vi.fn(async () => recommendationDraft())}
+        action={action}
+        onClose={vi.fn()}
+        onSaved={vi.fn()}
+      />
+    );
+
+    await flushAsyncWork();
+    act(() => {
+      (document.querySelector("form") as HTMLFormElement).requestSubmit();
+    });
+    await flushAsyncWork();
+
+    expect(
+      (currentDialog()?.querySelector("fieldset") as HTMLFieldSetElement).disabled
+    ).toBe(true);
+
+    await act(async () => {
+      resolveAction?.({ error: null, saved: true });
+      await Promise.resolve();
+    });
   });
 
   it("restores focus and body scroll state when closed", async () => {
@@ -440,9 +472,8 @@ describe("InspectionRecommendationModal", () => {
     expect(window.location.href).toBe(hrefBefore);
     expect(currentDialog()).not.toBeNull();
     expect(actionMocks.getInspectionRecommendationDraftAction).toHaveBeenCalledWith(
-      result.inspection_result_id,
-      "future_attention",
-      "Fresh local draft before modal open"
+      "work-order-1",
+      result.inspection_result_id
     );
     expect((document.querySelector('[name="severity"]') as HTMLSelectElement).value).toBe(
       "future_attention"
@@ -465,5 +496,40 @@ describe("InspectionRecommendationModal", () => {
         (button) => button.textContent?.trim() === "Edit recommendation"
       )
     ).toBeInstanceOf(HTMLButtonElement);
+  });
+
+  it("keeps a dirty modal draft when the parent checklist rerenders", async () => {
+    await openChecklistRecommendation({
+      nextStatus: "future_attention",
+      draftNotes: "Initial linked recommendation note",
+    });
+
+    const modalNotes = currentDialog()?.querySelector(
+      '[name="notes"]'
+    ) as HTMLTextAreaElement;
+    act(() => {
+      setTextareaValue(modalNotes, "Unsaved modal edit");
+    });
+    actionMocks.getInspectionRecommendationDraftAction.mockResolvedValue(
+      recommendationDraft({ notes: "Reloaded server value" })
+    );
+
+    act(() => {
+      root!.render(
+        <InspectionChecklist
+          inspection={inspectionDetail()}
+          canEdit
+          canForceComplete={false}
+          canRecommend
+          completeReturnTo={null}
+        />
+      );
+    });
+    await flushAsyncWork();
+
+    expect(actionMocks.getInspectionRecommendationDraftAction).toHaveBeenCalledTimes(1);
+    expect(
+      (currentDialog()?.querySelector('[name="notes"]') as HTMLTextAreaElement).value
+    ).toBe("Unsaved modal edit");
   });
 });
