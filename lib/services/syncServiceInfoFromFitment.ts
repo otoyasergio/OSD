@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/database/supabase-admin";
 import {
   buildServiceInfoFromFitmentRows,
   mergeServiceInfoFill,
+  normalizeFitmentMakeKey,
   type FitmentPayload,
   type ServiceInfoFitmentFields,
 } from "@/lib/fitment/serviceInfoFromFitment";
@@ -60,8 +61,9 @@ async function loadFitmentRows(client: SyncClient): Promise<FitmentPayload[]> {
 }
 
 function fitmentRowsForMake(rows: FitmentPayload[], make: string): FitmentPayload[] {
-  const key = make.trim().toLowerCase();
-  return rows.filter((row) => row.make.trim().toLowerCase() === key);
+  const key = normalizeFitmentMakeKey(make);
+  if (!key) return [];
+  return rows.filter((row) => normalizeFitmentMakeKey(row.make) === key);
 }
 
 /** Normalize staff make/model before matching (trailing spaces, etc.). */

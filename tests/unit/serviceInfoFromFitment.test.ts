@@ -6,6 +6,7 @@ import {
   isServiceInfoEmpty,
   mapFitmentToServiceInfo,
   mergeServiceInfoFill,
+  normalizeFitmentMakeKey,
   pickBestFitmentVehicle,
 } from "@/lib/fitment/serviceInfoFromFitment";
 
@@ -189,6 +190,133 @@ describe("buildServiceInfoFromFitmentRows Ducati short codes", () => {
     expect(mapped?.rear_brake_pads).toBe("010-047");
     expect(mapped?.front_tire_size).toBe("120/70-17");
     expect(mapped?.battery).toContain("YB16AL-A2");
+  });
+});
+
+const xdiavelCatalogue = [
+  {
+    make: "DUCATI",
+    model: "Diavel",
+    year_start: 2011,
+    year_end: 2018,
+    spec_data: {
+      chain: "525x118",
+      recommendedOil: "15W-50",
+      frontTireSize: "120/70-17",
+    },
+    part_data: { oilFilterHF: "HF153", airFilterKN: "1011-1281" },
+  },
+  {
+    make: "DUCATI",
+    model: "Xdiavel",
+    year_start: 2016,
+    year_end: 2019,
+    spec_data: {
+      chain: "Belt",
+      battery: "YT12B-BS",
+      recommendedOil: "15W-50",
+      frontTireSize: "120/70-17",
+      rearTireSize: "240/45-17",
+    },
+    part_data: { oilFilterHF: "HF153", oilFilterKN: "10-99200", airFilterKN: "DU-1112" },
+  },
+  {
+    make: "DUCATI",
+    model: "XDiavel S",
+    year_start: 2022,
+    year_end: 2023,
+    spec_data: { forkSealKit: "55-158" },
+    part_data: { wheelBearingFront: "25-1404" },
+  },
+  {
+    make: "DUCATI",
+    model: "XDiavel V4",
+    year_start: 2025,
+    year_end: 2025,
+    spec_data: { forkSealKit: "55-158" },
+    part_data: { wheelBearingFront: "25-1404" },
+  },
+];
+
+describe("buildServiceInfoFromFitmentRows year carry-forward", () => {
+  it("fills a newer XDiavel from last-known Xdiavel service data", () => {
+    const mapped = buildServiceInfoFromFitmentRows(
+      xdiavelCatalogue,
+      2026,
+      "DUCATI",
+      "XDiavel"
+    );
+
+    expect(mapped?.oil_filter).toContain("HF153");
+    expect(mapped?.oil_type).toBe("15W-50");
+    expect(mapped?.air_filter).toBe("DU-1112");
+    expect(mapped?.chain).toBe("Belt");
+    expect(mapped?.battery).toContain("YT12B-BS");
+    expect(mapped?.front_tire_size).toBe("120/70-17");
+    expect(mapped?.rear_tire_size).toBe("240/45-17");
+    expect(mapped?.air_filter).not.toContain("1011-1281");
+    expect(mapped?.chain).not.toContain("525");
+  });
+
+  it("still fills XDiavel when the current-year catalogue row has no service parts", () => {
+    const mapped = buildServiceInfoFromFitmentRows(
+      xdiavelCatalogue,
+      2025,
+      "DUCATI",
+      "XDiavel"
+    );
+
+    expect(mapped?.oil_filter).toContain("HF153");
+    expect(mapped?.chain).toBe("Belt");
+    expect(mapped?.air_filter).toBe("DU-1112");
+  });
+
+  it("does not carry older Xdiavel parts onto an explicit XDiavel V4", () => {
+    const mapped = buildServiceInfoFromFitmentRows(
+      xdiavelCatalogue,
+      2026,
+      "DUCATI",
+      "XDiavel V4"
+    );
+
+    expect(mapped?.oil_filter ?? null).toBeNull();
+    expect(mapped?.chain ?? null).toBeNull();
+    expect(mapped?.air_filter ?? null).toBeNull();
+  });
+});
+
+describe("normalizeFitmentMakeKey", () => {
+  it("treats VIN make suffixes and hyphenation as the same catalogue make", () => {
+    expect(normalizeFitmentMakeKey("INDIAN MOTORCYCLE")).toBe(
+      normalizeFitmentMakeKey("INDIAN")
+    );
+    expect(normalizeFitmentMakeKey("Harley Davidson")).toBe(
+      normalizeFitmentMakeKey("HARLEY-DAVIDSON")
+    );
+  });
+});
+
+describe("buildServiceInfoFromFitmentRows make aliases", () => {
+  it("fills Scout Sixty when the bike make is INDIAN MOTORCYCLE", () => {
+    const mapped = buildServiceInfoFromFitmentRows(
+      [
+        {
+          make: "INDIAN",
+          model: "Scout Sixty",
+          year_start: 2016,
+          year_end: 2024,
+          spec_data: { recommendedOil: "20W-40", battery: "YTX14AH" },
+          part_data: { oilFilterHF: "HF199" },
+        },
+      ],
+      2016,
+      "INDIAN MOTORCYCLE",
+      "Scout Sixty"
+    );
+
+    expect(mapped?.oil_filter).toBe("HF199");
+    expect(mapped?.oil_type).toBe("20W-40");
+    expect(mapped?.battery).toContain("YTX14AH");
   });
 });
 

@@ -15,7 +15,10 @@ import { escapeSearchTerm } from "@/lib/services/customers";
 import { normalizeVin } from "@/lib/vin";
 import type { MileageUnit } from "@/lib/mileage/format";
 import { applyFitmentFillToServiceInfo } from "@/lib/services/syncServiceInfoFromFitment";
-import type { FitmentPayload } from "@/lib/fitment/serviceInfoFromFitment";
+import {
+  fitmentMakeSearchVariants,
+  type FitmentPayload,
+} from "@/lib/fitment/serviceInfoFromFitment";
 
 export type Motorcycle = {
   motorcycle_id: string;
@@ -366,28 +369,34 @@ async function fillServiceInformationFromFitment(
   options: { refreshFitmentValues?: boolean } = {}
 ): Promise<number> {
   const rows: FitmentPayload[] = [];
+  const seen = new Set<string>();
   const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
-    const to = from + pageSize - 1;
-    const { data, error } = await supabase
-      .from("fitment_vehicle")
-      .select("make, model, year_start, year_end, spec_data, part_data")
-      .ilike("make", motorcycle.make.trim())
-      .order("vehicle_id", { ascending: true })
-      .range(from, to);
-    if (error) throw error;
-    const page = data ?? [];
-    for (const row of page) {
-      rows.push({
-        make: row.make as string,
-        model: row.model as string,
-        year_start: row.year_start as number,
-        year_end: row.year_end as number,
-        spec_data: (row.spec_data as Record<string, string>) ?? {},
-        part_data: (row.part_data as Record<string, string>) ?? {},
-      });
+  for (const makeVariant of fitmentMakeSearchVariants(motorcycle.make)) {
+    for (let from = 0; ; from += pageSize) {
+      const to = from + pageSize - 1;
+      const { data, error } = await supabase
+        .from("fitment_vehicle")
+        .select("make, model, year_start, year_end, spec_data, part_data")
+        .ilike("make", makeVariant)
+        .order("vehicle_id", { ascending: true })
+        .range(from, to);
+      if (error) throw error;
+      const page = data ?? [];
+      for (const row of page) {
+        const key = `${row.make}|${row.model}|${row.year_start}|${row.year_end}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push({
+          make: row.make as string,
+          model: row.model as string,
+          year_start: row.year_start as number,
+          year_end: row.year_end as number,
+          spec_data: (row.spec_data as Record<string, string>) ?? {},
+          part_data: (row.part_data as Record<string, string>) ?? {},
+        });
+      }
+      if (page.length < pageSize) break;
     }
-    if (page.length < pageSize) break;
   }
 
   return applyFitmentFillToServiceInfo(supabase, motorcycle, existing, rows, options);
