@@ -65,6 +65,30 @@ export function normalizeFitmentModelKey(value: string): string {
     .replace(/[\s\-_/]+/g, "");
 }
 
+/** VIN/staff makes often include "MOTORCYCLE" or hyphens the catalogue omits. */
+export function normalizeFitmentMakeKey(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/\s+MOTOR\s+COMPANY\s*$/g, "")
+    .replace(/\s+MOTORCYCLES?\s*$/g, "")
+    .replace(/[\s\-_/]+/g, "");
+}
+
+/** Exact ILIKE variants so we can load catalogue rows without scanning every make. */
+export function fitmentMakeSearchVariants(make: string): string[] {
+  const trimmed = make.trim();
+  if (!trimmed) return [];
+  const variants = new Set<string>([trimmed]);
+  variants.add(trimmed.replace(/-/g, " ").replace(/\s+/g, " ").trim());
+  variants.add(trimmed.replace(/\s+/g, "-"));
+  const withoutMc = trimmed.replace(/\s+MOTORCYCLES?$/i, "").trim();
+  if (withoutMc) variants.add(withoutMc);
+  const withoutCo = trimmed.replace(/\s+MOTOR\s+COMPANY$/i, "").trim();
+  if (withoutCo) variants.add(withoutCo);
+  return [...variants].filter(Boolean);
+}
+
 /** Drop parenthetical notes like "(all)" / "(Japan Only)" from catalogue names. */
 export function stripFitmentModelNotes(value: string): string {
   return value.replace(/\s*\([^)]*\)\s*/g, " ").trim();
@@ -313,6 +337,34 @@ export function scoreServiceInfoPayload(
   return Object.values(mapFitmentToServiceInfo(vehicle)).filter((v) => v?.trim()).length;
 }
 
+function uniqueFitmentRows<T extends FitmentPayload>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of rows) {
+    const key = `${row.make}|${row.model}|${row.year_start}|${row.year_end}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * When the bike year is newer than the catalogue (or the current-year row has
+ * no service parts), reuse last-known rows for the same strong model match.
+ */
+function carryForwardFitmentCandidates<T extends FitmentPayload>(
+  related: T[],
+  year: number,
+  model: string
+): T[] {
+  const prior = related.filter((row) => row.year_start <= year && row.year_end > 0);
+  if (prior.length === 0) return [];
+  const best = Math.max(...prior.map((row) => fitmentModelAffinity(model, row.model)));
+  const threshold = Math.max(best - 10, 85);
+  return prior.filter((row) => fitmentModelAffinity(model, row.model) >= threshold);
+}
+
 /** Related catalogue rows for this YMM (exact + alias), year-covered. */
 export function listFitmentCandidatesForServiceInfo<T extends FitmentPayload>(
   rows: T[],
@@ -320,21 +372,34 @@ export function listFitmentCandidatesForServiceInfo<T extends FitmentPayload>(
   make: string,
   model: string
 ): T[] {
-  const makeKey = normalizeFitmentModelKey(make);
+  const makeKey = normalizeFitmentMakeKey(make);
   if (!makeKey || !normalizeFitmentModelKey(model)) return [];
 
-  return rows
-    .filter((row) => {
-      if (normalizeFitmentModelKey(row.make) !== makeKey) return false;
-      if (!rowCoversYear(row.year_start, row.year_end, year)) return false;
-      return fitmentModelAffinity(model, row.model) > 0;
-    })
-    .sort((a, b) => {
-      const affinityDelta =
-        fitmentModelAffinity(model, b.model) - fitmentModelAffinity(model, a.model);
-      if (affinityDelta !== 0) return affinityDelta;
-      return scoreServiceInfoPayload(b) - scoreServiceInfoPayload(a);
-    });
+  const related = rows.filter((row) => {
+    if (normalizeFitmentMakeKey(row.make) !== makeKey) return false;
+    return fitmentModelAffinity(model, row.model) > 0;
+  });
+
+  const covered = related.filter((row) =>
+    rowCoversYear(row.year_start, row.year_end, year)
+  );
+  const coveredWithServiceInfo = covered.filter(
+    (row) => scoreServiceInfoPayload(row) > 0
+  );
+  const pool =
+    coveredWithServiceInfo.length > 0
+      ? covered
+      : uniqueFitmentRows([
+          ...covered,
+          ...carryForwardFitmentCandidates(related, year, model),
+        ]);
+
+  return pool.sort((a, b) => {
+    const affinityDelta =
+      fitmentModelAffinity(model, b.model) - fitmentModelAffinity(model, a.model);
+    if (affinityDelta !== 0) return affinityDelta;
+    return scoreServiceInfoPayload(b) - scoreServiceInfoPayload(a);
+  });
 }
 
 /** Build merged service-info fill from all related fitment rows. */
