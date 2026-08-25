@@ -13,9 +13,15 @@ export type LocationOption = {
 type Props = {
   locations: LocationOption[];
   activeLocationId: string;
+  /** Icon-bar fit for the tech floor — code only, label is visually hidden. */
+  compact?: boolean;
 };
 
-export function LocationSwitcher({ locations, activeLocationId }: Props) {
+export function LocationSwitcher({
+  locations,
+  activeLocationId,
+  compact = false,
+}: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -32,20 +38,34 @@ export function LocationSwitcher({ locations, activeLocationId }: Props) {
   if (locations.length === 0) return null;
 
   return (
-    <label className="flex items-center gap-2 text-sm text-chrome-muted">
-      <span className="whitespace-nowrap font-medium text-chrome-foreground">
+    <label
+      className={
+        compact
+          ? "flex items-center text-sm text-slate-200"
+          : "flex items-center gap-2 text-sm text-chrome-muted"
+      }
+    >
+      <span
+        className={
+          compact ? "sr-only" : "whitespace-nowrap font-medium text-chrome-foreground"
+        }
+      >
         Location
       </span>
       <select
         value={activeLocationId}
         onChange={onChange}
         disabled={pending || locations.length === 1}
-        className="select-dark min-w-[10rem] disabled:opacity-60"
+        className={
+          compact
+            ? "select-dark min-w-[5.5rem] py-1 text-xs disabled:opacity-60"
+            : "select-dark min-w-[10rem] disabled:opacity-60"
+        }
         aria-label="Active location"
       >
         {locations.map((loc) => (
           <option key={loc.location_id} value={loc.location_id}>
-            {loc.name} ({loc.code})
+            {compact ? loc.code : `${loc.name} (${loc.code})`}
           </option>
         ))}
       </select>

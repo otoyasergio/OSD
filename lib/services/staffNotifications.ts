@@ -1,10 +1,12 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { isFloorTech } from "@/lib/permissions";
+import { isTerminalWorkOrderStatus } from "@/lib/technician/floorActionModel";
 
 type NestedWorkOrder = {
   work_order_id: string;
   work_order_number: string;
+  status?: string | null;
   motorcycle:
     | {
         year: number;
@@ -19,7 +21,7 @@ type NestedWorkOrder = {
     | null;
 };
 
-type NotificationRow = {
+export type StaffNotificationRow = {
   staff_notification_id: string;
   kind: "work_order_assigned";
   work_order_id: string;
@@ -53,6 +55,14 @@ export function motorcycleNotificationLabel(
   return [motorcycle.year, motorcycle.make, motorcycle.model].filter(Boolean).join(" ");
 }
 
+/** First assignment the floor has not already shown — used to toast + refresh. */
+export function firstUnseenAssignment<T extends { notification_id: string }>(
+  knownIds: ReadonlySet<string>,
+  next: readonly T[]
+): T | undefined {
+  return next.find((notification) => !knownIds.has(notification.notification_id));
+}
+
 export function formatNotificationAge(
   createdAt: string,
   nowMs: number = Date.now()
@@ -68,6 +78,34 @@ export function formatNotificationAge(
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+/**
+ * Pure mapper — drops rows whose work order is gone or already
+ * completed/cancelled, so stale assignment alerts never ping a tech.
+ */
+export function mapUnreadStaffNotifications(
+  rows: readonly StaffNotificationRow[]
+): StaffAssignmentNotification[] {
+  return rows.flatMap((row) => {
+    const workOrder = unwrapOne(row.work_order);
+    if (!workOrder) return [];
+    if (isTerminalWorkOrderStatus(workOrder.status ?? null)) return [];
+    const motorcycle = unwrapOne(workOrder.motorcycle);
+    const actor = unwrapOne(row.actor);
+
+    return [
+      {
+        notification_id: row.staff_notification_id,
+        kind: row.kind,
+        work_order_id: row.work_order_id,
+        work_order_number: workOrder.work_order_number,
+        motorcycle_label: motorcycleNotificationLabel(motorcycle),
+        actor_name: actor ? `${actor.first_name} ${actor.last_name}`.trim() : null,
+        created_at: row.created_at,
+      },
+    ];
+  });
 }
 
 export async function listUnreadStaffNotifications(
@@ -90,6 +128,7 @@ export async function listUnreadStaffNotifications(
       work_order:work_order_id (
         work_order_id,
         work_order_number,
+        status,
         motorcycle:motorcycle_id ( year, make, model )
       )
     `
@@ -101,24 +140,7 @@ export async function listUnreadStaffNotifications(
 
   if (error) throw error;
 
-  return ((data ?? []) as unknown as NotificationRow[]).flatMap((row) => {
-    const workOrder = unwrapOne(row.work_order);
-    if (!workOrder) return [];
-    const motorcycle = unwrapOne(workOrder.motorcycle);
-    const actor = unwrapOne(row.actor);
-
-    return [
-      {
-        notification_id: row.staff_notification_id,
-        kind: row.kind,
-        work_order_id: row.work_order_id,
-        work_order_number: workOrder.work_order_number,
-        motorcycle_label: motorcycleNotificationLabel(motorcycle),
-        actor_name: actor ? `${actor.first_name} ${actor.last_name}`.trim() : null,
-        created_at: row.created_at,
-      },
-    ];
-  });
+  return mapUnreadStaffNotifications((data ?? []) as unknown as StaffNotificationRow[]);
 }
 
 export async function markStaffNotificationRead(notificationId: string): Promise<void> {

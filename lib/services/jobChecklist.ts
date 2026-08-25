@@ -4,7 +4,7 @@ import type { DbClient } from "@/lib/database/types";
 import { canCompleteJob, isFloorTech } from "@/lib/permissions";
 
 export const DEFAULT_JOB_CHECKLIST_TITLES = [
-  "Perform work per SOP",
+  "Perform work",
   "Verify fasteners/fluids/function",
   "Area clean / ready for QC",
 ] as const;

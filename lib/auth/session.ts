@@ -1,6 +1,10 @@
 import { cache } from "react";
 import { createClient } from "@/lib/database/supabase-server";
 import { cookies } from "next/headers";
+import {
+  resolveActiveLocationId,
+  sortMembershipLocationIds,
+} from "@/lib/auth/activeLocation";
 import { ACTIVE_LOCATION_COOKIE } from "@/lib/auth/location-cookie";
 import type { UserRole, UserStatus } from "@/lib/database/types";
 import { getSupabasePublicConfig } from "@/lib/database/config";
@@ -39,14 +43,23 @@ export const getCurrentAppUser = cache(async (): Promise<AppUser | null> => {
 
   const { data: locs } = await supabase
     .from("user_location")
-    .select("location_id")
+    .select("location_id, location ( created_at )")
     .eq("user_id", user.user_id);
 
-  const location_ids = (locs ?? []).map((l) => l.location_id);
+  const location_ids = sortMembershipLocationIds(
+    (locs ?? []).map((row) => {
+      const nested = row.location as
+        { created_at: string } | { created_at: string }[] | null;
+      const loc = Array.isArray(nested) ? nested[0] : nested;
+      return {
+        location_id: row.location_id,
+        created_at: loc?.created_at ?? null,
+      };
+    })
+  );
   const cookieStore = await cookies();
   const cookieLoc = cookieStore.get(ACTIVE_LOCATION_COOKIE)?.value ?? null;
-  const active_location_id =
-    cookieLoc && location_ids.includes(cookieLoc) ? cookieLoc : (location_ids[0] ?? null);
+  const active_location_id = resolveActiveLocationId(location_ids, cookieLoc);
 
   return {
     ...user,

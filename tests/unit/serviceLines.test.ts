@@ -220,10 +220,21 @@ describe("createWorkOrderSchema service_lines", () => {
   const base = {
     motorcycle_id: MOTO,
     location_id: LOC,
+    work_order_number: "WO-1042",
     mileage: 12000,
     estimated_completion: "2026-07-20T20:00:00.000Z",
     service_ids: [SERVICE_A],
   };
+
+  it("requires a Wix work order number", () => {
+    expect(
+      createWorkOrderSchema.safeParse({ ...base, work_order_number: undefined }).success
+    ).toBe(false);
+    expect(
+      createWorkOrderSchema.safeParse({ ...base, work_order_number: "   " }).success
+    ).toBe(false);
+    expect(createWorkOrderSchema.safeParse(base).success).toBe(true);
+  });
 
   it("requires a whole, non-negative mileage reading", () => {
     expect(createWorkOrderSchema.safeParse({ ...base, mileage: undefined }).success).toBe(

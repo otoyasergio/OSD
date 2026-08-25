@@ -5,10 +5,16 @@ import { useActionState } from "react";
 import type {
   TimeClockEntryWithUser,
   TimesheetStaffOption,
+  TimesheetWeekRow,
 } from "@/lib/services/timeClock";
 import type { UserWeekSummary } from "@/lib/services/timeClockShared";
 import type { ShopWeekRange } from "@/lib/datetime/format";
-import { formatHoursDecimal, punchDurationMs } from "@/lib/services/timeClockShared";
+import {
+  formatHoursDecimal,
+  ONTARIO_OT_THRESHOLD_HOURS,
+  punchDurationMs,
+  unpaidBreakMsForEntry,
+} from "@/lib/services/timeClockShared";
 import {
   formatDate,
   formatDateTime,
@@ -17,8 +23,14 @@ import {
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import {
+  approveTimesheetAction,
+  createBreakAction,
   createPunchAction,
+  deleteBreakAction,
   deletePunchAction,
+  rejectTimesheetAction,
+  reopenTimesheetAction,
+  updateBreakAction,
   updatePunchAction,
   type TimesheetFormState,
 } from "@/app/(app)/settings/timesheets/actions";
@@ -29,6 +41,7 @@ type Props = {
   entries: TimeClockEntryWithUser[];
   summaries: UserWeekSummary[];
   staff: TimesheetStaffOption[];
+  weeksByUser: Record<string, TimesheetWeekRow>;
   weekParam: string;
 };
 
@@ -47,6 +60,48 @@ function shortDayLabel(dateKey: string): string {
     day: "numeric",
     timeZone: "UTC",
   });
+}
+
+function PunchPhotoRow({ entry }: { entry: TimeClockEntryWithUser }) {
+  const thumbs: Array<{ label: string; url: string | null | undefined }> = [
+    { label: "In", url: entry.clock_in_photo_url },
+    { label: "Out", url: entry.clock_out_photo_url },
+  ];
+  for (const b of entry.breaks ?? []) {
+    thumbs.push({ label: "Meal start", url: b.break_start_photo_url });
+    thumbs.push({ label: "Meal end", url: b.break_end_photo_url });
+  }
+  const visible = thumbs.filter((t) => t.url);
+  if (visible.length === 0) {
+    return (
+      <p className="mt-2 text-xs text-[var(--status-neutral)]">
+        No kiosk photos on this punch (manual correction or legacy).
+      </p>
+    );
+  }
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {visible.map((t) => (
+        <a
+          key={`${t.label}-${t.url}`}
+          href={t.url!}
+          target="_blank"
+          rel="noreferrer"
+          className="block"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={t.url!}
+            alt={t.label}
+            className="h-16 w-16 rounded border border-[var(--border)] object-cover"
+          />
+          <span className="mt-0.5 block text-center text-[10px] text-[var(--status-neutral)]">
+            {t.label}
+          </span>
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function CreatePunchForm({ staff }: { staff: TimesheetStaffOption[] }) {
@@ -94,7 +149,13 @@ function CreatePunchForm({ staff }: { staff: TimesheetStaffOption[] }) {
   );
 }
 
-function EditPunchForm({ entry }: { entry: TimeClockEntryWithUser }) {
+function EditPunchForm({
+  entry,
+  locked,
+}: {
+  entry: TimeClockEntryWithUser;
+  locked: boolean;
+}) {
   const [updateState, updateAction] = useActionState(
     updatePunchAction.bind(null, entry.entry_id),
     { error: null } satisfies TimesheetFormState
@@ -103,6 +164,14 @@ function EditPunchForm({ entry }: { entry: TimeClockEntryWithUser }) {
     deletePunchAction.bind(null, entry.entry_id),
     { error: null } satisfies TimesheetFormState
   );
+
+  if (locked) {
+    return (
+      <p className="mt-2 text-sm text-[var(--status-neutral)]">
+        Week is approved — reopen to edit punches.
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-3 border-t border-[var(--chrome-border)] pt-3">
@@ -138,10 +207,172 @@ function EditPunchForm({ entry }: { entry: TimeClockEntryWithUser }) {
         </div>
         <FormError message={updateState.error} />
       </form>
+
+      <BreakSlotsEditor entry={entry} />
+
       <form action={deleteAction}>
-        <SubmitButton label="Delete punch" pendingLabel="Deleting…" variant="danger" />
+        <SubmitButton label="Void punch" pendingLabel="Voiding…" variant="danger" />
         <FormError message={deleteState.error} />
       </form>
+    </div>
+  );
+}
+
+function BreakSlotsEditor({ entry }: { entry: TimeClockEntryWithUser }) {
+  const breaks = entry.breaks ?? [];
+  const [addState, addAction] = useActionState(
+    createBreakAction.bind(null, entry.entry_id),
+    { error: null } satisfies TimesheetFormState
+  );
+
+  return (
+    <div className="space-y-3 rounded border border-[var(--chrome-border)] bg-[var(--surface-muted)] p-3">
+      <p className="text-sm font-semibold text-foreground">Break slots</p>
+      {breaks.length === 0 ? (
+        <p className="text-sm text-[var(--status-neutral)]">No breaks on this punch.</p>
+      ) : (
+        <ul className="space-y-3">
+          {breaks.map((brk) => (
+            <BreakSlotRow key={brk.break_id} brk={brk} />
+          ))}
+        </ul>
+      )}
+      <form action={addAction} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="block">
+          <span className="field-label">Break start</span>
+          <input name="break_start_at" type="datetime-local" className="input" required />
+        </label>
+        <label className="block">
+          <span className="field-label">Break end</span>
+          <input name="break_end_at" type="datetime-local" className="input" required />
+        </label>
+        <label className="block">
+          <span className="field-label">Type</span>
+          <select name="break_type" className="input" defaultValue="meal">
+            <option value="meal">Meal</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <div className="flex items-end">
+          <SubmitButton label="Add break" pendingLabel="Saving…" />
+        </div>
+        <div className="sm:col-span-2 lg:col-span-4">
+          <FormError message={addState.error} />
+          {addState.ok ? (
+            <p className="text-sm text-[var(--status-success)]">Break added.</p>
+          ) : null}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function BreakSlotRow({
+  brk,
+}: {
+  brk: NonNullable<TimeClockEntryWithUser["breaks"]>[number];
+}) {
+  const [updateState, updateAction] = useActionState(
+    updateBreakAction.bind(null, brk.break_id),
+    { error: null } satisfies TimesheetFormState
+  );
+  const [deleteState, deleteAction] = useActionState(
+    deleteBreakAction.bind(null, brk.break_id),
+    { error: null } satisfies TimesheetFormState
+  );
+
+  return (
+    <li className="space-y-2 rounded border border-[var(--chrome-border)] bg-white p-3">
+      <form action={updateAction} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="block">
+          <span className="field-label">Break start</span>
+          <input
+            name="break_start_at"
+            type="datetime-local"
+            className="input"
+            required
+            defaultValue={toShopDatetimeLocalValue(brk.break_start_at)}
+          />
+        </label>
+        <label className="block">
+          <span className="field-label">Break end</span>
+          <input
+            name="break_end_at"
+            type="datetime-local"
+            className="input"
+            required
+            defaultValue={
+              brk.break_end_at ? toShopDatetimeLocalValue(brk.break_end_at) : ""
+            }
+          />
+        </label>
+        <label className="block">
+          <span className="field-label">Type</span>
+          <select name="break_type" className="input" defaultValue={brk.break_type}>
+            <option value="meal">Meal</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
+        <div className="flex flex-wrap items-end gap-2">
+          <SubmitButton label="Save break" pendingLabel="Saving…" />
+        </div>
+        <FormError message={updateState.error} />
+      </form>
+      <form action={deleteAction}>
+        <SubmitButton label="Remove break" pendingLabel="Removing…" variant="danger" />
+        <FormError message={deleteState.error} />
+      </form>
+    </li>
+  );
+}
+
+function ApprovalActions({
+  userId,
+  weekStart,
+  status,
+}: {
+  userId: string;
+  weekStart: string;
+  status: string;
+}) {
+  const [approveState, approveAction] = useActionState(approveTimesheetAction, {
+    error: null,
+  } satisfies TimesheetFormState);
+  const [rejectState, rejectAction] = useActionState(rejectTimesheetAction, {
+    error: null,
+  } satisfies TimesheetFormState);
+  const [reopenState, reopenAction] = useActionState(reopenTimesheetAction, {
+    error: null,
+  } satisfies TimesheetFormState);
+
+  return (
+    <div className="mt-2 flex flex-wrap items-end gap-2">
+      {status !== "approved" ? (
+        <>
+          <form action={approveAction} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="user_id" value={userId} />
+            <input type="hidden" name="week_start_date" value={weekStart} />
+            <label className="block">
+              <span className="field-label">Note</span>
+              <input name="note" className="input" placeholder="Optional" />
+            </label>
+            <SubmitButton label="Approve" pendingLabel="Saving…" />
+          </form>
+          <form action={rejectAction} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="user_id" value={userId} />
+            <input type="hidden" name="week_start_date" value={weekStart} />
+            <input type="hidden" name="note" value="Needs correction" />
+            <SubmitButton label="Reject" pendingLabel="Saving…" variant="secondary" />
+          </form>
+        </>
+      ) : (
+        <form action={reopenAction}>
+          <input type="hidden" name="user_id" value={userId} />
+          <input type="hidden" name="week_start_date" value={weekStart} />
+          <SubmitButton label="Reopen week" pendingLabel="Saving…" variant="secondary" />
+        </form>
+      )}
+      <FormError message={approveState.error ?? rejectState.error ?? reopenState.error} />
     </div>
   );
 }
@@ -152,6 +383,7 @@ export function TimesheetsPanel({
   entries,
   summaries,
   staff,
+  weeksByUser,
   weekParam,
 }: Props) {
   const prevWeek = addDaysToDateKey(range.startDateKey, -7);
@@ -159,6 +391,7 @@ export function TimesheetsPanel({
   const exportHref = `/settings/timesheets/export?week=${encodeURIComponent(weekParam)}`;
 
   const grandTotalMs = summaries.reduce((sum, row) => sum + row.total_ms, 0);
+  const grandOtMs = summaries.reduce((sum, row) => sum + row.ot_ms, 0);
 
   return (
     <div className="flex flex-col gap-6">
@@ -166,7 +399,8 @@ export function TimesheetsPanel({
         <div>
           <p className="text-sm text-[var(--status-neutral)]">
             Week of {formatDate(range.startUtc)} –{" "}
-            {formatDate(new Date(range.endUtc.getTime() - 1))} (America/Toronto, Mon–Sun)
+            {formatDate(new Date(range.endUtc.getTime() - 1))} (America/Toronto, Mon–Sun).
+            OT after {ONTARIO_OT_THRESHOLD_HOURS}h.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -221,7 +455,8 @@ export function TimesheetsPanel({
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold text-foreground">Weekly summary</h2>
           <p className="text-sm text-[var(--status-neutral)]">
-            Shop total: {formatHoursDecimal(grandTotalMs)} h
+            Shop paid: {formatHoursDecimal(grandTotalMs)} h
+            {grandOtMs > 0 ? ` · OT ${formatHoursDecimal(grandOtMs)} h` : ""}
           </p>
         </div>
         {summaries.length === 0 ? (
@@ -239,33 +474,53 @@ export function TimesheetsPanel({
                       {shortDayLabel(key)}
                     </th>
                   ))}
-                  <th className="py-2 pl-3 font-medium">Total</th>
+                  <th className="py-2 pl-3 font-medium">Paid</th>
+                  <th className="py-2 pl-3 font-medium">OT</th>
+                  <th className="py-2 pl-3 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {summaries.map((row) => (
-                  <tr
-                    key={row.user_id}
-                    className="border-b border-[var(--chrome-border)]"
-                  >
-                    <td className="py-2 pr-3 font-medium text-foreground">
-                      {row.display_name}
-                      {row.open_entry_ids.length > 0 ? (
-                        <span className="ml-2 text-xs font-semibold text-[var(--status-warning)]">
-                          open
-                        </span>
-                      ) : null}
-                    </td>
-                    {row.daily.map((day) => (
-                      <td key={day.dateKey} className="px-2 py-2 tabular-nums">
-                        {day.ms > 0 ? formatHoursDecimal(day.ms) : "—"}
+                {summaries.map((row) => {
+                  const approval =
+                    weeksByUser[row.user_id]?.status ?? row.week_approval ?? "open";
+                  return (
+                    <tr
+                      key={row.user_id}
+                      className="border-b border-[var(--chrome-border)] align-top"
+                    >
+                      <td className="py-2 pr-3 font-medium text-foreground">
+                        {row.display_name}
+                        {row.open_entry_ids.length > 0 ? (
+                          <span className="ml-2 text-xs font-semibold text-[var(--status-warning)]">
+                            open
+                          </span>
+                        ) : null}
+                        <ApprovalActions
+                          userId={row.user_id}
+                          weekStart={range.startDateKey}
+                          status={approval}
+                        />
                       </td>
-                    ))}
-                    <td className="py-2 pl-3 font-semibold tabular-nums">
-                      {formatHoursDecimal(row.total_ms)}
-                    </td>
-                  </tr>
-                ))}
+                      {row.daily.map((day) => (
+                        <td key={day.dateKey} className="px-2 py-2 tabular-nums">
+                          {day.ms > 0 ? formatHoursDecimal(day.ms) : "—"}
+                        </td>
+                      ))}
+                      <td className="py-2 pl-3 font-semibold tabular-nums">
+                        {formatHoursDecimal(row.total_ms)}
+                      </td>
+                      <td className="py-2 pl-3 tabular-nums">
+                        {formatHoursDecimal(row.ot_ms)}
+                        {row.ot_ms > 0 ? (
+                          <span className="ml-1 text-xs font-semibold text-[var(--status-warning)]">
+                            OT
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="py-2 pl-3 capitalize">{approval}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -291,9 +546,18 @@ export function TimesheetsPanel({
         ) : (
           <ul className="mt-3 divide-y divide-[var(--chrome-border)]">
             {entries.map((entry) => {
-              const hours = formatHoursDecimal(
-                punchDurationMs(entry.clock_in_at, entry.clock_out_at)
+              const breakMs = unpaidBreakMsForEntry(
+                (entry.breaks ?? []).map((b) => ({
+                  entry_id: b.entry_id,
+                  break_start_at: b.break_start_at,
+                  break_end_at: b.break_end_at,
+                })),
+                entry.entry_id
               );
+              const gross = punchDurationMs(entry.clock_in_at, entry.clock_out_at);
+              const paid = Math.max(0, gross - breakMs);
+              const locked =
+                (weeksByUser[entry.user_id]?.status ?? "open") === "approved";
               return (
                 <li key={entry.entry_id} className="py-3">
                   <details>
@@ -312,7 +576,8 @@ export function TimesheetsPanel({
                         {entry.clock_out_at
                           ? formatDateTime(entry.clock_out_at)
                           : "now"}{" "}
-                        · {hours} h
+                        · {formatHoursDecimal(paid)} h paid
+                        {breakMs > 0 ? ` (−${Math.round(breakMs / 60_000)}m break)` : ""}
                       </span>
                     </summary>
                     {entry.notes ? (
@@ -320,7 +585,8 @@ export function TimesheetsPanel({
                         {entry.notes}
                       </p>
                     ) : null}
-                    <EditPunchForm entry={entry} />
+                    <PunchPhotoRow entry={entry} />
+                    <EditPunchForm entry={entry} locked={locked} />
                   </details>
                 </li>
               );

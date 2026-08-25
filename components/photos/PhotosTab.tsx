@@ -9,6 +9,8 @@ import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { formatDateTime } from "@/lib/datetime/format";
+import { toLightboxPhotos } from "@/lib/photos/lightbox";
+import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 
 type Action = (state: PhotoFormState, formData: FormData) => Promise<PhotoFormState>;
 
@@ -45,6 +47,7 @@ export function PhotosTab({
   const [filter, setFilter] = useState<PhotoCategory | "all">("all");
   const [chooserOpen, setChooserOpen] = useState(false);
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
+  const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null);
 
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
@@ -57,6 +60,11 @@ export function PhotosTab({
   const missingRequired = REQUIRED_PHOTO_CATEGORIES.filter((c) => !covered.has(c));
 
   const visible = filter === "all" ? photos : photos.filter((p) => p.category === filter);
+
+  const lightboxPhotos = useMemo(() => toLightboxPhotos(visible), [visible]);
+  const lightboxIndex = lightboxPhotoId
+    ? lightboxPhotos.findIndex((p) => p.id === lightboxPhotoId)
+    : -1;
 
   function applyPickedFile(input: HTMLInputElement) {
     const file = input.files?.[0] ?? null;
@@ -243,12 +251,19 @@ export function PhotosTab({
               className="overflow-hidden rounded border border-[var(--border)] bg-white"
             >
               {photo.signed_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={photo.signed_url}
-                  alt={`${PHOTO_CATEGORY_LABELS[photo.category]} intake photo`}
-                  className="aspect-[4/3] w-full object-cover bg-[var(--surface-muted)]"
-                />
+                <button
+                  type="button"
+                  className="block w-full cursor-zoom-in p-0 focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                  aria-label={`View ${PHOTO_CATEGORY_LABELS[photo.category]} photo full size`}
+                  onClick={() => setLightboxPhotoId(photo.photo_id)}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photo.signed_url}
+                    alt={`${PHOTO_CATEGORY_LABELS[photo.category]} intake photo`}
+                    className="aspect-[4/3] w-full object-cover bg-[var(--surface-muted)]"
+                  />
+                </button>
               ) : (
                 <div className="flex aspect-[4/3] items-center justify-center bg-[var(--surface-muted)] text-sm text-[var(--status-neutral)]">
                   Preview unavailable
@@ -283,6 +298,14 @@ export function PhotosTab({
           ))}
         </ul>
       )}
+
+      {lightboxIndex >= 0 ? (
+        <PhotoLightbox
+          photos={lightboxPhotos}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxPhotoId(null)}
+        />
+      ) : null}
 
       {chooserOpen ? (
         <div
