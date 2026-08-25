@@ -7,17 +7,15 @@ import { useNowTick } from "@/lib/client/useNowTick";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
   closestCenter,
   pointerWithin,
   useDraggable,
   useDroppable,
-  useSensor,
-  useSensors,
   type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { useBoardDragSensors } from "@/lib/client/useBoardDragSensors";
 import { ChevronLeft, ChevronRight, Flag, Play } from "lucide-react";
 import {
   dispatchWorkOrderToTechnicianAction,
@@ -520,11 +518,7 @@ export function ControlCenterShell({
     };
   }, [data.location_id, scheduleRefresh]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 6 },
-    })
-  );
+  const sensors = useBoardDragSensors(6);
 
   const { setNodeRef: setPoolRef, isOver: poolOver } = useDroppable({
     id: POOL_ID,

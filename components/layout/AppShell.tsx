@@ -129,10 +129,16 @@ export function AppShell({
 
   useEffect(() => {
     if (!mobileNavOpen) return;
-    const previous = document.body.style.overflow;
+    // iOS Safari scrolls the documentElement, so locking <body> alone leaves the
+    // page scrollable behind the drawer.
+    const root = document.documentElement;
+    const previousRoot = root.style.overflow;
+    const previousBody = document.body.style.overflow;
+    root.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = previous;
+      root.style.overflow = previousRoot;
+      document.body.style.overflow = previousBody;
     };
   }, [mobileNavOpen]);
 

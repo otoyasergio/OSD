@@ -202,6 +202,13 @@
   }
 }
 
+/* The only infinite animation on the floor — honour the OS motion setting. */
+@media (prefers-reduced-motion: reduce) {
+  .timerDot {
+    animation: none;
+  }
+}
+
 .body {
   padding: 0.55rem 0.65rem 0.7rem;
 }

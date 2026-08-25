@@ -104,7 +104,7 @@ export function MessageBubble({
           {editing ? (
             <div className="space-y-2">
               <textarea
-                className="input w-full text-sm text-slate-900"
+                className="input w-full text-slate-900"
                 value={editBody}
                 onChange={(e) => setEditBody(e.target.value)}
                 rows={2}

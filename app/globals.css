@@ -123,6 +123,34 @@ summary {
   min-height: var(--tap-min);
 }
 
+/*
+ * iOS Safari zooms the viewport when a focused text control computes below 16px,
+ * and never zooms back out on blur — the page is left shifted and horizontally
+ * scrollable. Floor every text-entry control at 16px on touch devices so the
+ * denser desktop type scale survives untouched. `select` is exempt: iOS opens a
+ * picker wheel instead of focusing it, so it never triggers the zoom.
+ */
+@media (pointer: coarse) {
+  textarea,
+  input:not([type]),
+  input:is(
+    [type="text"],
+    [type="search"],
+    [type="email"],
+    [type="tel"],
+    [type="url"],
+    [type="password"],
+    [type="number"],
+    [type="date"],
+    [type="datetime-local"],
+    [type="month"],
+    [type="time"],
+    [type="week"]
+  ) {
+    font-size: max(16px, 1em);
+  }
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -405,8 +433,8 @@ summary {
   gap: 0.5rem 0.75rem;
   background: #134e4a;
   color: #f0fdfa;
-  padding: 0.5rem max(0.75rem, env(safe-area-inset-right)) 0.5rem
-    max(0.75rem, env(safe-area-inset-left));
+  padding: 0.5rem max(0.75rem, env(safe-area-inset-right, 0px)) 0.5rem
+    max(0.75rem, env(safe-area-inset-left, 0px));
   border-bottom: 1px solid var(--chrome-border);
 }
 
@@ -435,7 +463,7 @@ summary {
   opacity: 0.6;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767.98px) {
   .app-shell {
     flex-direction: column;
   }
@@ -447,9 +475,9 @@ summary {
     gap: 0.75rem;
     border-bottom: 1px solid var(--chrome-border);
     background: var(--chrome);
-    padding: 0.75rem max(0.75rem, env(safe-area-inset-left)) 0.75rem
-      max(0.75rem, env(safe-area-inset-right));
-    padding-top: max(0.75rem, env(safe-area-inset-top));
+    padding: 0.75rem max(0.75rem, env(safe-area-inset-left, 0px)) 0.75rem
+      max(0.75rem, env(safe-area-inset-right, 0px));
+    padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
   }
 
   .mobile-header-brand {
@@ -489,6 +517,9 @@ summary {
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
+    /* iOS still rubber-band scrolls the page behind a fixed scrim, which
+       `overflow: hidden` on <body> alone does not prevent. */
+    touch-action: none;
   }
 
   .app-shell-nav-open .sidebar-backdrop {
@@ -506,11 +537,13 @@ summary {
     border-right: 1px solid var(--chrome-border);
     border-bottom: none;
     background: var(--chrome);
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     transform: translateX(-100%);
     transition: transform 0.2s ease;
     overflow-y: auto;
+    /* Keep drawer scrolling from chaining into the page underneath. */
+    overscroll-behavior: contain;
   }
 
   .app-shell-nav-open .sidebar {
@@ -556,9 +589,9 @@ summary {
   }
 
   .main-body {
-    padding-inline: max(1rem, env(safe-area-inset-left))
-      max(1rem, env(safe-area-inset-right));
-    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    padding-inline: max(1rem, env(safe-area-inset-left, 0px))
+      max(1rem, env(safe-area-inset-right, 0px));
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -708,6 +741,34 @@ summary {
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
+/*
+ * iOS Safari overrides an unstyled <select> with its own corner radius,
+ * background gradient and vertical centring, so a select sits visibly out of
+ * line with the .input beside it. Drop the native chrome and draw our own
+ * chevron; the extra inline-end padding reserves room for it.
+ *
+ * Must stay below the .input/.select and .input-dark/.select-dark rules — both
+ * set the `background` shorthand, which would reset this background-image.
+ */
+.select,
+.select-dark {
+  appearance: none;
+  background-repeat: no-repeat;
+  background-position: right 0.65rem center;
+  background-size: 0.7rem auto;
+  padding-right: 2rem;
+}
+
+.select {
+  /* Chevron stroked in --foreground. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5l5-5' stroke='%230a0a0a' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+.select-dark {
+  /* Chevron stroked in --chrome-foreground. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5l5-5' stroke='%23fafafa' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
 /* ── Buttons ── */
 
 .btn {
@@ -834,6 +895,9 @@ a.stat-card:hover {
 
 .data-table-wrap {
   overflow-x: auto;
+  /* Keep a horizontal swipe on a wide table from triggering Safari's
+     back-navigation gesture. */
+  overscroll-behavior-x: contain;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface);
@@ -977,9 +1041,9 @@ a.stat-card:hover {
 /* ── Portal & contract (mobile) ── */
 
 .portal-page {
-  padding-left: max(1rem, env(safe-area-inset-left));
-  padding-right: max(1rem, env(safe-area-inset-right));
-  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-bottom: max(2rem, env(safe-area-inset-bottom, 0px));
 }
 
 .contract-signing-prose {
@@ -987,7 +1051,7 @@ a.stat-card:hover {
   -webkit-overflow-scrolling: touch;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767.98px) {
   .contract-signing-form label {
     max-width: none;
   }
@@ -1055,7 +1119,7 @@ a.stat-card:hover {
   top: calc(100% + 0.25rem);
   left: 0;
   right: 0;
-  max-height: min(24rem, 70vh);
+  max-height: min(24rem, 70dvh);
   overflow: auto;
   border-radius: var(--radius-md);
   border: 1px solid var(--chrome-border);
@@ -1596,6 +1660,8 @@ a.stat-card:hover {
   overflow-x: auto;
   padding-bottom: 0.5rem;
   -webkit-overflow-scrolling: touch;
+  /* Swiping the columns must not trigger Safari's back-navigation gesture. */
+  overscroll-behavior-x: contain;
 }
 
 .shop-board-column {
@@ -1606,7 +1672,7 @@ a.stat-card:hover {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface-muted);
-  max-height: 70vh;
+  max-height: 70dvh;
 }
 
 .shop-board-column-header {
@@ -1677,7 +1743,10 @@ a.stat-card:hover {
 }
 
 .wo-card-drag-wrap {
-  touch-action: none;
+  /* Not `none`: the board scrolls both ways and the page scrolls vertically, so
+     the browser has to keep the pan gestures. Touch drags come from the long
+     press in `useBoardDragSensors`, which only fires when the finger is still. */
+  touch-action: manipulation;
 }
 
 .wo-card-drag-wrap--draggable {
@@ -2079,7 +2148,7 @@ button.board-control-link {
   gap: 0.75rem;
   min-height: 3.5rem;
   padding: 0.75rem 1rem;
-  padding-top: max(0.75rem, env(safe-area-inset-top));
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
@@ -2131,9 +2200,14 @@ button.board-control-link {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
+  /*
+   * Deliberately no `-webkit-overflow-scrolling: touch`. It forces a separate
+   * compositing layer, which makes the sticky `.inspection-section-header`
+   * children flicker or disappear during momentum scroll on iOS. iOS 13+ already
+   * scrolls overflow containers with momentum by default, so nothing is lost.
+   */
   padding: 1rem;
-  padding-bottom: max(8.5rem, calc(7rem + env(safe-area-inset-bottom)));
+  padding-bottom: max(8.5rem, calc(7rem + env(safe-area-inset-bottom, 0px)));
   scroll-padding-bottom: 12rem;
 }
 
@@ -2573,7 +2647,7 @@ button.board-control-link {
   gap: 0.75rem;
   margin: 1rem -1rem -1rem;
   padding: 0.75rem 1rem;
-  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
   border-top: 2px solid #0a0a0a;
   background: #fff;
 }
@@ -2650,7 +2724,9 @@ button.board-control-link {
   border: 1px solid var(--border);
   background: var(--surface);
   padding: 0.5rem 0.75rem;
-  font-size: 0.9375rem;
+  /* 16px, not 15px: this is an iPad-first surface, and a class selector outranks
+     the coarse-pointer floor near the top of this file. */
+  font-size: 1rem;
 }
 
 .inspection-item-photo {
@@ -3087,7 +3163,7 @@ button.board-control-link {
   top: calc(100% + 0.25rem);
   left: 0;
   right: 0;
-  max-height: min(20rem, 55vh);
+  max-height: min(20rem, 55dvh);
   overflow: auto;
   border-radius: 0.25rem;
   border: 1px solid var(--border, #d4d4d8);
@@ -3658,7 +3734,11 @@ label.photo-source-sheet-action {
   align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.875rem 1rem;
+  /* Fullscreen `inset: 0` puts this row under the notch / Dynamic Island, which
+     would swallow the close button. */
+  padding: max(0.875rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px)) 0.875rem
+    max(1rem, env(safe-area-inset-left, 0px));
 }
 
 .photo-lightbox-title {
@@ -3730,11 +3810,11 @@ label.photo-source-sheet-action {
 }
 
 .photo-lightbox-nav--prev {
-  left: 0.5rem;
+  left: max(0.5rem, env(safe-area-inset-left, 0px));
 }
 
 .photo-lightbox-nav--next {
-  right: 0.5rem;
+  right: max(0.5rem, env(safe-area-inset-right, 0px));
 }
 
 .photo-lightbox-caption {
@@ -5599,7 +5679,7 @@ a.cc-kpi-link:focus-visible {
   position: sticky;
   bottom: 0;
   flex-shrink: 0;
-  padding: 0.75rem 1rem max(1rem, env(safe-area-inset-bottom));
+  padding: 0.75rem 1rem max(1rem, env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
@@ -5649,7 +5729,7 @@ a.cc-kpi-link:focus-visible {
   flex: 1;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 767.98px) {
   .pit-layout {
     grid-template-columns: 1fr;
   }
@@ -6327,7 +6407,7 @@ a.cc-kpi-link:focus-visible {
   bottom: 0;
   z-index: 5;
   flex-shrink: 0;
-  padding: 0.75rem 1rem max(1rem, env(safe-area-inset-bottom));
+  padding: 0.75rem 1rem max(1rem, env(safe-area-inset-bottom, 0px));
   border-top: 1px solid #e4e4e7;
   background: #fff;
 }
@@ -6387,6 +6467,8 @@ a.cc-kpi-link:focus-visible {
   box-shadow: 0 4px 0 0 #c2410c;
   cursor: pointer;
   touch-action: manipulation;
+  /* Safari's grey tap flash muddies the raised-button press effect below. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .pit-go:active:not(:disabled) {
@@ -6645,7 +6727,7 @@ button.pit-current-card {
   gap: 0.35rem;
   min-height: 3.25rem;
   padding: 0.4rem 0.75rem;
-  padding-top: max(0.4rem, env(safe-area-inset-top));
+  padding-top: max(0.4rem, env(safe-area-inset-top, 0px));
   background: #0b1220;
 }
 
@@ -6813,8 +6895,10 @@ button.pit-current-card {
   width: min(40rem, 100%);
   max-height: 80dvh;
   overflow: auto;
+  /* Scrolling past the end of a sheet must not scroll the floor behind it. */
+  overscroll-behavior: contain;
   /* Bottom sheets sit on the home-bar edge — keep controls above it. */
-  padding: 1.25rem 1.25rem max(1.25rem, env(safe-area-inset-bottom));
+  padding: 1.25rem 1.25rem max(1.25rem, env(safe-area-inset-bottom, 0px));
   border-radius: 18px 18px 0 0;
   background: #fff;
 }
@@ -6825,7 +6909,7 @@ button.pit-current-card {
   flex-direction: column;
   overflow: hidden;
   max-height: min(26rem, 65dvh);
-  padding: 0.65rem 0.75rem max(0.5rem, env(safe-area-inset-bottom));
+  padding: 0.65rem 0.75rem max(0.5rem, env(safe-area-inset-bottom, 0px));
 }
 
 .pit-sheet--work {
@@ -6907,7 +6991,11 @@ button.pit-current-card {
   padding: 0.65rem 0.75rem;
   border: 2px solid #d4d4d8;
   border-radius: 10px;
-  font: inherit;
+  /* Not `font: inherit` — these inputs live inside `.pit-sheet-label`, so they
+     would inherit its 14px/600 and trip the iOS focus zoom. */
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 400;
 }
 
 .pit-sheet-or {
@@ -7261,7 +7349,8 @@ button.pit-current-card {
 
 .pit-sheet-input--compact {
   padding: 0.45rem 0.55rem;
-  font-size: 0.875rem;
+  /* Stays at 16px so a compact variant cannot reintroduce the iOS focus zoom. */
+  font-size: 1rem;
 }
 
 .pit-sheet-save--compact {
@@ -7545,9 +7634,12 @@ button.pit-current-card {
 /* Communications hub dock + call overlay */
 .comms-dock {
   position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  z-index: 60;
+  /* Clear the home indicator and the landscape notch rail, otherwise the system
+     swipe gesture eats taps on the chip. z-index sits under the mobile nav
+     backdrop (40) so the dock never floats over the open drawer. */
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  z-index: 35;
 }
 
 .comms-dock-chip {
@@ -7556,6 +7648,8 @@ button.pit-current-card {
   align-items: center;
   gap: 0.5rem;
   border-radius: 999px;
+  /* Safari draws the tap flash on the border box, so a pill gets a rectangle. */
+  -webkit-tap-highlight-color: transparent;
   border: 1px solid var(--chrome-border, #334155);
   background: var(--chrome, #0f172a);
   color: var(--chrome-foreground, #f8fafc);
@@ -7576,7 +7670,11 @@ button.pit-current-card {
   right: 0;
   bottom: calc(100% + 0.5rem);
   width: min(22rem, calc(100vw - 2rem));
-  overflow: hidden;
+  /* Without a cap a long recents list grows past the top of the viewport with
+     no way to reach it. Contain the scroll so it does not chain to the page. */
+  max-height: min(26rem, calc(100dvh - 8rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 0.75rem;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -7606,7 +7704,11 @@ button.pit-current-card {
   align-items: center;
   justify-content: center;
   background: rgb(0 0 0 / 0.7);
-  padding: 1rem;
+  /* `inset: 0` reaches under the notch and home indicator with viewport-fit=cover.
+     Hang-up is the one control that must always be tappable. */
+  padding: max(1rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-left, 0px));
 }
 
 .comms-call-overlay-card {
