@@ -42,8 +42,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example
           NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
 
-      - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        # WebKit backs the Safari/iOS layout gates in safari-mobile.spec.ts.
+        run: npx playwright install --with-deps chromium webkit
 
       - name: E2E smoke
         run: npm run test:e2e

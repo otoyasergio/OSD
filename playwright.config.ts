@@ -21,6 +21,13 @@ const STATEFUL_SPECS = [
   "**/responsive.spec.ts",
 ];
 
+/**
+ * Safari/iOS layout gates. Public pages only — no sign-in and no database — so
+ * unlike STATEFUL_SPECS these run on every invocation, across real WebKit at
+ * phone, iPad and desktop sizes.
+ */
+const SAFARI_SPECS = ["**/safari-mobile.spec.ts"];
+
 export default defineConfig({
   testDir: "tests/e2e",
   fullyParallel: true,
@@ -39,7 +46,22 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
-      testIgnore: STATEFUL_SPECS,
+      testIgnore: [...STATEFUL_SPECS, ...SAFARI_SPECS],
+    },
+    {
+      name: "safari-phone",
+      use: { ...devices["iPhone 13 Mini"] },
+      testMatch: SAFARI_SPECS,
+    },
+    {
+      name: "safari-ipad",
+      use: { ...devices["iPad Pro 11"] },
+      testMatch: SAFARI_SPECS,
+    },
+    {
+      name: "safari-desktop",
+      use: { ...devices["Desktop Safari"] },
+      testMatch: SAFARI_SPECS,
     },
     ...(allowMutation
       ? [

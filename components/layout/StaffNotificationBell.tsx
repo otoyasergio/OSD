@@ -37,7 +37,7 @@ type PanelCoords = {
   maxHeight: number;
 };
 
-const MOBILE_MEDIA_QUERY = "(max-width: 768px)";
+const MOBILE_MEDIA_QUERY = "(max-width: 767.98px)";
 
 function useSlotVisible(slot: BellSlot | undefined): boolean {
   return useSyncExternalStore(
@@ -94,17 +94,32 @@ export function StaffNotificationBell({
       const rect = button.getBoundingClientRect();
       const gap = 8;
       const top = rect.bottom + gap;
-      const right = Math.max(8, window.innerWidth - rect.right);
-      const maxHeight = Math.max(12 * 16, window.innerHeight - top - 16);
+      // iOS Safari keeps window.innerHeight/innerWidth at the *layout* viewport,
+      // which ignores the collapsing toolbar and the software keyboard, so the
+      // panel would extend past what you can actually see. visualViewport
+      // reports the visible box; offset + size converts it back to the layout
+      // coordinates that getBoundingClientRect and position:fixed use.
+      const visual = window.visualViewport;
+      const visibleRight = visual ? visual.offsetLeft + visual.width : window.innerWidth;
+      const visibleBottom = visual
+        ? visual.offsetTop + visual.height
+        : window.innerHeight;
+      const right = Math.max(8, visibleRight - rect.right);
+      const maxHeight = Math.max(12 * 16, visibleBottom - top - 16);
       setCoords({ top, right, maxHeight });
     }
 
     updatePosition();
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
+    const visual = window.visualViewport;
+    visual?.addEventListener("resize", updatePosition);
+    visual?.addEventListener("scroll", updatePosition);
     return () => {
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
+      visual?.removeEventListener("resize", updatePosition);
+      visual?.removeEventListener("scroll", updatePosition);
     };
   }, [active]);
 

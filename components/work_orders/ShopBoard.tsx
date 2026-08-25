@@ -4,16 +4,14 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
   closestCenter,
   pointerWithin,
   useDroppable,
-  useSensor,
-  useSensors,
   type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { useBoardDragSensors } from "@/lib/client/useBoardDragSensors";
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
 import { SHOP_BOARD_COLUMNS, GALLERY_BOARD_COLUMNS } from "@/lib/status/pipeline";
 import {
@@ -122,11 +120,7 @@ export function ShopBoard({
     setBoardRows(rows);
   }
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
-    })
-  );
+  const sensors = useBoardDragSensors(8);
 
   const byStatus = useMemo(() => {
     const map = new Map<WorkOrderStatus, WorkOrderCardData[]>();
