@@ -19,6 +19,7 @@ import {
   canClearAdminFlag,
   canOverrideSafetyRequirement,
   canUpdateServiceInformation,
+  canUseShopPhone,
   canViewClients,
   canViewPartCost,
   canViewPricing,
@@ -398,6 +399,7 @@ export default async function WorkOrderDetailPage({
         canViewClients={canSeeClients}
         canViewPricing={canSeePricing}
         showContractAction={activeTab !== "overview"}
+        showShopPhone={canUseShopPhone(viewRole)}
       />
       <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
 

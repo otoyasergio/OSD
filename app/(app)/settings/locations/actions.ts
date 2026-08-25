@@ -37,9 +37,8 @@ export async function updateLocationAction(
       name: String(formData.get("name") ?? ""),
       code: String(formData.get("code") ?? ""),
       status:
-        String(formData.get("status") ?? "active") === "inactive"
-          ? "inactive"
-          : "active",
+        String(formData.get("status") ?? "active") === "inactive" ? "inactive" : "active",
+      voice_e164: String(formData.get("voice_e164") ?? "").trim() || null,
     });
   } catch (error) {
     return { error: toFormErrorMessage(error) };

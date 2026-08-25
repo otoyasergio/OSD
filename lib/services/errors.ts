@@ -234,6 +234,14 @@ const MESSAGES: Record<string, string> = {
   ATTACHMENT_UPLOAD_FAILED: "Could not upload the attachment. Try again.",
   TWILIO_VIDEO_NOT_CONFIGURED:
     "Video calling is not configured. Add TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET.",
+  TWILIO_VOICE_NOT_CONFIGURED:
+    "Shop phone is not configured. Add TWILIO_TWIML_APP_SID plus the Twilio API key pair.",
+  USE_SHOP_VOICE: "Staff audio uses the shop phone, not a video room.",
+  SHOP_PHONE_NUMBER_MISSING:
+    "This location does not have a shop phone number yet. Set it in Location settings.",
+  INVALID_VOICE_E164:
+    "Shop phone number must be a valid E.164 number (e.g. +14165551212).",
+  PHONE_CALL_NOT_FOUND: "That call no longer exists.",
   CALL_NOT_FOUND: "That call no longer exists.",
   CALL_ALREADY_ENDED: "That call has already ended.",
   PROFILE_PHOTO_REQUIRED: "Choose a profile photo to upload.",

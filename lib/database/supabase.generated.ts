@@ -83,6 +83,7 @@ export type Database = {
           name: string;
           code: string;
           active: boolean;
+          voice_e164: string | null;
         };
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
@@ -281,6 +282,64 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["chat_call"]["Insert"]>;
       };
+      staff_voice_presence: {
+        Row: {
+          user_id: string;
+          location_id: string;
+          registered_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          location_id: string;
+          registered_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["staff_voice_presence"]["Insert"]>;
+      };
+      phone_call: {
+        Row: {
+          phone_call_id: string;
+          direction: string;
+          channel: string;
+          location_id: string;
+          from_e164: string | null;
+          to_e164: string | null;
+          from_user_id: string | null;
+          to_user_id: string | null;
+          customer_id: string | null;
+          work_order_id: string | null;
+          conversation_id: string | null;
+          twilio_call_sid: string | null;
+          status: string;
+          started_at: string;
+          answered_at: string | null;
+          ended_at: string | null;
+          duration_seconds: number | null;
+          created_at: string;
+        };
+        Insert: {
+          phone_call_id?: string;
+          direction: string;
+          channel: string;
+          location_id: string;
+          from_e164?: string | null;
+          to_e164?: string | null;
+          from_user_id?: string | null;
+          to_user_id?: string | null;
+          customer_id?: string | null;
+          work_order_id?: string | null;
+          conversation_id?: string | null;
+          twilio_call_sid?: string | null;
+          status?: string;
+          started_at?: string;
+          answered_at?: string | null;
+          ended_at?: string | null;
+          duration_seconds?: number | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["phone_call"]["Insert"]>;
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -295,6 +354,10 @@ export type Database = {
       user_location_ids: {
         Args: Record<string, never>;
         Returns: string[];
+      };
+      is_front_office_app_user: {
+        Args: Record<string, never>;
+        Returns: boolean;
       };
       is_chat_participant: {
         Args: { p_conversation_id: string };

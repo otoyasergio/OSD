@@ -163,13 +163,16 @@ Brand approval is often fast; Campaign review can take **~10–15 days**. Treat 
 
 ### App env
 
-| Variable                       | Required  | Notes                                                  |
-| ------------------------------ | --------- | ------------------------------------------------------ |
-| `TWILIO_ACCOUNT_SID`           | Yes       |                                                        |
-| `TWILIO_AUTH_TOKEN`            | Yes       | Also verifies `X-Twilio-Signature` on inbound + status |
-| `TWILIO_MESSAGING_SERVICE_SID` | Preferred | When set, sends use `MessagingServiceSid` (no `From`)  |
-| `TWILIO_FROM_NUMBER`           | Fallback  | Required only if Messaging Service SID is unset        |
-| `NEXT_PUBLIC_APP_URL`          | Yes       | Used for signature URL + StatusCallback                |
+| Variable                       | Required    | Notes                                                     |
+| ------------------------------ | ----------- | --------------------------------------------------------- |
+| `TWILIO_ACCOUNT_SID`           | Yes         |                                                           |
+| `TWILIO_AUTH_TOKEN`            | Yes         | Also verifies `X-Twilio-Signature` on inbound + status    |
+| `TWILIO_MESSAGING_SERVICE_SID` | Preferred   | When set, sends use `MessagingServiceSid` (no `From`)     |
+| `TWILIO_FROM_NUMBER`           | Fallback    | Required only if Messaging Service SID is unset           |
+| `TWILIO_API_KEY_SID`           | Voice/Video | API key for access tokens                                 |
+| `TWILIO_API_KEY_SECRET`        | Voice/Video | API key secret                                            |
+| `TWILIO_TWIML_APP_SID`         | Voice       | TwiML App whose Voice URL is `/api/twilio/voice/outbound` |
+| `NEXT_PUBLIC_APP_URL`          | Yes         | Used for signature URL + StatusCallback                   |
 
 ### App behaviour (shipped)
 
@@ -202,6 +205,18 @@ npx vercel env add TWILIO_MESSAGING_SERVICE_SID preview --sensitive --yes
 ```
 
 Then `npx vercel --prod` and re-run the smoke script (expect **401**).
+
+### Shop phone (Twilio Voice)
+
+Required for PSTN inbound/outbound. Staff audio uses the same Device.
+
+1. Create a **TwiML App** in Twilio Console. Voice request URL: `https://service.torontomoto.com/api/twilio/voice/outbound` (HTTP POST). Status callback: `https://service.torontomoto.com/api/twilio/voice/status`.
+2. Put the TwiML App SID in `TWILIO_TWIML_APP_SID` (plus existing `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET` for Voice + Video grants).
+3. For each shop number, set Voice webhook to `https://service.torontomoto.com/api/twilio/voice/inbound` and status callback to `/api/twilio/voice/status`.
+4. In **Settings → Locations**, set **Shop phone** to that number’s E.164 (one number per location).
+5. Smoke: unsigned `POST /api/twilio/voice/inbound` → **401** (or **503** if `TWILIO_AUTH_TOKEN` is missing). Logged-out `POST /api/calls/voice-token` → **401**.
+
+No call recording or voicemail audio in v1 (Canadian consent). Missed inbound still logs and plays a short “we missed you” prompt.
 
 ### CASL reminder
 

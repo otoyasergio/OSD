@@ -9,6 +9,7 @@ export type LocationRecord = {
   name: string;
   code: string;
   status: "active" | "inactive";
+  voice_e164: string | null;
   created_at: string;
   updated_at: string;
   user_count: number;
@@ -36,7 +37,7 @@ export async function listLocations(): Promise<LocationRecord[]> {
 
   const { data: locations, error } = await supabase
     .from("location")
-    .select("location_id, name, code, status, created_at, updated_at")
+    .select("location_id, name, code, status, voice_e164, created_at, updated_at")
     .order("name");
   if (error) throw error;
 
@@ -52,22 +53,21 @@ export async function listLocations(): Promise<LocationRecord[]> {
     byLocation.set(row.location_id, list);
   }
 
-  return ((locations ?? []) as Array<Omit<LocationRecord, "user_count" | "assigned_user_ids">>).map(
-    (loc) => {
-      const assigned = byLocation.get(loc.location_id) ?? [];
-      return {
-        ...loc,
-        status: loc.status as "active" | "inactive",
-        user_count: assigned.length,
-        assigned_user_ids: assigned,
-      };
-    }
-  );
+  return (
+    (locations ?? []) as Array<Omit<LocationRecord, "user_count" | "assigned_user_ids">>
+  ).map((loc) => {
+    const assigned = byLocation.get(loc.location_id) ?? [];
+    return {
+      ...loc,
+      status: loc.status as "active" | "inactive",
+      voice_e164: (loc as { voice_e164?: string | null }).voice_e164 ?? null,
+      user_count: assigned.length,
+      assigned_user_ids: assigned,
+    };
+  });
 }
 
-export async function listUsersForLocationAssignment(): Promise<
-  LocationUserOption[]
-> {
+export async function listUsersForLocationAssignment(): Promise<LocationUserOption[]> {
   await requireOwner();
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -123,7 +123,12 @@ export async function createLocation(input: {
 
 export async function updateLocation(
   locationId: string,
-  input: { name: string; code: string; status: "active" | "inactive" }
+  input: {
+    name: string;
+    code: string;
+    status: "active" | "inactive";
+    voice_e164?: string | null;
+  }
 ): Promise<void> {
   const user = await requireOwner();
   const parsed = locationSchema.parse(input);
@@ -131,7 +136,7 @@ export async function updateLocation(
 
   const { data: existing, error: loadError } = await supabase
     .from("location")
-    .select("location_id, name, code, status")
+    .select("location_id, name, code, status, voice_e164")
     .eq("location_id", locationId)
     .maybeSingle();
   if (loadError) throw loadError;
@@ -143,10 +148,11 @@ export async function updateLocation(
       name: parsed.name.trim(),
       code: parsed.code.trim().toUpperCase(),
       status: parsed.status,
+      voice_e164: parsed.voice_e164,
       updated_at: new Date().toISOString(),
     })
     .eq("location_id", locationId)
-    .select("location_id, name, code, status")
+    .select("location_id, name, code, status, voice_e164")
     .single();
   if (error) throw error;
 
@@ -185,9 +191,7 @@ export async function setLocationUsers(
     .eq("location_id", locationId);
   if (existingError) throw existingError;
 
-  const previousIds = (existing ?? []).map(
-    (row: { user_id: string }) => row.user_id
-  );
+  const previousIds = (existing ?? []).map((row: { user_id: string }) => row.user_id);
 
   const { error: deleteError } = await supabase
     .from("user_location")

@@ -288,6 +288,16 @@ export const locationSchema = z.object({
     .max(16, "Code must be 16 characters or fewer")
     .regex(/^[A-Za-z0-9_-]+$/, "Use letters, numbers, hyphens, or underscores"),
   status: z.enum(["active", "inactive"]).default("active"),
+  voice_e164: z
+    .string()
+    .trim()
+    .optional()
+    .nullable()
+    .transform((value) => (value ? value : null))
+    .refine(
+      (value) => value === null || /^\+[1-9][0-9]{7,14}$/.test(value),
+      "Shop phone must be E.164 (e.g. +14165551212)"
+    ),
 });
 
 const centsSchema = z.number().int("Amounts must be integer cents");

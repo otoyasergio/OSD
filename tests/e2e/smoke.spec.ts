@@ -80,6 +80,13 @@ test.describe("webhook security", () => {
     expect([401, 404, 503]).toContain(response.status());
   });
 
+  test("Twilio inbound voice webhook rejects missing signature", async ({ request }) => {
+    const response = await request.post("/api/twilio/voice/inbound", {
+      form: { From: "+15551234567", To: "+14165551212", CallSid: "CAtest" },
+    });
+    expect([401, 503]).toContain(response.status());
+  });
+
   test("Wix webhook fails closed without secret or rejects bad auth", async ({
     request,
   }) => {
