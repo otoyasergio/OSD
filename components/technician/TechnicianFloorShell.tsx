@@ -338,6 +338,18 @@ export function TechnicianFloorShell({
         }
       );
     }
+    channel.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "staff_notification",
+        filter: `recipient_user_id=eq.${viewerUserId}`,
+      },
+      () => {
+        scheduleRefresh();
+      }
+    );
     channel.subscribe();
     return () => {
       void supabase.removeChannel(channel);

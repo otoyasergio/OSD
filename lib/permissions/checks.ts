@@ -254,6 +254,11 @@ export function canUseMessenger(role: UserRole) {
   return ACTIVE_STAFF_ROLES.includes(role);
 }
 
+/** Customer PSTN (click-to-call + inbound shop phone). Staff audio/video is canUseMessenger. */
+export function canUseShopPhone(role: UserRole) {
+  return FRONT_OFFICE.includes(role);
+}
+
 /** Self-service password change — active staff plus kiosk tablet account. */
 export function canChangeOwnPassword(role: UserRole) {
   return ACTIVE_STAFF_ROLES.includes(role) || role === "time_clock_kiosk";

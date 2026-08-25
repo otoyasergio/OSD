@@ -240,6 +240,11 @@ const MESSAGES: Record<string, string> = {
   ATTACHMENT_UPLOAD_FAILED: "Could not upload the attachment. Try again.",
   TWILIO_VIDEO_NOT_CONFIGURED:
     "Video calling is not configured. Add TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET.",
+  TWILIO_VOICE_NOT_CONFIGURED:
+    "Shop phone is not configured. Add TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET, and TWILIO_TWIML_APP_SID.",
+  SHOP_PHONE_NOT_CONFIGURED:
+    "This location has no shop phone number. Add it under Settings → Locations.",
+  SHOP_PHONE_NOBODY_AVAILABLE: "Nobody is available to take the shop phone right now.",
   CALL_NOT_FOUND: "That call no longer exists.",
   CALL_ALREADY_ENDED: "That call has already ended.",
   PROFILE_PHOTO_REQUIRED: "Choose a profile photo to upload.",

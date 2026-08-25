@@ -27,7 +27,10 @@ import {
   markStaffNotificationReadAction,
   refreshStaffNotificationsAction,
 } from "@/app/(app)/notifications/actions";
-import type { StaffAssignmentNotification } from "@/lib/services/staffNotifications";
+import {
+  firstUnseenAssignment,
+  type StaffAssignmentNotification,
+} from "@/lib/services/staffNotifications";
 import { staffAssignmentHref } from "@/lib/technician/assignmentHref";
 import { FloorTopBar } from "@/components/technician/FloorTopBar";
 
@@ -59,6 +62,51 @@ function isInspectionFullscreenPath(pathname: string) {
 
 function isCompactFloorPath(pathname: string) {
   return pathname === "/technician" || pathname === "/technician/";
+}
+
+function IncomingAssignmentToast({
+  notification,
+  busy,
+  onOpen,
+  onDismiss,
+}: {
+  notification: StaffAssignmentNotification;
+  busy: boolean;
+  onOpen: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-white p-4 text-slate-900 shadow-2xl"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold">New motorcycle assignment</p>
+          <p className="mt-1 text-sm text-slate-700">
+            {notification.work_order_number} · {notification.motorcycle_label}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+          aria-label="Dismiss alert"
+          onClick={onDismiss}
+        >
+          <X size={18} aria-hidden />
+        </button>
+      </div>
+      <button
+        type="button"
+        className="btn btn-primary mt-3 w-full"
+        disabled={busy}
+        onClick={onOpen}
+      >
+        Open assigned motorcycle
+      </button>
+    </div>
+  );
 }
 
 export function AppShell({
@@ -99,19 +147,22 @@ export function AppShell({
   const refreshNotifications = useCallback(async () => {
     try {
       const next = await refreshStaffNotificationsAction();
-      const incoming = next.find(
-        (notification) => !knownNotificationIds.current.has(notification.notification_id)
-      );
+      const incoming = firstUnseenAssignment(knownNotificationIds.current, next);
       for (const notification of next) {
         knownNotificationIds.current.add(notification.notification_id);
       }
       setNotifications(next);
       setNotificationError(null);
-      if (incoming) setIncomingNotification(incoming);
+      if (incoming) {
+        setIncomingNotification(incoming);
+        // Job realtime filters miss assigned_technician_id UPDATEs (replica
+        // identity is PK-only). Refresh so the docket picks up the new bike.
+        router.refresh();
+      }
     } catch {
       setNotificationError("Could not refresh alerts. We will keep trying.");
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     // Seed "already seen" ids when the server re-hydrates the layout list.
@@ -224,6 +275,14 @@ export function AppShell({
     return (
       <div className="flex min-h-full flex-1 flex-col bg-background">
         <main className="inspection-fullscreen-main">{children}</main>
+        {incomingNotification ? (
+          <IncomingAssignmentToast
+            notification={incomingNotification}
+            busy={notificationBusy}
+            onOpen={() => void openNotification(incomingNotification)}
+            onDismiss={() => setIncomingNotification(null)}
+          />
+        ) : null}
       </div>
     );
   }
@@ -235,7 +294,18 @@ export function AppShell({
           Skip to main content
         </a>
         <FloorTopBar
-          trailing={notificationsEnabled ? notificationBellFor("mobile") : null}
+          trailing={
+            <>
+              {user.active_location_id && locations.length > 0 ? (
+                <LocationSwitcher
+                  locations={locations}
+                  activeLocationId={user.active_location_id}
+                  compact
+                />
+              ) : null}
+              {notificationsEnabled ? notificationBellFor("mobile") : null}
+            </>
+          }
         />
         {rolePreview ? (
           <RolePreviewBanner preview={rolePreview} ownerName={displayName} />
@@ -244,37 +314,12 @@ export function AppShell({
           {children}
         </main>
         {incomingNotification ? (
-          <div
-            role="status"
-            aria-live="polite"
-            className="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-white p-4 text-slate-900 shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold">New motorcycle assignment</p>
-                <p className="mt-1 text-sm text-slate-700">
-                  {incomingNotification.work_order_number} ·{" "}
-                  {incomingNotification.motorcycle_label}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                aria-label="Dismiss alert"
-                onClick={() => setIncomingNotification(null)}
-              >
-                <X size={18} aria-hidden />
-              </button>
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary mt-3 w-full"
-              disabled={notificationBusy}
-              onClick={() => void openNotification(incomingNotification)}
-            >
-              Open assigned motorcycle
-            </button>
-          </div>
+          <IncomingAssignmentToast
+            notification={incomingNotification}
+            busy={notificationBusy}
+            onOpen={() => void openNotification(incomingNotification)}
+            onDismiss={() => setIncomingNotification(null)}
+          />
         ) : null}
       </div>
     );
@@ -397,37 +442,12 @@ export function AppShell({
       </div>
 
       {incomingNotification ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-white p-4 text-slate-900 shadow-2xl"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-semibold">New motorcycle assignment</p>
-              <p className="mt-1 text-sm text-slate-700">
-                {incomingNotification.work_order_number} ·{" "}
-                {incomingNotification.motorcycle_label}
-              </p>
-            </div>
-            <button
-              type="button"
-              className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-              aria-label="Dismiss alert"
-              onClick={() => setIncomingNotification(null)}
-            >
-              <X size={18} aria-hidden />
-            </button>
-          </div>
-          <button
-            type="button"
-            className="btn btn-primary mt-3 w-full"
-            disabled={notificationBusy}
-            onClick={() => void openNotification(incomingNotification)}
-          >
-            Open assigned motorcycle
-          </button>
-        </div>
+        <IncomingAssignmentToast
+          notification={incomingNotification}
+          busy={notificationBusy}
+          onOpen={() => void openNotification(incomingNotification)}
+          onDismiss={() => setIncomingNotification(null)}
+        />
       ) : null}
     </div>
   );

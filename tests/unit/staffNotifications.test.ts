@@ -5,6 +5,7 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StaffNotificationBell } from "@/components/layout/StaffNotificationBell";
 import {
+  firstUnseenAssignment,
   formatNotificationAge,
   motorcycleNotificationLabel,
 } from "@/lib/services/staffNotifications";
@@ -87,6 +88,16 @@ describe("staff assignment notifications", () => {
 
   it("opens an assignment on the exact motorcycle in the tech floor", () => {
     expect(staffAssignmentHref("work order/1")).toBe("/technician?wo=work%20order%2F1");
+  });
+
+  it("treats a newly arrived assignment as unseen so the floor can refresh", () => {
+    const known = new Set(["n1"]);
+    const incoming = firstUnseenAssignment(known, [
+      { notification_id: "n1" },
+      { notification_id: "n2", work_order_id: "wo-new" },
+    ]);
+    expect(incoming).toEqual({ notification_id: "n2", work_order_id: "wo-new" });
+    expect(firstUnseenAssignment(known, [{ notification_id: "n1" }])).toBeUndefined();
   });
 
   it("renders a scannable unread assignment in the bell menu", () => {

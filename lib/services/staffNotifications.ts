@@ -55,6 +55,14 @@ export function motorcycleNotificationLabel(
   return [motorcycle.year, motorcycle.make, motorcycle.model].filter(Boolean).join(" ");
 }
 
+/** First assignment the floor has not already shown — used to toast + refresh. */
+export function firstUnseenAssignment<T extends { notification_id: string }>(
+  knownIds: ReadonlySet<string>,
+  next: readonly T[]
+): T | undefined {
+  return next.find((notification) => !knownIds.has(notification.notification_id));
+}
+
 export function formatNotificationAge(
   createdAt: string,
   nowMs: number = Date.now()
