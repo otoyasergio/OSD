@@ -209,16 +209,21 @@ if (!numbers.ok) {
         );
       }
       if (voiceReady) {
-        if (n.voice_application_sid === twimlAppSid)
-          pass("voice routed to the configured TwiML app");
-        else if (n.voice_application_sid) {
+        // Inbound PSTN calls go to the number's own Voice URL. The TwiML app is
+        // a separate path, used only for calls placed from the browser SDK, and
+        // Twilio clears voice_url the moment voice_application_sid is set.
+        const expectedVoice = appUrl ? `${appUrl}/api/twilio/voice/inbound` : "";
+        const hint = expectedVoice || "…/api/twilio/voice/inbound";
+        if (n.voice_application_sid) {
           fail(
-            `voice routed to TwiML app ${mask(n.voice_application_sid)}, not ${mask(twimlAppSid)}`
+            `voice is routed to TwiML app ${mask(n.voice_application_sid)}; inbound calls need the Voice URL ${hint} instead`
           );
-        } else if (n.voice_url) {
-          warn(`voice uses a direct URL (${n.voice_url}) rather than the TwiML app`);
+        } else if (!n.voice_url) {
+          fail(`voice is not routed anywhere; set the Voice URL to ${hint}`);
+        } else if (expectedVoice && n.voice_url !== expectedVoice) {
+          fail(`voice webhook is ${n.voice_url}; expected ${expectedVoice}`);
         } else {
-          fail("voice is not routed anywhere");
+          pass(`voice webhook → ${n.voice_url}`);
         }
       }
     }
