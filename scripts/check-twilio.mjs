@@ -147,9 +147,9 @@ if (!restAuth || !accountSid) {
 
 heading("Twilio account");
 
-async function api(url) {
+async function api(url, credentials = restAuth) {
   const res = await fetch(url, {
-    headers: { Authorization: `Basic ${Buffer.from(restAuth).toString("base64")}` },
+    headers: { Authorization: `Basic ${Buffer.from(credentials).toString("base64")}` },
   });
   const text = await res.text();
   let body;
@@ -164,7 +164,8 @@ async function api(url) {
 const v2010 = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}`;
 
 if (authToken) {
-  const acct = await api(`${v2010}.json`);
+  // Must use the Auth Token: /Accounts rejects Standard API keys with 20003.
+  const acct = await api(`${v2010}.json`, `${accountSid}:${authToken}`);
   if (acct.ok) {
     pass(`reachable: "${acct.body.friendly_name}" (status ${acct.body.status})`);
     if (acct.body.status !== "active")
