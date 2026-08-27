@@ -1,0 +1,36 @@
+---
+description: Toronto Moto business identity, address, and hours for forms, contracts, and vendor registrations
+alwaysApply: true
+---
+
+# Shop details
+
+Canonical business facts. These are **not** in the database — the `location`
+table holds only `name`, `code`, and `status`, so there is no address column to
+read from. Use these values instead of inventing placeholders.
+
+## Toronto (location code `TOR`)
+
+- **Legal entity:** OTOMOTO TORONTO MOTO INC.
+- **Address:** 99 River Street, Toronto, ON M5A 3P4, Canada
+- **Phone (call + text):** 647-424-1088
+- **Site:** https://www.torontomoto.com — app at https://service.torontomoto.com
+
+Hours: Mon–Fri 12:00–19:00, Sat 10:00–16:00, Sun closed. Closed on Victoria Day,
+Canada Day, Civic Holiday, Labour Day, and Thanksgiving.
+
+## Ottawa (location code `OTT`)
+
+A second active location exists in the `location` table. Its address is unknown —
+ask rather than reusing the Toronto address for it.
+
+## Where this matters
+
+- **Twilio:** use the legal entity name and Toronto address for regulatory
+  address records, toll-free verification, and Trust Hub business profiles.
+  Canadian carriers reject mismatches against the registered business name.
+- **647-424-1088 is the number customers already text.** The public site tells
+  them to text before dropping a bike off, so prefer porting it into Twilio over
+  buying a new number, otherwise the shop silently loses that thread.
+- Contracts, invoices, and customer-facing documents should use the legal entity
+  name, not the "Toronto Moto" trade name.
