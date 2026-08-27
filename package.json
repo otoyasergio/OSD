@@ -12,7 +12,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "analyze": "ANALYZE=true next build --webpack",
     "db:types": "supabase gen types typescript --linked > lib/database/supabase.generated.ts",
-    "deploy:production": "node scripts/guard-prod-deploy.mjs && vercel --prod --yes",
+    "deploy:production": "node scripts/guard-prod-deploy.mjs && npx vercel --prod --yes",
     "prepare": "husky"
   },
   "lint-staged": {
