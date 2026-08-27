@@ -15,6 +15,7 @@ import { computeQcScopeHash } from "@/lib/jobs-v2/scopeHash";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { toRpcErrorCode } from "@/lib/services/errors";
 import { SAFETY_INSPECTION_SERVICE_NAME } from "@/lib/status/safetyRequired";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -53,9 +54,7 @@ async function requireMutableWorkOrder(workOrderId: string) {
   const supabase = await createClient();
   const workOrder = await loadWorkOrder(supabase, workOrderId);
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }

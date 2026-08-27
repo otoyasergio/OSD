@@ -4,7 +4,10 @@ import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, WorkOrderStatus } from "@/lib/database/types";
 import { JOB_STATUS_LABELS, WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import { listTechnicianNotes, type TechnicianNote } from "@/lib/services/notes";
-import { assertViewerCanAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
+import {
+  assertViewerCanAccessWorkOrder,
+  canViewerAccessWorkOrderLocation,
+} from "@/lib/workOrders/assignmentVisibility";
 
 export type JobPacketJob = {
   job_id: string;
@@ -105,7 +108,16 @@ export async function getJobPacket(
 
   if (woError) throw woError;
   if (!wo) return null;
-  if (wo.location_id !== locationId) return null;
+  if (
+    !canViewerAccessWorkOrderLocation({
+      role: user.role,
+      workOrderLocationId: wo.location_id,
+      activeLocationId: locationId,
+      membershipLocationIds: user.location_ids,
+    })
+  ) {
+    return null;
+  }
 
   const jobRows = (wo.job as PacketJobRow[] | null) ?? [];
 

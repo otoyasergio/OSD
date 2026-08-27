@@ -245,7 +245,18 @@ export function AppShell({
             Skip to main content
           </a>
           <FloorTopBar
-            trailing={notificationsEnabled ? notificationBellFor("mobile") : null}
+            trailing={
+              <>
+                {locations.length > 1 && user.active_location_id ? (
+                  <LocationSwitcher
+                    locations={locations}
+                    activeLocationId={user.active_location_id}
+                    compact
+                  />
+                ) : null}
+                {notificationsEnabled ? notificationBellFor("mobile") : null}
+              </>
+            }
           />
           {rolePreview ? (
             <RolePreviewBanner preview={rolePreview} ownerName={displayName} />

@@ -14,6 +14,15 @@ export function stampDisplayLabel(stamp: PitBoardStamp): string {
   return isWaitingStamp(stamp) ? "WAIT" : stamp;
 }
 
+/** WO number, plus TOR/OTT when the tech’s floor spans more than one shop. */
+export function docketWorkOrderSubtitle(
+  workOrderNumber: string,
+  locationCode: string | null | undefined
+): string {
+  const code = locationCode?.trim();
+  return code ? `${workOrderNumber} · ${code}` : workOrderNumber;
+}
+
 /** Secondary line under the bike — WO · job/service (no client PII). */
 export function docketCardJobLine(
   item: Pick<

@@ -17,6 +17,7 @@ import {
   canRecordCustomerApproval,
 } from "@/lib/permissions";
 import { recommendationSchema } from "@/lib/validation/schemas";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { assignTechnicianToJob } from "@/lib/services/jobs";
 import {
@@ -613,9 +614,7 @@ async function requireMutableWorkOrder(
 
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }

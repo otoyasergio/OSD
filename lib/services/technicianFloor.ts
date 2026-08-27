@@ -19,7 +19,11 @@ import { listJobChecklist, type JobChecklistItem } from "@/lib/services/jobCheck
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 import type { AdminFlag } from "@/lib/services/adminFlags";
 import { canPerformSafetyCheck } from "@/lib/permissions";
-import { canViewerAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
+import {
+  canViewerAccessWorkOrder,
+  canViewerAccessWorkOrderLocation,
+  floorAssignedLocationIds,
+} from "@/lib/workOrders/assignmentVisibility";
 import { floorInspectionHrefs, techJobPacketHref } from "@/lib/technician/assignmentHref";
 import { sortByDocketPosition } from "@/lib/technician/docketOrder";
 import { groupAssignedJobsByWorkOrder } from "@/lib/technician/groupAssignedWorkOrders";
@@ -221,6 +225,19 @@ export async function getTechnicianFloorOs(input: {
   const subject = resolveReadSubject(user, input.view);
   const supabase = await createClient();
   const locationId = user.active_location_id!;
+  const allowedLocationIds = floorAssignedLocationIds({
+    viewerUserId: user.user_id,
+    technicianUserId: subject.userId,
+    activeLocationId: locationId,
+    membershipLocationIds: user.location_ids,
+  });
+  const canAccessWoLocation = (workOrderLocationId: string) =>
+    canViewerAccessWorkOrderLocation({
+      role: user.role,
+      workOrderLocationId,
+      activeLocationId: locationId,
+      membershipLocationIds: user.location_ids,
+    });
 
   const jobFloorSelectWithPosition = `
         job_id, service_name_snapshot, status, started_at, completed_at,
@@ -292,7 +309,7 @@ export async function getTechnicianFloorOs(input: {
         )
       `
         )
-        .eq("location_id", locationId)
+        .in("location_id", allowedLocationIds)
         .eq("status", "quality_check")
         .eq("quality_check_assigned_to", subject.userId),
       canPerformSafetyCheck(subject.role)
@@ -307,7 +324,7 @@ export async function getTechnicianFloorOs(input: {
             )
           `
             )
-            .eq("location_id", locationId)
+            .in("location_id", allowedLocationIds)
             .eq("status", "safety_check")
         : Promise.resolve({ data: [] as unknown[], error: null }),
       supabase
@@ -406,7 +423,7 @@ export async function getTechnicianFloorOs(input: {
 
   const assignedJobs = orderedMyJobs.flatMap((row) => {
     const wo = unwrapWo(row.work_order);
-    if (!wo || wo.location_id !== locationId) return [];
+    if (!wo || !allowedLocationIds.includes(wo.location_id)) return [];
     if (wo.status === "completed" || wo.status === "cancelled") return [];
     return [{ ...row, work_order_id: wo.work_order_id, work_order: wo }];
   });
@@ -525,7 +542,7 @@ export async function getTechnicianFloorOs(input: {
       `
       )
       .in("work_order_id", woIds)
-      .eq("location_id", locationId);
+      .in("location_id", allowedLocationIds);
     const byId = new Map((flagWos ?? []).map((wo) => [wo.work_order_id, wo]));
     for (const flag of flagRows) {
       const wo = byId.get(flag.work_order_id);
@@ -661,7 +678,7 @@ export async function getTechnicianFloorOs(input: {
     if (
       job &&
       wo &&
-      wo.location_id === locationId &&
+      canAccessWoLocation(wo.location_id) &&
       !isTerminalWorkOrderStatus(wo.status) &&
       job.assigned_technician_id === subject.userId
     ) {
@@ -1003,7 +1020,7 @@ export async function getTechnicianFloorOs(input: {
     if (woError) throw woError;
     if (
       wo &&
-      wo.location_id === locationId &&
+      canAccessWoLocation(wo.location_id) &&
       !isTerminalWorkOrderStatus(wo.status) &&
       canViewerAccessWorkOrder(
         {

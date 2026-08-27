@@ -12,6 +12,7 @@ import {
 } from "@/lib/permissions";
 import {
   assertViewerCanAccessWorkOrder,
+  canViewerAccessWorkOrderLocation,
   scopeWorkOrdersForViewer,
 } from "@/lib/workOrders/assignmentVisibility";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
@@ -614,7 +615,12 @@ export async function getWorkOrderDetail(
       row.status as WorkOrderStatus,
       agreementState.agreement
     ),
-    is_foreign_location: row.location_id !== user.active_location_id,
+    is_foreign_location: !canViewerAccessWorkOrderLocation({
+      role: user.role,
+      workOrderLocationId: row.location_id as string,
+      activeLocationId: user.active_location_id,
+      membershipLocationIds: user.location_ids,
+    }),
   };
 
   assertViewerCanAccessWorkOrder(

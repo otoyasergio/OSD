@@ -11,6 +11,7 @@ import {
   canRunQualityCheck,
   isFloorTech,
 } from "@/lib/permissions";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 
 type WorkOrderRow = {
@@ -42,9 +43,7 @@ async function requireMutableWorkOrder(workOrderId: string) {
   const supabase = await createClient();
   const workOrder = await loadWorkOrder(supabase, workOrderId);
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }

@@ -41,6 +41,8 @@ import {
 } from "@/lib/technician/floorActionModel";
 import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 import { techJobPacketHref } from "@/lib/technician/assignmentHref";
+import { docketWorkOrderSubtitle } from "@/lib/technician/docketCardDisplay";
+import { floorAssignedLocationIds } from "@/lib/workOrders/assignmentVisibility";
 import type { DbClient } from "@/lib/database/types";
 
 export type DocketItemKind = "now" | "assigned" | "qc" | "safety" | "flag";
@@ -106,18 +108,22 @@ export type DocketAssignedJobInput = {
   floor_park_reason?: FloorParkReason | null;
   floor_wait_owner?: FloorWaitOwner | null;
   job_timer_running?: boolean;
+  /** Shop code when this tech’s floor spans TOR and OTT. */
+  location_code?: string | null;
 };
 
 export type DocketQcInput = {
   work_order_id: string;
   work_order_number: string;
   motorcycle_label: string;
+  location_code?: string | null;
 };
 
 export type DocketSafetyInput = {
   work_order_id: string;
   work_order_number: string;
   motorcycle_label: string;
+  location_code?: string | null;
 };
 
 export type DocketFlagInput = {
@@ -130,6 +136,7 @@ export type DocketFlagInput = {
   motorcycle_label: string;
   reason: string;
   note: string | null;
+  location_code?: string | null;
 };
 
 function floorHref(input: {
@@ -244,7 +251,7 @@ export function buildTechnicianDocketItems(input: {
       service_label: serviceLabel,
       service_names: serviceNames,
       title: `${job.motorcycle_label} · ${serviceLabel}`,
-      subtitle: job.work_order_number,
+      subtitle: docketWorkOrderSubtitle(job.work_order_number, job.location_code),
       status_label: hasOpenFlag ? `${baseStatusLabel} · Flagged` : baseStatusLabel,
       job_id: job.job_id,
       work_order_id: job.work_order_id,
@@ -278,7 +285,7 @@ export function buildTechnicianDocketItems(input: {
       service_label: "Peer QC",
       service_names: ["Peer QC"],
       title: `${qc.motorcycle_label} · Peer QC`,
-      subtitle: qc.work_order_number,
+      subtitle: docketWorkOrderSubtitle(qc.work_order_number, qc.location_code),
       status_label: WORK_ORDER_STATUS_LABELS.quality_check,
       job_id: null,
       work_order_id: qc.work_order_id,
@@ -307,7 +314,7 @@ export function buildTechnicianDocketItems(input: {
         service_label: "Safety",
         service_names: ["Safety"],
         title: `${safety.motorcycle_label} · Safety`,
-        subtitle: safety.work_order_number,
+        subtitle: docketWorkOrderSubtitle(safety.work_order_number, safety.location_code),
         status_label: WORK_ORDER_STATUS_LABELS.safety_check,
         job_id: null,
         work_order_id: safety.work_order_id,
@@ -343,7 +350,7 @@ export function buildTechnicianDocketItems(input: {
       service_label: flag.reason,
       service_names: [flag.reason],
       title: `${flag.motorcycle_label} · ${flag.reason}`,
-      subtitle: flag.work_order_number,
+      subtitle: docketWorkOrderSubtitle(flag.work_order_number, flag.location_code),
       status_label: "Admin flag",
       job_id: flag.job_id,
       work_order_id: flag.work_order_id,
@@ -394,6 +401,13 @@ export async function getTechnicianDocket(
 
   const supabase = await createClient();
   const locationId = viewer.active_location_id!;
+  const allowedLocationIds = floorAssignedLocationIds({
+    viewerUserId: viewer.user_id,
+    technicianUserId,
+    activeLocationId: locationId,
+    membershipLocationIds: viewer.location_ids,
+  });
+  const showShopCode = allowedLocationIds.length > 1;
 
   const { data: tech, error: techError } = await supabase
     .from("app_user")
@@ -479,7 +493,7 @@ export async function getTechnicianDocket(
         motorcycle:motorcycle_id ( year, make, model )
       `
         )
-        .eq("location_id", locationId)
+        .in("location_id", allowedLocationIds)
         .eq("status", "quality_check")
         .eq("quality_check_assigned_to", technicianUserId),
       canPerformSafetyCheck(tech.role as UserRole)
@@ -491,7 +505,7 @@ export async function getTechnicianDocket(
             motorcycle:motorcycle_id ( year, make, model )
           `
             )
-            .eq("location_id", locationId)
+            .in("location_id", allowedLocationIds)
             .eq("status", "safety_check")
         : Promise.resolve({ data: [] as unknown[], error: null }),
       supabase
@@ -570,6 +584,17 @@ export async function getTechnicianDocket(
   if (safetyError) throw safetyError;
   if (flagsError) throw flagsError;
 
+  const { data: locRows, error: locError } = await supabase
+    .from("location")
+    .select("location_id, code")
+    .in("location_id", allowedLocationIds);
+  if (locError) throw locError;
+  const codeById = new Map(
+    (locRows ?? []).map((row) => [row.location_id as string, row.code as string])
+  );
+  const shopCode = (locationIdForWo: string) =>
+    showShopCode ? (codeById.get(locationIdForWo) ?? null) : null;
+
   const myJobs = (myJobsRaw ?? []) as DocketJobRow[];
 
   type NestedWo = {
@@ -595,7 +620,7 @@ export async function getTechnicianDocket(
   const assignedJobs: DocketAssignedJobInput[] = [];
   for (const row of myJobs) {
     const wo = unwrapWo(row.work_order);
-    if (!wo || wo.location_id !== locationId) continue;
+    if (!wo || !allowedLocationIds.includes(wo.location_id)) continue;
     // Job rows can linger after the WO is closed — keep those off the floor line.
     if (wo.status === "completed" || wo.status === "cancelled") continue;
     assignedJobs.push({
@@ -612,6 +637,7 @@ export async function getTechnicianDocket(
       floor_parked_at: row.floor_parked_at ?? null,
       floor_park_reason: row.floor_park_reason ?? null,
       floor_wait_owner: row.floor_wait_owner ?? null,
+      location_code: shopCode(wo.location_id),
     });
   }
 
@@ -621,6 +647,7 @@ export async function getTechnicianDocket(
       work_order_id: wo.work_order_id,
       work_order_number: wo.work_order_number,
       motorcycle_label: motorcycleLabel(moto ?? null),
+      location_code: shopCode(wo.location_id),
     };
   });
 
@@ -628,6 +655,7 @@ export async function getTechnicianDocket(
     const row = wo as {
       work_order_id: string;
       work_order_number: string;
+      location_id: string;
       motorcycle: unknown;
     };
     const motoRaw = row.motorcycle;
@@ -638,6 +666,7 @@ export async function getTechnicianDocket(
       motorcycle_label: motorcycleLabel(
         moto as { year: number; make: string; model: string } | null
       ),
+      location_code: shopCode(row.location_id),
     };
   });
 
@@ -656,7 +685,7 @@ export async function getTechnicianDocket(
       `
       )
       .in("work_order_id", woIds)
-      .eq("location_id", locationId);
+      .in("location_id", allowedLocationIds);
     const byId = new Map((flagWos ?? []).map((wo) => [wo.work_order_id, wo]));
     for (const flag of flagRows) {
       const wo = byId.get(flag.work_order_id);
@@ -671,6 +700,7 @@ export async function getTechnicianDocket(
         motorcycle_label: motorcycleLabel(moto ?? null),
         reason: flag.reason,
         note: flag.note,
+        location_code: shopCode(wo.location_id),
       });
     }
   }

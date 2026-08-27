@@ -22,6 +22,7 @@ import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderSta
 import { createAdminFlag } from "@/lib/services/adminFlags";
 import { toRpcErrorCode } from "@/lib/services/errors";
 import { completeQualityCheck } from "@/lib/services/quality";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 
 export type PeerQcPickerOption = {
   user_id: string;
@@ -111,7 +112,18 @@ export async function listPeerQcPickerOptions(
 ): Promise<PeerQcPickerOption[]> {
   const user = await requireUser();
   const supabase = await createClient();
-  const locationId = user.active_location_id!;
+  let locationId = user.active_location_id!;
+  if (workOrderId) {
+    const { data: workOrder, error } = await supabase
+      .from("work_order")
+      .select("location_id")
+      .eq("work_order_id", workOrderId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+    assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
+    locationId = workOrder.location_id;
+  }
   const techs = await listClockedInTechnicians(supabase, locationId);
   const workedUserIds = workOrderId
     ? await listVisitWorkerIds(supabase, workOrderId)
@@ -132,7 +144,6 @@ export async function assignPeerQcByTechnician(
   const user = await requireUser();
   if (!canCompleteJob(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
-  const locationId = user.active_location_id!;
 
   if (!assigneeUserId || assigneeUserId === user.user_id) {
     throw new Error("QC_ASSIGNEE_REQUIRED");
@@ -145,9 +156,9 @@ export async function assignPeerQcByTechnician(
     .maybeSingle();
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== locationId) throw new Error("FOREIGN_LOCATION");
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
 
-  const clockedIn = await listClockedInTechnicianIds(supabase, locationId);
+  const clockedIn = await listClockedInTechnicianIds(supabase, workOrder.location_id);
   if (!clockedIn.includes(assigneeUserId)) {
     throw new Error("QC_ASSIGNEE_NOT_AVAILABLE");
   }
@@ -195,7 +206,7 @@ export async function assignPeerQcByTechnician(
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,
-    location_id: locationId,
+    location_id: workOrder.location_id,
     action: "peer_qc_assigned",
     entity_type: "work_order",
     entity_id: workOrderId,
@@ -426,9 +437,7 @@ export async function passPeerQualityCheck(
     .maybeSingle();
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
 
   const useV2 = v2WritesEnabled(readWorkflowV2Flags());
   const isFrontOffice = canRunQualityCheck(user.role);
@@ -532,9 +541,7 @@ export async function failPeerQualityCheck(
     .maybeSingle();
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status !== "quality_check") {
     throw new Error("INVALID_STATUS");
   }

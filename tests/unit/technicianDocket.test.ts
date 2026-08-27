@@ -3,6 +3,7 @@ import { buildTechnicianDocketItems } from "@/lib/services/technicianDocket";
 import {
   docketCardAccessibleName,
   docketCardJobLine,
+  docketWorkOrderSubtitle,
   stampDisplayLabel,
 } from "@/lib/technician/docketCardDisplay";
 import { splitDocketByWait } from "@/lib/technician/floorActionModel";
@@ -28,6 +29,16 @@ describe("docketCardJobLine", () => {
         park_reason_label: "Parts not here",
       })
     ).toBe("WO-1198 · Parts not here");
+  });
+});
+
+describe("docketWorkOrderSubtitle", () => {
+  it("keeps a single-shop WO line unchanged", () => {
+    expect(docketWorkOrderSubtitle("WO-3585", null)).toBe("WO-3585");
+  });
+
+  it("appends TOR or OTT when the tech works both shops", () => {
+    expect(docketWorkOrderSubtitle("WO-3585", "TOR")).toBe("WO-3585 · TOR");
   });
 });
 
@@ -361,6 +372,29 @@ describe("buildTechnicianDocketItems", () => {
     expect(items).toHaveLength(1);
     expect(items[0].service_names).toEqual(["Oil change", "Chain kit"]);
     expect(stampDisplayLabel(items[0].board_stamp)).not.toMatch(/HOLD|PAUSED/);
+  });
+
+  it("appends the shop code to the WO line when a bike is at another shop", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j1",
+          work_order_id: "w1",
+          work_order_number: "WO-3585",
+          service_name: "Oil change",
+          motorcycle_label: "2024 Honda CB650R",
+          status: "approved",
+          status_label: "Approved",
+          location_code: "TOR",
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+    expect(items[0].subtitle).toBe("WO-3585 · TOR");
+    expect(docketCardJobLine(items[0])).toBe("WO-3585 · TOR · Oil change");
   });
 
   it("shows WAIT instead of internal HOLD/PAUSED stamps", () => {

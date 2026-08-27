@@ -10,7 +10,11 @@ import {
   canOverrideWorkOrderStatus,
   canViewClients,
 } from "@/lib/permissions";
-import { assertViewerCanAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
+import {
+  assertViewerCanAccessWorkOrder,
+  assertViewerCanAccessWorkOrderLocation,
+  canViewerAccessWorkOrderLocation,
+} from "@/lib/workOrders/assignmentVisibility";
 import { saveInspectionResultSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import {
@@ -108,9 +112,7 @@ async function requireMutableInspectionAccess(
 
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
@@ -368,7 +370,12 @@ export async function getInspectionForWorkOrder(
     location_id: workOrder.location_id,
     work_order_number: workOrder.work_order_number,
     work_order_status: workOrder.status,
-    is_foreign_location: workOrder.location_id !== user.active_location_id,
+    is_foreign_location: !canViewerAccessWorkOrderLocation({
+      role: user.role,
+      workOrderLocationId: workOrder.location_id,
+      activeLocationId: user.active_location_id,
+      membershipLocationIds: user.location_ids,
+    }),
     header: {
       customer_name:
         canViewClients(subject.role) && customer
@@ -433,9 +440,7 @@ export async function saveInspectionResult(
   const inspection = row.inspection;
   const workOrder = inspection.work_order;
 
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }

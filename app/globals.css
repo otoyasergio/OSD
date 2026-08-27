@@ -6759,6 +6759,21 @@ button.pit-current-card {
 
 .pit-floor-topbar-trailing {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pit-floor-location-switcher {
+  display: inline-flex;
+  align-items: center;
+}
+
+.pit-floor-location-select {
+  min-width: 4.5rem;
+  max-width: 6.5rem;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.75rem;
 }
 
 .docket-stamp-icon {
