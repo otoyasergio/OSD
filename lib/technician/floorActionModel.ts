@@ -348,7 +348,7 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
             disabledReason: checksDone
               ? undefined
               : "Tick all three judgement checks first",
-            hint: "Hands it to head-tech safety — your clock is not running.",
+            hint: "Sign off, then hands it to final inspection — your clock is not running.",
           },
           secondary: [
             {
@@ -379,12 +379,14 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
         {
           primary: {
             action: "pass_safety",
-            label: "Pass safety ✓",
+            label: "Pass final inspection ✓",
             enabled: true,
-            hint: "Front desk books pickup after pass.",
+            hint: "Draw your signature to release the bike toward pickup.",
           },
-          secondary: [{ action: "fail_safety", label: "Fail safety", enabled: true }],
-          stateLabel: "Final safety check",
+          secondary: [
+            { action: "fail_safety", label: "Fail final inspection", enabled: true },
+          ],
+          stateLabel: "Final inspection",
           waitReason: null,
           waitOwner: null,
         },
@@ -394,8 +396,8 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
     return {
       primary: nonePrimary("Head tech makes this call"),
       secondary: [],
-      stateLabel: "Safety check",
-      waitReason: "Waiting on head-tech safety",
+      stateLabel: "Final inspection",
+      waitReason: "Waiting on head-tech final inspection",
       waitOwner: "qc",
     };
   }

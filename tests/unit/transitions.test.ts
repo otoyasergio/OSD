@@ -4,6 +4,8 @@ import {
   boardColumnIdForStatus,
   canDropInColumn,
   getTargetStatusForColumn,
+  isPickupBoardColumn,
+  isQcBoardColumn,
   resolveShopBoardDropColumnId,
 } from "@/lib/status/transitions";
 
@@ -53,5 +55,17 @@ describe("board transitions", () => {
     expect(boardColumnIdForStatus("ready_for_pickup", GALLERY_BOARD_COLUMNS)).toBe(
       "gallery_ready"
     );
+  });
+
+  it("treats gallery Ready as a pickup drop so inspection/QC/safety gates apply", () => {
+    expect(isPickupBoardColumn("pickup")).toBe(true);
+    expect(isPickupBoardColumn("gallery_ready")).toBe(true);
+    expect(isPickupBoardColumn("gallery_in_bay")).toBe(false);
+  });
+
+  it("treats gallery QC as a QC drop so unfinished jobs cannot skip to check", () => {
+    expect(isQcBoardColumn("qc")).toBe(true);
+    expect(isQcBoardColumn("gallery_qc")).toBe(true);
+    expect(isQcBoardColumn("gallery_ready")).toBe(false);
   });
 });

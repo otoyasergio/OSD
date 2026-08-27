@@ -480,7 +480,8 @@ export async function passPeerQcAction(
   try {
     const workOrderId = String(formData.get("work_order_id") ?? "");
     const notes = String(formData.get("notes") ?? "") || null;
-    await passPeerQualityCheck(workOrderId, notes);
+    const signatureDataUrl = String(formData.get("signature_data_url") ?? "");
+    await passPeerQualityCheck(workOrderId, notes, signatureDataUrl);
     revalidateFloor(workOrderId);
     return { success: "Quality check passed." };
   } catch (error) {

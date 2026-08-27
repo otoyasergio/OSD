@@ -34,4 +34,20 @@ describe("getWorkOrderNextAction", () => {
     expect(next?.title).toMatch(/inspection/i);
     expect(next?.href).toContain("/inspection");
   });
+
+  it("asks for head-tech final inspection after QC on ordinary service visits", () => {
+    const next = getWorkOrderNextAction({
+      workOrderId: "wo-1",
+      status: "quality_check",
+      qualityChecked: true,
+      safetyChecked: false,
+      readyForPickup: false,
+      safety_required: null,
+      safety_waived: false,
+      jobs: [{ status: "completed", service_name_snapshot: "Oil Change" }],
+      hasAssignedTech: true,
+      inspectionCompleted: true,
+    });
+    expect(next?.title).toMatch(/Final inspection/i);
+  });
 });

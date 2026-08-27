@@ -5,8 +5,14 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canOverrideWorkOrderStatus } from "@/lib/permissions";
+import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
-import { canDropInColumn, getTargetStatusForColumn } from "@/lib/status/transitions";
+import {
+  canDropInColumn,
+  getTargetStatusForColumn,
+  isPickupBoardColumn,
+  isQcBoardColumn,
+} from "@/lib/status/transitions";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -68,9 +74,10 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
  * Hold/cancel must use detail-page actions, not the board.
  *
  * Gates:
- * - pickup requires a QC pass AND (safety not required OR a safety pass).
- * - complete requires billing paid, or an owner/manager override with a
- *   recorded reason.
+ * - Ready / gallery Ready require a finished inspection, QC pass, and
+ *   head-tech safety unless office waived it.
+ * - complete requires those same leave gates, plus billing paid or an
+ *   owner/manager override with a recorded reason.
  */
 export async function moveWorkOrderOnBoard(
   workOrderId: string,
@@ -94,32 +101,42 @@ export async function moveWorkOrderOnBoard(
     throw new Error("FORBIDDEN");
   }
 
-  if (targetColumnId === "qc") {
+  if (isQcBoardColumn(targetColumnId)) {
     await assertAllActiveJobsCompleted(supabase, workOrderId);
   }
 
-  if (targetColumnId === "pickup") {
-    if (!workOrder.quality_checked_at && !workOrder.quality_checked_by_user_id) {
-      throw new Error("QC_REQUIRED");
-    }
-
-    const { data: safetyJobs, error: safetyJobsError } = await supabase
-      .from("job")
-      .select("status, service_name_snapshot")
-      .eq("work_order_id", workOrderId);
+  if (isPickupBoardColumn(targetColumnId)) {
+    const [
+      { data: safetyJobs, error: safetyJobsError },
+      { data: inspection, error: inspectionError },
+    ] = await Promise.all([
+      supabase
+        .from("job")
+        .select("status, service_name_snapshot")
+        .eq("work_order_id", workOrderId),
+      supabase
+        .from("inspection")
+        .select("completed_at")
+        .eq("work_order_id", workOrderId)
+        .maybeSingle(),
+    ]);
     if (safetyJobsError) throw safetyJobsError;
-    const safetyRequired = isSafetyRequired({
-      safety_required: workOrder.safety_required,
-      safety_waived: workOrder.safety_waived,
-      jobs: safetyJobs ?? [],
+    if (inspectionError) throw inspectionError;
+    const blocked = pickupLeaveBlockReason({
+      inspectionComplete: Boolean(inspection?.completed_at),
+      qualityChecked: Boolean(
+        workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
+      ),
+      safetyRequired: isSafetyRequired({
+        safety_required: workOrder.safety_required,
+        safety_waived: workOrder.safety_waived,
+        jobs: safetyJobs ?? [],
+      }),
+      safetyChecked: Boolean(
+        workOrder.safety_checked_at || workOrder.safety_checked_by_user_id
+      ),
     });
-    if (
-      safetyRequired &&
-      !workOrder.safety_checked_at &&
-      !workOrder.safety_checked_by_user_id
-    ) {
-      throw new Error("SAFETY_REQUIRED_BEFORE_PICKUP");
-    }
+    if (blocked) throw new Error(blocked);
   }
 
   if (targetColumnId === "complete") {
@@ -160,7 +177,7 @@ export async function moveWorkOrderOnBoard(
     .update({
       status: targetStatus,
       updated_at: now,
-      ...(targetColumnId === "pickup" ? { ready_for_pickup_at: now } : {}),
+      ...(isPickupBoardColumn(targetColumnId) ? { ready_for_pickup_at: now } : {}),
     })
     .eq("work_order_id", workOrderId);
   if (error) throw error;

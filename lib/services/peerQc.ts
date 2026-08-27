@@ -393,6 +393,7 @@ async function recordQcAttemptV2(input: {
   outcome: "passed" | "failed";
   notes: string | null;
   reworkJobIds?: string[] | null;
+  signatureStoragePath?: string | null;
 }): Promise<void> {
   const admin = createAdminClient();
   const { data: completedJobs, error } = await admin
@@ -418,13 +419,15 @@ async function recordQcAttemptV2(input: {
     p_checklist: null,
     p_rework_job_ids: input.reworkJobIds ?? null,
     p_idempotency_key: `qc:${input.workOrderId}:${input.outcome}:${scopeHash}`,
+    p_signature_storage_path: input.signatureStoragePath ?? null,
   });
   if (rpcError) throw new Error(toRpcErrorCode(rpcError));
 }
 
 export async function passPeerQualityCheck(
   workOrderId: string,
-  notes?: string | null
+  notes?: string | null,
+  signatureDataUrl?: string | null
 ): Promise<void> {
   const user = await requireUser();
   if (!canPerformPeerQualityCheck(user.role)) throw new Error("FORBIDDEN");
@@ -463,13 +466,10 @@ export async function passPeerQualityCheck(
   }
 
   if (useV2) {
-    // Legacy parity: terminal work orders reject QC writes.
     if (workOrder.status === "completed" || workOrder.status === "cancelled") {
       throw new Error("WORK_ORDER_LOCKED");
     }
 
-    // Same gate the legacy completeQualityCheck enforces: nothing passes QC
-    // while active work remains open.
     const { data: gateJobs, error: gateError } = await supabase
       .from("job")
       .select("status")
@@ -483,13 +483,28 @@ export async function passPeerQualityCheck(
       throw new Error("JOBS_NOT_COMPLETE");
     }
 
-    const trimmedNotes = notes?.trim() || null;
-    await recordQcAttemptV2({
+    const { uploadInspectionSignature, removeInspectionSignature } =
+      await import("@/lib/services/inspectionSignatures");
+    const signaturePath = await uploadInspectionSignature(supabase, {
+      locationId: workOrder.location_id,
       workOrderId,
-      actorUserId: user.user_id,
-      outcome: "passed",
-      notes: trimmedNotes,
+      kind: "qc",
+      signatureDataUrl: signatureDataUrl ?? "",
     });
+
+    const trimmedNotes = notes?.trim() || null;
+    try {
+      await recordQcAttemptV2({
+        workOrderId,
+        actorUserId: user.user_id,
+        outcome: "passed",
+        notes: trimmedNotes,
+        signatureStoragePath: signaturePath,
+      });
+    } catch (err) {
+      await removeInspectionSignature(supabase, signaturePath);
+      throw err;
+    }
 
     await addTimelineEvent(supabase, {
       work_order_id: workOrderId,
@@ -498,7 +513,10 @@ export async function passPeerQualityCheck(
       entity_type: "work_order",
       entity_id: workOrderId,
       description: "Quality check completed",
-      new_value: { quality_check_notes: trimmedNotes },
+      new_value: {
+        quality_check_notes: trimmedNotes,
+        signature_storage_path: signaturePath,
+      },
     });
     await addAuditLog(supabase, {
       actor_user_id: user.user_id,
@@ -507,18 +525,24 @@ export async function passPeerQualityCheck(
       entity_type: "work_order",
       entity_id: workOrderId,
       description: "Quality check completed",
-      new_value: { quality_check_notes: trimmedNotes },
+      new_value: {
+        quality_check_notes: trimmedNotes,
+        signature_storage_path: signaturePath,
+      },
     });
     await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
     return;
   }
 
   if (isFrontOffice) {
-    await completeQualityCheck(workOrderId, notes);
+    await completeQualityCheck(workOrderId, notes, { signatureDataUrl });
     return;
   }
 
-  await completeQualityCheck(workOrderId, notes, { allowPeerTechnician: true });
+  await completeQualityCheck(workOrderId, notes, {
+    allowPeerTechnician: true,
+    signatureDataUrl,
+  });
 }
 
 export async function failPeerQualityCheck(

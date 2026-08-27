@@ -328,7 +328,7 @@ export function buildTechnicianDocketItems(input: {
         floor_wait_owner: null,
         wait_owner_label: "",
         park_reason_label: "",
-        state_label: "Final safety check",
+        state_label: "Final inspection",
         wait_reason: null,
         wait_owner_kind: null,
         awaiting_customer: false,

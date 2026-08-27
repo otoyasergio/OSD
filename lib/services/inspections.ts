@@ -56,6 +56,9 @@ export type InspectionDetail = {
   started_at: string | null;
   completed_at: string | null;
   completed_by_user_id: string | null;
+  completed_by_name: string | null;
+  signature_storage_path: string | null;
+  signature_signed_url: string | null;
   location_id: string;
   work_order_number: string;
   work_order_status: string;
@@ -258,6 +261,7 @@ export async function getInspectionForWorkOrder(
       started_at,
       completed_at,
       completed_by_user_id,
+      signature_storage_path,
       inspection_result (
         ${RESULT_COLUMNS}
       )
@@ -281,6 +285,7 @@ export async function getInspectionForWorkOrder(
       started_at,
       completed_at,
       completed_by_user_id,
+      signature_storage_path,
       inspection_result (
         ${RESULT_COLUMNS}
       )
@@ -361,12 +366,37 @@ export async function getInspectionForWorkOrder(
     signed_url: signedByPath.get(p.storage_path) ?? p.photo_url,
   }));
 
+  const signaturePath =
+    (inspection as { signature_storage_path?: string | null }).signature_storage_path ??
+    null;
+  const { createInspectionSignatureSignedUrl } =
+    await import("@/lib/services/inspectionSignatures");
+  const signatureSignedUrl = await createInspectionSignatureSignedUrl(
+    supabase,
+    signaturePath
+  );
+
+  let completedByName: string | null = null;
+  if (inspection.completed_by_user_id) {
+    const { data: completer } = await supabase
+      .from("app_user")
+      .select("first_name, last_name")
+      .eq("user_id", inspection.completed_by_user_id)
+      .maybeSingle();
+    if (completer) {
+      completedByName = `${completer.first_name} ${completer.last_name}`;
+    }
+  }
+
   return {
     inspection_id: inspection.inspection_id,
     work_order_id: inspection.work_order_id,
     started_at: inspection.started_at,
     completed_at: inspection.completed_at,
     completed_by_user_id: inspection.completed_by_user_id,
+    completed_by_name: completedByName,
+    signature_storage_path: signaturePath,
+    signature_signed_url: signatureSignedUrl,
     location_id: workOrder.location_id,
     work_order_number: workOrder.work_order_number,
     work_order_status: workOrder.status,
@@ -576,7 +606,7 @@ export async function saveInspectionResult(
 
 export async function completeInspection(
   workOrderId: string,
-  options: { force?: boolean } = {}
+  options: { force?: boolean; signatureDataUrl?: string | null } = {}
 ): Promise<void> {
   const user = await requireUser();
   if (!canCompleteInspection(user.role)) throw new Error("FORBIDDEN");
@@ -645,18 +675,31 @@ export async function completeInspection(
     }>
   );
 
+  const { uploadInspectionSignature, removeInspectionSignature } =
+    await import("@/lib/services/inspectionSignatures");
+  const signaturePath = await uploadInspectionSignature(supabase, {
+    locationId,
+    workOrderId,
+    kind: "arrival",
+    signatureDataUrl: options.signatureDataUrl ?? "",
+  });
+
   const now = new Date().toISOString();
   const { error: updateError } = await supabase
     .from("inspection")
     .update({
       completed_at: now,
       completed_by_user_id: user.user_id,
+      signature_storage_path: signaturePath,
       updated_at: now,
       ...(inspection.started_at ? {} : { started_at: now }),
     })
     .eq("inspection_id", inspection.inspection_id);
 
-  if (updateError) throw updateError;
+  if (updateError) {
+    await removeInspectionSignature(supabase, signaturePath);
+    throw updateError;
+  }
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,
@@ -666,11 +709,12 @@ export async function completeInspection(
     entity_id: inspection.inspection_id,
     description:
       incompleteCount > 0
-        ? `Inspection completed with ${incompleteCount} incomplete item(s)`
-        : "Inspection completed",
+        ? `Arrival inspection completed with ${incompleteCount} incomplete item(s)`
+        : "Arrival inspection completed",
     new_value: {
       incomplete_count: incompleteCount,
       forced: Boolean(options.force && incompleteCount > 0),
+      signature_storage_path: signaturePath,
     },
   });
 
@@ -680,10 +724,11 @@ export async function completeInspection(
     action: "inspection_completed",
     entity_type: "inspection",
     entity_id: inspection.inspection_id,
-    description: `Inspection completed on ${workOrderNumber}`,
+    description: `Arrival inspection completed on ${workOrderNumber}`,
     new_value: {
       incomplete_count: incompleteCount,
       forced: Boolean(options.force && incompleteCount > 0),
+      signature_storage_path: signaturePath,
     },
   });
 

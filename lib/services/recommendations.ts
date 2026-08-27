@@ -1320,6 +1320,7 @@ export async function convertRecommendationToJob(
       standard_price_snapshot: priceOverride ?? service.standard_price,
       estimated_labour_snapshot: service.estimated_labour,
       status: jobStatus,
+      origin: "recommendation",
       created_by_user_id: user.user_id,
       notes: jobNotes,
       ...(alreadyApproved
@@ -1500,6 +1501,7 @@ export async function createDraftJobFromRecommendation(
       standard_price_snapshot: service.standard_price,
       estimated_labour_snapshot: service.estimated_labour,
       status: "draft" satisfies JobStatus,
+      origin: "recommendation",
       created_by_user_id: user.user_id,
       notes: jobNotes,
     })

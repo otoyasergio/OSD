@@ -3,6 +3,13 @@ import { resolveReadSubject, type ReadView } from "@/lib/auth/role-preview-share
 import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, WorkOrderStatus } from "@/lib/database/types";
 import { JOB_STATUS_LABELS, WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
+import {
+  JOB_ORIGIN_LABELS,
+  isTechDoesThisStatus,
+  jobAuthorizationLabel,
+  jobWorkLabel,
+  normalizeJobOrigin,
+} from "@/lib/work-orders/visitWorkList";
 import { listTechnicianNotes, type TechnicianNote } from "@/lib/services/notes";
 import {
   assertViewerCanAccessWorkOrder,
@@ -14,8 +21,13 @@ export type JobPacketJob = {
   service_name: string;
   status: JobStatus;
   status_label: string;
+  authorization_label: string | null;
+  work_label: string;
+  origin: import("@/lib/database/types").JobOrigin;
+  origin_label: string;
   assigned_technician_id: string | null;
   assigned_to_me: boolean;
+  is_tech_work: boolean;
   floor_href: string; // /technician?wo=&job=
 };
 
@@ -42,6 +54,7 @@ type PacketJobRow = {
   job_id: string;
   service_name_snapshot: string;
   status: JobStatus;
+  origin?: string | null;
   assigned_technician_id: string | null;
   created_at: string;
 };
@@ -55,15 +68,23 @@ export function mapJobPacketJobs(
   return jobs
     .filter((job) => !["cancelled", "declined"].includes(job.status))
     .sort((a, b) => a.created_at.localeCompare(b.created_at))
-    .map((job) => ({
-      job_id: job.job_id,
-      service_name: job.service_name_snapshot,
-      status: job.status,
-      status_label: JOB_STATUS_LABELS[job.status] ?? job.status,
-      assigned_technician_id: job.assigned_technician_id,
-      assigned_to_me: job.assigned_technician_id === viewerUserId,
-      floor_href: jobFloorHref(workOrderId, job.job_id),
-    }));
+    .map((job) => {
+      const origin = normalizeJobOrigin(job.origin);
+      return {
+        job_id: job.job_id,
+        service_name: job.service_name_snapshot,
+        status: job.status,
+        status_label: JOB_STATUS_LABELS[job.status] ?? job.status,
+        authorization_label: jobAuthorizationLabel(job.status),
+        work_label: jobWorkLabel(job.status),
+        origin,
+        origin_label: JOB_ORIGIN_LABELS[origin],
+        assigned_technician_id: job.assigned_technician_id,
+        assigned_to_me: job.assigned_technician_id === viewerUserId,
+        is_tech_work: isTechDoesThisStatus(job.status),
+        floor_href: jobFloorHref(workOrderId, job.job_id),
+      };
+    });
 }
 
 function motorcycleLabel(
@@ -99,7 +120,7 @@ export async function getJobPacket(
         year, make, model
       ),
       job (
-        job_id, service_name_snapshot, status, assigned_technician_id, created_at
+        job_id, service_name_snapshot, status, origin, assigned_technician_id, created_at
       )
     `
     )

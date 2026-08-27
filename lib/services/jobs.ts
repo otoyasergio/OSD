@@ -132,6 +132,7 @@ export async function addJobToWorkOrder(
       standard_price_snapshot: service.standard_price,
       estimated_labour_snapshot: service.estimated_labour,
       status,
+      origin: "shop_added",
       created_by_user_id: user.user_id,
       ...(status === "approved"
         ? {

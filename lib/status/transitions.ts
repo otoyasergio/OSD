@@ -36,6 +36,15 @@ export function getTargetStatusForColumn(columnId: string): WorkOrderStatus | nu
   return COLUMN_TARGET_STATUS[columnId as ShopBoardColumnId];
 }
 
+/** Shop-floor Ready and Control Center Ready both mean the bike can leave. */
+export function isPickupBoardColumn(columnId: string): boolean {
+  return columnId === "pickup" || columnId === "gallery_ready";
+}
+
+export function isQcBoardColumn(columnId: string): boolean {
+  return columnId === "qc" || columnId === "gallery_qc";
+}
+
 export function boardColumnIdForStatus(
   status: WorkOrderStatus,
   columns: readonly { id: string; statuses: readonly WorkOrderStatus[] }[]

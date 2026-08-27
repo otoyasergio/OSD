@@ -13,6 +13,8 @@ import {
 } from "@/lib/permissions";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
+import { isSafetyRequired } from "@/lib/status/safetyRequired";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -72,10 +74,61 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
   }
 }
 
+async function assertPickupLeaveGates(
+  supabase: DbClient,
+  workOrderId: string,
+  workOrder: Pick<WorkOrderRow, "quality_checked_at" | "quality_checked_by_user_id">
+) {
+  const [
+    { data: safetyRow, error: safetyError },
+    { data: jobs, error: jobsError },
+    { data: inspection, error: inspectionError },
+  ] = await Promise.all([
+    supabase
+      .from("work_order")
+      .select(
+        "safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived"
+      )
+      .eq("work_order_id", workOrderId)
+      .single(),
+    supabase
+      .from("job")
+      .select("status, service_name_snapshot")
+      .eq("work_order_id", workOrderId),
+    supabase
+      .from("inspection")
+      .select("completed_at")
+      .eq("work_order_id", workOrderId)
+      .maybeSingle(),
+  ]);
+  if (safetyError) throw safetyError;
+  if (jobsError) throw jobsError;
+  if (inspectionError) throw inspectionError;
+
+  const blocked = pickupLeaveBlockReason({
+    inspectionComplete: Boolean(inspection?.completed_at),
+    qualityChecked: Boolean(
+      workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
+    ),
+    safetyRequired: isSafetyRequired({
+      safety_required: (safetyRow?.safety_required as boolean | null) ?? null,
+      safety_waived: Boolean(safetyRow?.safety_waived),
+      jobs: jobs ?? [],
+    }),
+    safetyChecked: Boolean(
+      safetyRow?.safety_checked_at || safetyRow?.safety_checked_by_user_id
+    ),
+  });
+  if (blocked) throw new Error(blocked);
+}
+
 export async function completeQualityCheck(
   workOrderId: string,
   notes?: string | null,
-  options: { allowPeerTechnician?: boolean } = {}
+  options: {
+    allowPeerTechnician?: boolean;
+    signatureDataUrl?: string | null;
+  } = {}
 ): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (
@@ -87,19 +140,45 @@ export async function completeQualityCheck(
 
   await assertAllActiveJobsCompleted(supabase, workOrderId);
 
+  const { uploadInspectionSignature, removeInspectionSignature } =
+    await import("@/lib/services/inspectionSignatures");
+  const { insertQualityCheckAttempt } =
+    await import("@/lib/services/checkAttemptEvidence");
+
+  const signaturePath = await uploadInspectionSignature(supabase, {
+    locationId: workOrder.location_id,
+    workOrderId,
+    kind: "qc",
+    signatureDataUrl: options.signatureDataUrl ?? "",
+  });
+
   const now = new Date().toISOString();
   const trimmedNotes = notes?.trim() || null;
 
-  const { error } = await supabase
-    .from("work_order")
-    .update({
-      quality_checked_by_user_id: user.user_id,
-      quality_checked_at: now,
-      quality_check_notes: trimmedNotes,
-      updated_at: now,
-    })
-    .eq("work_order_id", workOrderId);
-  if (error) throw error;
+  try {
+    await insertQualityCheckAttempt(supabase, {
+      workOrderId,
+      locationId: workOrder.location_id,
+      actorUserId: user.user_id,
+      outcome: "passed",
+      notes: trimmedNotes,
+      signatureStoragePath: signaturePath,
+    });
+
+    const { error } = await supabase
+      .from("work_order")
+      .update({
+        quality_checked_by_user_id: user.user_id,
+        quality_checked_at: now,
+        quality_check_notes: trimmedNotes,
+        updated_at: now,
+      })
+      .eq("work_order_id", workOrderId);
+    if (error) throw error;
+  } catch (error) {
+    await removeInspectionSignature(supabase, signaturePath);
+    throw error;
+  }
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,
@@ -116,6 +195,7 @@ export async function completeQualityCheck(
       quality_checked_at: now,
       quality_checked_by_user_id: user.user_id,
       quality_check_notes: trimmedNotes,
+      signature_storage_path: signaturePath,
     },
   });
 
@@ -132,6 +212,7 @@ export async function completeQualityCheck(
     new_value: {
       quality_checked_at: now,
       quality_check_notes: trimmedNotes,
+      signature_storage_path: signaturePath,
     },
   });
 
@@ -143,23 +224,7 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
   if (!canMarkReadyForPickup(user.role)) throw new Error("FORBIDDEN");
 
   await assertAllActiveJobsCompleted(supabase, workOrderId);
-
-  if (!workOrder.quality_checked_at && !workOrder.quality_checked_by_user_id) {
-    throw new Error("QC_REQUIRED");
-  }
-
-  // Load safety fields — markReady still used by front office; block if safety pending.
-  const { data: safetyRow, error: safetyError } = await supabase
-    .from("work_order")
-    .select(
-      "safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived, status"
-    )
-    .eq("work_order_id", workOrderId)
-    .single();
-  if (safetyError) throw safetyError;
-  if (safetyRow?.status === "safety_check") {
-    throw new Error("INVALID_STATUS");
-  }
+  await assertPickupLeaveGates(supabase, workOrderId, workOrder);
 
   const now = new Date().toISOString();
   const { error } = await supabase
@@ -216,6 +281,8 @@ export async function completeWorkOrder(
   ) {
     throw new Error("NOT_READY_FOR_PICKUP");
   }
+
+  await assertPickupLeaveGates(supabase, workOrderId, workOrder);
 
   const now = new Date().toISOString();
   const trimmedNotes = pickupNotes?.trim() || null;

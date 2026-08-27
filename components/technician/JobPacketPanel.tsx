@@ -175,47 +175,81 @@ export function JobPacketPanel({
 
           {activeTab === "jobs" ? (
             <>
-              <h3 className="floor-section-title">Jobs on this visit</h3>
-              {packet.jobs.length === 0 ? (
-                <p className="floor-muted">No active jobs on this work order.</p>
+              <h3 className="floor-section-title">Tech does this</h3>
+              {packet.jobs.filter((j) => j.is_tech_work).length === 0 ? (
+                <p className="floor-muted">No authorized work on this visit yet.</p>
               ) : (
                 <ul className="floor-service-list">
-                  {packet.jobs.map((job) => {
-                    const content = (
-                      <>
-                        <span className="floor-service-main">
-                          <span className="floor-service-name">{job.service_name}</span>
-                          <span className="floor-service-meta">{job.status_label}</span>
-                        </span>
-                        <span className="floor-service-owner">
-                          {job.assigned_to_me ? "Open on floor" : "Other tech"}
-                        </span>
-                      </>
-                    );
+                  {packet.jobs
+                    .filter((j) => j.is_tech_work)
+                    .map((job) => {
+                      const content = (
+                        <>
+                          <span className="floor-service-main">
+                            <span className="floor-service-name">{job.service_name}</span>
+                            <span className="floor-service-meta">
+                              {job.origin_label}
+                              {job.authorization_label
+                                ? ` · ${job.authorization_label}`
+                                : ""}
+                              {job.work_label !== "—" ? ` · ${job.work_label}` : ""}
+                            </span>
+                          </span>
+                          <span className="floor-service-owner">
+                            {job.assigned_to_me ? "Open on floor" : "Other tech"}
+                          </span>
+                        </>
+                      );
 
-                    return (
-                      <li key={job.job_id}>
-                        {job.assigned_to_me ? (
-                          <Link
-                            href={job.floor_href}
-                            className={`floor-service-item${
-                              selectedJobId === job.job_id
-                                ? " floor-service-item--selected"
-                                : ""
-                            }`}
-                          >
-                            {content}
-                          </Link>
-                        ) : (
-                          <div className="floor-service-item floor-service-item--other">
-                            {content}
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
+                      return (
+                        <li key={job.job_id}>
+                          {job.assigned_to_me ? (
+                            <Link
+                              href={job.floor_href}
+                              className={`floor-service-item${
+                                selectedJobId === job.job_id
+                                  ? " floor-service-item--selected"
+                                  : ""
+                              }`}
+                            >
+                              {content}
+                            </Link>
+                          ) : (
+                            <div className="floor-service-item floor-service-item--other">
+                              {content}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                 </ul>
               )}
+              {packet.jobs.some((j) => !j.is_tech_work) ? (
+                <>
+                  <h3 className="floor-section-title">Waiting / not work yet</h3>
+                  <ul className="floor-service-list">
+                    {packet.jobs
+                      .filter((j) => !j.is_tech_work)
+                      .map((job) => (
+                        <li key={job.job_id}>
+                          <div className="floor-service-item floor-service-item--other">
+                            <span className="floor-service-main">
+                              <span className="floor-service-name">
+                                {job.service_name}
+                              </span>
+                              <span className="floor-service-meta">
+                                {job.origin_label}
+                                {job.authorization_label
+                                  ? ` · ${job.authorization_label}`
+                                  : ""}
+                              </span>
+                            </span>
+                          </div>
+                        </li>
+                      ))}
+                  </ul>
+                </>
+              ) : null}
             </>
           ) : null}
 

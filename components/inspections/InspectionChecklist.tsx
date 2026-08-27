@@ -12,6 +12,7 @@ import {
 } from "@/lib/services/inspectionGate";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { SignOffPad } from "@/components/inspections/SignOffPad";
 import type { InspectionResultStatus, PhotoCategory } from "@/lib/database/types";
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
@@ -503,33 +504,43 @@ export function InspectionChecklist({
                 Force complete ({localIncompleteCount} incomplete)…
               </button>
             ) : (
-              <form action={completeAction} className="inspection-complete-dock-form">
+              <form
+                action={completeAction}
+                className="inspection-complete-dock-form flex flex-col gap-3"
+              >
                 <input type="hidden" name="force" value="true" />
                 {completeReturnTo ? (
                   <input type="hidden" name="return_to" value={completeReturnTo} />
                 ) : null}
-                <SubmitButton
-                  label="Confirm force complete"
-                  pendingLabel="Completing…"
-                  disabled={saving}
-                  className="inspection-complete-dock-go"
-                />
-                <button
-                  type="button"
-                  onClick={() => setForceConfirm(false)}
-                  className="btn btn-secondary"
-                >
-                  Cancel
-                </button>
+                <SignOffPad label="Force-complete signature (override)" />
+                <div className="flex flex-wrap gap-2">
+                  <SubmitButton
+                    label="Confirm force complete"
+                    pendingLabel="Completing…"
+                    disabled={saving}
+                    className="inspection-complete-dock-go"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setForceConfirm(false)}
+                    className="btn btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </form>
             )
           ) : (
-            <form action={completeAction} className="inspection-complete-dock-form">
+            <form
+              action={completeAction}
+              className="inspection-complete-dock-form flex flex-col gap-3"
+            >
               {completeReturnTo ? (
                 <input type="hidden" name="return_to" value={completeReturnTo} />
               ) : null}
+              <SignOffPad label="Tech sign-off" />
               <SubmitButton
-                label="Complete report"
+                label="Complete arrival inspection"
                 pendingLabel="Completing…"
                 disabled={saving || localIncompleteCount > 0}
                 className="inspection-complete-dock-go"
@@ -538,6 +549,31 @@ export function InspectionChecklist({
           )}
           <FormError message={completeState.error} />
         </div>
+      ) : inspection.completed_at ? (
+        <section className="mt-6 rounded border border-[var(--border)] bg-white p-4">
+          <h2 className="text-base font-semibold text-foreground">
+            Arrival inspection sign-off
+          </h2>
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
+            Completed
+            {inspection.completed_by_name ? ` by ${inspection.completed_by_name}` : ""}
+            {inspection.completed_at
+              ? ` · ${formatDateTime(inspection.completed_at)}`
+              : ""}
+          </p>
+          {inspection.signature_signed_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={inspection.signature_signed_url}
+              alt="Arrival inspection signature"
+              className="mt-3 max-h-32 rounded border border-[var(--border)] bg-white"
+            />
+          ) : (
+            <p className="mt-2 text-sm text-[var(--status-neutral)]">
+              No drawn signature on file (completed before sign-off was required).
+            </p>
+          )}
+        </section>
       ) : null}
 
       {lightboxIndex !== null && lightboxPhotos.length > 0 ? (

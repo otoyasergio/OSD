@@ -8,10 +8,12 @@ import type { QualityFormState } from "@/app/(app)/work_orders/quality-actions";
 import type { SafetyFormState } from "@/app/(app)/work_orders/safety-actions";
 import { FormError, TextAreaField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import { formatDateTime } from "@/lib/datetime/format";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import { getWorkOrderNextAction } from "@/lib/work-orders/nextAction";
+import { buildVisitWorkList } from "@/lib/work-orders/visitWorkList";
+import { VisitWorkListSections } from "@/components/work_orders/VisitWorkListSections";
+import { SignOffPad } from "@/components/inspections/SignOffPad";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
@@ -38,6 +40,7 @@ function formatDate(value: string | null) {
 
 export function OverviewTab({
   detail,
+  openRecommendations = [],
   technicians,
   canAssign,
   canRunQc,
@@ -62,6 +65,13 @@ export function OverviewTab({
   safetyOverrideAction,
 }: {
   detail: WorkOrderDetail;
+  openRecommendations?: Array<{
+    recommendation_id: string;
+    description: string;
+    severity: string;
+    status: string;
+    converted_job_id: string | null;
+  }>;
   technicians: TechnicianOption[];
   canAssign: boolean;
   canRunQc: boolean;
@@ -156,6 +166,17 @@ export function OverviewTab({
     inspectionCompleted,
   });
 
+  const visitWorkList = buildVisitWorkList({
+    jobs: detail.jobs.map((job) => ({
+      job_id: job.job_id,
+      service_name_snapshot: job.service_name_snapshot,
+      status: job.status,
+      origin: job.origin,
+      notes: job.notes,
+    })),
+    openRecommendations,
+  });
+
   return (
     <div className="flex flex-col gap-6">
       {nextAction ? (
@@ -178,16 +199,17 @@ export function OverviewTab({
       <section className="rounded border border-[var(--border)] bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">Inspection report</h2>
+            <h2 className="text-lg font-semibold text-foreground">Arrival inspection</h2>
             <p className="mt-1 text-sm text-[var(--status-neutral)]">
-              Visual Motorcycle Inspection Report — required before finishing jobs.
+              Visual Motorcycle Inspection Report — required and signed before finishing
+              jobs.
             </p>
           </div>
           <Link
             href={`/work_orders/${detail.work_order_id}/inspection`}
             className="btn btn-primary min-h-12"
           >
-            Open inspection report
+            Open arrival inspection
           </Link>
         </div>
       </section>
@@ -293,28 +315,13 @@ export function OverviewTab({
       ) : null}
 
       <section className="rounded border border-[var(--border)] bg-white p-4">
-        <h2 className="text-lg font-semibold text-foreground">Jobs summary</h2>
-        {detail.jobs.length === 0 ? (
-          <p className="mt-2 text-sm text-[var(--status-neutral)]">
-            No jobs on this work order yet.
-          </p>
-        ) : (
-          <ul className="mt-3 divide-y divide-[var(--border)]">
-            {detail.jobs.map((job) => (
-              <li
-                key={job.job_id}
-                className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm"
-              >
-                <span className="font-medium text-foreground">
-                  {job.service_name_snapshot}
-                </span>
-                <span className="text-[var(--status-neutral)]">
-                  {JOB_STATUS_LABELS[job.status] ?? job.status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <h2 className="text-lg font-semibold text-foreground">Visit work</h2>
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+          What the customer asked for, what was recommended, and what the tech should do.
+        </p>
+        <div className="mt-4">
+          <VisitWorkListSections list={visitWorkList} />
+        </div>
       </section>
 
       <section className="rounded border border-[var(--border)] bg-white p-4">
@@ -370,7 +377,7 @@ export function OverviewTab({
             </dd>
           </div>
           <div>
-            <dt className="text-[var(--status-neutral)]">Safety check</dt>
+            <dt className="text-[var(--status-neutral)]">Final inspection</dt>
             <dd className="font-medium text-foreground">
               {detail.safety_waived
                 ? "Waived"
@@ -417,10 +424,12 @@ export function OverviewTab({
             action={safetyFormAction}
             className="mt-4 flex flex-col gap-3 rounded border border-[var(--border)] p-4"
           >
-            <h3 className="font-semibold text-foreground">Safety requirement</h3>
+            <h3 className="font-semibold text-foreground">
+              Final inspection requirement
+            </h3>
             <p className="text-sm text-[var(--status-neutral)]">
-              Default: required when a Safety Inspection job is on the visit. Office can
-              force on or waive.
+              Default: required after QC so no bike leaves without a signed final
+              inspection. Office can waive a visit.
             </p>
             <FormError message={safetyState.error} />
             <div className="flex flex-wrap gap-2">
@@ -464,7 +473,7 @@ export function OverviewTab({
               >
                 <h3 className="font-semibold text-foreground">Quality check</h3>
                 <p className="text-sm text-[var(--status-neutral)]">
-                  Requires all active jobs completed.
+                  Requires all active jobs completed. Draw your signature to vouch.
                 </p>
                 <FormError message={qcState.error} />
                 <TextAreaField
@@ -472,6 +481,7 @@ export function OverviewTab({
                   name="quality_check_notes"
                   rows={2}
                 />
+                <SignOffPad label="QC signature" />
                 <div>
                   <SubmitButton label="Complete quality check" pendingLabel="Saving…" />
                 </div>
