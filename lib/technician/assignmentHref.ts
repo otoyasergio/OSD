@@ -11,6 +11,17 @@ export function staffAssignmentHref(workOrderId: string): string {
   return `/technician?wo=${encodeURIComponent(workOrderId)}`;
 }
 
+/** Deep-link for a staff notification: floor for assignments, WO page for pickup. */
+export function staffNotificationHref(notification: {
+  kind: string;
+  work_order_id: string;
+}): string {
+  if (notification.kind === "ready_for_pickup") {
+    return `/work_orders/${encodeURIComponent(notification.work_order_id)}`;
+  }
+  return staffAssignmentHref(notification.work_order_id);
+}
+
 export function techJobPacketHref(
   workOrderId: string,
   options?: { jobId?: string; section?: JobPacketSection; stage?: string }

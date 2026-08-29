@@ -5,10 +5,13 @@ function WorkListSection({
   title,
   empty,
   items,
+  yellow = false,
 }: {
   title: string;
   empty: string;
   items: VisitWorkListItem[];
+  /** Pending recommendations awaiting client approval. */
+  yellow?: boolean;
 }) {
   return (
     <div>
@@ -18,9 +21,18 @@ function WorkListSection({
       {items.length === 0 ? (
         <p className="mt-2 text-sm text-[var(--status-neutral)]">{empty}</p>
       ) : (
-        <ul className="mt-2 divide-y divide-[var(--border)]">
+        <ul
+          className={`mt-2 ${yellow ? "flex flex-col gap-2" : "divide-y divide-[var(--border)]"}`}
+        >
           {items.map((item) => (
-            <li key={item.key} className="py-2 text-sm">
+            <li
+              key={item.key}
+              className={
+                yellow
+                  ? "visit-work-item visit-work-item--pending py-2 text-sm"
+                  : "py-2 text-sm"
+              }
+            >
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="font-medium text-foreground">{item.title}</span>
                 <span className="text-[var(--status-neutral)]">
@@ -60,6 +72,7 @@ export function VisitWorkListSections({ list }: { list: VisitWorkList }) {
         title="Recommended"
         empty="No open recommendations."
         items={list.recommended}
+        yellow
       />
       <WorkListSection
         title="Tech does this"

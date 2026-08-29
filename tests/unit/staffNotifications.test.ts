@@ -7,8 +7,13 @@ import { StaffNotificationBell } from "@/components/layout/StaffNotificationBell
 import {
   formatNotificationAge,
   motorcycleNotificationLabel,
+  staffNotificationTitle,
 } from "@/lib/services/staffNotifications";
-import { staffAssignmentHref } from "@/lib/technician/assignmentHref";
+import {
+  staffAssignmentHref,
+  staffNotificationHref,
+} from "@/lib/technician/assignmentHref";
+import { canReceiveStaffNotifications } from "@/lib/permissions/checks";
 
 const SAMPLE_NOTIFICATION = {
   notification_id: "notification-1",
@@ -18,6 +23,12 @@ const SAMPLE_NOTIFICATION = {
   motorcycle_label: "2024 Honda CB650R",
   actor_name: "Alex Advisor",
   created_at: "2026-07-15T17:45:00.000Z",
+};
+
+const READY_NOTIFICATION = {
+  ...SAMPLE_NOTIFICATION,
+  notification_id: "notification-2",
+  kind: "ready_for_pickup" as const,
 };
 
 function bellProps(overrides: Partial<Parameters<typeof StaffNotificationBell>[0]> = {}) {
@@ -89,14 +100,42 @@ describe("staff assignment notifications", () => {
     expect(staffAssignmentHref("work order/1")).toBe("/technician?wo=work%20order%2F1");
   });
 
+  it("routes ready-for-pickup alerts to the work order page", () => {
+    expect(staffNotificationHref(SAMPLE_NOTIFICATION)).toBe(
+      "/technician?wo=work-order-1"
+    );
+    expect(staffNotificationHref(READY_NOTIFICATION)).toBe("/work_orders/work-order-1");
+    expect(staffNotificationTitle("ready_for_pickup")).toBe("Ready for pickup");
+  });
+
+  it("enables the bell for floor and desk roles", () => {
+    expect(canReceiveStaffNotifications("technician")).toBe(true);
+    expect(canReceiveStaffNotifications("service_advisor")).toBe(true);
+    expect(canReceiveStaffNotifications("owner")).toBe(true);
+    expect(canReceiveStaffNotifications("admin")).toBe(true);
+    expect(canReceiveStaffNotifications("time_clock_kiosk")).toBe(false);
+  });
+
   it("renders a scannable unread assignment in the bell menu", () => {
     mount(createElement(StaffNotificationBell, bellProps()));
 
     const markup = document.body.innerHTML;
-    expect(markup).toContain('aria-label="1 unread assignment alert"');
+    expect(markup).toContain('aria-label="1 unread alert"');
     expect(markup).toContain("WO-1042 · 2024 Honda CB650R");
     expect(markup).toContain("Assigned by Alex Advisor");
     expect(markup).toContain("Mark all seen");
+  });
+
+  it("renders ready-for-pickup copy in the bell menu", () => {
+    mount(
+      createElement(
+        StaffNotificationBell,
+        bellProps({ notifications: [READY_NOTIFICATION] })
+      )
+    );
+    const markup = document.body.innerHTML;
+    expect(markup).toContain("Ready for pickup");
+    expect(markup).toContain("Marked by Alex Advisor");
   });
 
   it("closes on Escape", () => {
@@ -137,7 +176,7 @@ describe("staff assignment notifications", () => {
       root!.render(createElement(StaffNotificationBell, bellProps({ open: false })));
     });
     const active = document.activeElement as HTMLElement | null;
-    expect(active?.getAttribute("aria-label")).toBe("1 unread assignment alert");
+    expect(active?.getAttribute("aria-label")).toBe("1 unread alert");
   });
 
   it("renders exactly one dialog when both responsive slots share one controller", () => {

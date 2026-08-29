@@ -7,7 +7,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { AppUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-browser";
-import { isFloorTech, staffHomePath } from "@/lib/permissions/checks";
+import {
+  isFloorTech,
+  canReceiveStaffNotifications,
+  staffHomePath,
+} from "@/lib/permissions/checks";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { SidebarNav } from "@/components/layout/SidebarNav";
 import {
@@ -27,8 +31,11 @@ import {
   markStaffNotificationReadAction,
   refreshStaffNotificationsAction,
 } from "@/app/(app)/notifications/actions";
-import type { StaffAssignmentNotification } from "@/lib/services/staffNotifications";
-import { staffAssignmentHref } from "@/lib/technician/assignmentHref";
+import {
+  staffNotificationTitle,
+  type StaffAssignmentNotification,
+} from "@/lib/services/staffNotifications";
+import { staffNotificationHref } from "@/lib/technician/assignmentHref";
 import { FloorTopBar } from "@/components/technician/FloorTopBar";
 import { CommsLayer } from "@/components/comms/CommsLayer";
 
@@ -95,7 +102,7 @@ export function AppShell({
   const homeHref = staffHomePath(viewRole);
   // Notifications stay bound to the signed-in user — a preview never reads
   // or marks another technician's alerts.
-  const notificationsEnabled = isFloorTech(user.role);
+  const notificationsEnabled = canReceiveStaffNotifications(user.role);
 
   const refreshNotifications = useCallback(async () => {
     try {
@@ -189,7 +196,7 @@ export function AppShell({
         current?.notification_id === notification.notification_id ? null : current
       );
       setNotificationOpen(false);
-      router.push(staffAssignmentHref(notification.work_order_id));
+      router.push(staffNotificationHref(notification));
     } catch {
       setNotificationError("Could not mark this alert as seen. Try again.");
       setNotificationOpen(true);
@@ -272,7 +279,9 @@ export function AppShell({
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="font-semibold">New motorcycle assignment</p>
+                  <p className="font-semibold">
+                    {staffNotificationTitle(incomingNotification.kind)}
+                  </p>
                   <p className="mt-1 text-sm text-slate-700">
                     {incomingNotification.work_order_number} ·{" "}
                     {incomingNotification.motorcycle_label}
@@ -293,7 +302,9 @@ export function AppShell({
                 disabled={notificationBusy}
                 onClick={() => void openNotification(incomingNotification)}
               >
-                Open assigned motorcycle
+                {incomingNotification.kind === "ready_for_pickup"
+                  ? "Open work order"
+                  : "Open assigned motorcycle"}
               </button>
             </div>
           ) : null}
@@ -427,7 +438,9 @@ export function AppShell({
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-semibold">New motorcycle assignment</p>
+                <p className="font-semibold">
+                  {staffNotificationTitle(incomingNotification.kind)}
+                </p>
                 <p className="mt-1 text-sm text-slate-700">
                   {incomingNotification.work_order_number} ·{" "}
                   {incomingNotification.motorcycle_label}
@@ -448,7 +461,9 @@ export function AppShell({
               disabled={notificationBusy}
               onClick={() => void openNotification(incomingNotification)}
             >
-              Open assigned motorcycle
+              {incomingNotification.kind === "ready_for_pickup"
+                ? "Open work order"
+                : "Open assigned motorcycle"}
             </button>
           </div>
         ) : null}

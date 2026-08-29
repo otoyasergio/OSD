@@ -4350,6 +4350,20 @@ label.photo-source-sheet-action {
   opacity: 0.78;
 }
 
+.floor-service-item--pending {
+  border-color: #eab308;
+  background: #fef3c7;
+  opacity: 1;
+}
+
+.visit-work-item--pending {
+  border-radius: var(--radius-md);
+  border: 1px solid #eab308;
+  background: #fef3c7;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
 .floor-service-main {
   display: flex;
   min-width: 0;
