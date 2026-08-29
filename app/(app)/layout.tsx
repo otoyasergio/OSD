@@ -14,8 +14,8 @@ import { getSupabasePublicConfig } from "@/lib/database/config";
 import { createProfilePhotoSignedUrl } from "@/lib/profilePhotos/storage";
 import { SignOutButton } from "@/components/layout/SignOutButton";
 import {
+  canReceiveStaffNotifications,
   canUseTimeClockKiosk,
-  isFloorTech,
   staffHomePath,
 } from "@/lib/permissions/checks";
 import { listUnreadStaffNotifications } from "@/lib/services/staffNotifications";
@@ -68,7 +68,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const supabase = await createClient();
   const [profilePhotoUrl, initialNotifications, previewTechnicians] = await Promise.all([
     createProfilePhotoSignedUrl(supabase, user.profile_photo_path),
-    isFloorTech(user.role) ? listUnreadStaffNotifications() : Promise.resolve([]),
+    canReceiveStaffNotifications(user.role)
+      ? listUnreadStaffNotifications()
+      : Promise.resolve([]),
     user.role === "owner"
       ? listRolePreviewTechnicians().catch(() => [])
       : Promise.resolve([]),

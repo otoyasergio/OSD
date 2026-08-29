@@ -136,7 +136,7 @@ export type Database = {
           actor_user_id: string | null;
           location_id: string;
           work_order_id: string;
-          kind: "work_order_assigned";
+          kind: "work_order_assigned" | "ready_for_pickup";
           read_at: string | null;
           created_at: string;
         };
@@ -146,7 +146,7 @@ export type Database = {
           actor_user_id?: string | null;
           location_id: string;
           work_order_id: string;
-          kind?: "work_order_assigned";
+          kind?: "work_order_assigned" | "ready_for_pickup";
           read_at?: string | null;
           created_at?: string;
         };

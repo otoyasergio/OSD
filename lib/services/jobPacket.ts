@@ -31,6 +31,12 @@ export type JobPacketJob = {
   floor_href: string; // /technician?wo=&job=
 };
 
+export type JobPacketPendingRecommendation = {
+  recommendation_id: string;
+  description: string;
+  severity: string | null;
+};
+
 export type JobPacket = {
   work_order_id: string;
   work_order_number: string;
@@ -38,6 +44,7 @@ export type JobPacket = {
   wo_status_label: string;
   motorcycle_label: string;
   jobs: JobPacketJob[];
+  pending_recommendations: JobPacketPendingRecommendation[];
   notes: TechnicianNote[];
   /** Intentionally empty — photos load in a separate client/server action when section opens */
 };
@@ -57,6 +64,14 @@ type PacketJobRow = {
   origin?: string | null;
   assigned_technician_id: string | null;
   created_at: string;
+};
+
+type PacketRecommendationRow = {
+  recommendation_id: string;
+  description: string;
+  severity?: string | null;
+  status: string;
+  converted_job_id?: string | null;
 };
 
 /** Pure mapper for unit tests / loader. */
@@ -85,6 +100,19 @@ export function mapJobPacketJobs(
         floor_href: jobFloorHref(workOrderId, job.job_id),
       };
     });
+}
+
+/** Open pending recommendations that are not yet jobs — shown yellow until approved. */
+export function mapJobPacketPendingRecommendations(
+  rows: PacketRecommendationRow[]
+): JobPacketPendingRecommendation[] {
+  return rows
+    .filter((row) => !row.converted_job_id && row.status === "pending")
+    .map((row) => ({
+      recommendation_id: row.recommendation_id,
+      description: row.description,
+      severity: row.severity ?? null,
+    }));
 }
 
 function motorcycleLabel(
@@ -154,7 +182,18 @@ export async function getJobPacket(
   );
 
   const moto = Array.isArray(wo.motorcycle) ? wo.motorcycle[0] : wo.motorcycle;
-  const notes = await listTechnicianNotes(workOrderId);
+  const [{ data: recommendationRows, error: recommendationError }, notes] =
+    await Promise.all([
+      supabase
+        .from("recommendation")
+        .select("recommendation_id, description, severity, status, converted_job_id")
+        .eq("work_order_id", workOrderId)
+        .eq("status", "pending")
+        .is("converted_job_id", null),
+      listTechnicianNotes(workOrderId),
+    ]);
+
+  if (recommendationError) throw recommendationError;
 
   return {
     work_order_id: wo.work_order_id,
@@ -165,6 +204,9 @@ export async function getJobPacket(
       moto ? { year: moto.year, make: moto.make, model: moto.model } : null
     ),
     jobs: mapJobPacketJobs(jobRows, wo.work_order_id, subject.userId),
+    pending_recommendations: mapJobPacketPendingRecommendations(
+      (recommendationRows as PacketRecommendationRow[] | null) ?? []
+    ),
     notes,
   };
 }
