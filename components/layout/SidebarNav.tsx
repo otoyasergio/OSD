@@ -44,6 +44,7 @@ import {
   canViewReports,
   isFloorTech,
 } from "@/lib/permissions/checks";
+import { useCommsSnapshot } from "@/components/comms/CommsDock";
 
 type NavLink = { href: string; label: string; icon: LucideIcon };
 
@@ -311,6 +312,7 @@ type Props = {
 export function SidebarNav({ role, onNavigate }: Props) {
   const pathname = usePathname();
   const categories = buildNavCategories(role);
+  const unreadCount = useCommsSnapshot()?.unreadCount ?? 0;
 
   return (
     <nav aria-label="Main" className="sidebar-nav">
@@ -338,6 +340,14 @@ export function SidebarNav({ role, onNavigate }: Props) {
                   >
                     <Icon className="nav-link-icon" aria-hidden />
                     {link.label}
+                    {link.href === "/messages" && unreadCount > 0 ? (
+                      <span
+                        className="comms-unread-badge"
+                        aria-label={`${unreadCount} unread`}
+                      >
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    ) : null}
                   </Link>
                 );
               })}

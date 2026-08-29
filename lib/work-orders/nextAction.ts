@@ -55,10 +55,11 @@ export function getWorkOrderNextAction(
 
   if (!input.inspectionCompleted) {
     return {
-      title: "Complete the inspection",
-      detail: "Visual inspection must be finished before jobs can be marked done.",
+      title: "Complete the arrival inspection",
+      detail:
+        "Arrival inspection must be finished and signed before jobs can be marked done.",
       href: `/work_orders/${input.workOrderId}/inspection`,
-      cta: "Open inspection",
+      cta: "Open arrival inspection",
     };
   }
 
@@ -71,7 +72,8 @@ export function getWorkOrderNextAction(
   if (activeIncomplete) {
     return {
       title: "Finish active jobs",
-      detail: "Technicians complete jobs on the floor; track progress on the Jobs tab.",
+      detail:
+        "Technicians complete authorized jobs on the floor; track work on Estimate & Jobs.",
       href: `/work_orders/${input.workOrderId}?tab=jobs`,
       cta: "View jobs",
     };
@@ -80,7 +82,7 @@ export function getWorkOrderNextAction(
   if (!input.qualityChecked) {
     return {
       title: "Run quality check",
-      detail: "All active jobs are done — QC is the next gate.",
+      detail: "All active jobs are done — peer QC (signed) is the next gate.",
     };
   }
 
@@ -91,8 +93,8 @@ export function getWorkOrderNextAction(
   });
   if (safetyNeeded && !input.safetyChecked) {
     return {
-      title: "Safety check",
-      detail: "Waiting on head-tech safety before ready for pickup.",
+      title: "Final inspection",
+      detail: "Waiting on head-tech final inspection (signed) before ready for pickup.",
     };
   }
 

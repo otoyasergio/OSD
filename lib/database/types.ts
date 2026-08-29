@@ -37,6 +37,9 @@ export type JobStatus =
   | "completed"
   | "cancelled";
 
+/** How a job entered the visit. */
+export type JobOrigin = "customer_request" | "recommendation" | "shop_added";
+
 export type PartStatus =
   "needed" | "in_stock" | "ordered" | "installed" | "not_required" | "cancelled";
 

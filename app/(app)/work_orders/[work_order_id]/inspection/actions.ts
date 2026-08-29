@@ -44,6 +44,7 @@ export async function completeInspectionAction(
   try {
     await completeInspection(workOrderId, {
       force: formData.get("force") === "true",
+      signatureDataUrl: String(formData.get("signature_data_url") ?? ""),
     });
   } catch (error) {
     const message = await recordUxFailure(error, {

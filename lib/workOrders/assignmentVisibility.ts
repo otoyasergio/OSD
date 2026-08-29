@@ -59,3 +59,58 @@ export function scopeWorkOrdersForViewer<T extends AssignmentVisibilityFields>(
   if (!isFloorTech(role)) return rows;
   return rows.filter((row) => isWorkOrderAssignedToTechnician(row, viewerUserId));
 }
+
+/**
+ * Locations whose assigned work belongs on this technician view.
+ * A tech looking at their own floor sees every shop they belong to.
+ * Advisors / owners looking at a tech stay on the active shop.
+ */
+export function floorAssignedLocationIds(input: {
+  viewerUserId: string;
+  technicianUserId: string;
+  activeLocationId: string;
+  membershipLocationIds: readonly string[];
+}): string[] {
+  if (input.viewerUserId === input.technicianUserId) {
+    const ids = [...new Set(input.membershipLocationIds.filter(Boolean))];
+    return ids.length > 0 ? ids : [input.activeLocationId];
+  }
+  return [input.activeLocationId];
+}
+
+/**
+ * Floor techs may open work at any shop they belong to (assignment is a
+ * separate check). Front office stays on the cookie / active shop.
+ */
+export function canViewerAccessWorkOrderLocation(input: {
+  role: UserRole;
+  workOrderLocationId: string;
+  activeLocationId: string | null;
+  membershipLocationIds: readonly string[];
+}): boolean {
+  if (!input.membershipLocationIds.includes(input.workOrderLocationId)) {
+    return false;
+  }
+  if (isFloorTech(input.role)) return true;
+  return input.workOrderLocationId === input.activeLocationId;
+}
+
+export function assertViewerCanAccessWorkOrderLocation(
+  user: {
+    role: UserRole;
+    active_location_id: string | null;
+    location_ids: readonly string[];
+  },
+  workOrderLocationId: string
+): void {
+  if (
+    !canViewerAccessWorkOrderLocation({
+      role: user.role,
+      workOrderLocationId,
+      activeLocationId: user.active_location_id,
+      membershipLocationIds: user.location_ids,
+    })
+  ) {
+    throw new Error("FOREIGN_LOCATION");
+  }
+}

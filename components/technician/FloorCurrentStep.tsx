@@ -129,17 +129,17 @@ function plateFor(s: FloorOsSurface) {
       kicker: "COMPLETE",
       title: "Your wrench work is done",
       body: "Here's the rest of its trip — none of it is yours unless it bounces back.",
-      pipe: ["WRENCH", "PEER QC", "SAFETY", "PICKUP"],
+      pipe: ["WRENCH", "PEER QC", "FINAL", "PICKUP"],
     };
   }
   if (s.is_safety) {
     return {
-      kicker: "HEAD-TECH SAFETY",
-      title: s.can_safety ? "Final safety call" : "Waiting on head tech",
+      kicker: "FINAL INSPECTION",
+      title: s.can_safety ? "Final inspection" : "Waiting on head tech",
       body: s.can_safety
-        ? "Pass or fail below. Front desk books pickup after pass."
-        : "You're done unless this bike is assigned to you for safety.",
-      pipe: ["WRENCH", "PEER QC", "SAFETY", "PICKUP"],
+        ? "Pass or fail below — pass requires your signature. Front desk books pickup after pass."
+        : "You're done unless this bike is assigned to you for final inspection.",
+      pipe: ["WRENCH", "PEER QC", "FINAL", "PICKUP"],
     };
   }
   return null;
@@ -255,12 +255,14 @@ export function FloorCurrentStep({
             {surface.inspection_complete ? "Review" : "Step 1"}
           </p>
           <h3 className="pit-current-title">
-            {surface.inspection_complete ? "Inspection complete" : "Open inspection"}
+            {surface.inspection_complete
+              ? "Arrival inspection complete"
+              : "Open arrival inspection"}
           </h3>
           <p className="pit-current-body">
             {surface.inspection_complete
-              ? "Tap to view the report, then keep pushing the bike."
-              : "Fullscreen checklist — you come straight back to Work when the report is done."}
+              ? "Tap to view the signed report, then keep pushing the bike."
+              : "Fullscreen checklist — sign off when done, then you return to Work."}
           </p>
         </button>
       ) : null}

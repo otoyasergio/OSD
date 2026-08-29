@@ -218,7 +218,7 @@ export function deriveGoAction(input: {
     return {
       action: "pass_qc",
       label: "Pass QC — vouch for it ✓",
-      sub: "Hands it to head-tech safety — your clock is not running.",
+      sub: "Sign off, then hands it to final inspection — your clock is not running.",
       enabled: Boolean(input.qc_checks_done),
     };
   }
@@ -248,7 +248,7 @@ export function deriveGoAction(input: {
         return {
           action: "advance_step",
           label: "Open inspection ▶",
-          sub: "Fullscreen inspection — you return here when done.",
+          sub: "Fullscreen arrival inspection — sign and return here when done.",
           enabled: true,
           step: nextStep,
         };

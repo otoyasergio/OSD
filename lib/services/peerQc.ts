@@ -22,6 +22,7 @@ import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderSta
 import { createAdminFlag } from "@/lib/services/adminFlags";
 import { toRpcErrorCode } from "@/lib/services/errors";
 import { completeQualityCheck } from "@/lib/services/quality";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 
 export type PeerQcPickerOption = {
   user_id: string;
@@ -111,7 +112,18 @@ export async function listPeerQcPickerOptions(
 ): Promise<PeerQcPickerOption[]> {
   const user = await requireUser();
   const supabase = await createClient();
-  const locationId = user.active_location_id!;
+  let locationId = user.active_location_id!;
+  if (workOrderId) {
+    const { data: workOrder, error } = await supabase
+      .from("work_order")
+      .select("location_id")
+      .eq("work_order_id", workOrderId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+    assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
+    locationId = workOrder.location_id;
+  }
   const techs = await listClockedInTechnicians(supabase, locationId);
   const workedUserIds = workOrderId
     ? await listVisitWorkerIds(supabase, workOrderId)
@@ -132,7 +144,6 @@ export async function assignPeerQcByTechnician(
   const user = await requireUser();
   if (!canCompleteJob(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
-  const locationId = user.active_location_id!;
 
   if (!assigneeUserId || assigneeUserId === user.user_id) {
     throw new Error("QC_ASSIGNEE_REQUIRED");
@@ -145,9 +156,9 @@ export async function assignPeerQcByTechnician(
     .maybeSingle();
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== locationId) throw new Error("FOREIGN_LOCATION");
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
 
-  const clockedIn = await listClockedInTechnicianIds(supabase, locationId);
+  const clockedIn = await listClockedInTechnicianIds(supabase, workOrder.location_id);
   if (!clockedIn.includes(assigneeUserId)) {
     throw new Error("QC_ASSIGNEE_NOT_AVAILABLE");
   }
@@ -195,7 +206,7 @@ export async function assignPeerQcByTechnician(
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,
-    location_id: locationId,
+    location_id: workOrder.location_id,
     action: "peer_qc_assigned",
     entity_type: "work_order",
     entity_id: workOrderId,
@@ -382,6 +393,7 @@ async function recordQcAttemptV2(input: {
   outcome: "passed" | "failed";
   notes: string | null;
   reworkJobIds?: string[] | null;
+  signatureStoragePath?: string | null;
 }): Promise<void> {
   const admin = createAdminClient();
   const { data: completedJobs, error } = await admin
@@ -407,13 +419,15 @@ async function recordQcAttemptV2(input: {
     p_checklist: null,
     p_rework_job_ids: input.reworkJobIds ?? null,
     p_idempotency_key: `qc:${input.workOrderId}:${input.outcome}:${scopeHash}`,
+    p_signature_storage_path: input.signatureStoragePath ?? null,
   });
   if (rpcError) throw new Error(toRpcErrorCode(rpcError));
 }
 
 export async function passPeerQualityCheck(
   workOrderId: string,
-  notes?: string | null
+  notes?: string | null,
+  signatureDataUrl?: string | null
 ): Promise<void> {
   const user = await requireUser();
   if (!canPerformPeerQualityCheck(user.role)) throw new Error("FORBIDDEN");
@@ -426,9 +440,7 @@ export async function passPeerQualityCheck(
     .maybeSingle();
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
 
   const useV2 = v2WritesEnabled(readWorkflowV2Flags());
   const isFrontOffice = canRunQualityCheck(user.role);
@@ -454,13 +466,10 @@ export async function passPeerQualityCheck(
   }
 
   if (useV2) {
-    // Legacy parity: terminal work orders reject QC writes.
     if (workOrder.status === "completed" || workOrder.status === "cancelled") {
       throw new Error("WORK_ORDER_LOCKED");
     }
 
-    // Same gate the legacy completeQualityCheck enforces: nothing passes QC
-    // while active work remains open.
     const { data: gateJobs, error: gateError } = await supabase
       .from("job")
       .select("status")
@@ -474,13 +483,28 @@ export async function passPeerQualityCheck(
       throw new Error("JOBS_NOT_COMPLETE");
     }
 
-    const trimmedNotes = notes?.trim() || null;
-    await recordQcAttemptV2({
+    const { uploadInspectionSignature, removeInspectionSignature } =
+      await import("@/lib/services/inspectionSignatures");
+    const signaturePath = await uploadInspectionSignature(supabase, {
+      locationId: workOrder.location_id,
       workOrderId,
-      actorUserId: user.user_id,
-      outcome: "passed",
-      notes: trimmedNotes,
+      kind: "qc",
+      signatureDataUrl: signatureDataUrl ?? "",
     });
+
+    const trimmedNotes = notes?.trim() || null;
+    try {
+      await recordQcAttemptV2({
+        workOrderId,
+        actorUserId: user.user_id,
+        outcome: "passed",
+        notes: trimmedNotes,
+        signatureStoragePath: signaturePath,
+      });
+    } catch (err) {
+      await removeInspectionSignature(supabase, signaturePath);
+      throw err;
+    }
 
     await addTimelineEvent(supabase, {
       work_order_id: workOrderId,
@@ -489,7 +513,10 @@ export async function passPeerQualityCheck(
       entity_type: "work_order",
       entity_id: workOrderId,
       description: "Quality check completed",
-      new_value: { quality_check_notes: trimmedNotes },
+      new_value: {
+        quality_check_notes: trimmedNotes,
+        signature_storage_path: signaturePath,
+      },
     });
     await addAuditLog(supabase, {
       actor_user_id: user.user_id,
@@ -498,18 +525,24 @@ export async function passPeerQualityCheck(
       entity_type: "work_order",
       entity_id: workOrderId,
       description: "Quality check completed",
-      new_value: { quality_check_notes: trimmedNotes },
+      new_value: {
+        quality_check_notes: trimmedNotes,
+        signature_storage_path: signaturePath,
+      },
     });
     await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
     return;
   }
 
   if (isFrontOffice) {
-    await completeQualityCheck(workOrderId, notes);
+    await completeQualityCheck(workOrderId, notes, { signatureDataUrl });
     return;
   }
 
-  await completeQualityCheck(workOrderId, notes, { allowPeerTechnician: true });
+  await completeQualityCheck(workOrderId, notes, {
+    allowPeerTechnician: true,
+    signatureDataUrl,
+  });
 }
 
 export async function failPeerQualityCheck(
@@ -532,9 +565,7 @@ export async function failPeerQualityCheck(
     .maybeSingle();
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status !== "quality_check") {
     throw new Error("INVALID_STATUS");
   }

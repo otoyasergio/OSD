@@ -6759,6 +6759,21 @@ button.pit-current-card {
 
 .pit-floor-topbar-trailing {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pit-floor-location-switcher {
+  display: inline-flex;
+  align-items: center;
+}
+
+.pit-floor-location-select {
+  min-width: 4.5rem;
+  max-width: 6.5rem;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.75rem;
 }
 
 .docket-stamp-icon {
@@ -7629,4 +7644,100 @@ button.pit-current-card {
   font-size: 0.6875rem;
   font-weight: 500;
   color: #71717a;
+}
+
+/* Communications hub dock + call overlay */
+.comms-dock {
+  position: fixed;
+  /* Clear the home indicator and the landscape notch rail, otherwise the system
+     swipe gesture eats taps on the chip. z-index sits under the mobile nav
+     backdrop (40) so the dock never floats over the open drawer. */
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  z-index: 35;
+}
+
+.comms-dock-chip {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  /* Safari draws the tap flash on the border box, so a pill gets a rectangle. */
+  -webkit-tap-highlight-color: transparent;
+  border: 1px solid var(--chrome-border, #334155);
+  background: var(--chrome, #0f172a);
+  color: var(--chrome-foreground, #f8fafc);
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 0.25);
+}
+
+.comms-dock-live {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #86efac;
+}
+
+.comms-dock-panel {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.5rem);
+  width: min(22rem, calc(100vw - 2rem));
+  /* Without a cap a long recents list grows past the top of the viewport with
+     no way to reach it. Contain the scroll so it does not chain to the page. */
+  max-height: min(26rem, calc(100dvh - 8rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 18px 40px rgb(15 23 42 / 0.2);
+}
+
+.comms-unread-badge {
+  display: inline-flex;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.4rem;
+  border-radius: 999px;
+  background: #dc2626;
+  padding: 0 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.comms-call-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.7);
+  /* `inset: 0` reaches under the notch and home indicator with viewport-fit=cover.
+     Hang-up is the one control that must always be tappable. */
+  padding: max(1rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-left, 0px));
+}
+
+.comms-call-overlay-card {
+  width: min(28rem, 100%);
+  border-radius: 1rem;
+  background: var(--chrome, #0f172a);
+  color: var(--chrome-foreground, #f8fafc);
+  padding: 1.25rem;
+  text-align: center;
+  box-shadow: 0 25px 50px rgb(0 0 0 / 0.35);
+}
+
+.comms-call-overlay-card--video {
+  width: min(48rem, 100%);
+  padding: 0;
+  overflow: hidden;
 }

@@ -15,6 +15,7 @@ import { computeQcScopeHash } from "@/lib/jobs-v2/scopeHash";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { toRpcErrorCode } from "@/lib/services/errors";
 import { SAFETY_INSPECTION_SERVICE_NAME } from "@/lib/status/safetyRequired";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -53,9 +54,7 @@ async function requireMutableWorkOrder(workOrderId: string) {
   const supabase = await createClient();
   const workOrder = await loadWorkOrder(supabase, workOrderId);
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
@@ -111,6 +110,7 @@ async function recordSafetyAttemptV2(input: {
   actorUserId: string;
   outcome: "passed" | "failed";
   notes: string | null;
+  signatureStoragePath?: string | null;
 }): Promise<void> {
   const admin = createAdminClient();
   const { data: completedJobs, error } = await admin
@@ -135,13 +135,15 @@ async function recordSafetyAttemptV2(input: {
     p_notes: input.notes,
     p_checklist: null,
     p_idempotency_key: `safety:${input.workOrderId}:${input.outcome}:${scopeHash}`,
+    p_signature_storage_path: input.signatureStoragePath ?? null,
   });
   if (rpcError) throw new Error(toRpcErrorCode(rpcError));
 }
 
 export async function passSafetyCheck(
   workOrderId: string,
-  notes?: string | null
+  notes?: string | null,
+  signatureDataUrl?: string | null
 ): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canPerformSafetyCheck(user.role)) throw new Error("FORBIDDEN");
@@ -150,24 +152,50 @@ export async function passSafetyCheck(
   const now = new Date().toISOString();
   const trimmedNotes = notes?.trim() || null;
 
-  if (v2WritesEnabled(readWorkflowV2Flags())) {
-    await recordSafetyAttemptV2({
-      workOrderId,
-      actorUserId: user.user_id,
-      outcome: "passed",
-      notes: trimmedNotes,
-    });
-  } else {
-    const { error } = await supabase
-      .from("work_order")
-      .update({
-        safety_checked_by_user_id: user.user_id,
-        safety_checked_at: now,
-        safety_check_notes: trimmedNotes,
-        updated_at: now,
-      })
-      .eq("work_order_id", workOrderId);
-    if (error) throw error;
+  const { uploadInspectionSignature, removeInspectionSignature } =
+    await import("@/lib/services/inspectionSignatures");
+  const { insertSafetyCheckAttempt } =
+    await import("@/lib/services/checkAttemptEvidence");
+
+  const signaturePath = await uploadInspectionSignature(supabase, {
+    locationId: workOrder.location_id,
+    workOrderId,
+    kind: "final",
+    signatureDataUrl: signatureDataUrl ?? "",
+  });
+
+  try {
+    if (v2WritesEnabled(readWorkflowV2Flags())) {
+      await recordSafetyAttemptV2({
+        workOrderId,
+        actorUserId: user.user_id,
+        outcome: "passed",
+        notes: trimmedNotes,
+        signatureStoragePath: signaturePath,
+      });
+    } else {
+      await insertSafetyCheckAttempt(supabase, {
+        workOrderId,
+        locationId: workOrder.location_id,
+        actorUserId: user.user_id,
+        outcome: "passed",
+        notes: trimmedNotes,
+        signatureStoragePath: signaturePath,
+      });
+      const { error } = await supabase
+        .from("work_order")
+        .update({
+          safety_checked_by_user_id: user.user_id,
+          safety_checked_at: now,
+          safety_check_notes: trimmedNotes,
+          updated_at: now,
+        })
+        .eq("work_order_id", workOrderId);
+      if (error) throw error;
+    }
+  } catch (error) {
+    await removeInspectionSignature(supabase, signaturePath);
+    throw error;
   }
 
   await addTimelineEvent(supabase, {
@@ -176,7 +204,7 @@ export async function passSafetyCheck(
     event_type: TimelineEventType.SAFETY_CHECK_PASSED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Safety check passed",
+    description: "Final inspection passed",
     old_value: {
       safety_checked_at: workOrder.safety_checked_at,
       safety_checked_by_user_id: workOrder.safety_checked_by_user_id,
@@ -185,6 +213,7 @@ export async function passSafetyCheck(
       safety_checked_at: now,
       safety_checked_by_user_id: user.user_id,
       safety_check_notes: trimmedNotes,
+      signature_storage_path: signaturePath,
     },
   });
 
@@ -194,8 +223,12 @@ export async function passSafetyCheck(
     action: "safety_check_passed",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Safety check passed on ${workOrder.work_order_number}`,
-    new_value: { safety_checked_at: now, safety_check_notes: trimmedNotes },
+    description: `Final inspection passed on ${workOrder.work_order_number}`,
+    new_value: {
+      safety_checked_at: now,
+      safety_check_notes: trimmedNotes,
+      signature_storage_path: signaturePath,
+    },
   });
 
   await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
@@ -250,6 +283,7 @@ export async function failSafetyCheck(
         service_id: fallbackService.service_id,
         service_name_snapshot: rec.description,
         status: "waiting_for_approval",
+        origin: "recommendation",
         standard_price_snapshot: fallbackService.standard_price,
         estimated_labour_snapshot: fallbackService.estimated_labour,
         created_by_user_id: user.user_id,

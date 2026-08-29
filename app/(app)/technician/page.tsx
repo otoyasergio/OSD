@@ -61,9 +61,7 @@ export default async function TechnicianPage({
           view,
         })
       : Promise.resolve(emptyFloorOs()),
-    isFloorTech(viewRole)
-      ? getTechnicianDocket(subjectUserId).catch(() => null)
-      : Promise.resolve(null),
+    isFloorTech(viewRole) ? getTechnicianDocket(subjectUserId) : Promise.resolve(null),
     // Pickup queue is front-office only — floor techs stay on their docket.
     isFloorTech(viewRole)
       ? Promise.resolve([])

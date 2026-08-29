@@ -18,6 +18,7 @@ import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspection
 import { seedDefaultJobChecklist } from "@/lib/services/jobChecklist";
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 import { nextDocketPosition } from "@/lib/technician/docketOrder";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import {
   getOptionalColumnSupport,
   isUndefinedColumnError,
@@ -92,9 +93,7 @@ async function requireMutableWorkOrder(
   const supabase = await createClient();
   const workOrder = await loadWorkOrder(supabase, workOrderId);
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
@@ -133,6 +132,7 @@ export async function addJobToWorkOrder(
       standard_price_snapshot: service.standard_price,
       estimated_labour_snapshot: service.estimated_labour,
       status,
+      origin: "shop_added",
       created_by_user_id: user.user_id,
       ...(status === "approved"
         ? {

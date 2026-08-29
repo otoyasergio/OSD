@@ -12,6 +12,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "analyze": "ANALYZE=true next build --webpack",
     "db:types": "supabase gen types typescript --linked > lib/database/supabase.generated.ts",
+    "check:twilio": "node --env-file=.env.local scripts/check-twilio.mjs",
     "deploy:production": "node scripts/guard-prod-deploy.mjs && npx vercel --prod --yes",
     "prepare": "husky"
   },
@@ -31,6 +32,7 @@
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.110.1",
     "@tanstack/react-virtual": "^3.14.6",
+    "@twilio/voice-sdk": "^2.18.3",
     "fflate": "^0.8.3",
     "lucide-react": "^1.24.0",
     "next": "16.2.10",

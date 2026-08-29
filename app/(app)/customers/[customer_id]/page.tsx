@@ -21,11 +21,13 @@ import {
   canEditWorkOrder,
   canSyncWixContacts,
   canUploadCustomerDocuments,
+  canUseShopPhone,
   canViewClients,
   canViewCustomerDocuments,
 } from "@/lib/permissions";
 import { isWixSyncAvailable } from "@/lib/services/wixContacts";
 import { formatCalendarDate, formatDate } from "@/lib/datetime/format";
+import { ClickToCallButton } from "@/components/comms/ClickToCallButton";
 
 function WorkOrderHistoryList({
   items,
@@ -131,11 +133,17 @@ export default async function CustomerDetailPage({
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
           {customer.first_name} {customer.last_name}
         </h1>
-        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--status-neutral)]">
           <span className="badge mr-2 bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]">
             {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
           </span>
           {customer.phone ?? "No phone"} · {customer.email ?? "No email"}
+          <ClickToCallButton
+            phone={customer.phone}
+            customerId={customer.customer_id}
+            customerName={`${customer.first_name} ${customer.last_name}`.trim()}
+            visible={canUseShopPhone(viewRole)}
+          />
         </p>
         {customer.address || customer.date_of_birth ? (
           <p className="mt-1 text-sm text-[var(--status-neutral)]">

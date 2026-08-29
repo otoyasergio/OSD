@@ -21,6 +21,11 @@ import { ReadyForPickupCarousel } from "@/components/technician/ReadyForPickupCa
 import { FloorStageSpine } from "@/components/technician/FloorStageSpine";
 import { FloorCurrentStep } from "@/components/technician/FloorCurrentStep";
 import { FloorDock } from "@/components/technician/FloorDock";
+import { SignOffPad } from "@/components/inspections/SignOffPad";
+import {
+  failSafetyCheckAction,
+  passSafetyCheckAction,
+} from "@/app/(app)/work_orders/safety-actions";
 import {
   acknowledgeDocketJobAction,
   completeJobFloorAction,
@@ -37,10 +42,6 @@ import {
   uploadJobProofAction,
   type FloorActionState,
 } from "@/app/(app)/technician/floor-actions";
-import {
-  failSafetyCheckAction,
-  passSafetyCheckAction,
-} from "@/app/(app)/work_orders/safety-actions";
 import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import {
   technicianClosePacketHref,
@@ -104,7 +105,7 @@ function JobPacketErrorState({ backHref }: { backHref: string }) {
   );
 }
 
-type Overlay = null | "park" | "fail" | "swap" | "qc_pick";
+type Overlay = null | "park" | "fail" | "swap" | "qc_pick" | "sign_qc" | "sign_safety";
 
 /**
  * Identity-bound floor actions: acknowledgement, bench/timer flows, and QC or
@@ -206,7 +207,7 @@ export function TechnicianFloorShell({
     null
   );
   const [toggleState, toggleAction] = useActionState(toggleChecklistAction, null);
-  const [installState, installAction, installPending] = useActionState(
+  const [installState, installAction, _installPending] = useActionState(
     installPartFloorAction,
     null
   );
@@ -225,6 +226,15 @@ export function TechnicianFloorShell({
   );
   const [failQcState, failQcAction, failQcPending] = useActionState(
     failPeerQcAction,
+    null
+  );
+  const [passSafetyState, passSafetyFormAction, passSafetyPending] = useActionState(
+    async (_prev: FloorActionState, formData: FormData): Promise<FloorActionState> => {
+      const workOrderId = String(formData.get("work_order_id") ?? "");
+      const result = await passSafetyCheckAction(workOrderId, { error: null }, formData);
+      if (result.error) return { error: result.error };
+      return { success: "Final inspection passed." };
+    },
     null
   );
   useEffect(() => {
@@ -250,6 +260,7 @@ export function TechnicianFloorShell({
       workState,
       passQcState,
       failQcState,
+      passSafetyState,
     ];
     for (const s of states) {
       if (s?.success) {
@@ -275,6 +286,7 @@ export function TechnicianFloorShell({
     workState,
     passQcState,
     failQcState,
+    passSafetyState,
     scheduleRefresh,
   ]);
 
@@ -463,9 +475,11 @@ export function TechnicianFloorShell({
       return;
     }
     if (primary.action === "pass_qc") {
-      dispatchFloorAction(passQcAction, {
-        work_order_id: surface.work_order_id,
-      });
+      setOverlay("sign_qc");
+      return;
+    }
+    if (primary.action === "pass_safety") {
+      setOverlay("sign_safety");
       return;
     }
     if (primary.action === "advance_step" && primary.step) {
@@ -793,20 +807,13 @@ export function TechnicianFloorShell({
 
                 {surface.can_safety && !previewMode ? (
                   <div className="pit-safety-actions">
-                    <form
-                      action={async (formData) => {
-                        await passSafetyCheckAction(
-                          surface.work_order_id,
-                          { error: null },
-                          formData
-                        );
-                        startTransition(() => scheduleRefresh());
-                      }}
+                    <button
+                      type="button"
+                      className="btn btn-primary pit-go"
+                      onClick={() => setOverlay("sign_safety")}
                     >
-                      <button type="submit" className="btn btn-primary pit-go">
-                        Pass safety ✓
-                      </button>
-                    </form>
+                      Pass final inspection ✓
+                    </button>
                     <form
                       action={async (formData) => {
                         await failSafetyCheckAction(
@@ -820,10 +827,10 @@ export function TechnicianFloorShell({
                       <input
                         type="hidden"
                         name="recommendation_description"
-                        value="Safety failed on floor"
+                        value="Final inspection failed on floor"
                       />
                       <button type="submit" className="btn btn-secondary">
-                        Fail safety
+                        Fail final inspection
                       </button>
                     </form>
                   </div>
@@ -976,6 +983,63 @@ export function TechnicianFloorShell({
                     Send back for rework
                   </button>
                 </form>
+              </>
+            ) : null}
+
+            {overlay === "sign_qc" && surface ? (
+              <>
+                <h3 className="pit-sheet-title">Sign quality check</h3>
+                <p className="pit-sheet-or">
+                  Draw your signature to vouch for this bike before final inspection.
+                </p>
+                <form
+                  action={passQcAction}
+                  className="pit-sheet-form flex flex-col gap-3"
+                >
+                  <input
+                    type="hidden"
+                    name="work_order_id"
+                    value={surface.work_order_id}
+                  />
+                  <SignOffPad label="QC signature" />
+                  <button type="submit" className="pit-go" disabled={passQcPending}>
+                    Pass QC — vouch for it ✓
+                  </button>
+                </form>
+                {passQcState?.error ? (
+                  <p className="floor-dock-msg floor-dock-msg--error" role="status">
+                    {passQcState.error}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+
+            {overlay === "sign_safety" && surface ? (
+              <>
+                <h3 className="pit-sheet-title">Sign final inspection</h3>
+                <p className="pit-sheet-or">
+                  Draw your signature to pass final inspection and clear the bike for
+                  pickup.
+                </p>
+                <form
+                  action={passSafetyFormAction}
+                  className="pit-sheet-form flex flex-col gap-3"
+                >
+                  <input
+                    type="hidden"
+                    name="work_order_id"
+                    value={surface.work_order_id}
+                  />
+                  <SignOffPad label="Final inspection signature" />
+                  <button type="submit" className="pit-go" disabled={passSafetyPending}>
+                    Pass final inspection ✓
+                  </button>
+                </form>
+                {passSafetyState?.error ? (
+                  <p className="floor-dock-msg floor-dock-msg--error" role="status">
+                    {passSafetyState.error}
+                  </p>
+                ) : null}
               </>
             ) : null}
 

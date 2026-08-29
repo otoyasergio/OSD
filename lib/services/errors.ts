@@ -43,7 +43,9 @@ const MESSAGES: Record<string, string> = {
   QC_CANNOT_CHECK_OWN_WORK: "You cannot quality-check work you performed.",
   SAFETY_REQUIRES_QC_PASS: "Pass the quality check before running the safety check.",
   SAFETY_REQUIRED_BEFORE_PICKUP:
-    "Head tech safety check is required before marking ready for pickup.",
+    "Head tech final inspection is required before the bike can leave.",
+  INSPECTION_REQUIRED_BEFORE_PICKUP:
+    "Complete the arrival inspection report before the bike can leave.",
   INVALID_PARK_REASON: "Choose a valid park reason.",
   INVALID_WAIT_OWNER: "Choose a valid wait owner.",
   INVALID_OUTCOME: "Choose pass or fail.",
@@ -123,7 +125,7 @@ const MESSAGES: Record<string, string> = {
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
   NO_JOBS_TO_ASSIGN: "This work order has no active jobs to assign. Add a job first.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
-  QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
+  QC_REQUIRED: "Complete the quality check before the bike can leave.",
   SAFETY_FAIL_RECOMMENDATIONS_REQUIRED:
     "Add at least one recommendation when failing safety.",
   NOT_READY_FOR_PICKUP:
@@ -150,6 +152,7 @@ const MESSAGES: Record<string, string> = {
   SIGNATURE_INVALID: "Could not read the signature image.",
   SIGNATURE_TOO_LARGE: "Signature image is too large.",
   SIGNATURE_UPLOAD_FAILED: "Could not save the signature. Try again.",
+  SIGNATURE_REQUIRED: "Draw your signature before submitting.",
   DOCUMENT_TITLE_REQUIRED: "Enter a title for this document.",
   DOCUMENT_REQUIRED: "Choose a file to upload.",
   DOCUMENT_TOO_LARGE: "Documents must be 10 MB or smaller.",
@@ -234,6 +237,14 @@ const MESSAGES: Record<string, string> = {
   ATTACHMENT_UPLOAD_FAILED: "Could not upload the attachment. Try again.",
   TWILIO_VIDEO_NOT_CONFIGURED:
     "Video calling is not configured. Add TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET.",
+  TWILIO_VOICE_NOT_CONFIGURED:
+    "Shop phone is not configured. Add TWILIO_TWIML_APP_SID plus the Twilio API key pair.",
+  USE_SHOP_VOICE: "Staff audio uses the shop phone, not a video room.",
+  SHOP_PHONE_NUMBER_MISSING:
+    "This location does not have a shop phone number yet. Set it in Location settings.",
+  INVALID_VOICE_E164:
+    "Shop phone number must be a valid E.164 number (e.g. +14165551212).",
+  PHONE_CALL_NOT_FOUND: "That call no longer exists.",
   CALL_NOT_FOUND: "That call no longer exists.",
   CALL_ALREADY_ENDED: "That call has already ended.",
   PROFILE_PHOTO_REQUIRED: "Choose a profile photo to upload.",

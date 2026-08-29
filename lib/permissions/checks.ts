@@ -254,6 +254,11 @@ export function canUseMessenger(role: UserRole) {
   return ACTIVE_STAFF_ROLES.includes(role);
 }
 
+/** Shop PSTN (customer inbound/outbound). Front office only — not techs, head tech, or admin. */
+export function canUseShopPhone(role: UserRole) {
+  return FRONT_OFFICE.includes(role);
+}
+
 /** Self-service password change — active staff plus kiosk tablet account. */
 export function canChangeOwnPassword(role: UserRole) {
   return ACTIVE_STAFF_ROLES.includes(role) || role === "time_clock_kiosk";

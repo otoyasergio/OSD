@@ -19,6 +19,7 @@ import {
   canClearAdminFlag,
   canOverrideSafetyRequirement,
   canUpdateServiceInformation,
+  canUseShopPhone,
   canViewClients,
   canViewPartCost,
   canViewPricing,
@@ -178,6 +179,7 @@ export default async function WorkOrderDetailPage({
   const needsInspection =
     activeTab === "overview" || activeTab === "inspection" || isEstimateTab;
   const needsParts = activeTab === "overview" || activeTab === "parts" || isEstimateTab;
+  const needsRecommendations = activeTab === "overview" || isEstimateTab;
 
   // The V2 workspace serves only when writes are enabled; legacy mode keeps
   // the old Jobs + Recommendations content (merged onto this tab) unchanged.
@@ -207,7 +209,9 @@ export default async function WorkOrderDetailPage({
     needsTechs ? listTechniciansForActiveLocation() : Promise.resolve([]),
     needsServices ? listServices({ includeInactive: false }) : Promise.resolve([]),
     needsInspection ? getInspectionForWorkOrder(work_order_id) : Promise.resolve(null),
-    isEstimateTab ? listRecommendationsForWorkOrder(work_order_id) : Promise.resolve([]),
+    needsRecommendations
+      ? listRecommendationsForWorkOrder(work_order_id)
+      : Promise.resolve([]),
     isEstimateTab
       ? listOutstandingRecommendationsForMotorcycle(detail.motorcycle_id, work_order_id)
       : Promise.resolve([]),
@@ -398,6 +402,7 @@ export default async function WorkOrderDetailPage({
         canViewClients={canSeeClients}
         canViewPricing={canSeePricing}
         showContractAction={activeTab !== "overview"}
+        showShopPhone={canUseShopPhone(viewRole)}
       />
       <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
 
@@ -415,6 +420,14 @@ export default async function WorkOrderDetailPage({
         <>
           <OverviewTab
             detail={detail}
+            openRecommendations={recommendations.filter(
+              (rec) =>
+                !rec.converted_job_id &&
+                (rec.status === "pending" ||
+                  rec.status === "approved" ||
+                  rec.status === "declined" ||
+                  rec.status === "deferred")
+            )}
             technicians={technicians}
             canAssign={canAssign}
             canRunQc={canRunQc}

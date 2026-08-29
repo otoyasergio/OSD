@@ -12,6 +12,7 @@ import {
 } from "@/lib/permissions";
 import {
   assertViewerCanAccessWorkOrder,
+  canViewerAccessWorkOrderLocation,
   scopeWorkOrdersForViewer,
 } from "@/lib/workOrders/assignmentVisibility";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
@@ -365,6 +366,7 @@ export type WorkOrderJob = {
   estimated_labour_snapshot: number | null;
   assigned_technician_id: string | null;
   status: JobStatus;
+  origin: import("@/lib/database/types").JobOrigin | null;
   notes: string | null;
   approved_by_customer_at: string | null;
   approval_method: string | null;
@@ -499,6 +501,7 @@ export async function getWorkOrderDetail(
         estimated_labour_snapshot,
         assigned_technician_id,
         status,
+        origin,
         notes,
         approved_by_customer_at,
         approval_method,
@@ -533,7 +536,10 @@ export async function getWorkOrderDetail(
   const customer = canViewClients(user.role)
     ? (row.customer as WorkOrderDetail["customer"])
     : null;
-  const jobs = (row.job as WorkOrderJob[] | null) ?? [];
+  const jobs = ((row.job as WorkOrderJob[] | null) ?? []).map((job) => ({
+    ...job,
+    origin: job.origin ?? null,
+  }));
   const recommendations =
     (row.recommendation as Array<{ severity: string; status: string }> | null) ?? [];
   const photos = (row.intake_photo as Array<{ photo_id: string }> | null) ?? [];
@@ -614,7 +620,12 @@ export async function getWorkOrderDetail(
       row.status as WorkOrderStatus,
       agreementState.agreement
     ),
-    is_foreign_location: row.location_id !== user.active_location_id,
+    is_foreign_location: !canViewerAccessWorkOrderLocation({
+      role: user.role,
+      workOrderLocationId: row.location_id as string,
+      activeLocationId: user.active_location_id,
+      membershipLocationIds: user.location_ids,
+    }),
   };
 
   assertViewerCanAccessWorkOrder(
@@ -967,6 +978,7 @@ export async function createWorkOrder(
         estimated_labour_snapshot: snapshots.estimated_labour_snapshot,
         notes: snapshots.notes,
         status: jobStatus,
+        origin: "customer_request",
         created_by_user_id: user.user_id,
         approved_by_customer_at: new Date().toISOString(),
         approval_method: "in_person",
