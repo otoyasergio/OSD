@@ -8,6 +8,7 @@ import {
   mergeServiceInfoFill,
   normalizeFitmentMakeKey,
   pickBestFitmentVehicle,
+  type FitmentPayload,
 } from "@/lib/fitment/serviceInfoFromFitment";
 
 describe("mapFitmentToServiceInfo", () => {
@@ -193,7 +194,7 @@ describe("buildServiceInfoFromFitmentRows Ducati short codes", () => {
   });
 });
 
-const xdiavelCatalogue = [
+const xdiavelCatalogue: FitmentPayload[] = [
   {
     make: "DUCATI",
     model: "Diavel",
