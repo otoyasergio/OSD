@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { jobFloorHref, mapJobPacketJobs } from "@/lib/services/jobPacket";
+import {
+  jobFloorHref,
+  mapJobPacketJobs,
+  mapJobPacketPendingRecommendations,
+} from "@/lib/services/jobPacket";
 
 describe("jobFloorHref", () => {
   it("builds floor URL with wo and job (no packet panel)", () => {
@@ -41,16 +45,25 @@ describe("mapJobPacketJobs", () => {
       assigned_technician_id: "other",
       created_at: "2026-01-03T00:00:00Z",
     },
+    {
+      job_id: "j-waiting",
+      service_name_snapshot: "Brake pads",
+      status: "waiting_for_approval" as const,
+      origin: "recommendation",
+      assigned_technician_id: null,
+      created_at: "2026-01-05T00:00:00Z",
+    },
   ];
 
   it("drops cancelled/declined, sorts by created_at, maps floor shape", () => {
     const jobs = mapJobPacketJobs(rows, "w1", "tech-1");
-    expect(jobs.map((j) => j.job_id)).toEqual(["j-a", "j-b"]);
+    expect(jobs.map((j) => j.job_id)).toEqual(["j-a", "j-b", "j-waiting"]);
     expect(jobs[0]).toMatchObject({
       service_name: "Tire swap",
       status: "approved",
       assigned_technician_id: "other",
       assigned_to_me: false,
+      is_tech_work: true,
       floor_href: "/technician?wo=w1&job=j-a",
     });
     expect(jobs[0]?.status_label).toBeTruthy();
@@ -58,5 +71,42 @@ describe("mapJobPacketJobs", () => {
       assigned_to_me: true,
       floor_href: "/technician?wo=w1&job=j-b",
     });
+    expect(jobs[2]).toMatchObject({
+      is_tech_work: false,
+      authorization_label: "Waiting approval",
+    });
+  });
+});
+
+describe("mapJobPacketPendingRecommendations", () => {
+  it("keeps only unconverted pending recommendations", () => {
+    const mapped = mapJobPacketPendingRecommendations([
+      {
+        recommendation_id: "r1",
+        description: "Fork seals",
+        severity: "immediate_attention",
+        status: "pending",
+        converted_job_id: null,
+      },
+      {
+        recommendation_id: "r2",
+        description: "Already a job",
+        status: "pending",
+        converted_job_id: "j9",
+      },
+      {
+        recommendation_id: "r3",
+        description: "Deferred",
+        status: "deferred",
+        converted_job_id: null,
+      },
+    ]);
+    expect(mapped).toEqual([
+      {
+        recommendation_id: "r1",
+        description: "Fork seals",
+        severity: "immediate_attention",
+      },
+    ]);
   });
 });

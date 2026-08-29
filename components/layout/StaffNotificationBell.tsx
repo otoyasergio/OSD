@@ -11,6 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { StaffAssignmentNotification } from "@/lib/services/staffNotifications";
+import { staffNotificationTitle } from "@/lib/services/staffNotifications";
 
 type BellSlot = "mobile" | "desktop";
 
@@ -163,7 +164,7 @@ export function StaffNotificationBell({
             ref={panelRef}
             id={panelId}
             role="dialog"
-            aria-label="Assignment alerts"
+            aria-label="Staff alerts"
             className="staff-notification-panel"
             style={{
               top: coords.top,
@@ -173,9 +174,9 @@ export function StaffNotificationBell({
           >
             <div className="staff-notification-panel-header">
               <div>
-                <p className="font-semibold">Assignment alerts</p>
+                <p className="font-semibold">Staff alerts</p>
                 <p className="text-xs text-muted-foreground">
-                  New motorcycles added to your docket
+                  Assignments and bikes ready for pickup
                 </p>
               </div>
               {unreadCount > 0 ? (
@@ -212,14 +213,21 @@ export function StaffNotificationBell({
                       onClick={() => onOpenNotification(notification)}
                     >
                       <span className="block text-sm font-semibold">
-                        New motorcycle assignment
+                        {staffNotificationTitle(notification.kind)}
                       </span>
                       <span className="mt-0.5 block text-sm text-foreground">
                         {notification.work_order_number} · {notification.motorcycle_label}
                       </span>
-                      {notification.actor_name ? (
+                      {notification.kind === "work_order_assigned" &&
+                      notification.actor_name ? (
                         <span className="mt-1 block text-xs text-muted-foreground">
                           Assigned by {notification.actor_name}
+                        </span>
+                      ) : null}
+                      {notification.kind === "ready_for_pickup" &&
+                      notification.actor_name ? (
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          Marked by {notification.actor_name}
                         </span>
                       ) : null}
                     </button>
@@ -240,8 +248,8 @@ export function StaffNotificationBell({
         className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-chrome-border bg-chrome-elevated text-chrome-foreground transition hover:border-slate-600 hover:bg-slate-800"
         aria-label={
           unreadCount > 0
-            ? `${unreadCount} unread assignment ${unreadCount === 1 ? "alert" : "alerts"}`
-            : "Assignment alerts"
+            ? `${unreadCount} unread ${unreadCount === 1 ? "alert" : "alerts"}`
+            : "Staff alerts"
         }
         aria-expanded={active}
         aria-controls={active ? panelId : undefined}

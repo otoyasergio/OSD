@@ -11,6 +11,11 @@ export function isFloorTech(role: UserRole) {
   return FLOOR_TECH.includes(role);
 }
 
+/** In-app bell: floor assignment alerts + desk ready-for-pickup alerts. */
+export function canReceiveStaffNotifications(role: UserRole) {
+  return isFloorTech(role) || FRONT_OFFICE.includes(role) || role === "admin";
+}
+
 export function canCreateWorkOrder(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "admin";
 }

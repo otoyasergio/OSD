@@ -224,15 +224,28 @@ export function JobPacketPanel({
                     })}
                 </ul>
               )}
-              {packet.jobs.some((j) => !j.is_tech_work) ? (
+              {packet.jobs.some((j) => !j.is_tech_work) ||
+              packet.pending_recommendations.length > 0 ? (
                 <>
-                  <h3 className="floor-section-title">Waiting / not work yet</h3>
+                  <h3 className="floor-section-title">Waiting approval</h3>
                   <ul className="floor-service-list">
+                    {packet.pending_recommendations.map((rec) => (
+                      <li key={`rec:${rec.recommendation_id}`}>
+                        <div className="floor-service-item floor-service-item--pending">
+                          <span className="floor-service-main">
+                            <span className="floor-service-name">{rec.description}</span>
+                            <span className="floor-service-meta">
+                              Recommended · Waiting approval
+                            </span>
+                          </span>
+                        </div>
+                      </li>
+                    ))}
                     {packet.jobs
                       .filter((j) => !j.is_tech_work)
                       .map((job) => (
                         <li key={job.job_id}>
-                          <div className="floor-service-item floor-service-item--other">
+                          <div className="floor-service-item floor-service-item--pending">
                             <span className="floor-service-main">
                               <span className="floor-service-name">
                                 {job.service_name}
