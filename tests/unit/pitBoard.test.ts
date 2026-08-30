@@ -126,6 +126,26 @@ describe("pitBoard", () => {
     expect(go.enabled).toBe(true);
   });
 
+  it("keeps after-photo done after the first shot and names how many are on file", () => {
+    const steps = buildPitBoardSteps({
+      inspection_complete: true,
+      checklist: [
+        {
+          job_checklist_item_id: "c1",
+          title: "Perform work",
+          checked_at: "2026-07-17T12:00:00Z",
+        },
+      ],
+      parts: [],
+      proof_count: 3,
+      has_proof_exception: false,
+      complete_gate_ok: true,
+    });
+    const proof = steps.find((step) => step.kind === "proof");
+    expect(proof?.state).toBe("done");
+    expect(proof?.sub).toBe("3 photos on file");
+  });
+
   it("holds jobs waiting for client approval", () => {
     expect(
       derivePitBoardStatus({

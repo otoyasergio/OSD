@@ -23,7 +23,7 @@ export function InspectionPhotoSlot({
   inspectionResultId,
   label,
   required,
-  existingUrl,
+  existingUrls = [],
   readOnly,
   onExpand,
 }: {
@@ -32,9 +32,9 @@ export function InspectionPhotoSlot({
   inspectionResultId?: string | null;
   label: string;
   required?: boolean;
-  existingUrl?: string | null;
+  existingUrls?: string[];
   readOnly?: boolean;
-  onExpand?: () => void;
+  onExpand?: (src: string) => void;
 }) {
   const titleId = useId();
   const cameraInputId = useId();
@@ -50,6 +50,7 @@ export function InspectionPhotoSlot({
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
   const busy = pending || preparing;
+  const hasPhotos = existingUrls.length > 0;
 
   useEffect(() => {
     if (!chooserOpen) return;
@@ -61,19 +62,22 @@ export function InspectionPhotoSlot({
   }, [chooserOpen]);
 
   async function uploadFromInput(input: HTMLInputElement) {
-    const original = input.files?.[0];
+    const originals = Array.from(input.files ?? []);
     setChooserOpen(false);
     setClientError(null);
-    if (!original || !formRef.current) return;
+    if (originals.length === 0 || !formRef.current) return;
 
     setPreparing(true);
     try {
       // Clone/compress before clearing the input — iOS library File refs can
       // become invalid as soon as the input value is reset.
-      const file = await preparePhotoFileForUpload(original);
+      const files = await Promise.all(
+        originals.map((original) => preparePhotoFileForUpload(original))
+      );
       input.value = "";
       const formData = new FormData(formRef.current);
-      formData.set("file", file);
+      formData.delete("file");
+      for (const file of files) formData.append("file", file);
       startTransition(() => {
         formAction(formData);
       });
@@ -88,24 +92,27 @@ export function InspectionPhotoSlot({
   return (
     <div
       className={`inspection-photo-slot ${
-        required && !existingUrl ? "inspection-photo-slot--required" : ""
-      } ${existingUrl ? "inspection-photo-slot--done" : ""}`}
+        required && !hasPhotos ? "inspection-photo-slot--required" : ""
+      } ${hasPhotos ? "inspection-photo-slot--done" : ""}`}
     >
       <div className="inspection-photo-slot-preview">
-        {existingUrl ? (
-          onExpand ? (
-            <button
-              type="button"
-              className="inspection-photo-slot-expand"
-              onClick={onExpand}
-              aria-label={`View ${label} larger`}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
-              <img src={existingUrl} alt={label} />
-            </button>
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-            <img src={existingUrl} alt={label} />
+        {hasPhotos ? (
+          existingUrls.map((src, index) =>
+            onExpand ? (
+              <button
+                key={`${src}-${index}`}
+                type="button"
+                className="inspection-photo-slot-expand"
+                onClick={() => onExpand(src)}
+                aria-label={`View ${label} photo ${index + 1} larger`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
+                <img src={src} alt={`${label} ${index + 1}`} />
+              </button>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
+              <img key={`${src}-${index}`} src={src} alt={`${label} ${index + 1}`} />
+            )
           )
         ) : (
           <span className="inspection-photo-slot-placeholder">
@@ -115,6 +122,11 @@ export function InspectionPhotoSlot({
       </div>
       <div className="inspection-photo-slot-meta">
         <p className="inspection-photo-slot-label">{label}</p>
+        {hasPhotos ? (
+          <p className="inspection-photo-slot-count">
+            {existingUrls.length} photo{existingUrls.length === 1 ? "" : "s"}
+          </p>
+        ) : null}
         {!readOnly ? (
           <form ref={formRef} action={formAction} className="inspection-photo-slot-form">
             <input type="hidden" name="category" value={category} />
@@ -141,6 +153,7 @@ export function InspectionPhotoSlot({
               id={libraryInputId}
               type="file"
               accept={libraryProps.accept}
+              multiple
               className="photo-file-input"
               tabIndex={-1}
               aria-label={`${label} photo library`}
@@ -154,7 +167,7 @@ export function InspectionPhotoSlot({
               className="btn btn-secondary min-h-12 w-full"
               onClick={() => setChooserOpen(true)}
             >
-              {busy ? "Uploading…" : existingUrl ? "Replace photo" : "Add photo"}
+              {busy ? "Uploading…" : hasPhotos ? "Add another photo" : "Add photo"}
             </button>
             <FormError message={state.error ?? clientError} />
           </form>
@@ -175,10 +188,11 @@ export function InspectionPhotoSlot({
             onClick={(event) => event.stopPropagation()}
           >
             <p id={titleId} className="photo-source-sheet-title">
-              {existingUrl ? `Replace ${label}` : `Add ${label}`}
+              {hasPhotos ? `Add another ${label}` : `Add ${label}`}
             </p>
             <p className="photo-source-sheet-lede">
-              Use the camera, or choose an existing photo from your library.
+              Take as many as you need. Camera takes one at a time; library can pick
+              several.
             </p>
             <label
               htmlFor={cameraInputId}

@@ -18,6 +18,7 @@ import {
 } from "@/lib/technician/pitBoard";
 import { buildFloorCompletionSummary } from "@/lib/technician/floorCompletionSummary";
 import { FloorPhotoField } from "@/components/technician/FloorPhotoField";
+import { shouldShowFloorAfterPhotoCapture } from "@/lib/technician/floorStage";
 
 function Plate({
   kicker,
@@ -189,7 +190,12 @@ export function FloorCurrentStep({
   });
   const plate = plateFor(surface);
   const showInspect = activeStage === "inspect" || currentStep?.kind === "inspect";
-  const showProof = activeStage === "proof" || currentStep?.kind === "proof";
+  const showProof = shouldShowFloorAfterPhotoCapture({
+    finished,
+    boardStatus: surface.board_status,
+    activeStage,
+    currentStepKind: currentStep?.kind,
+  });
   const showWork =
     !showInspect &&
     !showProof &&
@@ -335,31 +341,50 @@ export function FloorCurrentStep({
         <div className="pit-current-card">
           <Camera className="pit-current-hero-icon" size={40} aria-hidden />
           <p className="pit-current-kicker">After photo</p>
-          <h3 className="pit-current-title">Show the finished bike</h3>
+          <h3 className="pit-current-title">
+            {surface.proof_count > 0 ? "Add more photos" : "Show the finished bike"}
+          </h3>
           <p className="pit-current-body">
-            Photo encouraged — skip with a reason if you need to.
+            {surface.proof_count > 0
+              ? `${surface.proof_count} on file — take as many as you want.`
+              : "Take as many as you want, or skip with a reason."}
           </p>
           <form action={proofAction} className="pit-sheet-form">
             <input type="hidden" name="job_id" value={surface.job_id} />
             <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-            <FloorPhotoField hint="Camera or photo library" />
+            <FloorPhotoField
+              key={surface.proof_count}
+              hint="Camera or photo library — add as many as you need"
+            />
             <button type="submit" className="pit-current-action" disabled={proofPending}>
-              Upload photo
+              Upload photos
             </button>
           </form>
-          <p className="pit-sheet-or">or skip</p>
-          <div className="pit-sheet-grid">
-            {PROOF_SKIP_OPTIONS.map((reason) => (
-              <form key={reason} action={skipAction}>
-                <input type="hidden" name="job_id" value={surface.job_id!} />
-                <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-                <input type="hidden" name="reason" value={reason} />
-                <button type="submit" className="pit-sheet-btn" disabled={skipPending}>
-                  {reason}
-                </button>
-              </form>
-            ))}
-          </div>
+          {surface.proof_count < 1 && !surface.has_proof_exception ? (
+            <>
+              <p className="pit-sheet-or">or skip</p>
+              <div className="pit-sheet-grid">
+                {PROOF_SKIP_OPTIONS.map((reason) => (
+                  <form key={reason} action={skipAction}>
+                    <input type="hidden" name="job_id" value={surface.job_id!} />
+                    <input
+                      type="hidden"
+                      name="work_order_id"
+                      value={surface.work_order_id}
+                    />
+                    <input type="hidden" name="reason" value={reason} />
+                    <button
+                      type="submit"
+                      className="pit-sheet-btn"
+                      disabled={skipPending}
+                    >
+                      {reason}
+                    </button>
+                  </form>
+                ))}
+              </div>
+            </>
+          ) : null}
         </div>
       ) : null}
 

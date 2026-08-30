@@ -11,6 +11,7 @@ import { toggleJobChecklistItem } from "@/lib/services/jobChecklist";
 import { createAdminFlag } from "@/lib/services/adminFlags";
 import { failPeerQualityCheck, passPeerQualityCheck } from "@/lib/services/peerQc";
 import { uploadIntakePhoto } from "@/lib/services/photos";
+import { collectPhotoFiles } from "@/lib/forms/photoFiles";
 import { addTechnicianNote } from "@/lib/services/notes";
 import { updatePartStatus } from "@/lib/services/parts";
 import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
@@ -319,15 +320,22 @@ export async function uploadJobProofAction(
   try {
     const workOrderId = String(formData.get("work_order_id") ?? "");
     const jobId = String(formData.get("job_id") ?? "");
-    const file = formData.get("file");
-    if (!(file instanceof File)) throw new Error("PHOTO_REQUIRED");
-    await uploadIntakePhoto(workOrderId, {
-      category: "job_proof",
-      job_id: jobId,
-      file,
-    });
+    const files = collectPhotoFiles(formData);
+    if (files.length === 0) throw new Error("PHOTO_REQUIRED");
+    for (const file of files) {
+      await uploadIntakePhoto(workOrderId, {
+        category: "job_proof",
+        job_id: jobId,
+        file,
+      });
+    }
     revalidateFloor(workOrderId);
-    return { success: "Proof photo uploaded." };
+    return {
+      success:
+        files.length === 1
+          ? "Proof photo uploaded."
+          : `${files.length} proof photos uploaded.`,
+    };
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -345,16 +353,23 @@ export async function uploadJobWorkPhotoAction(
     const workOrderId = String(formData.get("work_order_id") ?? "");
     const jobId = String(formData.get("job_id") ?? "");
     const note = String(formData.get("note") ?? "").trim() || null;
-    const file = formData.get("file");
-    if (!(file instanceof File)) throw new Error("PHOTO_REQUIRED");
-    await uploadIntakePhoto(workOrderId, {
-      category: "job_work",
-      job_id: jobId,
-      notes: note,
-      file,
-    });
+    const files = collectPhotoFiles(formData);
+    if (files.length === 0) throw new Error("PHOTO_REQUIRED");
+    for (const file of files) {
+      await uploadIntakePhoto(workOrderId, {
+        category: "job_work",
+        job_id: jobId,
+        notes: note,
+        file,
+      });
+    }
     revalidateFloor(workOrderId);
-    return { success: "Work photo added to the journal." };
+    return {
+      success:
+        files.length === 1
+          ? "Work photo added to the journal."
+          : `${files.length} work photos added to the journal.`,
+    };
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -391,8 +406,8 @@ export async function completePerformWorkAction(
     const workOrderId = String(formData.get("work_order_id") ?? "");
     const jobId = String(formData.get("job_id") ?? "");
     const itemId = String(formData.get("item_id") ?? "");
-    const file = formData.get("file");
-    if (file instanceof File && file.size > 0 && file.name && file.name !== "undefined") {
+    const files = collectPhotoFiles(formData);
+    for (const file of files) {
       await uploadIntakePhoto(workOrderId, {
         category: "job_proof",
         job_id: jobId,

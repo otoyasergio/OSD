@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { mergeOptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 
@@ -8,6 +9,12 @@ export type FloorPhotoFieldHandle = {
   openCamera: () => void;
   openLibrary: () => void;
 };
+
+function readyLabel(files: File[]): string | null {
+  if (files.length === 0) return null;
+  if (files.length === 1) return `Photo ready — ${files[0].name}`;
+  return `${files.length} photos ready`;
+}
 
 export const FloorPhotoField = forwardRef<
   FloorPhotoFieldHandle,
@@ -29,28 +36,33 @@ export const FloorPhotoField = forwardRef<
     openLibrary: () => libraryInputRef.current?.click(),
   }));
 
-  function notifyPhotoReady(label: string | null) {
+  function notifyPhotoReady(files: File[]) {
+    const label = readyLabel(files);
     setPhotoLabel(label);
     onPhotoReady?.(label);
   }
 
-  async function applyPickedFile(input: HTMLInputElement) {
-    const original = input.files?.[0] ?? null;
+  async function applyPickedFiles(input: HTMLInputElement) {
+    const incoming = Array.from(input.files ?? []);
     const target = fileInputRef.current;
     if (!target) return;
-    if (!original) {
+    const current = Array.from(target.files ?? []);
+    if (incoming.length === 0 && current.length === 0) {
       target.value = "";
-      notifyPhotoReady(null);
+      notifyPhotoReady([]);
       return;
     }
     try {
-      const file = await preparePhotoFileForUpload(original);
+      const prepared = await Promise.all(
+        incoming.map((file) => preparePhotoFileForUpload(file))
+      );
+      const merged = mergeOptionalIntakePhotos(current, prepared);
       const transfer = new DataTransfer();
-      transfer.items.add(file);
+      for (const file of merged) transfer.items.add(file);
       target.files = transfer.files;
-      notifyPhotoReady(file.name);
+      notifyPhotoReady(merged);
     } catch {
-      notifyPhotoReady(null);
+      notifyPhotoReady(current);
     } finally {
       input.value = "";
     }
@@ -69,12 +81,12 @@ export const FloorPhotoField = forwardRef<
         type="file"
         name="file"
         accept={libraryProps.accept}
+        multiple
         className="photo-file-input"
         tabIndex={-1}
-        aria-label="Selected photo"
+        aria-label="Selected photos"
         onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
-          notifyPhotoReady(file?.name ?? null);
+          notifyPhotoReady(Array.from(event.currentTarget.files ?? []));
         }}
       />
       <input
@@ -85,16 +97,17 @@ export const FloorPhotoField = forwardRef<
         className="photo-file-input"
         tabIndex={-1}
         aria-label="Add photo"
-        onChange={(event) => void applyPickedFile(event.currentTarget)}
+        onChange={(event) => void applyPickedFiles(event.currentTarget)}
       />
       <input
         ref={libraryInputRef}
         type="file"
         accept={libraryProps.accept}
+        multiple
         className="photo-file-input"
         tabIndex={-1}
         aria-label="Choose from library"
-        onChange={(event) => void applyPickedFile(event.currentTarget)}
+        onChange={(event) => void applyPickedFiles(event.currentTarget)}
       />
       {dock ? null : (
         <>
@@ -116,7 +129,7 @@ export const FloorPhotoField = forwardRef<
           </div>
           {photoLabel ? (
             <p className="pit-photo-ready" role="status">
-              Photo ready — {photoLabel}
+              {photoLabel}
             </p>
           ) : (
             <p className="pit-photo-hint">{hint}</p>

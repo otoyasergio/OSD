@@ -72,7 +72,7 @@ export function InspectionItemRow({
   workOrderId,
   result,
   readOnly,
-  photoUrl,
+  photoUrls,
   photoRequired,
   onExpandPhoto,
   onRecommend,
@@ -83,9 +83,9 @@ export function InspectionItemRow({
   workOrderId: string;
   result: InspectionResultRow;
   readOnly: boolean;
-  photoUrl?: string | null;
+  photoUrls?: string[];
   photoRequired?: boolean;
-  onExpandPhoto?: () => void;
+  onExpandPhoto?: (src: string) => void;
   onRecommend?: (result: InspectionResultRow) => void;
   onBusyChange?: (resultId: string, busy: boolean) => void;
   onLocalStatusChange?: (resultId: string, status: InspectionResultStatus | null) => void;
@@ -400,7 +400,7 @@ export function InspectionItemRow({
         </p>
       ) : null}
 
-      {needsAttention && (!readOnly || photoUrl) ? (
+      {needsAttention && (!readOnly || (photoUrls && photoUrls.length > 0)) ? (
         <div className="inspection-item-photo">
           <InspectionPhotoSlot
             workOrderId={workOrderId}
@@ -408,7 +408,7 @@ export function InspectionItemRow({
             inspectionResultId={result.inspection_result_id}
             label={`Photo for ${displayName(result.item_name_snapshot)}`}
             required={photoRequired !== false}
-            existingUrl={photoUrl}
+            existingUrls={photoUrls}
             readOnly={readOnly}
             onExpand={onExpandPhoto}
           />
