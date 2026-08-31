@@ -153,6 +153,21 @@ describe("buildNavCategories", () => {
     }
   });
 
+  it("exposes Gallery to front office and hides it from floor techs", () => {
+    for (const role of ["owner", "manager", "service_advisor", "admin"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).toContain("/gallery");
+    }
+    for (const role of ["technician", "head_tech"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((c) =>
+        c.subgroups.flatMap((g) => g.links.map((l) => l.href))
+      );
+      expect(hrefs).not.toContain("/gallery");
+    }
+  });
+
   it("exposes Time clock under Docket only for owner/manager (self-clock)", () => {
     for (const role of ["owner", "manager"] as const) {
       const docket = buildNavCategories(role).find((c) => c.id === "docket");
