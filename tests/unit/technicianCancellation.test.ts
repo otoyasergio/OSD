@@ -9,7 +9,7 @@ import {
 import {
   mapUnreadStaffNotifications,
   type StaffNotificationRow,
-} from "@/lib/services/staffNotifications";
+} from "@/lib/staffNotifications/shared";
 import {
   buildFloorActionModel,
   deriveFloorWorkState,

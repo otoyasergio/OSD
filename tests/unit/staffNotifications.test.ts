@@ -8,7 +8,7 @@ import {
   formatNotificationAge,
   motorcycleNotificationLabel,
   staffNotificationTitle,
-} from "@/lib/services/staffNotifications";
+} from "@/lib/staffNotifications/shared";
 import {
   staffAssignmentHref,
   staffNotificationHref,

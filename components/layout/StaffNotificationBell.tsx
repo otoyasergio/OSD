@@ -10,8 +10,8 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import type { StaffAssignmentNotification } from "@/lib/services/staffNotifications";
-import { staffNotificationTitle } from "@/lib/services/staffNotifications";
+import type { StaffAssignmentNotification } from "@/lib/staffNotifications/shared";
+import { staffNotificationTitle } from "@/lib/staffNotifications/shared";
 
 type BellSlot = "mobile" | "desktop";
 

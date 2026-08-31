@@ -34,7 +34,7 @@ import {
 import {
   staffNotificationTitle,
   type StaffAssignmentNotification,
-} from "@/lib/services/staffNotifications";
+} from "@/lib/staffNotifications/shared";
 import { staffNotificationHref } from "@/lib/technician/assignmentHref";
 import { FloorTopBar } from "@/components/technician/FloorTopBar";
 import { CommsLayer } from "@/components/comms/CommsLayer";
