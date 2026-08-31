@@ -33,6 +33,13 @@ export type CustomerWorkOrderSummary = {
   jobs: CustomerWorkOrderJobSummary[];
 };
 
+export type MotorcycleWorkOrderSummary = CustomerWorkOrderSummary & {
+  mileage: number | null;
+  mileage_unit: string | null;
+  billing_collected_cents: number;
+  billing_amount_cents: number;
+};
+
 export type FiledWorkOrderCard = {
   work_order_id: string;
   work_order_number: string;
@@ -215,6 +222,86 @@ export async function listWorkOrdersForCustomer(
   });
 
   return partitionCustomerWorkOrders(rows);
+}
+
+export async function listWorkOrdersForMotorcycle(
+  motorcycleId: string
+): Promise<{ open: MotorcycleWorkOrderSummary[]; filed: MotorcycleWorkOrderSummary[] }> {
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("work_order")
+    .select(
+      `
+      work_order_id,
+      work_order_number,
+      status,
+      completed_at,
+      date_created,
+      mileage,
+      mileage_unit,
+      billing_collected_cents,
+      billing_amount_cents,
+      location:location_id ( name, code ),
+      motorcycle:motorcycle_id (
+        year,
+        make,
+        model
+      ),
+      job ( service_name_snapshot, status )
+    `
+    )
+    .eq("motorcycle_id", motorcycleId)
+    .order("date_created", { ascending: false })
+    .limit(200);
+
+  if (error) throw error;
+
+  type RawMotorcycleWo = RawCustomerWo & {
+    mileage: number | null;
+    mileage_unit: string | null;
+    billing_collected_cents: number | null;
+    billing_amount_cents: number | null;
+  };
+
+  const rows: MotorcycleWorkOrderSummary[] = (
+    (data ?? []) as unknown as RawMotorcycleWo[]
+  ).map((row) => {
+    const bike = row.motorcycle;
+    return {
+      work_order_id: row.work_order_id,
+      work_order_number: row.work_order_number,
+      status: row.status,
+      completed_at: row.completed_at,
+      date_created: row.date_created,
+      location_name: row.location?.name ?? "Unknown location",
+      location_code: row.location?.code ?? "",
+      motorcycle_label: bike
+        ? `${bike.year} ${bike.make} ${bike.model}`
+        : "Unknown motorcycle",
+      jobs: row.job ?? [],
+      mileage: row.mileage == null ? null : Number(row.mileage),
+      mileage_unit: row.mileage_unit,
+      billing_collected_cents: Number(row.billing_collected_cents ?? 0),
+      billing_amount_cents: Number(row.billing_amount_cents ?? 0),
+    };
+  });
+
+  const open = rows.filter(
+    (row) => row.status !== "completed" && row.status !== "cancelled"
+  );
+  const filed = rows
+    .filter((row) => row.status === "completed")
+    .sort((a, b) => {
+      const aKey = a.completed_at ?? a.date_created;
+      const bKey = b.completed_at ?? b.date_created;
+      return bKey.localeCompare(aKey);
+    });
+  open.sort((a, b) => b.date_created.localeCompare(a.date_created));
+
+  return { open, filed };
 }
 
 export async function listCompletedWorkOrdersForActiveLocation(

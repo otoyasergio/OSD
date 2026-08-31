@@ -71,3 +71,17 @@ export function floorSpineStates(
   }
   return result;
 }
+
+/** After-photo capture stays available after the first shot until the job is finished. */
+export function shouldShowFloorAfterPhotoCapture(input: {
+  finished: boolean;
+  boardStatus: string;
+  activeStage: FloorStage;
+  currentStepKind?: string | null;
+}): boolean {
+  if (input.finished) return false;
+  if (input.boardStatus !== "bench" && input.boardStatus !== "waiting") return false;
+  if (input.activeStage === "proof" || input.currentStepKind === "proof") return true;
+  if (input.activeStage === "done" || input.currentStepKind === "complete") return true;
+  return false;
+}

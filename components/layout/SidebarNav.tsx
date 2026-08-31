@@ -23,6 +23,7 @@ import {
   MessageSquare,
   ListOrdered,
   Gauge,
+  Images,
 } from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
@@ -52,6 +53,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/control-center": Gauge,
   "/dashboard": LayoutDashboard,
   "/work_orders": ClipboardList,
+  "/gallery": Images,
   "/parts": Package,
   "/technician": Wrench,
   "/technician/clock": Clock3,
@@ -123,6 +125,13 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
       href: "/work_orders",
       label: "Work Orders",
       icon: iconFor("/work_orders"),
+    });
+  }
+  if (canViewClients(role)) {
+    shopFloorLinks.push({
+      href: "/gallery",
+      label: "Gallery",
+      icon: iconFor("/gallery"),
     });
   }
   if (canViewPartsBoard(role)) {

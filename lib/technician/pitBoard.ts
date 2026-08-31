@@ -361,7 +361,9 @@ export function buildPitBoardSteps(input: {
     sub: proofDone
       ? input.has_proof_exception && input.proof_count < 1
         ? "Skipped with reason"
-        : "Photo on file"
+        : input.proof_count > 1
+          ? `${input.proof_count} photos on file`
+          : "Photo on file"
       : "Encouraged — easy to skip with a reason",
     tag: "PHOTO",
     state: proofDone

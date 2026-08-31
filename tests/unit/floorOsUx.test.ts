@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { deriveDefaultStage } from "@/lib/technician/floorStage";
+import {
+  deriveDefaultStage,
+  shouldShowFloorAfterPhotoCapture,
+} from "@/lib/technician/floorStage";
 import type { FloorOsSurface } from "@/lib/services/technicianFloor";
 
 function base(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface {
@@ -121,6 +124,33 @@ describe("deriveDefaultStage", () => {
 
   it("lands on done when gates satisfied", () => {
     expect(deriveDefaultStage(base())).toBe("done");
+  });
+
+  it("still lets techs add after photos once the first one is on file", () => {
+    expect(
+      shouldShowFloorAfterPhotoCapture({
+        finished: false,
+        boardStatus: "bench",
+        activeStage: "done",
+        currentStepKind: "complete",
+      })
+    ).toBe(true);
+    expect(
+      shouldShowFloorAfterPhotoCapture({
+        finished: false,
+        boardStatus: "bench",
+        activeStage: "proof",
+        currentStepKind: "proof",
+      })
+    ).toBe(true);
+    expect(
+      shouldShowFloorAfterPhotoCapture({
+        finished: true,
+        boardStatus: "done",
+        activeStage: "done",
+        currentStepKind: "complete",
+      })
+    ).toBe(false);
   });
 
   it("uses qc for peer QC without a job", () => {

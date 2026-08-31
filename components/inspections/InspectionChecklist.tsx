@@ -18,6 +18,11 @@ import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import {
+  groupInspectionPhotosByResult,
+  inspectionPhotoUrls,
+  inspectionPhotosForCategory,
+} from "@/lib/inspections/groupInspectionPhotos";
+import {
   AlertTriangle,
   Bike,
   Check,
@@ -134,25 +139,32 @@ export function InspectionChecklist({
     if (index >= 0) setLightboxIndex(index);
   }
 
-  const photosByResult = useMemo(() => {
-    const map = new Map<string, string | null>();
-    for (const photo of inspection.photos) {
-      if (photo.inspection_result_id && !map.has(photo.inspection_result_id)) {
-        map.set(photo.inspection_result_id, photo.signed_url);
-      }
-    }
-    return map;
-  }, [inspection.photos]);
+  const photosByResult = useMemo(
+    () => groupInspectionPhotosByResult(inspection.photos),
+    [inspection.photos]
+  );
 
-  const sectionPhotoUrl = useMemo(() => {
-    const map = new Map<string, string | null>();
-    for (const photo of inspection.photos) {
-      if (!map.has(photo.category)) {
-        map.set(photo.category, photo.signed_url);
-      }
-    }
-    return map;
-  }, [inspection.photos]);
+  const tirePhotoUrls = useMemo(
+    () =>
+      inspectionPhotoUrls(
+        inspectionPhotosForCategory(inspection.photos, "inspection_tires")
+      ),
+    [inspection.photos]
+  );
+  const brakePhotoUrls = useMemo(
+    () =>
+      inspectionPhotoUrls(
+        inspectionPhotosForCategory(inspection.photos, "inspection_brakes")
+      ),
+    [inspection.photos]
+  );
+  const forksPhotoUrls = useMemo(
+    () =>
+      inspectionPhotoUrls(
+        inspectionPhotosForCategory(inspection.photos, "inspection_forks")
+      ),
+    [inspection.photos]
+  );
 
   const missingPhotoLabels = inspection.missing_photos.map((p) => p.label);
   const totalCount = inspection.results.length;
@@ -327,40 +339,30 @@ export function InspectionChecklist({
       </div>
 
       {showTireBrakePhotos &&
-      (!readOnly ||
-        sectionPhotoUrl.get("inspection_tires") ||
-        sectionPhotoUrl.get("inspection_brakes")) ? (
+      (!readOnly || tirePhotoUrls.length > 0 || brakePhotoUrls.length > 0) ? (
         <section className="inspection-section-photos">
           <h2 className="inspection-section-header">Required section photos</h2>
           <div className="inspection-photo-grid">
-            {!readOnly || sectionPhotoUrl.get("inspection_tires") ? (
+            {!readOnly || tirePhotoUrls.length > 0 ? (
               <InspectionPhotoSlot
                 workOrderId={inspection.work_order_id}
                 category="inspection_tires"
                 label="Tires"
                 required
-                existingUrl={sectionPhotoUrl.get("inspection_tires")}
+                existingUrls={tirePhotoUrls}
                 readOnly={readOnly}
-                onExpand={
-                  sectionPhotoUrl.get("inspection_tires")
-                    ? () => openPhotoBySrc(sectionPhotoUrl.get("inspection_tires"))
-                    : undefined
-                }
+                onExpand={openPhotoBySrc}
               />
             ) : null}
-            {!readOnly || sectionPhotoUrl.get("inspection_brakes") ? (
+            {!readOnly || brakePhotoUrls.length > 0 ? (
               <InspectionPhotoSlot
                 workOrderId={inspection.work_order_id}
                 category="inspection_brakes"
                 label="Brakes"
                 required
-                existingUrl={sectionPhotoUrl.get("inspection_brakes")}
+                existingUrls={brakePhotoUrls}
                 readOnly={readOnly}
-                onExpand={
-                  sectionPhotoUrl.get("inspection_brakes")
-                    ? () => openPhotoBySrc(sectionPhotoUrl.get("inspection_brakes"))
-                    : undefined
-                }
+                onExpand={openPhotoBySrc}
               />
             ) : null}
           </div>
@@ -373,7 +375,7 @@ export function InspectionChecklist({
           const forksNeeded =
             sectionPhoto?.category === "inspection_forks" &&
             (inspection.missing_photos.some((p) => p.category === "inspection_forks") ||
-              sectionPhotoUrl.has("inspection_forks") ||
+              forksPhotoUrls.length > 0 ||
               results.some(
                 (r) => r.status != null && /front forks/i.test(r.item_name_snapshot)
               ));
@@ -418,28 +420,24 @@ export function InspectionChecklist({
                   {sectionChecked}/{results.length}
                 </span>
               </h2>
-              {forksNeeded &&
-              sectionPhoto &&
-              (!readOnly || sectionPhotoUrl.get(sectionPhoto.category)) ? (
+              {forksNeeded && sectionPhoto && (!readOnly || forksPhotoUrls.length > 0) ? (
                 <div className="mb-3">
                   <InspectionPhotoSlot
                     workOrderId={inspection.work_order_id}
                     category={sectionPhoto.category}
                     label={sectionPhoto.label}
                     required
-                    existingUrl={sectionPhotoUrl.get(sectionPhoto.category)}
+                    existingUrls={forksPhotoUrls}
                     readOnly={readOnly}
-                    onExpand={
-                      sectionPhotoUrl.get(sectionPhoto.category)
-                        ? () => openPhotoBySrc(sectionPhotoUrl.get(sectionPhoto.category))
-                        : undefined
-                    }
+                    onExpand={openPhotoBySrc}
                   />
                 </div>
               ) : null}
               <div className="inspection-section-items">
                 {results.map((result) => {
-                  const itemPhotoUrl = photosByResult.get(result.inspection_result_id);
+                  const itemPhotoUrls = inspectionPhotoUrls(
+                    photosByResult.get(result.inspection_result_id) ?? []
+                  );
                   return (
                     <InspectionItemRow
                       key={result.inspection_result_id}
@@ -450,12 +448,12 @@ export function InspectionChecklist({
                         !result.requires_measurement_snapshot &&
                         !category.startsWith("Comments")
                       }
-                      photoUrl={itemPhotoUrl}
+                      photoUrls={itemPhotoUrls}
                       photoRequired={inspection.missing_photos.some(
                         (p) => p.inspection_result_id === result.inspection_result_id
                       )}
                       onExpandPhoto={
-                        itemPhotoUrl ? () => openPhotoBySrc(itemPhotoUrl) : undefined
+                        itemPhotoUrls.length > 0 ? openPhotoBySrc : undefined
                       }
                       onBusyChange={(resultId, busy) => {
                         setBusyIds((current) => ({ ...current, [resultId]: busy }));
