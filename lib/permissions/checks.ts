@@ -213,6 +213,21 @@ export function canDeleteCustomerDocuments(role: UserRole) {
   return OWNERS_MANAGERS.includes(role);
 }
 
+/** View motorcycle document photos on the bike profile. */
+export function canViewMotorcycleDocuments(role: UserRole) {
+  return canViewClients(role);
+}
+
+/** Upload document photos to a motorcycle profile. */
+export function canUploadMotorcycleDocuments(role: UserRole) {
+  return canViewMotorcycleDocuments(role);
+}
+
+/** Delete motorcycle profile documents (owner/manager only). */
+export function canDeleteMotorcycleDocuments(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
+
 /** Billing area (/billing) — front office only; technicians excluded. */
 export function canViewBillingArea(role: UserRole) {
   return FRONT_OFFICE.includes(role);

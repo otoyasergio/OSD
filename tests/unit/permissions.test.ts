@@ -33,6 +33,9 @@ import {
   canViewCustomerDocuments,
   canUploadCustomerDocuments,
   canDeleteCustomerDocuments,
+  canViewMotorcycleDocuments,
+  canUploadMotorcycleDocuments,
+  canDeleteMotorcycleDocuments,
   canViewReports,
   canChangeOwnPassword,
   canPerformSafetyCheck,
@@ -235,6 +238,23 @@ describe("permissions", () => {
     expect(canDeleteCustomerDocuments("service_advisor")).toBe(false);
     expect(canDeleteCustomerDocuments("admin")).toBe(false);
     expect(canDeleteCustomerDocuments("technician")).toBe(false);
+  });
+
+  it("front office can view and upload motorcycle documents", () => {
+    for (const role of ["owner", "manager", "service_advisor", "admin"] as const) {
+      expect(canViewMotorcycleDocuments(role)).toBe(true);
+      expect(canUploadMotorcycleDocuments(role)).toBe(true);
+    }
+    expect(canViewMotorcycleDocuments("technician")).toBe(false);
+    expect(canUploadMotorcycleDocuments("technician")).toBe(false);
+  });
+
+  it("only owner and manager can delete motorcycle documents", () => {
+    expect(canDeleteMotorcycleDocuments("owner")).toBe(true);
+    expect(canDeleteMotorcycleDocuments("manager")).toBe(true);
+    expect(canDeleteMotorcycleDocuments("service_advisor")).toBe(false);
+    expect(canDeleteMotorcycleDocuments("admin")).toBe(false);
+    expect(canDeleteMotorcycleDocuments("technician")).toBe(false);
   });
 
   it("owner and manager can view shop reports", () => {

@@ -9,22 +9,27 @@ import { buildBikeSnapshot } from "@/lib/motorcycles/bikeSnapshot";
 import { requireUser } from "@/lib/auth/session";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
+  canDeleteMotorcycleDocuments,
   canEditWorkOrder,
   canUpdateServiceInformation,
+  canUploadMotorcycleDocuments,
   canViewBillingArea,
   canViewClients,
+  canViewMotorcycleDocuments,
 } from "@/lib/permissions";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
 import { TransferMotorcycleForm } from "@/components/forms/TransferMotorcycleForm";
 import { OutstandingRecommendations } from "@/components/recommendations/OutstandingRecommendations";
 import { StaffPhotoGrid } from "@/components/photos/StaffPhotoGrid";
+import { MotorcycleDocuments } from "@/components/motorcycles/MotorcycleDocuments";
 import { MotorcycleVisitList } from "@/components/motorcycles/MotorcycleVisitList";
 import {
   updateMotorcycleAction,
   updateServiceInformationAction,
   transferMotorcycleAction,
 } from "@/app/(app)/motorcycles/actions";
+import { listMotorcycleDocuments } from "@/lib/services/motorcycleDocuments";
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage, normalizeMileageUnit } from "@/lib/mileage/format";
 
@@ -49,14 +54,22 @@ export default async function MotorcycleDetailPage({
   const motorcycle = await getMotorcycleById(motorcycle_id);
   if (!motorcycle) notFound();
 
-  const [serviceInformation, customers, outstandingRecommendations, visits, photos] =
-    await Promise.all([
-      getServiceInformation(motorcycle_id),
-      searchCustomers("", { preferShopCustomers: true }),
-      listOutstandingRecommendationsForMotorcycle(motorcycle_id),
-      listWorkOrdersForMotorcycle(motorcycle_id),
-      listIntakePhotosForMotorcycle(motorcycle_id),
-    ]);
+  const canViewDocs = canViewMotorcycleDocuments(viewRole);
+  const [
+    serviceInformation,
+    customers,
+    outstandingRecommendations,
+    visits,
+    photos,
+    documents,
+  ] = await Promise.all([
+    getServiceInformation(motorcycle_id),
+    searchCustomers("", { preferShopCustomers: true }),
+    listOutstandingRecommendationsForMotorcycle(motorcycle_id),
+    listWorkOrdersForMotorcycle(motorcycle_id),
+    listIntakePhotosForMotorcycle(motorcycle_id),
+    canViewDocs ? listMotorcycleDocuments(motorcycle_id) : Promise.resolve([]),
+  ]);
 
   let customerOptions = customers;
   if (!customers.some((c) => c.customer_id === motorcycle.customer_id)) {
@@ -74,6 +87,8 @@ export default async function MotorcycleDetailPage({
   const canEditServiceInfo = canUpdateServiceInformation(viewRole);
   const canTransfer = canEditWorkOrder(viewRole);
   const showMoney = canViewBillingArea(viewRole);
+  const canUploadDocs = canUploadMotorcycleDocuments(viewRole);
+  const canDeleteDocs = canDeleteMotorcycleDocuments(viewRole);
   const ownerName = motorcycle.customer
     ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
     : "Unknown";
@@ -180,8 +195,17 @@ export default async function MotorcycleDetailPage({
         </div>
       </section>
 
+      {canViewDocs ? (
+        <MotorcycleDocuments
+          motorcycleId={motorcycle_id}
+          documents={documents}
+          canUpload={canUploadDocs}
+          canDelete={canDeleteDocs}
+        />
+      ) : null}
+
       <section>
-        <h2 className="text-lg font-semibold text-foreground">Photos</h2>
+        <h2 className="text-lg font-semibold text-foreground">Visit photos</h2>
         <p className="mt-1 text-sm text-[var(--status-neutral)]">
           Every intake, inspection, and after shot from this bike&apos;s visits.
         </p>
