@@ -15,4 +15,9 @@ test.describe("messages", () => {
     });
     expect([401, 404, 503]).toContain(response.status());
   });
+
+  test("voice token route requires auth", async ({ request }) => {
+    const response = await request.post("/api/calls/voice-token");
+    expect([401, 403, 503]).toContain(response.status());
+  });
 });

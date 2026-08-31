@@ -12,13 +12,13 @@ import type {
 export const WORK_ORDER_STATUS_LABELS: Record<WorkOrderStatus, string> = {
   draft: "Draft",
   open: "Open",
-  inspection_in_progress: "Inspection In Progress",
+  inspection_in_progress: "Arrival Inspection",
   waiting_for_customer_approval: "Waiting For Customer Approval",
   waiting_for_parts: "Waiting For Parts",
   ready_for_technician: "Ready For Technician",
   in_progress: "In Progress",
   quality_check: "Quality Check",
-  safety_check: "Safety Check",
+  safety_check: "Final Inspection",
   ready_for_pickup: "Ready For Pickup",
   completed: "Completed",
   cancelled: "Cancelled",
@@ -83,6 +83,7 @@ export const PHOTO_CATEGORY_LABELS: Record<PhotoCategory, string> = {
   inspection_forks: "Inspection — Forks",
   inspection_item: "Inspection — Needs work",
   job_proof: "Job proof",
+  job_work: "Work photo",
 };
 
 /** Categories required at work-order create (also shown as missing on Photos tab). */

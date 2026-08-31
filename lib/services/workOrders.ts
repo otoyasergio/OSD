@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { DbClient, JobStatus, WorkOrderStatus } from "@/lib/database/types";
+import type { JobStatus, WorkOrderStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/permissions";
 import {
   assertViewerCanAccessWorkOrder,
+  canViewerAccessWorkOrderLocation,
   scopeWorkOrdersForViewer,
 } from "@/lib/workOrders/assignmentVisibility";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
@@ -20,6 +21,8 @@ import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderSta
 import { buildWorkOrderFlags } from "@/lib/status/flags";
 import { getAgreementFollowUp } from "@/lib/status/agreementFollowUp";
 import { assignUnassignedJobsOnWorkOrderToTechnician } from "@/lib/services/jobs";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
+import { withPrimaryPhotoUrls } from "@/lib/workOrders/listPhotos";
 import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
 
 export type WorkOrder = {
@@ -97,11 +100,14 @@ export type WorkOrderListItem = {
   } | null;
   flags: string[];
   agreement_follow_up: "signature" | "paper_copy" | null;
+  primary_photo_url: string | null;
 };
 
 export type CreateWorkOrderInput = {
   motorcycle_id: string;
   location_id: string;
+  /** Wix work order # — stored as work_order.work_order_number. */
+  work_order_number: string;
   external_invoice_number?: string | null;
   mileage: number;
   mileage_unit?: MileageUnit;
@@ -337,7 +343,7 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
     };
   });
 
-  return scopeWorkOrdersForViewer(mapped, user.role, user.user_id).map(
+  const scoped = scopeWorkOrdersForViewer(mapped, user.role, user.user_id).map(
     ({
       primary_technician_id: _p,
       quality_check_assigned_to: _q,
@@ -345,6 +351,11 @@ export async function listWorkOrdersForActiveLocation(): Promise<WorkOrderListIt
       ...item
     }) => item
   );
+  const { urls } = await resolveBoardPrimaryPhotos(
+    supabase,
+    scoped.map((item) => item.work_order_id)
+  );
+  return withPrimaryPhotoUrls(scoped, urls);
 }
 
 export type WorkOrderJob = {
@@ -355,6 +366,7 @@ export type WorkOrderJob = {
   estimated_labour_snapshot: number | null;
   assigned_technician_id: string | null;
   status: JobStatus;
+  origin: import("@/lib/database/types").JobOrigin | null;
   notes: string | null;
   approved_by_customer_at: string | null;
   approval_method: string | null;
@@ -489,6 +501,7 @@ export async function getWorkOrderDetail(
         estimated_labour_snapshot,
         assigned_technician_id,
         status,
+        origin,
         notes,
         approved_by_customer_at,
         approval_method,
@@ -523,7 +536,10 @@ export async function getWorkOrderDetail(
   const customer = canViewClients(user.role)
     ? (row.customer as WorkOrderDetail["customer"])
     : null;
-  const jobs = (row.job as WorkOrderJob[] | null) ?? [];
+  const jobs = ((row.job as WorkOrderJob[] | null) ?? []).map((job) => ({
+    ...job,
+    origin: job.origin ?? null,
+  }));
   const recommendations =
     (row.recommendation as Array<{ severity: string; status: string }> | null) ?? [];
   const photos = (row.intake_photo as Array<{ photo_id: string }> | null) ?? [];
@@ -604,7 +620,12 @@ export async function getWorkOrderDetail(
       row.status as WorkOrderStatus,
       agreementState.agreement
     ),
-    is_foreign_location: row.location_id !== user.active_location_id,
+    is_foreign_location: !canViewerAccessWorkOrderLocation({
+      role: user.role,
+      workOrderLocationId: row.location_id as string,
+      activeLocationId: user.active_location_id,
+      membershipLocationIds: user.location_ids,
+    }),
   };
 
   assertViewerCanAccessWorkOrder(
@@ -759,20 +780,6 @@ export async function setPrimaryTechnician(
   }
 }
 
-async function mintWorkOrderNumber(
-  supabase: DbClient,
-  locationId: string
-): Promise<string> {
-  const { data, error } = await supabase.rpc("mint_work_order_number", {
-    p_location_id: locationId,
-  });
-  if (error) throw error;
-  if (!data || typeof data !== "string") {
-    throw new Error("WORK_ORDER_NUMBER_FAILED");
-  }
-  return data;
-}
-
 export async function createWorkOrder(
   input: CreateWorkOrderInput
 ): Promise<{ work_order_id: string; work_order_number: string }> {
@@ -781,6 +788,7 @@ export async function createWorkOrder(
 
   const parsed = createWorkOrderSchema.parse({
     ...input,
+    work_order_number: input.work_order_number,
     external_invoice_number: normalizeOptional(input.external_invoice_number),
     internal_notes: normalizeOptional(input.internal_notes),
     primary_technician_id: normalizeOptional(input.primary_technician_id),
@@ -863,7 +871,18 @@ export async function createWorkOrder(
     if (unitPreferenceError) throw unitPreferenceError;
   }
 
-  const workOrderNumber = await mintWorkOrderNumber(supabase, parsed.location_id);
+  const workOrderNumber = parsed.work_order_number;
+  if (!workOrderNumber) throw new Error("WORK_ORDER_NUMBER_REQUIRED");
+
+  const { data: existingWo, error: existingError } = await supabase
+    .from("work_order")
+    .select("work_order_id")
+    .eq("location_id", parsed.location_id)
+    .eq("work_order_number", workOrderNumber)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existingWo) throw new Error("WORK_ORDER_NUMBER_TAKEN");
+
   const initialStatus: WorkOrderStatus = services.length > 0 ? "open" : "draft";
 
   const { data: workOrder, error: woError } = await supabase
@@ -885,7 +904,10 @@ export async function createWorkOrder(
     .select("work_order_id, work_order_number, location_id, status")
     .single();
 
-  if (woError) throw woError;
+  if (woError) {
+    if (woError.code === "23505") throw new Error("WORK_ORDER_NUMBER_TAKEN");
+    throw woError;
+  }
 
   const workOrderId = workOrder.work_order_id as string;
 
@@ -956,6 +978,7 @@ export async function createWorkOrder(
         estimated_labour_snapshot: snapshots.estimated_labour_snapshot,
         notes: snapshots.notes,
         status: jobStatus,
+        origin: "customer_request",
         created_by_user_id: user.user_id,
         approved_by_customer_at: new Date().toISOString(),
         approval_method: "in_person",

@@ -14,6 +14,22 @@ test.describe("smoke", () => {
     expect(accessibility.violations).toEqual([]);
   });
 
+  test("login form surfaces an error and stays on /login for bad credentials", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+    await page.getByLabel(/email/i).fill("nobody@example.invalid");
+    await page.getByLabel(/password/i).fill("definitely-wrong-password-123!");
+    await page.getByRole("button", { name: /^sign in$/i }).click();
+
+    // Prefer the form error — Next.js also mounts a route announcer with role=alert.
+    // Against CI's placeholder Supabase host this may be a network/config message
+    // instead of "Invalid login credentials"; either way the form must not hang.
+    await expect(page.locator("p.alert-error")).toBeVisible({ timeout: 15_000 });
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByRole("button", { name: /^sign in$/i })).toBeEnabled();
+  });
+
   test("unauthenticated dashboard redirects to login", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/login/);
@@ -62,6 +78,13 @@ test.describe("webhook security", () => {
       form: { MessageSid: "SMtest", MessageStatus: "delivered" },
     });
     expect([401, 404, 503]).toContain(response.status());
+  });
+
+  test("Twilio inbound voice webhook rejects missing signature", async ({ request }) => {
+    const response = await request.post("/api/twilio/voice/inbound", {
+      form: { From: "+15551234567", To: "+14165551212", CallSid: "CAtest" },
+    });
+    expect([401, 503]).toContain(response.status());
   });
 
   test("Wix webhook fails closed without secret or rejects bad auth", async ({

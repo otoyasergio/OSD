@@ -6,9 +6,19 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { AppUser } from "@/lib/auth/session";
-import { isFloorTech, staffHomePath } from "@/lib/permissions/checks";
+import { createClient } from "@/lib/database/supabase-browser";
+import {
+  isFloorTech,
+  canReceiveStaffNotifications,
+  staffHomePath,
+} from "@/lib/permissions/checks";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
 import { SidebarNav } from "@/components/layout/SidebarNav";
+import {
+  RolePreviewBanner,
+  RolePreviewSwitcher,
+  type RolePreviewState,
+} from "@/components/layout/RolePreviewSwitcher";
 import {
   LocationSwitcher,
   type LocationOption,
@@ -21,8 +31,13 @@ import {
   markStaffNotificationReadAction,
   refreshStaffNotificationsAction,
 } from "@/app/(app)/notifications/actions";
-import type { StaffAssignmentNotification } from "@/lib/services/staffNotifications";
-import { staffAssignmentHref } from "@/lib/technician/assignmentHref";
+import {
+  staffNotificationTitle,
+  type StaffAssignmentNotification,
+} from "@/lib/services/staffNotifications";
+import { staffNotificationHref } from "@/lib/technician/assignmentHref";
+import { FloorTopBar } from "@/components/technician/FloorTopBar";
+import { CommsLayer } from "@/components/comms/CommsLayer";
 
 const ROLE_LABELS: Record<AppUser["role"], string> = {
   owner: "Owner",
@@ -31,10 +46,15 @@ const ROLE_LABELS: Record<AppUser["role"], string> = {
   technician: "Technician",
   head_tech: "Head Tech",
   admin: "Admin",
+  time_clock_kiosk: "Time Clock Kiosk",
 };
 
 type Props = {
   user: AppUser;
+  /** Presentation role — drives nav, home link, and role label. */
+  viewRole: AppUser["role"];
+  /** Owner-only "view as" state; null for every other persisted role. */
+  rolePreview: RolePreviewState | null;
   locations: LocationOption[];
   profilePhotoUrl: string | null;
   initialNotifications: StaffAssignmentNotification[];
@@ -45,8 +65,14 @@ function isInspectionFullscreenPath(pathname: string) {
   return /\/work_orders\/[^/]+\/inspection\/?$/.test(pathname);
 }
 
+function isCompactFloorPath(pathname: string) {
+  return pathname === "/technician" || pathname === "/technician/";
+}
+
 export function AppShell({
   user,
+  viewRole,
+  rolePreview,
   locations,
   profilePhotoUrl,
   initialNotifications,
@@ -61,13 +87,22 @@ export function AppShell({
   const [notificationError, setNotificationError] = useState<string | null>(null);
   const [incomingNotification, setIncomingNotification] =
     useState<StaffAssignmentNotification | null>(null);
+  const [prevInitialNotifications, setPrevInitialNotifications] =
+    useState(initialNotifications);
   const knownNotificationIds = useRef(
     new Set(initialNotifications.map((notification) => notification.notification_id))
   );
+  if (initialNotifications !== prevInitialNotifications) {
+    setPrevInitialNotifications(initialNotifications);
+    setNotifications(initialNotifications);
+  }
   const hideChrome = isInspectionFullscreenPath(pathname);
+  const compactFloor = isFloorTech(viewRole) && isCompactFloorPath(pathname);
   const displayName = `${user.first_name} ${user.last_name}`.trim();
-  const homeHref = staffHomePath(user.role);
-  const notificationsEnabled = isFloorTech(user.role);
+  const homeHref = staffHomePath(viewRole);
+  // Notifications stay bound to the signed-in user — a preview never reads
+  // or marks another technician's alerts.
+  const notificationsEnabled = canReceiveStaffNotifications(user.role);
 
   const refreshNotifications = useCallback(async () => {
     try {
@@ -87,6 +122,13 @@ export function AppShell({
   }, []);
 
   useEffect(() => {
+    // Seed "already seen" ids when the server re-hydrates the layout list.
+    knownNotificationIds.current = new Set(
+      initialNotifications.map((notification) => notification.notification_id)
+    );
+  }, [initialNotifications]);
+
+  useEffect(() => {
     // Close drawer when navigating (e.g. back button) without leaving it open over new page.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional route-change reset
     setMobileNavOpen(false);
@@ -94,29 +136,53 @@ export function AppShell({
 
   useEffect(() => {
     if (!mobileNavOpen) return;
-    const previous = document.body.style.overflow;
+    // iOS Safari scrolls the documentElement, so locking <body> alone leaves the
+    // page scrollable behind the drawer.
+    const root = document.documentElement;
+    const previousRoot = root.style.overflow;
+    const previousBody = document.body.style.overflow;
+    root.style.overflow = "hidden";
     document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = previous;
+      root.style.overflow = previousRoot;
+      document.body.style.overflow = previousBody;
     };
   }, [mobileNavOpen]);
 
   useEffect(() => {
     if (!notificationsEnabled) return;
 
-    const poll = () => {
-      void refreshNotifications();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshNotifications();
+      }
     };
-    const timer = window.setInterval(poll, 5_000);
-    window.addEventListener("focus", poll);
-    document.addEventListener("visibilitychange", poll);
+    window.addEventListener("focus", onVisible);
+    document.addEventListener("visibilitychange", onVisible);
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`staff-notifications:${user.user_id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "staff_notification",
+          filter: `recipient_user_id=eq.${user.user_id}`,
+        },
+        () => {
+          void refreshNotifications();
+        }
+      )
+      .subscribe();
 
     return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", poll);
-      document.removeEventListener("visibilitychange", poll);
+      window.removeEventListener("focus", onVisible);
+      document.removeEventListener("visibilitychange", onVisible);
+      void supabase.removeChannel(channel);
     };
-  }, [notificationsEnabled, refreshNotifications]);
+  }, [notificationsEnabled, refreshNotifications, user.user_id]);
 
   async function openNotification(notification: StaffAssignmentNotification) {
     setNotificationBusy(true);
@@ -130,7 +196,7 @@ export function AppShell({
         current?.notification_id === notification.notification_id ? null : current
       );
       setNotificationOpen(false);
-      router.push(staffAssignmentHref(notification.work_order_id));
+      router.push(staffNotificationHref(notification));
     } catch {
       setNotificationError("Could not mark this alert as seen. Try again.");
       setNotificationOpen(true);
@@ -153,13 +219,16 @@ export function AppShell({
     }
   }
 
-  const notificationBell = (
+  // One controller, two responsive mount points. Only the visible slot
+  // renders the dialog portal, so duplicate dialogs cannot appear.
+  const notificationBellFor = (slot: "mobile" | "desktop") => (
     <StaffNotificationBell
+      slot={slot}
       notifications={notifications}
       open={notificationOpen}
       busy={notificationBusy}
       error={notificationError}
-      onToggle={() => setNotificationOpen((open) => !open)}
+      onToggle={() => setNotificationOpen((current) => !current)}
       onOpenNotification={(notification) => void openNotification(notification)}
       onMarkAllRead={() => void markAllNotificationsRead()}
     />
@@ -167,157 +236,238 @@ export function AppShell({
 
   if (hideChrome) {
     return (
-      <div className="flex min-h-full flex-1 flex-col bg-background">
-        <main className="inspection-fullscreen-main">{children}</main>
-      </div>
+      <CommsLayer user={user}>
+        <div className="flex min-h-full flex-1 flex-col bg-background">
+          <main className="inspection-fullscreen-main">{children}</main>
+        </div>
+      </CommsLayer>
+    );
+  }
+
+  if (compactFloor) {
+    return (
+      <CommsLayer user={user}>
+        <div className="app-shell app-shell--floor-compact bg-background">
+          <a href="#main-content" className="skip-link">
+            Skip to main content
+          </a>
+          <FloorTopBar
+            trailing={
+              <>
+                {locations.length > 1 && user.active_location_id ? (
+                  <LocationSwitcher
+                    locations={locations}
+                    activeLocationId={user.active_location_id}
+                    compact
+                  />
+                ) : null}
+                {notificationsEnabled ? notificationBellFor("mobile") : null}
+              </>
+            }
+          />
+          {rolePreview ? (
+            <RolePreviewBanner preview={rolePreview} ownerName={displayName} />
+          ) : null}
+          <main id="main-content" className="main-body" tabIndex={-1}>
+            {children}
+          </main>
+          {incomingNotification ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-white p-4 text-slate-900 shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold">
+                    {staffNotificationTitle(incomingNotification.kind)}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-700">
+                    {incomingNotification.work_order_number} ·{" "}
+                    {incomingNotification.motorcycle_label}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  aria-label="Dismiss alert"
+                  onClick={() => setIncomingNotification(null)}
+                >
+                  <X size={18} aria-hidden />
+                </button>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary mt-3 w-full"
+                disabled={notificationBusy}
+                onClick={() => void openNotification(incomingNotification)}
+              >
+                {incomingNotification.kind === "ready_for_pickup"
+                  ? "Open work order"
+                  : "Open assigned motorcycle"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </CommsLayer>
     );
   }
 
   return (
-    <div
-      className={`app-shell bg-background${mobileNavOpen ? " app-shell-nav-open" : ""}`}
-    >
-      <a href="#main-content" className="skip-link">
-        Skip to main content
-      </a>
-      <header className="mobile-header">
-        <Link
-          href={homeHref}
-          className="mobile-header-brand"
-          aria-label="OTOMOTO Toronto Moto home"
-        >
-          <Image
-            src="/otomoto-logo.png"
-            alt="OTOMOTO Toronto Moto"
-            width={150}
-            height={52}
-            className="h-8 w-auto"
-            priority
-          />
-        </Link>
-        <div className="flex items-center gap-2">
-          {notificationsEnabled ? notificationBell : null}
-          <Link href="/account" aria-label="Open my account">
-            <UserAvatar
-              firstName={user.first_name}
-              lastName={user.last_name}
-              photoUrl={profilePhotoUrl}
-              size="sm"
-              className="ring-1 ring-chrome-border"
+    <CommsLayer user={user}>
+      <div
+        className={`app-shell bg-background${mobileNavOpen ? " app-shell-nav-open" : ""}`}
+      >
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
+        <header className="mobile-header">
+          <Link
+            href={homeHref}
+            className="mobile-header-brand"
+            aria-label="OTOMOTO Toronto Moto home"
+          >
+            <Image
+              src="/otomoto-logo.png"
+              alt="OTOMOTO Toronto Moto"
+              width={240}
+              height={84}
+              className="brand-logo brand-logo--mobile"
+              priority
             />
           </Link>
-          <button
-            type="button"
-            className="mobile-menu-button"
-            aria-expanded={mobileNavOpen}
-            aria-controls="app-sidebar-nav"
-            onClick={() => setMobileNavOpen((open) => !open)}
-          >
-            {mobileNavOpen ? "Close menu" : "Open menu"}
-          </button>
-        </div>
-      </header>
-
-      <button
-        type="button"
-        className="sidebar-backdrop"
-        aria-label="Close navigation menu"
-        tabIndex={mobileNavOpen ? 0 : -1}
-        onClick={() => setMobileNavOpen(false)}
-      />
-
-      <aside id="app-sidebar-nav" className="sidebar">
-        <Link
-          href={homeHref}
-          className="sidebar-brand sidebar-brand-desktop"
-          aria-label="OTOMOTO Toronto Moto home"
-        >
-          <Image
-            src="/otomoto-logo.png"
-            alt="OTOMOTO Toronto Moto"
-            width={150}
-            height={52}
-            className="h-9 w-auto"
-            priority
-          />
-          <span className="brand-wordmark" aria-hidden>
-            OTOMOTO
-          </span>
-        </Link>
-        <SidebarNav role={user.role} onNavigate={() => setMobileNavOpen(false)} />
-      </aside>
-
-      <div className="main-content">
-        <header className="main-topbar">
-          <GlobalSearch />
-          <div className="main-topbar-actions">
-            {notificationsEnabled ? notificationBell : null}
-            {user.active_location_id ? (
-              <LocationSwitcher
-                locations={locations}
-                activeLocationId={user.active_location_id}
-              />
-            ) : null}
-            <Link
-              href="/account"
-              className="main-topbar-user flex items-center gap-2 rounded-md border border-chrome-border bg-chrome-elevated px-2 py-1.5 text-sm text-chrome-muted hover:border-slate-600"
-              aria-label="Open my account"
-            >
+          <div className="flex items-center gap-2">
+            {notificationsEnabled ? notificationBellFor("mobile") : null}
+            <Link href="/account" aria-label="Open my account">
               <UserAvatar
                 firstName={user.first_name}
                 lastName={user.last_name}
                 photoUrl={profilePhotoUrl}
                 size="sm"
+                className="ring-1 ring-chrome-border"
               />
-              <span>
-                <span className="font-semibold text-chrome-foreground">
-                  {displayName}
-                </span>
-                <span className="mx-1.5 opacity-40">·</span>
-                <span>{ROLE_LABELS[user.role]}</span>
-              </span>
             </Link>
-            <SignOutButton />
+            <button
+              type="button"
+              className="mobile-menu-button"
+              aria-expanded={mobileNavOpen}
+              aria-controls="app-sidebar-nav"
+              onClick={() => setMobileNavOpen((open) => !open)}
+            >
+              {mobileNavOpen ? "Close menu" : "Open menu"}
+            </button>
           </div>
         </header>
-        <main id="main-content" className="main-body" tabIndex={-1}>
-          {children}
-        </main>
-      </div>
 
-      {incomingNotification ? (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-white p-4 text-slate-900 shadow-2xl"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-semibold">New motorcycle assignment</p>
-              <p className="mt-1 text-sm text-slate-700">
-                {incomingNotification.work_order_number} ·{" "}
-                {incomingNotification.motorcycle_label}
-              </p>
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="Close navigation menu"
+          tabIndex={mobileNavOpen ? 0 : -1}
+          onClick={() => setMobileNavOpen(false)}
+        />
+
+        <aside id="app-sidebar-nav" className="sidebar">
+          <Link
+            href={homeHref}
+            className="sidebar-brand sidebar-brand-desktop"
+            aria-label="OTOMOTO Toronto Moto home"
+          >
+            <Image
+              src="/otomoto-logo.png"
+              alt="OTOMOTO Toronto Moto"
+              width={260}
+              height={90}
+              className="brand-logo"
+              priority
+            />
+            <span className="brand-wordmark" aria-hidden>
+              OTOMOTO
+            </span>
+          </Link>
+          {rolePreview ? <RolePreviewSwitcher preview={rolePreview} /> : null}
+          <SidebarNav role={viewRole} onNavigate={() => setMobileNavOpen(false)} />
+        </aside>
+
+        <div className="main-content">
+          {rolePreview ? (
+            <RolePreviewBanner preview={rolePreview} ownerName={displayName} />
+          ) : null}
+          <header className="main-topbar">
+            <GlobalSearch />
+            <div className="main-topbar-actions">
+              {notificationsEnabled ? notificationBellFor("desktop") : null}
+              {user.active_location_id ? (
+                <LocationSwitcher
+                  locations={locations}
+                  activeLocationId={user.active_location_id}
+                />
+              ) : null}
+              <Link
+                href="/account"
+                className="main-topbar-user flex items-center gap-2 rounded-md border border-chrome-border bg-chrome-elevated px-2 py-1.5 text-sm text-chrome-muted hover:border-slate-600"
+                aria-label="Open my account"
+              >
+                <UserAvatar
+                  firstName={user.first_name}
+                  lastName={user.last_name}
+                  photoUrl={profilePhotoUrl}
+                  size="sm"
+                />
+                <span>
+                  <span className="font-semibold text-chrome-foreground">
+                    {displayName}
+                  </span>
+                  <span className="mx-1.5 opacity-40">·</span>
+                  <span>{ROLE_LABELS[viewRole]}</span>
+                </span>
+              </Link>
+              <SignOutButton />
+            </div>
+          </header>
+          <main id="main-content" className="main-body" tabIndex={-1}>
+            {children}
+          </main>
+        </div>
+
+        {incomingNotification ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-white p-4 text-slate-900 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">
+                  {staffNotificationTitle(incomingNotification.kind)}
+                </p>
+                <p className="mt-1 text-sm text-slate-700">
+                  {incomingNotification.work_order_number} ·{" "}
+                  {incomingNotification.motorcycle_label}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                aria-label="Dismiss alert"
+                onClick={() => setIncomingNotification(null)}
+              >
+                <X size={18} aria-hidden />
+              </button>
             </div>
             <button
               type="button"
-              className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-              aria-label="Dismiss alert"
-              onClick={() => setIncomingNotification(null)}
+              className="btn btn-primary mt-3 w-full"
+              disabled={notificationBusy}
+              onClick={() => void openNotification(incomingNotification)}
             >
-              <X size={18} aria-hidden />
+              {incomingNotification.kind === "ready_for_pickup"
+                ? "Open work order"
+                : "Open assigned motorcycle"}
             </button>
           </div>
-          <button
-            type="button"
-            className="btn btn-primary mt-3 w-full"
-            disabled={notificationBusy}
-            onClick={() => void openNotification(incomingNotification)}
-          >
-            Open assigned motorcycle
-          </button>
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+      </div>
+    </CommsLayer>
   );
 }

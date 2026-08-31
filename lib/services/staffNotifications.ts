@@ -1,10 +1,12 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import { isFloorTech } from "@/lib/permissions";
+import { canReceiveStaffNotifications } from "@/lib/permissions";
+import { isTerminalWorkOrderStatus } from "@/lib/technician/floorActionModel";
 
 type NestedWorkOrder = {
   work_order_id: string;
   work_order_number: string;
+  status?: string | null;
   motorcycle:
     | {
         year: number;
@@ -19,9 +21,11 @@ type NestedWorkOrder = {
     | null;
 };
 
-type NotificationRow = {
+export type StaffNotificationKind = "work_order_assigned" | "ready_for_pickup";
+
+export type StaffNotificationRow = {
   staff_notification_id: string;
-  kind: "work_order_assigned";
+  kind: StaffNotificationKind;
   work_order_id: string;
   created_at: string;
   actor:
@@ -33,7 +37,7 @@ type NotificationRow = {
 
 export type StaffAssignmentNotification = {
   notification_id: string;
-  kind: "work_order_assigned";
+  kind: StaffNotificationKind;
   work_order_id: string;
   work_order_number: string;
   motorcycle_label: string;
@@ -70,40 +74,22 @@ export function formatNotificationAge(
   return `${days}d ago`;
 }
 
-export async function listUnreadStaffNotifications(
-  limit = 8
-): Promise<StaffAssignmentNotification[]> {
-  const user = await requireUser();
-  if (!isFloorTech(user.role)) return [];
+export function staffNotificationTitle(kind: StaffNotificationKind): string {
+  if (kind === "ready_for_pickup") return "Ready for pickup";
+  return "New motorcycle assignment";
+}
 
-  const supabase = await createClient();
-  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 20);
-  const { data, error } = await supabase
-    .from("staff_notification")
-    .select(
-      `
-      staff_notification_id,
-      kind,
-      work_order_id,
-      created_at,
-      actor:actor_user_id ( first_name, last_name ),
-      work_order:work_order_id (
-        work_order_id,
-        work_order_number,
-        motorcycle:motorcycle_id ( year, make, model )
-      )
-    `
-    )
-    .eq("recipient_user_id", user.user_id)
-    .is("read_at", null)
-    .order("created_at", { ascending: false })
-    .limit(safeLimit);
-
-  if (error) throw error;
-
-  return ((data ?? []) as unknown as NotificationRow[]).flatMap((row) => {
+/**
+ * Pure mapper — drops rows whose work order is gone or already
+ * completed/cancelled, so stale alerts never ping staff.
+ */
+export function mapUnreadStaffNotifications(
+  rows: readonly StaffNotificationRow[]
+): StaffAssignmentNotification[] {
+  return rows.flatMap((row) => {
     const workOrder = unwrapOne(row.work_order);
     if (!workOrder) return [];
+    if (isTerminalWorkOrderStatus(workOrder.status ?? null)) return [];
     const motorcycle = unwrapOne(workOrder.motorcycle);
     const actor = unwrapOne(row.actor);
 
@@ -121,9 +107,44 @@ export async function listUnreadStaffNotifications(
   });
 }
 
+export async function listUnreadStaffNotifications(
+  limit = 8
+): Promise<StaffAssignmentNotification[]> {
+  const user = await requireUser();
+  if (!canReceiveStaffNotifications(user.role)) return [];
+
+  const supabase = await createClient();
+  const safeLimit = Math.min(Math.max(Math.trunc(limit), 1), 20);
+  const { data, error } = await supabase
+    .from("staff_notification")
+    .select(
+      `
+      staff_notification_id,
+      kind,
+      work_order_id,
+      created_at,
+      actor:actor_user_id ( first_name, last_name ),
+      work_order:work_order_id (
+        work_order_id,
+        work_order_number,
+        status,
+        motorcycle:motorcycle_id ( year, make, model )
+      )
+    `
+    )
+    .eq("recipient_user_id", user.user_id)
+    .is("read_at", null)
+    .order("created_at", { ascending: false })
+    .limit(safeLimit);
+
+  if (error) throw error;
+
+  return mapUnreadStaffNotifications((data ?? []) as unknown as StaffNotificationRow[]);
+}
+
 export async function markStaffNotificationRead(notificationId: string): Promise<void> {
   const user = await requireUser();
-  if (!isFloorTech(user.role)) throw new Error("FORBIDDEN");
+  if (!canReceiveStaffNotifications(user.role)) throw new Error("FORBIDDEN");
 
   const supabase = await createClient();
   const { error } = await supabase
@@ -138,7 +159,7 @@ export async function markStaffNotificationRead(notificationId: string): Promise
 
 export async function markAllStaffNotificationsRead(): Promise<void> {
   const user = await requireUser();
-  if (!isFloorTech(user.role)) throw new Error("FORBIDDEN");
+  if (!canReceiveStaffNotifications(user.role)) throw new Error("FORBIDDEN");
 
   const supabase = await createClient();
   const { error } = await supabase

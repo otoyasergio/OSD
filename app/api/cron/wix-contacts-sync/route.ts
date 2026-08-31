@@ -30,8 +30,10 @@ export async function GET(request: Request) {
       scanned: result.scanned,
       created: result.created,
       updated: result.updated,
+      unchanged: result.unchanged,
       skipped: result.skipped,
       failed: result.failed,
+      pushed: result.pushed,
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

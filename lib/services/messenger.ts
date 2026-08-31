@@ -3,6 +3,7 @@ import { createClient } from "@/lib/database/supabase-server";
 import type { DbClient } from "@/lib/database/types";
 import { canManageGroupMembers, canUseMessenger } from "@/lib/permissions";
 import { buildDmKey } from "@/lib/messenger/dmKey";
+import { isConversationUnread } from "@/lib/messenger/unread";
 import { canUnsendMessage } from "@/lib/messenger/unsendWindow";
 
 export type ConversationParticipant = {
@@ -213,11 +214,11 @@ export async function listConversations(): Promise<Conversation[]> {
   const result: Conversation[] = (conversations ?? []).map((c) => {
     const membership = membershipById.get(c.conversation_id)!;
     const participants = participantsByConv.get(c.conversation_id) ?? [];
-    const lastAt = c.last_message_at ? new Date(c.last_message_at).getTime() : 0;
-    const readAt = membership.last_read_at
-      ? new Date(membership.last_read_at).getTime()
-      : 0;
-    const unread = Boolean(lastAt && lastAt > readAt);
+    const unread = isConversationUnread({
+      lastMessageAt: c.last_message_at,
+      lastReadAt: membership.last_read_at,
+      muted: Boolean(membership.muted_at),
+    });
     return {
       conversation_id: c.conversation_id,
       type: c.type as "dm" | "group",
@@ -228,7 +229,7 @@ export async function listConversations(): Promise<Conversation[]> {
       created_at: c.created_at,
       participants,
       last_message_preview: previewByConv.get(c.conversation_id) ?? null,
-      unread: unread && !membership.muted_at,
+      unread,
       display_name: displayNameFor(c, participants, user.user_id),
     };
   });

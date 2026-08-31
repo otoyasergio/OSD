@@ -16,6 +16,7 @@ const ROLES = [
   { value: "technician", label: "Technician" },
   { value: "head_tech", label: "Head tech" },
   { value: "admin", label: "Admin" },
+  { value: "time_clock_kiosk", label: "Time clock kiosk" },
 ] as const;
 
 type Action = (state: UserFormState, formData: FormData) => Promise<UserFormState>;

@@ -3,22 +3,38 @@ import { notFound, redirect } from "next/navigation";
 import { getMotorcycleById, getServiceInformation } from "@/lib/services/motorcycles";
 import { getCustomerById, searchCustomers } from "@/lib/services/customers";
 import { listOutstandingRecommendationsForMotorcycle } from "@/lib/services/recommendations";
+import { listWorkOrdersForMotorcycle } from "@/lib/services/filedWorkOrders";
+import { listIntakePhotosForMotorcycle } from "@/lib/services/photoGallery";
+import { buildBikeSnapshot } from "@/lib/motorcycles/bikeSnapshot";
 import { requireUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canEditWorkOrder,
   canUpdateServiceInformation,
+  canViewBillingArea,
   canViewClients,
 } from "@/lib/permissions";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
 import { TransferMotorcycleForm } from "@/components/forms/TransferMotorcycleForm";
 import { OutstandingRecommendations } from "@/components/recommendations/OutstandingRecommendations";
+import { StaffPhotoGrid } from "@/components/photos/StaffPhotoGrid";
+import { MotorcycleVisitList } from "@/components/motorcycles/MotorcycleVisitList";
 import {
   updateMotorcycleAction,
   updateServiceInformationAction,
   transferMotorcycleAction,
 } from "@/app/(app)/motorcycles/actions";
-import { formatDateTime } from "@/lib/datetime/format";
+import { formatDate, formatDateTime } from "@/lib/datetime/format";
+import { formatMileage, normalizeMileageUnit } from "@/lib/mileage/format";
+
+function formatMoneyCents(cents: number): string {
+  return new Intl.NumberFormat("en-CA", {
+    style: "currency",
+    currency: "CAD",
+    maximumFractionDigits: 0,
+  }).format(cents / 100);
+}
 
 export default async function MotorcycleDetailPage({
   params,
@@ -27,15 +43,20 @@ export default async function MotorcycleDetailPage({
 }) {
   const { motorcycle_id } = await params;
   const user = await requireUser();
-  if (!canViewClients(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  const viewRole = preview?.role ?? user.role;
+  if (!canViewClients(viewRole)) redirect("/dashboard");
   const motorcycle = await getMotorcycleById(motorcycle_id);
   if (!motorcycle) notFound();
 
-  const [serviceInformation, customers, outstandingRecommendations] = await Promise.all([
-    getServiceInformation(motorcycle_id),
-    searchCustomers(""),
-    listOutstandingRecommendationsForMotorcycle(motorcycle_id),
-  ]);
+  const [serviceInformation, customers, outstandingRecommendations, visits, photos] =
+    await Promise.all([
+      getServiceInformation(motorcycle_id),
+      searchCustomers("", { preferShopCustomers: true }),
+      listOutstandingRecommendationsForMotorcycle(motorcycle_id),
+      listWorkOrdersForMotorcycle(motorcycle_id),
+      listIntakePhotosForMotorcycle(motorcycle_id),
+    ]);
 
   let customerOptions = customers;
   if (!customers.some((c) => c.customer_id === motorcycle.customer_id)) {
@@ -50,12 +71,23 @@ export default async function MotorcycleDetailPage({
     motorcycle_id,
     null
   );
-  const canEditServiceInfo = canUpdateServiceInformation(user.role);
-  const canTransfer = canEditWorkOrder(user.role);
+  const canEditServiceInfo = canUpdateServiceInformation(viewRole);
+  const canTransfer = canEditWorkOrder(viewRole);
+  const showMoney = canViewBillingArea(viewRole);
   const ownerName = motorcycle.customer
     ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
     : "Unknown";
   const bikeLabel = `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`;
+
+  const allVisits = [...visits.open, ...visits.filed];
+  const snapshot = buildBikeSnapshot(allVisits);
+  const lastMileageVisit = allVisits
+    .filter((visit) => visit.mileage != null)
+    .sort((a, b) => {
+      const aKey = a.completed_at ?? a.date_created;
+      const bKey = b.completed_at ?? b.date_created;
+      return bKey.localeCompare(aKey);
+    })[0];
 
   return (
     <div className="flex flex-col gap-8">
@@ -79,7 +111,7 @@ export default async function MotorcycleDetailPage({
           </Link>
           {motorcycle.colour ? ` · ${motorcycle.colour}` : null}
           {motorcycle.plate_number ? ` · Plate ${motorcycle.plate_number}` : null}
-          {` · Odometer ${motorcycle.odometer_unit}`}
+          {motorcycle.vin ? ` · VIN ${motorcycle.vin}` : null}
           {canTransfer ? (
             <>
               {" · "}
@@ -103,10 +135,94 @@ export default async function MotorcycleDetailPage({
         </p>
       )}
 
+      <section aria-label="Bike snapshot">
+        <h2 className="text-lg font-semibold text-foreground">At a glance</h2>
+        <div className="bike-snapshot-grid mt-3">
+          <div className="stat-card">
+            <span className="stat-card-label">Visits</span>
+            <span className="stat-card-value">{snapshot.visit_count}</span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-card-label">Last visit</span>
+            <span className="stat-card-value text-base">
+              {snapshot.last_visit_at ? formatDate(snapshot.last_visit_at) || "—" : "—"}
+            </span>
+            {snapshot.days_since_last_visit != null ? (
+              <span className="mt-1 text-xs text-[var(--status-neutral)]">
+                {snapshot.days_since_last_visit} day
+                {snapshot.days_since_last_visit === 1 ? "" : "s"} ago
+              </span>
+            ) : null}
+          </div>
+          <div className="stat-card">
+            <span className="stat-card-label">Last mileage</span>
+            <span className="stat-card-value text-base">
+              {lastMileageVisit?.mileage != null
+                ? formatMileage(
+                    lastMileageVisit.mileage,
+                    normalizeMileageUnit(lastMileageVisit.mileage_unit)
+                  )
+                : "—"}
+            </span>
+          </div>
+          <div className="stat-card">
+            <span className="stat-card-label">Pending follow-ups</span>
+            <span className="stat-card-value">{outstandingRecommendations.length}</span>
+          </div>
+          {showMoney ? (
+            <div className="stat-card">
+              <span className="stat-card-label">Lifetime collected</span>
+              <span className="stat-card-value text-base">
+                {formatMoneyCents(snapshot.lifetime_collected_cents)}
+              </span>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold text-foreground">Photos</h2>
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+          Every intake, inspection, and after shot from this bike&apos;s visits.
+        </p>
+        <div className="mt-3">
+          <StaffPhotoGrid
+            photos={photos}
+            mode="bike"
+            emptyMessage="Photos appear when a visit has intake, inspection, or after shots."
+          />
+        </div>
+      </section>
+
       <OutstandingRecommendations
         recommendations={outstandingRecommendations}
-        title="Follow-up from previous visits"
+        title="Pending recommendations"
       />
+
+      <section>
+        <h2 className="text-lg font-semibold text-foreground">Open visits</h2>
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+          Active work for this motorcycle across shops you can see.
+        </p>
+        <MotorcycleVisitList
+          items={visits.open}
+          emptyMessage="No open visits for this motorcycle."
+          showMoney={showMoney}
+        />
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold text-foreground">Previous services</h2>
+        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+          Completed visits with jobs, mileage, and collected amount.
+        </p>
+        <MotorcycleVisitList
+          items={visits.filed}
+          emptyMessage="No completed visits filed for this motorcycle yet."
+          showCompletedDate
+          showMoney={showMoney}
+        />
+      </section>
 
       <section>
         <h2 className="text-lg font-semibold text-foreground">Service information</h2>
@@ -115,7 +231,8 @@ export default async function MotorcycleDetailPage({
             ? `Last updated ${formatDateTime(serviceInformation.last_updated)}`
             : "Not recorded yet."}
           {" · "}
-          Part numbers fill from fitment when blank.
+          Part numbers fill from fitment for blank fields and stay in sync with the
+          catalogue.
         </p>
         <div className="mt-3">
           <ServiceInformationForm

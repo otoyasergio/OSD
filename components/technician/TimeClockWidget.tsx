@@ -1,50 +1,54 @@
 "use client";
 
-import { useActionState, useSyncExternalStore } from "react";
+import { useActionState } from "react";
 import type { ClockFormState } from "@/app/(app)/technician/clock-actions";
-import { clockInAction, clockOutAction } from "@/app/(app)/technician/clock-actions";
-import type { TimeClockEntry } from "@/lib/services/timeClock";
+import {
+  clockInAction,
+  clockOutAction,
+  endBreakAction,
+  startBreakAction,
+} from "@/app/(app)/technician/clock-actions";
+import type { TimeClockBreak, TimeClockEntry } from "@/lib/services/timeClock";
 import { formatElapsedMs } from "@/lib/services/timeClockShared";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { formatTime } from "@/lib/datetime/format";
+import { useNowTick } from "@/lib/client/useNowTick";
 
 type Props = {
   openEntry: TimeClockEntry | null;
+  openBreak?: TimeClockBreak | null;
+  mealBreakNudge?: boolean;
 };
 
-function subscribeClock(onStoreChange: () => void) {
-  const id = window.setInterval(onStoreChange, 1000);
-  return () => window.clearInterval(id);
-}
-
-function getClockNow() {
-  return Date.now();
-}
-
-function getServerClockNow() {
-  return 0;
-}
-
-export function TimeClockWidget({ openEntry }: Props) {
+export function TimeClockWidget({
+  openEntry,
+  openBreak = null,
+  mealBreakNudge = false,
+}: Props) {
   const [inState, inAction] = useActionState(clockInAction, {
     error: null,
   } satisfies ClockFormState);
   const [outState, outAction] = useActionState(clockOutAction, {
     error: null,
   } satisfies ClockFormState);
-  // Client-only clock via getServerSnapshot — avoids SSR Date.now() hydration drift.
-  const nowMs = useSyncExternalStore(
-    openEntry ? subscribeClock : () => () => {},
-    getClockNow,
-    getServerClockNow
-  );
+  const [startBreakState, startBreakFormAction] = useActionState(startBreakAction, {
+    error: null,
+  } satisfies ClockFormState);
+  const [endBreakState, endBreakFormAction] = useActionState(endBreakAction, {
+    error: null,
+  } satisfies ClockFormState);
+
+  const nowMs = useNowTick(Boolean(openEntry));
 
   const elapsed = openEntry
     ? nowMs > 0
       ? formatElapsedMs(openEntry.clock_in_at, nowMs)
       : "…"
     : "0:00";
+
+  const formError =
+    inState.error ?? outState.error ?? startBreakState.error ?? endBreakState.error;
 
   return (
     <section className="rounded-lg border border-[var(--chrome-border)] bg-[var(--surface)] p-4">
@@ -53,7 +57,9 @@ export function TimeClockWidget({ openEntry }: Props) {
           <h2 className="text-lg font-semibold text-foreground">Time clock</h2>
           <p className="text-sm text-[var(--status-neutral)]">
             {openEntry
-              ? `Clocked in since ${formatTime(openEntry.clock_in_at)}`
+              ? openBreak
+                ? `On meal break since ${formatTime(openBreak.break_start_at)}`
+                : `Clocked in since ${formatTime(openEntry.clock_in_at)}`
               : "Not clocked in"}
           </p>
         </div>
@@ -67,12 +73,34 @@ export function TimeClockWidget({ openEntry }: Props) {
         ) : null}
       </div>
 
-      <FormError message={inState.error ?? outState.error} />
+      {mealBreakNudge && openEntry && !openBreak ? (
+        <p className="mt-3 rounded-md border border-[var(--status-warning)]/40 bg-[var(--status-warning)]/10 px-3 py-2 text-sm text-foreground">
+          You have been on the clock for 5+ hours without a meal break. Ontario requires a
+          30-minute eating period after five consecutive hours.
+        </p>
+      ) : null}
+
+      <FormError message={formError} />
 
       {openEntry ? (
-        <form action={outAction} className="mt-3">
-          <SubmitButton label="Clock out" pendingLabel="Clocking out…" />
-        </form>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {openBreak ? (
+            <form action={endBreakFormAction}>
+              <SubmitButton label="End meal break" pendingLabel="Ending…" />
+            </form>
+          ) : (
+            <form action={startBreakFormAction}>
+              <SubmitButton
+                label="Start meal break"
+                pendingLabel="Starting…"
+                variant="secondary"
+              />
+            </form>
+          )}
+          <form action={outAction}>
+            <SubmitButton label="Clock out" pendingLabel="Clocking out…" />
+          </form>
+        </div>
       ) : (
         <form
           action={inAction}

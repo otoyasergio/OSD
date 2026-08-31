@@ -4,13 +4,36 @@ import { useActionState, useMemo, useState } from "react";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
 import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
+import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { completeInspectionAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
-import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
+import {
+  countIncompleteInspectionResults,
+  isInspectionReadOnly,
+} from "@/lib/services/inspectionGate";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-import type { PhotoCategory } from "@/lib/database/types";
+import { SignOffPad } from "@/components/inspections/SignOffPad";
+import type { InspectionResultStatus, PhotoCategory } from "@/lib/database/types";
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
+import { toLightboxPhotos } from "@/lib/photos/lightbox";
+import {
+  groupInspectionPhotosByResult,
+  inspectionPhotoUrls,
+  inspectionPhotosForCategory,
+} from "@/lib/inspections/groupInspectionPhotos";
+import {
+  AlertTriangle,
+  Bike,
+  Check,
+  ClipboardList,
+  Clock,
+  Gauge,
+  Lightbulb,
+  MessageSquare,
+  Minus,
+  type LucideIcon,
+} from "lucide-react";
 
 const SECTION_PHOTO: Record<
   string,
@@ -30,6 +53,15 @@ function formatInspectionDate(value: string | null) {
   return formatDate(value);
 }
 
+function sectionIcon(category: string): LucideIcon {
+  if (category.startsWith("Brakes") || /tire/i.test(category)) return Bike;
+  if (/fork|frame|chassis|suspension/i.test(category)) return Gauge;
+  if (/light/i.test(category)) return Lightbulb;
+  if (/control/i.test(category)) return Gauge;
+  if (/comment/i.test(category)) return MessageSquare;
+  return ClipboardList;
+}
+
 function sectionPhotoForCategory(
   category: string
 ): { category: PhotoCategory; label: string } | null {
@@ -44,17 +76,26 @@ export function InspectionChecklist({
   canEdit,
   canForceComplete,
   canRecommend,
+  completeReturnTo,
 }: {
   inspection: InspectionDetail;
   canEdit: boolean;
   canForceComplete: boolean;
   canRecommend?: boolean;
+  completeReturnTo?: string | null;
 }) {
   const [completeState, completeAction] = useActionState(
     completeInspectionAction.bind(null, inspection.work_order_id),
     { error: null }
   );
   const [forceConfirm, setForceConfirm] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
+  const [localStatuses, setLocalStatuses] = useState<
+    Record<string, InspectionResultStatus | null>
+  >(() =>
+    Object.fromEntries(inspection.results.map((r) => [r.inspection_result_id, r.status]))
+  );
   const readOnly = isInspectionReadOnly({
     is_foreign_location: inspection.is_foreign_location,
     completed_at: inspection.completed_at,
@@ -74,29 +115,60 @@ export function InspectionChecklist({
     );
   }, [inspection.results]);
 
-  const photosByResult = useMemo(() => {
-    const map = new Map<string, string | null>();
-    for (const photo of inspection.photos) {
-      if (photo.inspection_result_id && !map.has(photo.inspection_result_id)) {
-        map.set(photo.inspection_result_id, photo.signed_url);
-      }
-    }
-    return map;
-  }, [inspection.photos]);
+  const saving = Object.values(busyIds).some(Boolean);
+  const localIncompleteCount = useMemo(
+    () =>
+      countIncompleteInspectionResults(
+        inspection.results.map((r) => ({
+          status: localStatuses[r.inspection_result_id] ?? r.status,
+          category_snapshot: r.category_snapshot,
+          item_name_snapshot: r.item_name_snapshot,
+        }))
+      ),
+    [inspection.results, localStatuses]
+  );
 
-  const sectionPhotoUrl = useMemo(() => {
-    const map = new Map<string, string | null>();
-    for (const photo of inspection.photos) {
-      if (!map.has(photo.category)) {
-        map.set(photo.category, photo.signed_url);
-      }
-    }
-    return map;
-  }, [inspection.photos]);
+  const lightboxPhotos = useMemo(
+    () => toLightboxPhotos(inspection.photos),
+    [inspection.photos]
+  );
+
+  function openPhotoBySrc(src: string | null | undefined) {
+    if (!src) return;
+    const index = lightboxPhotos.findIndex((photo) => photo.src === src);
+    if (index >= 0) setLightboxIndex(index);
+  }
+
+  const photosByResult = useMemo(
+    () => groupInspectionPhotosByResult(inspection.photos),
+    [inspection.photos]
+  );
+
+  const tirePhotoUrls = useMemo(
+    () =>
+      inspectionPhotoUrls(
+        inspectionPhotosForCategory(inspection.photos, "inspection_tires")
+      ),
+    [inspection.photos]
+  );
+  const brakePhotoUrls = useMemo(
+    () =>
+      inspectionPhotoUrls(
+        inspectionPhotosForCategory(inspection.photos, "inspection_brakes")
+      ),
+    [inspection.photos]
+  );
+  const forksPhotoUrls = useMemo(
+    () =>
+      inspectionPhotoUrls(
+        inspectionPhotosForCategory(inspection.photos, "inspection_forks")
+      ),
+    [inspection.photos]
+  );
 
   const missingPhotoLabels = inspection.missing_photos.map((p) => p.label);
   const totalCount = inspection.results.length;
-  const checkedCount = totalCount - inspection.incomplete_count;
+  const checkedCount = totalCount - localIncompleteCount;
   const statusTotals = useMemo(() => {
     let ok = 0;
     let future = 0;
@@ -139,20 +211,28 @@ export function InspectionChecklist({
 
         <div className="inspection-report-legend" aria-label="Status legend">
           <span className="inspection-legend-item">
-            <span className="inspection-status-swatch inspection-status-ok is-selected" />
-            Checked and OK
+            <span className="inspection-status-swatch inspection-status-ok is-selected">
+              <Check size={16} aria-hidden />
+            </span>
+            OK
           </span>
           <span className="inspection-legend-item">
-            <span className="inspection-status-swatch inspection-status-future is-selected" />
-            May need future attention
+            <span className="inspection-status-swatch inspection-status-future is-selected">
+              <Clock size={16} aria-hidden />
+            </span>
+            Future
           </span>
           <span className="inspection-legend-item">
-            <span className="inspection-status-swatch inspection-status-immediate is-selected" />
-            Requires immediate attention
+            <span className="inspection-status-swatch inspection-status-immediate is-selected">
+              <AlertTriangle size={16} aria-hidden />
+            </span>
+            Now
           </span>
           <span className="inspection-legend-item">
-            <span className="inspection-status-swatch inspection-status-na is-selected" />
-            Not applicable
+            <span className="inspection-status-swatch inspection-status-na is-selected">
+              <Minus size={16} aria-hidden />
+            </span>
+            N/A
           </span>
         </div>
 
@@ -242,66 +322,47 @@ export function InspectionChecklist({
 
         {!readOnly ? (
           <div className="flex flex-col items-end gap-2">
-            {inspection.incomplete_count > 0 && canForceComplete ? (
-              !forceConfirm ? (
-                <button
-                  type="button"
-                  onClick={() => setForceConfirm(true)}
-                  className="btn btn-secondary min-h-12 border-amber-400 bg-amber-50 text-amber-950 hover:bg-amber-100"
-                >
-                  Force complete ({inspection.incomplete_count} incomplete)…
-                </button>
-              ) : (
-                <form action={completeAction} className="flex flex-wrap gap-2">
-                  <input type="hidden" name="force" value="true" />
-                  <SubmitButton
-                    label="Confirm force complete"
-                    pendingLabel="Completing…"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setForceConfirm(false)}
-                    className="btn btn-secondary min-h-12"
-                  >
-                    Cancel
-                  </button>
-                </form>
-              )
-            ) : (
-              <form action={completeAction}>
-                <SubmitButton label="Complete inspection" pendingLabel="Completing…" />
-              </form>
-            )}
+            {saving ? (
+              <p className="text-sm text-[var(--status-neutral)]">
+                Saving checklist changes…
+              </p>
+            ) : null}
+            {localIncompleteCount > 0 && !canForceComplete ? (
+              <p className="text-sm text-amber-900">
+                Check all fields ({localIncompleteCount} still open)
+                {saving ? " — wait for saves to finish" : ""}.
+              </p>
+            ) : null}
             <FormError message={completeState.error} />
           </div>
         ) : null}
       </div>
 
       {showTireBrakePhotos &&
-      (!readOnly ||
-        sectionPhotoUrl.get("inspection_tires") ||
-        sectionPhotoUrl.get("inspection_brakes")) ? (
+      (!readOnly || tirePhotoUrls.length > 0 || brakePhotoUrls.length > 0) ? (
         <section className="inspection-section-photos">
           <h2 className="inspection-section-header">Required section photos</h2>
           <div className="inspection-photo-grid">
-            {!readOnly || sectionPhotoUrl.get("inspection_tires") ? (
+            {!readOnly || tirePhotoUrls.length > 0 ? (
               <InspectionPhotoSlot
                 workOrderId={inspection.work_order_id}
                 category="inspection_tires"
                 label="Tires"
                 required
-                existingUrl={sectionPhotoUrl.get("inspection_tires")}
+                existingUrls={tirePhotoUrls}
                 readOnly={readOnly}
+                onExpand={openPhotoBySrc}
               />
             ) : null}
-            {!readOnly || sectionPhotoUrl.get("inspection_brakes") ? (
+            {!readOnly || brakePhotoUrls.length > 0 ? (
               <InspectionPhotoSlot
                 workOrderId={inspection.work_order_id}
                 category="inspection_brakes"
                 label="Brakes"
                 required
-                existingUrl={sectionPhotoUrl.get("inspection_brakes")}
+                existingUrls={brakePhotoUrls}
                 readOnly={readOnly}
+                onExpand={openPhotoBySrc}
               />
             ) : null}
           </div>
@@ -314,7 +375,7 @@ export function InspectionChecklist({
           const forksNeeded =
             sectionPhoto?.category === "inspection_forks" &&
             (inspection.missing_photos.some((p) => p.category === "inspection_forks") ||
-              sectionPhotoUrl.has("inspection_forks") ||
+              forksPhotoUrls.length > 0 ||
               results.some(
                 (r) => r.status != null && /front forks/i.test(r.item_name_snapshot)
               ));
@@ -334,11 +395,19 @@ export function InspectionChecklist({
               : sectionDone
                 ? "inspection-section-count--done"
                 : "";
+          const SectionIcon = sectionIcon(category);
 
           return (
             <section key={category} className="inspection-section">
               <h2 className="inspection-section-header">
-                <span className="inspection-section-header-title">{category}</span>
+                <span className="inspection-section-header-title">
+                  <SectionIcon
+                    size={18}
+                    aria-hidden
+                    className="inspection-section-icon"
+                  />
+                  {category}
+                </span>
                 <span
                   className={`inspection-section-count ${countClass}`}
                   aria-label={`${sectionChecked} of ${results.length} items checked${
@@ -351,49 +420,167 @@ export function InspectionChecklist({
                   {sectionChecked}/{results.length}
                 </span>
               </h2>
-              {forksNeeded &&
-              sectionPhoto &&
-              (!readOnly || sectionPhotoUrl.get(sectionPhoto.category)) ? (
+              {forksNeeded && sectionPhoto && (!readOnly || forksPhotoUrls.length > 0) ? (
                 <div className="mb-3">
                   <InspectionPhotoSlot
                     workOrderId={inspection.work_order_id}
                     category={sectionPhoto.category}
                     label={sectionPhoto.label}
                     required
-                    existingUrl={sectionPhotoUrl.get(sectionPhoto.category)}
+                    existingUrls={forksPhotoUrls}
                     readOnly={readOnly}
+                    onExpand={openPhotoBySrc}
                   />
                 </div>
               ) : null}
               <div className="inspection-section-items">
-                {results.map((result) => (
-                  <InspectionItemRow
-                    key={result.inspection_result_id}
-                    workOrderId={inspection.work_order_id}
-                    result={result}
-                    readOnly={readOnly}
-                    compact={
-                      !result.requires_measurement_snapshot &&
-                      !category.startsWith("Comments")
-                    }
-                    photoUrl={photosByResult.get(result.inspection_result_id)}
-                    photoRequired={inspection.missing_photos.some(
-                      (p) => p.inspection_result_id === result.inspection_result_id
-                    )}
-                    onRecommend={
-                      canRecommend
-                        ? (r) => {
-                            window.location.href = `/work_orders/${inspection.work_order_id}?tab=recommendations&from_result=${r.inspection_result_id}`;
-                          }
-                        : undefined
-                    }
-                  />
-                ))}
+                {results.map((result) => {
+                  const itemPhotoUrls = inspectionPhotoUrls(
+                    photosByResult.get(result.inspection_result_id) ?? []
+                  );
+                  return (
+                    <InspectionItemRow
+                      key={result.inspection_result_id}
+                      workOrderId={inspection.work_order_id}
+                      result={result}
+                      readOnly={readOnly}
+                      compact={
+                        !result.requires_measurement_snapshot &&
+                        !category.startsWith("Comments")
+                      }
+                      photoUrls={itemPhotoUrls}
+                      photoRequired={inspection.missing_photos.some(
+                        (p) => p.inspection_result_id === result.inspection_result_id
+                      )}
+                      onExpandPhoto={
+                        itemPhotoUrls.length > 0 ? openPhotoBySrc : undefined
+                      }
+                      onBusyChange={(resultId, busy) => {
+                        setBusyIds((current) => ({ ...current, [resultId]: busy }));
+                      }}
+                      onLocalStatusChange={(resultId, status) => {
+                        setLocalStatuses((current) => ({
+                          ...current,
+                          [resultId]: status,
+                        }));
+                      }}
+                      onRecommend={
+                        canRecommend
+                          ? (r) => {
+                              window.location.href = `/work_orders/${inspection.work_order_id}?tab=recommendations&from_result=${r.inspection_result_id}`;
+                            }
+                          : undefined
+                      }
+                    />
+                  );
+                })}
               </div>
             </section>
           );
         })}
       </div>
+
+      {!readOnly ? (
+        <div className="inspection-complete-dock">
+          <p className="inspection-complete-dock-count">
+            <strong>{checkedCount}</strong> / {totalCount}
+            {localIncompleteCount > 0 ? (
+              <span className="inspection-complete-dock-left">
+                {" "}
+                · {localIncompleteCount} left
+              </span>
+            ) : null}
+          </p>
+          {localIncompleteCount > 0 && canForceComplete ? (
+            !forceConfirm ? (
+              <button
+                type="button"
+                onClick={() => setForceConfirm(true)}
+                disabled={saving}
+                className="btn btn-secondary inspection-complete-dock-go"
+              >
+                Force complete ({localIncompleteCount} incomplete)…
+              </button>
+            ) : (
+              <form
+                action={completeAction}
+                className="inspection-complete-dock-form flex flex-col gap-3"
+              >
+                <input type="hidden" name="force" value="true" />
+                {completeReturnTo ? (
+                  <input type="hidden" name="return_to" value={completeReturnTo} />
+                ) : null}
+                <SignOffPad label="Force-complete signature (override)" />
+                <div className="flex flex-wrap gap-2">
+                  <SubmitButton
+                    label="Confirm force complete"
+                    pendingLabel="Completing…"
+                    disabled={saving}
+                    className="inspection-complete-dock-go"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setForceConfirm(false)}
+                    className="btn btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )
+          ) : (
+            <form
+              action={completeAction}
+              className="inspection-complete-dock-form flex flex-col gap-3"
+            >
+              {completeReturnTo ? (
+                <input type="hidden" name="return_to" value={completeReturnTo} />
+              ) : null}
+              <SignOffPad label="Tech sign-off" />
+              <SubmitButton
+                label="Complete arrival inspection"
+                pendingLabel="Completing…"
+                disabled={saving || localIncompleteCount > 0}
+                className="inspection-complete-dock-go"
+              />
+            </form>
+          )}
+          <FormError message={completeState.error} />
+        </div>
+      ) : inspection.completed_at ? (
+        <section className="mt-6 rounded border border-[var(--border)] bg-white p-4">
+          <h2 className="text-base font-semibold text-foreground">
+            Arrival inspection sign-off
+          </h2>
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
+            Completed
+            {inspection.completed_by_name ? ` by ${inspection.completed_by_name}` : ""}
+            {inspection.completed_at
+              ? ` · ${formatDateTime(inspection.completed_at)}`
+              : ""}
+          </p>
+          {inspection.signature_signed_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={inspection.signature_signed_url}
+              alt="Arrival inspection signature"
+              className="mt-3 max-h-32 rounded border border-[var(--border)] bg-white"
+            />
+          ) : (
+            <p className="mt-2 text-sm text-[var(--status-neutral)]">
+              No drawn signature on file (completed before sign-off was required).
+            </p>
+          )}
+        </section>
+      ) : null}
+
+      {lightboxIndex !== null && lightboxPhotos.length > 0 ? (
+        <PhotoLightbox
+          photos={lightboxPhotos}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -2,50 +2,81 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useEffect, useMemo, useRef, type ReactNode } from "react";
-import type { FloorOsSurface, TechnicianFloorOs } from "@/lib/services/technicianFloor";
+import {
+  useActionState,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import { Images, StickyNote } from "lucide-react";
+import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
+import { createClient } from "@/lib/database/supabase-browser";
+import type { TechnicianFloorOs } from "@/lib/services/technicianFloor";
 import type { DocketItem } from "@/lib/services/technicianDocket";
 import type { ReadyForPickupItem } from "@/lib/services/readyForPickup";
 import { TechnicianDocketList } from "@/components/technician/TechnicianDocketList";
 import { ReadyForPickupCarousel } from "@/components/technician/ReadyForPickupCarousel";
+import { FloorStageSpine } from "@/components/technician/FloorStageSpine";
+import { FloorCurrentStep } from "@/components/technician/FloorCurrentStep";
+import { FloorDock } from "@/components/technician/FloorDock";
+import { SignOffPad } from "@/components/inspections/SignOffPad";
 import {
-  addProofExceptionAction,
+  failSafetyCheckAction,
+  passSafetyCheckAction,
+} from "@/app/(app)/work_orders/safety-actions";
+import {
+  acknowledgeDocketJobAction,
   completeJobFloorAction,
+  completePerformWorkAction,
   failPeerQcAction,
-  flagForAdminAction,
   installPartFloorAction,
+  parkJobAction,
   passPeerQcAction,
-  pullJobAction,
-  startJobFloorAction,
+  pullOntoBenchAction,
+  resumeParkedJobAction,
+  skipProofAction,
+  swapBenchJobAction,
   toggleChecklistAction,
   uploadJobProofAction,
   type FloorActionState,
 } from "@/app/(app)/technician/floor-actions";
+import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import {
-  failSafetyCheckAction,
-  passSafetyCheckAction,
-  type SafetyFormState,
-} from "@/app/(app)/work_orders/safety-actions";
-import { deriveDefaultStage, type FloorStage } from "@/lib/technician/floorStage";
+  technicianClosePacketHref,
+  technicianFloorHref,
+  type JobPacketSection,
+} from "@/lib/technician/routeState";
+import type { JobPacket } from "@/lib/services/jobPacket";
+import type { IntakePhoto } from "@/lib/services/photos";
+import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
+import {
+  currentPitStep,
+  deriveDefaultStage,
+  floorSpineStates,
+  type FloorStage,
+} from "@/lib/technician/floorStage";
+import {
+  PARK_REASON_OPTIONS,
+  isFloorJobFinished,
+  type PitBoardStep,
+} from "@/lib/technician/pitBoard";
+import {
+  buildFloorActionModel,
+  splitDocketByWait,
+  waitOwnerDisplayLabel,
+  type FloorActionModel,
+} from "@/lib/technician/floorActionModel";
 
 export type { FloorStage };
 export { deriveDefaultStage };
 
-const FLOOR_REFRESH_MS = 60_000;
-
-function jobHref(workOrderId: string, jobId: string): string {
-  const params = new URLSearchParams();
-  params.set("job", jobId);
-  params.set("wo", workOrderId);
-  return `/technician?${params.toString()}`;
-}
-
-function stageHref(surface: FloorOsSurface, stage: FloorStage): string {
-  const params = new URLSearchParams();
-  if (surface.job_id) params.set("job", surface.job_id);
-  params.set("wo", surface.work_order_id);
-  params.set("stage", stage);
-  return `/technician?${params.toString()}`;
+function formatTimer(secs: number): string {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function ActionMessage({ state }: { state: FloorActionState }) {
@@ -60,814 +91,989 @@ function ActionMessage({ state }: { state: FloorActionState }) {
   );
 }
 
-function StageRail({ surface, stage }: { surface: FloorOsSurface; stage: FloorStage }) {
-  if (
-    stage === "safety" ||
-    (surface.is_safety && surface.can_safety && !surface.job_id)
-  ) {
-    return (
-      <div className="floor-stage-rail" aria-label="Safety check">
-        <span className="floor-stage-pill floor-stage-pill--current">Safety</span>
-      </div>
-    );
-  }
-  if (stage === "qc" || (surface.is_qc && surface.qc_assignee_is_me && !surface.job_id)) {
-    return (
-      <div className="floor-stage-rail" aria-label="Quality check">
-        <span className="floor-stage-pill floor-stage-pill--current">Peer QC</span>
-      </div>
-    );
-  }
-
-  const inspectDone = surface.inspection_complete;
-  const workDone =
-    surface.checklist.length > 0 &&
-    surface.checklist.every((item) => item.checked_at) &&
-    !surface.parts.some((part) => part.can_install);
-  const proofDone = surface.proof_count > 0 || surface.has_proof_exception;
-
-  const stages: Array<{ id: FloorStage; label: string; done: boolean }> = [
-    { id: "inspect", label: "Inspect", done: inspectDone },
-    { id: "work", label: "Work", done: workDone },
-    { id: "proof", label: "Proof", done: proofDone },
-    { id: "done", label: "Done", done: false },
-  ];
-
+function JobPacketErrorState({ backHref }: { backHref: string }) {
   return (
-    <nav className="floor-stage-rail" aria-label="Job stages">
-      {stages.map((s, index) => {
-        const current = stage === s.id;
-        return (
-          <div key={s.id} className="floor-stage-item">
-            {index > 0 ? (
-              <span className="floor-stage-arrow" aria-hidden>
-                →
-              </span>
-            ) : null}
-            <Link
-              href={stageHref(surface, s.id)}
-              className={[
-                "floor-stage-pill",
-                current ? "floor-stage-pill--current" : "",
-                s.done && !current ? "floor-stage-pill--done" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              aria-current={current ? "step" : undefined}
-            >
-              <span className="floor-stage-num">{index + 1}</span>
-              {s.label}
-              {s.done ? " ✓" : ""}
-            </Link>
-          </div>
-        );
-      })}
-    </nav>
-  );
-}
-
-function MotorcycleServices({ surface }: { surface: FloorOsSurface }) {
-  if (surface.jobs.length === 0) return null;
-
-  return (
-    <section className="floor-services" aria-labelledby="floor-services-title">
-      <h3 id="floor-services-title" className="floor-section-title">
-        Services on this motorcycle
-      </h3>
-      <ul className="floor-service-list">
-        {surface.jobs.map((job) => {
-          const content = (
-            <>
-              <span className="floor-service-main">
-                <span className="floor-service-name">{job.service_name}</span>
-                <span className="floor-service-meta">{job.status_label}</span>
-              </span>
-              <span className="floor-service-owner">
-                {job.assigned_to_me
-                  ? job.is_selected
-                    ? "Open"
-                    : "My service"
-                  : "Other tech"}
-              </span>
-            </>
-          );
-
-          return (
-            <li key={job.job_id}>
-              {job.assigned_to_me ? (
-                <Link
-                  href={jobHref(surface.work_order_id, job.job_id)}
-                  className={`floor-service-item${
-                    job.is_selected ? " floor-service-item--selected" : ""
-                  }`}
-                  aria-current={job.is_selected ? "true" : undefined}
-                >
-                  {content}
-                </Link>
-              ) : (
-                <div className="floor-service-item floor-service-item--other">
-                  {content}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-
-function FlagForm({
-  surface,
-  flagAction,
-  flagPending,
-  flagState,
-}: {
-  surface: FloorOsSurface;
-  flagAction: (payload: FormData) => void;
-  flagPending: boolean;
-  flagState: FloorActionState;
-}) {
-  return (
-    <details className="floor-flag-details">
-      <summary className="floor-flag-summary">Flag</summary>
-      <form action={flagAction} className="floor-flag-form">
-        <input type="hidden" name="job_id" value={surface.job_id ?? ""} />
-        <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-        <select name="reason" required className="input" defaultValue="parts">
-          <option value="parts">Parts</option>
-          <option value="approval">Approval</option>
-          <option value="tool">Tool</option>
-          <option value="quality">Quality</option>
-          <option value="other">Other</option>
-        </select>
-        <textarea name="note" rows={2} placeholder="Optional note" className="input" />
-        <button
-          className="btn btn-secondary floor-tap"
-          disabled={flagPending}
-          type="submit"
-        >
-          {flagPending ? "Flagging…" : "Raise flag"}
-        </button>
-        <ActionMessage state={flagState} />
-      </form>
-    </details>
-  );
-}
-
-function InspectStage({ surface }: { surface: FloorOsSurface }) {
-  return (
-    <div className="floor-stage-body">
-      <p className="floor-lead">
-        {surface.inspection_complete
-          ? "Inspection is complete. Continue to Work."
-          : "Complete the visual inspection before finishing jobs."}
-      </p>
-      <Link
-        href={surface.inspection_href}
-        className="btn btn-primary floor-tap floor-tap--wide"
-      >
-        {surface.inspection_complete ? "View inspection" : "Open inspection"}
-      </Link>
-      {surface.inspection_complete ? (
-        <Link
-          href={stageHref(surface, "work")}
-          className="btn btn-secondary floor-tap floor-tap--wide"
-        >
-          Continue to Work →
-        </Link>
-      ) : null}
-    </div>
-  );
-}
-
-function WorkStage({ surface }: { surface: FloorOsSurface }) {
-  const [checkState, checkAction] = useActionState(toggleChecklistAction, null);
-  const [partState, partAction, partPending] = useActionState(
-    installPartFloorAction,
-    null
-  );
-
-  return (
-    <div className="floor-stage-body">
-      <section>
-        <h3 className="floor-section-title">Standard work</h3>
-        <ul className="floor-checklist">
-          {surface.checklist.map((item) => (
-            <li key={item.job_checklist_item_id}>
-              <form action={checkAction} className="floor-checklist-row">
-                <input type="hidden" name="item_id" value={item.job_checklist_item_id} />
-                <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-                <input
-                  type="hidden"
-                  name="checked"
-                  value={item.checked_at ? "false" : "true"}
-                />
-                <button
-                  type="submit"
-                  className={`floor-check ${item.checked_at ? "floor-check--on" : ""}`}
-                  aria-pressed={Boolean(item.checked_at)}
-                  aria-label={item.title}
-                >
-                  {item.checked_at ? "✓" : ""}
-                </button>
-                <span className="floor-checklist-label">{item.title}</span>
-              </form>
-            </li>
-          ))}
-        </ul>
-        <ActionMessage state={checkState} />
-      </section>
-
-      <section>
-        <h3 className="floor-section-title">Parts</h3>
-        {surface.parts.length === 0 ? (
-          <p className="floor-muted">No parts on this job.</p>
-        ) : (
-          <ul className="floor-parts">
-            {surface.parts.map((part) => (
-              <li key={part.part_id} className="floor-part-row">
-                <div>
-                  <div className="floor-part-name">{part.name}</div>
-                  <div className="floor-muted">{part.status}</div>
-                </div>
-                {part.can_install ? (
-                  <form action={partAction}>
-                    <input type="hidden" name="part_id" value={part.part_id} />
-                    <input
-                      type="hidden"
-                      name="work_order_id"
-                      value={surface.work_order_id}
-                    />
-                    <button
-                      className="btn btn-secondary floor-tap"
-                      disabled={partPending}
-                    >
-                      Install
-                    </button>
-                  </form>
-                ) : (
-                  <span className="floor-part-done">Done</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        <ActionMessage state={partState} />
-      </section>
-
-      <Link
-        href={stageHref(surface, "proof")}
-        className="btn btn-secondary floor-tap floor-tap--wide"
-      >
-        Continue to Proof →
-      </Link>
-    </div>
-  );
-}
-
-function ProofStage({ surface }: { surface: FloorOsSurface }) {
-  const [proofState, proofAction, proofPending] = useActionState(
-    uploadJobProofAction,
-    null
-  );
-  const [exceptionState, exceptionAction] = useActionState(addProofExceptionAction, null);
-
-  if (!surface.job_id) {
-    return <p className="floor-muted">Select a job first.</p>;
-  }
-
-  return (
-    <div className="floor-stage-body">
-      <p className="floor-lead">
-        {surface.proof_count > 0
-          ? `${surface.proof_count} after photo(s) on file.`
-          : surface.has_proof_exception
-            ? "Proof exception on file."
-            : "Add an after photo, or note why proof isn’t available."}
-      </p>
-
-      <form action={proofAction} className="floor-proof-upload">
-        <input type="hidden" name="job_id" value={surface.job_id} />
-        <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-        <input
-          type="file"
-          name="file"
-          accept="image/*"
-          capture="environment"
-          className="input"
-          required
-        />
-        <button className="btn btn-primary floor-tap" disabled={proofPending}>
-          {proofPending ? "Uploading…" : "Upload proof photo"}
-        </button>
-      </form>
-      <ActionMessage state={proofState} />
-
-      <details className="floor-flag-details">
-        <summary className="floor-flag-summary">Can’t take a photo?</summary>
-        <form action={exceptionAction} className="floor-flag-form">
-          <input type="hidden" name="job_id" value={surface.job_id} />
-          <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-          <textarea
-            name="note"
-            required
-            rows={2}
-            placeholder="Why no after photo"
-            className="input"
-          />
-          <button className="btn btn-secondary floor-tap" type="submit">
-            Save exception
-          </button>
-          <ActionMessage state={exceptionState} />
-        </form>
-      </details>
-
-      <Link
-        href={stageHref(surface, "done")}
-        className="btn btn-secondary floor-tap floor-tap--wide"
-      >
-        Continue to Done →
-      </Link>
-    </div>
-  );
-}
-
-function DoneStage({ surface }: { surface: FloorOsSurface }) {
-  return (
-    <div className="floor-stage-body">
-      <h3 className="floor-section-title">Ready to finish?</h3>
-      <ul className="floor-gate-list">
-        <li className={surface.inspection_complete ? "floor-gate-ok" : "floor-gate-miss"}>
-          {surface.inspection_complete ? "✓" : "○"} Inspection
-        </li>
-        <li
-          className={
-            surface.checklist.every((i) => i.checked_at) && surface.checklist.length > 0
-              ? "floor-gate-ok"
-              : "floor-gate-miss"
-          }
-        >
-          {surface.checklist.every((i) => i.checked_at) && surface.checklist.length > 0
-            ? "✓"
-            : "○"}{" "}
-          Checklist
-        </li>
-        <li
-          className={
-            !surface.parts.some((p) => p.can_install)
-              ? "floor-gate-ok"
-              : "floor-gate-miss"
-          }
-        >
-          {!surface.parts.some((p) => p.can_install) ? "✓" : "○"} Parts
-        </li>
-        <li
-          className={
-            surface.proof_count > 0 || surface.has_proof_exception
-              ? "floor-gate-ok"
-              : "floor-gate-miss"
-          }
-        >
-          {surface.proof_count > 0 || surface.has_proof_exception ? "✓" : "○"} Proof
-        </li>
-      </ul>
-      {!surface.complete_gate_ok && surface.can_complete ? (
-        <p className="floor-gate-reason">{surface.complete_gate_reason}</p>
-      ) : (
-        <p className="floor-muted">Use the dock below to start or complete this job.</p>
-      )}
-      <Link
-        href={`${surface.overview_href}?tab=notes`}
-        className="btn btn-secondary floor-tap floor-tap--wide"
-      >
-        Open notes
-      </Link>
-    </div>
-  );
-}
-
-function QcStage({ surface }: { surface: FloorOsSurface }) {
-  if (!surface.is_qc) {
-    return <p className="floor-muted">No peer QC on this work order yet.</p>;
-  }
-  if (!surface.qc_assignee_is_me) {
-    return <p className="floor-muted">This QC is assigned to another technician.</p>;
-  }
-
-  return (
-    <div className="floor-stage-body">
-      <p className="floor-lead">
-        Confirm {surface.motorcycle_label} meets shop standard, then pass or fail from the
-        dock.
-      </p>
-      <ul className="floor-checklist">
-        <li className="floor-checklist-row">
-          <span className="floor-check floor-check--on" aria-hidden>
-            ✓
-          </span>
-          <span className="floor-checklist-label">Jobs completed as approved</span>
-        </li>
-        <li className="floor-checklist-row">
-          <span className="floor-check floor-check--on" aria-hidden>
-            ✓
-          </span>
-          <span className="floor-checklist-label">Proof photos / notes look right</span>
-        </li>
-        <li className="floor-checklist-row">
-          <span className="floor-check floor-check--on" aria-hidden>
-            ✓
-          </span>
-          <span className="floor-checklist-label">Bike is safe to return</span>
-        </li>
-      </ul>
+    <div className="floor-surface-empty floor-packet-error">
+      <h2 className="floor-section-title">Couldn&apos;t open notes &amp; photos</h2>
       <p className="floor-muted">
-        <Link href={surface.overview_href}>Open work order overview</Link> for full
-        detail. Pass or Fail from the dock below.
+        This work order may be unavailable or you may not have access.
       </p>
+      <Link href={backHref} className="btn btn-secondary floor-tap floor-tap--wide">
+        Back to jobs
+      </Link>
     </div>
   );
 }
 
-function SafetyStage({ surface }: { surface: FloorOsSurface }) {
-  if (!surface.is_safety) {
-    return <p className="floor-muted">No safety check on this work order yet.</p>;
-  }
-  if (!surface.can_safety) {
-    return <p className="floor-muted">Only Head Tech can pass or fail safety.</p>;
-  }
+type Overlay = null | "park" | "fail" | "swap" | "qc_pick" | "sign_qc" | "sign_safety";
 
-  return (
-    <div className="floor-stage-body">
-      <p className="floor-lead">
-        Review the inspection report for {surface.motorcycle_label}, then pass or fail
-        safety from the dock.
-      </p>
-      <Link
-        href={surface.inspection_href}
-        className="btn btn-secondary floor-tap floor-tap--wide"
-      >
-        Open inspection report
-      </Link>
-      <p className="floor-muted">
-        Fail requires a recommendation — the visit returns to customer approval.
-      </p>
-    </div>
-  );
-}
+/**
+ * Identity-bound floor actions: acknowledgement, bench/timer flows, and QC or
+ * safety judgements belong to the technician, so an owner previewing their
+ * floor gets them disabled. Everything else stays interactive as a clearly
+ * owner-attributed override.
+ */
+const PREVIEW_LOCKED_ACTIONS = new Set([
+  "acknowledge",
+  "pull_onto_bench",
+  "resume",
+  "pass_qc",
+  "fail_qc",
+  "pass_safety",
+  "fail_safety",
+  "park",
+  "swap",
+]);
 
-function StickyDock({ surface, stage }: { surface: FloorOsSurface; stage: FloorStage }) {
-  const [startState, startAction, startPending] = useActionState(
-    startJobFloorAction,
-    null
-  );
-  const [completeState, completeAction, completePending] = useActionState(
-    completeJobFloorAction,
-    null
-  );
-  const [pullState, pullAction, pullPending] = useActionState(pullJobAction, null);
-  const [flagState, flagAction, flagPending] = useActionState(flagForAdminAction, null);
-  const [passState, passAction, passPending] = useActionState(passPeerQcAction, null);
-  const [failState, failAction, failPending] = useActionState(failPeerQcAction, null);
-  const [passSafetyState, passSafetyAction, passSafetyPending] = useActionState(
-    (prev: SafetyFormState, formData: FormData) =>
-      passSafetyCheckAction(surface.work_order_id, prev, formData),
-    { error: null }
-  );
-  const [failSafetyState, failSafetyAction, failSafetyPending] = useActionState(
-    (prev: SafetyFormState, formData: FormData) =>
-      failSafetyCheckAction(surface.work_order_id, prev, formData),
-    { error: null }
-  );
+const PREVIEW_LOCK_REASON =
+  "Preview only — this action belongs to the technician you are viewing.";
 
-  const showFlag =
-    Boolean(surface.job_id) && !surface.can_pull && stage !== "qc" && stage !== "safety";
-  const checklistOpen = surface.checklist.some((item) => !item.checked_at);
-  const partsOpen = surface.parts.some((part) => part.can_install);
-  const proofOk = surface.proof_count > 0 || surface.has_proof_exception;
-  const workReady = surface.inspection_complete && !checklistOpen && !partsOpen;
-
-  let primary: ReactNode = null;
-  let secondary: ReactNode = null;
-  let reason: string | null = null;
-
-  if (surface.can_pull && surface.job_id) {
-    primary = (
-      <form action={pullAction} className="floor-dock-primary">
-        <input type="hidden" name="job_id" value={surface.job_id} />
-        <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-        <button className="btn btn-primary floor-dock-btn" disabled={pullPending}>
-          {pullPending ? "Pulling…" : "Pull job"}
-        </button>
-        <ActionMessage state={pullState} />
-      </form>
-    );
-  } else if (stage === "safety" && surface.can_safety) {
-    primary = (
-      <form action={passSafetyAction} className="floor-dock-primary">
-        <input
-          type="hidden"
-          name="safety_check_notes"
-          value="Safety checklist reviewed"
-        />
-        <button className="btn btn-primary floor-dock-btn" disabled={passSafetyPending}>
-          {passSafetyPending ? "Passing…" : "Pass safety"}
-        </button>
-        {passSafetyState.error ? (
-          <p className="floor-dock-msg floor-dock-msg--error" role="status">
-            {passSafetyState.error}
-          </p>
-        ) : null}
-      </form>
-    );
-    secondary = (
-      <details className="floor-flag-details floor-dock-fail">
-        <summary className="floor-flag-summary">Fail safety</summary>
-        <form action={failSafetyAction} className="floor-flag-form">
-          <textarea
-            name="recommendation_description"
-            required
-            rows={2}
-            placeholder="Recommendation for customer approval"
-            className="input"
-          />
-          <select
-            name="recommendation_severity"
-            className="input"
-            defaultValue="immediate_attention"
-          >
-            <option value="future_attention">Future attention</option>
-            <option value="immediate_attention">Immediate attention</option>
-            <option value="safety_critical">Safety critical</option>
-          </select>
-          <textarea
-            name="safety_check_notes"
-            rows={2}
-            placeholder="Safety notes (optional)"
-            className="input"
-          />
-          <button className="btn btn-secondary floor-tap" disabled={failSafetyPending}>
-            {failSafetyPending ? "Failing…" : "Confirm fail"}
-          </button>
-          {failSafetyState.error ? (
-            <p className="floor-dock-msg floor-dock-msg--error" role="status">
-              {failSafetyState.error}
-            </p>
-          ) : null}
-        </form>
-      </details>
-    );
-  } else if (stage === "qc" && surface.qc_assignee_is_me) {
-    primary = (
-      <form action={passAction} className="floor-dock-primary">
-        <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-        <input type="hidden" name="notes" value="Peer QC checklist reviewed" />
-        <button className="btn btn-primary floor-dock-btn" disabled={passPending}>
-          {passPending ? "Passing…" : "Pass QC"}
-        </button>
-        <ActionMessage state={passState} />
-      </form>
-    );
-    secondary = (
-      <details className="floor-flag-details floor-dock-fail">
-        <summary className="floor-flag-summary">Fail QC</summary>
-        <form action={failAction} className="floor-flag-form">
-          <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-          <textarea
-            name="reason"
-            required
-            rows={2}
-            placeholder="What failed?"
-            className="input"
-          />
-          <button className="btn btn-secondary floor-tap" disabled={failPending}>
-            {failPending ? "Failing…" : "Confirm fail"}
-          </button>
-          <ActionMessage state={failState} />
-        </form>
-      </details>
-    );
-  } else if (stage === "inspect" && !surface.inspection_complete) {
-    primary = (
-      <Link href={surface.inspection_href} className="btn btn-primary floor-dock-btn">
-        Open inspection
-      </Link>
-    );
-  } else if (stage === "inspect" && surface.inspection_complete) {
-    primary = (
-      <Link href={stageHref(surface, "work")} className="btn btn-primary floor-dock-btn">
-        Continue to Work →
-      </Link>
-    );
-  } else if (stage === "work" && surface.can_start && surface.job_id) {
-    primary = (
-      <form action={startAction} className="floor-dock-primary">
-        <input type="hidden" name="job_id" value={surface.job_id} />
-        <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-        <button className="btn btn-primary floor-dock-btn" disabled={startPending}>
-          {startPending ? "Starting…" : "Start job"}
-        </button>
-        <ActionMessage state={startState} />
-      </form>
-    );
-  } else if (stage === "work" && workReady) {
-    primary = (
-      <Link href={stageHref(surface, "proof")} className="btn btn-primary floor-dock-btn">
-        Continue to Proof →
-      </Link>
-    );
-  } else if (stage === "proof" && proofOk) {
-    primary = (
-      <Link href={stageHref(surface, "done")} className="btn btn-primary floor-dock-btn">
-        Continue to Done →
-      </Link>
-    );
-  } else if (
-    (stage === "done" || stage === "proof" || stage === "work") &&
-    surface.can_complete &&
-    surface.job_id
-  ) {
-    reason = surface.complete_gate_ok ? null : surface.complete_gate_reason;
-    primary = (
-      <form action={completeAction} className="floor-dock-primary">
-        <input type="hidden" name="job_id" value={surface.job_id} />
-        <input type="hidden" name="work_order_id" value={surface.work_order_id} />
-        <button
-          className="btn btn-primary floor-dock-btn"
-          disabled={completePending || !surface.complete_gate_ok}
-        >
-          {completePending ? "Completing…" : "Complete job"}
-        </button>
-        <ActionMessage state={completeState} />
-      </form>
-    );
-  }
-
-  if (!primary && !secondary && !showFlag) return null;
-
-  return (
-    <div className="floor-dock">
-      {reason ? <p className="floor-gate-reason">{reason}</p> : null}
-      <div className="floor-dock-row">
-        {showFlag ? (
-          <FlagForm
-            surface={surface}
-            flagAction={flagAction}
-            flagPending={flagPending}
-            flagState={flagState}
-          />
-        ) : null}
-        {secondary}
-        {primary}
-      </div>
-    </div>
-  );
+function applyPreviewLock(model: FloorActionModel): FloorActionModel {
+  return {
+    ...model,
+    primary: PREVIEW_LOCKED_ACTIONS.has(model.primary.action)
+      ? { ...model.primary, enabled: false, disabledReason: PREVIEW_LOCK_REASON }
+      : model.primary,
+    secondary: model.secondary.map((control) =>
+      PREVIEW_LOCKED_ACTIONS.has(control.action)
+        ? { ...control, enabled: false, disabledReason: PREVIEW_LOCK_REASON }
+        : control
+    ),
+  };
 }
 
 export function TechnicianFloorShell({
   floor,
-  stage: stageProp,
-  docketItems = [],
-  readyForPickup = [],
+  stage,
+  viewerUserId,
+  previewMode = false,
+  docketItems,
+  readyForPickup,
+  panel,
+  packet,
+  packetSection,
+  packetPhotos,
+  packetWorkOrderId,
+  packetJobId,
 }: {
   floor: TechnicianFloorOs;
-  stage?: FloorStage | null;
-  docketItems?: DocketItem[];
-  readyForPickup?: ReadyForPickupItem[];
+  stage?: FloorStage;
+  /** Read-subject tech — scopes the realtime job subscription. */
+  viewerUserId?: string;
+  /** Owner "view as technician" — disables identity-bound floor actions. */
+  previewMode?: boolean;
+  docketItems: DocketItem[];
+  readyForPickup: ReadyForPickupItem[];
+  panel?: "packet" | null;
+  packet?: JobPacket | null;
+  packetSection?: JobPacketSection | null;
+  packetPhotos?: IntakePhoto[];
+  packetWorkOrderId?: string | null;
+  packetJobId?: string | null;
 }) {
   const router = useRouter();
-  const routerRef = useRef(router);
-  const selected = floor.selected;
+  const surface = floor.selected;
+  // The stage param controls the visible work-surface emphasis; without it we
+  // fall back to the derived default for this surface.
+  const activeStage: FloorStage | null =
+    stage ?? (surface ? deriveDefaultStage(surface) : null);
+  const [overlay, setOverlay] = useState<Overlay>(null);
+  const [qcChecks, setQcChecks] = useState<boolean[]>([false, false, false]);
+  const [note, setNote] = useState<string | null>(null);
+  const [timerSecs, setTimerSecs] = useState(surface?.timer_secs ?? 0);
+  const [, startTransition] = useTransition();
+  const overlayRef = useRef(overlay);
+  useEffect(() => {
+    overlayRef.current = overlay;
+  }, [overlay]);
+  const { schedule: scheduleRefresh, flush: flushRefresh } = useDebouncedRouterRefresh({
+    delayMs: 800,
+    isPaused: () => overlayRef.current !== null,
+  });
+
+  const [ackState, ackAction, ackPending] = useActionState(
+    acknowledgeDocketJobAction,
+    null
+  );
+  const [pullState, pullAction, pullPending] = useActionState(pullOntoBenchAction, null);
+  const [parkState, parkAction, parkPending] = useActionState(parkJobAction, null);
+  const [resumeState, resumeAction, resumePending] = useActionState(
+    resumeParkedJobAction,
+    null
+  );
+  const [swapState, swapAction, swapPending] = useActionState(swapBenchJobAction, null);
+  const [completeState, completeAction, completePending] = useActionState(
+    completeJobFloorAction,
+    null
+  );
+  const [toggleState, toggleAction] = useActionState(toggleChecklistAction, null);
+  const [installState, installAction, _installPending] = useActionState(
+    installPartFloorAction,
+    null
+  );
+  const [proofState, proofAction, proofPending] = useActionState(
+    uploadJobProofAction,
+    null
+  );
+  const [skipState, skipAction, skipPending] = useActionState(skipProofAction, null);
+  const [workState, workAction, workPending] = useActionState(
+    completePerformWorkAction,
+    null
+  );
+  const [passQcState, passQcAction, passQcPending] = useActionState(
+    passPeerQcAction,
+    null
+  );
+  const [failQcState, failQcAction, failQcPending] = useActionState(
+    failPeerQcAction,
+    null
+  );
+  const [passSafetyState, passSafetyFormAction, passSafetyPending] = useActionState(
+    async (_prev: FloorActionState, formData: FormData): Promise<FloorActionState> => {
+      const workOrderId = String(formData.get("work_order_id") ?? "");
+      const result = await passSafetyCheckAction(workOrderId, { error: null }, formData);
+      if (result.error) return { error: result.error };
+      return { success: "Final inspection passed." };
+    },
+    null
+  );
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync timer from server surface
+    setTimerSecs(surface?.timer_secs ?? 0);
+  }, [surface?.job_id, surface?.timer_secs]);
 
   useEffect(() => {
-    routerRef.current = router;
-  }, [router]);
-
-  // Stable empty deps — depending on `router` remounted intervals and stacked refreshes.
-  useEffect(() => {
-    let lastRefreshAt = 0;
-    const tick = () => {
-      if (document.visibilityState === "hidden") return;
-      const now = Date.now();
-      // Guard against leaked duplicate intervals from HMR / prior mounts.
-      if (now - lastRefreshAt < FLOOR_REFRESH_MS - 5_000) return;
-      lastRefreshAt = now;
-      routerRef.current.refresh();
-    };
-    const id = window.setInterval(tick, FLOOR_REFRESH_MS);
+    if (!surface?.job_timer_running || surface.board_status !== "bench") return;
+    const id = window.setInterval(() => setTimerSecs((s) => s + 1), 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [surface?.job_timer_running, surface?.board_status, surface?.job_id]);
 
-  const stage = useMemo(() => {
-    if (!selected) return "work" as FloorStage;
-    if (stageProp) return stageProp;
-    return deriveDefaultStage(selected);
-  }, [selected, stageProp]);
+  useEffect(() => {
+    const states = [
+      ackState,
+      pullState,
+      parkState,
+      resumeState,
+      swapState,
+      completeState,
+      skipState,
+      workState,
+      passQcState,
+      failQcState,
+      passSafetyState,
+    ];
+    for (const s of states) {
+      if (s?.success) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- close overlays after floor actions succeed
+        setNote(s.success);
+        setOverlay(null);
+        startTransition(() => scheduleRefresh());
+        break;
+      }
+      if (s?.error) {
+        setNote(s.error);
+        break;
+      }
+    }
+  }, [
+    ackState,
+    pullState,
+    parkState,
+    resumeState,
+    swapState,
+    completeState,
+    skipState,
+    workState,
+    passQcState,
+    failQcState,
+    passSafetyState,
+    scheduleRefresh,
+  ]);
 
-  const docketSelectedKey =
-    selected == null
-      ? null
-      : selected.is_safety && !selected.job_id
-        ? `safety-${selected.work_order_id}`
-        : selected.is_qc && !selected.job_id
-          ? `qc-${selected.work_order_id}`
-          : selected.job_id
-            ? (docketItems.find(
-                (item) =>
-                  item.work_order_id === selected.work_order_id &&
-                  (item.kind === "now" || item.kind === "assigned")
-              )?.key ?? null)
-            : null;
+  useEffect(() => {
+    if (overlay === null) {
+      flushRefresh();
+    }
+  }, [overlay, flushRefresh]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        scheduleRefresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [scheduleRefresh]);
+
+  // Stable membership key so we only resubscribe when the docket changes.
+  const docketWoKey = useMemo(() => {
+    const ids = new Set(docketItems.map((item) => item.work_order_id));
+    if (surface) ids.add(surface.work_order_id);
+    return [...ids].sort().join(",");
+  }, [docketItems, surface]);
+
+  useEffect(() => {
+    // Live invalidation: cancelled/held/reassigned work disappears from
+    // already-open floors without a manual reload. Refreshes are debounced
+    // and paused while an overlay sheet is open.
+    if (!viewerUserId) return;
+    const supabase = createClient();
+    const channel = supabase.channel(`tech-floor:${viewerUserId}`);
+    channel.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "job",
+        filter: `assigned_technician_id=eq.${viewerUserId}`,
+      },
+      () => {
+        scheduleRefresh();
+      }
+    );
+    if (docketWoKey.length > 0) {
+      channel.on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "work_order",
+          filter: `work_order_id=in.(${docketWoKey})`,
+        },
+        () => {
+          scheduleRefresh();
+        }
+      );
+    }
+    channel.subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [viewerUserId, docketWoKey, scheduleRefresh]);
+
+  const selectedKey = useMemo(() => {
+    if (!surface) return null;
+    if (surface.is_qc) return `qc-${surface.work_order_id}`;
+    if (surface.is_safety) return `safety-${surface.work_order_id}`;
+    return `work-order-${surface.work_order_id}`;
+  }, [surface]);
+
+  // A bike appears in exactly one list: working or honestly waiting.
+  const { workNow: workNowItems, waiting: waitingItems } = splitDocketByWait(docketItems);
+  const swapTargets = docketItems.filter(
+    (item) =>
+      item.job_id &&
+      item.job_id !== surface?.job_id &&
+      (item.board_status === "next" ||
+        item.board_status === "waiting" ||
+        item.board_status === "offered")
+  );
+
+  const onBench = surface?.board_status === "bench";
+  const parked = surface?.board_status === "waiting";
+  const openPerformWorkStep = surface?.steps.find(
+    (step) => step.kind === "work" && step.state === "open"
+  );
+  const openPerformWorkItemId = openPerformWorkStep?.target_id ?? "";
+  const visibleStep =
+    surface && activeStage ? currentPitStep(surface.steps, activeStage) : null;
+  const remainingCount = surface
+    ? surface.steps.filter((step) => step.state === "open" && step.id !== visibleStep?.id)
+        .length
+    : 0;
+  const spineStates = surface
+    ? floorSpineStates(surface.steps, activeStage ?? "inspect")
+    : null;
+
+  const qcAllDone = qcChecks.every(Boolean);
+
+  // Park actions manage their own disabled state — don't lock the whole floor.
+  const pending =
+    ackPending ||
+    pullPending ||
+    resumePending ||
+    swapPending ||
+    completePending ||
+    proofPending ||
+    skipPending ||
+    workPending ||
+    passQcPending ||
+    failQcPending;
+
+  // One honest next action (or an explicit wait with a named owner).
+  const builtModel: FloorActionModel | null = surface
+    ? buildFloorActionModel({
+        surface: surface.is_safety
+          ? "safety"
+          : surface.is_qc && !surface.job_id
+            ? "qc"
+            : "job",
+        job_status: surface.job_status,
+        work_order_status: surface.wo_status,
+        floor_acknowledged_at: surface.floor_acknowledged_at,
+        floor_parked_at: surface.floor_parked_at,
+        floor_park_reason: surface.floor_park_reason,
+        job_timer_running: surface.job_timer_running,
+        steps: surface.steps,
+        complete_gate_ok: surface.complete_gate_ok,
+        qc_checks_done: qcAllDone,
+        qc_assignee_is_me: surface.qc_assignee_is_me,
+        can_safety: surface.can_safety,
+        has_swap_targets: swapTargets.length > 0,
+        pending_action: pending,
+      })
+    : null;
+  const model = builtModel && previewMode ? applyPreviewLock(builtModel) : builtModel;
+  const parkControl = model?.secondary.find((control) => control.action === "park");
+  const swapControl = model?.secondary.find((control) => control.action === "swap");
+  const failQcControl = model?.secondary.find((control) => control.action === "fail_qc");
+
+  function dispatchFloorAction(
+    action: (payload: FormData) => void,
+    fields: Record<string, string>
+  ) {
+    const fd = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      fd.set(key, value);
+    }
+    startTransition(() => {
+      action(fd);
+    });
+  }
+
+  function runGo() {
+    if (!surface || !model || !model.primary.enabled) return;
+    const primary = model.primary;
+    if (primary.action === "acknowledge" && surface.job_id) {
+      dispatchFloorAction(ackAction, {
+        job_id: surface.job_id,
+        work_order_id: surface.work_order_id,
+      });
+      return;
+    }
+    if (primary.action === "pull_onto_bench" && surface.job_id) {
+      dispatchFloorAction(pullAction, {
+        job_id: surface.job_id,
+        work_order_id: surface.work_order_id,
+      });
+      return;
+    }
+    if (primary.action === "resume" && surface.job_id) {
+      dispatchFloorAction(resumeAction, {
+        job_id: surface.job_id,
+        work_order_id: surface.work_order_id,
+      });
+      return;
+    }
+    if (primary.action === "complete" && surface.job_id) {
+      setOverlay("qc_pick");
+      return;
+    }
+    if (primary.action === "pass_qc") {
+      setOverlay("sign_qc");
+      return;
+    }
+    if (primary.action === "pass_safety") {
+      setOverlay("sign_safety");
+      return;
+    }
+    if (primary.action === "advance_step" && primary.step) {
+      advanceStep(primary.step);
+    }
+  }
+
+  function advanceStep(step: PitBoardStep) {
+    if (!surface) return;
+    if (step.kind === "inspect") {
+      router.push(surface.inspection_href);
+      return;
+    }
+    if (step.kind === "work") {
+      if (surface.job_id && openPerformWorkItemId) {
+        dispatchFloorAction(workAction, {
+          job_id: surface.job_id,
+          work_order_id: surface.work_order_id,
+          item_id: openPerformWorkItemId,
+        });
+      }
+      return;
+    }
+    if (step.kind === "checklist" && step.target_id) {
+      const fd = new FormData();
+      fd.set("item_id", step.target_id);
+      fd.set("checked", "true");
+      fd.set("work_order_id", surface.work_order_id);
+      setNote(`Done: ${step.label}`);
+      startTransition(() => {
+        toggleAction(fd);
+        scheduleRefresh();
+      });
+      return;
+    }
+    if (step.kind === "part" && step.target_id) {
+      const fd = new FormData();
+      fd.set("part_id", step.target_id);
+      fd.set("work_order_id", surface.work_order_id);
+      installAction(fd);
+      setNote(`Done: ${step.label}`);
+      startTransition(() => scheduleRefresh());
+      return;
+    }
+    if (step.kind === "proof") {
+      return;
+    }
+    if (step.kind === "complete" && surface.job_id) {
+      setOverlay("qc_pick");
+    }
+  }
+
+  function completeWithQcAssignee(assigneeId: string | null) {
+    if (!surface?.job_id) return;
+    const fields: Record<string, string> = {
+      job_id: surface.job_id,
+      work_order_id: surface.work_order_id,
+    };
+    if (assigneeId) fields.qc_assignee_id = assigneeId;
+    dispatchFloorAction(completeAction, fields);
+  }
+
+  const showPacket = panel === "packet";
 
   return (
-    <div className="floor-shell">
-      <header className="floor-header">
-        <h1 className="floor-title">Tech floor</h1>
-        <Link href="/technician/clock" className="btn btn-secondary text-sm">
-          Time clock
-        </Link>
+    <div className="pit-shell">
+      <header className="pit-topbar">
+        <p className="pit-wordmark">OTOMOTO · TECH FLOOR</p>
+        {previewMode ? (
+          <p className="pit-preview-note" role="status">
+            Owner preview — the technician&apos;s bench, timer, and QC controls are
+            disabled.
+          </p>
+        ) : null}
+        {readyForPickup.length > 0 ? (
+          <div className="pit-pickup-strip">
+            <ReadyForPickupCarousel items={readyForPickup} />
+          </div>
+        ) : null}
       </header>
 
-      <ReadyForPickupCarousel items={readyForPickup} />
-
-      <div className="floor-layout">
-        <aside className="floor-queue">
-          <div className="floor-lane floor-docket-lane">
-            <p className="floor-lane-title">My motorcycles</p>
-            <TechnicianDocketList
-              items={docketItems}
-              selectedKey={docketSelectedKey}
-              linkMode="floor"
-            />
-          </div>
-          {floor.priority.length === 0 &&
-          floor.needsQc.length === 0 &&
-          floor.safeties.length === 0 &&
-          floor.flagged.length === 0 &&
-          docketItems.length === 0 ? (
-            <p className="floor-muted">
-              Queue empty — wait for a job assignment from the front office.
-            </p>
+      <div className="pit-layout">
+        <aside className="pit-rail">
+          <section className="pit-rail-group" aria-label="Work now">
+            <h2 className="pit-rail-title">Work now</h2>
+            {workNowItems.length > 0 ? (
+              <TechnicianDocketList items={workNowItems} selectedKey={selectedKey} />
+            ) : (
+              <p className="floor-muted">Nothing to wrench right now.</p>
+            )}
+          </section>
+          {waitingItems.length > 0 ? (
+            <section className="pit-rail-group" aria-label="Waiting">
+              <h2 className="pit-rail-title">Waiting</h2>
+              <TechnicianDocketList items={waitingItems} selectedKey={selectedKey} />
+            </section>
           ) : null}
         </aside>
 
-        <section className="floor-surface">
-          {!selected ? (
-            <p className="floor-muted floor-surface-empty">
-              Select a motorcycle from the docket to begin.
-            </p>
+        <section className="pit-surface">
+          {showPacket && packetWorkOrderId ? (
+            packet ? (
+              <JobPacketPanel
+                packet={packet}
+                section={packetSection ?? null}
+                photos={packetPhotos ?? []}
+                selectedJobId={packetJobId ?? null}
+                closeHref={technicianClosePacketHref({
+                  workOrderId: packetWorkOrderId,
+                  jobId: packetJobId,
+                  stage,
+                })}
+                stage={stage ?? null}
+              />
+            ) : (
+              <JobPacketErrorState
+                backHref={technicianClosePacketHref({
+                  workOrderId: packetWorkOrderId,
+                  jobId: packetJobId,
+                  stage,
+                })}
+              />
+            )
+          ) : !surface ? (
+            <div className="floor-surface-empty">
+              <h2 className="floor-section-title">Pick a bike</h2>
+              <p className="floor-muted">
+                Your docket is on the left. Tap a bike to see the next move.
+              </p>
+            </div>
           ) : (
             <>
-              <div className="floor-surface-scroll">
-                <div className="floor-surface-hero">
-                  <p className="floor-wo-meta">
-                    {selected.work_order_number} · {selected.wo_status_label}
+              {model ? (
+                model.primary.enabled ? (
+                  <p className="pit-next-banner" role="status">
+                    <span className="pit-next-banner-kicker">NEXT</span>
+                    {model.primary.label}
                   </p>
-                  <h2 className="floor-bike">{selected.motorcycle_label}</h2>
-                  <p className="floor-muted">
-                    {[
-                      selected.service_name,
-                      selected.labour_label,
-                      selected.labour_over ? "over estimate" : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
+                ) : (
+                  <p className="pit-next-banner pit-next-banner--wait" role="status">
+                    <span className="pit-next-banner-kicker">
+                      {model.waitReason ? "WAITING" : model.stateLabel.toUpperCase()}
+                    </span>
+                    {model.waitReason ?? model.primary.disabledReason ?? ""}
+                    {model.waitOwner ? (
+                      <span className="pit-next-banner-owner">
+                        {" · "}
+                        {waitOwnerDisplayLabel(model.waitOwner)}
+                      </span>
+                    ) : null}
                   </p>
-                  {selected.flags.length > 0 ? (
-                    <div className="floor-flag-banner" role="status">
-                      <p className="floor-flag-banner-title">Admin flag open</p>
-                      <ul>
-                        {selected.flags.map((flag) => (
-                          <li key={flag.admin_flag_id}>
-                            {flag.reason}
-                            {flag.note ? ` — ${flag.note}` : ""}
-                          </li>
-                        ))}
-                      </ul>
-                      <Link href={selected.overview_href} className="floor-muted">
-                        View on overview →
-                      </Link>
-                    </div>
-                  ) : null}
+                )
+              ) : null}
+              <div className="pit-surface-header">
+                <div className="pit-surface-heading">
+                  <Link
+                    href={techJobPacketHref(surface.work_order_id, {
+                      jobId: surface.job_id ?? undefined,
+                      stage,
+                    })}
+                    className="pit-surface-heading-link"
+                    title="Open notes & intake photos"
+                  >
+                    <h2 className="pit-bike-title">{surface.motorcycle_label}</h2>
+                    <p className="pit-meta">
+                      <span className="pit-wo-chip">{surface.work_order_number}</span>
+                      {surface.service_name ? (
+                        <>
+                          <span aria-hidden> · </span>
+                          {surface.service_name}
+                        </>
+                      ) : null}
+                    </p>
+                  </Link>
+                  <div className="pit-header-access" aria-label="Notes and intake photos">
+                    <Link
+                      href={techJobPacketHref(surface.work_order_id, {
+                        jobId: surface.job_id ?? undefined,
+                        section: "notes",
+                        stage,
+                      })}
+                      className="pit-header-access-link pit-header-access-link--icon"
+                      aria-label="Notes"
+                      title="Notes"
+                    >
+                      <StickyNote size={22} aria-hidden />
+                    </Link>
+                    <Link
+                      href={techJobPacketHref(surface.work_order_id, {
+                        jobId: surface.job_id ?? undefined,
+                        section: "photos",
+                        stage,
+                      })}
+                      className="pit-header-access-link pit-header-access-link--icon"
+                      aria-label="Intake photos"
+                      title="Intake photos"
+                    >
+                      <Images size={22} aria-hidden />
+                    </Link>
+                  </div>
                 </div>
-
-                <MotorcycleServices surface={selected} />
-
-                <StageRail surface={selected} stage={stage} />
-
-                {stage === "inspect" ? <InspectStage surface={selected} /> : null}
-                {stage === "work" ? <WorkStage surface={selected} /> : null}
-                {stage === "proof" ? <ProofStage surface={selected} /> : null}
-                {stage === "done" ? <DoneStage surface={selected} /> : null}
-                {stage === "qc" ? <QcStage surface={selected} /> : null}
-                {stage === "safety" ? <SafetyStage surface={selected} /> : null}
+                {(onBench || surface.board_status === "waiting") && surface.job_id ? (
+                  <span className="pit-timer" aria-live="polite">
+                    {formatTimer(timerSecs)}
+                  </span>
+                ) : null}
               </div>
 
-              <StickyDock surface={selected} stage={stage} />
+              {surface.job_id && !surface.is_qc && !surface.is_safety && spineStates ? (
+                <FloorStageSpine
+                  workOrderId={surface.work_order_id}
+                  jobId={surface.job_id}
+                  activeStage={activeStage ?? "inspect"}
+                  states={spineStates}
+                />
+              ) : null}
+
+              {note ? (
+                <p
+                  className={[
+                    "pit-note",
+                    /cannot|failed|error|clock in|forbidden|not /i.test(note)
+                      ? "pit-note--error"
+                      : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  role="status"
+                >
+                  {note}
+                </p>
+              ) : null}
+
+              {surface.pending_recommendations.length > 0 &&
+              surface.job_status !== "waiting_for_approval" &&
+              !isFloorJobFinished({
+                board_status: surface.board_status,
+                job_status: surface.job_status,
+                completed_at: surface.completed_at,
+              }) ? (
+                <p className="pit-note" role="status">
+                  {surface.pending_recommendations.length} recommendation
+                  {surface.pending_recommendations.length === 1 ? "" : "s"} on hold for
+                  the client (approve later → new docket job; decline → stay finished).
+                  You can complete this job now.
+                </p>
+              ) : null}
+
+              {surface.jobs.filter((j) => j.assigned_to_me).length > 1 ? (
+                <div className="pit-job-switch" aria-label="Services on this bike">
+                  {surface.jobs
+                    .filter((j) => j.assigned_to_me)
+                    .map((job) => (
+                      <Link
+                        key={job.job_id}
+                        href={technicianFloorHref({
+                          workOrderId: surface.work_order_id,
+                          jobId: job.job_id,
+                        })}
+                        className={[
+                          "pit-job-chip",
+                          job.is_selected ? "pit-job-chip--active" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        {job.service_name}
+                        <span className="pit-job-chip-status">{job.status_label}</span>
+                      </Link>
+                    ))}
+                </div>
+              ) : null}
+
+              <div className="pit-surface-body">
+                <FloorCurrentStep
+                  surface={surface}
+                  activeStage={activeStage ?? "inspect"}
+                  currentStep={visibleStep}
+                  remainingCount={remainingCount}
+                  parked={parked}
+                  qcChecks={qcChecks}
+                  onToggleQc={(index) =>
+                    setQcChecks((prev) => {
+                      const next = [...prev];
+                      next[index] = !next[index];
+                      return next;
+                    })
+                  }
+                  onOpenInspection={() => router.push(surface.inspection_href)}
+                  onCompleteWork={() => {
+                    if (surface.job_id && openPerformWorkItemId) {
+                      dispatchFloorAction(workAction, {
+                        job_id: surface.job_id,
+                        work_order_id: surface.work_order_id,
+                        item_id: openPerformWorkItemId,
+                      });
+                    }
+                  }}
+                  onToggleChecklist={(itemId, label) => {
+                    const fd = new FormData();
+                    fd.set("item_id", itemId);
+                    fd.set("checked", "true");
+                    fd.set("work_order_id", surface.work_order_id);
+                    setNote(`Done: ${label}`);
+                    startTransition(() => {
+                      toggleAction(fd);
+                      scheduleRefresh();
+                    });
+                  }}
+                  onInstallPart={(partId, label) => {
+                    const fd = new FormData();
+                    fd.set("part_id", partId);
+                    fd.set("work_order_id", surface.work_order_id);
+                    installAction(fd);
+                    setNote(`Done: ${label}`);
+                    startTransition(() => scheduleRefresh());
+                  }}
+                  onParkParts={() => setOverlay("park")}
+                  proofAction={proofAction}
+                  skipAction={skipAction}
+                  proofPending={proofPending}
+                  skipPending={skipPending}
+                  workPending={workPending}
+                />
+
+                {surface.can_safety && !previewMode ? (
+                  <div className="pit-safety-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary pit-go"
+                      onClick={() => setOverlay("sign_safety")}
+                    >
+                      Pass final inspection ✓
+                    </button>
+                    <form
+                      action={async (formData) => {
+                        await failSafetyCheckAction(
+                          surface.work_order_id,
+                          { error: null },
+                          formData
+                        );
+                        startTransition(() => scheduleRefresh());
+                      }}
+                    >
+                      <input
+                        type="hidden"
+                        name="recommendation_description"
+                        value="Final inspection failed on floor"
+                      />
+                      <button type="submit" className="btn btn-secondary">
+                        Fail final inspection
+                      </button>
+                    </form>
+                  </div>
+                ) : null}
+              </div>
+
+              <FloorDock
+                model={model}
+                parkControl={parkControl}
+                swapControl={swapControl}
+                failQcControl={failQcControl}
+                onPark={() => setOverlay("park")}
+                onSwap={() => setOverlay("swap")}
+                onFailQc={() => setOverlay("fail")}
+                onGo={runGo}
+                message={
+                  <ActionMessage
+                    state={
+                      pullState?.error
+                        ? pullState
+                        : ackState?.error
+                          ? ackState
+                          : resumeState?.error
+                            ? resumeState
+                            : completeState?.error
+                              ? completeState
+                              : toggleState?.error
+                                ? toggleState
+                                : installState?.error
+                                  ? installState
+                                  : proofState?.error
+                                    ? proofState
+                                    : workState?.error
+                                      ? workState
+                                      : null
+                    }
+                  />
+                }
+              />
             </>
           )}
         </section>
       </div>
+
+      {overlay ? (
+        <div className="pit-overlay" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            className="pit-scrim"
+            aria-label="Close"
+            onClick={() => setOverlay(null)}
+          />
+          <div className="pit-sheet">
+            {overlay === "park" && surface?.job_id ? (
+              <>
+                <h3 className="pit-sheet-title">Why park?</h3>
+                <div className="pit-sheet-grid">
+                  {PARK_REASON_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.reason}
+                      type="button"
+                      className="pit-sheet-btn"
+                      disabled={parkPending}
+                      onClick={() =>
+                        dispatchFloorAction(parkAction, {
+                          job_id: surface.job_id!,
+                          work_order_id: surface.work_order_id,
+                          reason: opt.reason,
+                        })
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+
+            {overlay === "qc_pick" && surface?.job_id ? (
+              <>
+                <h3 className="pit-sheet-title">Who should check your work?</h3>
+                <p className="pit-sheet-or">
+                  Pick a clocked-in tech. They get this bike for peer QC.
+                </p>
+                {surface.peer_qc_candidates.length > 0 ? (
+                  <ul className="pit-sheet-list">
+                    {surface.peer_qc_candidates.map((tech) => (
+                      <li key={tech.user_id}>
+                        <button
+                          type="button"
+                          className="pit-sheet-btn"
+                          disabled={completePending}
+                          onClick={() => completeWithQcAssignee(tech.user_id)}
+                        >
+                          {tech.display_name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="pit-sheet-or">
+                    No other techs are clocked in. Front desk will cover QC.
+                  </p>
+                )}
+                {surface.peer_qc_candidates.length === 0 ? (
+                  <button
+                    type="button"
+                    className="pit-go"
+                    disabled={completePending}
+                    onClick={() => completeWithQcAssignee(null)}
+                  >
+                    Complete without picker ✓
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="pit-sheet-close"
+                  disabled={completePending}
+                  onClick={() => setOverlay(null)}
+                >
+                  Not done yet
+                </button>
+                {completeState?.error ? (
+                  <p className="floor-dock-msg floor-dock-msg--error" role="status">
+                    {completeState.error}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+
+            {overlay === "fail" && surface ? (
+              <>
+                <h3 className="pit-sheet-title">Fail peer QC</h3>
+                <form action={failQcAction} className="pit-sheet-form">
+                  <input
+                    type="hidden"
+                    name="work_order_id"
+                    value={surface.work_order_id}
+                  />
+                  <label className="pit-sheet-label">
+                    Reason
+                    <textarea
+                      name="reason"
+                      required
+                      rows={3}
+                      className="pit-sheet-input"
+                    />
+                  </label>
+                  <button type="submit" className="pit-go" disabled={failQcPending}>
+                    Send back for rework
+                  </button>
+                </form>
+              </>
+            ) : null}
+
+            {overlay === "sign_qc" && surface ? (
+              <>
+                <h3 className="pit-sheet-title">Sign quality check</h3>
+                <p className="pit-sheet-or">
+                  Draw your signature to vouch for this bike before final inspection.
+                </p>
+                <form
+                  action={passQcAction}
+                  className="pit-sheet-form flex flex-col gap-3"
+                >
+                  <input
+                    type="hidden"
+                    name="work_order_id"
+                    value={surface.work_order_id}
+                  />
+                  <SignOffPad label="QC signature" />
+                  <button type="submit" className="pit-go" disabled={passQcPending}>
+                    Pass QC — vouch for it ✓
+                  </button>
+                </form>
+                {passQcState?.error ? (
+                  <p className="floor-dock-msg floor-dock-msg--error" role="status">
+                    {passQcState.error}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+
+            {overlay === "sign_safety" && surface ? (
+              <>
+                <h3 className="pit-sheet-title">Sign final inspection</h3>
+                <p className="pit-sheet-or">
+                  Draw your signature to pass final inspection and clear the bike for
+                  pickup.
+                </p>
+                <form
+                  action={passSafetyFormAction}
+                  className="pit-sheet-form flex flex-col gap-3"
+                >
+                  <input
+                    type="hidden"
+                    name="work_order_id"
+                    value={surface.work_order_id}
+                  />
+                  <SignOffPad label="Final inspection signature" />
+                  <button type="submit" className="pit-go" disabled={passSafetyPending}>
+                    Pass final inspection ✓
+                  </button>
+                </form>
+                {passSafetyState?.error ? (
+                  <p className="floor-dock-msg floor-dock-msg--error" role="status">
+                    {passSafetyState.error}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+
+            {overlay === "swap" && surface?.job_id ? (
+              <>
+                <h3 className="pit-sheet-title">Swap onto</h3>
+                <ul className="pit-sheet-list">
+                  {swapTargets.map((item) => (
+                    <li key={item.key}>
+                      <form action={swapAction}>
+                        <input type="hidden" name="from_job_id" value={surface.job_id!} />
+                        <input type="hidden" name="to_job_id" value={item.job_id!} />
+                        <input
+                          type="hidden"
+                          name="work_order_id"
+                          value={item.work_order_id}
+                        />
+                        <button
+                          type="submit"
+                          className="pit-sheet-btn"
+                          disabled={swapPending}
+                        >
+                          {item.motorcycle_label}
+                          <span className="pit-sheet-btn-sub">{item.service_label}</span>
+                        </button>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
