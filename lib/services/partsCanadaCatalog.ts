@@ -119,6 +119,10 @@ export async function searchPartsCanadaCatalog(
   if (safe.length < 2) return [];
   const like = `%${safe}%`;
 
+  // No SQL ORDER BY on purpose: sorting by part_number baits the planner
+  // into walking the whole pkey instead of the trigram indexes (~280ms for
+  // common terms). Unordered, common terms early-terminate and rare terms
+  // use the trigram bitmap (<10ms either way); we sort the ≤50 hits here.
   const { data, error } = await supabase
     .from("parts_canada_catalog")
     .select("part_number, brand, description_en, msrp, dealer_price, qty_cal, qty_lon")
@@ -130,11 +134,12 @@ export async function searchPartsCanadaCatalog(
         `description_en.ilike.${JSON.stringify(like)}`,
       ].join(",")
     )
-    .order("part_number", { ascending: true })
     .limit(limit);
 
   if (error) throw error;
-  return (data ?? []).map((row) => mapSearchHit(row, includeCost));
+  return (data ?? [])
+    .map((row) => mapSearchHit(row, includeCost))
+    .sort((a, b) => a.part_number.localeCompare(b.part_number));
 }
 
 async function upsertCatalogBatches(
