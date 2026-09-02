@@ -5906,6 +5906,79 @@ a.cc-kpi-link:focus-visible {
   color: #52525b;
 }
 
+.pit-rail-help {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #71717a;
+}
+
+.pit-bench-zone {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  transition:
+    box-shadow 0.15s ease,
+    outline-color 0.15s ease;
+}
+
+.pit-bench-zone--over {
+  outline: 3px dashed #0a0a0a;
+  outline-offset: 4px;
+  box-shadow: 0 0 0 4px rgb(10 10 10 / 0.08);
+}
+
+.pit-bench-zone-hint {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  background: #f4f4f5;
+  border: 1px dashed #d4d4d8;
+  font-size: 0.8125rem;
+  color: #52525b;
+}
+
+.pit-bench-zone--occupied .pit-bench-zone-hint {
+  background: #fff;
+}
+
+.pit-bench-zone .pit-surface {
+  flex: 1;
+  min-height: 0;
+}
+
+.pit-queue-drag-wrap {
+  touch-action: pan-y;
+}
+
+.pit-queue-drag-wrap--dragging {
+  opacity: 0.45;
+}
+
+.pit-queue-card--draggable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.pit-queue-card--draggable:active {
+  cursor: grabbing;
+}
+
+.pit-queue-grip {
+  display: inline-flex;
+  align-items: center;
+  color: #a1a1aa;
+  flex-shrink: 0;
+}
+
+.pit-queue-card--drag-preview {
+  width: min(18rem, 72vw);
+  box-shadow: 0 12px 32px rgb(10 10 10 / 0.18);
+  pointer-events: none;
+}
+
 .pit-queue {
   list-style: none;
   margin: 0;

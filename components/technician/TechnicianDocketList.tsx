@@ -2,6 +2,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   Check,
+  GripVertical,
   Pause,
   Play,
   ShieldCheck,
@@ -19,6 +20,8 @@ import {
   stampClass,
   stampDisplayLabel,
 } from "@/lib/technician/docketCardDisplay";
+import { canDragDocketItemToBench } from "@/lib/technician/benchDrag";
+import { DraggableDocketCard } from "@/components/technician/DraggableDocketCard";
 
 const STAMP_ICONS: Record<PitBoardStamp, LucideIcon> = {
   NOW: Play,
@@ -74,6 +77,7 @@ export function TechnicianDocketList({
   linkMode = "floor",
   reorderAction,
   variant = "pit",
+  dnd,
 }: {
   items: DocketItem[];
   selectedKey?: string | null;
@@ -83,6 +87,11 @@ export function TechnicianDocketList({
   reorderAction?: (formData: FormData) => Promise<void>;
   /** Pit Board flat line (default) or legacy bike cards. */
   variant?: "pit" | "legacy";
+  /** Drag bikes onto the workbench (tech floor). */
+  dnd?: {
+    enabled?: boolean;
+    draggingKey?: string | null;
+  };
 }) {
   if (items.length === 0) {
     return <p className="floor-muted">Nothing on this docket right now.</p>;
@@ -173,35 +182,47 @@ export function TechnicianDocketList({
           (item.kind === "now" || item.kind === "assigned");
         return (
           <li key={item.key} className="pit-queue-item">
-            <Link
-              href={href}
-              aria-label={docketCardAccessibleName(item)}
-              className={[
-                "pit-queue-card",
-                docketCardToneClass(item.board_stamp),
-                selected ? "pit-queue-card--selected" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
+            <DraggableDocketCard
+              item={item}
+              dragEnabled={dnd?.enabled !== false}
+              isDragging={dnd?.draggingKey === item.key}
             >
-              <span className="pit-queue-num" aria-hidden>
-                {item.position}
-              </span>
-              <span className="pit-queue-body">
-                <span className="pit-queue-bike">
-                  {item.motorcycle_label}
-                  {item.awaiting_customer ? (
-                    <span className="pit-queue-badge">Awaiting customer</span>
-                  ) : null}
+              <Link
+                href={href}
+                aria-label={docketCardAccessibleName(item)}
+                className={[
+                  "pit-queue-card",
+                  docketCardToneClass(item.board_stamp),
+                  selected ? "pit-queue-card--selected" : "",
+                  canDragDocketItemToBench(item) ? "pit-queue-card--draggable" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {canDragDocketItemToBench(item) ? (
+                  <span className="pit-queue-grip" aria-hidden>
+                    <GripVertical size={16} strokeWidth={2.25} />
+                  </span>
+                ) : null}
+                <span className="pit-queue-num" aria-hidden>
+                  {item.position}
                 </span>
-                <span className="pit-queue-sub">
-                  <span className="pit-queue-wo">{item.subtitle}</span>
+                <span className="pit-queue-body">
+                  <span className="pit-queue-bike">
+                    {item.motorcycle_label}
+                    {item.awaiting_customer ? (
+                      <span className="pit-queue-badge">Awaiting customer</span>
+                    ) : null}
+                  </span>
+                  <span className="pit-queue-sub">
+                    <span className="pit-queue-wo">{item.subtitle}</span>
+                  </span>
+                  <DocketServiceLines item={item} />
+                  <DocketWaitLine item={item} />
                 </span>
-                <DocketServiceLines item={item} />
-                <DocketWaitLine item={item} />
-              </span>
-              <DocketStamp stamp={item.board_stamp} />
-            </Link>
+                <DocketStamp stamp={item.board_stamp} />
+              </Link>
+            </DraggableDocketCard>
             {reorderable ? (
               <form action={reorderAction} className="floor-docket-reorder">
                 <input type="hidden" name="job" value={item.job_id ?? ""} />
