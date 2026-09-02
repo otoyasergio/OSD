@@ -34,6 +34,13 @@ describe("Vercel compute allocation", () => {
     expect(JSON.stringify(config)).not.toMatch(/"memory"\s*:/);
   });
 
+  it("gives cron routes the Pro plan maxDuration ceiling", () => {
+    expect(config.functions).toEqual({
+      "app/api/cron/wix-contacts-sync/route.ts": { maxDuration: 300 },
+      "app/api/cron/parts-canada-sync/route.ts": { maxDuration: 300 },
+    });
+  });
+
   it("keeps catalog crons (Parts Canada daily, Wix contacts every 4 minutes)", () => {
     expect(config.crons).toEqual([
       { path: "/api/cron/parts-canada-sync", schedule: "0 15 * * *" },

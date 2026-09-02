@@ -324,6 +324,7 @@ export type WixContactsReconcileStats = {
   failed: number;
   pushed: number;
   triggered_by: string;
+  skipped_reason?: "already_running";
 };
 
 /**
@@ -353,6 +354,33 @@ export async function reconcileWixContactsToApp(options?: {
     triggered_by: options?.triggeredBy ?? "manual",
   };
 
+  const isCron = options?.triggeredBy === "cron";
+  let lockHeld = false;
+  if (isCron) {
+    const { data: acquired, error: lockError } = await supabase.rpc(
+      "try_wix_contacts_sync_lock"
+    );
+    if (lockError) throw lockError;
+    if (!acquired) {
+      stats.skipped_reason = "already_running";
+      return stats;
+    }
+    lockHeld = true;
+  }
+
+  try {
+    return await reconcileWixContactsToAppBody(supabase, stats);
+  } finally {
+    if (lockHeld) {
+      await supabase.rpc("release_wix_contacts_sync_lock");
+    }
+  }
+}
+
+async function reconcileWixContactsToAppBody(
+  supabase: AdminClient,
+  stats: WixContactsReconcileStats
+): Promise<WixContactsReconcileStats> {
   const wixContacts = await listAllWixContacts();
   stats.scanned = wixContacts.length;
 

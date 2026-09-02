@@ -78,4 +78,4 @@ If Automations miss an event, the app also pulls all Wix contacts every 4 minute
 
 - Path: `GET` or `POST` `/api/cron/wix-contacts-sync`
 - Auth: `Authorization: Bearer <CRON_SECRET>` only (no query-string secret)
-- Vercel schedule: `*/4 * * * *` (see `vercel.json`); invocations outside the shop window return `{ ok: true, skipped: "outside_window" }`
+- Vercel schedule: `*/4 * * * *` (see `vercel.json`); invocations outside the shop window return `{ ok: true, skipped: "outside_window" }`; overlapping runs return `{ ok: true, skipped: "already_running" }`

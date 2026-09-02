@@ -81,14 +81,13 @@ rolls the live site back to whatever that branch last contained.
 Repo (`vercel.json`) — these ship with the app:
 
 - **Fluid compute** is on (`fluid: true`) so function instances are reused and concurrent shop requests share CPU instead of cold-starting a new lambda per click.
-- Functions are pinned to **`iad1`** (Washington, D.C.). Live traffic already executes there (`x-vercel-id: …::iad1::…`). A single region stays Hobby-compatible and keeps SSR next to typical US-East Supabase.
+- Functions are pinned to **`iad1`** (Washington, D.C.). Live traffic already executes there (`x-vercel-id: …::iad1::…`). A single region keeps SSR next to typical US-East Supabase.
 
 Dashboard (cannot be set in `vercel.json` when Fluid is on):
 
-- **Hobby:** memory/CPU is fixed at 2 GB / 1 vCPU. Fluid + `iad1` is the maximum you can allocate from git.
-- **Pro / Enterprise:** Vercel → Project → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**. Use this for Control Center / dashboard SSR. Do **not** add `functions.*.memory` in `vercel.json` — Fluid rejects it at build time.
+- **Pro / Enterprise:** Vercel → Project → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**. Use this for Control Center / dashboard SSR and heavy cron work. Do **not** add `functions.*.memory` in `vercel.json` — Fluid rejects it at build time.
 
-Cron routes already export `maxDuration = 300` (plan maximum on Hobby).
+Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` (Pro plan ceiling).
 
 ---
 
@@ -101,7 +100,8 @@ Cron routes already export `maxDuration = 300` (plan maximum on Hobby).
 - [ ] Twilio TrustHub: Business Profile approved → Brand → Campaign → Messaging Service (see §8)
 - [ ] `TWILIO_*` set on Vercel; inbound + status webhook URLs match `NEXT_PUBLIC_APP_URL`
 - [ ] Migration `037_customer_sms_opt_out` applied
-- [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada daily; Wix contacts every 4 minutes requires **Pro**)
+- [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada daily; Wix contacts every 4 minutes on **Pro**)
+- [ ] Vercel → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**
 - [ ] `npm test` and `npm run build` green
 - [ ] Playwright smoke (`npm run test:e2e`) against staging when available
 - [ ] Supabase **leaked password protection** enabled
@@ -185,7 +185,7 @@ Brand approval is often fast; Campaign review can take **~10–15 days**. Treat 
 
 1. Apply migration `037_customer_sms_opt_out.sql`.
 2. Set the Twilio env vars on Vercel (Production; Preview if you test SMS there).
-3. `vercel.json` crons: Parts Canada daily (`0 15 * * *`); Wix contacts every 4 minutes (`*/4 * * * *`, active 10:00–23:00 America/Toronto in the route — requires Vercel **Pro**).
+3. `vercel.json` crons: Parts Canada daily (`0 15 * * *`); Wix contacts every 4 minutes (`*/4 * * * *`, active 10:00–23:00 America/Toronto in the route). Apply migration `20260902010000_wix_contacts_sync_lock.sql` so overlapping cron runs skip cleanly.
 4. Redeploy so webhooks and secrets are live.
 5. **CA:** From a work order, send an SMS template to a Canadian mobile; confirm delivery / status updates in `communication_log`.
 6. **Inbound:** Reply `YES` / `APPROVE` on an approval request when a single job is waiting; confirm job updates. Reply `STOP` — carrier opt-out + `sms_opted_out_at` set.

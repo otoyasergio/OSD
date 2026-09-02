@@ -2,6 +2,14 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "fluid": true,
   "regions": ["iad1"],
+  "functions": {
+    "app/api/cron/wix-contacts-sync/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/cron/parts-canada-sync/route.ts": {
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/parts-canada-sync",

@@ -44,7 +44,9 @@ export async function getFitmentImportStatus(): Promise<{
   await requireUser();
   const supabase = await createClient();
   const [{ count }, { data: lastRun }] = await Promise.all([
-    supabase.from("fitment_vehicle").select("vehicle_id", { count: "exact", head: true }),
+    supabase
+      .from("fitment_vehicle")
+      .select("vehicle_id", { count: "estimated", head: true }),
     supabase
       .from("fitment_import_run")
       .select("status, started_at, row_count")

@@ -32,6 +32,10 @@ export async function GET(request: Request) {
 
   try {
     const result = await reconcileWixContactsToApp({ triggeredBy: "cron" });
+    if (result.skipped_reason === "already_running") {
+      logger.info("Wix contacts cron skipped prior run still active", { requestId });
+      return NextResponse.json({ ok: true, skipped: "already_running" });
+    }
     logger.info("Wix contacts cron sync complete", {
       requestId,
       scanned: result.scanned,

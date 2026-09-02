@@ -74,12 +74,10 @@ export async function getPartsCanadaSyncStatus(): Promise<PartsCanadaSyncStatus>
   const [{ count }, { data: lastRun }] = await Promise.all([
     supabase
       .from("parts_canada_catalog")
-      .select("part_number", { count: "exact", head: true }),
+      .select("part_number", { count: "estimated", head: true }),
     supabase
       .from("parts_canada_sync_run")
-      .select(
-        "status, started_at, finished_at, row_count, error_message, triggered_by"
-      )
+      .select("status, started_at, finished_at, row_count, error_message, triggered_by")
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -114,15 +112,16 @@ export async function searchPartsCanadaCatalog(
   const limit = Math.min(Math.max(options?.limit ?? 25, 1), 50);
   const supabase = await createClient();
   const includeCost = canViewPartCost(user.role);
-  const safe = trimmed.replace(/[%_,.()]/g, " ").replace(/\s+/g, " ").trim();
+  const safe = trimmed
+    .replace(/[%_,.()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (safe.length < 2) return [];
   const like = `%${safe}%`;
 
   const { data, error } = await supabase
     .from("parts_canada_catalog")
-    .select(
-      "part_number, brand, description_en, msrp, dealer_price, qty_cal, qty_lon"
-    )
+    .select("part_number, brand, description_en, msrp, dealer_price, qty_cal, qty_lon")
     .or(
       [
         `part_number.ilike.${JSON.stringify(like)}`,
@@ -208,8 +207,7 @@ export async function syncPartsCanadaCatalog(options: {
     if (finishError) throw finishError;
     return { row_count: uniqueRows.length };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "PARTS_CANADA_SYNC_FAILED";
+    const message = error instanceof Error ? error.message : "PARTS_CANADA_SYNC_FAILED";
     await admin
       .from("parts_canada_sync_run")
       .update({
