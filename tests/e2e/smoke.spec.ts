@@ -119,4 +119,16 @@ test.describe("webhook security", () => {
     const response = await request.get("/api/cron/wix-contacts-sync");
     expect([401, 500]).toContain(response.status());
   });
+
+  test("health endpoint reports integration readiness", async ({ request }) => {
+    const response = await request.get("/api/health");
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as {
+      ok: boolean;
+      integrations: { supabase: string; cron: string };
+    };
+    expect(body.ok).toBe(true);
+    expect(body.integrations.supabase).toBe("ok");
+    expect(body.integrations.cron).toBe("ok");
+  });
 });

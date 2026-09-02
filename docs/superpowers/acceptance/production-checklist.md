@@ -102,6 +102,8 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 - [ ] Migration `037_customer_sms_opt_out` applied
 - [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada every 4 hours + Wix contacts every 4 minutes on **Pro**, both gated to 10:00–23:00 Toronto)
 - [ ] Vercel → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**
+- [ ] `npm run smoke:production` passes against https://service.torontomoto.com (set `CRON_SECRET` locally for bearer check)
+- [ ] `GET /api/health` returns `{ ok: true }` with `integrations.supabase: "ok"`
 - [ ] `npm test` and `npm run build` green
 - [ ] Playwright smoke (`npm run test:e2e`) against staging when available
 - [ ] Supabase **leaked password protection** enabled

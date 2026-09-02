@@ -13,6 +13,7 @@
     "analyze": "ANALYZE=true next build --webpack",
     "db:types": "supabase gen types typescript --linked > lib/database/supabase.generated.ts",
     "check:twilio": "node --env-file=.env.local scripts/check-twilio.mjs",
+    "smoke:production": "node scripts/smoke-production.mjs",
     "deploy:production": "node scripts/guard-prod-deploy.mjs && npx vercel --prod --yes",
     "prepare": "husky"
   },
