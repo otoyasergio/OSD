@@ -41,9 +41,9 @@ describe("Vercel compute allocation", () => {
     });
   });
 
-  it("keeps catalog crons (Parts Canada daily, Wix contacts every 4 minutes)", () => {
+  it("keeps catalog crons (Parts Canada every 4 hours, Wix contacts every 4 minutes)", () => {
     expect(config.crons).toEqual([
-      { path: "/api/cron/parts-canada-sync", schedule: "0 15 * * *" },
+      { path: "/api/cron/parts-canada-sync", schedule: "0 */4 * * *" },
       { path: "/api/cron/wix-contacts-sync", schedule: "*/4 * * * *" },
     ]);
   });

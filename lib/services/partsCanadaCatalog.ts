@@ -164,12 +164,25 @@ async function upsertCatalogBatches(
 export async function syncPartsCanadaCatalog(options: {
   triggeredBy: "cron" | "manual";
   triggeredByUserId?: string | null;
-}): Promise<{ row_count: number }> {
+}): Promise<{ row_count: number; skipped_reason?: "already_running" }> {
   if (!isPartsCanadaConfigured()) {
     throw new Error("PARTS_CANADA_NOT_CONFIGURED");
   }
 
   const admin = createAdminClient();
+
+  if (options.triggeredBy === "cron") {
+    const { data: active, error: activeError } = await admin
+      .from("parts_canada_sync_run")
+      .select("sync_run_id")
+      .eq("status", "running")
+      .gte("started_at", new Date(Date.now() - 280 * 60 * 1000).toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (activeError) throw activeError;
+    if (active) return { row_count: 0, skipped_reason: "already_running" };
+  }
+
   const { data: run, error: runError } = await admin
     .from("parts_canada_sync_run")
     .insert({

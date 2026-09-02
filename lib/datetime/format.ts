@@ -131,11 +131,14 @@ function getTimeZoneOffsetMs(timeZone: string, instantMs: number): number {
   return asUtc - instantMs;
 }
 
-/** Wix contacts cron runs every 4 minutes within this shop-local window (inclusive). */
-export const WIX_CONTACTS_SYNC_WINDOW = {
+/** Shop-local hours when inventory and contact crons should run (10:00–23:00 Toronto). */
+export const SHOP_CRON_ACTIVE_WINDOW = {
   startHour: 10,
   endHour: 23,
 } as const;
+
+/** @deprecated Use SHOP_CRON_ACTIVE_WINDOW */
+export const WIX_CONTACTS_SYNC_WINDOW = SHOP_CRON_ACTIVE_WINDOW;
 
 /** Minutes since local midnight in America/Toronto (0–1439). */
 export function shopLocalMinutesSinceMidnight(date: Date): number {
@@ -151,11 +154,16 @@ export function shopLocalMinutesSinceMidnight(date: Date): number {
 }
 
 /** True during 10:00–23:00 America/Toronto (inclusive through the 23:00 minute). */
-export function isWithinWixContactsSyncWindow(now: Date = new Date()): boolean {
+export function isWithinShopCronWindow(now: Date = new Date()): boolean {
   const minutes = shopLocalMinutesSinceMidnight(now);
-  const start = WIX_CONTACTS_SYNC_WINDOW.startHour * 60;
-  const end = WIX_CONTACTS_SYNC_WINDOW.endHour * 60;
+  const start = SHOP_CRON_ACTIVE_WINDOW.startHour * 60;
+  const end = SHOP_CRON_ACTIVE_WINDOW.endHour * 60;
   return minutes >= start && minutes <= end;
+}
+
+/** @deprecated Use isWithinShopCronWindow */
+export function isWithinWixContactsSyncWindow(now: Date = new Date()): boolean {
+  return isWithinShopCronWindow(now);
 }
 
 /** YYYY-MM-DD calendar date in America/Toronto. */

@@ -100,7 +100,7 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 - [ ] Twilio TrustHub: Business Profile approved → Brand → Campaign → Messaging Service (see §8)
 - [ ] `TWILIO_*` set on Vercel; inbound + status webhook URLs match `NEXT_PUBLIC_APP_URL`
 - [ ] Migration `037_customer_sms_opt_out` applied
-- [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada daily; Wix contacts every 4 minutes on **Pro**)
+- [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada every 4 hours + Wix contacts every 4 minutes on **Pro**, both gated to 10:00–23:00 Toronto)
 - [ ] Vercel → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**
 - [ ] `npm test` and `npm run build` green
 - [ ] Playwright smoke (`npm run test:e2e`) against staging when available
@@ -185,7 +185,7 @@ Brand approval is often fast; Campaign review can take **~10–15 days**. Treat 
 
 1. Apply migration `037_customer_sms_opt_out.sql`.
 2. Set the Twilio env vars on Vercel (Production; Preview if you test SMS there).
-3. `vercel.json` crons: Parts Canada daily (`0 15 * * *`); Wix contacts every 4 minutes (`*/4 * * * *`, active 10:00–23:00 America/Toronto in the route). Apply migration `20260902010000_wix_contacts_sync_lock.sql` so overlapping cron runs skip cleanly.
+3. `vercel.json` crons: Parts Canada every 4 hours (`0 */4 * * *`, active 10:00–23:00 Toronto); Wix contacts every 4 minutes (`*/4 * * * *`, same window). Apply migration `20260902010000_wix_contacts_sync_lock.sql` so overlapping Wix cron runs skip cleanly.
 4. Redeploy so webhooks and secrets are live.
 5. **CA:** From a work order, send an SMS template to a Canadian mobile; confirm delivery / status updates in `communication_log`.
 6. **Inbound:** Reply `YES` / `APPROVE` on an approval request when a single job is waiting; confirm job updates. Reply `STOP` — carrier opt-out + `sms_opted_out_at` set.
