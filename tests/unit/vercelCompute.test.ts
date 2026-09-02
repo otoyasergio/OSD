@@ -34,10 +34,10 @@ describe("Vercel compute allocation", () => {
     expect(JSON.stringify(config)).not.toMatch(/"memory"\s*:/);
   });
 
-  it("keeps the daily catalog crons", () => {
+  it("keeps catalog crons (Parts Canada daily, Wix contacts every 4 minutes)", () => {
     expect(config.crons).toEqual([
       { path: "/api/cron/parts-canada-sync", schedule: "0 15 * * *" },
-      { path: "/api/cron/wix-contacts-sync", schedule: "30 15 * * *" },
+      { path: "/api/cron/wix-contacts-sync", schedule: "*/4 * * * *" },
     ]);
   });
 });
