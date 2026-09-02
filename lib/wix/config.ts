@@ -66,6 +66,7 @@ async function wixFetch<T>(path: string, init?: RequestInit): Promise<T> {
       "wix-site-id": config.siteId,
       ...(init?.headers ?? {}),
     },
+    signal: init?.signal ?? AbortSignal.timeout(20_000),
   });
 
   if (!response.ok) {

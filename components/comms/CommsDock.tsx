@@ -51,32 +51,38 @@ export function CommsSnapshotProvider({
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount snapshot
     void refresh();
+    // This provider is mounted on every staff page, so coalesce realtime
+    // bursts: N online users x M chat events would otherwise fan out one
+    // snapshot server action per event per user.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleSnapshotRefresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        void refresh();
+      }, 1000);
+    };
     const supabase = createClient();
     const channel = supabase
       .channel(`comms-dock:${userId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "chat_message" },
-        () => {
-          void refresh();
-        }
+        scheduleSnapshotRefresh
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "chat_conversation" },
-        () => {
-          void refresh();
-        }
+        scheduleSnapshotRefresh
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "chat_participant" },
-        () => {
-          void refresh();
-        }
+        scheduleSnapshotRefresh
       )
       .subscribe();
     return () => {
+      if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
     };
   }, [userId, refresh]);

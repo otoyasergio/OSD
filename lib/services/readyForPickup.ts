@@ -65,7 +65,10 @@ async function listWaitingStageBikes(input: {
     )
     .eq("location_id", locationId)
     .eq("status", input.status)
-    .order(input.orderColumn, { ascending: true, nullsFirst: false });
+    .order(input.orderColumn, { ascending: true, nullsFirst: false })
+    // Control Center renders every row it gets; keep the queue bounded so a
+    // backlog can't turn one render into hundreds of photo signings.
+    .limit(60);
 
   if (error) throw error;
 

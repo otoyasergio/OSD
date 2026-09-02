@@ -444,8 +444,12 @@ async function reconcileWixContactsToAppBody(
           };
         }
       }
-    } catch {
+    } catch (error) {
       stats.failed += 1;
+      logger.warn("Wix contact reconcile failed", {
+        wixContactId: contact.id,
+        error: error instanceof Error ? error.message : "UNKNOWN",
+      });
     }
   }
 
@@ -466,6 +470,10 @@ async function reconcileWixContactsToAppBody(
         stats.skipped += 1;
       } else {
         stats.failed += 1;
+        logger.warn("Wix contact push failed", {
+          customerId: local.customer_id,
+          error: error instanceof Error ? error.message : "UNKNOWN",
+        });
       }
     }
   }

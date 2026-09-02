@@ -191,16 +191,35 @@ export function ShopVoiceProvider({
       });
 
       await device.register();
-      refreshTimer = window.setTimeout(
-        () => {
-          void fetch("/api/calls/voice-token", { method: "POST" })
-            .then((r) => r.json())
-            .then((body: { token?: string }) => {
-              if (body.token) device.updateToken(body.token);
-            });
-        },
-        Math.max(60_000, (data.ttl - 300) * 1000)
-      );
+      // Self-rescheduling token refresh: a one-shot timer would let the token
+      // expire ~2h in and silently kill the shop phone on an open tab, and a
+      // network blip must retry rather than give up.
+      const scheduleTokenRefresh = (ttlSeconds: number) => {
+        if (cancelled) return;
+        refreshTimer = window.setTimeout(
+          () => {
+            void (async () => {
+              try {
+                const r = await fetch("/api/calls/voice-token", { method: "POST" });
+                if (cancelled) return;
+                if (r.ok) {
+                  const body = (await r.json()) as { token?: string; ttl?: number };
+                  if (body.token) {
+                    device.updateToken(body.token);
+                    scheduleTokenRefresh(body.ttl ?? 3600);
+                    return;
+                  }
+                }
+              } catch {
+                // Network blip — fall through to the short retry below.
+              }
+              scheduleTokenRefresh(0); // clamps to the 60s minimum
+            })();
+          },
+          Math.max(60_000, (ttlSeconds - 300) * 1000)
+        );
+      };
+      scheduleTokenRefresh(data.ttl);
       heartbeatTimer = window.setInterval(() => {
         void heartbeatVoicePresenceAction();
       }, 30_000);

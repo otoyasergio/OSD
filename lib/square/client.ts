@@ -30,6 +30,7 @@ async function squareFetch<T>(path: string, init?: RequestInit): Promise<T> {
       "Square-Version": "2024-12-18",
       ...(init?.headers ?? {}),
     },
+    signal: init?.signal ?? AbortSignal.timeout(20_000),
   });
 
   const body = (await response.json()) as T & {

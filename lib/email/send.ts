@@ -22,6 +22,7 @@ export async function sendEmail(input: {
       html: input.html,
       text: input.text,
     }),
+    signal: AbortSignal.timeout(15_000),
   });
 
   const data = (await response.json()) as { id?: string; message?: string };

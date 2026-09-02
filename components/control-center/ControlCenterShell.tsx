@@ -492,11 +492,19 @@ export function ControlCenterShell({
 
   useEffect(() => {
     const supabase = createClient();
+    // work_order and time_clock_entry are filtered to this location server-side
+    // so other locations' writes don't re-render the heaviest page in the app.
+    // job has no location column; its events stay debounced via scheduleRefresh.
     const channel = supabase
       .channel(`control-center:${data.location_id}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "work_order" },
+        {
+          event: "*",
+          schema: "public",
+          table: "work_order",
+          filter: `location_id=eq.${data.location_id}`,
+        },
         () => {
           scheduleRefresh();
         }
@@ -506,7 +514,12 @@ export function ControlCenterShell({
       })
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "time_clock_entry" },
+        {
+          event: "*",
+          schema: "public",
+          table: "time_clock_entry",
+          filter: `location_id=eq.${data.location_id}`,
+        },
         () => {
           scheduleRefresh();
         }
