@@ -12,6 +12,8 @@ import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 
+export const dynamic = "force-dynamic";
+
 const ACCOUNT_FILTERS: Array<CustomerAccountType | ""> = [
   "",
   "retail",

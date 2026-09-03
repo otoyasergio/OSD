@@ -6,6 +6,8 @@ import { canViewClients } from "@/lib/permissions";
 import { CustomerForm } from "@/components/forms/CustomerForm";
 import { createCustomerAction } from "@/app/(app)/customers/actions";
 
+export const dynamic = "force-dynamic";
+
 export default async function NewCustomerPage({
   searchParams,
 }: {
