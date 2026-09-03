@@ -39,8 +39,9 @@ export const getCurrentAppUser = cache(async (): Promise<AppUser | null> => {
 
   const { data: locs } = await supabase
     .from("user_location")
-    .select("location_id")
-    .eq("user_id", user.user_id);
+    .select("location_id, location!inner(status)")
+    .eq("user_id", user.user_id)
+    .eq("location.status", "active");
 
   const location_ids = (locs ?? []).map((l) => l.location_id);
   const cookieStore = await cookies();
