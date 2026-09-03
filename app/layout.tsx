@@ -16,12 +16,22 @@ const ibmPlexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "OTOMOTO Workshop",
   description: "OTOMOTO workshop management app",
+  appleWebApp: {
+    title: "OTOMOTO",
+    // Deliberately not "capable": a home-screen launch stays in Safari so staff
+    // keep the back gesture and the address bar.
+    capable: false,
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Required for env(safe-area-inset-*) to report real values on notched iPhones.
   viewportFit: "cover",
+  // Tints the iOS Safari address bar and the iPadOS tab bar to match the chrome.
+  themeColor: "#0b1220",
 };
 
 export default function RootLayout({

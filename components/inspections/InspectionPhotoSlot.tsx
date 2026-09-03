@@ -1,12 +1,20 @@
 "use client";
 
-import { useActionState, useEffect, useId, useRef, useState } from "react";
+import {
+  startTransition,
+  useActionState,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import type { PhotoCategory } from "@/lib/database/types";
 import {
   uploadIntakePhotoAction,
   type PhotoFormState,
 } from "@/app/(app)/work_orders/photo-actions";
 import { FormError } from "@/components/forms/Field";
+import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 
 export function InspectionPhotoSlot({
@@ -15,28 +23,34 @@ export function InspectionPhotoSlot({
   inspectionResultId,
   label,
   required,
-  existingUrl,
+  existingUrls = [],
   readOnly,
+  onExpand,
 }: {
   workOrderId: string;
   category: PhotoCategory;
   inspectionResultId?: string | null;
   label: string;
   required?: boolean;
-  existingUrl?: string | null;
+  existingUrls?: string[];
   readOnly?: boolean;
+  onExpand?: (src: string) => void;
 }) {
   const titleId = useId();
   const cameraInputId = useId();
   const libraryInputId = useId();
   const formRef = useRef<HTMLFormElement>(null);
   const [chooserOpen, setChooserOpen] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [clientError, setClientError] = useState<string | null>(null);
   const [state, formAction, pending] = useActionState(
     uploadIntakePhotoAction.bind(null, workOrderId),
     { error: null } satisfies PhotoFormState
   );
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
+  const busy = pending || preparing;
+  const hasPhotos = existingUrls.length > 0;
 
   useEffect(() => {
     if (!chooserOpen) return;
@@ -47,26 +61,59 @@ export function InspectionPhotoSlot({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [chooserOpen]);
 
-  function uploadFromInput(input: HTMLInputElement) {
-    const file = input.files?.[0];
+  async function uploadFromInput(input: HTMLInputElement) {
+    const originals = Array.from(input.files ?? []);
     setChooserOpen(false);
-    if (!file || !formRef.current) return;
-    const formData = new FormData(formRef.current);
-    formData.set("file", file);
-    formAction(formData);
-    input.value = "";
+    setClientError(null);
+    if (originals.length === 0 || !formRef.current) return;
+
+    setPreparing(true);
+    try {
+      // Clone/compress before clearing the input — iOS library File refs can
+      // become invalid as soon as the input value is reset.
+      const files = await Promise.all(
+        originals.map((original) => preparePhotoFileForUpload(original))
+      );
+      input.value = "";
+      const formData = new FormData(formRef.current);
+      formData.delete("file");
+      for (const file of files) formData.append("file", file);
+      startTransition(() => {
+        formAction(formData);
+      });
+    } catch {
+      input.value = "";
+      setClientError("Could not read that photo. Try again, or use the camera instead.");
+    } finally {
+      setPreparing(false);
+    }
   }
 
   return (
     <div
       className={`inspection-photo-slot ${
-        required && !existingUrl ? "inspection-photo-slot--required" : ""
-      } ${existingUrl ? "inspection-photo-slot--done" : ""}`}
+        required && !hasPhotos ? "inspection-photo-slot--required" : ""
+      } ${hasPhotos ? "inspection-photo-slot--done" : ""}`}
     >
       <div className="inspection-photo-slot-preview">
-        {existingUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={existingUrl} alt={label} />
+        {hasPhotos ? (
+          existingUrls.map((src, index) =>
+            onExpand ? (
+              <button
+                key={`${src}-${index}`}
+                type="button"
+                className="inspection-photo-slot-expand"
+                onClick={() => onExpand(src)}
+                aria-label={`View ${label} photo ${index + 1} larger`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
+                <img src={src} alt={`${label} ${index + 1}`} />
+              </button>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
+              <img key={`${src}-${index}`} src={src} alt={`${label} ${index + 1}`} />
+            )
+          )
         ) : (
           <span className="inspection-photo-slot-placeholder">
             {required ? "Photo required" : "Optional photo"}
@@ -75,6 +122,11 @@ export function InspectionPhotoSlot({
       </div>
       <div className="inspection-photo-slot-meta">
         <p className="inspection-photo-slot-label">{label}</p>
+        {hasPhotos ? (
+          <p className="inspection-photo-slot-count">
+            {existingUrls.length} photo{existingUrls.length === 1 ? "" : "s"}
+          </p>
+        ) : null}
         {!readOnly ? (
           <form ref={formRef} action={formAction} className="inspection-photo-slot-form">
             <input type="hidden" name="category" value={category} />
@@ -93,26 +145,31 @@ export function InspectionPhotoSlot({
               className="photo-file-input"
               tabIndex={-1}
               aria-label={`${label} camera`}
-              onChange={(e) => uploadFromInput(e.currentTarget)}
+              onChange={(e) => {
+                void uploadFromInput(e.currentTarget);
+              }}
             />
             <input
               id={libraryInputId}
               type="file"
               accept={libraryProps.accept}
+              multiple
               className="photo-file-input"
               tabIndex={-1}
               aria-label={`${label} photo library`}
-              onChange={(e) => uploadFromInput(e.currentTarget)}
+              onChange={(e) => {
+                void uploadFromInput(e.currentTarget);
+              }}
             />
             <button
               type="button"
-              disabled={pending}
+              disabled={busy}
               className="btn btn-secondary min-h-12 w-full"
               onClick={() => setChooserOpen(true)}
             >
-              {pending ? "Uploading…" : existingUrl ? "Replace photo" : "Add photo"}
+              {busy ? "Uploading…" : hasPhotos ? "Add another photo" : "Add photo"}
             </button>
-            <FormError message={state.error} />
+            <FormError message={state.error ?? clientError} />
           </form>
         ) : null}
       </div>
@@ -131,10 +188,11 @@ export function InspectionPhotoSlot({
             onClick={(event) => event.stopPropagation()}
           >
             <p id={titleId} className="photo-source-sheet-title">
-              {existingUrl ? `Replace ${label}` : `Add ${label}`}
+              {hasPhotos ? `Add another ${label}` : `Add ${label}`}
             </p>
             <p className="photo-source-sheet-lede">
-              Use the camera, or choose an existing photo from your library.
+              Take as many as you need. Camera takes one at a time; library can pick
+              several.
             </p>
             <label
               htmlFor={cameraInputId}

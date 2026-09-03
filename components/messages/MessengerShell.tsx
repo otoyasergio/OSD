@@ -63,7 +63,7 @@ export function MessengerShell({
   }
 
   return (
-    <div className="messenger-shell flex min-h-[calc(100vh-5rem)] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+    <div className="messenger-shell flex min-h-[calc(100dvh-5rem)] overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
       <aside className={listPaneClass}>
         <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-3">
           <h1 className="text-lg font-semibold tracking-tight">Messages</h1>
@@ -78,7 +78,7 @@ export function MessengerShell({
         </div>
         <div className="border-b border-[var(--border)] px-3 py-2">
           <input
-            className="input w-full text-sm"
+            className="input w-full"
             placeholder="Search messages"
             value={query}
             onChange={(e) => onSearch(e.target.value)}

@@ -12,9 +12,7 @@ describe("formatLabourComparison", () => {
   });
 
   it("returns null when startedAt is missing", () => {
-    expect(
-      formatLabourComparison(1.5, null, "2026-07-09T14:00:00.000Z")
-    ).toBeNull();
+    expect(formatLabourComparison(1.5, null, "2026-07-09T14:00:00.000Z")).toBeNull();
   });
 
   it("formats est and actual hours from startedAt to completedAt", () => {
@@ -30,11 +28,7 @@ describe("formatLabourComparison", () => {
   });
 
   it("uses now when completedAt is null", () => {
-    const result = formatLabourComparison(
-      2,
-      "2026-07-09T10:00:00.000Z",
-      null
-    );
+    const result = formatLabourComparison(2, "2026-07-09T10:00:00.000Z", null);
     expect(result).toEqual({
       label: "Est 2h · Actual 2h",
       overEstimate: false,
@@ -65,6 +59,19 @@ describe("formatLabourComparison", () => {
     );
     expect(result).toEqual({
       label: "Actual 1h",
+      overEstimate: false,
+    });
+  });
+
+  it("prefers segment actual ms when provided", () => {
+    const result = formatLabourComparison(
+      2,
+      "2026-07-09T10:00:00.000Z",
+      "2026-07-09T14:00:00.000Z",
+      { actualMsFromSegments: 1.5 * 60 * 60 * 1000 }
+    );
+    expect(result).toEqual({
+      label: "Est 2h · Actual 1.5h",
       overEstimate: false,
     });
   });

@@ -13,6 +13,8 @@ async function fetchAuthorized(path: string): Promise<Response> {
       Accept: "*/*",
     },
     cache: "no-store",
+    // Large inventory ZIP; generous timeout but well inside the 300s cron cap.
+    signal: AbortSignal.timeout(120_000),
   });
   return response;
 }
@@ -32,9 +34,7 @@ function extractCsvFromZip(buffer: ArrayBuffer): string {
  * Download nightly inventory ZIP from Parts Canada and parse CSV rows.
  * Rate limit: 10 requests / 24 hours — call at most once per day.
  */
-export async function downloadInventoryCatalog(): Promise<
-  PartsCanadaCatalogRow[]
-> {
+export async function downloadInventoryCatalog(): Promise<PartsCanadaCatalogRow[]> {
   const response = await fetchAuthorized("/inventory");
   if (response.status === 403) throw new Error("PARTS_CANADA_FORBIDDEN");
   if (response.status === 404) throw new Error("PARTS_CANADA_INVENTORY_MISSING");

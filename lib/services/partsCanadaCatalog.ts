@@ -74,12 +74,10 @@ export async function getPartsCanadaSyncStatus(): Promise<PartsCanadaSyncStatus>
   const [{ count }, { data: lastRun }] = await Promise.all([
     supabase
       .from("parts_canada_catalog")
-      .select("part_number", { count: "exact", head: true }),
+      .select("part_number", { count: "estimated", head: true }),
     supabase
       .from("parts_canada_sync_run")
-      .select(
-        "status, started_at, finished_at, row_count, error_message, triggered_by"
-      )
+      .select("status, started_at, finished_at, row_count, error_message, triggered_by")
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -114,15 +112,20 @@ export async function searchPartsCanadaCatalog(
   const limit = Math.min(Math.max(options?.limit ?? 25, 1), 50);
   const supabase = await createClient();
   const includeCost = canViewPartCost(user.role);
-  const safe = trimmed.replace(/[%_,.()]/g, " ").replace(/\s+/g, " ").trim();
+  const safe = trimmed
+    .replace(/[%_,.()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (safe.length < 2) return [];
   const like = `%${safe}%`;
 
+  // No SQL ORDER BY on purpose: sorting by part_number baits the planner
+  // into walking the whole pkey instead of the trigram indexes (~280ms for
+  // common terms). Unordered, common terms early-terminate and rare terms
+  // use the trigram bitmap (<10ms either way); we sort the ≤50 hits here.
   const { data, error } = await supabase
     .from("parts_canada_catalog")
-    .select(
-      "part_number, brand, description_en, msrp, dealer_price, qty_cal, qty_lon"
-    )
+    .select("part_number, brand, description_en, msrp, dealer_price, qty_cal, qty_lon")
     .or(
       [
         `part_number.ilike.${JSON.stringify(like)}`,
@@ -131,11 +134,12 @@ export async function searchPartsCanadaCatalog(
         `description_en.ilike.${JSON.stringify(like)}`,
       ].join(",")
     )
-    .order("part_number", { ascending: true })
     .limit(limit);
 
   if (error) throw error;
-  return (data ?? []).map((row) => mapSearchHit(row, includeCost));
+  return (data ?? [])
+    .map((row) => mapSearchHit(row, includeCost))
+    .sort((a, b) => a.part_number.localeCompare(b.part_number));
 }
 
 async function upsertCatalogBatches(
@@ -165,12 +169,25 @@ async function upsertCatalogBatches(
 export async function syncPartsCanadaCatalog(options: {
   triggeredBy: "cron" | "manual";
   triggeredByUserId?: string | null;
-}): Promise<{ row_count: number }> {
+}): Promise<{ row_count: number; skipped_reason?: "already_running" }> {
   if (!isPartsCanadaConfigured()) {
     throw new Error("PARTS_CANADA_NOT_CONFIGURED");
   }
 
   const admin = createAdminClient();
+
+  if (options.triggeredBy === "cron") {
+    const { data: active, error: activeError } = await admin
+      .from("parts_canada_sync_run")
+      .select("sync_run_id")
+      .eq("status", "running")
+      .gte("started_at", new Date(Date.now() - 280 * 60 * 1000).toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (activeError) throw activeError;
+    if (active) return { row_count: 0, skipped_reason: "already_running" };
+  }
+
   const { data: run, error: runError } = await admin
     .from("parts_canada_sync_run")
     .insert({
@@ -208,8 +225,7 @@ export async function syncPartsCanadaCatalog(options: {
     if (finishError) throw finishError;
     return { row_count: uniqueRows.length };
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "PARTS_CANADA_SYNC_FAILED";
+    const message = error instanceof Error ? error.message : "PARTS_CANADA_SYNC_FAILED";
     await admin
       .from("parts_canada_sync_run")
       .update({

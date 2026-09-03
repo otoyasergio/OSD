@@ -7,10 +7,8 @@ import {
   useMemo,
   useRef,
   useState,
-  useTransition,
   type KeyboardEvent,
 } from "react";
-import { searchCustomersAction } from "@/app/(app)/customers/actions";
 import type { Customer } from "@/lib/services/customers";
 import { customerPickerInterimResults } from "@/lib/forms/customerSearch";
 
@@ -59,7 +57,6 @@ export function CustomerSearchPicker({
   const [activeIndex, setActiveIndex] = useState(-1);
   const [knownCustomers, setKnownCustomers] = useState<Customer[]>(initialCustomers);
   const [searching, setSearching] = useState(false);
-  const [pending, startTransition] = useTransition();
 
   const selected = useMemo(
     () => knownCustomers.find((c) => c.customer_id === value) ?? null,
@@ -80,10 +77,16 @@ export function CustomerSearchPicker({
     (term: string) => {
       const requestId = ++requestIdRef.current;
       setSearching(true);
-      startTransition(async () => {
+      void (async () => {
         try {
-          const next = await searchCustomersAction(term);
+          const response = await fetch(
+            `/api/customers/search?q=${encodeURIComponent(term)}`,
+            { cache: "no-store" }
+          );
+          if (!response.ok) throw new Error("SEARCH_FAILED");
+          const body = (await response.json()) as { customers?: Customer[] };
           if (requestId !== requestIdRef.current) return;
+          const next = body.customers ?? [];
           setResults(next);
           mergeKnown(next);
           setActiveIndex(next.length > 0 ? 0 : -1);
@@ -94,7 +97,7 @@ export function CustomerSearchPicker({
         } finally {
           if (requestId === requestIdRef.current) setSearching(false);
         }
-      });
+      })();
     },
     [mergeKnown]
   );
@@ -253,10 +256,10 @@ export function CustomerSearchPicker({
           role="listbox"
           aria-label="Customer matches"
         >
-          {(searching || pending) && results.length === 0 ? (
+          {searching && results.length === 0 ? (
             <div className="customer-picker-empty">Searching…</div>
           ) : null}
-          {!searching && !pending && results.length === 0 ? (
+          {!searching && results.length === 0 ? (
             <div className="customer-picker-empty">No customers found</div>
           ) : null}
           {results.length > 0 ? (

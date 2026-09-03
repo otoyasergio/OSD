@@ -76,6 +76,19 @@ rolls the live site back to whatever that branch last contained.
 7. Smoke on **Safari Mac** and **Safari iPad**.
 8. CI must be green: `npm run typecheck && npm run lint && npm test && npm run build`.
 
+### Compute (Vercel Functions)
+
+Repo (`vercel.json`) — these ship with the app:
+
+- **Fluid compute** is on (`fluid: true`) so function instances are reused and concurrent shop requests share CPU instead of cold-starting a new lambda per click.
+- Functions are pinned to **`iad1`** (Washington, D.C.). Live traffic already executes there (`x-vercel-id: …::iad1::…`). A single region keeps SSR next to typical US-East Supabase.
+
+Dashboard (cannot be set in `vercel.json` when Fluid is on):
+
+- **Pro / Enterprise:** Vercel → Project → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**. Use this for Control Center / dashboard SSR and heavy cron work. Do **not** add `functions.*.memory` in `vercel.json` — Fluid rejects it at build time.
+
+Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` (Pro plan ceiling).
+
 ---
 
 ## 5. Pre-cutover checklist
@@ -87,7 +100,10 @@ rolls the live site back to whatever that branch last contained.
 - [ ] Twilio TrustHub: Business Profile approved → Brand → Campaign → Messaging Service (see §8)
 - [ ] `TWILIO_*` set on Vercel; inbound + status webhook URLs match `NEXT_PUBLIC_APP_URL`
 - [ ] Migration `037_customer_sms_opt_out` applied
-- [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (daily schedules for Hobby)
+- [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada every 4 hours + Wix contacts every 4 minutes on **Pro**, both gated to 10:00–23:00 Toronto)
+- [ ] Vercel → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**
+- [ ] `npm run smoke:production` passes against https://service.torontomoto.com (set `CRON_SECRET` locally for bearer check)
+- [ ] `GET /api/health` returns `{ ok: true }` with `integrations.supabase: "ok"`
 - [ ] `npm test` and `npm run build` green
 - [ ] Playwright smoke (`npm run test:e2e`) against staging when available
 - [ ] Supabase **leaked password protection** enabled
@@ -149,13 +165,16 @@ Brand approval is often fast; Campaign review can take **~10–15 days**. Treat 
 
 ### App env
 
-| Variable                       | Required  | Notes                                                  |
-| ------------------------------ | --------- | ------------------------------------------------------ |
-| `TWILIO_ACCOUNT_SID`           | Yes       |                                                        |
-| `TWILIO_AUTH_TOKEN`            | Yes       | Also verifies `X-Twilio-Signature` on inbound + status |
-| `TWILIO_MESSAGING_SERVICE_SID` | Preferred | When set, sends use `MessagingServiceSid` (no `From`)  |
-| `TWILIO_FROM_NUMBER`           | Fallback  | Required only if Messaging Service SID is unset        |
-| `NEXT_PUBLIC_APP_URL`          | Yes       | Used for signature URL + StatusCallback                |
+| Variable                       | Required    | Notes                                                     |
+| ------------------------------ | ----------- | --------------------------------------------------------- |
+| `TWILIO_ACCOUNT_SID`           | Yes         |                                                           |
+| `TWILIO_AUTH_TOKEN`            | Yes         | Also verifies `X-Twilio-Signature` on inbound + status    |
+| `TWILIO_MESSAGING_SERVICE_SID` | Preferred   | When set, sends use `MessagingServiceSid` (no `From`)     |
+| `TWILIO_FROM_NUMBER`           | Fallback    | Required only if Messaging Service SID is unset           |
+| `TWILIO_API_KEY_SID`           | Voice/Video | API key for access tokens                                 |
+| `TWILIO_API_KEY_SECRET`        | Voice/Video | API key secret                                            |
+| `TWILIO_TWIML_APP_SID`         | Voice       | TwiML App whose Voice URL is `/api/twilio/voice/outbound` |
+| `NEXT_PUBLIC_APP_URL`          | Yes         | Used for signature URL + StatusCallback                   |
 
 ### App behaviour (shipped)
 
@@ -168,7 +187,7 @@ Brand approval is often fast; Campaign review can take **~10–15 days**. Treat 
 
 1. Apply migration `037_customer_sms_opt_out.sql`.
 2. Set the Twilio env vars on Vercel (Production; Preview if you test SMS there).
-3. `vercel.json` crons are **daily** (`0 15 * * *` Parts Canada, `30 15 * * *` Wix contacts at 11:30 America/Toronto) so Hobby deploys succeed.
+3. `vercel.json` crons: Parts Canada every 4 hours (`0 */4 * * *`, active 10:00–23:00 Toronto); Wix contacts every 4 minutes (`*/4 * * * *`, same window). Apply migration `20260902010000_wix_contacts_sync_lock.sql` so overlapping Wix cron runs skip cleanly.
 4. Redeploy so webhooks and secrets are live.
 5. **CA:** From a work order, send an SMS template to a Canadian mobile; confirm delivery / status updates in `communication_log`.
 6. **Inbound:** Reply `YES` / `APPROVE` on an approval request when a single job is waiting; confirm job updates. Reply `STOP` — carrier opt-out + `sms_opted_out_at` set.
@@ -188,6 +207,18 @@ npx vercel env add TWILIO_MESSAGING_SERVICE_SID preview --sensitive --yes
 ```
 
 Then `npx vercel --prod` and re-run the smoke script (expect **401**).
+
+### Shop phone (Twilio Voice)
+
+Required for PSTN inbound/outbound. Staff audio uses the same Device.
+
+1. Create a **TwiML App** in Twilio Console. Voice request URL: `https://service.torontomoto.com/api/twilio/voice/outbound` (HTTP POST). Status callback: `https://service.torontomoto.com/api/twilio/voice/status`.
+2. Put the TwiML App SID in `TWILIO_TWIML_APP_SID` (plus existing `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET` for Voice + Video grants).
+3. For each shop number, set Voice webhook to `https://service.torontomoto.com/api/twilio/voice/inbound` and status callback to `/api/twilio/voice/status`.
+4. In **Settings → Locations**, set **Shop phone** to that number’s E.164 (one number per location).
+5. Smoke: unsigned `POST /api/twilio/voice/inbound` → **401** (or **503** if `TWILIO_AUTH_TOKEN` is missing). Logged-out `POST /api/calls/voice-token` → **401**.
+
+No call recording or voicemail audio in v1 (Canadian consent). Missed inbound still logs and plays a short “we missed you” prompt.
 
 ### CASL reminder
 

@@ -66,6 +66,13 @@ export function LocationEditForm({
         <FormError message={updateState.error} />
         <TextField label="Name" name="name" required defaultValue={location.name} />
         <TextField label="Code" name="code" required defaultValue={location.code} />
+        <TextField
+          label="Shop phone (E.164)"
+          name="voice_e164"
+          defaultValue={location.voice_e164 ?? ""}
+          placeholder="+14165551212"
+          hint="Twilio number for this location. Leave blank if unused."
+        />
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-foreground">Status</span>
           <select className={SELECT_CLASS} name="status" defaultValue={location.status}>

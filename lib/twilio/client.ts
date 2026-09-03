@@ -44,6 +44,7 @@ export async function sendSms(input: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: params.toString(),
+      signal: AbortSignal.timeout(15_000),
     }
   );
 

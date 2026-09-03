@@ -26,13 +26,18 @@ function redirectWithSession(
   return redirectResponse;
 }
 
+const SAFE_SESSION_HEADERS = new Set(["cache-control", "expires", "pragma"]);
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
   const config = getSupabasePublicConfig();
   const { pathname, search } = request.nextUrl;
+  // Middleware redirects break the Server Actions protocol and surface as
+  // "An unexpected response was received from the server."
+  const isServerAction = request.headers.has("next-action");
 
   if (!config) {
-    if (!isPublicAppPath(pathname)) {
+    if (!isPublicAppPath(pathname) && !isServerAction) {
       return redirectWithSession(
         request,
         supabaseResponse,
@@ -54,9 +59,13 @@ export async function updateSession(request: NextRequest) {
         cookiesToSet.forEach(({ name, value, options }) =>
           supabaseResponse.cookies.set(name, value, options)
         );
-        Object.entries(headers).forEach(([name, value]) =>
-          supabaseResponse.headers.set(name, value)
-        );
+        // Only forward cache headers — copying content-type (etc.) corrupts
+        // Server Action / RSC responses.
+        Object.entries(headers ?? {}).forEach(([name, value]) => {
+          if (SAFE_SESSION_HEADERS.has(name.toLowerCase())) {
+            supabaseResponse.headers.set(name, value);
+          }
+        });
       },
     },
   });
@@ -67,6 +76,10 @@ export async function updateSession(request: NextRequest) {
   const isAuthenticated = Boolean(data?.claims.sub);
 
   supabaseResponse.headers.set("Cache-Control", "private, no-store");
+
+  if (isServerAction) {
+    return supabaseResponse;
+  }
 
   if (!isAuthenticated && !isPublicAppPath(pathname)) {
     return redirectWithSession(

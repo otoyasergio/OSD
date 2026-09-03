@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isWithinWixContactsSyncWindow } from "@/lib/datetime/format";
 import { reconcileWixContactsToApp } from "@/lib/services/wixContacts";
 import { logger, newRequestId } from "@/lib/security/logger";
 import { captureException } from "@/lib/security/sentry";
@@ -7,7 +8,8 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
- * Daily Wix Contacts → app customer reconciliation (11:30 America/Toronto → 15:30 UTC).
+ * Wix Contacts → app customer reconciliation every 4 minutes (Vercel cron),
+ * active 10:00–23:00 America/Toronto only. Overnight invocations no-op.
  * Protect with CRON_SECRET via Authorization: Bearer <secret> only.
  */
 export async function GET(request: Request) {
@@ -23,15 +25,26 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!isWithinWixContactsSyncWindow()) {
+    logger.info("Wix contacts cron skipped outside shop window", { requestId });
+    return NextResponse.json({ ok: true, skipped: "outside_window" });
+  }
+
   try {
     const result = await reconcileWixContactsToApp({ triggeredBy: "cron" });
+    if (result.skipped_reason === "already_running") {
+      logger.info("Wix contacts cron skipped prior run still active", { requestId });
+      return NextResponse.json({ ok: true, skipped: "already_running" });
+    }
     logger.info("Wix contacts cron sync complete", {
       requestId,
       scanned: result.scanned,
       created: result.created,
       updated: result.updated,
+      unchanged: result.unchanged,
       skipped: result.skipped,
       failed: result.failed,
+      pushed: result.pushed,
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

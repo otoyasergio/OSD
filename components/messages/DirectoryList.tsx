@@ -21,6 +21,7 @@ type Props = {
   multiSelect?: boolean;
   selectedIds?: string[];
   onToggleSelect?: (userId: string) => void;
+  onlineUserIds?: string[];
 };
 
 export function DirectoryList({
@@ -29,11 +30,13 @@ export function DirectoryList({
   multiSelect = false,
   selectedIds = [],
   onToggleSelect,
+  onlineUserIds = [],
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const online = useMemo(() => new Set(onlineUserIds), [onlineUserIds]);
 
   function openDm(userId: string) {
     if (multiSelect && onToggleSelect) {
@@ -92,6 +95,13 @@ export function DirectoryList({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">
                       {person.first_name} {person.last_name}
+                      {online.has(person.user_id) ? (
+                        <span
+                          className="ml-2 inline-block h-2 w-2 rounded-full bg-emerald-500"
+                          title="Online"
+                          aria-label="Online"
+                        />
+                      ) : null}
                     </span>
                     <span className="block text-sm text-slate-500">
                       {ROLE_LABELS[person.role] ?? person.role}
