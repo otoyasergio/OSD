@@ -4,7 +4,7 @@ import type { AppUser } from "@/lib/auth/session";
 import { canUseMessenger } from "@/lib/permissions/checks";
 import { ShopVoiceProvider } from "@/components/comms/ShopVoiceProvider";
 import { CallOverlay } from "@/components/messages/CallOverlay";
-import { CommsDock, CommsSnapshotProvider } from "@/components/comms/CommsDock";
+import { CommsSnapshotProvider } from "@/components/comms/CommsDock";
 
 export function CommsLayer({
   user,
@@ -20,7 +20,6 @@ export function CommsLayer({
       <ShopVoiceProvider user={user}>
         {children}
         <CallOverlay currentUserId={user.user_id} />
-        <CommsDock />
       </ShopVoiceProvider>
     </CommsSnapshotProvider>
   );

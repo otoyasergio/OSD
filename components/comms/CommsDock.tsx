@@ -1,7 +1,18 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/database/supabase-browser";
 import { loadCommsSnapshotAction } from "@/app/(app)/messages/voice-actions";
 import { useShopVoiceOptional } from "@/components/comms/ShopVoiceProvider";
@@ -94,33 +105,147 @@ export function CommsSnapshotProvider({
   );
 }
 
-export function CommsDock() {
+export type CommsDockSlot = "mobile" | "desktop" | "floor";
+
+const MOBILE_MEDIA_QUERY = "(max-width: 767.98px)";
+
+function useSlotVisible(slot: CommsDockSlot): boolean {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      if (slot === "floor" || typeof window.matchMedia !== "function") {
+        return () => {};
+      }
+      const mql = window.matchMedia(MOBILE_MEDIA_QUERY);
+      mql.addEventListener("change", onStoreChange);
+      return () => mql.removeEventListener("change", onStoreChange);
+    },
+    () => {
+      if (slot === "floor") return true;
+      if (typeof window.matchMedia !== "function") return slot === "desktop";
+      const mobile = window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+      return slot === "mobile" ? mobile : !mobile;
+    },
+    () => slot !== "mobile"
+  );
+}
+
+type Props = {
+  /**
+   * Responsive slot this dock lives in. The shell mounts one control in the
+   * mobile header and one in the desktop topbar; only the visible slot owns
+   * the recents panel so a duplicate dialog cannot appear.
+   */
+  slot: CommsDockSlot;
+};
+
+export function CommsDock({ slot }: Props) {
   const snapshot = useCommsSnapshot();
   const voice = useShopVoiceOptional();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const unread = snapshot?.unreadCount ?? 0;
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+  const slotVisible = useSlotVisible(slot);
+  const active = open && slotVisible;
+  const messagesActive = pathname === "/messages" || pathname.startsWith("/messages/");
 
-  return (
-    <div className={`comms-dock${open ? " comms-dock--open" : ""}`}>
+  useEffect(() => {
+    if (!active) return;
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    function onPointerDown(event: MouseEvent | TouchEvent) {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (buttonRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
+  }, [active]);
+
+  const unreadBadge =
+    unread > 0 ? (
+      <span className="comms-unread-badge" aria-label={`${unread} unread`}>
+        {unread > 99 ? "99+" : unread}
+      </span>
+    ) : null;
+
+  const trigger =
+    slot === "desktop" ? (
       <button
+        ref={buttonRef}
         type="button"
         className="comms-dock-chip"
-        aria-expanded={open}
+        aria-expanded={active}
+        aria-controls={active ? panelId : undefined}
+        aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
       >
         Messages
-        {unread > 0 ? (
-          <span className="comms-unread-badge" aria-label={`${unread} unread`}>
-            {unread > 99 ? "99+" : unread}
-          </span>
-        ) : null}
+        {unreadBadge}
         {voice?.active ? <span className="comms-dock-live">On a call</span> : null}
       </button>
-      {open ? (
-        <div className="comms-dock-panel">
+    ) : (
+      <button
+        ref={buttonRef}
+        type="button"
+        className={
+          slot === "floor"
+            ? `pit-floor-topbar-link comms-dock-icon${
+                messagesActive ? " pit-floor-topbar-link--active" : ""
+              }`
+            : "comms-dock-icon comms-dock-icon--header"
+        }
+        aria-label={
+          unread > 0
+            ? `${unread} unread ${unread === 1 ? "message" : "messages"}`
+            : "Messages"
+        }
+        aria-expanded={active}
+        aria-controls={active ? panelId : undefined}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <MessageSquare size={slot === "floor" ? 22 : 19} aria-hidden />
+        {unreadBadge}
+        {voice?.active ? (
+          <span className="comms-dock-live-dot" aria-label="On a call" />
+        ) : null}
+        {slot === "floor" ? <span className="sr-only">Messages</span> : null}
+      </button>
+    );
+
+  return (
+    <div className={`comms-dock comms-dock--${slot}${active ? " comms-dock--open" : ""}`}>
+      {trigger}
+      {active ? (
+        <div
+          ref={panelRef}
+          id={panelId}
+          role="dialog"
+          aria-label="Messages"
+          className="comms-dock-panel"
+        >
           <div className="flex items-center justify-between gap-2 px-3 py-2">
             <p className="text-sm font-semibold">Communication</p>
-            <Link href="/messages" className="text-xs underline-offset-2 hover:underline">
+            <Link
+              href="/messages"
+              className="text-xs underline-offset-2 hover:underline"
+              onClick={() => setOpen(false)}
+            >
               Open hub
             </Link>
           </div>

@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageSquare, Package, UserRound, Wrench } from "lucide-react";
+import { Package, UserRound, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 
 const LINKS = [
   { href: "/technician", label: "Tech Floor", Icon: Wrench, exact: true },
   { href: "/parts", label: "Parts", Icon: Package, exact: false },
-  { href: "/messages", label: "Messages", Icon: MessageSquare, exact: false },
   { href: "/account", label: "Account", Icon: UserRound, exact: false },
 ] as const;
 

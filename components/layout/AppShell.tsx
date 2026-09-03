@@ -10,6 +10,7 @@ import { createClient } from "@/lib/database/supabase-browser";
 import {
   isFloorTech,
   canReceiveStaffNotifications,
+  canUseMessenger,
   staffHomePath,
 } from "@/lib/permissions/checks";
 import { GlobalSearch } from "@/components/layout/GlobalSearch";
@@ -38,6 +39,50 @@ import {
 import { staffNotificationHref } from "@/lib/technician/assignmentHref";
 import { FloorTopBar } from "@/components/technician/FloorTopBar";
 import { CommsLayer } from "@/components/comms/CommsLayer";
+import { CommsDock } from "@/components/comms/CommsDock";
+
+function IncomingAlertBanner({
+  notification,
+  busy,
+  onOpen,
+  onDismiss,
+}: {
+  notification: StaffAssignmentNotification;
+  busy: boolean;
+  onOpen: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div role="status" aria-live="polite" className="incoming-alert-banner">
+      <div className="incoming-alert-banner-copy">
+        <p className="font-semibold">{staffNotificationTitle(notification.kind)}</p>
+        <p className="text-sm text-slate-700">
+          {notification.work_order_number} · {notification.motorcycle_label}
+        </p>
+      </div>
+      <div className="incoming-alert-banner-actions">
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={busy}
+          onClick={onOpen}
+        >
+          {notification.kind === "ready_for_pickup"
+            ? "Open work order"
+            : "Open assigned motorcycle"}
+        </button>
+        <button
+          type="button"
+          className="incoming-alert-banner-dismiss"
+          aria-label="Dismiss alert"
+          onClick={onDismiss}
+        >
+          <X size={18} aria-hidden />
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const ROLE_LABELS: Record<AppUser["role"], string> = {
   owner: "Owner",
@@ -103,6 +148,7 @@ export function AppShell({
   // Notifications stay bound to the signed-in user — a preview never reads
   // or marks another technician's alerts.
   const notificationsEnabled = canReceiveStaffNotifications(user.role);
+  const messengerEnabled = canUseMessenger(user.role);
 
   const refreshNotifications = useCallback(async () => {
     try {
@@ -254,6 +300,7 @@ export function AppShell({
           <FloorTopBar
             trailing={
               <>
+                {messengerEnabled ? <CommsDock slot="floor" /> : null}
                 {locations.length > 1 && user.active_location_id ? (
                   <LocationSwitcher
                     locations={locations}
@@ -268,46 +315,17 @@ export function AppShell({
           {rolePreview ? (
             <RolePreviewBanner preview={rolePreview} ownerName={displayName} />
           ) : null}
+          {incomingNotification ? (
+            <IncomingAlertBanner
+              notification={incomingNotification}
+              busy={notificationBusy}
+              onOpen={() => void openNotification(incomingNotification)}
+              onDismiss={() => setIncomingNotification(null)}
+            />
+          ) : null}
           <main id="main-content" className="main-body" tabIndex={-1}>
             {children}
           </main>
-          {incomingNotification ? (
-            <div
-              role="status"
-              aria-live="polite"
-              className="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-white p-4 text-slate-900 shadow-2xl"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold">
-                    {staffNotificationTitle(incomingNotification.kind)}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-700">
-                    {incomingNotification.work_order_number} ·{" "}
-                    {incomingNotification.motorcycle_label}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                  aria-label="Dismiss alert"
-                  onClick={() => setIncomingNotification(null)}
-                >
-                  <X size={18} aria-hidden />
-                </button>
-              </div>
-              <button
-                type="button"
-                className="btn btn-primary mt-3 w-full"
-                disabled={notificationBusy}
-                onClick={() => void openNotification(incomingNotification)}
-              >
-                {incomingNotification.kind === "ready_for_pickup"
-                  ? "Open work order"
-                  : "Open assigned motorcycle"}
-              </button>
-            </div>
-          ) : null}
         </div>
       </CommsLayer>
     );
@@ -337,6 +355,7 @@ export function AppShell({
             />
           </Link>
           <div className="flex items-center gap-2">
+            {messengerEnabled ? <CommsDock slot="mobile" /> : null}
             {notificationsEnabled ? notificationBellFor("mobile") : null}
             <Link href="/account" aria-label="Open my account">
               <UserAvatar
@@ -396,6 +415,7 @@ export function AppShell({
           <header className="main-topbar">
             <GlobalSearch />
             <div className="main-topbar-actions">
+              {messengerEnabled ? <CommsDock slot="desktop" /> : null}
               {notificationsEnabled ? notificationBellFor("desktop") : null}
               {user.active_location_id ? (
                 <LocationSwitcher
@@ -425,48 +445,18 @@ export function AppShell({
               <SignOutButton />
             </div>
           </header>
+          {incomingNotification ? (
+            <IncomingAlertBanner
+              notification={incomingNotification}
+              busy={notificationBusy}
+              onOpen={() => void openNotification(incomingNotification)}
+              onDismiss={() => setIncomingNotification(null)}
+            />
+          ) : null}
           <main id="main-content" className="main-body" tabIndex={-1}>
             {children}
           </main>
         </div>
-
-        {incomingNotification ? (
-          <div
-            role="status"
-            aria-live="polite"
-            className="fixed bottom-4 right-4 z-[70] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-blue-200 bg-white p-4 text-slate-900 shadow-2xl"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="font-semibold">
-                  {staffNotificationTitle(incomingNotification.kind)}
-                </p>
-                <p className="mt-1 text-sm text-slate-700">
-                  {incomingNotification.work_order_number} ·{" "}
-                  {incomingNotification.motorcycle_label}
-                </p>
-              </div>
-              <button
-                type="button"
-                className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
-                aria-label="Dismiss alert"
-                onClick={() => setIncomingNotification(null)}
-              >
-                <X size={18} aria-hidden />
-              </button>
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary mt-3 w-full"
-              disabled={notificationBusy}
-              onClick={() => void openNotification(incomingNotification)}
-            >
-              {incomingNotification.kind === "ready_for_pickup"
-                ? "Open work order"
-                : "Open assigned motorcycle"}
-            </button>
-          </div>
-        ) : null}
       </div>
     </CommsLayer>
   );
