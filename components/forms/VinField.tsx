@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { decodeVinAction } from "@/app/(app)/vin/actions";
 import { normalizeVin, validateOptionalVin, type VinDecodeResult } from "@/lib/vin";
+import { VinScanner } from "@/components/forms/VinScanner";
 
 export type VinAutofillSuggestion = {
   year?: string;
@@ -43,6 +44,7 @@ export function VinField({
   );
   const [error, setError] = useState<string | null>(null);
   const [decode, setDecode] = useState<VinDecodeResult | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const lastDecoded = useRef<string>("");
   const onSuggestionRef = useRef(onSuggestion);
@@ -108,49 +110,65 @@ export function VinField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+
+  function applyScannedVin(vin: string) {
+    const next = normalizeVin(vin).slice(0, 17);
+    setValue(next);
+    if (runValidation(next)) requestDecode(next);
+  }
+
   const displacement = decode ? formatDisplacement(decode) : null;
 
   return (
     <div className="block">
       <label className="block">
         <span className="field-label">VIN</span>
-        <input
-          className="input font-mono tracking-wide uppercase"
-          name={name}
-          value={value}
-          autoComplete="off"
-          spellCheck={false}
-          maxLength={17}
-          placeholder="17-character VIN"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? "vin-error" : "vin-hint"}
-          onChange={(event) => {
-            const next = normalizeVin(event.target.value).slice(0, 17);
-            setValue(next);
-            if (!next) {
-              setError(null);
-              setDecode(null);
-              lastDecoded.current = "";
-              onVinReadyRef.current?.(null);
-              return;
-            }
-            if (next.length === 17) {
-              if (runValidation(next)) requestDecode(next);
-            } else {
-              setError(null);
-              setDecode(null);
-              onVinReadyRef.current?.(null);
-            }
-          }}
-          onBlur={() => {
-            if (!value) {
-              setError(null);
-              onVinReadyRef.current?.(null);
-              return;
-            }
-            if (runValidation(value)) requestDecode(value);
-          }}
-        />
+        <div className="flex flex-wrap gap-2">
+          <input
+            className="input min-w-[14rem] flex-1 font-mono tracking-wide uppercase"
+            name={name}
+            value={value}
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={17}
+            placeholder="17-character VIN"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? "vin-error" : "vin-hint"}
+            onChange={(event) => {
+              const next = normalizeVin(event.target.value).slice(0, 17);
+              setValue(next);
+              if (!next) {
+                setError(null);
+                setDecode(null);
+                lastDecoded.current = "";
+                onVinReadyRef.current?.(null);
+                return;
+              }
+              if (next.length === 17) {
+                if (runValidation(next)) requestDecode(next);
+              } else {
+                setError(null);
+                setDecode(null);
+                onVinReadyRef.current?.(null);
+              }
+            }}
+            onBlur={() => {
+              if (!value) {
+                setError(null);
+                onVinReadyRef.current?.(null);
+                return;
+              }
+              if (runValidation(value)) requestDecode(value);
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary min-h-11 shrink-0"
+            onClick={() => setScannerOpen(true)}
+          >
+            Scan VIN
+          </button>
+        </div>
       </label>
       {error ? (
         <span
@@ -163,7 +181,7 @@ export function VinField({
       ) : (
         <span id="vin-hint" className="field-hint">
           Optional, but missing VIN is flagged in the shop. When entered, must be a valid
-          17-character VIN.
+          17-character VIN. Use Scan VIN for a barcode sticker or stamped number.
         </span>
       )}
 
@@ -213,6 +231,13 @@ export function VinField({
             </p>
           ) : null}
         </div>
+      ) : null}
+
+      {scannerOpen ? (
+        <VinScanner
+          onClose={() => setScannerOpen(false)}
+          onScanned={applyScannedVin}
+        />
       ) : null}
     </div>
   );

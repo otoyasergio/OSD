@@ -16,6 +16,7 @@ import {
   type VinDecodeResult,
 } from "@/lib/vin";
 import { VinOwnershipConflictNotice } from "@/components/forms/VinOwnershipConflictNotice";
+import { VinScanner } from "@/components/forms/VinScanner";
 
 type Props = {
   customerId: string;
@@ -69,6 +70,7 @@ export function FindMotorcycleByVin({
   const [decode, setDecode] = useState<VinDecodeResult | null>(null);
   const [conflict, setConflict] = useState<VinOwnershipConflict | null>(null);
   const [transferError, setTransferError] = useState<string | null>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function clear() {
@@ -80,13 +82,13 @@ export function FindMotorcycleByVin({
     setTransferError(null);
   }
 
-  function lookup() {
+  function lookup(vinOverride?: string) {
     setMessage(null);
     setConflict(null);
     setTransferError(null);
     setNotFoundVin(null);
     setDecode(null);
-    const validation = validateOptionalVin(vin);
+    const validation = validateOptionalVin(vinOverride ?? vin);
     if (!validation.ok || !validation.vin) {
       setMessage(validation.ok ? "Enter a VIN to look up." : validation.error);
       return;
@@ -124,6 +126,16 @@ export function FindMotorcycleByVin({
         setDecode(null);
       }
     });
+  }
+
+
+  function applyScannedVin(scanned: string) {
+    setVin(scanned);
+    setConflict(null);
+    setMessage(null);
+    setNotFoundVin(null);
+    setDecode(null);
+    lookup(scanned);
   }
 
   function acceptTransfer() {
@@ -180,13 +192,28 @@ export function FindMotorcycleByVin({
         />
         <button
           type="button"
-          className="btn btn-secondary"
+          className="btn btn-secondary min-h-11"
+          disabled={pending}
+          onClick={() => setScannerOpen(true)}
+        >
+          Scan VIN
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary min-h-11"
           disabled={pending || !customerId}
-          onClick={lookup}
+          onClick={() => lookup()}
         >
           {pending ? "Looking up…" : "Look up"}
         </button>
       </div>
+
+      {scannerOpen ? (
+        <VinScanner
+          onClose={() => setScannerOpen(false)}
+          onScanned={applyScannedVin}
+        />
+      ) : null}
 
       {message && !notFoundVin ? (
         <p className="mt-2 text-sm text-foreground" role="status">
