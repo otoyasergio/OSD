@@ -8,6 +8,8 @@ import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { createMotorcycleAction } from "@/app/(app)/motorcycles/actions";
 import { normalizeVin } from "@/lib/vin";
 
+export const dynamic = "force-dynamic";
+
 export default async function NewMotorcyclePage({
   searchParams,
 }: {

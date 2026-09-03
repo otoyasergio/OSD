@@ -21,3 +21,8 @@ export {
   type VinDecodeFields,
   type VinLocalParse,
 } from "@/lib/vin/decode";
+
+export {
+  extractVinFromScanText,
+  type ExtractVinResult,
+} from "@/lib/vin/extractFromScan";

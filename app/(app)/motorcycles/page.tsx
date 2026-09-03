@@ -7,6 +7,8 @@ import { countMotorcycles, searchMotorcycles } from "@/lib/services/motorcycles"
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 
+export const dynamic = "force-dynamic";
+
 export default async function MotorcyclesPage({
   searchParams,
 }: {

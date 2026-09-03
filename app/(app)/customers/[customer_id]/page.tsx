@@ -29,6 +29,8 @@ import { isWixSyncAvailable } from "@/lib/services/wixContacts";
 import { formatCalendarDate, formatDate } from "@/lib/datetime/format";
 import { ClickToCallButton } from "@/components/comms/ClickToCallButton";
 
+export const dynamic = "force-dynamic";
+
 function WorkOrderHistoryList({
   items,
   emptyMessage,

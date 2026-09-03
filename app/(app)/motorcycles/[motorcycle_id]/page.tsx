@@ -33,6 +33,8 @@ import { listMotorcycleDocuments } from "@/lib/services/motorcycleDocuments";
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage, normalizeMileageUnit } from "@/lib/mileage/format";
 
+export const dynamic = "force-dynamic";
+
 function formatMoneyCents(cents: number): string {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
