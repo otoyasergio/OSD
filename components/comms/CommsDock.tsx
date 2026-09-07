@@ -60,12 +60,11 @@ export function CommsSnapshotProvider({
   }, []);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- mount snapshot
-    void refresh();
     // This provider is mounted on every staff page, so coalesce realtime
     // bursts: N online users x M chat events would otherwise fan out one
     // snapshot server action per event per user.
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let paintTimer: number | undefined;
     const scheduleSnapshotRefresh = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
@@ -73,6 +72,11 @@ export function CommsSnapshotProvider({
         void refresh();
       }, 1000);
     };
+    const raf = window.requestAnimationFrame(() => {
+      paintTimer = window.setTimeout(() => {
+        void refresh();
+      }, 0);
+    });
     const supabase = createClient();
     const channel = supabase
       .channel(`comms-dock:${userId}`)
@@ -93,6 +97,8 @@ export function CommsSnapshotProvider({
       )
       .subscribe();
     return () => {
+      window.cancelAnimationFrame(raf);
+      if (paintTimer) window.clearTimeout(paintTimer);
       if (timer) clearTimeout(timer);
       void supabase.removeChannel(channel);
     };

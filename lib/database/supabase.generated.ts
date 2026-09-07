@@ -363,6 +363,18 @@ export type Database = {
         Args: { p_conversation_id: string };
         Returns: boolean;
       };
+      fitment_year_bounds: {
+        Args: Record<string, never>;
+        Returns: { min_year: number; max_year: number };
+      };
+      fitment_makes_for_year: {
+        Args: { p_year: number };
+        Returns: string[];
+      };
+      fitment_models_for_year_make: {
+        Args: { p_year: number; p_make: string };
+        Returns: string[];
+      };
     };
     Enums: Record<string, never>;
   };

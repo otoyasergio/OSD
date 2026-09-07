@@ -8,6 +8,7 @@ import {
   makesForYear,
   modelsForYearMake,
   rowCoversYear,
+  yearsFromBounds,
 } from "@/lib/fitment/fitmentRange";
 
 describe("partMatch", () => {
@@ -47,5 +48,13 @@ describe("fitmentRange", () => {
 
   it("lists models for year/make", () => {
     expect(modelsForYearMake(rows, 2020, "KAWASAKI")).toEqual(["Ninja 400"]);
+  });
+
+  it("builds newest-first years from min/max bounds", () => {
+    expect(yearsFromBounds(2018, 2024, 2023)).toEqual([
+      2024, 2023, 2022, 2021, 2020, 2019, 2018,
+    ]);
+    expect(yearsFromBounds(2010, 2030, 2024)).toEqual(yearsFromBounds(2010, 2025, 2024));
+    expect(yearsFromBounds(Number.NaN, 2024)).toEqual([]);
   });
 });

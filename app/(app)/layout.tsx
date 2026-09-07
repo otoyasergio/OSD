@@ -31,9 +31,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect(staffHomePath(user.role));
   }
 
-  const preview = await getRolePreviewContext();
-  const viewRole = preview?.role ?? user.role;
-
   if (!user.active_location_id) {
     return (
       <div className="flex min-h-full flex-1 items-center justify-center bg-background px-4">
@@ -53,20 +50,23 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     );
   }
 
-  let locations: LocationOption[] = [];
-  if (getSupabasePublicConfig() && user.location_ids.length > 0) {
-    const supabase = await createClient();
-    const { data } = await supabase
-      .from("location")
-      .select("location_id, name, code")
-      .in("location_id", user.location_ids)
-      .eq("status", "active")
-      .order("name");
-    locations = (data ?? []) as LocationOption[];
-  }
-
   const supabase = await createClient();
-  const [profilePhotoUrl, initialNotifications, previewTechnicians] = await Promise.all([
+  const [
+    preview,
+    locationResult,
+    profilePhotoUrl,
+    initialNotifications,
+    previewTechnicians,
+  ] = await Promise.all([
+    getRolePreviewContext(),
+    getSupabasePublicConfig() && user.location_ids.length > 0
+      ? supabase
+          .from("location")
+          .select("location_id, name, code")
+          .in("location_id", user.location_ids)
+          .eq("status", "active")
+          .order("name")
+      : Promise.resolve({ data: [] as LocationOption[] }),
     createProfilePhotoSignedUrl(supabase, user.profile_photo_path),
     canReceiveStaffNotifications(user.role)
       ? listUnreadStaffNotifications()
@@ -75,6 +75,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ? listRolePreviewTechnicians().catch(() => [])
       : Promise.resolve([]),
   ]);
+
+  const viewRole = preview?.role ?? user.role;
+  const locations = (locationResult.data ?? []) as LocationOption[];
 
   const rolePreview: RolePreviewState | null =
     user.role === "owner"

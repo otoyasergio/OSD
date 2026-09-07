@@ -121,22 +121,34 @@ export async function listRolePreviewTechnicians(): Promise<
   if (!actor || actor.role !== "owner" || !actor.active_location_id) return [];
 
   const supabase = await createClient();
-  const { data: memberships } = await supabase
+  const { data, error } = await supabase
     .from("user_location")
-    .select("user_id")
-    .eq("location_id", actor.active_location_id);
-  const memberIds = (memberships ?? []).map((row: { user_id: string }) => row.user_id);
-  if (memberIds.length === 0) return [];
+    .select("app_user!inner(user_id, first_name, last_name, role, status)")
+    .eq("location_id", actor.active_location_id)
+    .eq("app_user.role", "technician")
+    .eq("app_user.status", "active");
+  if (error || !data) return [];
 
-  const { data } = await supabase
-    .from("app_user")
-    .select("user_id, first_name, last_name")
-    .eq("role", "technician")
-    .eq("status", "active")
-    .in("user_id", memberIds)
-    .order("first_name")
-    .order("last_name");
-  return (data ?? []) as RolePreviewTechnicianOption[];
+  const techs: RolePreviewTechnicianOption[] = [];
+  for (const row of data as Array<{
+    app_user:
+      | RolePreviewTechnicianOption
+      | Array<RolePreviewTechnicianOption & { role?: string; status?: string }>
+      | null;
+  }>) {
+    const tech = Array.isArray(row.app_user) ? row.app_user[0] : row.app_user;
+    if (!tech?.user_id) continue;
+    techs.push({
+      user_id: tech.user_id,
+      first_name: tech.first_name,
+      last_name: tech.last_name,
+    });
+  }
+  techs.sort(
+    (a, b) =>
+      a.first_name.localeCompare(b.first_name) || a.last_name.localeCompare(b.last_name)
+  );
+  return techs;
 }
 
 /** Server-side eligibility check used by the preview setter action. */

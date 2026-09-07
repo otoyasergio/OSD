@@ -225,9 +225,18 @@ export function ShopVoiceProvider({
       }, 30_000);
     }
 
-    void setup();
+    // Yield one frame so the staff shell can paint before Voice token + SDK.
+    let paintTimer: number | undefined;
+    const raf = window.requestAnimationFrame(() => {
+      paintTimer = window.setTimeout(() => {
+        if (!cancelled) void setup();
+      }, 0);
+    });
+
     return () => {
       cancelled = true;
+      window.cancelAnimationFrame(raf);
+      if (paintTimer) window.clearTimeout(paintTimer);
       if (refreshTimer) window.clearTimeout(refreshTimer);
       if (heartbeatTimer) window.clearInterval(heartbeatTimer);
       stopRingtone();
