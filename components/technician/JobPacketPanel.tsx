@@ -292,7 +292,7 @@ export function JobPacketPanel({
                     );
                     return (
                       <li key={photo.photo_id} className="floor-packet-photo">
-                        {photo.signed_url ? (
+                        {photo.thumb_url || photo.signed_url ? (
                           <button
                             type="button"
                             className="floor-packet-photo-open"
@@ -303,7 +303,7 @@ export function JobPacketPanel({
                           >
                             {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
                             <img
-                              src={photo.signed_url}
+                              src={photo.thumb_url ?? photo.signed_url ?? ""}
                               alt={`${PHOTO_CATEGORY_LABELS[photo.category]} photo`}
                               className="floor-packet-photo-img"
                             />

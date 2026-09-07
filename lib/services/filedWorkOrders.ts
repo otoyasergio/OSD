@@ -165,6 +165,7 @@ type RawFiledWo = {
   intake_photo: Array<{
     photo_id: string;
     storage_path: string;
+    thumb_storage_path: string | null;
     photo_url: string | null;
     category: PhotoCategory;
     created_at: string;
@@ -336,7 +337,7 @@ export async function listCompletedWorkOrdersForActiveLocation(
         last_name
       ),
       job ( service_name_snapshot, status ),
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at )
+      intake_photo ( photo_id, storage_path, thumb_storage_path, photo_url, category, created_at )
     `
     )
     .eq("location_id", user.active_location_id!)

@@ -32,7 +32,11 @@ export function WorkOrderPhotoStrip({ photos }: { photos: IntakePhoto[] }) {
             onClick={() => setOpenIndex(index)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
-            <img src={photo.src} alt={photo.label} className="wo-photo-strip-img" />
+            <img
+              src={photo.previewSrc ?? photo.src}
+              alt={photo.label}
+              className="wo-photo-strip-img"
+            />
           </button>
         ))}
       </div>

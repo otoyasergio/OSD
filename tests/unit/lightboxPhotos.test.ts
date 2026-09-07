@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 
 describe("toLightboxPhotos", () => {
-  it("prefers signed_url over photo_url", () => {
+  it("uses the full signed URL when the lightbox opens and a thumb for the grid", () => {
     const result = toLightboxPhotos([
       {
         photo_id: "p1",
-        signed_url: "https://signed.example/p1",
+        signed_url: "https://signed.example/full.jpg",
+        thumb_url: "https://signed.example/thumb.jpg",
         photo_url: "https://public.example/p1",
         category: "front",
         notes: null,
@@ -15,7 +16,8 @@ describe("toLightboxPhotos", () => {
     expect(result).toEqual([
       {
         id: "p1",
-        src: "https://signed.example/p1",
+        src: "https://signed.example/full.jpg",
+        previewSrc: "https://signed.example/thumb.jpg",
         label: "Front",
         caption: null,
       },
@@ -33,6 +35,7 @@ describe("toLightboxPhotos", () => {
       },
     ]);
     expect(result[0]?.src).toBe("https://public.example/p2");
+    expect(result[0]?.previewSrc).toBe("https://public.example/p2");
     expect(result[0]?.caption).toBe("Scratch on tank");
   });
 

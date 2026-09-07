@@ -72,6 +72,7 @@ export type InspectionDetail = {
     category: string;
     inspection_result_id: string | null;
     signed_url: string | null;
+    thumb_url: string | null;
     notes: string | null;
   }>;
 };
@@ -323,7 +324,9 @@ export async function getInspectionForWorkOrder(
 
   const { data: photoRows, error: photoError } = await supabase
     .from("intake_photo")
-    .select("photo_id, category, inspection_result_id, notes, storage_path, photo_url")
+    .select(
+      "photo_id, category, inspection_result_id, notes, storage_path, thumb_storage_path, photo_url"
+    )
     .eq("work_order_id", workOrderId)
     .in("category", [
       "inspection_tires",
@@ -340,17 +343,18 @@ export async function getInspectionForWorkOrder(
     inspection_result_id: string | null;
     notes: string | null;
     storage_path: string;
+    thumb_storage_path: string | null;
     photo_url: string | null;
   }>;
 
   const signedByPath = new Map<string, string | null>();
   if (rawPhotos.length > 0) {
+    const paths = rawPhotos.flatMap((p) =>
+      p.thumb_storage_path ? [p.storage_path, p.thumb_storage_path] : [p.storage_path]
+    );
     const { data: signed } = await supabase.storage
       .from("intake-photos")
-      .createSignedUrls(
-        rawPhotos.map((p) => p.storage_path),
-        60 * 60
-      );
+      .createSignedUrls(paths, 60 * 60);
     for (const row of signed ?? []) {
       if (row.path) {
         signedByPath.set(row.path, row.signedUrl ?? null);
@@ -358,13 +362,19 @@ export async function getInspectionForWorkOrder(
     }
   }
 
-  const photos = rawPhotos.map((p) => ({
-    photo_id: p.photo_id,
-    category: p.category,
-    inspection_result_id: p.inspection_result_id,
-    notes: p.notes,
-    signed_url: signedByPath.get(p.storage_path) ?? p.photo_url,
-  }));
+  const photos = rawPhotos.map((p) => {
+    const signed_url = signedByPath.get(p.storage_path) ?? p.photo_url;
+    return {
+      photo_id: p.photo_id,
+      category: p.category,
+      inspection_result_id: p.inspection_result_id,
+      notes: p.notes,
+      signed_url,
+      thumb_url:
+        (p.thumb_storage_path ? signedByPath.get(p.thumb_storage_path) : null) ??
+        signed_url,
+    };
+  });
 
   const signaturePath =
     (inspection as { signature_storage_path?: string | null }).signature_storage_path ??

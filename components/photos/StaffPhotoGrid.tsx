@@ -26,6 +26,7 @@ export function StaffPhotoGrid({
         photos.map((photo) => ({
           photo_id: photo.photo_id,
           signed_url: photo.signed_url,
+          thumb_url: photo.thumb_url,
           category: photo.category,
           notes:
             mode === "gallery"
@@ -62,12 +63,12 @@ export function StaffPhotoGrid({
               className="staff-photo-thumb"
               onClick={() => setOpenId(photo.photo_id)}
               aria-label={`View ${photo.category_label} photo`}
-              disabled={!photo.signed_url}
+              disabled={!photo.signed_url && !photo.thumb_url}
             >
-              {photo.signed_url ? (
+              {photo.thumb_url || photo.signed_url ? (
                 // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
                 <img
-                  src={photo.signed_url}
+                  src={photo.thumb_url ?? photo.signed_url ?? ""}
                   alt={photo.category_label}
                   className="staff-photo-img"
                   loading="lazy"

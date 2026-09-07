@@ -135,7 +135,14 @@ export function InspectionChecklist({
 
   function openPhotoBySrc(src: string | null | undefined) {
     if (!src) return;
-    const index = lightboxPhotos.findIndex((photo) => photo.src === src);
+    const match = inspection.photos.find(
+      (photo) => photo.thumb_url === src || photo.signed_url === src
+    );
+    const index = match
+      ? lightboxPhotos.findIndex((photo) => photo.id === match.photo_id)
+      : lightboxPhotos.findIndex(
+          (photo) => photo.src === src || photo.previewSrc === src
+        );
     if (index >= 0) setLightboxIndex(index);
   }
 

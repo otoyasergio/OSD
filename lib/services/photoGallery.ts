@@ -24,12 +24,14 @@ export type StaffGalleryPhoto = {
   notes: string | null;
   created_at: string;
   signed_url: string | null;
+  thumb_url: string | null;
 };
 
 type RawGalleryPhotoRow = {
   photo_id: string;
   work_order_id: string;
   storage_path: string;
+  thumb_storage_path: string | null;
   photo_url: string | null;
   category: PhotoCategory;
   notes: string | null;
@@ -145,6 +147,7 @@ export async function listShopGalleryPhotos(
       photo_id,
       work_order_id,
       storage_path,
+      thumb_storage_path,
       photo_url,
       category,
       notes,
@@ -212,22 +215,32 @@ export async function listShopGalleryPhotos(
   const page = filtered.slice(0, limit);
   const signed = await signStoragePaths(
     supabase,
-    page.map(({ row }) => row.storage_path)
+    page.flatMap(({ row }) =>
+      row.thumb_storage_path
+        ? [row.storage_path, row.thumb_storage_path]
+        : [row.storage_path]
+    )
   );
 
-  const photos: StaffGalleryPhoto[] = page.map(({ row, wo, bike, customer }) => ({
-    photo_id: row.photo_id,
-    work_order_id: row.work_order_id,
-    work_order_number: wo.work_order_number,
-    motorcycle_id: bike?.motorcycle_id ?? null,
-    motorcycle_label: bikeLabel(bike),
-    customer_label: customerLabel(customer),
-    category: row.category,
-    category_label: PHOTO_CATEGORY_LABELS[row.category] ?? row.category,
-    notes: row.notes,
-    created_at: row.created_at,
-    signed_url: signed.get(row.storage_path) ?? row.photo_url,
-  }));
+  const photos: StaffGalleryPhoto[] = page.map(({ row, wo, bike, customer }) => {
+    const signed_url = signed.get(row.storage_path) ?? row.photo_url;
+    return {
+      photo_id: row.photo_id,
+      work_order_id: row.work_order_id,
+      work_order_number: wo.work_order_number,
+      motorcycle_id: bike?.motorcycle_id ?? null,
+      motorcycle_label: bikeLabel(bike),
+      customer_label: customerLabel(customer),
+      category: row.category,
+      category_label: PHOTO_CATEGORY_LABELS[row.category] ?? row.category,
+      notes: row.notes,
+      created_at: row.created_at,
+      signed_url,
+      thumb_url:
+        (row.thumb_storage_path ? signed.get(row.thumb_storage_path) : null) ??
+        signed_url,
+    };
+  });
 
   return { photos, hasMore: filtered.length > limit };
 }
@@ -299,7 +312,7 @@ export async function listIntakePhotosForMotorcycle(
   const { data: photoRows, error: photoError } = await supabase
     .from("intake_photo")
     .select(
-      "photo_id, work_order_id, storage_path, photo_url, category, notes, created_at"
+      "photo_id, work_order_id, storage_path, thumb_storage_path, photo_url, category, notes, created_at"
     )
     .in("work_order_id", workOrderIds)
     .order("created_at", { ascending: false });
@@ -309,12 +322,19 @@ export async function listIntakePhotosForMotorcycle(
   const rows = photoRows ?? [];
   const signed = await signStoragePaths(
     supabase,
-    rows.map((row) => row.storage_path as string)
+    rows.flatMap((row) => {
+      const path = row.storage_path as string;
+      const thumb = row.thumb_storage_path as string | null;
+      return thumb ? [path, thumb] : [path];
+    })
   );
 
   return rows.map((row) => {
     const wo = byId.get(row.work_order_id as string)!;
     const category = row.category as PhotoCategory;
+    const signed_url =
+      signed.get(row.storage_path as string) ?? (row.photo_url as string | null);
+    const thumbPath = row.thumb_storage_path as string | null;
     return {
       photo_id: row.photo_id as string,
       work_order_id: row.work_order_id as string,
@@ -326,8 +346,8 @@ export async function listIntakePhotosForMotorcycle(
       category_label: PHOTO_CATEGORY_LABELS[category] ?? category,
       notes: (row.notes as string | null) ?? null,
       created_at: row.created_at as string,
-      signed_url:
-        signed.get(row.storage_path as string) ?? (row.photo_url as string | null),
+      signed_url,
+      thumb_url: (thumbPath ? signed.get(thumbPath) : null) ?? signed_url,
     };
   });
 }

@@ -1,16 +1,22 @@
+import { photoPreviewUrl } from "@/lib/photos/urls";
+
 export type InspectionPhotoRef = {
   photo_id?: string;
   category: string;
   inspection_result_id?: string | null;
   signed_url?: string | null;
+  thumb_url?: string | null;
   photo_url?: string | null;
 };
 
+export { photoFullUrl, photoPreviewUrl } from "@/lib/photos/urls";
+
 export function photoViewUrl(photo: {
+  thumb_url?: string | null;
   signed_url?: string | null;
   photo_url?: string | null;
 }): string | null {
-  return photo.signed_url || photo.photo_url || null;
+  return photoPreviewUrl(photo);
 }
 
 /** All photos linked to each inspection item — never first-wins. */

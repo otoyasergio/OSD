@@ -5,23 +5,41 @@ export type CompressImageOptions = {
   maxDimension?: number;
   /** Starting JPEG quality (0–1). */
   quality?: number;
+  /** Floor JPEG quality — never go below this while retrying for size. */
+  minQuality?: number;
 };
 
-const DEFAULT_MAX_BYTES = 900_000;
-const DEFAULT_MAX_DIMENSION = 1600;
-const DEFAULT_QUALITY = 0.72;
+/** Inspection-grade bike photos. Boards use a separate stored thumbnail. */
+export const BIKE_PHOTO_COMPRESS: Required<CompressImageOptions> = {
+  maxBytes: 4_500_000,
+  maxDimension: 4096,
+  quality: 0.9,
+  minQuality: 0.82,
+};
+
+/** Paper agreements and other documents — size matters more than pixel detail. */
+export const DOCUMENT_IMAGE_COMPRESS: Required<CompressImageOptions> = {
+  maxBytes: 900_000,
+  maxDimension: 1600,
+  quality: 0.72,
+  minQuality: 0.45,
+};
 
 /**
  * Downscale/re-encode camera photos so sequential uploads stay under
  * serverless body limits. Falls back to the original file on failure.
+ *
+ * Defaults keep bike photos large enough to inspect VIN, scratches, and
+ * fasteners when opened full-screen.
  */
 export async function compressImageForUpload(
   file: File,
   options: CompressImageOptions = {}
 ): Promise<File> {
-  const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
-  const maxDimension = options.maxDimension ?? DEFAULT_MAX_DIMENSION;
-  let quality = options.quality ?? DEFAULT_QUALITY;
+  const maxBytes = options.maxBytes ?? BIKE_PHOTO_COMPRESS.maxBytes;
+  const maxDimension = options.maxDimension ?? BIKE_PHOTO_COMPRESS.maxDimension;
+  const minQuality = options.minQuality ?? BIKE_PHOTO_COMPRESS.minQuality;
+  let quality = options.quality ?? BIKE_PHOTO_COMPRESS.quality;
 
   if (!(file instanceof File) || file.size === 0) return file;
   if (file.size <= maxBytes && file.type === "image/jpeg") return file;
@@ -52,7 +70,7 @@ export async function compressImageForUpload(
       });
       if (!blob) break;
       if (blob.size <= maxBytes) break;
-      quality = Math.max(0.45, quality - 0.12);
+      quality = Math.max(minQuality, quality - 0.08);
     }
 
     if (!blob || blob.size === 0) return file;

@@ -250,7 +250,7 @@ export function PhotosTab({
               key={photo.photo_id}
               className="overflow-hidden rounded border border-[var(--border)] bg-white"
             >
-              {photo.signed_url ? (
+              {photo.thumb_url || photo.signed_url ? (
                 <button
                   type="button"
                   className="block w-full cursor-zoom-in p-0 focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
@@ -259,7 +259,7 @@ export function PhotosTab({
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={photo.signed_url}
+                    src={photo.thumb_url ?? photo.signed_url ?? ""}
                     alt={`${PHOTO_CATEGORY_LABELS[photo.category]} intake photo`}
                     className="aspect-[4/3] w-full object-cover bg-[var(--surface-muted)]"
                   />

@@ -13,19 +13,24 @@ import {
 import { intakePhotoSchema } from "@/lib/validation/schemas";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
+import { intakeThumbStoragePath, makeIntakeThumb } from "@/lib/photos/makeIntakeThumb";
 
 export type IntakePhoto = {
   photo_id: string;
   work_order_id: string;
   uploaded_by_user_id: string | null;
   storage_path: string;
+  thumb_storage_path: string | null;
   photo_url: string | null;
   category: PhotoCategory;
   notes: string | null;
   inspection_result_id: string | null;
   job_id: string | null;
   created_at: string;
+  /** Full-size signed URL — lightbox and inspection zoom. */
   signed_url?: string | null;
+  /** Compressed preview for boards, grids, and strips. */
+  thumb_url?: string | null;
   uploaded_by?: {
     user_id: string;
     first_name: string;
@@ -34,7 +39,7 @@ export type IntakePhoto = {
 };
 
 const COLUMNS =
-  "photo_id, work_order_id, uploaded_by_user_id, storage_path, photo_url, category, notes, inspection_result_id, job_id, created_at";
+  "photo_id, work_order_id, uploaded_by_user_id, storage_path, thumb_storage_path, photo_url, category, notes, inspection_result_id, job_id, created_at";
 
 const BUCKET = "intake-photos";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -89,10 +94,18 @@ function extensionForType(type: string): string {
 export type IntakePhotoRef = {
   photo_id: string;
   storage_path: string;
+  thumb_storage_path?: string | null;
   photo_url?: string | null;
   category?: PhotoCategory | string | null;
   created_at?: string | null;
 };
+
+function previewPath(photo: {
+  storage_path: string;
+  thumb_storage_path?: string | null;
+}): string {
+  return photo.thumb_storage_path || photo.storage_path;
+}
 
 const PRIMARY_PHOTO_CATEGORY_RANK: Record<string, number> = {
   front: 0,
@@ -203,7 +216,7 @@ export async function resolvePrimaryPhotoUrls(
     const primary = pickPrimaryIntakePhoto(photos);
     if (!primary) continue;
     primaryByWo.set(workOrderId, primary);
-    paths.push(primary.storage_path);
+    paths.push(previewPath(primary));
   }
 
   const signed = await signStoragePaths(supabase, paths);
@@ -212,7 +225,7 @@ export async function resolvePrimaryPhotoUrls(
   for (const [workOrderId, primary] of primaryByWo) {
     result.set(
       workOrderId,
-      signed.get(primary.storage_path) ?? primary.photo_url ?? null
+      signed.get(previewPath(primary)) ?? primary.photo_url ?? null
     );
   }
   return result;
@@ -221,6 +234,7 @@ export async function resolvePrimaryPhotoUrls(
 type BoardPrimaryPhotoRow = {
   work_order_id: string;
   storage_path: string;
+  thumb_storage_path: string | null;
   photo_url: string | null;
   category: string | null;
   photo_count: number | string;
@@ -252,12 +266,13 @@ export async function resolveBoardPrimaryPhotos(
   const paths: string[] = [];
   for (const row of rows) {
     counts.set(row.work_order_id, Number(row.photo_count) || 0);
-    if (row.storage_path) paths.push(row.storage_path);
+    const path = previewPath(row);
+    if (path) paths.push(path);
   }
 
   const signed = await signStoragePaths(supabase, paths);
   for (const row of rows) {
-    urls.set(row.work_order_id, signed.get(row.storage_path) ?? row.photo_url ?? null);
+    urls.set(row.work_order_id, signed.get(previewPath(row)) ?? row.photo_url ?? null);
   }
 
   for (const id of uniqueIds) {
@@ -275,13 +290,20 @@ async function signPaths(
 
   const byPath = await signStoragePaths(
     supabase,
-    photos.map((p) => p.storage_path)
+    photos.flatMap((p) =>
+      p.thumb_storage_path ? [p.storage_path, p.thumb_storage_path] : [p.storage_path]
+    )
   );
 
-  return photos.map((p) => ({
-    ...p,
-    signed_url: byPath.get(p.storage_path) ?? p.photo_url,
-  }));
+  return photos.map((p) => {
+    const signed_url = byPath.get(p.storage_path) ?? p.photo_url;
+    return {
+      ...p,
+      signed_url,
+      thumb_url:
+        (p.thumb_storage_path ? byPath.get(p.thumb_storage_path) : null) ?? signed_url,
+    };
+  });
 }
 
 export async function listIntakePhotos(
@@ -414,6 +436,7 @@ export async function uploadIntakePhoto(
   const ext = extensionForType(file.type || "image/jpeg");
   const photoId = crypto.randomUUID();
   const storagePath = `${workOrderId}/${parsed.category}/${photoId}.${ext}`;
+  const thumbPath = intakeThumbStoragePath(storagePath);
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const { error: uploadError } = await supabase.storage
@@ -425,6 +448,22 @@ export async function uploadIntakePhoto(
 
   if (uploadError) throw new Error("PHOTO_UPLOAD_FAILED");
 
+  let thumbStoragePath: string | null = null;
+  const thumbBytes = await makeIntakeThumb(bytes);
+  if (thumbBytes && thumbBytes.byteLength > 0) {
+    const { error: thumbError } = await supabase.storage
+      .from(BUCKET)
+      .upload(thumbPath, thumbBytes, {
+        contentType: "image/jpeg",
+        upsert: false,
+      });
+    if (thumbError) {
+      console.error("intake photo thumb upload failed", thumbError);
+    } else {
+      thumbStoragePath = thumbPath;
+    }
+  }
+
   const { data, error } = await supabase
     .from("intake_photo")
     .insert({
@@ -432,6 +471,7 @@ export async function uploadIntakePhoto(
       work_order_id: workOrderId,
       uploaded_by_user_id: user.user_id,
       storage_path: storagePath,
+      thumb_storage_path: thumbStoragePath,
       photo_url: null,
       category: parsed.category,
       notes: parsed.notes ?? null,
@@ -442,7 +482,8 @@ export async function uploadIntakePhoto(
     .single();
 
   if (error) {
-    await supabase.storage.from(BUCKET).remove([storagePath]);
+    const toRemove = thumbStoragePath ? [storagePath, thumbStoragePath] : [storagePath];
+    await supabase.storage.from(BUCKET).remove(toRemove);
     throw error;
   }
 
@@ -517,9 +558,11 @@ export async function deleteIntakePhoto(
 
   if (deleteError) throw new Error("PHOTO_DELETE_FAILED");
 
+  const storagePaths = [row.storage_path];
+  if (row.thumb_storage_path) storagePaths.push(row.thumb_storage_path);
   const { error: storageError } = await supabase.storage
     .from(BUCKET)
-    .remove([row.storage_path]);
+    .remove(storagePaths);
   if (storageError) {
     // Row is gone; storage orphan is preferable to failing the user action.
     console.error("intake photo storage remove failed", storageError);

@@ -65,7 +65,14 @@ describe("inspectionPhotosForCategory", () => {
 });
 
 describe("photoViewUrl", () => {
-  it("prefers the signed URL and skips empty records", () => {
+  it("prefers the compressed thumb for on-page previews", () => {
+    expect(
+      photoViewUrl({
+        thumb_url: "https://cdn.example/thumb.jpg",
+        signed_url: "https://cdn.example/full.jpg",
+        photo_url: "/a.jpg",
+      })
+    ).toBe("https://cdn.example/thumb.jpg");
     expect(
       photoViewUrl({ signed_url: "https://cdn.example/a.jpg", photo_url: "/a.jpg" })
     ).toBe("https://cdn.example/a.jpg");

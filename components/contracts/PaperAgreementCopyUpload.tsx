@@ -5,7 +5,10 @@ import { useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CameraIcon, LibraryIcon } from "@/components/forms/IntakePhotoSlots";
 import { FormError } from "@/components/forms/Field";
-import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
+import {
+  compressImageForUpload,
+  DOCUMENT_IMAGE_COMPRESS,
+} from "@/lib/forms/compressImageForUpload";
 import { withIntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 
@@ -44,7 +47,7 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
 
     startTransition(async () => {
       const prepared = file.type.startsWith("image/")
-        ? await compressImageForUpload(file)
+        ? await compressImageForUpload(file, DOCUMENT_IMAGE_COMPRESS)
         : file;
       const formData = new FormData();
       formData.set("file", prepared);
