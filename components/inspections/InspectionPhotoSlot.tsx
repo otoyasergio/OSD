@@ -14,8 +14,8 @@ import {
   type PhotoFormState,
 } from "@/app/(app)/work_orders/photo-actions";
 import { FormError } from "@/components/forms/Field";
-import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 export function InspectionPhotoSlot({
   workOrderId,
@@ -62,19 +62,17 @@ export function InspectionPhotoSlot({
   }, [chooserOpen]);
 
   async function uploadFromInput(input: HTMLInputElement) {
-    const originals = Array.from(input.files ?? []);
     setChooserOpen(false);
     setClientError(null);
-    if (originals.length === 0 || !formRef.current) return;
+    if (!formRef.current) {
+      input.value = "";
+      return;
+    }
 
     setPreparing(true);
     try {
-      // Clone/compress before clearing the input — iOS library File refs can
-      // become invalid as soon as the input value is reset.
-      const files = await Promise.all(
-        originals.map((original) => preparePhotoFileForUpload(original))
-      );
-      input.value = "";
+      const files = await readPickedPhotoFiles(input);
+      if (files.length === 0) return;
       const formData = new FormData(formRef.current);
       formData.delete("file");
       for (const file of files) formData.append("file", file);
@@ -82,7 +80,6 @@ export function InspectionPhotoSlot({
         formAction(formData);
       });
     } catch {
-      input.value = "";
       setClientError("Could not read that photo. Try again, or use the camera instead.");
     } finally {
       setPreparing(false);

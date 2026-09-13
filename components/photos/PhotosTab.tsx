@@ -7,7 +7,9 @@ import type { PhotoFormState } from "@/app/(app)/work_orders/photo-actions";
 import { PHOTO_CATEGORY_LABELS, REQUIRED_PHOTO_CATEGORIES } from "@/lib/status/labels";
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { formatDateTime } from "@/lib/datetime/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
@@ -48,6 +50,8 @@ export function PhotosTab({
   const [chooserOpen, setChooserOpen] = useState(false);
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
   const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
 
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
@@ -66,21 +70,34 @@ export function PhotosTab({
     ? lightboxPhotos.findIndex((p) => p.id === lightboxPhotoId)
     : -1;
 
-  function applyPickedFile(input: HTMLInputElement) {
-    const file = input.files?.[0] ?? null;
+  async function applyPickedFile(input: HTMLInputElement) {
     const target = fileInputRef.current;
     setChooserOpen(false);
-    if (!target) return;
-    if (!file) {
-      target.value = "";
-      setPendingFileName(null);
+    setPickError(null);
+    if (!target) {
+      input.value = "";
       return;
     }
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    target.files = transfer.files;
-    setPendingFileName(file.name);
-    input.value = "";
+    setPreparing(true);
+    try {
+      const files = await readPickedPhotoFiles(input);
+      const file = files[0] ?? null;
+      if (!file) {
+        target.value = "";
+        setPendingFileName(null);
+        return;
+      }
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      target.files = transfer.files;
+      setPendingFileName(file.name);
+    } catch {
+      target.value = "";
+      setPendingFileName(null);
+      setPickError(UNREADABLE_PHOTO_MESSAGE);
+    } finally {
+      setPreparing(false);
+    }
   }
 
   return (
@@ -114,7 +131,7 @@ export function PhotosTab({
           }}
         >
           <h3 className="text-base font-semibold text-foreground">Upload intake photo</h3>
-          <FormError message={uploadState.error} />
+          <FormError message={uploadState.error ?? pickError} />
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-foreground">
               Category <span className="text-red-600">*</span>
@@ -161,7 +178,7 @@ export function PhotosTab({
               capture={cameraProps.capture}
               tabIndex={-1}
               aria-label="Camera"
-              onChange={(event) => applyPickedFile(event.currentTarget)}
+              onChange={(event) => void applyPickedFile(event.currentTarget)}
             />
             <input
               id={libraryInputId}
@@ -170,15 +187,20 @@ export function PhotosTab({
               accept={libraryProps.accept}
               tabIndex={-1}
               aria-label="Photo library"
-              onChange={(event) => applyPickedFile(event.currentTarget)}
+              onChange={(event) => void applyPickedFile(event.currentTarget)}
             />
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
                 className="btn btn-secondary min-h-11 flex-1"
                 onClick={() => setChooserOpen(true)}
+                disabled={preparing}
               >
-                {pendingFileName ? "Change photo" : "Choose photo"}
+                {preparing
+                  ? "Preparing photo…"
+                  : pendingFileName
+                    ? "Change photo"
+                    : "Choose photo"}
               </button>
             </div>
             {pendingFileName ? (
@@ -187,13 +209,19 @@ export function PhotosTab({
               </p>
             ) : (
               <p className="mt-1.5 text-sm text-[var(--status-neutral)]">
-                Camera or Library — required before upload.
+                {preparing
+                  ? "Preparing photo — keep this screen open."
+                  : "Camera or Library — required before upload."}
               </p>
             )}
           </div>
           <TextField label="Notes" name="notes" />
           <div>
-            <SubmitButton label="Upload photo" pendingLabel="Uploading…" />
+            <SubmitButton
+              label={preparing ? "Preparing…" : "Upload photo"}
+              pendingLabel="Uploading…"
+              disabled={preparing}
+            />
           </div>
         </form>
       ) : null}

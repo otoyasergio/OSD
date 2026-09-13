@@ -47,7 +47,7 @@ export async function compressImageForUpload(
   if (typeof document === "undefined") return file;
 
   try {
-    const bitmap = await createImageBitmap(file);
+    const bitmap = await decodeImageBitmap(file);
     const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
@@ -82,5 +82,27 @@ export async function compressImageForUpload(
     });
   } catch {
     return file;
+  }
+}
+
+async function decodeImageBitmap(file: File): Promise<ImageBitmap> {
+  try {
+    return await createImageBitmap(file);
+  } catch {
+    if (typeof Image === "undefined" || typeof URL === "undefined") {
+      throw new Error("IMAGE_DECODE_FAILED");
+    }
+    const url = URL.createObjectURL(file);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("IMAGE_DECODE_FAILED"));
+        img.src = url;
+      });
+      return await createImageBitmap(image);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   }
 }

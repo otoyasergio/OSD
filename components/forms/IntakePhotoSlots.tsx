@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { PhotoCategory } from "@/lib/database/types";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
 
 export type IntakePhotoSelection = Partial<Record<PhotoCategory, File | null>>;
@@ -155,7 +157,31 @@ export function IntakePhotoSlots({
   const slots = slotsFor(categories);
   const titleId = useId();
   const inputIdPrefix = useId();
+  const valueRef = useRef(value);
   const [chooserCategory, setChooserCategory] = useState<PhotoCategory | null>(null);
+  const [preparingCategory, setPreparingCategory] = useState<PhotoCategory | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  async function applyPickedFile(category: PhotoCategory, input: HTMLInputElement) {
+    setChooserCategory(null);
+    setPickError(null);
+    setPreparingCategory(category);
+    try {
+      const files = await readPickedPhotoFiles(input);
+      const file = files[0] ?? null;
+      const next = { ...valueRef.current, [category]: file };
+      valueRef.current = next;
+      onChange(next);
+    } catch {
+      setPickError(UNREADABLE_PHOTO_MESSAGE);
+    } finally {
+      setPreparingCategory(null);
+    }
+  }
 
   function cameraInputId(category: PhotoCategory) {
     return `${inputIdPrefix}-camera-${category}`;
@@ -200,25 +226,35 @@ export function IntakePhotoSlots({
 
   return (
     <>
+      {pickError ? (
+        <p role="alert" className="intake-photo-pick-error">
+          {pickError}
+        </p>
+      ) : null}
       <div className="intake-photo-grid">
         {slots.map((slot) => {
           const preview = previews[slot.category];
           const selected = value[slot.category];
           const filled = selected instanceof File && selected.size > 0;
+          const preparing = preparingCategory === slot.category;
 
           return (
             <div
               key={slot.category}
               className={`intake-photo-slot${filled ? " is-filled" : ""}${
-                disabled ? " is-disabled" : ""
-              }`}
+                preparing ? " is-preparing" : ""
+              }${disabled ? " is-disabled" : ""}`}
             >
               <button
                 type="button"
                 className="intake-photo-slot-trigger"
-                disabled={disabled}
+                disabled={disabled || preparing}
                 aria-label={
-                  filled ? `Retake ${slot.label} photo` : `Add ${slot.label} photo`
+                  preparing
+                    ? `Preparing ${slot.label} photo`
+                    : filled
+                      ? `Retake ${slot.label} photo`
+                      : `Add ${slot.label} photo`
                 }
                 onClick={() => setChooserCategory(slot.category)}
               >
@@ -230,7 +266,7 @@ export function IntakePhotoSlots({
                     </span>
                   </span>
                   <span className="intake-photo-slot-badge">
-                    {filled ? "Ready" : "Required"}
+                    {preparing ? "Preparing" : filled ? "Ready" : "Required"}
                   </span>
                 </span>
                 <span className="intake-photo-slot-body">
@@ -241,15 +277,21 @@ export function IntakePhotoSlots({
                       <span className="intake-photo-slot-check">
                         <CheckIcon />
                       </span>
-                      <span className="intake-photo-slot-retake">Tap to retake</span>
+                      <span className="intake-photo-slot-retake">
+                        {preparing ? "Preparing…" : "Tap to retake"}
+                      </span>
                     </>
                   ) : (
                     <span className="intake-photo-slot-empty">
                       <span className="intake-photo-slot-icon">
                         <CameraIcon />
                       </span>
-                      <span className="intake-photo-slot-hint">Tap to add photo</span>
-                      <span className="intake-photo-slot-subhint">Camera or Library</span>
+                      <span className="intake-photo-slot-hint">
+                        {preparing ? "Preparing photo…" : "Tap to add photo"}
+                      </span>
+                      <span className="intake-photo-slot-subhint">
+                        {preparing ? "Keep this screen open" : "Camera or Library"}
+                      </span>
                     </span>
                   )}
                 </span>
@@ -276,10 +318,7 @@ export function IntakePhotoSlots({
                 disabled={disabled}
                 aria-label={`${slot.label} camera`}
                 onChange={(event) => {
-                  const file = event.target.files?.[0] ?? null;
-                  onChange({ ...value, [slot.category]: file });
-                  setChooserCategory(null);
-                  event.target.value = "";
+                  void applyPickedFile(slot.category, event.currentTarget);
                 }}
               />
               <input
@@ -291,10 +330,7 @@ export function IntakePhotoSlots({
                 disabled={disabled}
                 aria-label={`${slot.label} photo library`}
                 onChange={(event) => {
-                  const file = event.target.files?.[0] ?? null;
-                  onChange({ ...value, [slot.category]: file });
-                  setChooserCategory(null);
-                  event.target.value = "";
+                  void applyPickedFile(slot.category, event.currentTarget);
                 }}
               />
             </div>
