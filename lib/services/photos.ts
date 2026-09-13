@@ -14,6 +14,8 @@ import { intakePhotoSchema } from "@/lib/validation/schemas";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { intakeThumbStoragePath, makeIntakeThumb } from "@/lib/photos/makeIntakeThumb";
+import { PHOTO_UPLOAD_RETRY_ATTEMPTS } from "@/lib/forms/photoUploadErrors";
+import { classifyStorageUploadError } from "@/lib/forms/storageUploadRetry";
 
 export type IntakePhoto = {
   photo_id: string;
@@ -89,6 +91,30 @@ function extensionForType(type: string): string {
   if (type === "image/webp") return "webp";
   if (type === "image/heic" || type === "image/heif") return "heic";
   return "jpg";
+}
+
+async function uploadIntakeBytes(
+  supabase: DbClient,
+  storagePath: string,
+  bytes: Uint8Array,
+  contentType: string
+) {
+  let lastError: { message?: string } | null = null;
+  for (let attempt = 0; attempt < PHOTO_UPLOAD_RETRY_ATTEMPTS; attempt += 1) {
+    const { error } = await supabase.storage.from(BUCKET).upload(storagePath, bytes, {
+      contentType,
+      upsert: false,
+    });
+    const kind = classifyStorageUploadError(error);
+    if (kind === "ok" || kind === "exists") return;
+    lastError = error;
+    if (kind === "fail" || attempt === PHOTO_UPLOAD_RETRY_ATTEMPTS - 1) break;
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+  }
+  if (lastError) {
+    console.error("intake photo upload failed", lastError);
+  }
+  throw new Error("PHOTO_UPLOAD_FAILED");
 }
 
 export type IntakePhotoRef = {
@@ -439,14 +465,8 @@ export async function uploadIntakePhoto(
   const thumbPath = intakeThumbStoragePath(storagePath);
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, bytes, {
-      contentType: file.type || "image/jpeg",
-      upsert: false,
-    });
-
-  if (uploadError) throw new Error("PHOTO_UPLOAD_FAILED");
+  if (bytes.byteLength === 0) throw new Error("PHOTO_REQUIRED");
+  await uploadIntakeBytes(supabase, storagePath, bytes, file.type || "image/jpeg");
 
   let thumbStoragePath: string | null = null;
   const thumbBytes = await makeIntakeThumb(bytes);

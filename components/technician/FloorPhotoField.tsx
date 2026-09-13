@@ -3,7 +3,7 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { mergeOptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
-import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
+import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 export type FloorPhotoFieldHandle = {
   openCamera: () => void;
@@ -43,19 +43,19 @@ export const FloorPhotoField = forwardRef<
   }
 
   async function applyPickedFiles(input: HTMLInputElement) {
-    const incoming = Array.from(input.files ?? []);
     const target = fileInputRef.current;
-    if (!target) return;
-    const current = Array.from(target.files ?? []);
-    if (incoming.length === 0 && current.length === 0) {
-      target.value = "";
-      notifyPhotoReady([]);
+    if (!target) {
+      input.value = "";
       return;
     }
+    const current = Array.from(target.files ?? []);
     try {
-      const prepared = await Promise.all(
-        incoming.map((file) => preparePhotoFileForUpload(file))
-      );
+      const prepared = await readPickedPhotoFiles(input);
+      if (prepared.length === 0 && current.length === 0) {
+        target.value = "";
+        notifyPhotoReady([]);
+        return;
+      }
       const merged = mergeOptionalIntakePhotos(current, prepared);
       const transfer = new DataTransfer();
       for (const file of merged) transfer.items.add(file);
@@ -63,8 +63,6 @@ export const FloorPhotoField = forwardRef<
       notifyPhotoReady(merged);
     } catch {
       notifyPhotoReady(current);
-    } finally {
-      input.value = "";
     }
   }
 

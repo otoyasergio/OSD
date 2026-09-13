@@ -3296,6 +3296,26 @@ button.board-control-link {
   grid-template-columns: 1fr;
 }
 
+.intake-photo-pick-error {
+  margin: 0 0 0.75rem;
+  border: 1px solid var(--status-danger, #b91c1c);
+  border-radius: var(--radius-md, 0.5rem);
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 0.75rem 0.875rem;
+  font-size: 0.875rem;
+}
+
+.intake-photo-slot.is-preparing {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.intake-photo-slot.is-preparing .intake-photo-slot-badge {
+  background: var(--accent-muted);
+  color: var(--accent-foreground);
+}
+
 @media (min-width: 640px) {
   .intake-photo-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

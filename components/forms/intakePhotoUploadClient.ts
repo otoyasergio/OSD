@@ -2,7 +2,8 @@
 
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import type { PhotoCategory } from "@/lib/database/types";
-import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
+import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
+import { withPhotoUploadRetries } from "@/lib/forms/retryPhotoUpload";
 
 export async function uploadSelectedIntakePhoto(
   workOrderId: string,
@@ -12,14 +13,18 @@ export async function uploadSelectedIntakePhoto(
   if (!(original instanceof File) || original.size === 0) return false;
 
   try {
-    const file = await compressImageForUpload(original);
-    const photoData = new FormData();
-    photoData.set("file", file);
-    photoData.set("category", category);
-    const uploaded = await uploadIntakePhotoAction(
-      workOrderId,
-      { error: null },
-      photoData
+    const file = await preparePhotoFileForUpload(original);
+    const uploaded = await withPhotoUploadRetries(
+      async () => {
+        const photoData = new FormData();
+        photoData.set("file", file);
+        photoData.set("category", category);
+        return uploadIntakePhotoAction(workOrderId, { error: null }, photoData);
+      },
+      {
+        isSuccess: (result) => !result.error,
+        getFailureMessage: (result) => result.error,
+      }
     );
     return !uploaded.error;
   } catch {
