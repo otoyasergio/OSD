@@ -20,6 +20,8 @@ async function wixFetch(path: string, init: RequestInit = {}): Promise<Response>
     ...init,
     headers,
     cache: "no-store",
+    // A hung socket here would otherwise burn the whole 300s cron budget.
+    signal: init.signal ?? AbortSignal.timeout(20_000),
   });
 }
 

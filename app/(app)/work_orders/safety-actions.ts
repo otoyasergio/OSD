@@ -24,7 +24,11 @@ export async function passSafetyCheckAction(
   formData: FormData
 ): Promise<SafetyFormState> {
   try {
-    await passSafetyCheck(workOrderId, String(formData.get("safety_check_notes") ?? ""));
+    await passSafetyCheck(
+      workOrderId,
+      String(formData.get("safety_check_notes") ?? ""),
+      String(formData.get("signature_data_url") ?? "")
+    );
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

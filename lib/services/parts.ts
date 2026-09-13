@@ -11,6 +11,7 @@ import {
   canViewPartCost,
 } from "@/lib/permissions";
 import { partSchema, partStatusSchema } from "@/lib/validation/schemas";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 
 export type Part = {
@@ -87,13 +88,8 @@ async function requireMutableWorkOrder(
 
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
-  if (
-    workOrder.status === "completed" ||
-    workOrder.status === "cancelled"
-  ) {
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
+  if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
 
@@ -104,9 +100,7 @@ async function requireMutableWorkOrder(
   };
 }
 
-export async function listPartsForWorkOrder(
-  workOrderId: string
-): Promise<Part[]> {
+export async function listPartsForWorkOrder(workOrderId: string): Promise<Part[]> {
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -226,10 +220,7 @@ export async function updatePartUnitPrice(
     throw new Error("FORBIDDEN");
   }
 
-  const price =
-    unitPrice === null || unitPrice === undefined
-      ? null
-      : Number(unitPrice);
+  const price = unitPrice === null || unitPrice === undefined ? null : Number(unitPrice);
   if (price !== null && (!Number.isFinite(price) || price < 0)) {
     throw new Error("Invalid unit price");
   }
@@ -366,14 +357,8 @@ export async function updatePartStatus(
   });
 
   // Keep job status in sync when parts are waiting
-  if (
-    parsedStatus === "needed" ||
-    parsedStatus === "ordered"
-  ) {
-    if (
-      job.status === "approved" ||
-      job.status === "ready_to_start"
-    ) {
+  if (parsedStatus === "needed" || parsedStatus === "ordered") {
+    if (job.status === "approved" || job.status === "ready_to_start") {
       await supabase
         .from("job")
         .update({ status: "waiting_for_parts", updated_at: now })

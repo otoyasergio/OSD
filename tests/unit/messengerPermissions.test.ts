@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { canUseMessenger, canManageGroupMembers } from "@/lib/permissions/checks";
 
 describe("canUseMessenger", () => {
-  it("allows every active staff role", () => {
+  it("allows every active staff role except the kiosk tablet", () => {
     for (const role of [
       "owner",
       "manager",
@@ -13,6 +13,7 @@ describe("canUseMessenger", () => {
     ] as const) {
       expect(canUseMessenger(role)).toBe(true);
     }
+    expect(canUseMessenger("time_clock_kiosk")).toBe(false);
   });
 });
 

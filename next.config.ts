@@ -12,6 +12,7 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "64mb",
     },
   },
+  serverExternalPackages: ["sharp"],
   // Allow Playwright / automation hitting 127.0.0.1 while Next binds to localhost.
   allowedDevOrigins: ["127.0.0.1"],
 };

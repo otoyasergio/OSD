@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth/session";
+import { resolveReadSubject, type ReadView } from "@/lib/auth/role-preview-shared";
 import { createClient } from "@/lib/database/supabase-server";
 import type { JobStatus, PartStatus, WorkOrderStatus } from "@/lib/database/types";
 import { canViewClients, canViewPartsBoard, isFloorTech } from "@/lib/permissions";
@@ -102,14 +103,23 @@ function resolveBucket(
 
 export async function listPartsWaitingForLocation(
   locationId: string,
-  options?: { technicianId?: string }
+  options?: {
+    technicianId?: string;
+    /** Trusted presentation principal (owner "view as") — read shaping only. */
+    view?: ReadView;
+  }
 ): Promise<PartsWaitingItem[]> {
   const user = await requireUser();
+  const subject = resolveReadSubject(user, options?.view);
   if (!canViewPartsBoard(user.role)) throw new Error("FORBIDDEN");
   if (locationId !== user.active_location_id) throw new Error("FOREIGN_LOCATION");
 
   const supabase = await createClient();
-  const { data, error } = await supabase
+  const technicianFilter = isFloorTech(subject.role)
+    ? subject.userId
+    : options?.technicianId?.trim() || "";
+
+  let query = supabase
     .from("part")
     .select(
       `
@@ -123,7 +133,7 @@ export async function listPartsWaitingForLocation(
       status,
       ordered_at,
       created_at,
-      job:job_id (
+      job:job_id!inner (
         job_id,
         service_name_snapshot,
         status,
@@ -133,7 +143,7 @@ export async function listPartsWaitingForLocation(
           first_name,
           last_name
         ),
-        work_order:work_order_id (
+        work_order:work_order_id!inner (
           work_order_id,
           work_order_number,
           status,
@@ -152,15 +162,19 @@ export async function listPartsWaitingForLocation(
     `
     )
     .in("status", BOARD_STATUSES)
-    .order("created_at", { ascending: true });
+    .eq("job.work_order.location_id", locationId)
+    .not("job.work_order.status", "in", '("completed","cancelled")');
+
+  if (technicianFilter) {
+    query = query.eq("job.assigned_technician_id", technicianFilter);
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: true });
 
   if (error) throw error;
 
   const now = new Date();
-  const technicianFilter = isFloorTech(user.role)
-    ? user.user_id
-    : options?.technicianId?.trim() || "";
-  const showClients = canViewClients(user.role);
+  const showClients = canViewClients(subject.role);
   const items: PartsWaitingItem[] = [];
 
   for (const row of (data ?? []) as unknown as Array<{

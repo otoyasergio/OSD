@@ -28,6 +28,7 @@
 *.pem
 .superpowers/
 .worktrees/
+/tmp/
 
 # debug
 npm-debug.log*
@@ -41,6 +42,9 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# supabase cli scratch (blocks the production deploy guard when untracked)
+supabase/.temp/
 
 # typescript
 *.tsbuildinfo

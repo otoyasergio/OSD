@@ -5,9 +5,12 @@ import { useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CameraIcon, LibraryIcon } from "@/components/forms/IntakePhotoSlots";
 import { FormError } from "@/components/forms/Field";
-import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
+import { DOCUMENT_IMAGE_COMPRESS } from "@/lib/forms/compressImageForUpload";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import { cloneFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import { withIntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 type Props = {
   action: (formData: FormData) => Promise<{ error: string | null }>;
@@ -34,6 +37,29 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
     setChooserOpen(false);
   }
 
+  async function chooseFromInput(input: HTMLInputElement) {
+    const original = input.files?.[0] ?? null;
+    setChooserOpen(false);
+    setError(null);
+    if (!original) {
+      input.value = "";
+      return;
+    }
+    try {
+      if (original.type === "application/pdf" || !original.type.startsWith("image/")) {
+        const cloned = await cloneFileForUpload(original);
+        input.value = "";
+        chooseFile(cloned);
+        return;
+      }
+      const files = await readPickedPhotoFiles(input, DOCUMENT_IMAGE_COMPRESS);
+      chooseFile(files[0] ?? null);
+    } catch {
+      input.value = "";
+      setError(UNREADABLE_PHOTO_MESSAGE);
+    }
+  }
+
   function upload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -43,11 +69,8 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
     }
 
     startTransition(async () => {
-      const prepared = file.type.startsWith("image/")
-        ? await compressImageForUpload(file)
-        : file;
       const formData = new FormData();
-      formData.set("file", prepared);
+      formData.set("file", file);
       const result = await action(formData);
       if (result.error) {
         setError(result.error);
@@ -135,8 +158,7 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
         disabled={pending}
         aria-label="Photograph signed paper agreement"
         onChange={(event) => {
-          chooseFile(event.target.files?.[0] ?? null);
-          event.target.value = "";
+          void chooseFromInput(event.currentTarget);
         }}
       />
       <input
@@ -148,8 +170,7 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
         disabled={pending}
         aria-label="Choose signed paper agreement file"
         onChange={(event) => {
-          chooseFile(event.target.files?.[0] ?? null);
-          event.target.value = "";
+          void chooseFromInput(event.currentTarget);
         }}
       />
 

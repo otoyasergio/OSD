@@ -30,6 +30,7 @@ async function squareFetch<T>(path: string, init?: RequestInit): Promise<T> {
       "Square-Version": "2024-12-18",
       ...(init?.headers ?? {}),
     },
+    signal: init?.signal ?? AbortSignal.timeout(20_000),
   });
 
   const body = (await response.json()) as T & {
@@ -120,12 +121,25 @@ export type SquareInvoiceLine = {
 
 type SquareInvoiceWithVersion = SquareInvoice & { version?: number };
 
+/**
+ * Derive the per-request Square idempotency key from a caller-provided
+ * stable operation key. Retries of the same operation (same content) replay
+ * on Square instead of minting duplicate documents; callers without a key
+ * fall back to a random one (no idempotency across retries).
+ */
+function squareIdempotencyKey(operationKey: string | undefined, step: string): string {
+  if (!operationKey) return crypto.randomUUID();
+  return `${operationKey}:${step}`.slice(0, 128);
+}
+
 export async function createSquareInvoiceDraft(input: {
   customerId: string;
   title: string;
   description?: string;
   lineItems: SquareInvoiceLine[];
   dueDate?: string;
+  /** Stable key derived from (work order, operation, content) by the caller. */
+  idempotencyKey?: string;
 }): Promise<SquareInvoiceWithVersion> {
   const config = getSquareConfig();
 
@@ -136,7 +150,7 @@ export async function createSquareInvoiceDraft(input: {
   const orderResponse = await squareFetch<{ order: { id: string } }>("/v2/orders", {
     method: "POST",
     body: JSON.stringify({
-      idempotency_key: crypto.randomUUID(),
+      idempotency_key: squareIdempotencyKey(input.idempotencyKey, "order"),
       order: {
         location_id: config.locationId,
         customer_id: input.customerId,
@@ -157,7 +171,7 @@ export async function createSquareInvoiceDraft(input: {
     {
       method: "POST",
       body: JSON.stringify({
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: squareIdempotencyKey(input.idempotencyKey, "invoice"),
         invoice: {
           location_id: config.locationId,
           order_id: orderResponse.order.id,
@@ -190,14 +204,15 @@ export async function createSquareInvoiceDraft(input: {
 
 export async function publishSquareInvoice(
   invoiceId: string,
-  version: number
+  version: number,
+  idempotencyKey?: string
 ): Promise<SquareInvoiceWithVersion> {
   const published = await squareFetch<{ invoice: SquareInvoiceWithVersion }>(
     `/v2/invoices/${invoiceId}/publish`,
     {
       method: "POST",
       body: JSON.stringify({
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: squareIdempotencyKey(idempotencyKey, "publish"),
         version,
       }),
     }

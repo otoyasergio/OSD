@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { deriveDefaultStage } from "@/lib/technician/floorStage";
+import {
+  deriveDefaultStage,
+  shouldShowFloorAfterPhotoCapture,
+} from "@/lib/technician/floorStage";
 import type { FloorOsSurface } from "@/lib/services/technicianFloor";
 
 function base(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface {
@@ -51,11 +54,39 @@ function base(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface {
     can_start: false,
     can_complete: true,
     can_pull: false,
+    job_timer_running: false,
     is_qc: false,
     qc_assignee_is_me: false,
     is_safety: false,
     can_safety: false,
     flags: [],
+    board_status: "bench",
+    board_stamp: "NOW",
+    floor_acknowledged_at: "2026-01-01T00:00:00Z",
+    floor_parked_at: null,
+    floor_park_reason: null,
+    floor_wait_owner: null,
+    wait_owner_label: "",
+    park_reason_label: "",
+    steps: [],
+    go: {
+      action: "none",
+      label: "Nothing to do",
+      sub: "",
+      enabled: false,
+    },
+    timer_secs: 0,
+    work_brief: {
+      service_name: "Oil",
+      job_notes: null,
+      recommendation_description: null,
+      recommendation_notes: null,
+      estimated_labour: null,
+      parts: [],
+      technician_notes: [],
+    },
+    pending_recommendations: [],
+    peer_qc_candidates: [],
     ...overrides,
   };
 }
@@ -93,6 +124,33 @@ describe("deriveDefaultStage", () => {
 
   it("lands on done when gates satisfied", () => {
     expect(deriveDefaultStage(base())).toBe("done");
+  });
+
+  it("still lets techs add after photos once the first one is on file", () => {
+    expect(
+      shouldShowFloorAfterPhotoCapture({
+        finished: false,
+        boardStatus: "bench",
+        activeStage: "done",
+        currentStepKind: "complete",
+      })
+    ).toBe(true);
+    expect(
+      shouldShowFloorAfterPhotoCapture({
+        finished: false,
+        boardStatus: "bench",
+        activeStage: "proof",
+        currentStepKind: "proof",
+      })
+    ).toBe(true);
+    expect(
+      shouldShowFloorAfterPhotoCapture({
+        finished: true,
+        boardStatus: "done",
+        activeStage: "done",
+        currentStepKind: "complete",
+      })
+    ).toBe(false);
   });
 
   it("uses qc for peer QC without a job", () => {

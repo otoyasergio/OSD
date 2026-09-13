@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  approveRecommendationAndSendToFloor,
   convertRecommendationToJob,
   createRecommendation,
   createRecommendationFromInspectionResult,
@@ -10,10 +11,7 @@ import {
   updateRecommendationStatus,
 } from "@/lib/services/recommendations";
 import { toFormErrorMessage } from "@/lib/services/errors";
-import type {
-  RecommendationSeverity,
-  RecommendationStatus,
-} from "@/lib/database/types";
+import type { RecommendationSeverity, RecommendationStatus } from "@/lib/database/types";
 
 export type RecommendationFormState = { error: string | null };
 
@@ -28,6 +26,8 @@ function revalidateRecommendations(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath(`/work_orders/${workOrderId}/inspection`);
   revalidatePath("/work_orders");
+  revalidatePath("/technician");
+  revalidatePath("/dashboard");
 }
 
 export async function createRecommendationAction(
@@ -41,9 +41,7 @@ export async function createRecommendationAction(
       const severityRaw = String(formData.get("severity") ?? "").trim();
       await createRecommendationFromInspectionResult(fromResult, {
         description: String(formData.get("description") ?? "").trim() || undefined,
-        severity: severityRaw
-          ? (severityRaw as RecommendationSeverity)
-          : undefined,
+        severity: severityRaw ? (severityRaw as RecommendationSeverity) : undefined,
         notes: String(formData.get("notes") ?? "").trim() || null,
       });
     } else {
@@ -72,11 +70,16 @@ export async function updateRecommendationStatusAction(
       RecommendationStatus,
       "converted_to_job" | "pending"
     >;
-    await updateRecommendationStatus(
-      recommendationId,
-      status,
-      String(formData.get("notes") ?? "").trim() || null
-    );
+    // Client approved → create approved job and put it on the tech's Perform work.
+    if (status === "approved") {
+      await approveRecommendationAndSendToFloor(recommendationId);
+    } else {
+      await updateRecommendationStatus(
+        recommendationId,
+        status,
+        String(formData.get("notes") ?? "").trim() || null
+      );
+    }
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -92,14 +95,38 @@ export async function convertRecommendationAction(
   formData: FormData
 ): Promise<RecommendationFormState> {
   try {
+    const serviceId = String(formData.get("service_id") ?? "").trim();
+    if (!serviceId) throw new Error("SERVICE_NOT_FOUND");
+    const priceRaw = String(formData.get("price") ?? "").trim();
     await convertRecommendationToJob(recommendationId, {
-      service_id: String(formData.get("service_id") ?? ""),
+      service_id: serviceId,
       already_approved: formData.get("already_approved") === "true",
+      use_recommendation_title: true,
+      price_override: priceRaw ? Number(priceRaw) : null,
     });
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
 
   revalidateRecommendations(workOrderId);
+  return { error: null };
+}
+
+export async function sendRecommendationEstimateAction(
+  workOrderId: string,
+  _prevState: RecommendationFormState,
+  formData: FormData
+): Promise<RecommendationFormState> {
+  try {
+    const channel = formData.get("channel") === "sms" ? "sms" : "email";
+    const { sendWorkOrderEstimateApproval } =
+      await import("@/lib/services/squareBilling");
+    await sendWorkOrderEstimateApproval(workOrderId, channel);
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+
+  revalidateRecommendations(workOrderId);
+  revalidatePath("/billing");
   return { error: null };
 }

@@ -2,13 +2,11 @@
 
 import { FormEvent, useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/database/supabase-browser";
 import { assertLoginAllowed } from "@/app/login/actions";
 import { safeNextPath } from "@/lib/auth/routes";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +25,7 @@ export default function LoginPage() {
       }
 
       const supabase = createClient();
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -37,13 +35,28 @@ export default function LoginPage() {
         return;
       }
 
+      // Soft client navigations can race cookie writes and bounce back to
+      // /login. Confirm the session, then do a full navigation so the proxy
+      // and RSC tree both see the new auth cookies.
+      const session = data.session ?? (await supabase.auth.getSession()).data.session;
+      if (!session) {
+        setError("Sign-in did not establish a session. Refresh and try again.");
+        return;
+      }
+
       const nextPath = safeNextPath(
         new URLSearchParams(window.location.search).get("next")
       );
-      router.replace(nextPath);
-      router.refresh();
+      window.location.assign(nextPath);
+      return;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to sign in");
+      const message = err instanceof Error ? err.message : "Unable to sign in";
+      // Next.js surfaces middleware redirects of Server Actions as this string.
+      setError(
+        /unexpected response was received from the server/i.test(message)
+          ? "Sign-in was interrupted. Refresh the page and try again."
+          : message
+      );
     } finally {
       setPending(false);
     }
@@ -60,9 +73,9 @@ export default function LoginPage() {
               <Image
                 src="/otomoto-logo.png"
                 alt="OTOMOTO Toronto Moto"
-                width={180}
-                height={62}
-                className="h-11 w-auto"
+                width={280}
+                height={96}
+                className="brand-logo brand-logo--login"
                 priority
               />
               <div>
@@ -129,9 +142,9 @@ export default function LoginPage() {
           <Image
             src="/otomoto-service-logo.png"
             alt="OTOMOTO Moto Service"
-            width={160}
-            height={124}
-            className="h-14 w-auto opacity-70"
+            width={220}
+            height={170}
+            className="brand-logo brand-logo--service"
           />
         </div>
       </div>

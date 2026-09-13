@@ -46,6 +46,7 @@ export async function startCall(
 ): Promise<ChatCall> {
   const user = await requireUser();
   if (!canUseMessenger(user.role)) throw new Error("FORBIDDEN");
+  if (kind !== "video") throw new Error("USE_SHOP_VOICE");
   if (!isTwilioVideoConfigured()) throw new Error("TWILIO_VIDEO_NOT_CONFIGURED");
 
   const supabase = await requireParticipant(conversationId, user.user_id);
@@ -77,7 +78,7 @@ export async function startCall(
     .single();
   if (error) throw error;
 
-  const label = kind === "video" ? "Video call started" : "Audio call started";
+  const label = "Video call started";
   await supabase.from("chat_message").insert({
     conversation_id: conversationId,
     sender_user_id: user.user_id,
@@ -209,4 +210,34 @@ export async function getActiveCallForConversation(
     .maybeSingle();
   if (error) throw error;
   return (data as ChatCall | null) ?? null;
+}
+
+export async function getVideoCallRingInfo(callId: string): Promise<{
+  callId: string;
+  callerName: string;
+} | null> {
+  const user = await requireUser();
+  if (!canUseMessenger(user.role)) throw new Error("FORBIDDEN");
+  const supabase = await createClient();
+  const { data: call, error } = await supabase
+    .from("chat_call")
+    .select("call_id, conversation_id, kind, started_by_user_id, status")
+    .eq("call_id", callId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!call || call.kind !== "video") return null;
+  await requireParticipant(call.conversation_id, user.user_id);
+
+  if (!call.started_by_user_id) {
+    return { callId: call.call_id, callerName: "Incoming video call" };
+  }
+  const { data: starter } = await supabase
+    .from("app_user")
+    .select("first_name, last_name")
+    .eq("user_id", call.started_by_user_id)
+    .maybeSingle();
+  const callerName = starter
+    ? `${starter.first_name} ${starter.last_name}`.trim()
+    : "Incoming video call";
+  return { callId: call.call_id, callerName: callerName || "Incoming video call" };
 }

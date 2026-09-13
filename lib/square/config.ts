@@ -6,8 +6,13 @@ export function getSquareConfig(): {
 } {
   const accessToken = process.env.SQUARE_ACCESS_TOKEN ?? "";
   const locationId = process.env.SQUARE_LOCATION_ID ?? "";
-  const environment =
-    process.env.SQUARE_ENVIRONMENT === "production" ? "production" : "sandbox";
+  const rawEnvironment = process.env.SQUARE_ENVIRONMENT?.trim();
+  // Anything other than the exact string "production" falls back to sandbox,
+  // so a typo silently sends real invoices to the sandbox. Fail loudly.
+  if (rawEnvironment && rawEnvironment !== "production" && rawEnvironment !== "sandbox") {
+    throw new Error(`SQUARE_ENVIRONMENT_INVALID: "${rawEnvironment}"`);
+  }
+  const environment = rawEnvironment === "production" ? "production" : "sandbox";
   const webhookSignatureKey = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY ?? "";
 
   if (!accessToken || !locationId) {
@@ -19,8 +24,7 @@ export function getSquareConfig(): {
 
 export function isSquareConfigured(): boolean {
   return Boolean(
-    process.env.SQUARE_ACCESS_TOKEN?.trim() &&
-      process.env.SQUARE_LOCATION_ID?.trim()
+    process.env.SQUARE_ACCESS_TOKEN?.trim() && process.env.SQUARE_LOCATION_ID?.trim()
   );
 }
 

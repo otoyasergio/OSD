@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canViewClients } from "@/lib/permissions";
 import { countMotorcycles, searchMotorcycles } from "@/lib/services/motorcycles";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -12,7 +13,8 @@ export default async function MotorcyclesPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const user = await requireUser();
-  if (!canViewClients(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  if (!canViewClients(preview?.role ?? user.role)) redirect("/dashboard");
 
   const { q = "" } = await searchParams;
   const [motorcycles, totalMotorcycles] = await Promise.all([

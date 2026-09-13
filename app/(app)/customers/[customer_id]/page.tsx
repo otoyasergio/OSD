@@ -15,16 +15,19 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { JOB_STATUS_LABELS } from "@/lib/status/labels";
 import type { CustomerWorkOrderSummary } from "@/lib/services/filedWorkOrders";
 import { requireUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canDeleteCustomerDocuments,
   canEditWorkOrder,
   canSyncWixContacts,
   canUploadCustomerDocuments,
+  canUseShopPhone,
   canViewClients,
   canViewCustomerDocuments,
 } from "@/lib/permissions";
 import { isWixSyncAvailable } from "@/lib/services/wixContacts";
 import { formatCalendarDate, formatDate } from "@/lib/datetime/format";
+import { ClickToCallButton } from "@/components/comms/ClickToCallButton";
 
 function WorkOrderHistoryList({
   items,
@@ -97,23 +100,25 @@ export default async function CustomerDetailPage({
 }) {
   const { customer_id } = await params;
   const user = await requireUser();
-  if (!canViewClients(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  const viewRole = preview?.role ?? user.role;
+  if (!canViewClients(viewRole)) redirect("/dashboard");
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 
   const [garage, history, documents] = await Promise.all([
     listGarageForCustomer(customer_id),
     listWorkOrdersForCustomer(customer_id),
-    canViewCustomerDocuments(user.role)
+    canViewCustomerDocuments(viewRole)
       ? listCustomerDocuments(customer_id)
       : Promise.resolve([]),
   ]);
   const updateAction = updateCustomerAction.bind(null, customer_id);
-  const canTransfer = canEditWorkOrder(user.role);
-  const canUploadDocs = canUploadCustomerDocuments(user.role);
-  const canDeleteDocs = canDeleteCustomerDocuments(user.role);
-  const canViewDocs = canViewCustomerDocuments(user.role);
-  const canSyncWix = canSyncWixContacts(user.role);
+  const canTransfer = canEditWorkOrder(viewRole);
+  const canUploadDocs = canUploadCustomerDocuments(viewRole);
+  const canDeleteDocs = canDeleteCustomerDocuments(viewRole);
+  const canViewDocs = canViewCustomerDocuments(viewRole);
+  const canSyncWix = canSyncWixContacts(viewRole);
   const wixConfigured = isWixSyncAvailable();
 
   return (
@@ -128,11 +133,17 @@ export default async function CustomerDetailPage({
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
           {customer.first_name} {customer.last_name}
         </h1>
-        <p className="mt-1 text-sm text-[var(--status-neutral)]">
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--status-neutral)]">
           <span className="badge mr-2 bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]">
             {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
           </span>
           {customer.phone ?? "No phone"} · {customer.email ?? "No email"}
+          <ClickToCallButton
+            phone={customer.phone}
+            customerId={customer.customer_id}
+            customerName={`${customer.first_name} ${customer.last_name}`.trim()}
+            visible={canUseShopPhone(viewRole)}
+          />
         </p>
         {customer.address || customer.date_of_birth ? (
           <p className="mt-1 text-sm text-[var(--status-neutral)]">

@@ -9,6 +9,78 @@ export type Service = {
   updated_at: string;
 };
 
+export type ServicePricingMode = "itemized" | "fixed_package" | "no_charge";
+
+export const SERVICE_PRICING_MODE_OPTIONS: Array<{
+  value: ServicePricingMode;
+  label: string;
+}> = [
+  { value: "fixed_package", label: "Fixed package (uses standard price)" },
+  { value: "itemized", label: "Itemized labour + parts" },
+  { value: "no_charge", label: "No charge" },
+];
+
+/** Fields captured by a catalogue version snapshot (Workflow V2). */
+export type ServiceVersionFields = {
+  name: string;
+  category: string | null;
+  standard_price: number | null;
+  estimated_labour: number | null;
+  pricing_mode?: ServicePricingMode | null;
+};
+
+/** Next version number: previous max + 1 (create starts at 1). */
+export function nextServiceVersionNo(previousMax: number | null | undefined): number {
+  if (previousMax == null || !Number.isFinite(previousMax) || previousMax < 0) return 1;
+  return Math.floor(previousMax) + 1;
+}
+
+export type ServiceVersionSnapshot = {
+  name_snapshot: string;
+  category_snapshot: string | null;
+  pricing_mode: ServicePricingMode;
+  fixed_package_price_cents: number | null;
+  default_labor_minutes: number | null;
+};
+
+/**
+ * A new catalogue version is only written when a snapshot-relevant field
+ * actually changed; re-saving identical values must not spawn noise
+ * versions. Creation (no previous version row) always versions.
+ */
+export function shouldWriteServiceVersion(
+  previous: ServiceVersionSnapshot | null,
+  next: ServiceVersionSnapshot
+): boolean {
+  if (!previous) return true;
+  return (
+    previous.name_snapshot !== next.name_snapshot ||
+    (previous.category_snapshot ?? null) !== (next.category_snapshot ?? null) ||
+    previous.pricing_mode !== next.pricing_mode ||
+    (previous.fixed_package_price_cents ?? null) !==
+      (next.fixed_package_price_cents ?? null) ||
+    (previous.default_labor_minutes ?? null) !== (next.default_labor_minutes ?? null)
+  );
+}
+
+/**
+ * Legacy dollars/hours → V2 snapshot units: standard price becomes integer
+ * package cents, estimated labour hours become whole minutes.
+ */
+export function buildServiceVersionSnapshot(
+  fields: ServiceVersionFields
+): ServiceVersionSnapshot {
+  return {
+    name_snapshot: fields.name,
+    category_snapshot: fields.category ?? null,
+    pricing_mode: fields.pricing_mode ?? "fixed_package",
+    fixed_package_price_cents:
+      fields.standard_price == null ? null : Math.round(fields.standard_price * 100),
+    default_labor_minutes:
+      fields.estimated_labour == null ? null : Math.round(fields.estimated_labour * 60),
+  };
+}
+
 export const UNCATEGORISED_SERVICE_GROUP = "Other";
 
 /** Preferred Visit details / catalogue display order. */

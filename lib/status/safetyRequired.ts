@@ -8,17 +8,12 @@ export type SafetyRequirementJob = {
 export type SafetyRequirementInput = {
   safety_required: boolean | null;
   safety_waived: boolean;
+  /** Kept so every caller can pass the same visit snapshot. */
   jobs: SafetyRequirementJob[];
 };
 
-/** True when the visit must pass Head Tech safety after QC. */
+/** True unless the office has waived head-tech safety after QC. */
 export function isSafetyRequired(input: SafetyRequirementInput): boolean {
   if (input.safety_waived) return false;
-  if (input.safety_required === true) return true;
-  return input.jobs.some(
-    (job) =>
-      job.status !== "cancelled" &&
-      job.status !== "declined" &&
-      job.service_name_snapshot === SAFETY_INSPECTION_SERVICE_NAME
-  );
+  return true;
 }
