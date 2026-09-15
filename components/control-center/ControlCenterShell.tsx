@@ -7,7 +7,7 @@ import { useNowTick } from "@/lib/client/useNowTick";
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
+  MeasuringStrategy,
   pointerWithin,
   useDraggable,
   useDroppable,
@@ -29,6 +29,16 @@ import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefres
 import { createClient } from "@/lib/database/supabase-browser";
 import type { WorkOrderStatus } from "@/lib/database/types";
 import { controlCenterCohortHref } from "@/lib/control-center/cohorts";
+import {
+  canAutoScrollControlCenter,
+  collectControlCenterWorkOrderIds,
+  overlayPendingControlCenterMove,
+  shouldDeferControlCenterServerSnapshot,
+  shouldRefreshControlCenterForJobChange,
+  snapshotHasPendingPlacement,
+  workOrderIdFromJobRealtimePayload,
+  type ControlCenterPendingMove,
+} from "@/lib/control-center/boardSync";
 import {
   assignBoardColumnForTarget,
   canDragCcBike,
@@ -63,11 +73,14 @@ import { PageHeader } from "@/components/ui/PageHeader";
 
 const POOL_ID = "pool";
 
-const controlCenterCollision: CollisionDetection = (args) => {
-  const hits = pointerWithin(args);
-  if (hits.length > 0) return hits;
-  return closestCenter(args);
-};
+/**
+ * Pointer-only, same as the tech floor. closestCenter snaps to the source
+ * lane when the overlay lags — Complete is the longest drag, so that looks
+ * like the card jumping back.
+ */
+const controlCenterCollision: CollisionDetection = (args) => pointerWithin(args);
+
+type CcPendingMove = ControlCenterPendingMove<ControlCenterBike, WaitingStageBike>;
 
 function toStageBike(
   bike: ControlCenterBike | WaitingStageBike,
@@ -433,23 +446,21 @@ export function ControlCenterShell({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [pendingMove, setPendingMove] = useState<CcPendingMove | null>(null);
   const activeIdRef = useRef<string | null>(null);
-  const isPendingRef = useRef(false);
+  const knownWorkOrderIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
-  useEffect(() => {
-    isPendingRef.current = isPending;
-  }, [isPending]);
   const {
     schedule: scheduleRefresh,
     flush: flushRefresh,
     cancel: cancelRefresh,
   } = useDebouncedRouterRefresh({
     delayMs: 1500,
-    // Pause while dragging or while a drop action is in flight so a stale
-    // router.refresh cannot overwrite optimistic placement.
-    isPaused: () => activeIdRef.current !== null || isPendingRef.current,
+    // Pause while dragging so a flush cannot remount droppables mid-gesture.
+    // In-flight refreshes still apply via props; pendingMove overlays those.
+    isPaused: () => activeIdRef.current !== null,
   });
 
   const syncKey = useMemo(
@@ -477,24 +488,55 @@ export function ControlCenterShell({
     [data, waitingForParts, readyForQc, readyForSafety, readyForPickup, recentlyCompleted]
   );
   const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
-  if (syncKey !== prevSyncKey) {
+  if (
+    syncKey !== prevSyncKey &&
+    !shouldDeferControlCenterServerSnapshot(activeId !== null)
+  ) {
     setPrevSyncKey(syncKey);
-    setPool(data.pool);
-    setTechs(data.techs);
+    const snapshot = {
+      pool: data.pool,
+      techs: data.techs,
+      stages: {
+        parts: waitingForParts,
+        qc: readyForQc,
+        safety: readyForSafety,
+        pickup: readyForPickup,
+        complete: recentlyCompleted,
+      } as Record<CcStageDropId, WaitingStageBike[]>,
+    };
+    const pending = pendingMove;
+    const next =
+      pending &&
+      !snapshotHasPendingPlacement({
+        pending,
+        ...snapshot,
+        poolId: POOL_ID,
+      })
+        ? overlayPendingControlCenterMove({
+            pending,
+            ...snapshot,
+            poolId: POOL_ID,
+          })
+        : snapshot;
+    if (pending && next === snapshot) {
+      setPendingMove(null);
+    }
+    setPool(next.pool);
+    setTechs(next.techs);
     setKpis(data.kpis);
     setLiveSummary(data.live_summary);
-    setPartsQueue(waitingForParts);
-    setQcQueue(readyForQc);
-    setSafetyQueue(readyForSafety);
-    setPickupQueue(readyForPickup);
-    setCompleteQueue(recentlyCompleted);
+    setPartsQueue(next.stages.parts);
+    setQcQueue(next.stages.qc);
+    setSafetyQueue(next.stages.safety);
+    setPickupQueue(next.stages.pickup);
+    setCompleteQueue(next.stages.complete);
   }
 
   useEffect(() => {
     const supabase = createClient();
     // work_order and time_clock_entry are filtered to this location server-side
     // so other locations' writes don't re-render the heaviest page in the app.
-    // job has no location column; its events stay debounced via scheduleRefresh.
+    // job has no location column; ignore rows that are not on this board.
     const channel = supabase
       .channel(`control-center:${data.location_id}`)
       .on(
@@ -509,9 +551,26 @@ export function ControlCenterShell({
           scheduleRefresh();
         }
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "job" }, () => {
-        scheduleRefresh();
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "job" },
+        (payload) => {
+          const workOrderId = workOrderIdFromJobRealtimePayload(
+            payload as {
+              new?: Record<string, unknown> | null;
+              old?: Record<string, unknown> | null;
+            }
+          );
+          if (
+            shouldRefreshControlCenterForJobChange(
+              workOrderId,
+              knownWorkOrderIdsRef.current
+            )
+          ) {
+            scheduleRefresh();
+          }
+        }
+      )
       .on(
         "postgres_changes",
         {
@@ -549,6 +608,19 @@ export function ControlCenterShell({
       }) as Record<CcStageDropId, WaitingStageBike[]>,
     [partsQueue, qcQueue, safetyQueue, pickupQueue, completeQueue]
   );
+  const knownWorkOrderIds = useMemo(
+    () =>
+      collectControlCenterWorkOrderIds({
+        pool,
+        techs,
+        stages: stageQueues,
+        pendingWorkOrderId: pendingMove?.workOrderId ?? null,
+      }),
+    [pool, techs, stageQueues, pendingMove]
+  );
+  useEffect(() => {
+    knownWorkOrderIdsRef.current = knownWorkOrderIds;
+  }, [knownWorkOrderIds]);
 
   const allBikes = useMemo(() => {
     const map = new Map<string, ControlCenterBike>();
@@ -640,6 +712,7 @@ export function ControlCenterShell({
   }
 
   function restoreBoard(previous: ReturnType<typeof snapshotBoard>) {
+    setPendingMove(null);
     setPool(previous.pool);
     setTechs(previous.techs);
     setPartsQueue(previous.partsQueue);
@@ -717,6 +790,12 @@ export function ControlCenterShell({
     setSafetyQueue(lists.stages.safety);
     setPickupQueue(lists.stages.pickup);
     setCompleteQueue(lists.stages.complete);
+    setPendingMove({
+      workOrderId,
+      containerId: targetId,
+      dispatchBike: moved,
+      stageBike: null,
+    });
     return previous;
   }
 
@@ -740,6 +819,12 @@ export function ControlCenterShell({
         id === stageId ? [nextItem, ...lists.stages[id]] : lists.stages[id]
       );
     }
+    setPendingMove({
+      workOrderId,
+      containerId: stageId,
+      dispatchBike: allBikes.get(workOrderId) ?? null,
+      stageBike: nextItem,
+    });
     return previous;
   }
 
@@ -778,6 +863,12 @@ export function ControlCenterShell({
         )
       );
     }
+    setPendingMove({
+      workOrderId,
+      containerId: targetId,
+      dispatchBike: moved,
+      stageBike: null,
+    });
     return previous;
   }
 
@@ -1098,6 +1189,14 @@ export function ControlCenterShell({
       <DndContext
         sensors={sensors}
         collisionDetection={controlCenterCollision}
+        measuring={{
+          droppable: { strategy: MeasuringStrategy.Always },
+        }}
+        autoScroll={{
+          threshold: { x: 0.2, y: 0.12 },
+          acceleration: 12,
+          canScroll: canAutoScrollControlCenter,
+        }}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
         onDragCancel={() => {

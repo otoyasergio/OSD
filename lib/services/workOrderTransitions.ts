@@ -4,7 +4,6 @@ import type { DbClient, WorkOrderStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { canOverrideWorkOrderStatus } from "@/lib/permissions";
 import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import {
@@ -24,8 +23,6 @@ type WorkOrderRow = {
   safety_checked_by_user_id: string | null;
   safety_required: boolean | null;
   safety_waived: boolean;
-  billing_stage: string | null;
-  square_payment_status: string | null;
 };
 
 async function loadWorkOrder(
@@ -35,7 +32,7 @@ async function loadWorkOrder(
   const { data, error } = await supabase
     .from("work_order")
     .select(
-      "work_order_id, location_id, status, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived, billing_stage, square_payment_status"
+      "work_order_id, location_id, status, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived"
     )
     .eq("work_order_id", workOrderId)
     .maybeSingle();
@@ -76,13 +73,13 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
  * Gates:
  * - Ready / gallery Ready require a finished inspection, QC pass, and
  *   head-tech safety unless office waived it.
- * - complete requires those same leave gates, plus billing paid or an
- *   owner/manager override with a recorded reason.
+ * - complete uses the same leave gates as Overview (`completeWorkOrder`).
+ *   Billing is collected on the Billing tab; rejecting an unpaid drop here
+ *   snapped the card back with no way to enter an override reason.
  */
 export async function moveWorkOrderOnBoard(
   workOrderId: string,
-  targetColumnId: string,
-  options: { billingOverrideReason?: string | null } = {}
+  targetColumnId: string
 ): Promise<void> {
   const user = await requireUser();
   const supabase = await createClient();
@@ -140,30 +137,6 @@ export async function moveWorkOrderOnBoard(
   }
 
   if (targetColumnId === "complete") {
-    const billingPaid =
-      workOrder.billing_stage === "paid" || workOrder.square_payment_status === "paid";
-    if (!billingPaid) {
-      const reason = options.billingOverrideReason?.trim() ?? "";
-      if (!canOverrideWorkOrderStatus(user.role)) {
-        throw new Error("BILLING_NOT_PAID");
-      }
-      if (!reason) {
-        throw new Error("OVERRIDE_REASON_REQUIRED");
-      }
-      await addAuditLog(supabase, {
-        actor_user_id: user.user_id,
-        location_id: workOrder.location_id,
-        action: "work_order_complete_billing_override",
-        entity_type: "work_order",
-        entity_id: workOrderId,
-        description: `Completed without payment collected — override: ${reason}`,
-        new_value: {
-          reason,
-          billing_stage: workOrder.billing_stage,
-          square_payment_status: workOrder.square_payment_status,
-        },
-      });
-    }
     const { completeWorkOrder } = await import("@/lib/services/quality");
     await completeWorkOrder(workOrderId, null);
     return;
