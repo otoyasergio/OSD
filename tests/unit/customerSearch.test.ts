@@ -114,6 +114,53 @@ describe("filterKnownCustomerMatches", () => {
   });
 });
 
+describe("customerPickerSearchScope", () => {
+  it("keeps one-character typeahead on shop customers so Wix contacts are not scanned", async () => {
+    const { customerPickerSearchScope } = await import("@/lib/forms/customerSearch");
+    expect(customerPickerSearchScope("")).toBe("shop");
+    expect(customerPickerSearchScope("s")).toBe("shop");
+    expect(customerPickerSearchScope("sm")).toBe("shop_then_all");
+  });
+});
+
+describe("mergeShopFirstCustomerHits", () => {
+  it("puts customers with bikes or work orders ahead of Wix-only contacts", async () => {
+    const { mergeShopFirstCustomerHits } = await import("@/lib/forms/customerSearch");
+    const shop = customer({ customer_id: "shop-smith", last_name: "Smith" });
+    const wixA = customer({
+      customer_id: "wix-aaron",
+      first_name: "Aaron",
+      last_name: "Smith",
+    });
+    const wixZ = customer({
+      customer_id: "wix-zara",
+      first_name: "Zara",
+      last_name: "Smith",
+    });
+
+    expect(
+      mergeShopFirstCustomerHits({
+        shopHits: [shop],
+        otherHits: [wixA, shop, wixZ],
+        limit: 50,
+      }).map((row) => row.customer_id)
+    ).toEqual(["shop-smith", "wix-aaron", "wix-zara"]);
+  });
+
+  it("caps results after ranking", async () => {
+    const { mergeShopFirstCustomerHits } = await import("@/lib/forms/customerSearch");
+    const shop = customer({ customer_id: "shop" });
+    const extra = customer({ customer_id: "wix" });
+    expect(
+      mergeShopFirstCustomerHits({
+        shopHits: [shop],
+        otherHits: [extra],
+        limit: 1,
+      }).map((row) => row.customer_id)
+    ).toEqual(["shop"]);
+  });
+});
+
 describe("customerPickerInterimResults", () => {
   it("keeps showing seed options while waiting when the query is empty", async () => {
     const { customerPickerInterimResults } = await import("@/lib/forms/customerSearch");

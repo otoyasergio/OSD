@@ -51,3 +51,28 @@ export function customerPickerInterimResults(
 ): Customer[] {
   return filterKnownCustomerMatches(knownCustomers, rawTerm);
 }
+
+/**
+ * Short queries stay on shop customers (bikes / work orders). Scanning the
+ * full Wix contact dump (~4.7k rows) only starts at two characters.
+ */
+export function customerPickerSearchScope(rawTerm: string): "shop" | "shop_then_all" {
+  return rawTerm.trim().length < 2 ? "shop" : "shop_then_all";
+}
+
+/** Shop hits first, then directory matches, de-duplicated. */
+export function mergeShopFirstCustomerHits(input: {
+  shopHits: readonly Customer[];
+  otherHits: readonly Customer[];
+  limit: number;
+}): Customer[] {
+  const seen = new Set<string>();
+  const merged: Customer[] = [];
+  for (const row of [...input.shopHits, ...input.otherHits]) {
+    if (seen.has(row.customer_id)) continue;
+    seen.add(row.customer_id);
+    merged.push(row);
+    if (merged.length >= input.limit) break;
+  }
+  return merged;
+}

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { addShopClosureAction, deleteShopClosureAction } from "./actions";
 import { ShopClosureForm } from "@/components/forms/ShopClosureForm";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { formatCalendarDate } from "@/lib/datetime/format";
 import { canManageShopClosures } from "@/lib/permissions";
 import { listUpcomingShopClosures } from "@/lib/services/shopClosures";
@@ -11,9 +11,9 @@ import { listUpcomingShopClosures } from "@/lib/services/shopClosures";
 export const dynamic = "force-dynamic";
 
 export default async function ShopClosuresPage() {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canManageShopClosures(user.role)) redirect("/settings");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canManageShopClosures(preview.role)) redirect("/settings");
 
   const closures = await listUpcomingShopClosures();
 

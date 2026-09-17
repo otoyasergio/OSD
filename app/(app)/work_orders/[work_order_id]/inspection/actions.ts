@@ -1,12 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import {
-  completeInspection,
-  saveInspectionResult,
-} from "@/lib/services/inspections";
+import { redirect } from "next/navigation";
+import { completeInspection, saveInspectionResult } from "@/lib/services/inspections";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { recordUxFailure } from "@/lib/services/uxEvents";
 import type { InspectionResultStatus } from "@/lib/database/types";
+import { safeFloorReturnTo } from "@/lib/technician/assignmentHref";
 
 export type InspectionFormState = { error: string | null };
 
@@ -14,6 +14,7 @@ function revalidateInspection(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath(`/work_orders/${workOrderId}/inspection`);
   revalidatePath("/work_orders");
+  revalidatePath("/technician");
 }
 
 export async function saveInspectionResultAction(
@@ -43,11 +44,18 @@ export async function completeInspectionAction(
   try {
     await completeInspection(workOrderId, {
       force: formData.get("force") === "true",
+      signatureDataUrl: String(formData.get("signature_data_url") ?? ""),
     });
   } catch (error) {
-    return { error: toFormErrorMessage(error) };
+    const message = await recordUxFailure(error, {
+      source: "inspection.complete",
+      context: { work_order_id: workOrderId },
+    });
+    return { error: message };
   }
 
   revalidateInspection(workOrderId);
+  const next = safeFloorReturnTo(String(formData.get("return_to") ?? ""));
+  if (next) redirect(next);
   return { error: null };
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canManageContractTemplate } from "@/lib/permissions";
 import {
   getActiveAgreementTemplate,
@@ -12,9 +12,9 @@ import { publishContractTemplateAction } from "@/app/(app)/settings/contract_tem
 export const dynamic = "force-dynamic";
 
 export default async function ContractTemplatePage() {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canManageContractTemplate(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canManageContractTemplate(preview.role)) redirect("/dashboard");
 
   const [template, history] = await Promise.all([
     getActiveAgreementTemplate(),

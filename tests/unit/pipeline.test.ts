@@ -86,6 +86,6 @@ describe("GALLERY_BOARD_COLUMNS", () => {
       tone: "orange",
     });
     expect(getGalleryStageForStatus("quality_check").label).toBe("QC");
-    expect(getGalleryStageForStatus("safety_check").label).toBe("Safety");
+    expect(getGalleryStageForStatus("safety_check").label).toBe("Final");
   });
 });

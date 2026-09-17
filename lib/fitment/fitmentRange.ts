@@ -2,12 +2,23 @@ export function normalizeYmmKey(v: string): string {
   return v.trim().toUpperCase();
 }
 
-export function rowCoversYear(
-  yearStart: number,
-  yearEnd: number,
-  year: number
-): boolean {
+export function rowCoversYear(yearStart: number, yearEnd: number, year: number): boolean {
   return year >= yearStart && year <= yearEnd;
+}
+
+/** Inclusive year list from MIN(year_start) / MAX(year_end), newest first. */
+export function yearsFromBounds(
+  minYear: number,
+  maxYear: number,
+  currentYear = new Date().getFullYear()
+): number[] {
+  if (!Number.isFinite(minYear) || !Number.isFinite(maxYear)) return [];
+  const start = minYear;
+  const end = Math.min(maxYear, currentYear + 1);
+  if (end < start) return [];
+  const years: number[] = [];
+  for (let y = end; y >= start; y--) years.push(y);
+  return years;
 }
 
 export function distinctYearsFromRanges(

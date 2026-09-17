@@ -7,8 +7,12 @@ import type { PhotoFormState } from "@/app/(app)/work_orders/photo-actions";
 import { PHOTO_CATEGORY_LABELS, REQUIRED_PHOTO_CATEGORIES } from "@/lib/status/labels";
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { formatDateTime } from "@/lib/datetime/format";
+import { toLightboxPhotos } from "@/lib/photos/lightbox";
+import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 
 type Action = (state: PhotoFormState, formData: FormData) => Promise<PhotoFormState>;
 
@@ -45,6 +49,9 @@ export function PhotosTab({
   const [filter, setFilter] = useState<PhotoCategory | "all">("all");
   const [chooserOpen, setChooserOpen] = useState(false);
   const [pendingFileName, setPendingFileName] = useState<string | null>(null);
+  const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
 
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
@@ -58,21 +65,39 @@ export function PhotosTab({
 
   const visible = filter === "all" ? photos : photos.filter((p) => p.category === filter);
 
-  function applyPickedFile(input: HTMLInputElement) {
-    const file = input.files?.[0] ?? null;
+  const lightboxPhotos = useMemo(() => toLightboxPhotos(visible), [visible]);
+  const lightboxIndex = lightboxPhotoId
+    ? lightboxPhotos.findIndex((p) => p.id === lightboxPhotoId)
+    : -1;
+
+  async function applyPickedFile(input: HTMLInputElement) {
     const target = fileInputRef.current;
     setChooserOpen(false);
-    if (!target) return;
-    if (!file) {
-      target.value = "";
-      setPendingFileName(null);
+    setPickError(null);
+    if (!target) {
+      input.value = "";
       return;
     }
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    target.files = transfer.files;
-    setPendingFileName(file.name);
-    input.value = "";
+    setPreparing(true);
+    try {
+      const files = await readPickedPhotoFiles(input);
+      const file = files[0] ?? null;
+      if (!file) {
+        target.value = "";
+        setPendingFileName(null);
+        return;
+      }
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      target.files = transfer.files;
+      setPendingFileName(file.name);
+    } catch {
+      target.value = "";
+      setPendingFileName(null);
+      setPickError(UNREADABLE_PHOTO_MESSAGE);
+    } finally {
+      setPreparing(false);
+    }
   }
 
   return (
@@ -106,7 +131,7 @@ export function PhotosTab({
           }}
         >
           <h3 className="text-base font-semibold text-foreground">Upload intake photo</h3>
-          <FormError message={uploadState.error} />
+          <FormError message={uploadState.error ?? pickError} />
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-foreground">
               Category <span className="text-red-600">*</span>
@@ -153,7 +178,7 @@ export function PhotosTab({
               capture={cameraProps.capture}
               tabIndex={-1}
               aria-label="Camera"
-              onChange={(event) => applyPickedFile(event.currentTarget)}
+              onChange={(event) => void applyPickedFile(event.currentTarget)}
             />
             <input
               id={libraryInputId}
@@ -162,15 +187,20 @@ export function PhotosTab({
               accept={libraryProps.accept}
               tabIndex={-1}
               aria-label="Photo library"
-              onChange={(event) => applyPickedFile(event.currentTarget)}
+              onChange={(event) => void applyPickedFile(event.currentTarget)}
             />
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
                 className="btn btn-secondary min-h-11 flex-1"
                 onClick={() => setChooserOpen(true)}
+                disabled={preparing}
               >
-                {pendingFileName ? "Change photo" : "Choose photo"}
+                {preparing
+                  ? "Preparing photo…"
+                  : pendingFileName
+                    ? "Change photo"
+                    : "Choose photo"}
               </button>
             </div>
             {pendingFileName ? (
@@ -179,13 +209,19 @@ export function PhotosTab({
               </p>
             ) : (
               <p className="mt-1.5 text-sm text-[var(--status-neutral)]">
-                Camera or Library — required before upload.
+                {preparing
+                  ? "Preparing photo — keep this screen open."
+                  : "Camera or Library — required before upload."}
               </p>
             )}
           </div>
           <TextField label="Notes" name="notes" />
           <div>
-            <SubmitButton label="Upload photo" pendingLabel="Uploading…" />
+            <SubmitButton
+              label={preparing ? "Preparing…" : "Upload photo"}
+              pendingLabel="Uploading…"
+              disabled={preparing}
+            />
           </div>
         </form>
       ) : null}
@@ -242,13 +278,20 @@ export function PhotosTab({
               key={photo.photo_id}
               className="overflow-hidden rounded border border-[var(--border)] bg-white"
             >
-              {photo.signed_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={photo.signed_url}
-                  alt={`${PHOTO_CATEGORY_LABELS[photo.category]} intake photo`}
-                  className="aspect-[4/3] w-full object-cover bg-[var(--surface-muted)]"
-                />
+              {photo.thumb_url || photo.signed_url ? (
+                <button
+                  type="button"
+                  className="block w-full cursor-zoom-in p-0 focus-visible:outline-2 focus-visible:outline-[var(--accent)]"
+                  aria-label={`View ${PHOTO_CATEGORY_LABELS[photo.category]} photo full size`}
+                  onClick={() => setLightboxPhotoId(photo.photo_id)}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photo.thumb_url ?? photo.signed_url ?? ""}
+                    alt={`${PHOTO_CATEGORY_LABELS[photo.category]} intake photo`}
+                    className="aspect-[4/3] w-full object-cover bg-[var(--surface-muted)]"
+                  />
+                </button>
               ) : (
                 <div className="flex aspect-[4/3] items-center justify-center bg-[var(--surface-muted)] text-sm text-[var(--status-neutral)]">
                   Preview unavailable
@@ -283,6 +326,14 @@ export function PhotosTab({
           ))}
         </ul>
       )}
+
+      {lightboxIndex >= 0 ? (
+        <PhotoLightbox
+          photos={lightboxPhotos}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxPhotoId(null)}
+        />
+      ) : null}
 
       {chooserOpen ? (
         <div

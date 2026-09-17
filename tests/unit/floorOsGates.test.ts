@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { pickPeerQcAssignee } from "@/lib/status/peerQcAssigner";
-import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
+import { countProofPhotos, evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
 
 describe("pickPeerQcAssignee", () => {
   it("excludes workers and picks least loaded", () => {
@@ -66,5 +66,26 @@ describe("evaluateJobCompleteGate", () => {
         inspectionComplete: false,
       })
     ).toMatchObject({ ok: false, code: "INSPECTION_NOT_COMPLETED" });
+  });
+
+  it("only job_proof photos satisfy the proof gate — job_work never does", () => {
+    const photos = [{ category: "job_work" }, { category: "job_work" }];
+    expect(
+      evaluateJobCompleteGate({
+        checklistItems: [{ checked_at: "2026-01-01" }],
+        parts: [{ status: "installed" }],
+        proofPhotoCount: countProofPhotos(photos),
+        hasProofException: false,
+      })
+    ).toMatchObject({ ok: false, code: "PROOF_REQUIRED" });
+
+    expect(
+      evaluateJobCompleteGate({
+        checklistItems: [{ checked_at: "2026-01-01" }],
+        parts: [{ status: "installed" }],
+        proofPhotoCount: countProofPhotos([...photos, { category: "job_proof" }]),
+        hasProofException: false,
+      }).ok
+    ).toBe(true);
   });
 });

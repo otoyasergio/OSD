@@ -6,7 +6,11 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
+  // /api is excluded: every API route authenticates itself (webhook
+  // signatures, cron bearer, requireUser), so running getClaims() session
+  // refresh in middleware only added a Supabase Auth round trip to every
+  // Twilio/Square/Wix webhook and cron invocation.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

@@ -9,6 +9,7 @@ import { WorkOrderPhotoStrip } from "@/components/work_orders/WorkOrderPhotoStri
 import { getGalleryStageForStatus, getWorkOrderNextAction } from "@/lib/status/pipeline";
 import { formatDateTime } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
+import { ClickToCallButton } from "@/components/comms/ClickToCallButton";
 
 const INACTIVE_JOB_STATUSES = new Set(["cancelled", "declined", "completed"]);
 
@@ -32,6 +33,7 @@ export function WorkOrderHeader({
   canViewClients = true,
   canViewPricing = true,
   showContractAction = true,
+  showShopPhone = false,
 }: {
   detail: WorkOrderDetail;
   photos?: IntakePhoto[];
@@ -41,6 +43,7 @@ export function WorkOrderHeader({
   canViewPricing?: boolean;
   /** Overview renders a larger intake follow-up notice instead. */
   showContractAction?: boolean;
+  showShopPhone?: boolean;
 }) {
   const customer = canViewClients ? detail.customer : null;
   const bike = detail.motorcycle;
@@ -83,16 +86,25 @@ export function WorkOrderHeader({
               </p>
             ) : null}
             {customer ? (
-              <p className="mt-1 text-sm font-medium text-[var(--status-neutral-fg)]">
-                <Link
-                  href={`/customers/${customer.customer_id}`}
-                  className="data-table-link"
-                >
-                  {customer.first_name} {customer.last_name}
-                </Link>
-                {customer.phone ? ` · ${customer.phone}` : ""}
-                {customer.email ? ` · ${customer.email}` : ""}
-              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--status-neutral-fg)]">
+                <p>
+                  <Link
+                    href={`/customers/${customer.customer_id}`}
+                    className="data-table-link"
+                  >
+                    {customer.first_name} {customer.last_name}
+                  </Link>
+                  {customer.phone ? ` · ${customer.phone}` : ""}
+                  {customer.email ? ` · ${customer.email}` : ""}
+                </p>
+                <ClickToCallButton
+                  phone={customer.phone}
+                  customerId={customer.customer_id}
+                  workOrderId={detail.work_order_id}
+                  customerName={`${customer.first_name} ${customer.last_name}`.trim()}
+                  visible={showShopPhone}
+                />
+              </div>
             ) : null}
             {bike?.vin ? (
               <p className="mt-1 font-mono text-xs text-[var(--status-neutral)]">

@@ -5,6 +5,10 @@ import { canAdminHelpCreateRecords, canViewClients } from "@/lib/permissions";
 import { customerSchema } from "@/lib/validation/schemas";
 import type { CustomerAccountType } from "@/lib/services/customerShared";
 import { normalizeEmailInput } from "@/lib/email/normalize";
+import {
+  customerPickerSearchScope,
+  mergeShopFirstCustomerHits,
+} from "@/lib/forms/customerSearch";
 
 export type { CustomerAccountType } from "@/lib/services/customerShared";
 export { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
@@ -117,25 +121,70 @@ export async function countCustomers(): Promise<number> {
 
 export async function searchCustomers(
   term: string,
-  options?: { account_type?: CustomerAccountType }
+  options?: { account_type?: CustomerAccountType; preferShopCustomers?: boolean }
 ): Promise<Customer[]> {
   const user = await requireUser();
   if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
-
-  let query = supabase.from("customer").select(CUSTOMER_COLUMNS);
   const cleaned = escapeSearchTerm(term);
-  if (cleaned) {
-    query = query.or(buildCustomerSearchOrFilter(term));
-  }
-  if (options?.account_type) {
-    query = query.eq("account_type", options.account_type);
+  const preferShop = options?.preferShopCustomers === true;
+  const limit = 50;
+
+  async function runQuery(customerIds?: string[]): Promise<Customer[]> {
+    if (customerIds && customerIds.length === 0) return [];
+
+    let query = supabase.from("customer").select(CUSTOMER_COLUMNS);
+    if (cleaned) {
+      query = query.or(buildCustomerSearchOrFilter(term));
+    }
+    if (options?.account_type) {
+      query = query.eq("account_type", options.account_type);
+    }
+    if (customerIds) {
+      query = query.in("customer_id", customerIds);
+    }
+
+    const ordered = cleaned
+      ? query.order("last_name").order("first_name")
+      : query.order("updated_at", { ascending: false });
+    const { data, error } = await ordered.limit(limit);
+    if (error) throw error;
+    return (data ?? []) as Customer[];
   }
 
-  const { data, error } = await query.order("last_name").order("first_name").limit(50);
+  if (!preferShop) {
+    return runQuery();
+  }
 
-  if (error) throw error;
-  return (data ?? []) as Customer[];
+  const shopIds = await loadShopCustomerIds(supabase);
+  const shopHits = await runQuery(shopIds);
+  if (customerPickerSearchScope(term) === "shop" || shopHits.length >= limit) {
+    return shopHits;
+  }
+
+  const otherHits = await runQuery();
+  return mergeShopFirstCustomerHits({ shopHits, otherHits, limit });
+}
+
+async function loadShopCustomerIds(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<string[]> {
+  const [{ data: bikes, error: bikeError }, { data: wos, error: woError }] =
+    await Promise.all([
+      supabase.from("motorcycle").select("customer_id"),
+      supabase.from("work_order").select("customer_id"),
+    ]);
+  if (bikeError) throw bikeError;
+  if (woError) throw woError;
+
+  return [
+    ...new Set(
+      [
+        ...(bikes ?? []).map((row) => row.customer_id as string),
+        ...(wos ?? []).map((row) => row.customer_id as string | null),
+      ].filter((id): id is string => Boolean(id))
+    ),
+  ];
 }
 
 export async function getCustomerById(customerId: string): Promise<Customer | null> {

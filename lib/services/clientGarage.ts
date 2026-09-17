@@ -110,7 +110,7 @@ export async function listGarageForCustomer(
       work_order_id,
       motorcycle_id,
       date_created,
-      intake_photo ( photo_id, storage_path, photo_url, category, created_at )
+      intake_photo ( photo_id, storage_path, thumb_storage_path, photo_url, category, created_at )
     `
     )
     .in("motorcycle_id", motorcycleIds)

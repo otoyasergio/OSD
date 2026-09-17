@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   assertViewerCanAccessWorkOrder,
   canViewerAccessWorkOrder,
+  canViewerAccessWorkOrderLocation,
+  floorAssignedLocationIds,
   isWorkOrderAssignedToTechnician,
   scopeWorkOrdersForViewer,
 } from "@/lib/workOrders/assignmentVisibility";
@@ -183,5 +185,91 @@ describe("scopeWorkOrdersForViewer", () => {
     expect(
       scopeWorkOrdersForViewer(rows, "head_tech", "tech-2").map((r) => r.work_order_id)
     ).toEqual(["b"]);
+  });
+});
+
+describe("floorAssignedLocationIds", () => {
+  it("shows a tech their assigned bikes at every shop they belong to", () => {
+    expect(
+      floorAssignedLocationIds({
+        viewerUserId: "tech-1",
+        technicianUserId: "tech-1",
+        activeLocationId: "ott",
+        membershipLocationIds: ["ott", "tor"],
+      })
+    ).toEqual(["ott", "tor"]);
+  });
+
+  it("keeps advisor and owner views on the active shop", () => {
+    expect(
+      floorAssignedLocationIds({
+        viewerUserId: "advisor-1",
+        technicianUserId: "tech-1",
+        activeLocationId: "ott",
+        membershipLocationIds: ["ott", "tor"],
+      })
+    ).toEqual(["ott"]);
+  });
+
+  it("falls back to the active shop when membership is empty", () => {
+    expect(
+      floorAssignedLocationIds({
+        viewerUserId: "tech-1",
+        technicianUserId: "tech-1",
+        activeLocationId: "tor",
+        membershipLocationIds: [],
+      })
+    ).toEqual(["tor"]);
+  });
+});
+
+describe("canViewerAccessWorkOrderLocation", () => {
+  it("lets a floor tech open assigned work at another shop they belong to", () => {
+    expect(
+      canViewerAccessWorkOrderLocation({
+        role: "technician",
+        workOrderLocationId: "tor",
+        activeLocationId: "ott",
+        membershipLocationIds: ["ott", "tor"],
+      })
+    ).toBe(true);
+    expect(
+      canViewerAccessWorkOrderLocation({
+        role: "head_tech",
+        workOrderLocationId: "tor",
+        activeLocationId: "ott",
+        membershipLocationIds: ["ott", "tor"],
+      })
+    ).toBe(true);
+  });
+
+  it("blocks a floor tech from a shop they do not belong to", () => {
+    expect(
+      canViewerAccessWorkOrderLocation({
+        role: "technician",
+        workOrderLocationId: "tor",
+        activeLocationId: "ott",
+        membershipLocationIds: ["ott"],
+      })
+    ).toBe(false);
+  });
+
+  it("keeps front office on the active shop even with dual membership", () => {
+    expect(
+      canViewerAccessWorkOrderLocation({
+        role: "service_advisor",
+        workOrderLocationId: "tor",
+        activeLocationId: "ott",
+        membershipLocationIds: ["ott", "tor"],
+      })
+    ).toBe(false);
+    expect(
+      canViewerAccessWorkOrderLocation({
+        role: "owner",
+        workOrderLocationId: "ott",
+        activeLocationId: "ott",
+        membershipLocationIds: ["ott", "tor"],
+      })
+    ).toBe(true);
   });
 });

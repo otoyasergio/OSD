@@ -41,15 +41,20 @@ describe("create work order wizard steps", () => {
     expect(canProceedFromMotorcycleStep("bike-1")).toBe(true);
   });
 
-  it("requires mileage and estimated completion on visit details", () => {
+  it("requires Wix work order number, mileage, and estimated completion on visit details", () => {
     const estimatedCompletion = "2026-07-20T16:00";
     const selectedServiceIds = ["service-1"];
     const validVisit = {
+      workOrderNumber: "WO-1042",
       mileage: "12000",
       estimatedCompletion,
       selectedServiceIds,
       servicePricingComplete: true,
     };
+    expect(canProceedFromVisitStep({ ...validVisit, workOrderNumber: "" })).toBe(false);
+    expect(canProceedFromVisitStep({ ...validVisit, workOrderNumber: "   " })).toBe(
+      false
+    );
     expect(canProceedFromVisitStep({ ...validVisit, mileage: "" })).toBe(false);
     expect(canProceedFromVisitStep({ ...validVisit, mileage: "abc" })).toBe(false);
     expect(canProceedFromVisitStep({ ...validVisit, mileage: "-1" })).toBe(false);
@@ -95,12 +100,22 @@ describe("create work order wizard steps", () => {
     expect(isWizardStepComplete("motorcycle", { motorcycleId: "" })).toBe(false);
     expect(
       isWizardStepComplete("visit", {
+        workOrderNumber: "WO-1001",
         mileage: "100",
         estimatedCompletion: "2026-07-20T16:00",
         selectedServiceIds: ["service-1"],
         servicePricingComplete: true,
       })
     ).toBe(true);
+    expect(
+      isWizardStepComplete("visit", {
+        workOrderNumber: "",
+        mileage: "100",
+        estimatedCompletion: "2026-07-20T16:00",
+        selectedServiceIds: ["service-1"],
+        servicePricingComplete: true,
+      })
+    ).toBe(false);
     expect(isWizardStepComplete("photos", { intakeComplete: false })).toBe(false);
     expect(isWizardStepComplete("review", { intakeComplete: true })).toBe(true);
   });
@@ -110,6 +125,7 @@ describe("create work order wizard steps", () => {
       stepId: "review" as const,
       customerId: "c1",
       motorcycleId: "m1",
+      workOrderNumber: "WO-1042",
       mileage: "5000",
       estimatedCompletion: "2026-07-20T16:00",
       selectedServiceIds: ["service-1"],
@@ -122,6 +138,7 @@ describe("create work order wizard steps", () => {
       false
     );
     expect(canSubmitCreateWorkOrderWizard({ ...ready, motorcycleId: "" })).toBe(false);
+    expect(canSubmitCreateWorkOrderWizard({ ...ready, workOrderNumber: "" })).toBe(false);
     expect(canSubmitCreateWorkOrderWizard({ ...ready, selectedServiceIds: [] })).toBe(
       false
     );

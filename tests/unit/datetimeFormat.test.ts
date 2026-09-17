@@ -3,6 +3,7 @@ import {
   formatDate,
   formatDateTime,
   formatTime,
+  isWithinWixContactsSyncWindow,
   nextShopBusinessCompletionValue,
   parseShopLocalDateTimeInput,
 } from "@/lib/datetime/format";
@@ -50,6 +51,44 @@ describe("parseShopLocalDateTimeInput", () => {
   it("returns null for empty/invalid", () => {
     expect(parseShopLocalDateTimeInput("")).toBeNull();
     expect(parseShopLocalDateTimeInput("nope")).toBeNull();
+  });
+});
+
+describe("isWithinWixContactsSyncWindow", () => {
+  it("includes 10:00 and 23:00 Toronto during EDT", () => {
+    expect(isWithinWixContactsSyncWindow(new Date("2026-07-12T14:00:00.000Z"))).toBe(
+      true
+    );
+    expect(isWithinWixContactsSyncWindow(new Date("2026-07-13T03:00:00.000Z"))).toBe(
+      true
+    );
+  });
+
+  it("excludes 09:56 and 23:04 Toronto during EDT", () => {
+    expect(isWithinWixContactsSyncWindow(new Date("2026-07-12T13:56:00.000Z"))).toBe(
+      false
+    );
+    expect(isWithinWixContactsSyncWindow(new Date("2026-07-13T03:04:00.000Z"))).toBe(
+      false
+    );
+  });
+
+  it("includes 10:00 and 23:00 Toronto during EST", () => {
+    expect(isWithinWixContactsSyncWindow(new Date("2026-01-12T15:00:00.000Z"))).toBe(
+      true
+    );
+    expect(isWithinWixContactsSyncWindow(new Date("2026-01-13T04:00:00.000Z"))).toBe(
+      true
+    );
+  });
+
+  it("excludes 09:56 and 23:04 Toronto during EST", () => {
+    expect(isWithinWixContactsSyncWindow(new Date("2026-01-12T14:56:00.000Z"))).toBe(
+      false
+    );
+    expect(isWithinWixContactsSyncWindow(new Date("2026-01-13T04:04:00.000Z"))).toBe(
+      false
+    );
   });
 });
 

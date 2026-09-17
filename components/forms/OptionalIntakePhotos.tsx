@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CameraIcon, LibraryIcon } from "@/components/forms/IntakePhotoSlots";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 type Props = {
   value: File[];
@@ -37,7 +39,14 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
   const titleId = useId();
   const cameraInputId = `${useId()}-optional-camera`;
   const libraryInputId = `${useId()}-optional-library`;
+  const valueRef = useRef(value);
   const [chooserOpen, setChooserOpen] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   const previews = useMemo(
     () =>
@@ -67,10 +76,20 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
 
-  function addFiles(files: FileList | null) {
-    if (!files) return;
-    onChange(mergeOptionalIntakePhotos(value, Array.from(files)));
+  async function addFiles(input: HTMLInputElement) {
     setChooserOpen(false);
+    setPickError(null);
+    setPreparing(true);
+    try {
+      const prepared = await readPickedPhotoFiles(input);
+      const next = mergeOptionalIntakePhotos(valueRef.current, prepared);
+      valueRef.current = next;
+      onChange(next);
+    } catch {
+      setPickError(UNREADABLE_PHOTO_MESSAGE);
+    } finally {
+      setPreparing(false);
+    }
   }
 
   return (
@@ -83,9 +102,15 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
           </p>
         </div>
         <span className="optional-intake-photos-count" role="status" aria-live="polite">
-          {value.length} added
+          {preparing ? "Preparing…" : `${value.length} added`}
         </span>
       </div>
+
+      {pickError ? (
+        <p role="alert" className="intake-photo-pick-error">
+          {pickError}
+        </p>
+      ) : null}
 
       <div className="optional-intake-photos-grid">
         {previews.map(({ file, index, url }) => (
@@ -99,11 +124,13 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
             <button
               type="button"
               className="optional-intake-photo-remove"
-              disabled={disabled}
+              disabled={disabled || preparing}
               aria-label={`Remove extra intake photo ${index + 1}`}
-              onClick={() =>
-                onChange(value.filter((_, itemIndex) => itemIndex !== index))
-              }
+              onClick={() => {
+                const next = value.filter((_, itemIndex) => itemIndex !== index);
+                valueRef.current = next;
+                onChange(next);
+              }}
             >
               Remove
             </button>
@@ -113,14 +140,16 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
         <button
           type="button"
           className="optional-intake-photo-add"
-          disabled={disabled}
+          disabled={disabled || preparing}
           onClick={() => setChooserOpen(true)}
         >
           <span className="optional-intake-photo-add-icon">
             <CameraIcon />
           </span>
           <span>Add extra photos</span>
-          <span className="optional-intake-photo-add-hint">Camera or Library</span>
+          <span className="optional-intake-photo-add-hint">
+            {preparing ? "Preparing photo…" : "Camera or Library"}
+          </span>
         </button>
       </div>
 
@@ -134,8 +163,7 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
         disabled={disabled}
         aria-label="Extra photo camera"
         onChange={(event) => {
-          addFiles(event.target.files);
-          event.target.value = "";
+          void addFiles(event.currentTarget);
         }}
       />
       <input
@@ -148,8 +176,7 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
         disabled={disabled}
         aria-label="Extra photos library"
         onChange={(event) => {
-          addFiles(event.target.files);
-          event.target.value = "";
+          void addFiles(event.currentTarget);
         }}
       />
 

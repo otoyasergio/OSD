@@ -4,11 +4,7 @@ import type { DbClient } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import {
-  canCreateWorkOrder,
-  canEditWorkOrder,
-  canManageContractTemplate,
-} from "@/lib/permissions";
+import { canManageContractTemplate, canSignContract } from "@/lib/permissions";
 import { fileDropOffAgreementDocument } from "@/lib/services/customerDocuments";
 import {
   dropOffAgreementSchema,
@@ -50,10 +46,6 @@ const BUCKET = "contract-signatures";
 const SIGNATURE_MAX_BYTES = 2 * 1024 * 1024;
 const AGREEMENT_COLUMNS =
   "agreement_id, work_order_id, template_version, signer_name, initials, signature_method, signature_storage_path, signed_at";
-
-function canSignContract(role: string) {
-  return canEditWorkOrder(role as never) || canCreateWorkOrder(role as never);
-}
 
 export async function getActiveAgreementTemplate(): Promise<AgreementTemplate | null> {
   await requireUser();

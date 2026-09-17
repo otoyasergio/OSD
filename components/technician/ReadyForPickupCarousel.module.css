@@ -143,6 +143,8 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .placeholder {
@@ -197,6 +199,13 @@
   }
   50% {
     opacity: 0.45;
+  }
+}
+
+/* The only infinite animation on the floor — honour the OS motion setting. */
+@media (prefers-reduced-motion: reduce) {
+  .timerDot {
+    animation: none;
   }
 }
 

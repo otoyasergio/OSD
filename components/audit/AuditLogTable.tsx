@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { AuditLogEntry, AuditFilterOption } from "@/lib/services/audit";
 import { formatDateTime } from "@/lib/datetime/format";
+import { AuditExportButton } from "@/components/logs/AuditExportButton";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
@@ -13,6 +14,7 @@ export function AuditLogTable({
   locations,
   entityTypes,
   filters,
+  formBasePath,
 }: {
   entries: AuditLogEntry[];
   actors: AuditFilterOption[];
@@ -24,14 +26,25 @@ export function AuditLogTable({
     actor_user_id: string;
     location_id: string;
     entity_type: string;
+    action: string;
   };
+  formBasePath?: string;
 }) {
+  const basePath = formBasePath ?? "/settings/logs";
+  const auditQuery = basePath.includes("logs") ? "tab=audit&" : "";
+
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <AuditExportButton entries={entries} />
+      </div>
       <form
         method="get"
         className="grid gap-3 rounded border border-[var(--border)] bg-white p-4 sm:grid-cols-2 lg:grid-cols-3"
       >
+        {basePath.includes("logs") ? (
+          <input type="hidden" name="tab" value="audit" />
+        ) : null}
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-foreground">From</span>
           <input
@@ -99,6 +112,15 @@ export function AuditLogTable({
             ))}
           </select>
         </label>
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-foreground">Action</span>
+          <input
+            className={INPUT_CLASS}
+            name="action"
+            defaultValue={filters.action}
+            placeholder="Search action…"
+          />
+        </label>
         <div className="flex items-end gap-2">
           <button
             type="submit"
@@ -107,7 +129,7 @@ export function AuditLogTable({
             Apply filters
           </button>
           <Link
-            href="/settings/audit"
+            href={`${basePath}${auditQuery ? `?${auditQuery.slice(0, -1)}` : ""}`}
             className="inline-flex min-h-11 items-center rounded border border-[var(--border-strong)] px-4 text-sm font-medium text-foreground hover:bg-[var(--surface-muted)]"
           >
             Clear

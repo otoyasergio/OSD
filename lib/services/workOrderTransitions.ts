@@ -4,9 +4,13 @@ import type { DbClient, WorkOrderStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
+import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
+import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import {
   canDropInColumn,
   getTargetStatusForColumn,
+  isPickupBoardColumn,
+  isQcBoardColumn,
 } from "@/lib/status/transitions";
 
 type WorkOrderRow = {
@@ -15,6 +19,10 @@ type WorkOrderRow = {
   status: WorkOrderStatus;
   quality_checked_at: string | null;
   quality_checked_by_user_id: string | null;
+  safety_checked_at: string | null;
+  safety_checked_by_user_id: string | null;
+  safety_required: boolean | null;
+  safety_waived: boolean;
 };
 
 async function loadWorkOrder(
@@ -24,22 +32,22 @@ async function loadWorkOrder(
   const { data, error } = await supabase
     .from("work_order")
     .select(
-      "work_order_id, location_id, status, quality_checked_at, quality_checked_by_user_id"
+      "work_order_id, location_id, status, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived"
     )
     .eq("work_order_id", workOrderId)
     .maybeSingle();
   if (error) throw error;
-  return (data as WorkOrderRow) ?? null;
+  const row = data as
+    (Omit<WorkOrderRow, "safety_waived"> & { safety_waived: boolean | null }) | null;
+  if (!row) return null;
+  return { ...row, safety_waived: Boolean(row.safety_waived) };
 }
 
 function isActiveJob(status: string) {
   return status !== "cancelled" && status !== "declined";
 }
 
-async function assertAllActiveJobsCompleted(
-  supabase: DbClient,
-  workOrderId: string
-) {
+async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: string) {
   const { data: jobs, error } = await supabase
     .from("job")
     .select("job_id, status")
@@ -61,6 +69,13 @@ async function assertAllActiveJobsCompleted(
  * Board drag-and-drop status move. Sets status explicitly (override-style)
  * so recalculate does not immediately overwrite the drop target.
  * Hold/cancel must use detail-page actions, not the board.
+ *
+ * Gates:
+ * - Ready / gallery Ready require a finished inspection, QC pass, and
+ *   head-tech safety unless office waived it.
+ * - complete uses the same leave gates as Overview (`completeWorkOrder`).
+ *   Billing is collected on the Billing tab; rejecting an unpaid drop here
+ *   snapped the card back with no way to enter an override reason.
  */
 export async function moveWorkOrderOnBoard(
   workOrderId: string,
@@ -83,14 +98,48 @@ export async function moveWorkOrderOnBoard(
     throw new Error("FORBIDDEN");
   }
 
-  if (targetColumnId === "qc") {
+  if (isQcBoardColumn(targetColumnId)) {
     await assertAllActiveJobsCompleted(supabase, workOrderId);
   }
 
-  if (targetColumnId === "pickup") {
-    if (!workOrder.quality_checked_at && !workOrder.quality_checked_by_user_id) {
-      throw new Error("QC_REQUIRED");
-    }
+  if (isPickupBoardColumn(targetColumnId)) {
+    const [
+      { data: safetyJobs, error: safetyJobsError },
+      { data: inspection, error: inspectionError },
+    ] = await Promise.all([
+      supabase
+        .from("job")
+        .select("status, service_name_snapshot")
+        .eq("work_order_id", workOrderId),
+      supabase
+        .from("inspection")
+        .select("completed_at")
+        .eq("work_order_id", workOrderId)
+        .maybeSingle(),
+    ]);
+    if (safetyJobsError) throw safetyJobsError;
+    if (inspectionError) throw inspectionError;
+    const blocked = pickupLeaveBlockReason({
+      inspectionComplete: Boolean(inspection?.completed_at),
+      qualityChecked: Boolean(
+        workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
+      ),
+      safetyRequired: isSafetyRequired({
+        safety_required: workOrder.safety_required,
+        safety_waived: workOrder.safety_waived,
+        jobs: safetyJobs ?? [],
+      }),
+      safetyChecked: Boolean(
+        workOrder.safety_checked_at || workOrder.safety_checked_by_user_id
+      ),
+    });
+    if (blocked) throw new Error(blocked);
+  }
+
+  if (targetColumnId === "complete") {
+    const { completeWorkOrder } = await import("@/lib/services/quality");
+    await completeWorkOrder(workOrderId, null);
+    return;
   }
 
   if (targetStatus === workOrder.status) return;
@@ -101,7 +150,7 @@ export async function moveWorkOrderOnBoard(
     .update({
       status: targetStatus,
       updated_at: now,
-      ...(targetColumnId === "pickup" ? { ready_for_pickup_at: now } : {}),
+      ...(isPickupBoardColumn(targetColumnId) ? { ready_for_pickup_at: now } : {}),
     })
     .eq("work_order_id", workOrderId);
   if (error) throw error;

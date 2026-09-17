@@ -4,7 +4,22 @@ import { toFormErrorMessage } from "@/lib/services/errors";
 describe("toFormErrorMessage", () => {
   it("maps QC_REQUIRED for pickup gate parity", () => {
     expect(toFormErrorMessage(new Error("QC_REQUIRED"))).toBe(
-      "Complete the quality check before marking ready for pickup."
+      "Complete the quality check before the bike can leave."
+    );
+  });
+
+  it("maps inspection and safety leave gates", () => {
+    expect(toFormErrorMessage(new Error("INSPECTION_REQUIRED_BEFORE_PICKUP"))).toBe(
+      "Complete the arrival inspection report before the bike can leave."
+    );
+    expect(toFormErrorMessage(new Error("SAFETY_REQUIRED_BEFORE_PICKUP"))).toBe(
+      "Head tech final inspection is required before the bike can leave."
+    );
+  });
+
+  it("maps signature required", () => {
+    expect(toFormErrorMessage(new Error("SIGNATURE_REQUIRED"))).toBe(
+      "Draw your signature before submitting."
     );
   });
 
