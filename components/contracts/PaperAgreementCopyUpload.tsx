@@ -46,7 +46,10 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
       return;
     }
     try {
-      if (original.type === "application/pdf" || !original.type.startsWith("image/")) {
+      const isPdf =
+        original.type === "application/pdf" ||
+        original.name.toLowerCase().endsWith(".pdf");
+      if (isPdf) {
         const cloned = await cloneFileForUpload(original);
         input.value = "";
         chooseFile(cloned);

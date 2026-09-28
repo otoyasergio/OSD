@@ -17,6 +17,16 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
     expect(source).toMatch(/readPickedPhotoFiles|preparePhotoFileForUpload/);
   });
 
+  it("floor photo buttons activate inputs with labels, not click()", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/technician/FloorPhotoField.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/htmlFor=\{cameraInputId\}/);
+    expect(source).toMatch(/htmlFor=\{libraryInputId\}/);
+    expect(source).not.toMatch(/pit-photo-add[\s\S]*onClick=\{\(\) => cameraInputRef/);
+  });
+
   it("intake sequential uploads clone/compress then retry transient failures", () => {
     const source = readFileSync(
       join(process.cwd(), "components/forms/intakePhotoUploadClient.ts"),

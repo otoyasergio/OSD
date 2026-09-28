@@ -36,6 +36,20 @@ describe("readPickedPhotoFiles", () => {
     expect(input.value).toBe("");
   });
 
+  it("keeps library files that report size 0 until they are read", async () => {
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+    const sneaky = new File([bytes], "IMG_1234.HEIC", { type: "" });
+    Object.defineProperty(sneaky, "size", { configurable: true, value: 0 });
+    const input = fakeInput([sneaky]);
+
+    const prepared = await readPickedPhotoFiles(input);
+
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]).not.toBe(sneaky);
+    expect(prepared[0].size).toBe(bytes.byteLength);
+    expect(input.value).toBe("");
+  });
+
   it("clears the input even when there is nothing to prepare", async () => {
     const input = fakeInput([]);
     await expect(readPickedPhotoFiles(input)).resolves.toEqual([]);

@@ -10,10 +10,11 @@ export async function uploadSelectedIntakePhoto(
   original: File,
   category: PhotoCategory
 ): Promise<boolean> {
-  if (!(original instanceof File) || original.size === 0) return false;
+  if (!original || typeof original.arrayBuffer !== "function") return false;
 
   try {
     const file = await preparePhotoFileForUpload(original);
+    if (file.size === 0) return false;
     const uploaded = await withPhotoUploadRetries(
       async () => {
         const photoData = new FormData();

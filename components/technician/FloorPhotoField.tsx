@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useId, useImperativeHandle, useRef, useState } from "react";
 import { mergeOptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
 import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
@@ -24,6 +24,8 @@ export const FloorPhotoField = forwardRef<
     onPhotoReady?: (label: string | null) => void;
   }
 >(function FloorPhotoField({ hint, variant = "default", onPhotoReady }, ref) {
+  const cameraInputId = useId();
+  const libraryInputId = useId();
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -88,6 +90,7 @@ export const FloorPhotoField = forwardRef<
         }}
       />
       <input
+        id={cameraInputId}
         ref={cameraInputRef}
         type="file"
         accept={cameraProps.accept}
@@ -98,6 +101,7 @@ export const FloorPhotoField = forwardRef<
         onChange={(event) => void applyPickedFiles(event.currentTarget)}
       />
       <input
+        id={libraryInputId}
         ref={libraryInputRef}
         type="file"
         accept={libraryProps.accept}
@@ -110,20 +114,16 @@ export const FloorPhotoField = forwardRef<
       {dock ? null : (
         <>
           <div className="pit-photo-actions">
-            <button
-              type="button"
-              className="pit-photo-add"
-              onClick={() => cameraInputRef.current?.click()}
-            >
+            {/*
+              Native <label htmlFor> is more reliable than input.click()
+              on Safari iPad/Mac (user-gesture + no clipped programmatic target).
+            */}
+            <label htmlFor={cameraInputId} className="pit-photo-add">
               Camera
-            </button>
-            <button
-              type="button"
-              className="pit-photo-library"
-              onClick={() => libraryInputRef.current?.click()}
-            >
+            </label>
+            <label htmlFor={libraryInputId} className="pit-photo-library">
               Library
-            </button>
+            </label>
           </div>
           {photoLabel ? (
             <p className="pit-photo-ready" role="status">
