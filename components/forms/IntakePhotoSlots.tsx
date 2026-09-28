@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { PhotoCategory } from "@/lib/database/types";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
-import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
 
@@ -355,7 +355,8 @@ export function IntakePhotoSlots({
               Add {chooserSlot.label} photo
             </p>
             <p className="photo-source-sheet-lede">
-              Use the camera, or choose an existing photo from your library.
+              Use the camera, or choose an existing photo from your library.{" "}
+              {CAMERA_ROLL_HINT}
             </p>
             {/*
               Native <label htmlFor> activation is more reliable than input.click()

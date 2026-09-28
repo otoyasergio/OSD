@@ -9,7 +9,7 @@ import { DOCUMENT_IMAGE_COMPRESS } from "@/lib/forms/compressImageForUpload";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { cloneFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import { withIntakeFollowUp } from "@/lib/forms/intakeCompletion";
-import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 type Props = {
@@ -194,7 +194,8 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
               Attach signed paper copy
             </p>
             <p className="photo-source-sheet-lede">
-              Take a photo now, or choose an image or PDF already on this device.
+              Take a photo now, or choose an image or PDF already on this device.{" "}
+              {CAMERA_ROLL_HINT}
             </p>
             <label
               htmlFor={cameraInputId}

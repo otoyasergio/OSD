@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
@@ -54,6 +54,36 @@ describe("readPickedPhotoFiles", () => {
     const input = fakeInput([]);
     await expect(readPickedPhotoFiles(input)).resolves.toEqual([]);
     expect(input.value).toBe("");
+  });
+
+  it("archives camera captures to the device before clearing the input", async () => {
+    const original = new File(["tiny-jpeg-bytes"], "shot.jpg", {
+      type: "image/jpeg",
+    });
+    const input = {
+      ...fakeInput([original]),
+      capture: "environment",
+    } as unknown as HTMLInputElement;
+    const savePhotos = vi.fn().mockResolvedValue(undefined);
+
+    const prepared = await readPickedPhotoFiles(input, { savePhotos });
+
+    expect(savePhotos).toHaveBeenCalledTimes(1);
+    expect(savePhotos.mock.calls[0][0]).toEqual([original]);
+    expect(prepared[0]).not.toBe(original);
+    expect(input.value).toBe("");
+  });
+
+  it("does not archive library picks — those are already on the device", async () => {
+    const original = new File(["tiny-jpeg-bytes"], "library.jpg", {
+      type: "image/jpeg",
+    });
+    const input = fakeInput([original]);
+    const savePhotos = vi.fn();
+
+    await readPickedPhotoFiles(input, { savePhotos });
+
+    expect(savePhotos).not.toHaveBeenCalled();
   });
 });
 

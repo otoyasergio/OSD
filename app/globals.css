@@ -3806,6 +3806,12 @@ label.photo-source-sheet-action {
   font-variant-numeric: tabular-nums;
 }
 
+.photo-lightbox-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .photo-lightbox-btn {
   display: inline-flex;
   align-items: center;

@@ -8,7 +8,7 @@ import { PHOTO_CATEGORY_LABELS, REQUIRED_PHOTO_CATEGORIES } from "@/lib/status/l
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
-import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { formatDateTime } from "@/lib/datetime/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
@@ -352,7 +352,8 @@ export function PhotosTab({
               Add photo
             </p>
             <p className="photo-source-sheet-lede">
-              Use the camera, or choose an existing photo from your library.
+              Use the camera, or choose an existing photo from your library.{" "}
+              {CAMERA_ROLL_HINT}
             </p>
             <label
               htmlFor={cameraInputId}

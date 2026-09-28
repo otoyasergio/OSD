@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import type { LightboxPhoto } from "@/lib/photos/lightbox";
+import { saveRemotePhotoToCameraRoll } from "@/lib/forms/savePhotosToCameraRoll";
 
 /**
  * Full-screen photo viewer. Rendered only while open (parent keeps the
@@ -26,6 +27,7 @@ export function PhotoLightbox({
   );
   const dialogRef = useRef<HTMLDivElement>(null);
   const restoreFocusTo = useRef<Element | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const goPrev = useCallback(() => {
     setIndex((i) => (i - 1 + count) % count);
@@ -90,6 +92,19 @@ export function PhotoLightbox({
   }, [goPrev, goNext, onClose]);
 
   const photo = photos[index];
+
+  async function saveCurrent() {
+    if (!photo || saving) return;
+    setSaving(true);
+    try {
+      await saveRemotePhotoToCameraRoll(photo.src, `${photo.label}.jpg`);
+    } catch {
+      // Best-effort — the viewer stays open if the device save is dismissed.
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!photo) return null;
 
   return createPortal(
@@ -108,14 +123,27 @@ export function PhotoLightbox({
             {index + 1} of {count}
           </p>
         </div>
-        <button
-          type="button"
-          className="photo-lightbox-btn"
-          aria-label="Close photo viewer"
-          onClick={onClose}
-        >
-          <X size={22} aria-hidden />
-        </button>
+        <div className="photo-lightbox-actions">
+          <button
+            type="button"
+            className="photo-lightbox-btn"
+            aria-label={
+              saving ? "Saving photo to this device" : "Save photo to this device"
+            }
+            disabled={saving}
+            onClick={() => void saveCurrent()}
+          >
+            <Download size={22} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="photo-lightbox-btn"
+            aria-label="Close photo viewer"
+            onClick={onClose}
+          >
+            <X size={22} aria-hidden />
+          </button>
+        </div>
       </div>
 
       <div

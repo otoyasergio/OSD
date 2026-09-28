@@ -16,8 +16,8 @@ import {
 } from "@/app/(app)/motorcycles/document-actions";
 import { FormError } from "@/components/forms/Field";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
-import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
-import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { formatDate } from "@/lib/datetime/format";
 import type { LightboxPhoto } from "@/lib/photos/lightbox";
 
@@ -69,21 +69,17 @@ export function MotorcycleDocuments({
   }
 
   async function uploadFromInput(input: HTMLInputElement) {
-    const originals = Array.from(input.files ?? []);
     setChooserOpen(false);
     setError(null);
-    if (originals.length === 0 || !formRef.current) return;
+    if (!formRef.current) {
+      input.value = "";
+      return;
+    }
 
     setPreparing(true);
     try {
-      const files = await Promise.all(
-        originals.map((original) =>
-          original.type.startsWith("image/")
-            ? preparePhotoFileForUpload(original)
-            : original
-        )
-      );
-      input.value = "";
+      const files = await readPickedPhotoFiles(input);
+      if (files.length === 0) return;
       const formData = new FormData(formRef.current);
       formData.delete("file");
       for (const file of files) formData.append("file", file);
@@ -269,6 +265,9 @@ export function MotorcycleDocuments({
                 onClick={(e) => e.stopPropagation()}
               >
                 <p className="text-sm font-medium text-foreground">Add document photo</p>
+                <p className="mt-1 text-sm text-[var(--status-neutral)]">
+                  {CAMERA_ROLL_HINT}
+                </p>
                 <div className="mt-3 flex flex-col gap-2">
                   <label
                     htmlFor={cameraInputId}

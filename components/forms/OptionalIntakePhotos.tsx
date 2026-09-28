@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CameraIcon, LibraryIcon } from "@/components/forms/IntakePhotoSlots";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
-import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 type Props = {
@@ -197,7 +197,8 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
               Add extra photos
             </p>
             <p className="photo-source-sheet-lede">
-              Take one photo now, or select one or more from your library.
+              Take one photo now, or select one or more from your library.{" "}
+              {CAMERA_ROLL_HINT}
             </p>
             <label
               htmlFor={cameraInputId}

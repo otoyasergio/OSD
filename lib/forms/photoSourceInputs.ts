@@ -1,5 +1,8 @@
 export type PhotoSource = "camera" | "library";
 
+/** Shown on camera/library sheets so staff know shots are kept on the iPad. */
+export const CAMERA_ROLL_HINT = "Camera shots are also saved to this device’s Photos.";
+
 /**
  * Prefer `image/*` first — Safari (iPad/Mac) keys off that for Photos vs Files.
  * Explicit types remain as hints for other browsers / HEIC from iPhone libraries.

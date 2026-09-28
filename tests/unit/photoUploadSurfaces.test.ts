@@ -9,6 +9,7 @@ const PICKERS = [
   "components/technician/FloorPhotoField.tsx",
   "components/contracts/PaperAgreementCopyUpload.tsx",
   "components/messages/Composer.tsx",
+  "components/motorcycles/MotorcycleDocuments.tsx",
 ];
 
 describe("photo upload surfaces clone files before clearing the picker", () => {
@@ -25,6 +26,15 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
     expect(source).toMatch(/htmlFor=\{cameraInputId\}/);
     expect(source).toMatch(/htmlFor=\{libraryInputId\}/);
     expect(source).not.toMatch(/pit-photo-add[\s\S]*onClick=\{\(\) => cameraInputRef/);
+  });
+
+  it("lightbox offers save-to-device for the open photo", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/photos/PhotoLightbox.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/saveRemotePhotoToCameraRoll/);
+    expect(source).toMatch(/Save photo to this device/);
   });
 
   it("intake sequential uploads clone/compress then retry transient failures", () => {

@@ -14,7 +14,7 @@ import {
   type PhotoFormState,
 } from "@/app/(app)/work_orders/photo-actions";
 import { FormError } from "@/components/forms/Field";
-import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 export function InspectionPhotoSlot({
@@ -189,7 +189,7 @@ export function InspectionPhotoSlot({
             </p>
             <p className="photo-source-sheet-lede">
               Take as many as you need. Camera takes one at a time; library can pick
-              several.
+              several. {CAMERA_ROLL_HINT}
             </p>
             <label
               htmlFor={cameraInputId}

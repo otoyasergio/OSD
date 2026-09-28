@@ -2,7 +2,7 @@
 
 import { forwardRef, useId, useImperativeHandle, useRef, useState } from "react";
 import { mergeOptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
-import { photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 export type FloorPhotoFieldHandle = {
@@ -130,7 +130,9 @@ export const FloorPhotoField = forwardRef<
               {photoLabel}
             </p>
           ) : (
-            <p className="pit-photo-hint">{hint}</p>
+            <p className="pit-photo-hint">
+              {hint}. {CAMERA_ROLL_HINT}
+            </p>
           )}
         </>
       )}
