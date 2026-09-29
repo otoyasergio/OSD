@@ -25,6 +25,7 @@ function row(overrides: Partial<DiagnosticsPhotoRow> = {}): DiagnosticsPhotoRow 
     jobId: null,
     category: "inspection_item",
     storagePath: "wo-1/inspection_item/photo-1.jpg",
+    thumbStoragePath: null,
     ...overrides,
   };
 }
@@ -49,7 +50,9 @@ describe("diagnostics selected image preparation", () => {
     );
 
     expect(deps.loadRows).toHaveBeenCalledWith(["photo-1"]);
-    expect(deps.download).toHaveBeenCalledWith("wo-1/inspection_item/photo-1.jpg");
+    expect(deps.download).toHaveBeenCalledWith("wo-1/inspection_item/photo-1.jpg", {
+      maxBytes: 10 * 1024 * 1024,
+    });
     expect(result.images).toEqual([
       expect.objectContaining({
         dataUrl: expect.stringMatching(/^data:image\/jpeg;base64,/),
@@ -61,6 +64,7 @@ describe("diagnostics selected image preparation", () => {
         photoId: "photo-1",
         purpose: "Inspect terminal damage",
         sortOrder: 0,
+        limitation: null,
       },
     ]);
     expect(JSON.stringify(result)).not.toContain("storagePath");
@@ -86,7 +90,14 @@ describe("diagnostics selected image preparation", () => {
           storagePath: "wo-1/inspection_item/photo-1.heic",
         }),
       ]),
-      download: vi.fn().mockResolvedValue(Buffer.from("fake-heic")),
+      download: vi
+        .fn()
+        .mockResolvedValue(Buffer.from("00000018667479706865696300000000", "hex")),
+      inspectImage: vi.fn().mockResolvedValue({
+        format: "heif",
+        width: 100,
+        height: 100,
+      }),
       normalizeImage,
     };
 
@@ -105,18 +116,19 @@ describe("diagnostics selected image preparation", () => {
     expect(result.images[0]!.dataUrl).toMatch(/^data:image\/jpeg;base64,/);
   });
 
-  it("allows a same-work-order job photo in work-order-wide context", async () => {
+  it("requires an exact selected job for job work/proof photos", async () => {
     const deps = dependencies([row({ category: "job_proof", jobId: "job-1" })]);
 
-    const result = await prepareDiagnosticsImages(
-      {
-        workOrderId: "wo-1",
-        selections: [{ photoId: "photo-1", purpose: "Inspect completed work" }],
-      },
-      deps
-    );
-
-    expect(result.photoMetadata[0]).toMatchObject({ photoId: "photo-1" });
+    await expect(
+      prepareDiagnosticsImages(
+        {
+          workOrderId: "wo-1",
+          selections: [{ photoId: "photo-1", purpose: "Inspect completed work" }],
+        },
+        deps
+      )
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_JOB_REQUIRED");
+    expect(deps.download).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -229,6 +241,147 @@ describe("diagnostics selected image preparation", () => {
         },
         invalid
       )
-    ).rejects.toThrow("DIAGNOSTICS_IMAGE_DECODE_FAILED");
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_FORMAT_UNSUPPORTED");
+  });
+
+  it.each([
+    ["svg", Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'></svg>")],
+    ["pdf", Buffer.from("%PDF-1.7 private")],
+    ["tiff", Buffer.from("49492a0008000000", "hex")],
+  ])("rejects unsupported %s magic before decode", async (_format, bytes) => {
+    const deps = dependencies([row()]);
+    deps.download.mockResolvedValue(bytes);
+
+    await expect(
+      prepareDiagnosticsImages(
+        {
+          workOrderId: "wo-1",
+          selections: [{ photoId: "photo-1", purpose: "Inspect" }],
+        },
+        deps
+      )
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_FORMAT_UNSUPPORTED");
+  });
+
+  it("enforces the 50M input-pixel limit before normalization", async () => {
+    const deps = {
+      ...dependencies([row()]),
+      inspectImage: vi.fn().mockResolvedValue({
+        format: "jpeg",
+        width: 10_000,
+        height: 5_001,
+      }),
+      normalizeImage: vi.fn(),
+    };
+
+    await expect(
+      prepareDiagnosticsImages(
+        {
+          workOrderId: "wo-1",
+          selections: [{ photoId: "photo-1", purpose: "Inspect" }],
+        },
+        deps
+      )
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_PIXEL_LIMIT");
+    expect(deps.normalizeImage).not.toHaveBeenCalled();
+  });
+
+  it("passes the aligned 10MB cap into every storage download", async () => {
+    const deps = dependencies([row()]);
+    await prepareDiagnosticsImages(
+      {
+        workOrderId: "wo-1",
+        selections: [{ photoId: "photo-1", purpose: "Inspect" }],
+      },
+      deps
+    );
+    expect(deps.download).toHaveBeenCalledWith(expect.any(String), {
+      maxBytes: 10 * 1024 * 1024,
+    });
+  });
+
+  it("falls back from unsupported stored HEIF decode to its JPEG thumbnail", async () => {
+    const original = Buffer.from("00000018667479706865696300000000", "hex");
+    const thumbnail = await jpeg();
+    const normalized = await jpeg();
+    const deps = {
+      loadRows: vi.fn().mockResolvedValue([
+        row({
+          storagePath: "wo-1/inspection_item/photo-1.heic",
+          thumbStoragePath: "wo-1/inspection_item/photo-1.thumb.jpg",
+        }),
+      ]),
+      download: vi.fn().mockResolvedValueOnce(original).mockResolvedValueOnce(thumbnail),
+      inspectImage: vi
+        .fn()
+        .mockResolvedValueOnce({ format: "heif", width: 3_000, height: 2_000 })
+        .mockResolvedValueOnce({ format: "jpeg", width: 480, height: 320 }),
+      normalizeImage: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("decoder unavailable"))
+        .mockResolvedValueOnce(normalized),
+    };
+
+    const result = await prepareDiagnosticsImages(
+      {
+        workOrderId: "wo-1",
+        selections: [{ photoId: "photo-1", purpose: "Inspect" }],
+      },
+      deps
+    );
+
+    expect(deps.download).toHaveBeenNthCalledWith(
+      2,
+      "wo-1/inspection_item/photo-1.thumb.jpg",
+      { maxBytes: 10 * 1024 * 1024 }
+    );
+    expect(result.photoMetadata[0]?.limitation).toMatch(/lower-resolution/i);
+    expect(result.images[0]?.limitation).toMatch(/lower-resolution/i);
+  });
+
+  it("uses the JPEG thumbnail when HEIF metadata cannot be decoded", async () => {
+    const original = Buffer.from("00000018667479706865696300000000", "hex");
+    const thumbnail = await jpeg();
+    const deps = {
+      loadRows: vi.fn().mockResolvedValue([
+        row({
+          storagePath: "wo-1/inspection_item/photo-1.heif",
+          thumbStoragePath: "wo-1/inspection_item/photo-1.thumb.jpg",
+        }),
+      ]),
+      download: vi.fn().mockResolvedValueOnce(original).mockResolvedValueOnce(thumbnail),
+      inspectImage: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("HEIF decoder unavailable"))
+        .mockResolvedValueOnce({ format: "jpeg", width: 480, height: 320 }),
+      normalizeImage: vi.fn().mockResolvedValue(thumbnail),
+    };
+
+    const result = await prepareDiagnosticsImages(
+      {
+        workOrderId: "wo-1",
+        selections: [{ photoId: "photo-1", purpose: "Inspect" }],
+      },
+      deps
+    );
+
+    expect(result.photoMetadata[0]?.limitation).toMatch(/lower-resolution/i);
+    expect(deps.normalizeImage).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps invalid injected normalization output to a safe code", async () => {
+    const deps = {
+      ...dependencies([row()]),
+      normalizeImage: vi.fn().mockResolvedValue(Buffer.from("not-jpeg")),
+    };
+    await expect(
+      prepareDiagnosticsImages(
+        {
+          workOrderId: "wo-1",
+          selections: [{ photoId: "photo-1", purpose: "Inspect" }],
+        },
+        deps
+      )
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_NORMALIZATION_FAILED");
   });
 });

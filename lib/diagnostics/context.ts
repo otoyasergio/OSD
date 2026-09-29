@@ -1,9 +1,30 @@
 import { createHash } from "node:crypto";
+import { extractDiagnosticsTechnicalValues } from "@/lib/diagnostics/evidence";
 import type { DiagnosticsClaimContext } from "@/lib/diagnostics/outputPolicy";
+import {
+  buildUntrustedReferenceBlock,
+  diagnosticsAudienceForMode,
+  type DiagnosticsAudience,
+} from "@/lib/diagnostics/prompts";
 import type { DiagnosticsMode } from "@/lib/diagnostics/responseSchema";
 
-export const DIAGNOSTICS_MAX_CONTEXT_TEXT_CHARS = 2_000;
+export const DIAGNOSTICS_MAX_CONTEXT_TEXT_CHARS = 500;
 export const DIAGNOSTICS_MAX_COLLECTION_ITEMS = 100;
+export const DIAGNOSTICS_MAX_CONTEXT_BLOCK_CHARS = 48_000;
+
+const DEEP_MAX_DEPTH = 3;
+const DEEP_MAX_ITEMS = 40;
+const SECTION_BUDGETS = {
+  customerRequestJobs: 2_000,
+  inspectionResults: 8_000,
+  technicianNotes: 4_000,
+  recommendations: 4_000,
+  qualityChecks: 2_000,
+  safetyChecks: 2_000,
+  selectedJobParts: 2_500,
+  selectedJobChecklist: 1_500,
+  selectedJobVerification: 1_500,
+} as const;
 
 type NullableText = string | null | undefined;
 
@@ -134,7 +155,9 @@ export type DiagnosticsContextSource = {
     quality?: DiagnosticsCheckSource[];
     safety?: DiagnosticsCheckSource[];
   };
-  references?: Partial<Record<DiagnosticsReferenceName, boolean>>;
+  references?: Partial<
+    Record<DiagnosticsReferenceName, boolean | string | { text?: NullableText }>
+  >;
 };
 
 type DiagnosticsCheckSource = {
@@ -158,7 +181,13 @@ export type DiagnosticsContextOptions = {
   workOrderId: string;
   jobId?: string | null;
   serverNowIso?: string | null;
-  includeFullVin?: boolean;
+};
+
+export type DiagnosticsTruncation = {
+  total: number;
+  included: number;
+  omitted: number;
+  clipped: boolean;
 };
 
 type ShapedJob = {
@@ -200,9 +229,16 @@ type ShapedJob = {
   }>;
   pricing?: NonNullable<DiagnosticsContextJobSource["prices"]>;
   authorization?: NonNullable<DiagnosticsContextJobSource["authorization"]>;
+  truncation: {
+    parts: DiagnosticsTruncation;
+    checklist: DiagnosticsTruncation;
+    verification: DiagnosticsTruncation;
+  };
 };
 
 export type DiagnosticsModelContext = {
+  mode: DiagnosticsMode;
+  audience: DiagnosticsAudience;
   contextAsOf: string | null;
   workOrder: {
     workOrderId: string;
@@ -219,7 +255,6 @@ export type DiagnosticsModelContext = {
     model: string;
     colour: string | null;
     notes: string | null;
-    vin?: string;
     source: "unverified_app_catalogue_reference";
     verified: false;
   };
@@ -271,6 +306,16 @@ export type DiagnosticsModelContext = {
     safety: ShapedCheck[];
   };
   missingReferences: Record<DiagnosticsReferenceName, boolean>;
+  referenceEvidence: Record<DiagnosticsReferenceName, string | null>;
+  truncation: {
+    customerRequestJobs: DiagnosticsTruncation;
+    inspectionResults: DiagnosticsTruncation;
+    technicianNotes: DiagnosticsTruncation;
+    recommendations: DiagnosticsTruncation;
+    qualityChecks: DiagnosticsTruncation;
+    safetyChecks: DiagnosticsTruncation;
+    aggregate: DiagnosticsTruncation;
+  };
 };
 
 type ShapedCheck = {
@@ -283,6 +328,7 @@ type ShapedCheck = {
 
 export type ShapedDiagnosticsContext = {
   context: DiagnosticsModelContext;
+  contextBlock: string;
   contextHash: string;
   claims: DiagnosticsClaimContext;
 };
@@ -310,10 +356,31 @@ const SERVICE_INFORMATION_KEYS = [
   "notes",
 ] as const;
 
+function redactSensitiveText(value: string): string | null {
+  if (
+    /(?:https?:\/\/|data:image\/|(?:^|\/)(?:storage|photos?|images?|signatures?|documents?|tokens?)(?:\/|$)|\.(?:jpe?g|png|webp|heic|heif|pdf)(?:$|[?#]))/i.test(
+      value
+    )
+  ) {
+    return null;
+  }
+  return value
+    .replace(/\b[A-HJ-NPR-Z0-9]{17}\b/gi, "[REDACTED_VIN]")
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED_EMAIL]")
+    .replace(/(?:\+?1[\s.()-]*)?(?:\d[\s.()-]*){10}\b/g, "[REDACTED_PHONE]");
+}
+
 function boundedText(value: NullableText): string | null {
   const normalized = value?.trim();
   if (!normalized) return null;
-  return normalized.slice(0, DIAGNOSTICS_MAX_CONTEXT_TEXT_CHARS);
+  const redacted = redactSensitiveText(normalized);
+  if (!redacted) return null;
+  if (redacted.length <= DIAGNOSTICS_MAX_CONTEXT_TEXT_CHARS) return redacted;
+  const marker = "[CLIPPED]";
+  return `${redacted.slice(
+    0,
+    DIAGNOSTICS_MAX_CONTEXT_TEXT_CHARS - marker.length
+  )}${marker}`;
 }
 
 function boundedRequiredText(value: string): string {
@@ -322,6 +389,34 @@ function boundedRequiredText(value: string): string {
 
 function sortedBounded<T>(values: readonly T[], compare: (a: T, b: T) => number): T[] {
   return [...values].sort(compare).slice(0, DIAGNOSTICS_MAX_COLLECTION_ITEMS);
+}
+
+function budgetItems<T>(
+  values: readonly T[],
+  budget: number
+): { items: T[]; truncation: DiagnosticsTruncation } {
+  const items: T[] = [];
+  let used = 2;
+  for (const value of values.slice(0, DIAGNOSTICS_MAX_COLLECTION_ITEMS)) {
+    const size = JSON.stringify(value).length + (items.length > 0 ? 1 : 0);
+    if (used + size > budget) break;
+    items.push(value);
+    used += size;
+  }
+  const total = values.length;
+  return {
+    items,
+    truncation: {
+      total,
+      included: items.length,
+      omitted: total - items.length,
+      clipped: items.length < total,
+    },
+  };
+}
+
+function noTruncation(total = 0): DiagnosticsTruncation {
+  return { total, included: total, omitted: 0, clipped: false };
 }
 
 function byId<T>(getId: (value: T) => string): (a: T, b: T) => number {
@@ -358,7 +453,7 @@ function shapePricing(
 }
 
 function shapeJob(job: DiagnosticsContextJobSource, frontOffice: boolean): ShapedJob {
-  const parts = sortedBounded(
+  const allParts = sortedBounded(
     job.parts ?? [],
     byId((part) => part.partId)
   ).map((part) => ({
@@ -375,7 +470,7 @@ function shapeJob(job: DiagnosticsContextJobSource, frontOffice: boolean): Shape
       ? { sellPriceCents: part.sellPriceCents }
       : {}),
   }));
-  const checklist = sortedBounded(
+  const allChecklist = sortedBounded(
     job.checklist ?? [],
     byId((item) => item.checklistItemId)
   ).map((item) => ({
@@ -384,10 +479,10 @@ function shapeJob(job: DiagnosticsContextJobSource, frontOffice: boolean): Shape
     checked: item.checkedAt !== null,
     checkedAt: item.checkedAt,
   }));
-  const verification = sortedBounded(
+  const allVerification = sortedBounded(
     job.verification ?? [],
     (a, b) =>
-      a.recordedAt.localeCompare(b.recordedAt) ||
+      b.recordedAt.localeCompare(a.recordedAt) ||
       a.verificationId.localeCompare(b.verificationId)
   ).map((item) => ({
     verificationId: boundedRequiredText(item.verificationId),
@@ -395,6 +490,12 @@ function shapeJob(job: DiagnosticsContextJobSource, frontOffice: boolean): Shape
     notes: boundedText(item.notes),
     recordedAt: item.recordedAt,
   }));
+  const parts = budgetItems(allParts, SECTION_BUDGETS.selectedJobParts);
+  const checklist = budgetItems(allChecklist, SECTION_BUDGETS.selectedJobChecklist);
+  const verification = budgetItems(
+    allVerification,
+    SECTION_BUDGETS.selectedJobVerification
+  );
 
   const shaped: ShapedJob = {
     jobId: boundedRequiredText(job.jobId),
@@ -404,8 +505,8 @@ function shapeJob(job: DiagnosticsContextJobSource, frontOffice: boolean): Shape
     workState: boundedText(job.workState),
     notes: boundedText(job.notes),
     completedAt: job.completedAt ?? null,
-    parts,
-    checklist,
+    parts: parts.items,
+    checklist: checklist.items,
     proof: job.proof
       ? {
           required: job.proof.required,
@@ -413,7 +514,12 @@ function shapeJob(job: DiagnosticsContextJobSource, frontOffice: boolean): Shape
           exceptionRecorded: job.proof.exceptionRecorded,
         }
       : null,
-    verification,
+    verification: verification.items,
+    truncation: {
+      parts: parts.truncation,
+      checklist: checklist.truncation,
+      verification: verification.truncation,
+    },
   };
 
   if (frontOffice) {
@@ -436,12 +542,13 @@ function shapeJob(job: DiagnosticsContextJobSource, frontOffice: boolean): Shape
 }
 
 function sanitizeChecklist(value: unknown, depth = 0): unknown {
-  if (depth > 3 || value === null || typeof value === "boolean") return value;
+  if (depth > DEEP_MAX_DEPTH) return null;
+  if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string") return boundedText(value);
   if (Array.isArray(value)) {
     return value
-      .slice(0, DIAGNOSTICS_MAX_COLLECTION_ITEMS)
+      .slice(0, DEEP_MAX_ITEMS)
       .map((item) => sanitizeChecklist(item, depth + 1));
   }
   if (typeof value !== "object") return null;
@@ -449,10 +556,13 @@ function sanitizeChecklist(value: unknown, depth = 0): unknown {
   const result: Record<string, unknown> = {};
   for (const key of Object.keys(value as Record<string, unknown>)
     .filter(
-      (key) => !/(signature|customer|contact|address|url|path|vin|price|cost)/i.test(key)
+      (key) =>
+        !/(photo|image|signature|token|url|path|customer|contact|address|email|phone|vin|price|cost)/i.test(
+          key
+        )
     )
     .sort()
-    .slice(0, DIAGNOSTICS_MAX_COLLECTION_ITEMS)) {
+    .slice(0, DEEP_MAX_ITEMS)) {
     result[key.slice(0, 100)] = sanitizeChecklist(
       (value as Record<string, unknown>)[key],
       depth + 1
@@ -462,41 +572,62 @@ function sanitizeChecklist(value: unknown, depth = 0): unknown {
 }
 
 function shapeChecks(rows: DiagnosticsCheckSource[] | undefined): ShapedCheck[] {
-  return sortedBounded(
-    rows ?? [],
-    (a, b) =>
-      a.performedAt.localeCompare(b.performedAt) || a.attemptId.localeCompare(b.attemptId)
-  ).map((row) => ({
-    attemptId: boundedRequiredText(row.attemptId),
-    outcome: boundedRequiredText(row.outcome),
-    checklist: sanitizeChecklist(row.checklist ?? null),
-    notes: boundedText(row.notes),
-    performedAt: row.performedAt,
-  }));
+  return [...(rows ?? [])]
+    .sort(
+      (a, b) =>
+        b.performedAt.localeCompare(a.performedAt) ||
+        a.attemptId.localeCompare(b.attemptId)
+    )
+    .map((row) => ({
+      attemptId: boundedRequiredText(row.attemptId),
+      outcome: boundedRequiredText(row.outcome),
+      checklist: sanitizeChecklist(row.checklist ?? null),
+      notes: boundedText(row.notes),
+      performedAt: row.performedAt,
+    }));
 }
 
-function stableSerialize(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
-  }
-  const object = value as Record<string, unknown>;
-  return `{${Object.keys(object)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableSerialize(object[key])}`)
-    .join(",")}}`;
+export function buildDiagnosticsContextBlock(context: DiagnosticsModelContext): string {
+  return buildUntrustedReferenceBlock(
+    "current_work_order_context",
+    context,
+    DIAGNOSTICS_MAX_CONTEXT_BLOCK_CHARS
+  );
 }
 
 export function hashDiagnosticsContext(context: DiagnosticsModelContext): string {
-  return createHash("sha256").update(stableSerialize(context)).digest("hex");
+  return createHash("sha256").update(buildDiagnosticsContextBlock(context)).digest("hex");
 }
 
 export function deriveDiagnosticsClaimContext(
   context: DiagnosticsModelContext
 ): DiagnosticsClaimContext {
   const selected = context.selectedJob;
+  const allowedPriceCents = new Set<number>();
+  if (selected?.pricing) {
+    for (const value of Object.entries(selected.pricing)) {
+      if (value[0] !== "currency" && typeof value[1] === "number") {
+        allowedPriceCents.add(value[1]);
+      }
+    }
+  }
+  for (const part of selected?.parts ?? []) {
+    if (typeof part.sellPriceCents === "number") {
+      allowedPriceCents.add(part.sellPriceCents);
+    }
+  }
+  const exactModelReference = context.referenceEvidence.exactModelOem;
+  const technicalEvidence = [
+    exactModelReference,
+    ...context.inspection.results.map((item) => item.measurement),
+    ...(selected?.verification.flatMap((item) => [item.result, item.notes]) ?? []),
+    ...context.technicianNotes.map((item) => item.note),
+    ...context.checks.quality.map((item) => item.notes),
+    ...context.checks.safety.map((item) => item.notes),
+  ].filter((value): value is string => Boolean(value));
   return {
-    hasRecordedCustomerAuthorization: Boolean(selected?.authorization),
+    hasRecordedCustomerAuthorization:
+      selected?.authorization?.decision.toLowerCase() === "approved",
     hasRecordedCompletedWork: Boolean(
       selected &&
       (selected.completedAt ||
@@ -508,11 +639,21 @@ export function deriveDiagnosticsClaimContext(
         /^(?:pass(?:ed)?|success(?:ful)?|resolved|verified)$/i.test(item.result)
       )
     ),
-    hasExactModelSource: !context.missingReferences.exactModelOem,
-    hasCurrentRecallSource: !context.missingReferences.currentRecallLookup,
-    hasCurrentOntarioInspectionSource:
-      !context.missingReferences.currentOntarioInspection,
-    hasSuppliedPrices: Boolean(selected?.pricing),
+    hasExactModelSource: Boolean(exactModelReference),
+    hasCurrentRecallSource: Boolean(context.referenceEvidence.currentRecallLookup),
+    hasCurrentOntarioInspectionSource: Boolean(
+      context.referenceEvidence.currentOntarioInspection
+    ),
+    hasSuppliedPrices: allowedPriceCents.size > 0,
+    allowedTechnicalValues: [
+      ...new Set(
+        technicalEvidence.flatMap((value) => extractDiagnosticsTechnicalValues(value))
+      ),
+    ].sort(),
+    allowedPriceCents: [...allowedPriceCents].sort((a, b) => a - b),
+    availableNamedReferences: REFERENCE_NAMES.filter(
+      (name) => context.referenceEvidence[name] !== null
+    ),
   };
 }
 
@@ -520,6 +661,13 @@ export function shapeDiagnosticsContext(
   source: DiagnosticsContextSource,
   options: DiagnosticsContextOptions
 ): ShapedDiagnosticsContext {
+  if (
+    options.serverNowIso != null &&
+    (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(options.serverNowIso) ||
+      !Number.isFinite(Date.parse(options.serverNowIso)))
+  ) {
+    throw new Error("DIAGNOSTICS_CONTEXT_TIME_INVALID");
+  }
   if (!options.workOrderId || source.workOrder.workOrderId !== options.workOrderId) {
     throw new Error("DIAGNOSTICS_CONTEXT_WORK_ORDER_MISMATCH");
   }
@@ -541,22 +689,27 @@ export function shapeDiagnosticsContext(
   }
 
   const frontOffice = isFrontOffice(options.mode);
-  const inspectionResults = source.inspection
-    ? sortedBounded(
-        source.inspection.results,
-        (a, b) =>
-          a.displayOrder - b.displayOrder ||
-          a.inspectionResultId.localeCompare(b.inspectionResultId)
-      ).map((result) => ({
-        inspectionResultId: boundedRequiredText(result.inspectionResultId),
-        category: boundedRequiredText(result.category),
-        itemName: boundedRequiredText(result.itemName),
-        displayOrder: result.displayOrder,
-        status: boundedText(result.status) ?? "uninspected",
-        measurement: boundedText(result.measurement),
-        notes: boundedText(result.notes),
-      }))
+  const allInspectionResults = source.inspection
+    ? [...source.inspection.results]
+        .sort(
+          (a, b) =>
+            a.displayOrder - b.displayOrder ||
+            a.inspectionResultId.localeCompare(b.inspectionResultId)
+        )
+        .map((result) => ({
+          inspectionResultId: boundedRequiredText(result.inspectionResultId),
+          category: boundedRequiredText(result.category),
+          itemName: boundedRequiredText(result.itemName),
+          displayOrder: result.displayOrder,
+          status: boundedText(result.status) ?? "uninspected",
+          measurement: boundedText(result.measurement),
+          notes: boundedText(result.notes),
+        }))
     : [];
+  const inspectionResults = budgetItems(
+    allInspectionResults,
+    SECTION_BUDGETS.inspectionResults
+  );
 
   const serviceValues: Record<string, string | null> = {};
   if (source.serviceInformation) {
@@ -565,11 +718,104 @@ export function shapeDiagnosticsContext(
     }
   }
 
+  const referenceEvidence = Object.fromEntries(
+    REFERENCE_NAMES.map((name) => {
+      const value = source.references?.[name];
+      const text =
+        typeof value === "string"
+          ? boundedText(value)
+          : value && typeof value === "object"
+            ? boundedText(value.text)
+            : null;
+      return [name, text];
+    })
+  ) as Record<DiagnosticsReferenceName, string | null>;
   const missingReferences = Object.fromEntries(
-    REFERENCE_NAMES.map((name) => [name, source.references?.[name] !== true])
+    REFERENCE_NAMES.map((name) => [name, referenceEvidence[name] === null])
   ) as Record<DiagnosticsReferenceName, boolean>;
 
+  const scopedJobs = options.jobId
+    ? source.jobs.filter((job) => job.jobId === options.jobId)
+    : source.jobs;
+  const customerRequestJobs = budgetItems(
+    [...scopedJobs]
+      .filter((job) => job.origin === "customer_request")
+      .sort(byId((job) => job.jobId))
+      .map((job) => ({
+        jobId: boundedRequiredText(job.jobId),
+        serviceName: boundedRequiredText(job.serviceName),
+        status: boundedRequiredText(job.status),
+        workState: boundedText(job.workState),
+        notes: boundedText(job.notes),
+      })),
+    SECTION_BUDGETS.customerRequestJobs
+  );
+
+  const scopedNotes = (source.technicianNotes ?? []).filter(
+    (note) => !options.jobId || note.jobId === null || note.jobId === options.jobId
+  );
+  const technicianNotes = budgetItems(
+    [...scopedNotes]
+      .sort(
+        (a, b) =>
+          b.createdAt.localeCompare(a.createdAt) ||
+          a.technicianNoteId.localeCompare(b.technicianNoteId)
+      )
+      .map((note) => ({
+        technicianNoteId: boundedRequiredText(note.technicianNoteId),
+        jobId: boundedText(note.jobId),
+        noteType: boundedRequiredText(note.noteType),
+        note: boundedRequiredText(note.note),
+        createdAt: note.createdAt,
+      })),
+    SECTION_BUDGETS.technicianNotes
+  );
+
+  const severityRank: Record<string, number> = {
+    safety_critical: 0,
+    immediate_attention: 1,
+    future_attention: 2,
+  };
+  const scopedRecommendations = (source.recommendations ?? []).filter(
+    (item) => !options.jobId || !item.jobId || item.jobId === options.jobId
+  );
+  const recommendations = budgetItems(
+    [...scopedRecommendations]
+      .sort(
+        (a, b) =>
+          (severityRank[a.severity] ?? 99) - (severityRank[b.severity] ?? 99) ||
+          a.recommendationId.localeCompare(b.recommendationId)
+      )
+      .map((recommendation) => ({
+        recommendationId: boundedRequiredText(recommendation.recommendationId),
+        jobId: boundedText(recommendation.jobId),
+        description: boundedRequiredText(recommendation.description),
+        severity: boundedRequiredText(recommendation.severity),
+        status: boundedRequiredText(recommendation.status),
+        disposition: boundedText(recommendation.disposition),
+        notes: boundedText(recommendation.notes),
+      })),
+    SECTION_BUDGETS.recommendations
+  );
+  const qualityChecks = budgetItems(
+    shapeChecks(source.checks?.quality),
+    SECTION_BUDGETS.qualityChecks
+  );
+  const safetyChecks = budgetItems(
+    shapeChecks(source.checks?.safety),
+    SECTION_BUDGETS.safetyChecks
+  );
+
   const context: DiagnosticsModelContext = {
+    missingReferences,
+    mode: options.mode,
+    audience: diagnosticsAudienceForMode(options.mode),
+    referenceEvidence,
+    selectedJob: selectedJob ? shapeJob(selectedJob, frontOffice) : null,
+    checks: {
+      quality: qualityChecks.items,
+      safety: safetyChecks.items,
+    },
     contextAsOf: options.serverNowIso ?? null,
     workOrder: {
       workOrderId: boundedRequiredText(source.workOrder.workOrderId),
@@ -589,9 +835,6 @@ export function shapeDiagnosticsContext(
       model: boundedRequiredText(source.motorcycle.model),
       colour: boundedText(source.motorcycle.colour),
       notes: boundedText(source.motorcycle.notes),
-      ...(options.includeFullVin && frontOffice && boundedText(source.motorcycle.vin)
-        ? { vin: boundedText(source.motorcycle.vin)! }
-        : {}),
       source: "unverified_app_catalogue_reference",
       verified: false,
     },
@@ -602,57 +845,40 @@ export function shapeDiagnosticsContext(
           verified: false,
         }
       : null,
-    customerRequestJobs: sortedBounded(
-      source.jobs.filter((job) => job.origin === "customer_request"),
-      byId((job) => job.jobId)
-    ).map((job) => ({
-      jobId: boundedRequiredText(job.jobId),
-      serviceName: boundedRequiredText(job.serviceName),
-      status: boundedRequiredText(job.status),
-      workState: boundedText(job.workState),
-      notes: boundedText(job.notes),
-    })),
-    selectedJob: selectedJob ? shapeJob(selectedJob, frontOffice) : null,
+    customerRequestJobs: customerRequestJobs.items,
     inspection: {
       available: Boolean(source.inspection),
       completed: Boolean(source.inspection?.completedAt),
       completedAt: source.inspection?.completedAt ?? null,
-      results: inspectionResults,
+      results: inspectionResults.items,
     },
-    technicianNotes: sortedBounded(
-      source.technicianNotes ?? [],
-      (a, b) =>
-        a.createdAt.localeCompare(b.createdAt) ||
-        a.technicianNoteId.localeCompare(b.technicianNoteId)
-    ).map((note) => ({
-      technicianNoteId: boundedRequiredText(note.technicianNoteId),
-      jobId: boundedText(note.jobId),
-      noteType: boundedRequiredText(note.noteType),
-      note: boundedRequiredText(note.note),
-      createdAt: note.createdAt,
-    })),
-    recommendations: sortedBounded(
-      source.recommendations ?? [],
-      byId((recommendation) => recommendation.recommendationId)
-    ).map((recommendation) => ({
-      recommendationId: boundedRequiredText(recommendation.recommendationId),
-      jobId: boundedText(recommendation.jobId),
-      description: boundedRequiredText(recommendation.description),
-      severity: boundedRequiredText(recommendation.severity),
-      status: boundedRequiredText(recommendation.status),
-      disposition: boundedText(recommendation.disposition),
-      notes: boundedText(recommendation.notes),
-    })),
-    checks: {
-      quality: shapeChecks(source.checks?.quality),
-      safety: shapeChecks(source.checks?.safety),
+    technicianNotes: technicianNotes.items,
+    recommendations: recommendations.items,
+    truncation: {
+      customerRequestJobs: customerRequestJobs.truncation,
+      inspectionResults: inspectionResults.truncation,
+      technicianNotes: technicianNotes.truncation,
+      recommendations: recommendations.truncation,
+      qualityChecks: qualityChecks.truncation,
+      safetyChecks: safetyChecks.truncation,
+      aggregate: noTruncation(1),
     },
-    missingReferences,
   };
 
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    const total = JSON.stringify(context).length;
+    context.truncation.aggregate = {
+      total,
+      included: total,
+      omitted: 0,
+      clipped: false,
+    };
+  }
+  const contextBlock = buildDiagnosticsContextBlock(context);
   return {
     context,
-    contextHash: hashDiagnosticsContext(context),
+    contextBlock,
+    contextHash: createHash("sha256").update(contextBlock).digest("hex"),
     claims: deriveDiagnosticsClaimContext(context),
   };
 }

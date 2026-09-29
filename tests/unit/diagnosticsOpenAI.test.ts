@@ -1,5 +1,6 @@
-import OpenAI from "openai";
+import OpenAI, { OpenAIError } from "openai";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   diagnosticsSafetyIdentifier,
   generateDiagnosticsDraft,
@@ -76,6 +77,8 @@ function providerResult(output: DiagnosticsResponse = validResponse()) {
 
 function request() {
   const workOrderContext: DiagnosticsModelContext = {
+    mode: "shop",
+    audience: "technical",
     contextAsOf: "2026-09-29T03:30:00.000Z",
     workOrder: {
       workOrderId: "wo-1",
@@ -113,6 +116,22 @@ function request() {
       currentOntarioInspection: true,
       officialInspectionTemplate: true,
       universalDiagnosticTree: true,
+    },
+    referenceEvidence: {
+      exactModelOem: null,
+      currentRecallLookup: null,
+      currentOntarioInspection: null,
+      officialInspectionTemplate: null,
+      universalDiagnosticTree: null,
+    },
+    truncation: {
+      customerRequestJobs: { total: 0, included: 0, omitted: 0, clipped: false },
+      inspectionResults: { total: 0, included: 0, omitted: 0, clipped: false },
+      technicianNotes: { total: 0, included: 0, omitted: 0, clipped: false },
+      recommendations: { total: 0, included: 0, omitted: 0, clipped: false },
+      qualityChecks: { total: 0, included: 0, omitted: 0, clipped: false },
+      safetyChecks: { total: 0, included: 0, omitted: 0, clipped: false },
+      aggregate: { total: 1, included: 1, omitted: 0, clipped: false },
     },
   };
   return {
@@ -172,6 +191,11 @@ describe("OpenAI diagnostics provider", () => {
         {
           ...request(),
           mode: "advisor",
+          workOrderContext: {
+            ...request().workOrderContext,
+            mode: "advisor",
+            audience: "front_office",
+          },
         },
         { client, config }
       )
@@ -187,6 +211,8 @@ describe("OpenAI diagnostics provider", () => {
         ...request(),
         images: [
           {
+            photoId: "photo-1",
+            purpose: "Inspect starter terminal",
             dataUrl: "data:image/jpeg;base64,YmlrZS1waG90bw==",
             detail: "high",
           },
@@ -199,6 +225,12 @@ describe("OpenAI diagnostics provider", () => {
     const serialized = JSON.stringify(body.input);
     expect(serialized.match(/\"type\":\"input_image\"/g)).toHaveLength(1);
     expect(serialized).toContain("data:image/jpeg;base64,YmlrZS1waG90bw==");
+    expect(serialized).toMatch(
+      /UNTRUSTED SELECTED IMAGE EVIDENCE.*photo-1.*Inspect starter terminal/
+    );
+    expect(serialized.indexOf("photo-1")).toBeLessThan(
+      serialized.indexOf("data:image/jpeg")
+    );
   });
 
   it("rejects an invalid image before making a provider request", async () => {
@@ -209,7 +241,13 @@ describe("OpenAI diagnostics provider", () => {
       generateDiagnosticsDraft(
         {
           ...request(),
-          images: [{ dataUrl: "https://example.com/every-work-order-photo.jpg" }],
+          images: [
+            {
+              photoId: "photo-1",
+              purpose: "Inspect",
+              dataUrl: "https://example.com/every-work-order-photo.jpg",
+            },
+          ],
         },
         { client, config }
       )
@@ -228,5 +266,86 @@ describe("OpenAI diagnostics provider", () => {
     await expect(generateDiagnosticsDraft(request(), { client, config })).rejects.toThrow(
       "DIAGNOSTICS_AI_OUTPUT_WITHHELD"
     );
+  });
+
+  it("rejects context mode/audience mismatches before provider use", async () => {
+    const parse = vi.fn();
+    const client = { responses: { parse } } as unknown as OpenAI;
+    const mismatched = request();
+    mismatched.workOrderContext.audience = "front_office";
+
+    await expect(
+      generateDiagnosticsDraft(mismatched, { client, config })
+    ).rejects.toThrow("DIAGNOSTICS_AI_CONTEXT_AUDIENCE_MISMATCH");
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it("hashes the exact untrusted context string sent to the provider", async () => {
+    const parse = vi.fn().mockResolvedValue(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+    const result = await generateDiagnosticsDraft(request(), { client, config });
+    const input = (parse.mock.calls[0]?.[0] as { input: Array<{ content: unknown }> })
+      .input;
+    const contextBlock = input[0]!.content as string;
+    const expected = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(contextBlock)
+    );
+
+    expect(result.contextHash).toBe(Buffer.from(expected).toString("hex"));
+  });
+
+  it("maps schema parse, refusal, and missing model failures precisely", async () => {
+    const schemaError = (() => {
+      try {
+        z.object({ answer: z.string() }).parse({});
+      } catch (error) {
+        return error;
+      }
+    })();
+    const schemaClient = {
+      responses: { parse: vi.fn().mockRejectedValue(schemaError) },
+    } as unknown as OpenAI;
+    await expect(
+      generateDiagnosticsDraft(request(), { client: schemaClient, config })
+    ).rejects.toThrow("DIAGNOSTICS_AI_RESPONSE_SCHEMA_INVALID");
+
+    const parseClient = {
+      responses: {
+        parse: vi
+          .fn()
+          .mockRejectedValue(new OpenAIError("Failed to parse response JSON")),
+      },
+    } as unknown as OpenAI;
+    await expect(
+      generateDiagnosticsDraft(request(), { client: parseClient, config })
+    ).rejects.toThrow("DIAGNOSTICS_AI_RESPONSE_PARSE_FAILED");
+
+    const refusalClient = {
+      responses: {
+        parse: vi.fn().mockResolvedValue({
+          ...providerResult(),
+          output_parsed: null,
+          output: [
+            {
+              type: "message",
+              content: [{ type: "refusal", refusal: "Cannot comply" }],
+            },
+          ],
+        }),
+      },
+    } as unknown as OpenAI;
+    await expect(
+      generateDiagnosticsDraft(request(), { client: refusalClient, config })
+    ).rejects.toThrow("DIAGNOSTICS_AI_RESPONSE_REFUSED");
+
+    const noModelClient = {
+      responses: {
+        parse: vi.fn().mockResolvedValue({ ...providerResult(), model: undefined }),
+      },
+    } as unknown as OpenAI;
+    await expect(
+      generateDiagnosticsDraft(request(), { client: noModelClient, config })
+    ).rejects.toThrow("DIAGNOSTICS_AI_RESPONSE_MODEL_MISSING");
   });
 });

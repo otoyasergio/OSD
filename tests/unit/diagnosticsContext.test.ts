@@ -254,7 +254,10 @@ describe("diagnostics context shaping", () => {
     });
     const serialized = JSON.stringify(result.context);
 
-    expect(serialized).not.toMatch(/price|cost|currency|total|authorization|decision/i);
+    expect(result.context.selectedJob).not.toHaveProperty("pricing");
+    expect(result.context.selectedJob).not.toHaveProperty("authorization");
+    expect(result.context.selectedJob?.parts[0]).not.toHaveProperty("sellPriceCents");
+    expect(serialized).not.toMatch(/supplierCost|currency|authorization|decision/i);
     expect(serialized).not.toContain("18645");
     expect(serialized).not.toContain("4500");
     expect(serialized).not.toContain("2000");
@@ -334,7 +337,14 @@ describe("diagnostics context shaping", () => {
     const first = shapeDiagnosticsContext(firstSource, options);
     const second = shapeDiagnosticsContext(secondSource, options);
 
-    expect(first.context.technicianNotes).toHaveLength(DIAGNOSTICS_MAX_COLLECTION_ITEMS);
+    expect(first.context.technicianNotes.length).toBeLessThanOrEqual(
+      DIAGNOSTICS_MAX_COLLECTION_ITEMS
+    );
+    expect(first.context.truncation.technicianNotes).toMatchObject({
+      clipped: true,
+      total: DIAGNOSTICS_MAX_COLLECTION_ITEMS + 2,
+      included: first.context.technicianNotes.length,
+    });
     expect(first.context.technicianNotes[0]!.note.length).toBeLessThanOrEqual(
       DIAGNOSTICS_MAX_CONTEXT_TEXT_CHARS
     );

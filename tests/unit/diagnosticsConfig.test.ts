@@ -15,6 +15,7 @@ describe("diagnostics AI configuration", () => {
       timeoutMs: DEFAULT_DIAGNOSTICS_TIMEOUT_MS,
       maxOutputTokens: DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS,
     });
+    expect(DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(16_384);
   });
 
   it("accepts explicit emergency overrides", () => {
@@ -51,5 +52,18 @@ describe("diagnostics AI configuration", () => {
         OTOMOTO_DIAGNOSTICS_TIMEOUT_MS: "999",
       })
     ).toThrow("DIAGNOSTICS_AI_TIMEOUT_INVALID");
+
+    expect(
+      getDiagnosticsConfig({
+        OPENAI_API_KEY: "key",
+        OTOMOTO_DIAGNOSTICS_MAX_OUTPUT_TOKENS: "32768",
+      }).maxOutputTokens
+    ).toBe(32_768);
+    expect(() =>
+      getDiagnosticsConfig({
+        OPENAI_API_KEY: "key",
+        OTOMOTO_DIAGNOSTICS_MAX_OUTPUT_TOKENS: "32769",
+      })
+    ).toThrow("DIAGNOSTICS_AI_OUTPUT_LIMIT_INVALID");
   });
 });
