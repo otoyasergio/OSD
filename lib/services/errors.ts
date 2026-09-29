@@ -159,6 +159,40 @@ const MESSAGES: Record<string, string> = {
   DOCUMENT_TYPE_INVALID: "Use a PDF, JPEG, PNG, or WebP file.",
   DOCUMENT_UPLOAD_FAILED: "Could not upload the document. Try again.",
   DOCUMENT_NOT_FOUND: "That document no longer exists.",
+  DIAGNOSTICS_AI_NOT_CONFIGURED:
+    "Ask OTOMOTO is not configured. Add OPENAI_API_KEY on the server.",
+  DIAGNOSTICS_AI_MODEL_INVALID:
+    "Ask OTOMOTO has an invalid model setting. Check the server configuration.",
+  DIAGNOSTICS_AI_TIMEOUT_INVALID:
+    "Ask OTOMOTO has an invalid timeout setting. Check the server configuration.",
+  DIAGNOSTICS_AI_OUTPUT_LIMIT_INVALID:
+    "Ask OTOMOTO has an invalid output limit. Check the server configuration.",
+  DIAGNOSTICS_AI_PROVIDER_TIMEOUT:
+    "Ask OTOMOTO took too long to respond. Your work-order records were not changed; try again.",
+  DIAGNOSTICS_AI_PROVIDER_RATE_LIMITED:
+    "Ask OTOMOTO is receiving too many requests. Wait a moment and try again.",
+  DIAGNOSTICS_AI_PROVIDER_AUTH_FAILED:
+    "Ask OTOMOTO could not authenticate with OpenAI. Check the server configuration.",
+  DIAGNOSTICS_AI_PROVIDER_UNAVAILABLE:
+    "Ask OTOMOTO is temporarily unavailable. Your work-order records were not changed; try again.",
+  DIAGNOSTICS_AI_PROVIDER_FAILED:
+    "Ask OTOMOTO could not create a draft. Your work-order records were not changed.",
+  DIAGNOSTICS_AI_RESPONSE_INCOMPLETE:
+    "Ask OTOMOTO returned an incomplete draft. Try again.",
+  DIAGNOSTICS_AI_RESPONSE_INVALID: "Ask OTOMOTO returned an invalid draft. Try again.",
+  DIAGNOSTICS_AI_OUTPUT_WITHHELD:
+    "Ask OTOMOTO withheld this draft because it did not pass the shop safety rules. Try again or continue manually.",
+  DIAGNOSTICS_AI_MESSAGE_INVALID: "Enter a shorter question for Ask OTOMOTO.",
+  DIAGNOSTICS_AI_HISTORY_INVALID:
+    "This Ask OTOMOTO conversation contains an invalid message.",
+  DIAGNOSTICS_AI_HISTORY_TOO_LARGE:
+    "This Ask OTOMOTO conversation is too long. Start a new conversation.",
+  DIAGNOSTICS_AI_TOO_MANY_IMAGES:
+    "Attach no more than three photos to one Ask OTOMOTO turn.",
+  DIAGNOSTICS_AI_IMAGE_INVALID:
+    "Ask OTOMOTO can analyze a selected JPEG, PNG, WebP, or GIF image only.",
+  DIAGNOSTICS_AI_STAFF_ID_INVALID:
+    "Ask OTOMOTO could not identify the signed-in staff member.",
   SQUARE_NOT_CONFIGURED:
     "Square is not configured. Add SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID.",
   SQUARE_INVOICE_NOT_READY:
