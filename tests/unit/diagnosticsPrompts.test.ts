@@ -17,7 +17,7 @@ describe("Ask OTOMOTO prompt boundaries", () => {
   it("includes the applicable mode and explicit unavailable references", () => {
     const prompt = buildDiagnosticsInstructions("report");
     expect(prompt).toContain("REPORT MODE");
-    expect(prompt).toContain("official Visual Motorcycle Inspection Report template");
+    expect(prompt).toMatch(/official\s+Visual Motorcycle\s+Inspection Report template/);
     expect(prompt).toContain("not installed");
     expect(prompt).toContain("Never issue an inspection pass/fail");
   });
