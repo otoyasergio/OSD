@@ -76,14 +76,17 @@ type VerificationClauseResult =
   "failed" | "pending" | "passed" | "restrictive_recorded" | "neutral";
 
 const VERIFICATION_TEST_CONTEXT = String.raw`(?:road[- ]test|retest|test ride)`;
+const VERIFICATION_NO_RECURRENCE_TEST_CONTEXT = String.raw`(?:road[- ]test|retest)`;
 const BROAD_VERIFICATION_TEST_CONTEXT = String.raw`(?:road[- ]test|retest|test ride|quality check|qc)`;
 
-function hasConditionedNoRecurrence(clause: string): boolean {
-  const match = clause.match(
-    new RegExp(
-      String.raw`\b(?:the\s+)?(?:original\s+)?symptom\s+has not recurred\s+after\s+(.+?)\s+${VERIFICATION_TEST_CONTEXT}\b`
-    )
+function conditionedNoRecurrencePattern(): RegExp {
+  return new RegExp(
+    String.raw`\b(?:the\s+)?(?:original\s+)?symptom\s+has not recurred\s+after\s+(.+?)\s+${VERIFICATION_NO_RECURRENCE_TEST_CONTEXT}\b`
   );
+}
+
+function hasConditionedNoRecurrence(clause: string): boolean {
+  const match = clause.match(conditionedNoRecurrencePattern());
   if (!match) return false;
 
   return !/^(?:a|an|the)$/.test(match[1]!.trim());
@@ -94,6 +97,7 @@ function hasVerificationCandidate(clause: string): boolean {
     new RegExp(
       String.raw`\b${BROAD_VERIFICATION_TEST_CONTEXT}\b.{0,80}\b(?:pass(?:ed)?|successful)\b`
     ).test(clause) ||
+    /\bpassed\s+(?:the\s+)?qc\b/.test(clause) ||
     /\b(?:repair|fix)\b.{0,80}\bverif(?:y|ied)\b/.test(clause) ||
     /\bverif(?:y|ied)\b.{0,40}\b(?:repair|fix)\b/.test(clause) ||
     /\b(?:concern|complaint|symptom)\b.{0,60}\b(?:resolv(?:e|ed)|no longer present)\b/.test(
@@ -167,13 +171,14 @@ function classifyVerificationClause(
     /\b(?:concern|complaint|symptom)\s+(?:(?:is|was|has been)\s+)?no longer present\b/.test(
       clause
     );
-  const candidate = hasVerificationCandidate(clause) || /\bverif(?:y|ied)\b/.test(clause);
-  if (
-    candidate &&
-    !conditionedNoRecurrence &&
-    !resolvedNoLongerPresent &&
-    hasVerificationNegator(clause)
-  ) {
+  const candidate =
+    conditionedNoRecurrence ||
+    hasVerificationCandidate(clause) ||
+    /\bverif(?:y|ied)\b/.test(clause);
+  const negationText = clause
+    .replace(conditionedNoRecurrence ? conditionedNoRecurrencePattern() : /$^/, "")
+    .replace(resolvedNoLongerPresent ? /\bno longer present\b/ : /$^/, "");
+  if (candidate && hasVerificationNegator(negationText)) {
     if (
       new RegExp(
         String.raw`\b${BROAD_VERIFICATION_TEST_CONTEXT}\b.{0,50}\b(?:never|did not|didn't|hasn't|haven't)\s+pass(?:ed)?\b`
@@ -212,6 +217,7 @@ function classifyVerificationClause(
     /^(?:passed|was successful)$/.test(clause) &&
     Boolean(
       previousClause &&
+      !hasVerificationNegator(previousClause) &&
       new RegExp(String.raw`\b(?:${VERIFICATION_TEST_CONTEXT}|qc)\b`).test(previousClause)
     );
 
@@ -235,7 +241,7 @@ export function classifyVerificationNote(
   const clauses = note
     .replace(/[’‘]/g, "'")
     .toLowerCase()
-    .split(/[.;:!?\n]+/)
+    .split(/[,.;:!?\n]+|\s+[—–-]\s+/)
     .map((clause) => clause.replace(/\s+/g, " ").trim())
     .filter(Boolean);
   const results = clauses.map((clause, index) =>

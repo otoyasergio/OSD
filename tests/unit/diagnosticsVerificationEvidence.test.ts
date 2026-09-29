@@ -83,6 +83,8 @@ describe("recorded verification-note classification", () => {
     "No failure codes; road test passed.",
     "Road test passed; noise not present.",
     "Mostly highway road test; passed.",
+    "Road test passed, noise not present.",
+    "Mostly highway road test, passed.",
   ])("accepts only an unambiguous positive outcome: %s", (note) => {
     expect(classifyVerificationNote(note)).toBe("passed");
   });
@@ -116,6 +118,12 @@ describe("recorded verification-note classification", () => {
     ["The repair couldn't be verified.", "pending"],
     ["The repair was not fully verified after the road test.", "pending"],
     ["The repair was verified without a comparable road test.", "pending"],
+    ["Passed QC without a comparable retest.", "pending"],
+    ["Concern is no longer present without a road test.", "pending"],
+    [
+      "Symptom has not recurred after a 25 km road test without comparable load.",
+      "pending",
+    ],
     ["Unable to verify the fix.", "pending"],
     ["Repair isn't verified yet.", "pending"],
     ["Retest isn't successful.", "pending"],
@@ -149,6 +157,8 @@ describe("recorded verification-note classification", () => {
     "Successfully reproduced clunk.",
     "Quality check was successful.",
     "Symptom has not recurred.",
+    "Symptom has not recurred after a 25 km test ride.",
+    "No road test; passed.",
     "Road test should pass once the relay arrives.",
     "Recommend road test after repair.",
     "Concern reproduced before repair.",
