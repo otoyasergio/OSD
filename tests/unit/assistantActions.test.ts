@@ -157,6 +157,77 @@ describe("Ask OTOMOTO server actions", () => {
     expect(uploadIntakePhoto).not.toHaveBeenCalled();
   });
 
+  it("stores a selected-photo upload as job_work pinned to the exact thread job", async () => {
+    uploadIntakePhoto.mockResolvedValue({
+      photo_id: MESSAGE,
+      work_order_id: WO,
+      job_id: JOB,
+      category: "job_work",
+      notes: "Caliper piston",
+      created_at: "2026-09-29T00:00:00.000Z",
+      storage_path: `${WO}/job_work/${MESSAGE}.jpg`,
+      thumb_storage_path: `${WO}/job_work/${MESSAGE}_thumb.jpg`,
+      signed_url: "https://signed.example/full.jpg",
+      thumb_url: "https://signed.example/thumb.jpg",
+      uploaded_by_user_id: "11111111-1111-4111-8111-111111111111",
+    });
+    const form = new FormData();
+    form.set("thread_id", THREAD);
+    form.set("purpose", "Caliper piston");
+    form.set("category", "vin");
+    form.set("job_id", "52222222-2222-4222-8222-222222222222");
+    form.set("file", new File(["photo"], "photo.jpg", { type: "image/jpeg" }));
+
+    const result = await uploadAssistantPhotoAction(
+      WO,
+      { status: "idle", error: null },
+      form
+    );
+
+    expect(authorizeThreadWrite).toHaveBeenCalledWith(WO, THREAD);
+    expect(uploadIntakePhoto).toHaveBeenCalledWith(
+      WO,
+      expect.objectContaining({
+        category: "job_work",
+        job_id: JOB,
+        notes: "Caliper piston",
+        inspection_result_id: null,
+      })
+    );
+    expect(result).toEqual({
+      status: "success",
+      error: null,
+      data: {
+        photoId: MESSAGE,
+        workOrderId: WO,
+        jobId: JOB,
+        category: "job_work",
+        notes: "Caliper piston",
+        createdAt: "2026-09-29T00:00:00.000Z",
+      },
+    });
+    expect(JSON.stringify(result)).not.toMatch(/storage_path|signed\.example|https?:/);
+  });
+
+  it("rejects photo upload for a work-order-only thread before storage", async () => {
+    authorizeThreadWrite.mockResolvedValue({ thread: { jobId: null }, messages: [] });
+    const form = new FormData();
+    form.set("thread_id", THREAD);
+    form.set("file", new File(["photo"], "photo.jpg", { type: "image/jpeg" }));
+
+    const result = await uploadAssistantPhotoAction(
+      WO,
+      { status: "idle", error: null },
+      form
+    );
+
+    expect(result).toEqual({
+      status: "error",
+      error: "Select the matching job before attaching a job work or proof photo.",
+    });
+    expect(uploadIntakePhoto).not.toHaveBeenCalled();
+  });
+
   it("passes owner role-preview read shaping to list and load", async () => {
     getRolePreviewContext.mockResolvedValue(preview(true));
     listThreads.mockResolvedValue([]);

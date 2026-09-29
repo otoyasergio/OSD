@@ -15,6 +15,8 @@ import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { formatDateTime } from "@/lib/datetime/format";
 import { DiagnosticsThreadReadOnly } from "@/components/diagnostics/DiagnosticsThreadReadOnly";
 import type { DiagnosticsThreadWorkspace } from "@/lib/services/diagnosticsAssistant";
+import type { AssistantComposerFlags } from "@/lib/diagnostics/assistantPageState";
+import { toDiagnosticsPhotoSourceRows } from "@/lib/diagnostics/photoSelection";
 
 function toNoteJobs(packet: JobPacket): WorkOrderJob[] {
   return packet.jobs.map(
@@ -48,6 +50,7 @@ export function JobPacketPanel({
   photos = [],
   selectedJobId = null,
   assistantWorkspace = null,
+  assistantFlags = { canMutate: false, preview: false, readOnly: false },
   stage,
 }: {
   packet: JobPacket;
@@ -57,6 +60,7 @@ export function JobPacketPanel({
   photos?: IntakePhoto[];
   selectedJobId?: string | null;
   assistantWorkspace?: DiagnosticsThreadWorkspace | null;
+  assistantFlags?: AssistantComposerFlags;
   stage: FloorStage | null;
 }) {
   const tabRefs = useRef(new Map<string, HTMLAnchorElement>());
@@ -337,7 +341,16 @@ export function JobPacketPanel({
 
           {activeTab === "assistant" ? (
             assistantWorkspace ? (
-              <DiagnosticsThreadReadOnly workspace={assistantWorkspace} />
+              <DiagnosticsThreadReadOnly
+                workspace={assistantWorkspace}
+                photos={toDiagnosticsPhotoSourceRows(photos, {
+                  workOrderId: packet.work_order_id,
+                  jobId: assistantWorkspace.thread.jobId,
+                })}
+                canMutate={assistantFlags.canMutate}
+                preview={assistantFlags.preview}
+                readOnly={assistantFlags.readOnly}
+              />
             ) : (
               <div className="floor-packet-summary">
                 <h3 className="floor-section-title">Ask OTOMOTO</h3>

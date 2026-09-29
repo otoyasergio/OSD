@@ -129,6 +129,11 @@ import { floorTechWorkOrderRedirect } from "@/lib/technician/assignmentHref";
 import { isRouteUuid } from "@/lib/technician/routeState";
 import { createDiagnosticsAssistantService } from "@/lib/services/diagnosticsAssistant";
 import { DiagnosticsThreadReadOnly } from "@/components/diagnostics/DiagnosticsThreadReadOnly";
+import {
+  assistantComposerFlags,
+  loadAssistantWorkspaceOrNull,
+} from "@/lib/diagnostics/assistantPageState";
+import { toDiagnosticsPhotoSourceRows } from "@/lib/diagnostics/photoSelection";
 
 export const dynamic = "force-dynamic";
 const diagnosticsAssistant = createDiagnosticsAssistantService();
@@ -251,10 +256,12 @@ export default async function WorkOrderDetailPage({
         })
       : Promise.resolve([]),
     activeTab === "assistant" && assistantThreadId
-      ? diagnosticsAssistant.loadThread(
-          work_order_id,
-          assistantThreadId,
-          assistantReadView
+      ? loadAssistantWorkspaceOrNull(() =>
+          diagnosticsAssistant.loadThread(
+            work_order_id,
+            assistantThreadId,
+            assistantReadView
+          )
         )
       : Promise.resolve(null),
   ]);
@@ -275,6 +282,18 @@ export default async function WorkOrderDetailPage({
   const canUploadPhotos =
     canEditWorkOrder(viewRole) || canCreateWorkOrder(viewRole) || isFloorTech(viewRole);
   const canDeletePhotos = canDeleteIntakePhoto(viewRole);
+  const assistantFlags = assistantComposerFlags({
+    isForeignLocation: detail.is_foreign_location,
+    isPreviewing: preview.isPreviewing,
+    workOrderStatus: detail.status,
+    hasWriteRole: canUploadPhotos,
+  });
+  const assistantPhotos = assistantWorkspace
+    ? toDiagnosticsPhotoSourceRows(photos, {
+        workOrderId: detail.work_order_id,
+        jobId: assistantWorkspace.thread.jobId,
+      })
+    : [];
   const canAddNotes = canComplete || canEdit || canAdd;
   const canRunQc = canRunQualityCheck(viewRole);
   const canClearFlags = canClearAdminFlag(viewRole);
@@ -618,7 +637,13 @@ export default async function WorkOrderDetailPage({
       ) : null}
       {activeTab === "assistant" ? (
         assistantWorkspace ? (
-          <DiagnosticsThreadReadOnly workspace={assistantWorkspace} />
+          <DiagnosticsThreadReadOnly
+            workspace={assistantWorkspace}
+            photos={assistantPhotos}
+            canMutate={assistantFlags.canMutate}
+            preview={assistantFlags.preview}
+            readOnly={assistantFlags.readOnly}
+          />
         ) : (
           <div className="empty-state">
             <p className="empty-state-title">Ask OTOMOTO</p>

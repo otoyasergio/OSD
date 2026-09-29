@@ -1,11 +1,22 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   retryAssistantTurnAction,
+  submitAssistantTurnAction,
   type AssistantActionState,
 } from "@/app/(app)/work_orders/assistant-actions";
+import { DiagnosticsPhotoPicker } from "@/components/diagnostics/DiagnosticsPhotoPicker";
+import {
+  buildPhotosPayload,
+  photoPromptFromMessages,
+  validatePhotoSelections,
+  type DiagnosticsPhotoSelection,
+  type DiagnosticsPhotoSourceRow,
+} from "@/lib/diagnostics/photoSelection";
+import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
+import { DIAGNOSTICS_TURN_TEXT_MAX } from "@/lib/diagnostics/turnLimits";
 import type { DiagnosticsThreadWorkspace } from "@/lib/services/diagnosticsAssistant";
 
 const INITIAL_ACTION_STATE: AssistantActionState = {
@@ -20,10 +31,149 @@ function titleCase(value: string): string {
     .join(" ");
 }
 
-export function DiagnosticsThreadReadOnly({
+function TurnComposer({
   workspace,
+  photos,
+  canMutate,
+  preview,
+  readOnly,
 }: {
   workspace: DiagnosticsThreadWorkspace;
+  photos: DiagnosticsPhotoSourceRow[];
+  canMutate: boolean;
+  preview: boolean;
+  readOnly: boolean;
+}) {
+  const router = useRouter();
+  const { thread, messages } = workspace;
+  const [text, setText] = useState("");
+  const [selections, setSelections] = useState<DiagnosticsPhotoSelection[]>([]);
+  const [uploading, setUploading] = useState(false);
+
+  const [state, formAction, pending] = useActionState(
+    async (previous: AssistantActionState, formData: FormData) => {
+      const result = await submitAssistantTurnAction(
+        thread.workOrderId,
+        previous,
+        formData
+      );
+      if (result.status === "success") {
+        setText("");
+        setSelections([]);
+        router.refresh();
+      }
+      return result;
+    },
+    INITIAL_ACTION_STATE
+  );
+
+  const threadBusy = thread.status === "pending" || thread.status === "generating";
+  const archived = thread.status === "archived";
+  const blockedReason = preview
+    ? "Role preview is read-only. Exit preview to send a message."
+    : readOnly
+      ? "This work order is read-only."
+      : !canMutate
+        ? "You can't send messages on this thread."
+        : archived
+          ? "This conversation is archived."
+          : threadBusy
+            ? "Ask OTOMOTO is still working on the previous message."
+            : null;
+  const locked = blockedReason !== null;
+  const validation = validatePhotoSelections(selections);
+  const trimmed = text.trim();
+  const canSend =
+    !locked &&
+    !pending &&
+    !uploading &&
+    trimmed.length > 0 &&
+    trimmed.length <= DIAGNOSTICS_TURN_TEXT_MAX &&
+    validation.ok;
+  const requestedPrompt = photoPromptFromMessages(messages);
+
+  return (
+    <form action={formAction} className="flex flex-col gap-3">
+      <input type="hidden" name="thread_id" value={thread.threadId} />
+      <input type="hidden" name="job_id" value={thread.jobId ?? ""} />
+      <input type="hidden" name="mode" value={thread.mode} />
+      <input
+        type="hidden"
+        name="photos"
+        value={JSON.stringify(buildPhotosPayload(selections))}
+      />
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor={`turn-text-${thread.threadId}`} className="text-sm font-medium">
+          Message to Ask OTOMOTO
+        </label>
+        <textarea
+          id={`turn-text-${thread.threadId}`}
+          name="text"
+          className="input min-h-24"
+          rows={4}
+          maxLength={DIAGNOSTICS_TURN_TEXT_MAX}
+          value={text}
+          disabled={locked || pending}
+          onChange={(event) => setText(event.target.value)}
+        />
+      </div>
+
+      <DiagnosticsPhotoPicker
+        thread={{
+          threadId: thread.threadId,
+          workOrderId: thread.workOrderId,
+          jobId: thread.jobId,
+        }}
+        photos={photos}
+        selections={selections}
+        onSelectionsChange={setSelections}
+        requestedPrompt={requestedPrompt}
+        canMutate={canMutate}
+        preview={preview}
+        readOnly={readOnly}
+        disabled={locked || pending}
+        onBusyChange={setUploading}
+      />
+
+      {blockedReason ? (
+        <p role="status" className="text-sm text-[var(--status-neutral)]">
+          {blockedReason}
+        </p>
+      ) : null}
+      {!validation.ok ? (
+        <p role="alert" className="text-sm text-red-700">
+          {validation.errors[0]}
+        </p>
+      ) : null}
+      {state.error ? (
+        <p role="alert" className="text-sm text-red-700">
+          {state.error}
+        </p>
+      ) : null}
+
+      <div>
+        <button type="submit" className="btn btn-primary" disabled={!canSend}>
+          {pending ? "Sending…" : "Send to Ask OTOMOTO"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function DiagnosticsThreadReadOnly({
+  workspace,
+  photos = [],
+  canMutate = false,
+  preview = false,
+  readOnly = false,
+}: {
+  workspace: DiagnosticsThreadWorkspace;
+  /** Authorized, already-filtered staff photos for this work order. */
+  photos?: DiagnosticsPhotoSourceRow[];
+  canMutate?: boolean;
+  preview?: boolean;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const { thread, messages } = workspace;
@@ -86,9 +236,36 @@ export function DiagnosticsThreadReadOnly({
                   ? "Response unavailable — use Retry."
                   : "Response pending.")}
             </div>
+            {message.photos.length > 0 ? (
+              <ul
+                aria-label="Attached photos"
+                className="mt-2 flex flex-wrap gap-1 text-xs"
+              >
+                {message.photos.map((photo) => (
+                  <li
+                    key={photo.photoId}
+                    className="rounded-full border border-[var(--border)] bg-white px-2 py-1"
+                  >
+                    {PHOTO_CATEGORY_LABELS[
+                      photo.category as keyof typeof PHOTO_CATEGORY_LABELS
+                    ] ?? "Photo"}{" "}
+                    · {photo.purpose}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </article>
         ))}
       </div>
+
+      <TurnComposer
+        key={thread.threadId}
+        workspace={workspace}
+        photos={photos}
+        canMutate={canMutate}
+        preview={preview}
+        readOnly={readOnly}
+      />
 
       <div className="flex flex-wrap gap-2">
         <button

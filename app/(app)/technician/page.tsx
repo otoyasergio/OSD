@@ -10,7 +10,11 @@ import { getTechnicianDocket } from "@/lib/services/technicianDocket";
 import { listReadyForPickup } from "@/lib/services/readyForPickup";
 import { getJobPacket } from "@/lib/services/jobPacket";
 import { listIntakePhotos } from "@/lib/services/photos";
-import { isFloorTech } from "@/lib/permissions";
+import { canCreateWorkOrder, canEditWorkOrder, isFloorTech } from "@/lib/permissions";
+import {
+  assistantComposerFlags,
+  loadAssistantWorkspaceOrNull,
+} from "@/lib/diagnostics/assistantPageState";
 import { TechnicianFloorShell } from "@/components/technician/TechnicianFloorShell";
 import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import {
@@ -79,10 +83,10 @@ export default async function TechnicianPage({
             : [];
           const assistantWorkspace =
             packet && route.packetSection === "assistant" && route.assistantThreadId
-              ? await diagnosticsAssistant
-                  .loadThread(
+              ? await loadAssistantWorkspaceOrNull(() =>
+                  diagnosticsAssistant.loadThread(
                     route.workOrderId!,
-                    route.assistantThreadId,
+                    route.assistantThreadId!,
                     view
                       ? {
                           role: view.role,
@@ -90,11 +94,25 @@ export default async function TechnicianPage({
                         }
                       : undefined
                   )
-                  .catch(() => null)
+                )
               : null;
-          return { packet, photos, assistantWorkspace };
+          const assistantFlags = assistantComposerFlags({
+            isForeignLocation: false,
+            isPreviewing: techPreview,
+            workOrderStatus: packet?.wo_status ?? "",
+            hasWriteRole:
+              isFloorTech(viewRole) ||
+              canEditWorkOrder(viewRole) ||
+              canCreateWorkOrder(viewRole),
+          });
+          return { packet, photos, assistantWorkspace, assistantFlags };
         })()
-      : Promise.resolve({ packet: null, photos: [], assistantWorkspace: null }),
+      : Promise.resolve({
+          packet: null,
+          photos: [],
+          assistantWorkspace: null,
+          assistantFlags: undefined,
+        }),
   ]);
 
   // Explicit stage only — the shell derives the default per surface, so URLs
@@ -112,6 +130,7 @@ export default async function TechnicianPage({
       packetSection={route.packetSection}
       packetPhotos={packetBundle.photos}
       packetAssistantWorkspace={packetBundle.assistantWorkspace}
+      packetAssistantFlags={packetBundle.assistantFlags}
       packetWorkOrderId={route.workOrderId}
       packetJobId={route.jobId}
     />

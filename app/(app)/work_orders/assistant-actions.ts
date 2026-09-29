@@ -218,7 +218,7 @@ export async function uploadAssistantPhotoAction(
       throw new Error("PHOTO_REQUIRED");
     }
     const workspace = await service.authorizeThreadWrite(parsedWorkOrderId, threadId);
-    if (!workspace.thread.jobId) throw new Error("JOB_NOT_FOUND");
+    if (!workspace.thread.jobId) throw new Error("DIAGNOSTICS_IMAGE_JOB_REQUIRED");
     const photo = await uploadIntakePhoto(parsedWorkOrderId, {
       category: "job_work",
       job_id: workspace.thread.jobId,
