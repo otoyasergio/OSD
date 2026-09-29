@@ -186,19 +186,11 @@ export type AiAssistantMode = "shop" | "teach" | "intake" | "advisor" | "report"
 export type AiAssistantAudience = "technical" | "front_office";
 
 export type AiAssistantThreadStatus =
-  | "pending"
-  | "generating"
-  | "ready"
-  | "failed"
-  | "archived";
+  "pending" | "generating" | "ready" | "failed" | "archived";
 
 export type AiAssistantMessageRole = "system" | "user" | "assistant" | "tool";
 
-export type AiAssistantGenerationStatus =
-  | "pending"
-  | "generating"
-  | "ready"
-  | "failed";
+export type AiAssistantGenerationStatus = "pending" | "generating" | "ready" | "failed";
 
 export type AiAssistantRequestedInput = Json;
 

@@ -90,9 +90,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
         };
-        Update: Partial<
-          Database["public"]["Tables"]["ai_assistant_thread"]["Insert"]
-        >;
+        Update: Partial<Database["public"]["Tables"]["ai_assistant_thread"]["Insert"]>;
       };
       ai_assistant_message: {
         Row: {
@@ -135,9 +133,7 @@ export type Database = {
           created_at?: string;
           updated_at?: string;
         };
-        Update: Partial<
-          Database["public"]["Tables"]["ai_assistant_message"]["Insert"]
-        >;
+        Update: Partial<Database["public"]["Tables"]["ai_assistant_message"]["Insert"]>;
       };
       ai_assistant_message_photo: {
         Row: {
@@ -179,9 +175,7 @@ export type Database = {
           note_type?: string;
           created_at?: string;
         };
-        Update: Partial<
-          Database["public"]["Tables"]["technician_note"]["Insert"]
-        >;
+        Update: Partial<Database["public"]["Tables"]["technician_note"]["Insert"]>;
       };
       motorcycle: {
         Row: {
