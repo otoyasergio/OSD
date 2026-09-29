@@ -126,7 +126,10 @@ function hasImmediatelyNegatedVerificationOutcome(clause: string): boolean {
   const bridge = String.raw`(?:(?:be|been|being|yet|fully|completely)\s+){0,3}`;
 
   return (
-    new RegExp(String.raw`\b(?:not|no|never)\s+${bridge}${outcome}\b`).test(clause) ||
+    new RegExp(
+      String.raw`\b(?:not|no|never|without|cannot)\s+(?:to\s+)?${bridge}${outcome}\b`
+    ).test(clause) ||
+    new RegExp(String.raw`\bunable\s+to\s+${bridge}${outcome}\b`).test(clause) ||
     new RegExp(String.raw`\b[a-z]+n't\s+${bridge}${outcome}\b`).test(clause)
   );
 }
