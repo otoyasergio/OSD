@@ -14,6 +14,7 @@ import { intakePhotoSchema } from "@/lib/validation/schemas";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { intakeThumbStoragePath, makeIntakeThumb } from "@/lib/photos/makeIntakeThumb";
+import { INTAKE_PHOTO_BUCKET, signStoragePaths } from "@/lib/photos/signedUrls";
 import { PHOTO_UPLOAD_RETRY_ATTEMPTS } from "@/lib/forms/photoUploadErrors";
 import { classifyStorageUploadError } from "@/lib/forms/storageUploadRetry";
 
@@ -43,7 +44,9 @@ export type IntakePhoto = {
 const COLUMNS =
   "photo_id, work_order_id, uploaded_by_user_id, storage_path, thumb_storage_path, photo_url, category, notes, inspection_result_id, job_id, created_at";
 
-const BUCKET = "intake-photos";
+const BUCKET = INTAKE_PHOTO_BUCKET;
+
+export { signStoragePaths };
 const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -154,80 +157,6 @@ export function pickPrimaryIntakePhoto<T extends IntakePhotoRef>(photos: T[]): T
     if (rankA !== rankB) return rankA - rankB;
     return (a.created_at ?? "").localeCompare(b.created_at ?? "");
   })[0];
-}
-
-const DEFAULT_SIGN_TTL_SECONDS = 60 * 60;
-/** Reuse a signed URL for 45 min of its 60 min validity. */
-const SIGNED_URL_REUSE_MS = 45 * 60 * 1000;
-const SIGNED_URL_CACHE_MAX = 4000;
-
-/**
- * Per-instance cache of signed URLs. Without it every server render mints a
- * new token per photo, so the URL changes and the browser re-downloads every
- * thumbnail on every realtime-driven refresh. A stable URL lets the browser
- * cache do its job. Signed URLs are bearer links to staff photos either way;
- * all callers are staff/portal surfaces already authorized to view them.
- */
-const signedUrlCache = new Map<string, { url: string; freshUntil: number }>();
-
-function pruneSignedUrlCache(now: number): void {
-  if (signedUrlCache.size <= SIGNED_URL_CACHE_MAX) return;
-  for (const [key, value] of signedUrlCache) {
-    if (value.freshUntil <= now) signedUrlCache.delete(key);
-  }
-  if (signedUrlCache.size <= SIGNED_URL_CACHE_MAX) return;
-  // Still over cap: drop oldest half by insertion order.
-  let toDrop = Math.ceil(signedUrlCache.size / 2);
-  for (const key of signedUrlCache.keys()) {
-    if (toDrop-- <= 0) break;
-    signedUrlCache.delete(key);
-  }
-}
-
-export async function signStoragePaths(
-  supabase: DbClient,
-  paths: string[],
-  expiresInSeconds = DEFAULT_SIGN_TTL_SECONDS
-): Promise<Map<string, string | null>> {
-  const unique = [...new Set(paths.filter(Boolean))];
-  const byPath = new Map<string, string | null>();
-  if (unique.length === 0) return byPath;
-
-  // Only the default TTL flows through the cache; custom expiries (e.g.
-  // portal links) always sign fresh.
-  const cacheable = expiresInSeconds === DEFAULT_SIGN_TTL_SECONDS;
-  const now = Date.now();
-  const misses: string[] = [];
-  if (cacheable) {
-    for (const path of unique) {
-      const hit = signedUrlCache.get(path);
-      if (hit && hit.freshUntil > now) byPath.set(path, hit.url);
-      else misses.push(path);
-    }
-    if (misses.length === 0) return byPath;
-  } else {
-    misses.push(...unique);
-  }
-
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrls(misses, expiresInSeconds);
-
-  if (error || !data) {
-    for (const path of misses) byPath.set(path, null);
-    return byPath;
-  }
-
-  for (const row of data) {
-    if (!row.path) continue;
-    const url = row.signedUrl ?? null;
-    byPath.set(row.path, url);
-    if (cacheable && url) {
-      signedUrlCache.set(row.path, { url, freshUntil: now + SIGNED_URL_REUSE_MS });
-    }
-  }
-  if (cacheable) pruneSignedUrlCache(now);
-  return byPath;
 }
 
 /** Sign one display URL per work order (front preferred). */
@@ -466,10 +395,13 @@ export async function uploadIntakePhoto(
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.byteLength === 0) throw new Error("PHOTO_REQUIRED");
+  // Build the preview while the original is in flight so the slot is not
+  // stuck on "Uploading" for a second full image encode after storage.
+  const thumbPromise = makeIntakeThumb(bytes);
   await uploadIntakeBytes(supabase, storagePath, bytes, file.type || "image/jpeg");
 
   let thumbStoragePath: string | null = null;
-  const thumbBytes = await makeIntakeThumb(bytes);
+  const thumbBytes = await thumbPromise;
   if (thumbBytes && thumbBytes.byteLength > 0) {
     const { error: thumbError } = await supabase.storage
       .from(BUCKET)

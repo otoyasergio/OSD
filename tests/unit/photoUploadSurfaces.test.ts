@@ -28,6 +28,28 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
     expect(source).not.toMatch(/pit-photo-add[\s\S]*onClick=\{\(\) => cameraInputRef/);
   });
 
+  it("inspection photos upload one at a time and preview before the server returns", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/inspections/InspectionPhotoSlot.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/readPickedPhotoFiles/);
+    expect(source).toMatch(/withPhotoUploadRetries/);
+    expect(source).toMatch(/createObjectURL/);
+    expect(source).toMatch(/router\.refresh\(\)/);
+    expect(source).toMatch(/Ask OTOMOTO/);
+    expect(source).not.toMatch(/formData\.append\("file"/);
+  });
+
+  it("inspection report reuses stable signed photo URLs", () => {
+    const source = readFileSync(
+      join(process.cwd(), "lib/services/inspections.ts"),
+      "utf8"
+    );
+    expect(source).toMatch(/signStoragePaths/);
+    expect(source).not.toMatch(/createSignedUrls/);
+  });
+
   it("lightbox offers save-to-device for the open photo", () => {
     const source = readFileSync(
       join(process.cwd(), "components/photos/PhotoLightbox.tsx"),

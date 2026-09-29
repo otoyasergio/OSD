@@ -1,13 +1,7 @@
 "use client";
 
-import {
-  startTransition,
-  useActionState,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { PhotoCategory } from "@/lib/database/types";
 import {
   uploadIntakePhotoAction,
@@ -15,7 +9,17 @@ import {
 } from "@/app/(app)/work_orders/photo-actions";
 import { FormError } from "@/components/forms/Field";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { withPhotoUploadRetries } from "@/lib/forms/retryPhotoUpload";
+
+type LocalShot = {
+  id: string;
+  url: string;
+  status: "saving" | "failed";
+};
+
+const IDLE: PhotoFormState = { error: null };
 
 export function InspectionPhotoSlot({
   workOrderId,
@@ -36,21 +40,54 @@ export function InspectionPhotoSlot({
   readOnly?: boolean;
   onExpand?: (src: string) => void;
 }) {
+  const router = useRouter();
   const titleId = useId();
   const cameraInputId = useId();
   const libraryInputId = useId();
-  const formRef = useRef<HTMLFormElement>(null);
   const [chooserOpen, setChooserOpen] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
-  const [state, formAction, pending] = useActionState(
-    uploadIntakePhotoAction.bind(null, workOrderId),
-    { error: null } satisfies PhotoFormState
-  );
+  const [localShots, setLocalShots] = useState<LocalShot[]>([]);
+  const knownUrls = useRef<Set<string> | null>(null);
+  const localShotsRef = useRef<LocalShot[]>([]);
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
-  const busy = pending || preparing;
-  const hasPhotos = existingUrls.length > 0;
+  const busy = preparing || uploading;
+  const hasPhotos = existingUrls.length > 0 || localShots.length > 0;
+
+  useEffect(() => {
+    localShotsRef.current = localShots;
+  }, [localShots]);
+
+  useEffect(() => {
+    return () => {
+      for (const shot of localShotsRef.current) URL.revokeObjectURL(shot.url);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (knownUrls.current === null) {
+      knownUrls.current = new Set(existingUrls);
+      return;
+    }
+    const fresh = existingUrls.filter((url) => !knownUrls.current?.has(url));
+    knownUrls.current = new Set(existingUrls);
+    if (fresh.length === 0) return;
+    setLocalShots((current) => {
+      let remaining = fresh.length;
+      const next: LocalShot[] = [];
+      for (const shot of current) {
+        if (shot.status === "saving" && remaining > 0) {
+          remaining -= 1;
+          URL.revokeObjectURL(shot.url);
+          continue;
+        }
+        next.push(shot);
+      }
+      return next;
+    });
+  }, [existingUrls]);
 
   useEffect(() => {
     if (!chooserOpen) return;
@@ -64,27 +101,97 @@ export function InspectionPhotoSlot({
   async function uploadFromInput(input: HTMLInputElement) {
     setChooserOpen(false);
     setClientError(null);
-    if (!formRef.current) {
-      input.value = "";
-      return;
-    }
-
     setPreparing(true);
     try {
       const files = await readPickedPhotoFiles(input);
       if (files.length === 0) return;
-      const formData = new FormData(formRef.current);
-      formData.delete("file");
-      for (const file of files) formData.append("file", file);
-      startTransition(() => {
-        formAction(formData);
-      });
+
+      const shots: LocalShot[] = files.map((file) => ({
+        id: crypto.randomUUID(),
+        url: URL.createObjectURL(file),
+        status: "saving",
+      }));
+      setLocalShots((current) => [
+        ...current.filter((shot) => shot.status !== "failed"),
+        ...shots,
+      ]);
+      setPreparing(false);
+      setUploading(true);
+
+      let failed = 0;
+      let saved = 0;
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+        const shot = shots[index];
+        if (!file || !shot) continue;
+        let result: PhotoFormState;
+        try {
+          result = await withPhotoUploadRetries(
+            async () => {
+              try {
+                const formData = new FormData();
+                formData.set("category", category);
+                if (inspectionResultId) {
+                  formData.set("inspection_result_id", inspectionResultId);
+                }
+                formData.set("file", file);
+                return await uploadIntakePhotoAction(workOrderId, IDLE, formData);
+              } catch (error) {
+                const message =
+                  error instanceof Error && error.message
+                    ? error.message
+                    : "Could not upload the photo. Try again.";
+                return { error: message };
+              }
+            },
+            {
+              isSuccess: (value) => !value.error,
+              getFailureMessage: (value) => value.error,
+            }
+          );
+        } catch {
+          result = { error: "Could not upload the photo. Try again." };
+        }
+        if (result.error) {
+          failed += 1;
+          setClientError(result.error);
+          setLocalShots((current) =>
+            current.map((item) =>
+              item.id === shot.id ? { ...item, status: "failed" } : item
+            )
+          );
+        } else {
+          saved += 1;
+        }
+      }
+      if (saved > 0) router.refresh();
+      if (failed > 1) {
+        setClientError(
+          `${failed} photos could not be saved. The ones that succeeded are on this inspection and in Ask OTOMOTO.`
+        );
+      }
     } catch {
-      setClientError("Could not read that photo. Try again, or use the camera instead.");
+      setClientError(UNREADABLE_PHOTO_MESSAGE);
     } finally {
       setPreparing(false);
+      setUploading(false);
     }
   }
+
+  const previews = [
+    ...localShots.map((shot) => ({
+      key: shot.id,
+      src: shot.url,
+      pending: shot.status === "saving",
+      failed: shot.status === "failed",
+    })),
+    ...existingUrls.map((src, index) => ({
+      key: `saved-${src}-${index}`,
+      src,
+      pending: false,
+      failed: false,
+    })),
+  ];
 
   return (
     <div
@@ -94,21 +201,36 @@ export function InspectionPhotoSlot({
     >
       <div className="inspection-photo-slot-preview">
         {hasPhotos ? (
-          existingUrls.map((src, index) =>
-            onExpand ? (
+          previews.map((preview, index) =>
+            onExpand && !preview.pending && !preview.failed ? (
               <button
-                key={`${src}-${index}`}
+                key={preview.key}
                 type="button"
                 className="inspection-photo-slot-expand"
-                onClick={() => onExpand(src)}
+                onClick={() => onExpand(preview.src)}
                 aria-label={`View ${label} photo ${index + 1} larger`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
-                <img src={src} alt={`${label} ${index + 1}`} />
+                <img
+                  src={preview.src}
+                  alt={`${label} ${index + 1}`}
+                  decoding="async"
+                  loading={preview.pending ? "eager" : "lazy"}
+                />
               </button>
             ) : (
-              // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-              <img key={`${src}-${index}`} src={src} alt={`${label} ${index + 1}`} />
+              // eslint-disable-next-line @next/next/no-img-element -- signed or local preview
+              <img
+                key={preview.key}
+                src={preview.src}
+                alt={
+                  preview.failed
+                    ? `${label} ${index + 1} failed to save`
+                    : `${label} ${index + 1}`
+                }
+                decoding="async"
+                loading={preview.pending ? "eager" : "lazy"}
+              />
             )
           )
         ) : (
@@ -121,19 +243,19 @@ export function InspectionPhotoSlot({
         <p className="inspection-photo-slot-label">{label}</p>
         {hasPhotos ? (
           <p className="inspection-photo-slot-count">
-            {existingUrls.length} photo{existingUrls.length === 1 ? "" : "s"}
+            {previews.length} photo{previews.length === 1 ? "" : "s"}
+          </p>
+        ) : null}
+        {uploading ? (
+          <p className="inspection-photo-slot-count" role="status">
+            Saving to this inspection and Ask OTOMOTO…
           </p>
         ) : null}
         {!readOnly ? (
-          <form ref={formRef} action={formAction} className="inspection-photo-slot-form">
-            <input type="hidden" name="category" value={category} />
-            {inspectionResultId ? (
-              <input
-                type="hidden"
-                name="inspection_result_id"
-                value={inspectionResultId}
-              />
-            ) : null}
+          <form
+            className="inspection-photo-slot-form"
+            onSubmit={(event) => event.preventDefault()}
+          >
             <input
               id={cameraInputId}
               type="file"
@@ -142,8 +264,8 @@ export function InspectionPhotoSlot({
               className="photo-file-input"
               tabIndex={-1}
               aria-label={`${label} camera`}
-              onChange={(e) => {
-                void uploadFromInput(e.currentTarget);
+              onChange={(event) => {
+                void uploadFromInput(event.currentTarget);
               }}
             />
             <input
@@ -154,8 +276,8 @@ export function InspectionPhotoSlot({
               className="photo-file-input"
               tabIndex={-1}
               aria-label={`${label} photo library`}
-              onChange={(e) => {
-                void uploadFromInput(e.currentTarget);
+              onChange={(event) => {
+                void uploadFromInput(event.currentTarget);
               }}
             />
             <button
@@ -164,9 +286,15 @@ export function InspectionPhotoSlot({
               className="btn btn-secondary min-h-12 w-full"
               onClick={() => setChooserOpen(true)}
             >
-              {busy ? "Uploading…" : hasPhotos ? "Add another photo" : "Add photo"}
+              {preparing
+                ? "Preparing photo…"
+                : uploading
+                  ? "Uploading…"
+                  : hasPhotos
+                    ? "Add another photo"
+                    : "Add photo"}
             </button>
-            <FormError message={state.error ?? clientError} />
+            <FormError message={clientError} />
           </form>
         ) : null}
       </div>
@@ -188,8 +316,9 @@ export function InspectionPhotoSlot({
               {hasPhotos ? `Add another ${label}` : `Add ${label}`}
             </p>
             <p className="photo-source-sheet-lede">
-              Take as many as you need. Camera takes one at a time; library can pick
-              several. {CAMERA_ROLL_HINT}
+              Take as many as you need. Each photo is saved on this inspection and kept
+              for Ask OTOMOTO. Camera takes one at a time; library can pick several.{" "}
+              {CAMERA_ROLL_HINT}
             </p>
             <label
               htmlFor={cameraInputId}

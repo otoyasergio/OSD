@@ -47,7 +47,7 @@ export async function compressImageForUpload(
   if (typeof document === "undefined") return file;
 
   try {
-    const bitmap = await decodeImageBitmap(file);
+    const bitmap = await decodeImageBitmap(file, maxDimension);
     const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
@@ -85,24 +85,35 @@ export async function compressImageForUpload(
   }
 }
 
-async function decodeImageBitmap(file: File): Promise<ImageBitmap> {
+async function decodeImageBitmap(file: File, maxDimension: number): Promise<ImageBitmap> {
+  // Resize while decoding so a 12MP camera shot is not fully expanded on the
+  // main thread before the canvas step. Older browsers ignore the options.
+  const resized: ImageBitmapOptions = {
+    imageOrientation: "from-image",
+    resizeWidth: maxDimension,
+    resizeQuality: "medium",
+  };
   try {
-    return await createImageBitmap(file);
+    return await createImageBitmap(file, resized);
   } catch {
-    if (typeof Image === "undefined" || typeof URL === "undefined") {
-      throw new Error("IMAGE_DECODE_FAILED");
-    }
-    const url = URL.createObjectURL(file);
     try {
-      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error("IMAGE_DECODE_FAILED"));
-        img.src = url;
-      });
-      return await createImageBitmap(image);
-    } finally {
-      URL.revokeObjectURL(url);
+      return await createImageBitmap(file);
+    } catch {
+      if (typeof Image === "undefined" || typeof URL === "undefined") {
+        throw new Error("IMAGE_DECODE_FAILED");
+      }
+      const url = URL.createObjectURL(file);
+      try {
+        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error("IMAGE_DECODE_FAILED"));
+          img.src = url;
+        });
+        return await createImageBitmap(image);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     }
   }
 }

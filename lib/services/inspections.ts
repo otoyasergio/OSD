@@ -24,6 +24,7 @@ import {
   type InspectionPhotoRequirement,
 } from "@/lib/services/inspectionGate";
 import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
+import { signStoragePaths } from "@/lib/photos/signedUrls";
 
 export type InspectionResultRow = {
   inspection_result_id: string;
@@ -347,20 +348,17 @@ export async function getInspectionForWorkOrder(
     photo_url: string | null;
   }>;
 
-  const signedByPath = new Map<string, string | null>();
-  if (rawPhotos.length > 0) {
-    const paths = rawPhotos.flatMap((p) =>
-      p.thumb_storage_path ? [p.storage_path, p.thumb_storage_path] : [p.storage_path]
-    );
-    const { data: signed } = await supabase.storage
-      .from("intake-photos")
-      .createSignedUrls(paths, 60 * 60);
-    for (const row of signed ?? []) {
-      if (row.path) {
-        signedByPath.set(row.path, row.signedUrl ?? null);
-      }
-    }
-  }
+  const signedByPath =
+    rawPhotos.length === 0
+      ? new Map<string, string | null>()
+      : await signStoragePaths(
+          supabase,
+          rawPhotos.flatMap((p) =>
+            p.thumb_storage_path
+              ? [p.storage_path, p.thumb_storage_path]
+              : [p.storage_path]
+          )
+        );
 
   const photos = rawPhotos.map((p) => {
     const signed_url = signedByPath.get(p.storage_path) ?? p.photo_url;

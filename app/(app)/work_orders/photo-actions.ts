@@ -14,6 +14,7 @@ function revalidatePhotos(workOrderId: string) {
   revalidatePath("/work_orders");
   revalidatePath("/dashboard");
   revalidatePath("/technician");
+  revalidatePath("/gallery");
 }
 
 export async function uploadIntakePhotoAction(
@@ -30,20 +31,26 @@ export async function uploadIntakePhotoAction(
     const resultId = String(formData.get("inspection_result_id") ?? "").trim();
     const category = String(formData.get("category") ?? "") as PhotoCategory;
     const notes = String(formData.get("notes") ?? "").trim() || null;
+    let saved = 0;
+    let firstError: string | null = null;
     for (const file of files) {
-      await uploadIntakePhoto(workOrderId, {
-        category,
-        notes,
-        inspection_result_id: resultId || null,
-        file,
-      });
+      try {
+        await uploadIntakePhoto(workOrderId, {
+          category,
+          notes,
+          inspection_result_id: resultId || null,
+          file,
+        });
+        saved += 1;
+      } catch (error) {
+        if (!firstError) firstError = toFormErrorMessage(error);
+      }
     }
+    if (saved > 0) revalidatePhotos(workOrderId);
+    return { error: firstError };
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
-
-  revalidatePhotos(workOrderId);
-  return { error: null };
 }
 
 export async function deleteIntakePhotoAction(
