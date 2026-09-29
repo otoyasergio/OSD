@@ -74,10 +74,27 @@ function clauseAt(value: string, index: number): string {
   return value.slice(start, end);
 }
 
+/**
+ * A sentence-initial imperative prohibition ("Never A, B, or C") governs every
+ * comma-separated item until a clause break or a pivot word ("then", "instead",
+ * "so") starts a new instruction. Bare "no"/"not" are excluded because they
+ * negate a noun phrase ("No visible damage, so ...") rather than the actions.
+ */
+function prohibitionListCovers(prefix: string): boolean {
+  return (
+    /^\W*(?:never|do not|don't|must not|should not|shouldn't|cannot|can't|avoid)\b/i.test(
+      prefix
+    ) &&
+    !/[;:—]/.test(prefix) &&
+    !/\b(?:then|instead|but|so|rather|however|afterwards|next|now)\b/i.test(prefix)
+  );
+}
+
 function actionIsNegated(sentence: string, index: number): boolean {
   const prefix = sentence
     .slice(0, index)
     .replace(/,\s*(?:under|in|at|regardless of|even in)\b[^,]{0,80},/gi, " ");
+  if (prohibitionListCovers(prefix)) return true;
   const start =
     Math.max(
       prefix.lastIndexOf(","),
@@ -91,6 +108,17 @@ function actionIsNegated(sentence: string, index: number): boolean {
   );
 }
 
+/**
+ * Two-keyword patterns ("interlock ... bypass") can span a negation that
+ * governs the action verb at the end of the match: "diagnose the interlock,
+ * but not permanently bypass it".
+ */
+function actionVerbNegatedWithinMatch(matched: string): boolean {
+  return /\b(?:not|never|don't|cannot|can't|won't|must not|avoid|refus(?:e|es|ed|ing)|declin(?:e|es|ed|ing))\b(?:\W+\w+){0,3}\W+(?:bypass\w*|jumper\w*|bridg\w*|defeat\w*|open\w*|prob\w*|backprob\w*|disconnect\w*|remov\w*|touch\w*|unbolt\w*|place|connect|put)\W*$/i.test(
+    matched
+  );
+}
+
 function unnegatedMatches(
   fields: readonly string[],
   patterns: readonly RegExp[]
@@ -99,7 +127,13 @@ function unnegatedMatches(
   for (const sentence of sentences(fields)) {
     for (const pattern of patterns) {
       for (const match of regexMatches(sentence, pattern)) {
-        if (match.index === undefined || actionIsNegated(sentence, match.index)) continue;
+        if (
+          match.index === undefined ||
+          actionIsNegated(sentence, match.index) ||
+          actionVerbNegatedWithinMatch(match[0])
+        ) {
+          continue;
+        }
         matches.push(match[0]);
       }
     }
@@ -344,7 +378,7 @@ function screenInvariant(
     case "preserve_dtc":
       return passed(
         invariant,
-        /\b(?:preserve|do not clear|don't clear|before clearing|save)\b.{0,60}\b(?:DTC|code|freeze[- ]frame)\b|\b(?:DTC|code|freeze[- ]frame)\b.{0,60}\b(?:preserve|do not clear|don't clear|before clearing|save)\b/i.test(
+        /\b(?:preserv\w*|do not clear|don't clear|before clearing|without clearing|save|retain\w*|unaltered)\b.{0,80}\b(?:DTCs?|codes?|freeze[- ]frame|scan (?:report|record|data)|diagnostic evidence)\b|\b(?:DTCs?|codes?|freeze[- ]frame|scan (?:report|record|data)|diagnostic evidence)\b.{0,80}\b(?:preserv\w*|do not clear|don't clear|before clearing|without clearing|save|retain\w*|unaltered)\b/i.test(
           prose
         )
           ? []
