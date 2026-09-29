@@ -71,22 +71,42 @@ const ALLOWED_DIAGNOSTICS_PHOTO_CATEGORIES = new Set([
 
 const VERIFICATION_NOTE_TYPES = new Set(["road_test", "quality_check"]);
 
-function classifyVerificationNote(note: string): string {
+export function classifyVerificationNote(
+  note: string
+): "failed" | "pending" | "passed" | "recorded" {
+  const normalized = note.replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
+
   if (
-    /\b(?:failed|failure|unsuccessful|did not pass|symptom (?:recurred|remains))\b/i.test(
-      note
-    )
+    /\b(?:failed|failure|unsuccessful|recurred)\b/i.test(normalized) ||
+    /\b(?:never|did not|didn't|has not|hasn't|have not|haven't)\s+(?:(?:yet|ever|been)\s+){0,2}pass(?:ed)?\b/i.test(
+      normalized
+    ) ||
+    /\b(?:symptom|concern|issue|fault|problem)\s+(?:still\s+)?remains?\b/i.test(
+      normalized
+    ) ||
+    /\bremains?\s+(?:present|unresolved)\b/i.test(normalized)
   ) {
     return "failed";
   }
   if (
-    /\b(?:pending|incomplete|not (?:yet )?(?:verified|passed|complete)|retest required|requires? (?:a )?retest|verification (?:is )?(?:not|still))\b/i.test(
-      note
-    )
+    /\b(?:pending|incomplete|retest required|requires? (?:a )?retest)\b/i.test(
+      normalized
+    ) ||
+    /\b(?:not|never|cannot|can't|could not|couldn't|has not|hasn't|have not|haven't|was not|wasn't|is not|isn't|did not|didn't)\s+(?:(?:yet|ever|been|be|fully)\s+){0,3}(?:resolved|successful|verified|complete|passed)\b/i.test(
+      normalized
+    ) ||
+    /\bverification\s+(?:is\s+)?(?:not|still)\b/i.test(normalized)
   ) {
     return "pending";
   }
-  if (/\b(?:passed|successful|verified|resolved)\b/i.test(note)) {
+  if (
+    /\b(?:may|might|could|possibly|perhaps|appears?|seems?|reportedly|likely|probably|potentially)\b/i.test(
+      normalized
+    )
+  ) {
+    return "recorded";
+  }
+  if (/\b(?:passed|successful|verified|resolved)\b/i.test(normalized)) {
     return "passed";
   }
   return "recorded";
