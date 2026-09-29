@@ -185,12 +185,23 @@ export type AiAssistantMode = "shop" | "teach" | "intake" | "advisor" | "report"
 
 export type AiAssistantAudience = "technical" | "front_office";
 
+export type AiAssistantTriggerType = "inspection_completed" | "job_completed";
+
+export type AiAssistantPhase =
+  | "information_needed"
+  | "diagnosis"
+  | "repair_planning"
+  | "repair_in_progress"
+  | "verification"
+  | "ready_for_technician_verification";
+
 export type AiAssistantThreadStatus =
   "pending" | "generating" | "ready" | "failed" | "archived";
 
 export type AiAssistantMessageRole = "system" | "user" | "assistant" | "tool";
 
-export type AiAssistantGenerationStatus = "pending" | "generating" | "ready" | "failed";
+export type AiAssistantGenerationStatus =
+  "pending" | "generating" | "ready" | "failed" | "policy_withheld";
 
 export type AiAssistantRequestedInput = Json;
 

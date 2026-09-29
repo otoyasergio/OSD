@@ -25,7 +25,7 @@ CREATE TABLE public.ai_assistant_thread (
   mode text NOT NULL CHECK (
     mode IN ('shop', 'teach', 'intake', 'advisor', 'report')
   ),
-  audience text NOT NULL DEFAULT 'technical' CHECK (
+  audience text NOT NULL CHECK (
     audience IN ('technical', 'front_office')
   ),
   status text NOT NULL DEFAULT 'pending' CHECK (
@@ -39,6 +39,31 @@ CREATE TABLE public.ai_assistant_thread (
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT ai_assistant_thread_trigger_identity_complete CHECK (
     (trigger_type IS NULL) = (trigger_entity_id IS NULL)
+  ),
+  CONSTRAINT ai_assistant_thread_mode_audience_check CHECK (
+    (
+      mode IN ('shop', 'teach', 'report')
+      AND audience = 'technical'
+    )
+    OR (
+      mode IN ('intake', 'advisor')
+      AND audience = 'front_office'
+    )
+  ),
+  CONSTRAINT ai_assistant_thread_trigger_type_check CHECK (
+    trigger_type IS NULL
+    OR trigger_type IN ('inspection_completed', 'job_completed')
+  ),
+  CONSTRAINT ai_assistant_thread_diagnostic_phase_check CHECK (
+    diagnostic_phase IS NULL
+    OR diagnostic_phase IN (
+      'information_needed',
+      'diagnosis',
+      'repair_planning',
+      'repair_in_progress',
+      'verification',
+      'ready_for_technician_verification'
+    )
   ),
   CONSTRAINT ai_assistant_thread_work_order_location_fk
     FOREIGN KEY (work_order_id, location_id)
@@ -76,7 +101,13 @@ CREATE TABLE public.ai_assistant_message (
   role text NOT NULL CHECK (role IN ('system', 'user', 'assistant', 'tool')),
   body text,
   generation_status text NOT NULL DEFAULT 'pending' CHECK (
-    generation_status IN ('pending', 'generating', 'ready', 'failed')
+    generation_status IN (
+      'pending',
+      'generating',
+      'ready',
+      'failed',
+      'policy_withheld'
+    )
   ),
   requested_input jsonb,
   phase text,
@@ -98,6 +129,33 @@ CREATE TABLE public.ai_assistant_message (
   CONSTRAINT ai_assistant_message_requested_input_structured CHECK (
     requested_input IS NULL
     OR jsonb_typeof(requested_input) IN ('object', 'array')
+  ),
+  CONSTRAINT ai_assistant_message_phase_check CHECK (
+    phase IS NULL
+    OR phase IN (
+      'information_needed',
+      'diagnosis',
+      'repair_planning',
+      'repair_in_progress',
+      'verification',
+      'ready_for_technician_verification'
+    )
+  ),
+  CONSTRAINT ai_assistant_message_generation_payload_check CHECK (
+    (
+      generation_status = 'ready'
+      AND COALESCE(length(btrim(body)), 0) > 0
+      AND safe_error_code IS NULL
+    )
+    OR (
+      generation_status IN ('failed', 'policy_withheld')
+      AND body IS NULL
+      AND COALESCE(safe_error_code ~ '^[A-Z][A-Z0-9_]*$', false)
+    )
+    OR (
+      generation_status IN ('pending', 'generating')
+      AND safe_error_code IS NULL
+    )
   )
 );
 
@@ -118,7 +176,7 @@ CREATE TABLE public.ai_assistant_message_photo (
     ON DELETE CASCADE,
   photo_id uuid NOT NULL
     REFERENCES public.intake_photo(photo_id)
-    ON DELETE RESTRICT,
+    ON DELETE CASCADE,
   sort_order integer NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
   purpose text NOT NULL CHECK (length(btrim(purpose)) > 0),
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -137,6 +195,79 @@ ALTER TABLE public.technician_note
 CREATE INDEX idx_technician_note_source_ai_message
   ON public.technician_note (source_ai_message_id)
   WHERE source_ai_message_id IS NOT NULL;
+
+-- A promoted note remains a human-owned record, but any optional provenance
+-- must point to a ready technical assistant output in the same scope. This is
+-- deliberately SECURITY INVOKER: authenticated callers can cite only messages
+-- their RLS policy allows them to read, while service_role retains BYPASSRLS.
+CREATE FUNCTION private.ai_assistant_validate_technician_note_source()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+  source_role text;
+  source_status text;
+  source_audience text;
+  source_work_order_id uuid;
+  source_job_id uuid;
+BEGIN
+  IF NEW.source_ai_message_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT
+    message.role,
+    message.generation_status,
+    thread.audience,
+    thread.work_order_id,
+    thread.job_id
+  INTO
+    source_role,
+    source_status,
+    source_audience,
+    source_work_order_id,
+    source_job_id
+  FROM public.ai_assistant_message AS message
+  JOIN public.ai_assistant_thread AS thread
+    ON thread.ai_assistant_thread_id = message.thread_id
+  WHERE message.ai_assistant_message_id = NEW.source_ai_message_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'AI_ASSISTANT_NOTE_SOURCE_NOT_VIEWABLE';
+  END IF;
+  IF source_role <> 'assistant' THEN
+    RAISE EXCEPTION 'AI_ASSISTANT_NOTE_SOURCE_NOT_ASSISTANT';
+  END IF;
+  IF source_status <> 'ready' THEN
+    RAISE EXCEPTION 'AI_ASSISTANT_NOTE_SOURCE_NOT_READY';
+  END IF;
+  IF source_audience <> 'technical' THEN
+    RAISE EXCEPTION 'AI_ASSISTANT_NOTE_SOURCE_NOT_TECHNICAL';
+  END IF;
+  IF NEW.work_order_id IS DISTINCT FROM source_work_order_id THEN
+    RAISE EXCEPTION 'AI_ASSISTANT_NOTE_WORK_ORDER_MISMATCH';
+  END IF;
+  IF NEW.job_id IS NOT NULL
+    AND source_job_id IS NOT NULL
+    AND NEW.job_id IS DISTINCT FROM source_job_id
+  THEN
+    RAISE EXCEPTION 'AI_ASSISTANT_NOTE_JOB_MISMATCH';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION private.ai_assistant_validate_technician_note_source()
+  FROM PUBLIC, anon, authenticated;
+
+CREATE TRIGGER technician_note_ai_source_guard
+  BEFORE INSERT OR UPDATE OF source_ai_message_id, work_order_id, job_id
+  ON public.technician_note
+  FOR EACH ROW
+  EXECUTE FUNCTION private.ai_assistant_validate_technician_note_source();
 
 -- Keep a message's parent immutable: moving generated content to a different
 -- thread would silently change its work-order and RLS scope.
@@ -166,15 +297,31 @@ CREATE TRIGGER ai_assistant_message_reparent_guard
 CREATE FUNCTION private.ai_assistant_reject_thread_reparent()
 RETURNS trigger
 LANGUAGE plpgsql
+SECURITY DEFINER
 SET search_path = ''
 AS $$
 BEGIN
   IF NEW.work_order_id IS DISTINCT FROM OLD.work_order_id
-    OR NEW.job_id IS DISTINCT FROM OLD.job_id
     OR NEW.location_id IS DISTINCT FROM OLD.location_id
   THEN
     RAISE EXCEPTION 'AI_ASSISTANT_THREAD_SCOPE_IMMUTABLE';
   END IF;
+
+  IF NEW.job_id IS DISTINCT FROM OLD.job_id
+    AND NOT (
+      NEW.job_id IS NULL
+      AND OLD.job_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.job AS deleted_job
+        WHERE deleted_job.job_id = OLD.job_id
+          AND deleted_job.work_order_id = OLD.work_order_id
+      )
+    )
+  THEN
+    RAISE EXCEPTION 'AI_ASSISTANT_THREAD_SCOPE_IMMUTABLE';
+  END IF;
+
   RETURN NEW;
 END;
 $$;
@@ -260,7 +407,19 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $$
+DECLARE
+  deleting_job_scope boolean;
 BEGIN
+  deleting_job_scope :=
+    OLD.job_id IS NOT NULL
+    AND NEW.job_id IS NULL
+    AND NOT EXISTS (
+      SELECT 1
+      FROM public.job AS deleted_job
+      WHERE deleted_job.job_id = OLD.job_id
+        AND deleted_job.work_order_id = OLD.work_order_id
+    );
+
   IF EXISTS (
     SELECT 1
     FROM public.ai_assistant_message_photo AS link
@@ -274,7 +433,8 @@ BEGIN
     RAISE EXCEPTION 'AI_ASSISTANT_PHOTO_WORK_ORDER_MISMATCH';
   END IF;
 
-  IF NEW.category IN ('job_work', 'job_proof')
+  IF NOT deleting_job_scope
+    AND NEW.category IN ('job_work', 'job_proof')
     AND EXISTS (
       SELECT 1
       FROM public.ai_assistant_message_photo AS link

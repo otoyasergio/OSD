@@ -68,8 +68,15 @@ export type Database = {
           mode: "shop" | "teach" | "intake" | "advisor" | "report";
           audience: "technical" | "front_office";
           status: "pending" | "generating" | "ready" | "failed" | "archived";
-          diagnostic_phase: string | null;
-          trigger_type: string | null;
+          diagnostic_phase:
+            | "information_needed"
+            | "diagnosis"
+            | "repair_planning"
+            | "repair_in_progress"
+            | "verification"
+            | "ready_for_technician_verification"
+            | null;
+          trigger_type: "inspection_completed" | "job_completed" | null;
           trigger_entity_id: string | null;
           created_by_user_id: string | null;
           created_at: string;
@@ -81,10 +88,17 @@ export type Database = {
           job_id?: string | null;
           location_id: string;
           mode: "shop" | "teach" | "intake" | "advisor" | "report";
-          audience?: "technical" | "front_office";
+          audience: "technical" | "front_office";
           status?: "pending" | "generating" | "ready" | "failed" | "archived";
-          diagnostic_phase?: string | null;
-          trigger_type?: string | null;
+          diagnostic_phase?:
+            | "information_needed"
+            | "diagnosis"
+            | "repair_planning"
+            | "repair_in_progress"
+            | "verification"
+            | "ready_for_technician_verification"
+            | null;
+          trigger_type?: "inspection_completed" | "job_completed" | null;
           trigger_entity_id?: string | null;
           created_by_user_id?: string | null;
           created_at?: string;
@@ -98,9 +112,17 @@ export type Database = {
           thread_id: string;
           role: "system" | "user" | "assistant" | "tool";
           body: string | null;
-          generation_status: "pending" | "generating" | "ready" | "failed";
+          generation_status:
+            "pending" | "generating" | "ready" | "failed" | "policy_withheld";
           requested_input: Json | null;
-          phase: string | null;
+          phase:
+            | "information_needed"
+            | "diagnosis"
+            | "repair_planning"
+            | "repair_in_progress"
+            | "verification"
+            | "ready_for_technician_verification"
+            | null;
           created_by_user_id: string | null;
           provider_model: string | null;
           provider_response_id: string | null;
@@ -118,9 +140,17 @@ export type Database = {
           thread_id: string;
           role: "system" | "user" | "assistant" | "tool";
           body?: string | null;
-          generation_status?: "pending" | "generating" | "ready" | "failed";
+          generation_status?:
+            "pending" | "generating" | "ready" | "failed" | "policy_withheld";
           requested_input?: Json | null;
-          phase?: string | null;
+          phase?:
+            | "information_needed"
+            | "diagnosis"
+            | "repair_planning"
+            | "repair_in_progress"
+            | "verification"
+            | "ready_for_technician_verification"
+            | null;
           created_by_user_id?: string | null;
           provider_model?: string | null;
           provider_response_id?: string | null;
