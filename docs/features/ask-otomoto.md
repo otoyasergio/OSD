@@ -101,6 +101,14 @@ Ask OTOMOTO never automatically:
 - certifies roadworthiness; or
 - approves pickup or release.
 
+Verification claims use two independent safeguards. Stored road-test and
+quality-check notes open the evidence gate only when their result is
+unambiguously positive; negated, failed, pending, or qualified wording does not.
+The output-policy verification-claim check remains a separate defense-in-depth
+control over generated text. Do not replace or mechanically derive its regex
+from the stored-note classifier; changes to either require their own regression
+tests and policy review.
+
 ## Lifecycle, retention, and operational states
 
 Begin, complete, fail, and retry database functions atomically claim a generation
