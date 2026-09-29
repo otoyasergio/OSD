@@ -9,8 +9,10 @@ export type DiagnosticsConfig = {
   maxOutputTokens: number;
 };
 
+type DiagnosticsEnvironment = Readonly<Record<string, string | undefined>>;
+
 function integerSetting(
-  env: NodeJS.ProcessEnv,
+  env: DiagnosticsEnvironment,
   name: string,
   errorCode: string,
   fallback: number,
@@ -28,7 +30,7 @@ function integerSetting(
 }
 
 export function getDiagnosticsConfig(
-  env: NodeJS.ProcessEnv = process.env
+  env: DiagnosticsEnvironment = process.env
 ): DiagnosticsConfig {
   const apiKey = env.OPENAI_API_KEY?.trim() ?? "";
   if (!apiKey) throw new Error("DIAGNOSTICS_AI_NOT_CONFIGURED");
@@ -60,6 +62,8 @@ export function getDiagnosticsConfig(
   };
 }
 
-export function isDiagnosticsAiConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+export function isDiagnosticsAiConfigured(
+  env: DiagnosticsEnvironment = process.env
+): boolean {
   return Boolean(env.OPENAI_API_KEY?.trim());
 }
