@@ -119,6 +119,12 @@ export function checkMutationEnvironment(
     reasons.push("RESEND_API_KEY must be unset so tests cannot send real email.");
   }
 
+  if (env.OPENAI_API_KEY) {
+    reasons.push(
+      "OPENAI_API_KEY must be unset so stateful E2E cannot call a live model."
+    );
+  }
+
   const locationCode = env.E2E_FIXTURE_LOCATION_CODE ?? "QA";
   if (locationCode !== "QA") {
     reasons.push(

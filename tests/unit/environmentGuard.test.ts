@@ -217,6 +217,11 @@ describe("checkMutationEnvironment", () => {
       const reasons = reasonsFor(safeEnv({ RESEND_API_KEY: "re_123" }));
       expect(reasons).toEqual([expect.stringContaining("RESEND_API_KEY")]);
     });
+
+    it("rejects OPENAI_API_KEY so stateful E2E cannot call a live model", () => {
+      const reasons = reasonsFor(safeEnv({ OPENAI_API_KEY: "sk-live-provider" }));
+      expect(reasons).toEqual([expect.stringContaining("OPENAI_API_KEY")]);
+    });
   });
 
   describe("fixture location code", () => {
