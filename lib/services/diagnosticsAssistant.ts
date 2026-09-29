@@ -477,15 +477,23 @@ export function assertDiagnosticsThreadWrite(
     if (!scopedJob) {
       throw new Error("ASK_OTOMOTO_THREAD_SCOPE_MISMATCH");
     }
-    const headTechSafetyException =
-      user.role === "head_tech" && workOrder.status === "safety_check";
-    if (
-      isFloorTech(user.role) &&
-      scopedJob.assignedTechnicianId !== user.user_id &&
-      !headTechSafetyException
-    ) {
-      throw new Error("FORBIDDEN");
-    }
+    assertDiagnosticsJobWrite(user, workOrder, scopedJob);
+  }
+}
+
+function assertDiagnosticsJobWrite(
+  user: AppUser,
+  workOrder: DiagnosticsWorkOrderScope,
+  job: DiagnosticsWorkOrderScope["jobs"][number]
+): void {
+  const headTechSafetyException =
+    user.role === "head_tech" && workOrder.status === "safety_check";
+  if (
+    isFloorTech(user.role) &&
+    job.assignedTechnicianId !== user.user_id &&
+    !headTechSafetyException
+  ) {
+    throw new Error("FORBIDDEN");
   }
 }
 
@@ -2204,6 +2212,11 @@ export function createDiagnosticsAssistantService(
         "write"
       );
       await assertJob(repository, input.workOrderId, input.jobId ?? null);
+      if (input.jobId) {
+        const scopedJob = workOrder.jobs.find((job) => job.jobId === input.jobId);
+        if (!scopedJob) throw new Error("JOB_NOT_FOUND");
+        assertDiagnosticsJobWrite(user, workOrder, scopedJob);
+      }
       return repository.createThread({
         workOrderId: input.workOrderId,
         jobId: input.jobId ?? null,

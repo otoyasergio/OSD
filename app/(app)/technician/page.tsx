@@ -92,6 +92,11 @@ async function loadPacketBundle({
         job.job_id === route.jobId && (!isFloorTech(viewRole) || job.assigned_to_me)
     ) ?? null;
   const { workspace } = assistantData;
+  const selectedThreadJobAssignedToViewer = workspace?.thread.jobId
+    ? packet.jobs.some(
+        (job) => job.job_id === workspace.thread.jobId && job.assigned_to_me
+      )
+    : true;
   return {
     packet,
     photos,
@@ -122,6 +127,7 @@ async function loadPacketBundle({
         isForeignLocation: packet.is_foreign_location !== false,
         isPreviewing,
         workOrderStatus: packet.wo_status,
+        selectedThreadJobAssignedToViewer,
       }),
       historyUnavailable: assistantData.historyUnavailable,
     },

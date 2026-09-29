@@ -77,10 +77,19 @@ export function askOtomotoCapabilities(input: {
   isForeignLocation: boolean;
   isPreviewing: boolean;
   workOrderStatus: string;
+  selectedThreadJobAssignedToViewer?: boolean;
 }): AskOtomotoCapabilities {
   const role = input.viewRole;
+  const headTechSafetyException =
+    role === "head_tech" && input.workOrderStatus === "safety_check";
+  const peerJobLocked =
+    input.surface === "floor" &&
+    isFloorTech(role) &&
+    input.selectedThreadJobAssignedToViewer === false &&
+    !headTechSafetyException;
   const hasWriteRole =
-    isFloorTech(role) || canEditWorkOrder(role) || canCreateWorkOrder(role);
+    !peerJobLocked &&
+    (isFloorTech(role) || canEditWorkOrder(role) || canCreateWorkOrder(role));
   const flags = assistantComposerFlags({
     isForeignLocation: input.isForeignLocation,
     isPreviewing: input.isPreviewing,

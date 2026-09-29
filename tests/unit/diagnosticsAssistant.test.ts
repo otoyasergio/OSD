@@ -444,6 +444,45 @@ describe("Ask OTOMOTO service boundaries", () => {
     expect(repo.createThread).not.toHaveBeenCalled();
   });
 
+  it.each(["technician", "head_tech"] as const)(
+    "rejects a %s manually creating a thread on a colleague's job without persisting clutter",
+    async (role) => {
+      const user = actor(role);
+      const ownJobId = "51111111-1111-4111-8111-111111111111";
+      const colleagueJobId = "52222222-2222-4222-8222-222222222222";
+      const repo = repository();
+      vi.mocked(repo.loadWorkOrderScope).mockResolvedValue(
+        scope({
+          primaryTechnicianId: null,
+          jobs: [
+            { jobId: ownJobId, assignedTechnicianId: user.user_id },
+            {
+              jobId: colleagueJobId,
+              assignedTechnicianId: "91111111-1111-4111-8111-111111111111",
+            },
+          ],
+        })
+      );
+      vi.mocked(repo.loadJob).mockResolvedValue({
+        workOrderId: scope().workOrderId,
+        jobId: colleagueJobId,
+      });
+      const service = createDiagnosticsAssistantService({
+        repository: repo,
+        requireUser: async () => user,
+      });
+
+      await expect(
+        service.createThread({
+          workOrderId: scope().workOrderId,
+          jobId: colleagueJobId,
+          mode: "shop",
+        })
+      ).rejects.toThrow("FORBIDDEN");
+      expect(repo.createThread).not.toHaveBeenCalled();
+    }
+  );
+
   it("derives location and audience server-side when creating", async () => {
     const repo = repository();
     vi.mocked(repo.createThread).mockImplementation(async (input) => ({

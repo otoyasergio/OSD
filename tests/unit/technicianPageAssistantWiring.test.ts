@@ -231,6 +231,25 @@ describe("technician page Ask OTOMOTO wiring", () => {
     }
   );
 
+  it("makes a selected peer-job thread read-only for a floor technician", async () => {
+    loadThread.mockResolvedValue({
+      thread: threadSummary({ jobId: OTHER_JOB }),
+      messages: [],
+    });
+
+    const { packetAssistant } = await shellProps("technician", false, {
+      job: OTHER_JOB,
+    });
+
+    expect(packetAssistant?.workspace?.thread).toMatchObject({ jobId: OTHER_JOB });
+    expect(packetAssistant?.capabilities).toMatchObject({
+      canMutate: false,
+      canPromoteNotes: false,
+      readOnly: false,
+      lockReason: "role",
+    });
+  });
+
   it("offers any work-order job to a front-office role the backend allows", async () => {
     const { packetAssistant } = await shellProps("manager", false, { job: OTHER_JOB });
     expect(packetAssistant?.jobs).toEqual([{ jobId: OTHER_JOB, label: "Tire swap" }]);
