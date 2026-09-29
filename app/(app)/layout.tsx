@@ -20,6 +20,8 @@ import {
 } from "@/lib/permissions/checks";
 import { listUnreadStaffNotifications } from "@/lib/services/staffNotifications";
 
+export const dynamic = "force-dynamic";
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentAppUser();
   if (!user) {
