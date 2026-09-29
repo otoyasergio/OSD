@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   createThread,
+  listThreads,
   loadThread,
+  authorizeThreadWrite,
   submitTurn,
   retryLatestFailed,
   promoteReviewedTechnicianNote,
@@ -11,7 +13,9 @@ const {
   getRolePreviewContext,
 } = vi.hoisted(() => ({
   createThread: vi.fn(),
+  listThreads: vi.fn(),
   loadThread: vi.fn(),
+  authorizeThreadWrite: vi.fn(),
   submitTurn: vi.fn(),
   retryLatestFailed: vi.fn(),
   promoteReviewedTechnicianNote: vi.fn(),
@@ -29,7 +33,9 @@ vi.mock("@/lib/services/diagnosticsAssistant", async (importOriginal) => {
     ...original,
     createDiagnosticsAssistantService: () => ({
       createThread,
+      listThreads,
       loadThread,
+      authorizeThreadWrite,
       submitTurn,
       retryLatestFailed,
     }),
@@ -40,6 +46,8 @@ vi.mock("@/lib/services/photos", () => ({ uploadIntakePhoto }));
 
 import {
   createAssistantThreadAction,
+  listAssistantThreadsAction,
+  loadAssistantThreadAction,
   promoteAssistantNoteAction,
   retryAssistantTurnAction,
   submitAssistantTurnAction,
@@ -68,6 +76,10 @@ describe("Ask OTOMOTO server actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getRolePreviewContext.mockResolvedValue(preview(false));
+    authorizeThreadWrite.mockResolvedValue({
+      thread: { jobId: JOB },
+      messages: [],
+    });
   });
 
   it.each([
@@ -125,6 +137,100 @@ describe("Ask OTOMOTO server actions", () => {
 
     expect(result.status).toBe("error");
     expect(uploadIntakePhoto).not.toHaveBeenCalled();
+  });
+
+  it("authorizes exact thread writes before selected-photo upload", async () => {
+    const form = new FormData();
+    form.set("thread_id", THREAD);
+    form.set("file", new File(["photo"], "photo.jpg", { type: "image/jpeg" }));
+    authorizeThreadWrite.mockRejectedValue(new Error("FOREIGN_LOCATION"));
+
+    const result = await uploadAssistantPhotoAction(
+      WO,
+      { status: "idle", error: null },
+      form
+    );
+
+    expect(result.status).toBe("error");
+    expect(authorizeThreadWrite).toHaveBeenCalledWith(WO, THREAD);
+    expect(loadThread).not.toHaveBeenCalled();
+    expect(uploadIntakePhoto).not.toHaveBeenCalled();
+  });
+
+  it("passes owner role-preview read shaping to list and load", async () => {
+    getRolePreviewContext.mockResolvedValue(preview(true));
+    listThreads.mockResolvedValue([]);
+    loadThread.mockResolvedValue({ thread: {}, messages: [] });
+
+    await listAssistantThreadsAction(WO);
+    await loadAssistantThreadAction(WO, THREAD);
+
+    expect(listThreads).toHaveBeenCalledWith(WO, {
+      role: "technician",
+      subjectUserId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(loadThread).toHaveBeenCalledWith(WO, THREAD, {
+      role: "technician",
+      subjectUserId: "11111111-1111-4111-8111-111111111111",
+    });
+  });
+
+  it("maps raw database errors to a stable generic action message", async () => {
+    createThread.mockRejectedValue(
+      new Error("duplicate key value violates internal constraint secret_name")
+    );
+    const form = new FormData();
+    form.set("mode", "shop");
+    form.set("job_id", JOB);
+
+    const result = await createAssistantThreadAction(
+      WO,
+      { status: "idle", error: null },
+      form
+    );
+
+    expect(result.error).toMatch(/could not complete/i);
+    expect(result.error).not.toContain("secret_name");
+  });
+
+  it("does not expose uppercase database transport codes", async () => {
+    createThread.mockRejectedValue(new Error("PGRST116"));
+    const form = new FormData();
+    form.set("mode", "shop");
+    form.set("job_id", JOB);
+
+    const result = await createAssistantThreadAction(
+      WO,
+      { status: "idle", error: null },
+      form
+    );
+
+    expect(result.error).toMatch(/could not complete/i);
+    expect(result.error).not.toContain("PGRST116");
+  });
+
+  it("maps duplicate selected photos to a human message", async () => {
+    const form = new FormData();
+    form.set("thread_id", THREAD);
+    form.set("job_id", JOB);
+    form.set("mode", "shop");
+    form.set("text", "Check it");
+    form.set(
+      "photos",
+      JSON.stringify([
+        { photoId: MESSAGE, purpose: "one" },
+        { photoId: MESSAGE, purpose: "two" },
+      ])
+    );
+
+    const result = await submitAssistantTurnAction(
+      WO,
+      { status: "idle", error: null },
+      form
+    );
+
+    expect(result.error).toMatch(/each photo only once/i);
+    expect(submitTurn).not.toHaveBeenCalled();
   });
 
   it("submits only the diagnostic turn and revalidates read surfaces", async () => {

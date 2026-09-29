@@ -223,6 +223,16 @@ const MESSAGES: Record<string, string> = {
   ASK_OTOMOTO_THREAD_NOT_FOUND: "That Ask OTOMOTO conversation is no longer available.",
   ASK_OTOMOTO_THREAD_SCOPE_MISMATCH:
     "That Ask OTOMOTO conversation does not match this work order, job, or mode.",
+  ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH:
+    "The existing automatic Ask OTOMOTO conversation does not match this work.",
+  ASK_OTOMOTO_THREAD_ARCHIVED:
+    "That Ask OTOMOTO conversation is archived and cannot be changed.",
+  ASK_OTOMOTO_THREAD_BUSY:
+    "Ask OTOMOTO is already generating a response for this conversation.",
+  ASK_OTOMOTO_LIFECYCLE_FAILED:
+    "Ask OTOMOTO could not complete this request safely. Try again.",
+  ASK_OTOMOTO_REQUEST_FAILED:
+    "Ask OTOMOTO could not complete this request safely. Try again.",
   ASK_OTOMOTO_DIAGNOSTICS_MISCONFIGURED:
     "Ask OTOMOTO storage is not configured on this server.",
   ASK_OTOMOTO_TRIGGER_NOT_FOUND:

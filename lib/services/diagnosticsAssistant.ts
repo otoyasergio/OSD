@@ -10,6 +10,7 @@ import type {
   AiAssistantThreadStatus,
   AiAssistantTriggerType,
   DbClient,
+  UserRole,
 } from "@/lib/database/types";
 import { canViewClients, canViewPricing, isFloorTech } from "@/lib/permissions";
 import {
@@ -20,7 +21,11 @@ import {
   shapeDiagnosticsContext,
   type DiagnosticsContextSource,
 } from "@/lib/diagnostics/context";
-import type { DiagnosticsRedactTerms } from "@/lib/diagnostics/redaction";
+import {
+  redactDiagnosticsText,
+  type DiagnosticsRedactTerms,
+} from "@/lib/diagnostics/redaction";
+import { DEFAULT_DIAGNOSTICS_TIMEOUT_MS } from "@/lib/diagnostics/config";
 import {
   prepareDiagnosticsImages,
   type DiagnosticsImagePreparationResult,
@@ -40,6 +45,16 @@ export const ASK_OTOMOTO_RATE_LIMIT = 12;
 export const ASK_OTOMOTO_RATE_WINDOW_MS = 60_000;
 export const ASK_OTOMOTO_MAX_TEXT_CHARS = 8_000;
 export const ASK_OTOMOTO_MAX_PHOTOS = 3;
+export const ASK_OTOMOTO_STALE_MARGIN_MS = 30_000;
+
+const ALLOWED_DIAGNOSTICS_PHOTO_CATEGORIES = new Set([
+  "inspection_tires",
+  "inspection_brakes",
+  "inspection_forks",
+  "inspection_item",
+  "job_work",
+  "job_proof",
+]);
 
 const uuidSchema = z.string().uuid();
 const nullableUuidSchema = z.string().uuid().nullable().optional();
@@ -135,6 +150,8 @@ export type DiagnosticsMessageView = {
   requestedInput: unknown;
   phase: AiAssistantPhase | null;
   safeErrorCode: string | null;
+  parentUserMessageId: string | null;
+  requestedProviderModel: string | null;
   providerModel: string | null;
   createdAt: string;
   updatedAt: string;
@@ -163,6 +180,7 @@ type CreateThreadRecord = {
 };
 
 type BeginTurnInput = {
+  workOrderId: string;
   threadId: string;
   userId: string;
   text: string;
@@ -172,15 +190,19 @@ type BeginTurnInput = {
 type TurnRecord = {
   userMessageId: string;
   assistantMessageId: string;
+  attemptId: string;
 };
 
 type GenerationInput = {
   userMessageId: string;
   assistantMessageId: string;
+  attemptId: string;
   userMessage: string;
   photos: Array<{ photoId: string; purpose: string }>;
   history: DiagnosticsHistoryMessage[];
 };
+
+type LoadedGenerationInput = Omit<GenerationInput, "attemptId">;
 
 type LoadedContext = {
   source: DiagnosticsContextSource;
@@ -190,6 +212,7 @@ type LoadedContext = {
 type CompleteGenerationInput = {
   threadId: string;
   assistantMessageId: string;
+  attemptId: string;
   body: string;
   response: DiagnosticsGenerationResult;
   contextAsOf: string;
@@ -197,9 +220,14 @@ type CompleteGenerationInput = {
   requestedInput: unknown;
 };
 
-type FailedTurn = GenerationInput & {
-  mode: AiAssistantMode;
-  jobId: string | null;
+export type DiagnosticsTrustedReadView = {
+  role: UserRole;
+  subjectUserId: string;
+};
+
+type LatestSuccessfulModel = {
+  requestedModel: string | null;
+  resolvedModel: string;
 };
 
 export interface DiagnosticsAssistantRepository {
@@ -225,15 +253,21 @@ export interface DiagnosticsAssistantRepository {
   loadGenerationInput(
     workOrderId: string,
     threadId: string,
+    userMessageId: string,
     assistantMessageId: string
-  ): Promise<GenerationInput>;
+  ): Promise<LoadedGenerationInput>;
   completeGeneration(input: CompleteGenerationInput): Promise<void>;
   failGeneration(input: {
     threadId: string;
     assistantMessageId: string;
+    attemptId: string;
     safeErrorCode: string;
   }): Promise<void>;
-  loadLatestFailedTurn(workOrderId: string, threadId: string): Promise<FailedTurn | null>;
+  claimLatestRetry(
+    workOrderId: string,
+    threadId: string,
+    staleBefore: string
+  ): Promise<TurnRecord | null>;
   loadContextSource(
     workOrderId: string,
     jobId: string | null,
@@ -241,11 +275,16 @@ export interface DiagnosticsAssistantRepository {
   ): Promise<LoadedContext>;
   loadPhotoRows(workOrderId: string, photoIds: string[]): Promise<DiagnosticsPhotoRow[]>;
   downloadPhoto(storagePath: string, options: { maxBytes: number }): Promise<Uint8Array>;
+  loadLatestSuccessfulModel(
+    locationId: string,
+    excludeMessageId: string
+  ): Promise<LatestSuccessfulModel | null>;
   recordModelChangeAudit?(input: {
     actorUserId: string;
     locationId: string;
     messageId: string;
     previousModel: string;
+    requestedModel: string;
     resolvedModel: string;
   }): Promise<void>;
 }
@@ -267,6 +306,7 @@ export type DiagnosticsAssistantDependencies = {
   ) => Promise<DiagnosticsImagePreparationResult>;
   consumeRateLimit?: (userId: string) => RateLimitResult;
   now?: () => Date;
+  staleAfterMs?: number;
 };
 
 export function deriveDiagnosticsAudience(mode: AiAssistantMode): AiAssistantAudience {
@@ -323,6 +363,42 @@ export function assertDiagnosticsAccess(
   if (access === "write" && workOrder.locationId !== user.active_location_id) {
     throw new Error("FOREIGN_LOCATION");
   }
+  if (
+    access === "write" &&
+    (workOrder.status === "completed" || workOrder.status === "cancelled")
+  ) {
+    throw new Error("WORK_ORDER_LOCKED");
+  }
+}
+
+export function assertDiagnosticsThreadWrite(
+  user: AppUser,
+  workOrder: DiagnosticsWorkOrderScope,
+  thread: DiagnosticsThreadSummary
+): void {
+  assertDiagnosticsAccess(user, workOrder, thread.mode, "write");
+  if (
+    thread.workOrderId !== workOrder.workOrderId ||
+    thread.locationId !== workOrder.locationId ||
+    thread.audience !== deriveDiagnosticsAudience(thread.mode)
+  ) {
+    throw new Error("ASK_OTOMOTO_THREAD_SCOPE_MISMATCH");
+  }
+  if (thread.status === "archived") {
+    throw new Error("ASK_OTOMOTO_THREAD_ARCHIVED");
+  }
+  if (thread.jobId && !workOrder.jobs.some((job) => job.jobId === thread.jobId)) {
+    throw new Error("ASK_OTOMOTO_THREAD_SCOPE_MISMATCH");
+  }
+}
+
+function readActorForView(actor: AppUser, view?: DiagnosticsTrustedReadView): AppUser {
+  if (!view || actor.role !== "owner") return actor;
+  return {
+    ...actor,
+    role: view.role,
+    user_id: view.subjectUserId,
+  };
 }
 
 function rowToThread(row: Record<string, unknown>): DiagnosticsThreadSummary {
@@ -344,7 +420,7 @@ function rowToThread(row: Record<string, unknown>): DiagnosticsThreadSummary {
 const THREAD_COLUMNS =
   "ai_assistant_thread_id, work_order_id, job_id, location_id, mode, audience, status, diagnostic_phase, trigger_type, created_at, updated_at";
 const MESSAGE_COLUMNS =
-  "ai_assistant_message_id, thread_id, role, body, generation_status, requested_input, phase, safe_error_code, provider_model, created_at, updated_at";
+  "ai_assistant_message_id, thread_id, role, body, generation_status, requested_input, phase, safe_error_code, parent_user_message_id, requested_provider_model, provider_model, created_at, updated_at";
 
 function throwQuery(error: { message?: string; code?: string } | null): void {
   if (error) throw error;
@@ -355,7 +431,7 @@ function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
-class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
+export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
   private adminClient: DbClient | null = null;
 
   constructor(
@@ -364,6 +440,8 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
   ) {}
 
   private get admin(): DbClient {
+    // This getter is intentionally lazy. Public service operations authenticate
+    // and authorize the work-order scope before any privileged method reaches it.
     this.adminClient ??= this.createAdmin();
     return this.adminClient;
   }
@@ -468,6 +546,12 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
           requestedInput: message.requested_input ?? null,
           phase: (message.phase as AiAssistantPhase | null) ?? null,
           safeErrorCode: message.safe_error_code ? String(message.safe_error_code) : null,
+          parentUserMessageId: message.parent_user_message_id
+            ? String(message.parent_user_message_id)
+            : null,
+          requestedProviderModel: message.requested_provider_model
+            ? String(message.requested_provider_model)
+            : null,
           providerModel: message.provider_model ? String(message.provider_model) : null,
           createdAt: String(message.created_at),
           updatedAt: String(message.updated_at),
@@ -519,7 +603,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
     triggerType: AiAssistantTriggerType,
     triggerEntityId: string
   ): Promise<DiagnosticsThreadSummary | null> {
-    const { data, error } = await this.admin
+    const { data, error } = await this.session
       .from("ai_assistant_thread")
       .select(THREAD_COLUMNS)
       .eq("work_order_id", workOrderId)
@@ -561,66 +645,59 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
   }
 
   async beginTurn(input: BeginTurnInput): Promise<TurnRecord> {
-    const { data: userMessage, error: userError } = await this.admin
-      .from("ai_assistant_message")
-      .insert({
-        thread_id: input.threadId,
-        role: "user",
-        body: input.text,
-        generation_status: "ready",
-        created_by_user_id: input.userId,
-      })
-      .select("ai_assistant_message_id")
-      .single();
-    throwQuery(userError);
-    if (!userMessage) throw new Error("ASK_OTOMOTO_TURN_CREATE_FAILED");
-    const userMessageId = String(userMessage.ai_assistant_message_id);
-    if (input.photos.length > 0) {
-      const { error } = await this.admin.from("ai_assistant_message_photo").insert(
-        input.photos.map((photo) => ({
-          message_id: userMessageId,
-          photo_id: photo.photoId,
-          purpose: photo.purpose,
-          sort_order: photo.sortOrder,
-        }))
-      );
-      throwQuery(error);
+    const { data, error } = await this.admin.rpc("ask_otomoto_begin_turn", {
+      p_thread_id: input.threadId,
+      p_work_order_id: input.workOrderId,
+      p_user_id: input.userId,
+      p_body: input.text,
+      p_photos: input.photos.map((photo) => ({
+        photo_id: photo.photoId,
+        purpose: photo.purpose,
+        sort_order: photo.sortOrder,
+      })),
+    });
+    throwQuery(error);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (
+      !row?.user_message_id ||
+      !row?.assistant_message_id ||
+      !row?.generation_attempt_id
+    ) {
+      throw new Error("ASK_OTOMOTO_LIFECYCLE_FAILED");
     }
-    const { data: assistantMessage, error: assistantError } = await this.admin
-      .from("ai_assistant_message")
-      .insert({
-        thread_id: input.threadId,
-        role: "assistant",
-        generation_status: "generating",
-      })
-      .select("ai_assistant_message_id")
-      .single();
-    throwQuery(assistantError);
-    if (!assistantMessage) throw new Error("ASK_OTOMOTO_TURN_CREATE_FAILED");
-    const { error: threadError } = await this.admin
-      .from("ai_assistant_thread")
-      .update({ status: "generating", updated_at: new Date().toISOString() })
-      .eq("ai_assistant_thread_id", input.threadId);
-    throwQuery(threadError);
     return {
-      userMessageId,
-      assistantMessageId: String(assistantMessage.ai_assistant_message_id),
+      userMessageId: String(row.user_message_id),
+      assistantMessageId: String(row.assistant_message_id),
+      attemptId: String(row.generation_attempt_id),
     };
   }
 
   async loadGenerationInput(
     workOrderId: string,
     threadId: string,
+    userMessageId: string,
     assistantMessageId: string
-  ): Promise<GenerationInput> {
+  ): Promise<LoadedGenerationInput> {
     const workspace = await this.loadThread(workOrderId, threadId);
     if (!workspace) throw new Error("ASK_OTOMOTO_THREAD_NOT_FOUND");
     const assistantIndex = workspace.messages.findIndex(
       (message) => message.messageId === assistantMessageId
     );
-    if (assistantIndex < 1) throw new Error("ASK_OTOMOTO_TURN_NOT_FOUND");
-    const user = workspace.messages[assistantIndex - 1];
-    if (!user || user.role !== "user" || !user.body) {
+    const userIndex = workspace.messages.findIndex(
+      (message) => message.messageId === userMessageId
+    );
+    const assistant = workspace.messages[assistantIndex];
+    const user = workspace.messages[userIndex];
+    if (
+      assistantIndex < 0 ||
+      userIndex < 0 ||
+      !assistant ||
+      assistant.role !== "assistant" ||
+      assistant.parentUserMessageId !== userMessageId ||
+      !user ||
+      user.role !== "user" ||
+      !user.body
+    ) {
       throw new Error("ASK_OTOMOTO_TURN_NOT_FOUND");
     }
     return {
@@ -632,7 +709,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
         purpose: photo.purpose,
       })),
       history: workspace.messages
-        .slice(0, assistantIndex - 1)
+        .slice(0, userIndex)
         .filter(
           (
             message
@@ -649,100 +726,63 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
   }
 
   async completeGeneration(input: CompleteGenerationInput): Promise<void> {
-    const { error: messageError } = await this.admin
-      .from("ai_assistant_message")
-      .update({
-        body: input.body,
-        generation_status: "ready",
-        requested_input: input.requestedInput,
-        phase: input.phase,
-        provider_model: input.response.resolvedModel,
-        provider_response_id: input.response.responseId,
-        prompt_version: input.response.promptVersion,
-        input_token_count: input.response.usage.inputTokens,
-        output_token_count: input.response.usage.outputTokens,
-        context_as_of: input.contextAsOf,
-        context_hash: input.response.contextHash,
-        safe_error_code: null,
-        updated_at: input.contextAsOf,
-      })
-      .eq("thread_id", input.threadId)
-      .eq("ai_assistant_message_id", input.assistantMessageId);
-    throwQuery(messageError);
-    const { error: threadError } = await this.admin
-      .from("ai_assistant_thread")
-      .update({
-        status: "ready",
-        diagnostic_phase: input.phase,
-        updated_at: input.contextAsOf,
-      })
-      .eq("ai_assistant_thread_id", input.threadId);
-    throwQuery(threadError);
+    const { error } = await this.admin.rpc("ask_otomoto_complete_turn", {
+      p_thread_id: input.threadId,
+      p_assistant_message_id: input.assistantMessageId,
+      p_generation_attempt_id: input.attemptId,
+      p_body: input.body,
+      p_requested_input: input.requestedInput,
+      p_phase: input.phase,
+      p_requested_provider_model: input.response.requestedModel,
+      p_resolved_provider_model: input.response.resolvedModel,
+      p_provider_response_id: input.response.responseId,
+      p_prompt_version: input.response.promptVersion,
+      p_input_token_count: input.response.usage.inputTokens,
+      p_output_token_count: input.response.usage.outputTokens,
+      p_context_as_of: input.contextAsOf,
+      p_context_hash: input.response.contextHash,
+    });
+    throwQuery(error);
   }
 
   async failGeneration(input: {
     threadId: string;
     assistantMessageId: string;
+    attemptId: string;
     safeErrorCode: string;
   }): Promise<void> {
-    const now = new Date().toISOString();
-    const { error: messageError } = await this.admin
-      .from("ai_assistant_message")
-      .update({
-        body: null,
-        generation_status: "failed",
-        safe_error_code: input.safeErrorCode,
-        updated_at: now,
-      })
-      .eq("thread_id", input.threadId)
-      .eq("ai_assistant_message_id", input.assistantMessageId);
-    throwQuery(messageError);
-    const { error: threadError } = await this.admin
-      .from("ai_assistant_thread")
-      .update({ status: "failed", updated_at: now })
-      .eq("ai_assistant_thread_id", input.threadId);
-    throwQuery(threadError);
+    const { error } = await this.admin.rpc("ask_otomoto_fail_turn", {
+      p_thread_id: input.threadId,
+      p_assistant_message_id: input.assistantMessageId,
+      p_generation_attempt_id: input.attemptId,
+      p_safe_error_code: input.safeErrorCode,
+    });
+    throwQuery(error);
   }
 
-  async loadLatestFailedTurn(
+  async claimLatestRetry(
     workOrderId: string,
-    threadId: string
-  ): Promise<FailedTurn | null> {
-    const workspace = await this.loadThread(workOrderId, threadId);
-    if (!workspace) return null;
-    const failed = [...workspace.messages]
-      .reverse()
-      .find(
-        (message) => message.role === "assistant" && message.generationStatus === "failed"
-      );
-    if (!failed) return null;
-    const loaded = await this.loadGenerationInput(
-      workOrderId,
-      threadId,
-      failed.messageId
-    );
-    const { data: claimed, error } = await this.admin
-      .from("ai_assistant_message")
-      .update({
-        generation_status: "generating",
-        safe_error_code: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("thread_id", threadId)
-      .eq("ai_assistant_message_id", failed.messageId)
-      .eq("generation_status", "failed")
-      .select("ai_assistant_message_id")
-      .maybeSingle();
+    threadId: string,
+    staleBefore: string
+  ): Promise<TurnRecord | null> {
+    const { data, error } = await this.admin.rpc("ask_otomoto_claim_retry", {
+      p_thread_id: threadId,
+      p_work_order_id: workOrderId,
+      p_stale_before: staleBefore,
+    });
     throwQuery(error);
-    if (!claimed) return null;
-    await this.admin
-      .from("ai_assistant_thread")
-      .update({ status: "generating", updated_at: new Date().toISOString() })
-      .eq("ai_assistant_thread_id", threadId);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (
+      !row?.user_message_id ||
+      !row?.assistant_message_id ||
+      !row?.generation_attempt_id
+    ) {
+      return null;
+    }
     return {
-      ...loaded,
-      mode: workspace.thread.mode,
-      jobId: workspace.thread.jobId,
+      userMessageId: String(row.user_message_id),
+      assistantMessageId: String(row.assistant_message_id),
+      attemptId: String(row.generation_attempt_id),
     };
   }
 
@@ -751,7 +791,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
     jobId: string | null,
     includeFrontOffice: boolean
   ): Promise<LoadedContext> {
-    const { data: workOrder, error: workOrderError } = await this.admin
+    const { data: workOrder, error: workOrderError } = await this.session
       .from("work_order")
       .select(
         "work_order_id, work_order_number, status, lifecycle_state, mileage, internal_notes, motorcycle_id"
@@ -760,24 +800,32 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       .single();
     throwQuery(workOrderError);
     if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-    const { data: motorcycle, error: motorcycleError } = await this.admin
+    const { data: motorcycle, error: motorcycleError } = await this.session
       .from("motorcycle")
-      .select(
-        "motorcycle_id, customer_id, year, make, model, colour, odometer_unit, vin, notes"
-      )
+      .select("motorcycle_id, year, make, model, colour, odometer_unit, notes")
       .eq("motorcycle_id", workOrder.motorcycle_id)
       .single();
     throwQuery(motorcycleError);
     if (!motorcycle) throw new Error("MOTORCYCLE_NOT_FOUND");
+    // Customer identity/contact and the full VIN are loaded only to build
+    // redaction terms after application authorization; they never enter source.
+    const { data: redactionMotorcycle, error: redactionMotorcycleError } =
+      await this.admin
+        .from("motorcycle")
+        .select("customer_id, vin")
+        .eq("motorcycle_id", workOrder.motorcycle_id)
+        .single();
+    throwQuery(redactionMotorcycleError);
+    if (!redactionMotorcycle) throw new Error("MOTORCYCLE_NOT_FOUND");
     const { data: customer, error: customerError } = await this.admin
       .from("customer")
       .select("first_name, last_name, email, phone, address")
-      .eq("customer_id", motorcycle.customer_id)
+      .eq("customer_id", redactionMotorcycle.customer_id)
       .single();
     throwQuery(customerError);
     if (!customer) throw new Error("CUSTOMER_NOT_FOUND");
 
-    let jobsQuery = this.admin
+    let jobsQuery = this.session
       .from("job")
       .select(
         "job_id, work_order_id, origin, service_name_snapshot, status, work_state, notes, completed_at"
@@ -801,46 +849,46 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       partsResult,
       proofResult,
     ] = await Promise.all([
-      this.admin
+      this.session
         .from("motorcycle_service_information")
         .select(
           "oil_filter, oil_type, oil_capacity, air_filter, spark_plugs, front_brake_pads, rear_brake_pads, front_tire_size, rear_tire_size, chain, battery, notes"
         )
         .eq("motorcycle_id", motorcycle.motorcycle_id)
         .maybeSingle(),
-      this.admin
+      this.session
         .from("inspection")
         .select(
           "inspection_id, work_order_id, completed_at, results:inspection_result(inspection_result_id, category_snapshot, item_name_snapshot, display_order_snapshot, status, measurement, notes)"
         )
         .eq("work_order_id", workOrderId)
         .maybeSingle(),
-      this.admin
+      this.session
         .from("technician_note")
         .select("technician_note_id, work_order_id, job_id, note_type, note, created_at")
         .eq("work_order_id", workOrderId),
-      this.admin
+      this.session
         .from("recommendation")
         .select(
           "recommendation_id, work_order_id, description, severity, status, disposition, notes, converted_job_id"
         )
         .eq("work_order_id", workOrderId),
-      this.admin
+      this.session
         .from("quality_check_attempt")
         .select("attempt_id, work_order_id, outcome, checklist, notes, performed_at")
         .eq("work_order_id", workOrderId),
-      this.admin
+      this.session
         .from("safety_check_attempt")
         .select("attempt_id, work_order_id, outcome, checklist, notes, performed_at")
         .eq("work_order_id", workOrderId),
       jobIds.length
-        ? this.admin
+        ? this.session
             .from("job_checklist_item")
             .select("job_checklist_item_id, job_id, title, checked_at")
             .in("job_id", jobIds)
         : Promise.resolve({ data: [], error: null }),
       jobIds.length
-        ? this.admin
+        ? this.session
             .from("job_part_requirement")
             .select(
               [
@@ -859,7 +907,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
             .in("job_id", jobIds)
         : Promise.resolve({ data: [], error: null }),
       jobIds.length
-        ? this.admin
+        ? this.session
             .from("intake_photo")
             .select("photo_id, job_id, category")
             .eq("work_order_id", workOrderId)
@@ -1063,7 +1111,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
         email: customer.email ? String(customer.email) : null,
         phone: customer.phone ? String(customer.phone) : null,
         address: customer.address ? String(customer.address) : null,
-        fullVin: motorcycle.vin ? String(motorcycle.vin) : null,
+        fullVin: redactionMotorcycle.vin ? String(redactionMotorcycle.vin) : null,
       },
     };
   }
@@ -1084,7 +1132,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
   > {
     const result = new Map();
     if (jobIds.length === 0) return result;
-    const { data: estimate, error } = await this.admin
+    const { data: estimate, error } = await this.session
       .from("estimate")
       .select("current_version_id, currency")
       .eq("work_order_id", workOrderId)
@@ -1096,14 +1144,14 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       { data: prices, error: priceError },
       { data: decisions, error: decisionError },
     ] = await Promise.all([
-      this.admin
+      this.session
         .from("estimate_job")
         .select(
           "job_id, labor_cents, parts_cents, fees_cents, discount_cents, tax_cents, total_cents"
         )
         .eq("estimate_version_id", estimate.current_version_id)
         .in("job_id", jobIds),
-      this.admin
+      this.session
         .from("estimate_job_decision")
         .select("job_id, decision, decided_at, method, reason")
         .eq("estimate_version_id", estimate.current_version_id)
@@ -1144,7 +1192,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
     photoIds: string[]
   ): Promise<DiagnosticsPhotoRow[]> {
     if (photoIds.length === 0) return [];
-    const { data, error } = await this.admin
+    const { data, error } = await this.session
       .from("intake_photo")
       .select(
         "photo_id, work_order_id, job_id, category, storage_path, thumb_storage_path"
@@ -1168,9 +1216,14 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
     storagePath: string,
     options: { maxBytes: number }
   ): Promise<Uint8Array> {
-    const { data, error } = await this.admin.storage
+    let { data, error } = await this.session.storage
       .from("intake-photos")
       .download(storagePath);
+    if (error || !data) {
+      ({ data, error } = await this.admin.storage
+        .from("intake-photos")
+        .download(storagePath));
+    }
     throwQuery(error);
     if (!data || data.size > options.maxBytes) {
       throw new Error("DIAGNOSTICS_IMAGE_TOO_LARGE");
@@ -1178,11 +1231,39 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
     return new Uint8Array(await data.arrayBuffer());
   }
 
+  async loadLatestSuccessfulModel(
+    locationId: string,
+    excludeMessageId: string
+  ): Promise<LatestSuccessfulModel | null> {
+    const { data, error } = await this.session
+      .from("ai_assistant_message")
+      .select(
+        "requested_provider_model, provider_model, thread:ai_assistant_thread!inner(location_id)"
+      )
+      .eq("role", "assistant")
+      .eq("generation_status", "ready")
+      .eq("thread.location_id", locationId)
+      .neq("ai_assistant_message_id", excludeMessageId)
+      .not("provider_model", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    throwQuery(error);
+    if (!data?.provider_model) return null;
+    return {
+      requestedModel: data.requested_provider_model
+        ? String(data.requested_provider_model)
+        : null,
+      resolvedModel: String(data.provider_model),
+    };
+  }
+
   async recordModelChangeAudit(input: {
     actorUserId: string;
     locationId: string;
     messageId: string;
     previousModel: string;
+    requestedModel: string;
     resolvedModel: string;
   }): Promise<void> {
     await addAuditLog(this.admin, {
@@ -1193,7 +1274,10 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       entity_id: input.messageId,
       description: "Ask OTOMOTO resolved model changed",
       old_value: { resolved_model: input.previousModel },
-      new_value: { resolved_model: input.resolvedModel },
+      new_value: {
+        requested_model: input.requestedModel,
+        resolved_model: input.resolvedModel,
+      },
     });
   }
 }
@@ -1206,10 +1290,26 @@ async function defaultRepository(): Promise<DiagnosticsAssistantRepository> {
 }
 
 function safeFailureCode(error: unknown): string {
-  const value = error instanceof Error ? error.message : "";
-  return /^[A-Z][A-Z0-9_]*$/.test(value)
-    ? value.slice(0, 120)
-    : "DIAGNOSTICS_AI_PROVIDER_FAILED";
+  const value =
+    error instanceof Error
+      ? error.message
+      : error && typeof error === "object" && "message" in error
+        ? String(error.message)
+        : "";
+  const domainCode =
+    /^(?:(?:ASK_OTOMOTO|DIAGNOSTICS|WORK_ORDER|JOB|PHOTO)_[A-Z0-9_]+|RATE_LIMITED|FOREIGN_LOCATION|FORBIDDEN|UNAUTHORIZED)$/;
+  const exact = domainCode.test(value)
+    ? value
+    : value
+        .match(
+          /\b(?:(?:ASK_OTOMOTO|DIAGNOSTICS|WORK_ORDER|JOB|PHOTO)_[A-Z0-9_]+|RATE_LIMITED|FOREIGN_LOCATION|FORBIDDEN|UNAUTHORIZED)\b/
+        )
+        ?.find((candidate) => domainCode.test(candidate));
+  return exact?.slice(0, 120) ?? "ASK_OTOMOTO_LIFECYCLE_FAILED";
+}
+
+function stablePublicError(error: unknown): Error {
+  return new Error(safeFailureCode(error));
 }
 
 function defaultRateLimit(userId: string): RateLimitResult {
@@ -1276,6 +1376,22 @@ async function assertThread(
   return workspace;
 }
 
+async function requireThreadWrite(
+  repository: DiagnosticsAssistantRepository,
+  user: AppUser,
+  workOrderId: string,
+  threadId: string
+): Promise<{
+  workOrder: DiagnosticsWorkOrderScope;
+  workspace: DiagnosticsThreadWorkspace;
+}> {
+  const workspace = await assertThread(repository, workOrderId, threadId);
+  const workOrder = await repository.loadWorkOrderScope(workOrderId);
+  if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+  assertDiagnosticsThreadWrite(user, workOrder, workspace.thread);
+  return { workOrder, workspace };
+}
+
 export function createDiagnosticsAssistantService(
   dependencies: DiagnosticsAssistantDependencies = {}
 ) {
@@ -1284,7 +1400,39 @@ export function createDiagnosticsAssistantService(
   const generate = dependencies.generateDraft ?? generateDiagnosticsDraft;
   const prepare = dependencies.prepareImages ?? defaultPrepareImages;
   const consumeRateLimit = dependencies.consumeRateLimit ?? defaultRateLimit;
+  const staleAfterMs =
+    dependencies.staleAfterMs ??
+    DEFAULT_DIAGNOSTICS_TIMEOUT_MS + ASK_OTOMOTO_STALE_MARGIN_MS;
   const repo = async () => dependencies.repository ?? (await defaultRepository());
+
+  async function loadClaimedGeneration(
+    repository: DiagnosticsAssistantRepository,
+    workOrderId: string,
+    threadId: string,
+    turn: TurnRecord
+  ): Promise<GenerationInput> {
+    try {
+      const generation = await repository.loadGenerationInput(
+        workOrderId,
+        threadId,
+        turn.userMessageId,
+        turn.assistantMessageId
+      );
+      return { ...generation, attemptId: turn.attemptId };
+    } catch (error) {
+      try {
+        await repository.failGeneration({
+          threadId,
+          assistantMessageId: turn.assistantMessageId,
+          attemptId: turn.attemptId,
+          safeErrorCode: safeFailureCode(error),
+        });
+      } catch {
+        // A concurrent completion/retry may win; preserve its terminal state.
+      }
+      throw stablePublicError(error);
+    }
+  }
 
   async function generateTurn(input: {
     actor: AppUser;
@@ -1294,6 +1442,9 @@ export function createDiagnosticsAssistantService(
     generation: GenerationInput;
   }): Promise<DiagnosticsMessageView> {
     const contextAsOf = now().toISOString();
+    let renderedBody: string;
+    let response: DiagnosticsGenerationResult;
+    let priorModel: LatestSuccessfulModel | null = null;
     try {
       const loaded = await input.repository.loadContextSource(
         input.thread.workOrderId,
@@ -1307,55 +1458,84 @@ export function createDiagnosticsAssistantService(
         serverNowIso: contextAsOf,
         redactTerms: loaded.redactTerms,
       });
+      const safeUserMessage = redactDiagnosticsText(
+        input.generation.userMessage,
+        loaded.redactTerms
+      );
+      const safeHistory = input.generation.history.map((message) => ({
+        ...message,
+        content: redactDiagnosticsText(message.content, loaded.redactTerms),
+      }));
+      const safeSelections = input.generation.photos.map((photo) => ({
+        ...photo,
+        purpose: redactDiagnosticsText(photo.purpose, loaded.redactTerms),
+      }));
       const prepared = await prepare(
         {
           workOrderId: input.thread.workOrderId,
           jobId: input.thread.jobId,
-          selections: input.generation.photos,
+          selections: safeSelections,
           redactTerms: loaded.redactTerms,
         },
         input.repository
       );
-      const response = await generate({
+      try {
+        priorModel = await input.repository.loadLatestSuccessfulModel(
+          input.scope.locationId,
+          input.generation.assistantMessageId
+        );
+      } catch {
+        priorModel = null;
+      }
+      response = await generate({
         mode: input.thread.mode,
         staffUserId: input.actor.user_id,
         workOrderContext: shaped.context,
-        userMessage: input.generation.userMessage,
-        history: input.generation.history,
+        userMessage: safeUserMessage,
+        history: safeHistory,
         images: prepared.images,
       });
-      const priorReady = (
-        await input.repository.loadThread(input.thread.workOrderId, input.thread.threadId)
-      )?.messages
-        .filter(
-          (message) =>
-            message.messageId !== input.generation.assistantMessageId &&
-            message.role === "assistant" &&
-            message.generationStatus === "ready" &&
-            Boolean(message.providerModel)
-        )
-        .at(-1);
+      renderedBody = renderDiagnosticsDraft(response.response);
       await input.repository.completeGeneration({
         threadId: input.thread.threadId,
         assistantMessageId: input.generation.assistantMessageId,
-        body: renderDiagnosticsDraft(response.response),
+        attemptId: input.generation.attemptId,
+        body: renderedBody,
         response,
         contextAsOf,
         phase: response.response.phase,
         requestedInput: response.response.requested_input,
       });
-      if (
-        priorReady?.providerModel &&
-        priorReady.providerModel !== response.resolvedModel
-      ) {
+    } catch (error) {
+      try {
+        await input.repository.failGeneration({
+          threadId: input.thread.threadId,
+          assistantMessageId: input.generation.assistantMessageId,
+          attemptId: input.generation.attemptId,
+          safeErrorCode: safeFailureCode(error),
+        });
+      } catch {
+        // The CAS may lose to completion/retry; never expose database details.
+      }
+      throw stablePublicError(error);
+    }
+
+    if (priorModel && priorModel.resolvedModel !== response.resolvedModel) {
+      try {
         await input.repository.recordModelChangeAudit?.({
           actorUserId: input.actor.user_id,
           locationId: input.scope.locationId,
           messageId: input.generation.assistantMessageId,
-          previousModel: priorReady.providerModel,
+          previousModel: priorModel.resolvedModel,
+          requestedModel: response.requestedModel,
           resolvedModel: response.resolvedModel,
         });
+      } catch {
+        // Metadata-only audit is best effort after the response is committed.
       }
+    }
+
+    try {
       const workspace = await assertThread(
         input.repository,
         input.thread.workOrderId,
@@ -1366,19 +1546,35 @@ export function createDiagnosticsAssistantService(
       );
       if (!completed) throw new Error("ASK_OTOMOTO_TURN_NOT_FOUND");
       return completed;
-    } catch (error) {
-      await input.repository.failGeneration({
+    } catch {
+      // A read-after-write failure cannot turn a committed response into a
+      // visible generation failure. Return the committed serializable view.
+      return {
+        messageId: input.generation.assistantMessageId,
         threadId: input.thread.threadId,
-        assistantMessageId: input.generation.assistantMessageId,
-        safeErrorCode: safeFailureCode(error),
-      });
-      throw error;
+        role: "assistant",
+        body: renderedBody,
+        generationStatus: "ready",
+        requestedInput: response.response.requested_input,
+        phase: response.response.phase,
+        safeErrorCode: null,
+        parentUserMessageId: input.generation.userMessageId,
+        requestedProviderModel: response.requestedModel,
+        providerModel: response.resolvedModel,
+        createdAt: contextAsOf,
+        updatedAt: contextAsOf,
+        photos: [],
+      };
     }
   }
 
   return {
-    async listThreads(workOrderId: string): Promise<DiagnosticsThreadSummary[]> {
-      const user = await authenticate();
+    async listThreads(
+      workOrderId: string,
+      readView?: DiagnosticsTrustedReadView
+    ): Promise<DiagnosticsThreadSummary[]> {
+      const actor = await authenticate();
+      const user = readActorForView(actor, readView);
       const repository = await repo();
       const scope = await repository.loadWorkOrderScope(uuidSchema.parse(workOrderId));
       if (!scope) throw new Error("WORK_ORDER_NOT_FOUND");
@@ -1395,9 +1591,11 @@ export function createDiagnosticsAssistantService(
 
     async loadThread(
       workOrderId: string,
-      threadId: string
+      threadId: string,
+      readView?: DiagnosticsTrustedReadView
     ): Promise<DiagnosticsThreadWorkspace> {
-      const user = await authenticate();
+      const actor = await authenticate();
+      const user = readActorForView(actor, readView);
       const repository = await repo();
       const parsedWorkOrderId = uuidSchema.parse(workOrderId);
       const workspace = await assertThread(
@@ -1413,6 +1611,21 @@ export function createDiagnosticsAssistantService(
         "read"
       );
       return workspace;
+    },
+
+    async authorizeThreadWrite(
+      workOrderId: string,
+      threadId: string
+    ): Promise<DiagnosticsThreadWorkspace> {
+      const user = await authenticate();
+      const repository = await repo();
+      const authorized = await requireThreadWrite(
+        repository,
+        user,
+        uuidSchema.parse(workOrderId),
+        uuidSchema.parse(threadId)
+      );
+      return authorized.workspace;
     },
 
     async createThread(
@@ -1445,7 +1658,13 @@ export function createDiagnosticsAssistantService(
       const user = await authenticate();
       const input = submitDiagnosticsTurnSchema.parse(raw);
       const repository = await repo();
-      const workspace = await assertThread(repository, input.workOrderId, input.threadId);
+      const authorized = await requireThreadWrite(
+        repository,
+        user,
+        input.workOrderId,
+        input.threadId
+      );
+      const workspace = authorized.workspace;
       if (
         workspace.thread.mode !== input.mode ||
         workspace.thread.jobId !== (input.jobId ?? null) ||
@@ -1453,13 +1672,7 @@ export function createDiagnosticsAssistantService(
       ) {
         throw new Error("ASK_OTOMOTO_THREAD_SCOPE_MISMATCH");
       }
-      const workOrder = await requireScope(
-        repository,
-        user,
-        input.workOrderId,
-        input.mode,
-        "write"
-      );
+      const workOrder = authorized.workOrder;
       await assertJob(repository, input.workOrderId, input.jobId ?? null);
       if (!consumeRateLimit(user.user_id).success) throw new Error("RATE_LIMITED");
       const rows = await repository.loadPhotoRows(
@@ -1476,6 +1689,9 @@ export function createDiagnosticsAssistantService(
         if (input.jobId && row.jobId && row.jobId !== input.jobId) {
           throw new Error("DIAGNOSTICS_IMAGE_JOB_MISMATCH");
         }
+        if (!ALLOWED_DIAGNOSTICS_PHOTO_CATEGORIES.has(row.category)) {
+          throw new Error("DIAGNOSTICS_IMAGE_CATEGORY_NOT_ALLOWED");
+        }
         if (
           (row.category === "job_work" || row.category === "job_proof") &&
           (!input.jobId || row.jobId !== input.jobId)
@@ -1487,19 +1703,26 @@ export function createDiagnosticsAssistantService(
           );
         }
       }
-      const turn = await repository.beginTurn({
-        threadId: input.threadId,
-        userId: user.user_id,
-        text: input.text,
-        photos: input.photos.map((photo, sortOrder) => ({
-          ...photo,
-          sortOrder,
-        })),
-      });
-      const generation = await repository.loadGenerationInput(
+      let turn: TurnRecord;
+      try {
+        turn = await repository.beginTurn({
+          workOrderId: input.workOrderId,
+          threadId: input.threadId,
+          userId: user.user_id,
+          text: input.text,
+          photos: input.photos.map((photo, sortOrder) => ({
+            ...photo,
+            sortOrder,
+          })),
+        });
+      } catch (error) {
+        throw stablePublicError(error);
+      }
+      const generation = await loadClaimedGeneration(
+        repository,
         input.workOrderId,
         input.threadId,
-        turn.assistantMessageId
+        turn
       );
       return generateTurn({
         actor: user,
@@ -1516,26 +1739,38 @@ export function createDiagnosticsAssistantService(
       const user = await authenticate();
       const input = retryDiagnosticsTurnSchema.parse(raw);
       const repository = await repo();
-      const workspace = await assertThread(repository, input.workOrderId, input.threadId);
-      const workOrder = await requireScope(
+      const authorized = await requireThreadWrite(
         repository,
         user,
         input.workOrderId,
-        workspace.thread.mode,
-        "write"
-      );
-      if (!consumeRateLimit(user.user_id).success) throw new Error("RATE_LIMITED");
-      const failed = await repository.loadLatestFailedTurn(
-        input.workOrderId,
         input.threadId
       );
-      if (!failed) throw new Error("ASK_OTOMOTO_RETRY_NOT_FOUND");
+      const workspace = authorized.workspace;
+      const workOrder = authorized.workOrder;
+      if (!consumeRateLimit(user.user_id).success) throw new Error("RATE_LIMITED");
+      let turn: TurnRecord | null;
+      try {
+        turn = await repository.claimLatestRetry(
+          input.workOrderId,
+          input.threadId,
+          new Date(now().getTime() - staleAfterMs).toISOString()
+        );
+      } catch (error) {
+        throw stablePublicError(error);
+      }
+      if (!turn) throw new Error("ASK_OTOMOTO_RETRY_NOT_FOUND");
+      const generation = await loadClaimedGeneration(
+        repository,
+        input.workOrderId,
+        input.threadId,
+        turn
+      );
       return generateTurn({
         actor: user,
         repository,
         scope: workOrder,
         thread: workspace.thread,
-        generation: failed,
+        generation,
       });
     },
   };
@@ -1590,7 +1825,23 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
     triggerType,
     input.triggerEntityId
   );
-  if (existing) return existing;
+  const assertExpectedTrigger = (
+    thread: DiagnosticsThreadSummary
+  ): DiagnosticsThreadSummary => {
+    if (
+      thread.workOrderId !== input.workOrderId ||
+      thread.locationId !== workOrder.locationId ||
+      thread.jobId !== (input.jobId ?? null) ||
+      thread.mode !== input.mode ||
+      thread.audience !== deriveDiagnosticsAudience(input.mode) ||
+      thread.triggerType !== triggerType
+    ) {
+      throw new Error("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+    }
+    assertDiagnosticsThreadWrite(actor, workOrder, thread);
+    return thread;
+  };
+  if (existing) return assertExpectedTrigger(existing);
   try {
     return await repository.createThread({
       workOrderId: input.workOrderId,
@@ -1612,6 +1863,6 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
       input.triggerEntityId
     );
     if (!recovered) throw error;
-    return recovered;
+    return assertExpectedTrigger(recovered);
   }
 }

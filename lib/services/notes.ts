@@ -220,6 +220,7 @@ export type ReviewedNoteSource = {
   role: string;
   generationStatus: string;
   audience: string;
+  threadStatus: string;
 };
 
 type ReviewedNoteInsert = {
@@ -264,10 +265,7 @@ const reviewedNotePromotionSchema = z
       "customer_concern_confirmed",
       "customer_concern_not_found",
       "parts_issue",
-      "road_test",
-      "quality_check",
       "internal_warning",
-      "proof_exception",
     ]),
     jobId: z.string().uuid().nullable().optional(),
     sourceMessageId: z.string().uuid(),
@@ -310,7 +308,7 @@ async function createDefaultReviewedNoteDependencies(): Promise<ReviewedNoteProm
       const { data, error } = await supabase
         .from("ai_assistant_message")
         .select(
-          "ai_assistant_message_id, role, generation_status, thread:ai_assistant_thread!inner(work_order_id, job_id, audience)"
+          "ai_assistant_message_id, role, generation_status, thread:ai_assistant_thread!inner(work_order_id, job_id, audience, status)"
         )
         .eq("ai_assistant_message_id", sourceMessageId)
         .eq("thread.work_order_id", workOrderId)
@@ -326,6 +324,7 @@ async function createDefaultReviewedNoteDependencies(): Promise<ReviewedNoteProm
         role: data.role,
         generationStatus: data.generation_status,
         audience: thread.audience,
+        threadStatus: thread.status,
       };
     },
     async findExistingPromotion(workOrderId, sourceMessageId) {
@@ -409,6 +408,9 @@ export async function promoteReviewedTechnicianNote(
   const input = reviewedNotePromotionSchema.parse(raw);
   const workOrder = await deps.loadWorkOrder(z.string().uuid().parse(workOrderId));
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
+  if (workOrder.locationId !== actor.active_location_id) {
+    throw new Error("FOREIGN_LOCATION");
+  }
   assertViewerCanAccessWorkOrderLocation(actor, workOrder.locationId);
   assertViewerCanAccessWorkOrder(
     {
@@ -442,7 +444,10 @@ export async function promoteReviewedTechnicianNote(
   if (source.audience !== "technical") {
     throw new Error("ASK_OTOMOTO_NOTE_SOURCE_NOT_TECHNICAL");
   }
-  if (input.jobId && source.jobId && input.jobId !== source.jobId) {
+  if (source.threadStatus === "archived") {
+    throw new Error("ASK_OTOMOTO_THREAD_ARCHIVED");
+  }
+  if (source.jobId && input.jobId !== source.jobId) {
     throw new Error("ASK_OTOMOTO_NOTE_JOB_MISMATCH");
   }
   if (await deps.findExistingPromotion(workOrderId, input.sourceMessageId)) {
@@ -457,7 +462,9 @@ export async function promoteReviewedTechnicianNote(
     note: input.text,
     noteType: input.noteType,
   });
-  await deps.recordTimeline({ note, actor, workOrder });
-  await deps.recordAudit({ note, actor, workOrder });
+  await Promise.allSettled([
+    deps.recordTimeline({ note, actor, workOrder }),
+    deps.recordAudit({ note, actor, workOrder }),
+  ]);
   return note;
 }

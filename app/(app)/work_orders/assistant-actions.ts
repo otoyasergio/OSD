@@ -12,6 +12,7 @@ import {
 import { promoteReviewedTechnicianNote } from "@/lib/services/notes";
 import { uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { diagnosticsErrorMessageForCode } from "@/lib/diagnostics/errors";
 
 export type AssistantActionState = {
   status: "idle" | "success" | "error";
@@ -31,10 +32,7 @@ const promoteSchema = z
       "customer_concern_confirmed",
       "customer_concern_not_found",
       "parts_issue",
-      "road_test",
-      "quality_check",
       "internal_warning",
-      "proof_exception",
     ]),
     text: z.string().trim().min(1).max(8_000),
   })
@@ -44,8 +42,30 @@ function success(data?: unknown): AssistantActionState {
   return { status: "success", error: null, ...(data === undefined ? {} : { data }) };
 }
 
+function isSafeActionCode(value: string): boolean {
+  return /^(?:(?:ASK_OTOMOTO|DIAGNOSTICS|WORK_ORDER|JOB|PHOTO)_[A-Z0-9_]+|RATE_LIMITED|FOREIGN_LOCATION|FORBIDDEN|UNAUTHORIZED|ROLE_PREVIEW_MUTATION_BLOCKED)$/.test(
+    value
+  );
+}
+
 function failure(error: unknown): AssistantActionState {
-  return { status: "error", error: toFormErrorMessage(error) };
+  const zodCode =
+    error instanceof z.ZodError
+      ? error.issues.find((issue) => isSafeActionCode(issue.message))?.message
+      : null;
+  const rawCode =
+    error instanceof Error && isSafeActionCode(error.message) ? error.message : zodCode;
+  const code = rawCode ?? "ASK_OTOMOTO_REQUEST_FAILED";
+  return {
+    status: "error",
+    error: diagnosticsErrorMessageForCode(code) ?? toFormErrorMessage(new Error(code)),
+  };
+}
+
+async function trustedReadView() {
+  const preview = await getRolePreviewContext();
+  if (!preview?.isPreviewing) return undefined;
+  return { role: preview.role, subjectUserId: preview.subjectUserId };
 }
 
 async function assertMutationNotPreviewed(): Promise<void> {
@@ -66,7 +86,9 @@ export async function listAssistantThreadsAction(
   workOrderId: string
 ): Promise<AssistantActionState> {
   try {
-    return success(await service.listThreads(uuid.parse(workOrderId)));
+    return success(
+      await service.listThreads(uuid.parse(workOrderId), await trustedReadView())
+    );
   } catch (error) {
     return failure(error);
   }
@@ -78,7 +100,11 @@ export async function loadAssistantThreadAction(
 ): Promise<AssistantActionState> {
   try {
     return success(
-      await service.loadThread(uuid.parse(workOrderId), uuid.parse(threadId))
+      await service.loadThread(
+        uuid.parse(workOrderId),
+        uuid.parse(threadId),
+        await trustedReadView()
+      )
     );
   } catch (error) {
     return failure(error);
@@ -191,7 +217,7 @@ export async function uploadAssistantPhotoAction(
     if (!(file instanceof File) || file.size === 0) {
       throw new Error("PHOTO_REQUIRED");
     }
-    const workspace = await service.loadThread(parsedWorkOrderId, threadId);
+    const workspace = await service.authorizeThreadWrite(parsedWorkOrderId, threadId);
     if (!workspace.thread.jobId) throw new Error("JOB_NOT_FOUND");
     const photo = await uploadIntakePhoto(parsedWorkOrderId, {
       category: "job_work",

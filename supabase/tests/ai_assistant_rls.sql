@@ -919,7 +919,7 @@ select throws_ok(
       'a0000000-0000-0000-0000-000000000001'
     )
   $$,
-  'AI_ASSISTANT_NOTE_JOB_MISMATCH',
+  'ASK_OTOMOTO_NOTE_JOB_MISMATCH',
   'assistant note provenance cannot cross jobs when both are scoped'
 );
 select throws_ok(

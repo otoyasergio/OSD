@@ -124,6 +124,9 @@ export type Database = {
             | "ready_for_technician_verification"
             | null;
           created_by_user_id: string | null;
+          parent_user_message_id: string | null;
+          requested_provider_model: string | null;
+          generation_attempt_id: string | null;
           provider_model: string | null;
           provider_response_id: string | null;
           prompt_version: string | null;
@@ -152,6 +155,9 @@ export type Database = {
             | "ready_for_technician_verification"
             | null;
           created_by_user_id?: string | null;
+          parent_user_message_id?: string | null;
+          requested_provider_model?: string | null;
+          generation_attempt_id?: string | null;
           provider_model?: string | null;
           provider_response_id?: string | null;
           prompt_version?: string | null;
@@ -522,6 +528,60 @@ export type Database = {
       fitment_models_for_year_make: {
         Args: { p_year: number; p_make: string };
         Returns: string[];
+      };
+      ask_otomoto_begin_turn: {
+        Args: {
+          p_thread_id: string;
+          p_work_order_id: string;
+          p_user_id: string;
+          p_body: string;
+          p_photos?: Json;
+        };
+        Returns: {
+          user_message_id: string;
+          assistant_message_id: string;
+          generation_attempt_id: string;
+        }[];
+      };
+      ask_otomoto_complete_turn: {
+        Args: {
+          p_thread_id: string;
+          p_assistant_message_id: string;
+          p_generation_attempt_id: string;
+          p_body: string;
+          p_requested_input: Json | null;
+          p_phase: string;
+          p_requested_provider_model: string;
+          p_resolved_provider_model: string;
+          p_provider_response_id: string;
+          p_prompt_version: string;
+          p_input_token_count: number | null;
+          p_output_token_count: number | null;
+          p_context_as_of: string;
+          p_context_hash: string | null;
+        };
+        Returns: undefined;
+      };
+      ask_otomoto_fail_turn: {
+        Args: {
+          p_thread_id: string;
+          p_assistant_message_id: string;
+          p_generation_attempt_id: string;
+          p_safe_error_code: string;
+        };
+        Returns: boolean;
+      };
+      ask_otomoto_claim_retry: {
+        Args: {
+          p_thread_id: string;
+          p_work_order_id: string;
+          p_stale_before: string;
+        };
+        Returns: {
+          user_message_id: string;
+          assistant_message_id: string;
+          generation_attempt_id: string;
+        }[];
       };
     };
     Enums: Record<string, never>;

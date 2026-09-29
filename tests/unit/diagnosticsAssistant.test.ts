@@ -134,10 +134,14 @@ function repository(): DiagnosticsAssistantRepository {
     loadGenerationInput: vi.fn(),
     completeGeneration: vi.fn(),
     failGeneration: vi.fn(),
-    loadLatestFailedTurn: vi.fn(),
+    claimLatestRetry: vi.fn(),
     loadContextSource: vi.fn(),
     loadPhotoRows: vi.fn(),
     downloadPhoto: vi.fn(),
+    loadLatestSuccessfulModel: vi.fn().mockResolvedValue({
+      requestedModel: "model-alias",
+      resolvedModel: "model-resolved-1",
+    }),
   };
 }
 
@@ -221,6 +225,74 @@ describe("Ask OTOMOTO service boundaries", () => {
         createdByUserId: actor("service_advisor").user_id,
       })
     );
+  });
+
+  it("shapes owner preview reads through the trusted subject role", async () => {
+    const repo = repository();
+    vi.mocked(repo.listThreads).mockResolvedValue([
+      {
+        threadId: "71111111-1111-4111-8111-111111111111",
+        workOrderId: scope().workOrderId,
+        jobId: null,
+        locationId: scope().locationId,
+        mode: "advisor",
+        audience: "front_office",
+        status: "ready",
+        diagnosticPhase: null,
+        triggerType: null,
+        createdAt: "2026-09-29T00:00:00.000Z",
+        updatedAt: "2026-09-29T00:00:00.000Z",
+      },
+    ]);
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("owner"),
+    });
+
+    await expect(
+      service.listThreads(scope().workOrderId, {
+        role: "technician",
+        subjectUserId: actor("technician").user_id,
+      })
+    ).resolves.toEqual([]);
+  });
+
+  it("denies thread writes at a non-current shop for floor staff", async () => {
+    const repo = repository();
+    const foreignLocation = "61111111-1111-4111-8111-111111111111";
+    vi.mocked(repo.loadWorkOrderScope).mockResolvedValue(
+      scope({ locationId: foreignLocation })
+    );
+    vi.mocked(repo.loadThread).mockResolvedValue({
+      thread: {
+        threadId: "71111111-1111-4111-8111-111111111111",
+        workOrderId: scope().workOrderId,
+        jobId: "51111111-1111-4111-8111-111111111111",
+        locationId: foreignLocation,
+        mode: "shop",
+        audience: "technical",
+        status: "ready",
+        diagnosticPhase: null,
+        triggerType: null,
+        createdAt: "2026-09-29T00:00:00.000Z",
+        updatedAt: "2026-09-29T00:00:00.000Z",
+      },
+      messages: [],
+    });
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () =>
+        actor("technician", {
+          location_ids: [scope().locationId, foreignLocation],
+        }),
+    });
+
+    await expect(
+      service.authorizeThreadWrite(
+        scope().workOrderId,
+        "71111111-1111-4111-8111-111111111111"
+      )
+    ).rejects.toThrow("FOREIGN_LOCATION");
   });
 });
 
@@ -314,6 +386,8 @@ function generationRepository() {
     requestedInput: null,
     phase: "diagnosis" as const,
     safeErrorCode: null,
+    parentUserMessageId: null,
+    requestedProviderModel: "model-alias",
     providerModel: "model-resolved-1",
     createdAt: "2026-09-29T00:00:00.000Z",
     updatedAt: "2026-09-29T00:00:00.000Z",
@@ -323,6 +397,7 @@ function generationRepository() {
     ...previous,
     messageId: "a1111111-1111-4111-8111-111111111111",
     body: "Generated answer",
+    parentUserMessageId: "b1111111-1111-4111-8111-111111111111",
     providerModel: "model-resolved-2",
   };
   vi.mocked(repo.loadThread).mockResolvedValue({
@@ -333,6 +408,7 @@ function generationRepository() {
   vi.mocked(repo.beginTurn).mockResolvedValue({
     userMessageId: "b1111111-1111-4111-8111-111111111111",
     assistantMessageId: generated.messageId,
+    attemptId: "attempt-1",
   });
   vi.mocked(repo.loadGenerationInput).mockResolvedValue({
     userMessageId: "b1111111-1111-4111-8111-111111111111",
@@ -456,6 +532,108 @@ describe("Ask OTOMOTO generation lifecycle", () => {
     );
   });
 
+  it("redacts the current request, history, and photo purposes before provider use", async () => {
+    const { repo, thread } = generationRepository();
+    vi.mocked(repo.loadPhotoRows).mockResolvedValue([
+      {
+        photoId: "c1111111-1111-4111-8111-111111111111",
+        workOrderId: scope().workOrderId,
+        jobId: thread.jobId,
+        category: "job_work",
+        storagePath: "private/photo.jpg",
+      },
+    ]);
+    vi.mocked(repo.loadGenerationInput).mockResolvedValue({
+      userMessageId: "b1111111-1111-4111-8111-111111111111",
+      assistantMessageId: "a1111111-1111-4111-8111-111111111111",
+      userMessage:
+        "Alex Rider at 123 Customer Street: call 647-555-1234, alex@example.invalid, VIN SECRET-VIN-123",
+      photos: [
+        {
+          photoId: "c1111111-1111-4111-8111-111111111111",
+          purpose: "Alex Rider's VIN SECRET-VIN-123",
+        },
+      ],
+      history: [
+        {
+          role: "user",
+          content: "Prior note from Alex Rider, 647-555-1234",
+        },
+      ],
+    });
+    vi.mocked(repo.loadContextSource).mockResolvedValue({
+      source: contextSource(),
+      redactTerms: {
+        customerName: "Alex Rider",
+        email: "alex@example.invalid",
+        phone: "647-555-1234",
+        address: "123 Customer Street",
+        fullVin: "SECRET-VIN-123",
+      },
+    });
+    const generateDraft = vi
+      .fn<
+        (request: DiagnosticsGenerationRequest) => Promise<DiagnosticsGenerationResult>
+      >()
+      .mockResolvedValue(generationResult());
+    const prepareImages = vi.fn(
+      async (input: { selections: Array<{ photoId: string; purpose: string }> }) => ({
+        images: input.selections.map((selection) => ({
+          photoId: selection.photoId,
+          purpose: selection.purpose,
+          dataUrl: "data:image/jpeg;base64,YQ==",
+        })),
+        photoMetadata: [],
+      })
+    );
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft,
+      prepareImages,
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await service.submitTurn({
+      workOrderId: scope().workOrderId,
+      threadId: thread.threadId,
+      jobId: thread.jobId,
+      mode: "shop",
+      text: "Original text remains persisted",
+      photos: [
+        {
+          photoId: "c1111111-1111-4111-8111-111111111111",
+          purpose: "Original purpose remains persisted",
+        },
+      ],
+    });
+
+    const providerPayload = JSON.stringify(generateDraft.mock.calls[0]![0]);
+    for (const pii of [
+      "Alex Rider",
+      "123 Customer Street",
+      "647-555-1234",
+      "alex@example.invalid",
+      "SECRET-VIN-123",
+    ]) {
+      expect(providerPayload).not.toContain(pii);
+    }
+    expect(repo.beginTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: "Original text remains persisted",
+        photos: [
+          expect.objectContaining({ purpose: "Original purpose remains persisted" }),
+        ],
+      })
+    );
+    expect(repo.loadGenerationInput).toHaveBeenCalledWith(
+      scope().workOrderId,
+      thread.threadId,
+      "b1111111-1111-4111-8111-111111111111",
+      "a1111111-1111-4111-8111-111111111111"
+    );
+  });
+
   it("persists a safe failed state for provider and missing-config errors", async () => {
     for (const code of [
       "DIAGNOSTICS_AI_PROVIDER_UNAVAILABLE",
@@ -485,21 +663,75 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       expect(repo.failGeneration).toHaveBeenCalledWith({
         threadId: thread.threadId,
         assistantMessageId: generated.messageId,
+        attemptId: "attempt-1",
         safeErrorCode: code,
       });
     }
   });
 
+  it("maps database transport failures to a generic lifecycle code", async () => {
+    const { repo, thread, generated } = generationRepository();
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft: async () => {
+        throw new Error("PGRST116");
+      },
+      prepareImages: async () => ({ images: [], photoMetadata: [] }),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await expect(
+      service.submitTurn({
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        jobId: thread.jobId,
+        mode: "shop",
+        text: "Help diagnose it",
+        photos: [],
+      })
+    ).rejects.toThrow("ASK_OTOMOTO_LIFECYCLE_FAILED");
+    expect(repo.failGeneration).toHaveBeenCalledWith({
+      threadId: thread.threadId,
+      assistantMessageId: generated.messageId,
+      attemptId: "attempt-1",
+      safeErrorCode: "ASK_OTOMOTO_LIFECYCLE_FAILED",
+    });
+  });
+
+  it("fails the claimed turn when its explicit generation input cannot reload", async () => {
+    const { repo, thread, generated } = generationRepository();
+    vi.mocked(repo.loadGenerationInput).mockRejectedValue(new Error("PGRST116"));
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await expect(
+      service.submitTurn({
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        jobId: thread.jobId,
+        mode: "shop",
+        text: "Help diagnose it",
+        photos: [],
+      })
+    ).rejects.toThrow("ASK_OTOMOTO_LIFECYCLE_FAILED");
+    expect(repo.failGeneration).toHaveBeenCalledWith({
+      threadId: thread.threadId,
+      assistantMessageId: generated.messageId,
+      attemptId: "attempt-1",
+      safeErrorCode: "ASK_OTOMOTO_LIFECYCLE_FAILED",
+    });
+  });
+
   it("retries the existing failed assistant without creating another user message", async () => {
     const { repo, thread, generated } = generationRepository();
-    vi.mocked(repo.loadLatestFailedTurn).mockResolvedValue({
+    vi.mocked(repo.claimLatestRetry).mockResolvedValue({
       userMessageId: "b1111111-1111-4111-8111-111111111111",
       assistantMessageId: generated.messageId,
-      userMessage: "Help diagnose it",
-      photos: [],
-      history: [],
-      mode: "shop",
-      jobId: thread.jobId,
+      attemptId: "attempt-2",
     });
     const service = createDiagnosticsAssistantService({
       repository: repo,
@@ -507,6 +739,8 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       generateDraft: async () => generationResult(),
       prepareImages: async () => ({ images: [], photoMetadata: [] }),
       consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+      now: () => new Date("2026-09-29T05:00:00.000Z"),
+      staleAfterMs: 90_000,
     });
 
     await service.retryLatestFailed({
@@ -515,8 +749,16 @@ describe("Ask OTOMOTO generation lifecycle", () => {
     });
 
     expect(repo.beginTurn).not.toHaveBeenCalled();
+    expect(repo.claimLatestRetry).toHaveBeenCalledWith(
+      scope().workOrderId,
+      thread.threadId,
+      "2026-09-29T04:58:30.000Z"
+    );
     expect(repo.completeGeneration).toHaveBeenCalledWith(
-      expect.objectContaining({ assistantMessageId: generated.messageId })
+      expect.objectContaining({
+        assistantMessageId: generated.messageId,
+        attemptId: "attempt-2",
+      })
     );
   });
 
@@ -545,12 +787,113 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       locationId: scope().locationId,
       messageId: "a1111111-1111-4111-8111-111111111111",
       previousModel: "model-resolved-1",
+      requestedModel: "model-alias",
       resolvedModel: "model-resolved-2",
     });
     expect(
       JSON.stringify(vi.mocked(repo.recordModelChangeAudit).mock.calls)
     ).not.toContain("Generated answer");
   });
+
+  it("does not fail or overwrite a completed response when audit logging fails", async () => {
+    const { repo, thread } = generationRepository();
+    repo.recordModelChangeAudit = vi
+      .fn()
+      .mockRejectedValue(new Error("raw audit database failure"));
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft: async () => generationResult(),
+      prepareImages: async () => ({ images: [], photoMetadata: [] }),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await expect(
+      service.submitTurn({
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        jobId: thread.jobId,
+        mode: "shop",
+        text: "Help diagnose it",
+        photos: [],
+      })
+    ).resolves.toMatchObject({
+      messageId: "a1111111-1111-4111-8111-111111111111",
+    });
+    expect(repo.completeGeneration).toHaveBeenCalledOnce();
+    expect(repo.failGeneration).not.toHaveBeenCalled();
+  });
+
+  it("rejects disallowed photo categories before the atomic begin", async () => {
+    const { repo, thread } = generationRepository();
+    vi.mocked(repo.loadPhotoRows).mockResolvedValue([
+      {
+        photoId: "c1111111-1111-4111-8111-111111111111",
+        workOrderId: scope().workOrderId,
+        jobId: null,
+        category: "front",
+        storagePath: "private/photo.jpg",
+      },
+    ]);
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await expect(
+      service.submitTurn({
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        jobId: thread.jobId,
+        mode: "shop",
+        text: "Help diagnose it",
+        photos: [
+          {
+            photoId: "c1111111-1111-4111-8111-111111111111",
+            purpose: "Not a diagnostic category",
+          },
+        ],
+      })
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_CATEGORY_NOT_ALLOWED");
+    expect(repo.beginTurn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["completed", "ready"],
+    ["cancelled", "ready"],
+    ["in_progress", "archived"],
+  ] as const)(
+    "rejects generation for work-order=%s thread=%s",
+    async (workOrderStatus, threadStatus) => {
+      const { repo, thread } = generationRepository();
+      vi.mocked(repo.loadWorkOrderScope).mockResolvedValue(
+        scope({ status: workOrderStatus })
+      );
+      vi.mocked(repo.loadThread).mockResolvedValue({
+        thread: { ...thread, status: threadStatus },
+        messages: [],
+      });
+      const service = createDiagnosticsAssistantService({
+        repository: repo,
+        requireUser: async () => actor("technician"),
+      });
+
+      await expect(
+        service.submitTurn({
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          jobId: thread.jobId,
+          mode: "shop",
+          text: "Must not start",
+          photos: [],
+        })
+      ).rejects.toThrow(
+        threadStatus === "archived" ? "ASK_OTOMOTO_THREAD_ARCHIVED" : "WORK_ORDER_LOCKED"
+      );
+      expect(repo.beginTurn).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe("Ask OTOMOTO internal trigger primitive", () => {
@@ -607,5 +950,36 @@ describe("Ask OTOMOTO internal trigger primitive", () => {
         { repository: repo }
       )
     ).resolves.toEqual(existing);
+  });
+
+  it("rejects reuse when the existing trigger thread scope differs", async () => {
+    const repo = repository();
+    vi.mocked(repo.findTriggerThread).mockResolvedValue({
+      threadId: "71111111-1111-4111-8111-111111111111",
+      workOrderId: scope().workOrderId,
+      jobId: null,
+      locationId: scope().locationId,
+      mode: "advisor",
+      audience: "front_office",
+      status: "pending",
+      diagnosticPhase: null,
+      triggerType: "inspection_completed",
+      createdAt: "2026-09-29T00:00:00.000Z",
+      updatedAt: "2026-09-29T00:00:00.000Z",
+    });
+
+    await expect(
+      createOrReuseDiagnosticsTriggerThreadInternal(
+        actor("service_advisor"),
+        {
+          workOrderId: scope().workOrderId,
+          jobId: null,
+          mode: "shop",
+          trigger: "inspection_completion",
+          triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
   });
 });
