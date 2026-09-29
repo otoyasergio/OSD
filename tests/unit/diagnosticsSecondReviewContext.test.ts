@@ -117,6 +117,17 @@ describe("second review context regressions", () => {
     expect(result.claims.allowedSpecificationValues).not.toContain("14:v");
   });
 
+  it("exposes supplied work order and job identifiers as consultable record claims", () => {
+    const result = shapeDiagnosticsContext(source(), {
+      mode: "shop",
+      workOrderId: "wo-1",
+      jobId: "job-1",
+    });
+
+    expect(result.claims.suppliedRecordIdentifiers).toEqual(["wo-1", "TOR-1001", "job-1"]);
+    expect(result.claims.hasProvidedReferenceEvidence).toBe(false);
+  });
+
   it("applies one global checklist work budget and denies identity/signature keys", () => {
     const input = source();
     input.checks!.quality = [

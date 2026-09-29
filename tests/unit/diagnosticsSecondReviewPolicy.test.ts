@@ -192,6 +192,172 @@ describe("second review output-policy regressions", () => {
     ).not.toContain("SOURCE_REFERENCE_UNAVAILABLE");
   });
 
+  it.each([
+    {
+      label: "Selected work order SYN-RELAY-CLICK and current staff request",
+      citation: "Supplied complaint and selected-job verification fields.",
+    },
+    {
+      label: "Selected work-order inspection note",
+      citation: "SYN-BRAKE-PHOTO — Synthetic observation / Observed area",
+    },
+    {
+      label: "Selected work-order context",
+      citation: null,
+    },
+    {
+      label: "Recorded customer complaint and technician notes",
+      citation: "Current request context",
+    },
+    {
+      label: "Job record",
+      citation: "job-relay-click",
+    },
+  ])(
+    "accepts the supplied work order/job record as a consulted provided reference: $label",
+    ({ label, citation }) => {
+      const output = draft({
+        sources: [
+          {
+            label,
+            citation,
+            authority: "provided_reference",
+            status: "consulted",
+            applies_to: "Reported symptom and absence of supplied measurements.",
+          },
+        ],
+      });
+      expect(codes(output)).not.toContain("SOURCE_REFERENCE_UNAVAILABLE");
+      expect(
+        codes(output, {
+          hasProvidedReferenceEvidence: false,
+          includedReferenceEvidence: [],
+          suppliedRecordIdentifiers: ["wo-1", "SYN-RELAY-CLICK", "job-relay-click"],
+        })
+      ).not.toContain("SOURCE_REFERENCE_UNAVAILABLE");
+    }
+  );
+
+  it("accepts a consulted provided reference that names a supplied record identifier", () => {
+    const output = draft({
+      sources: [
+        {
+          label: "Selected record",
+          citation: "3f2a9c1e-4b7d-4e0a-9c11-8d2f6a5b7c90",
+          authority: "provided_reference",
+          status: "consulted",
+          applies_to: "Recorded complaint.",
+        },
+      ],
+    });
+    expect(codes(output)).toContain("SOURCE_REFERENCE_UNAVAILABLE");
+    expect(
+      codes(output, {
+        suppliedRecordIdentifiers: ["3f2a9c1e-4b7d-4e0a-9c11-8d2f6a5b7c90"],
+      })
+    ).not.toContain("SOURCE_REFERENCE_UNAVAILABLE");
+    expect(codes(output, { suppliedRecordIdentifiers: ["1"] })).toContain(
+      "SOURCE_REFERENCE_UNAVAILABLE"
+    );
+  });
+
+  it("still withholds a work-order-labelled source that claims unsupplied named material", () => {
+    expect(
+      codes(
+        draft({
+          sources: [
+            {
+              label: "Work order attachment: exact-model service manual",
+              citation: "Section 6",
+              authority: "provided_reference",
+              status: "consulted",
+              applies_to: "Battery limits.",
+            },
+          ],
+        })
+      )
+    ).toContain("SOURCE_EXACT_MODEL_UNAVAILABLE");
+    expect(
+      codes(
+        draft({
+          sources: [
+            {
+              label: "Work order: Visual Motorcycle Inspection Report template",
+              citation: null,
+              authority: "provided_reference",
+              status: "consulted",
+              applies_to: "Report format.",
+            },
+          ],
+        })
+      )
+    ).toContain("NAMED_SOURCE_UNAVAILABLE");
+  });
+
+  it("does not treat a record citation about a recall or Ontario request as a consulted lookup", () => {
+    const recallRecord = draft({
+      sources: [
+        {
+          label: "Selected work-order context (customer recall inquiry)",
+          citation: "SYN-RECALL-STATUS / job-recall-status",
+          authority: "provided_reference",
+          status: "consulted",
+          applies_to: "Customer recall inquiry and absence of supplied recall verification.",
+        },
+      ],
+    });
+    expect(codes(recallRecord)).not.toContain("SOURCE_RECALL_UNAVAILABLE");
+
+    const ontarioRecord = draft({
+      sources: [
+        {
+          label: "Selected work-order context",
+          citation: "SYN-ONTARIO-INSPECTION; job-ontario-inspection",
+          authority: "provided_reference",
+          status: "consulted",
+          applies_to: "Recorded workflow status.",
+        },
+      ],
+    });
+    expect(codes(ontarioRecord)).not.toContain("SOURCE_REGULATORY_UNAVAILABLE");
+
+    const fabricatedLookup = draft({
+      sources: [
+        {
+          label: "Work order: current official recall lookup result",
+          citation: null,
+          authority: "provided_reference",
+          status: "consulted",
+          applies_to: "Recall status.",
+        },
+      ],
+    });
+    expect(codes(fabricatedLookup)).toContain("SOURCE_RECALL_UNAVAILABLE");
+  });
+
+  it("does not withhold an explicit refusal that mentions recall status or the manual", () => {
+    expect(
+      codes(
+        draft({
+          safety: {
+            stop_work: false,
+            do_not_ride: false,
+            boundary: "Unknown recall status is not evidence of no recalls.",
+          },
+        })
+      )
+    ).not.toContain("RECALL_STATUS_CLAIM");
+    expect(
+      codes(draft({ answer: "I cannot confirm what the OEM manual states for this limit." }))
+    ).not.toContain("UNREAD_MANUAL_CLAIM");
+    expect(codes(draft({ answer: "There are no open recalls for this motorcycle." }))).toContain(
+      "RECALL_STATUS_CLAIM"
+    );
+    expect(codes(draft({ answer: "The recall status is clear." }))).toContain(
+      "RECALL_STATUS_CLAIM"
+    );
+  });
+
   it("recognizes 'per the service manual' as an exact-source claim", () => {
     expect(codes(draft({ answer: "Per the service manual, use this limit." }))).toContain(
       "UNREAD_MANUAL_CLAIM"

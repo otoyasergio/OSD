@@ -24,6 +24,8 @@ export type DiagnosticsClaimContext = {
   availableNamedReferences?: string[];
   hasProvidedReferenceEvidence?: boolean;
   includedReferenceEvidence?: string[];
+  /** Identifiers of the work order and jobs supplied in this request context. */
+  suppliedRecordIdentifiers?: string[];
 };
 
 export type DiagnosticsPolicyViolation = {
@@ -43,17 +45,6 @@ export class DiagnosticsOutputPolicyError extends Error {
 
 function generatedText(output: DiagnosticsResponse): string {
   return JSON.stringify(output);
-}
-
-function addClaimViolation(
-  violations: DiagnosticsPolicyViolation[],
-  text: string,
-  allowed: boolean | undefined,
-  pattern: RegExp,
-  code: string,
-  message: string
-): void {
-  if (!allowed && pattern.test(text)) violations.push({ code, message });
 }
 
 function outputTextFields(output: DiagnosticsResponse): string[] {
@@ -392,12 +383,30 @@ function normalizedSourceText(value: string): string {
     .trim();
 }
 
+/**
+ * Matches normalized source text that names the work order/job record supplied
+ * in every request (complaint, jobs, notes, inspection rows, staff request).
+ * Named external documents (manuals, recall or regulatory lookups, templates)
+ * are screened separately and never satisfy this pattern.
+ */
+const SUPPLIED_RECORD_PATTERN =
+  /\b(?:(?:work|repair) order|selected job|job (?:context|record|notes?)|staff (?:request|report|question)|current request|request context|supplied context|inspection (?:rows?|notes?|records?|results?)|technician notes?|complaint)\b/;
+
+function citesSuppliedRecord(source: string, claims: DiagnosticsClaimContext): boolean {
+  const namesIdentifier = (claims.suppliedRecordIdentifiers ?? []).some((identifier) => {
+    const normalized = normalizedSourceText(identifier);
+    return normalized.length >= 3 && source.includes(normalized);
+  });
+  return namesIdentifier || SUPPLIED_RECORD_PATTERN.test(source);
+}
+
 function hasMatchingProvidedReference(
   sourceText: string,
   claims: DiagnosticsClaimContext
 ): boolean {
-  if (!claims.hasProvidedReferenceEvidence) return false;
   const source = normalizedSourceText(sourceText);
+  if (citesSuppliedRecord(source, claims)) return true;
+  if (!claims.hasProvidedReferenceEvidence) return false;
   return (claims.includedReferenceEvidence ?? []).some((evidence) => {
     const included = normalizedSourceText(evidence);
     return Boolean(included && (included.includes(source) || source.includes(included)));
@@ -560,8 +569,17 @@ export function inspectDiagnosticsOutput(
       /\b(?:manual|oem|factory|bulletin|tsb|wiring(?: diagram)?)\b/.test(
         normalizedSource
       );
-    const namesRecallSource = /\brecall\b/.test(normalizedSource);
+    // The supplied record may be *about* a recall inquiry or an Ontario
+    // inspection request; citing it is not a claim to have consulted a lookup.
+    const recordCitationOnly =
+      source.authority === "provided_reference" &&
+      citesSuppliedRecord(normalizedSource, claims) &&
+      !/\b(?:lookup|result|official|bulletin|campaign|database|notice|manufacturer|transport canada|ministry)\b/.test(
+        normalizedSource
+      );
+    const namesRecallSource = !recordCitationOnly && /\brecall\b/.test(normalizedSource);
     const namesOntarioRegulatorySource =
+      !recordCitationOnly &&
       /\b(?:ontario|o reg|regulation|inspection standard|inspection program)\b/.test(
         normalizedSource
       );
@@ -698,25 +716,25 @@ export function inspectDiagnosticsOutput(
       });
     }
   }
-  addClaimViolation(
+  addPositiveViolation(
     violations,
-    text,
+    fields,
     claims.hasExactModelSource,
     /\baccording to\s+(?:the\s+)?(?:oem|factory|service)\s+manual\b|\bper\s+(?:the\s+)?(?:oem|factory|service)\s+manual\b|\bthe\s+(?:oem|factory|service)\s+manual\s+(?:states|specifies|requires)\b/i,
     "UNREAD_MANUAL_CLAIM",
     "The draft claims access to an exact-model manual that was not supplied."
   );
-  addClaimViolation(
+  addPositiveViolation(
     violations,
-    text,
+    fields,
     claims.hasCurrentRecallSource,
     /\bno\s+(?:open\s+|outstanding\s+)?recalls?\b|\brecall\s+status\s+(?:is\s+)?(?:clear|none)\b/i,
     "RECALL_STATUS_CLAIM",
     "The draft claims recall status without a current official lookup."
   );
-  addClaimViolation(
+  addPositiveViolation(
     violations,
-    text,
+    fields,
     claims.hasCurrentOntarioInspectionSource,
     /\bontario\s+(?:law|regulation|inspection\s+(?:standard|program))\s+(?:requires|allows|prohibits|says)\b/i,
     "ONTARIO_REQUIREMENT_CLAIM",

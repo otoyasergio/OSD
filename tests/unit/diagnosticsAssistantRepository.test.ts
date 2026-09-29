@@ -848,7 +848,7 @@ describe("Supabase diagnostics repository boundaries", () => {
       previousModel: "model-old",
       requestedModel: "model-alias",
       resolvedModel: "model-new",
-      promptVersion: "otomoto-moto-diagnostics-v1.4.0",
+      promptVersion: "otomoto-moto-diagnostics-v1.4.1",
       acceptanceRerunRequired: true,
       scenarioCount: 18,
     });
@@ -859,7 +859,7 @@ describe("Supabase diagnostics repository boundaries", () => {
         new_value: {
           requested_model: "model-alias",
           resolved_model: "model-new",
-          prompt_version: "otomoto-moto-diagnostics-v1.4.0",
+          prompt_version: "otomoto-moto-diagnostics-v1.4.1",
           acceptance_rerun_required: true,
           scenario_count: 18,
         },
@@ -926,7 +926,7 @@ describe("Supabase diagnostics repository boundaries", () => {
       previousModel: "model-old",
       requestedModel: "model-alias",
       resolvedModel: "model-new",
-      promptVersion: "otomoto-moto-diagnostics-v1.4.0",
+      promptVersion: "otomoto-moto-diagnostics-v1.4.1",
       acceptanceRerunRequired: true,
       scenarioCount: 18,
     });

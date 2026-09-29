@@ -861,6 +861,16 @@ export function deriveDiagnosticsClaimContext(
     ),
     hasProvidedReferenceEvidence: includedReferenceEvidence.length > 0,
     includedReferenceEvidence,
+    suppliedRecordIdentifiers: [
+      ...new Set(
+        [
+          context.workOrder.workOrderId,
+          context.workOrder.identifier,
+          selected?.jobId ?? null,
+          ...context.customerRequestJobs.map((job) => job.jobId),
+        ].filter((value): value is string => Boolean(value?.trim()))
+      ),
+    ],
   };
 }
 
