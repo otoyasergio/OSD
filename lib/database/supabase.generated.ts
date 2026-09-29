@@ -575,7 +575,7 @@ export type Database = {
         Args: {
           p_thread_id: string;
           p_work_order_id: string;
-          p_stale_before: string;
+          p_stale_after: string;
         };
         Returns: {
           user_message_id: string;

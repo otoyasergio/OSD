@@ -336,20 +336,47 @@ describe("Supabase diagnostics repository boundaries", () => {
     });
   });
 
-  it("loads the latest successful resolved model at location scope", async () => {
-    const selects: string[] = [];
-    const repository = new SupabaseDiagnosticsRepository(
-      fakeClient(
+  it("passes retry staleness as a database-clock interval", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [
         {
-          ai_assistant_message: {
-            requested_provider_model: "model-alias",
-            provider_model: "model-resolved-global",
-          },
+          user_message_id: "user-message-1",
+          assistant_message_id: "assistant-message-1",
+          generation_attempt_id: "attempt-2",
         },
-        [],
-        selects
-      ),
-      vi.fn()
+      ],
+      error: null,
+    });
+    const repository = new SupabaseDiagnosticsRepository(fakeClient({}, []), () => {
+      return { rpc } as unknown as DbClient;
+    });
+
+    await repository.claimLatestRetry("wo-1", "thread-1", 270_000);
+
+    expect(rpc).toHaveBeenCalledWith("ask_otomoto_claim_retry", {
+      p_thread_id: "thread-1",
+      p_work_order_id: "wo-1",
+      p_stale_after: "270000 milliseconds",
+    });
+  });
+
+  it("loads location-global model metadata through narrow service-role access", async () => {
+    const selects: string[] = [];
+    const sessionCalls: string[] = [];
+    const adminCalls: string[] = [];
+    const admin = fakeClient(
+      {
+        ai_assistant_message: {
+          requested_provider_model: "model-alias",
+          provider_model: "model-resolved-global",
+        },
+      },
+      adminCalls,
+      selects
+    );
+    const repository = new SupabaseDiagnosticsRepository(
+      fakeClient({}, sessionCalls, selects),
+      () => admin
     );
 
     await expect(
@@ -359,6 +386,29 @@ describe("Supabase diagnostics repository boundaries", () => {
       resolvedModel: "model-resolved-global",
     });
     expect(selects.join("\n")).toContain("thread:ai_assistant_thread!inner(location_id)");
+    expect(selects.join("\n")).not.toMatch(/\bbody\b|requested_input|safe_error_code/);
+    expect(sessionCalls).toEqual([]);
+    expect(adminCalls).toEqual(["ai_assistant_message"]);
+  });
+
+  it("does not fall back to service-role storage when session download is denied", async () => {
+    const session = {
+      storage: {
+        from: vi.fn().mockReturnValue({
+          download: vi.fn().mockResolvedValue({
+            data: null,
+            error: { message: "storage denied" },
+          }),
+        }),
+      },
+    } as unknown as DbClient;
+    const createAdmin = vi.fn();
+    const repository = new SupabaseDiagnosticsRepository(session, createAdmin);
+
+    await expect(
+      repository.downloadPhoto("private/photo.jpg", { maxBytes: 1_000 })
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_NOT_FOUND");
+    expect(createAdmin).not.toHaveBeenCalled();
   });
 
   it("surfaces a simultaneous begin loser without partial client-side writes", async () => {

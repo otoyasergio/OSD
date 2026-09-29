@@ -80,7 +80,7 @@ CREATE TRIGGER ai_assistant_message_parent_immutable
 CREATE FUNCTION private.ai_assistant_validate_promoted_note_policy()
 RETURNS trigger
 LANGUAGE plpgsql
-SECURITY DEFINER
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 DECLARE
@@ -398,7 +398,7 @@ $$;
 CREATE FUNCTION public.ask_otomoto_claim_retry(
   p_thread_id uuid,
   p_work_order_id uuid,
-  p_stale_before timestamptz
+  p_stale_after interval
 )
 RETURNS TABLE(
   user_message_id uuid,
@@ -449,7 +449,7 @@ BEGIN
       latest_message.generation_status = 'failed'
       OR (
         latest_message.generation_status = 'generating'
-        AND latest_message.updated_at < p_stale_before
+        AND latest_message.updated_at < clock_timestamp() - p_stale_after
       )
     )
   THEN
@@ -469,7 +469,7 @@ BEGIN
       generation_status = 'failed'
       OR (
         generation_status = 'generating'
-        AND updated_at < p_stale_before
+        AND updated_at < clock_timestamp() - p_stale_after
       )
     );
 
@@ -501,7 +501,7 @@ REVOKE ALL ON FUNCTION public.ask_otomoto_fail_turn(
   uuid, uuid, uuid, text
 ) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.ask_otomoto_claim_retry(
-  uuid, uuid, timestamptz
+  uuid, uuid, interval
 ) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.ask_otomoto_begin_turn(
@@ -515,7 +515,7 @@ GRANT EXECUTE ON FUNCTION public.ask_otomoto_fail_turn(
   uuid, uuid, uuid, text
 ) TO service_role;
 GRANT EXECUTE ON FUNCTION public.ask_otomoto_claim_retry(
-  uuid, uuid, timestamptz
+  uuid, uuid, interval
 ) TO service_role;
 
 COMMENT ON FUNCTION public.ask_otomoto_begin_turn(
@@ -529,5 +529,5 @@ COMMENT ON FUNCTION public.ask_otomoto_fail_turn(
   uuid, uuid, uuid, text
 ) IS 'CAS-fails a generating Ask OTOMOTO response without overwriting ready output.';
 COMMENT ON FUNCTION public.ask_otomoto_claim_retry(
-  uuid, uuid, timestamptz
+  uuid, uuid, interval
 ) IS 'Claims only the latest failed or stale-generating Ask OTOMOTO assistant turn.';

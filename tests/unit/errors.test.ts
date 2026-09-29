@@ -58,4 +58,19 @@ describe("toFormErrorMessage", () => {
       "New password and confirmation do not match."
     );
   });
+
+  it.each([
+    "ASK_OTOMOTO_PARENT_REQUIRES_ASSISTANT",
+    "ASK_OTOMOTO_PARENT_USER_INVALID",
+    "ASK_OTOMOTO_PARENT_USER_IMMUTABLE",
+    "ASK_OTOMOTO_NOTE_TYPE_NOT_ALLOWED",
+    "ASK_OTOMOTO_THREAD_NOT_WRITABLE",
+    "ASK_OTOMOTO_COMPLETE_CONFLICT",
+    "ASK_OTOMOTO_SAFE_ERROR_INVALID",
+    "ASK_OTOMOTO_FAIL_CONFLICT",
+  ])("maps new Ask OTOMOTO lifecycle code %s to friendly text", (code) => {
+    const message = toFormErrorMessage(new Error(code));
+    expect(message).not.toBe(code);
+    expect(message).toMatch(/Ask OTOMOTO|assistant|note|conversation|request/i);
+  });
 });

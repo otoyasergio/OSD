@@ -29,6 +29,19 @@ function integerSetting(
   return value;
 }
 
+export function getDiagnosticsTimeoutMs(
+  env: DiagnosticsEnvironment = process.env
+): number {
+  return integerSetting(
+    env,
+    "OTOMOTO_DIAGNOSTICS_TIMEOUT_MS",
+    "DIAGNOSTICS_AI_TIMEOUT_INVALID",
+    DEFAULT_DIAGNOSTICS_TIMEOUT_MS,
+    10_000,
+    120_000
+  );
+}
+
 export function getDiagnosticsConfig(
   env: DiagnosticsEnvironment = process.env
 ): DiagnosticsConfig {
@@ -43,14 +56,7 @@ export function getDiagnosticsConfig(
   return {
     apiKey,
     model,
-    timeoutMs: integerSetting(
-      env,
-      "OTOMOTO_DIAGNOSTICS_TIMEOUT_MS",
-      "DIAGNOSTICS_AI_TIMEOUT_INVALID",
-      DEFAULT_DIAGNOSTICS_TIMEOUT_MS,
-      10_000,
-      120_000
-    ),
+    timeoutMs: getDiagnosticsTimeoutMs(env),
     maxOutputTokens: integerSetting(
       env,
       "OTOMOTO_DIAGNOSTICS_MAX_OUTPUT_TOKENS",

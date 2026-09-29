@@ -250,6 +250,21 @@ const MESSAGES: Record<string, string> = {
     "The reviewed note must stay with the assistant response's job.",
   ASK_OTOMOTO_NOTE_ALREADY_PROMOTED:
     "That Ask OTOMOTO response was already promoted to a technician note.",
+  ASK_OTOMOTO_PARENT_REQUIRES_ASSISTANT:
+    "Ask OTOMOTO could not attach this response to its request.",
+  ASK_OTOMOTO_PARENT_USER_INVALID: "The parent Ask OTOMOTO request is no longer valid.",
+  ASK_OTOMOTO_PARENT_USER_IMMUTABLE:
+    "An Ask OTOMOTO response cannot be moved to another request.",
+  ASK_OTOMOTO_NOTE_TYPE_NOT_ALLOWED:
+    "Choose a non-gating technician note type for this Ask OTOMOTO finding.",
+  ASK_OTOMOTO_THREAD_NOT_WRITABLE:
+    "That Ask OTOMOTO conversation cannot accept a request right now.",
+  ASK_OTOMOTO_COMPLETE_CONFLICT:
+    "This Ask OTOMOTO request was already completed or retried.",
+  ASK_OTOMOTO_SAFE_ERROR_INVALID:
+    "Ask OTOMOTO could not record the request failure safely.",
+  ASK_OTOMOTO_FAIL_CONFLICT:
+    "This Ask OTOMOTO request changed before the failure could be recorded.",
   DIAGNOSTICS_IMAGE_SELECTION_INVALID:
     "The selected Ask OTOMOTO photos could not be read. Select them again.",
   INVALID_PIN: "Enter a valid 4-digit PIN.",

@@ -739,8 +739,7 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       generateDraft: async () => generationResult(),
       prepareImages: async () => ({ images: [], photoMetadata: [] }),
       consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
-      now: () => new Date("2026-09-29T05:00:00.000Z"),
-      staleAfterMs: 90_000,
+      providerTimeoutMs: 120_000,
     });
 
     await service.retryLatestFailed({
@@ -752,7 +751,7 @@ describe("Ask OTOMOTO generation lifecycle", () => {
     expect(repo.claimLatestRetry).toHaveBeenCalledWith(
       scope().workOrderId,
       thread.threadId,
-      "2026-09-29T04:58:30.000Z"
+      270_000
     );
     expect(repo.completeGeneration).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -822,6 +821,70 @@ describe("Ask OTOMOTO generation lifecycle", () => {
     });
     expect(repo.completeGeneration).toHaveBeenCalledOnce();
     expect(repo.failGeneration).not.toHaveBeenCalled();
+  });
+
+  it("keeps selected photo metadata when completed-response reload fails", async () => {
+    const { repo, thread, generated } = generationRepository();
+    const selectedPhoto = {
+      photoId: "c1111111-1111-4111-8111-111111111111",
+      category: "job_work",
+      notes: "Terminal corrosion",
+      purpose: "Inspect the battery terminal",
+      sortOrder: 0,
+      createdAt: "2026-09-29T01:00:00.000Z",
+    };
+    vi.mocked(repo.loadGenerationInput).mockResolvedValue({
+      userMessageId: "b1111111-1111-4111-8111-111111111111",
+      assistantMessageId: generated.messageId,
+      userMessage: "Help diagnose it",
+      photos: [{ photoId: selectedPhoto.photoId, purpose: selectedPhoto.purpose }],
+      selectedPhotoMetadata: [selectedPhoto],
+      history: [],
+    });
+    vi.mocked(repo.loadPhotoRows).mockResolvedValue([
+      {
+        photoId: selectedPhoto.photoId,
+        workOrderId: scope().workOrderId,
+        jobId: thread.jobId,
+        category: selectedPhoto.category,
+        storagePath: "private/photo.jpg",
+      },
+    ]);
+    vi.mocked(repo.loadThread).mockResolvedValueOnce({
+      thread,
+      messages: [],
+    });
+    vi.mocked(repo.loadThread).mockRejectedValueOnce(new Error("read unavailable"));
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft: async () => generationResult(),
+      prepareImages: async () => ({
+        images: [],
+        photoMetadata: [
+          {
+            photoId: selectedPhoto.photoId,
+            purpose: selectedPhoto.purpose,
+            sortOrder: 0,
+            limitation: null,
+          },
+        ],
+      }),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await expect(
+      service.submitTurn({
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        jobId: thread.jobId,
+        mode: "shop",
+        text: "Help diagnose it",
+        photos: [{ photoId: selectedPhoto.photoId, purpose: selectedPhoto.purpose }],
+      })
+    ).resolves.toMatchObject({
+      photos: [selectedPhoto],
+    });
   });
 
   it("rejects disallowed photo categories before the atomic begin", async () => {
@@ -981,5 +1044,49 @@ describe("Ask OTOMOTO internal trigger primitive", () => {
         { repository: repo }
       )
     ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+  });
+
+  it("maps trigger creation database failures to a stable public error", async () => {
+    const repo = repository();
+    vi.mocked(repo.findTriggerThread).mockResolvedValue(null);
+    vi.mocked(repo.createThread).mockRejectedValue(
+      new Error("duplicate key leaked_private_constraint")
+    );
+
+    await expect(
+      createOrReuseDiagnosticsTriggerThreadInternal(
+        actor("service_advisor"),
+        {
+          workOrderId: scope().workOrderId,
+          jobId: null,
+          mode: "shop",
+          trigger: "inspection_completion",
+          triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_LIFECYCLE_FAILED");
+  });
+
+  it("maps trigger conflict recovery database failures to a stable public error", async () => {
+    const repo = repository();
+    vi.mocked(repo.findTriggerThread)
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error("raw recovery query details"));
+    vi.mocked(repo.createThread).mockRejectedValue({ code: "23505" });
+
+    await expect(
+      createOrReuseDiagnosticsTriggerThreadInternal(
+        actor("service_advisor"),
+        {
+          workOrderId: scope().workOrderId,
+          jobId: null,
+          mode: "shop",
+          trigger: "inspection_completion",
+          triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_LIFECYCLE_FAILED");
   });
 });

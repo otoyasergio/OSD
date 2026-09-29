@@ -12,10 +12,11 @@ import type {
   DbClient,
   UserRole,
 } from "@/lib/database/types";
-import { canViewClients, canViewPricing, isFloorTech } from "@/lib/permissions";
+import { canViewClients, canViewPricing } from "@/lib/permissions";
 import {
   canViewerAccessWorkOrder,
   canViewerAccessWorkOrderLocation,
+  canViewerReadWorkOrderLocation,
 } from "@/lib/workOrders/assignmentVisibility";
 import {
   shapeDiagnosticsContext,
@@ -25,7 +26,7 @@ import {
   redactDiagnosticsText,
   type DiagnosticsRedactTerms,
 } from "@/lib/diagnostics/redaction";
-import { DEFAULT_DIAGNOSTICS_TIMEOUT_MS } from "@/lib/diagnostics/config";
+import { getDiagnosticsTimeoutMs } from "@/lib/diagnostics/config";
 import {
   prepareDiagnosticsImages,
   type DiagnosticsImagePreparationResult,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/diagnostics/images";
 import {
   generateDiagnosticsDraft,
+  DIAGNOSTICS_PROVIDER_MAX_RETRIES,
   type DiagnosticsGenerationRequest,
   type DiagnosticsGenerationResult,
   type DiagnosticsHistoryMessage,
@@ -199,6 +201,7 @@ type GenerationInput = {
   attemptId: string;
   userMessage: string;
   photos: Array<{ photoId: string; purpose: string }>;
+  selectedPhotoMetadata?: DiagnosticsMessagePhotoView[];
   history: DiagnosticsHistoryMessage[];
 };
 
@@ -266,7 +269,7 @@ export interface DiagnosticsAssistantRepository {
   claimLatestRetry(
     workOrderId: string,
     threadId: string,
-    staleBefore: string
+    staleAfterMs: number
   ): Promise<TurnRecord | null>;
   loadContextSource(
     workOrderId: string,
@@ -306,7 +309,7 @@ export type DiagnosticsAssistantDependencies = {
   ) => Promise<DiagnosticsImagePreparationResult>;
   consumeRateLimit?: (userId: string) => RateLimitResult;
   now?: () => Date;
-  staleAfterMs?: number;
+  providerTimeoutMs?: number;
 };
 
 export function deriveDiagnosticsAudience(mode: AiAssistantMode): AiAssistantAudience {
@@ -325,17 +328,19 @@ export function assertDiagnosticsAccess(
   if (workOrder.locationStatus !== "active") {
     throw new Error("FOREIGN_LOCATION");
   }
-  if (
-    !canViewerAccessWorkOrderLocation({
-      role: user.role,
-      workOrderLocationId: workOrder.locationId,
-      activeLocationId:
-        access === "read" && !isFloorTech(user.role)
-          ? workOrder.locationId
-          : user.active_location_id,
-      membershipLocationIds: user.location_ids,
-    })
-  ) {
+  const canAccessLocation =
+    access === "read"
+      ? canViewerReadWorkOrderLocation({
+          workOrderLocationId: workOrder.locationId,
+          membershipLocationIds: user.location_ids,
+        })
+      : canViewerAccessWorkOrderLocation({
+          role: user.role,
+          workOrderLocationId: workOrder.locationId,
+          activeLocationId: user.active_location_id,
+          membershipLocationIds: user.location_ids,
+        });
+  if (!canAccessLocation) {
     throw new Error("FOREIGN_LOCATION");
   }
   if (
@@ -708,6 +713,7 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
         photoId: photo.photoId,
         purpose: photo.purpose,
       })),
+      selectedPhotoMetadata: user.photos,
       history: workspace.messages
         .slice(0, userIndex)
         .filter(
@@ -763,12 +769,12 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
   async claimLatestRetry(
     workOrderId: string,
     threadId: string,
-    staleBefore: string
+    staleAfterMs: number
   ): Promise<TurnRecord | null> {
     const { data, error } = await this.admin.rpc("ask_otomoto_claim_retry", {
       p_thread_id: threadId,
       p_work_order_id: workOrderId,
-      p_stale_before: staleBefore,
+      p_stale_after: `${staleAfterMs} milliseconds`,
     });
     throwQuery(error);
     const row = Array.isArray(data) ? data[0] : data;
@@ -1216,16 +1222,13 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
     storagePath: string,
     options: { maxBytes: number }
   ): Promise<Uint8Array> {
-    let { data, error } = await this.session.storage
+    const { data, error } = await this.session.storage
       .from("intake-photos")
       .download(storagePath);
     if (error || !data) {
-      ({ data, error } = await this.admin.storage
-        .from("intake-photos")
-        .download(storagePath));
+      throw new Error("DIAGNOSTICS_IMAGE_NOT_FOUND");
     }
-    throwQuery(error);
-    if (!data || data.size > options.maxBytes) {
+    if (data.size > options.maxBytes) {
       throw new Error("DIAGNOSTICS_IMAGE_TOO_LARGE");
     }
     return new Uint8Array(await data.arrayBuffer());
@@ -1235,7 +1238,7 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
     locationId: string,
     excludeMessageId: string
   ): Promise<LatestSuccessfulModel | null> {
-    const { data, error } = await this.session
+    const { data, error } = await this.admin
       .from("ai_assistant_message")
       .select(
         "requested_provider_model, provider_model, thread:ai_assistant_thread!inner(location_id)"
@@ -1400,9 +1403,10 @@ export function createDiagnosticsAssistantService(
   const generate = dependencies.generateDraft ?? generateDiagnosticsDraft;
   const prepare = dependencies.prepareImages ?? defaultPrepareImages;
   const consumeRateLimit = dependencies.consumeRateLimit ?? defaultRateLimit;
-  const staleAfterMs =
-    dependencies.staleAfterMs ??
-    DEFAULT_DIAGNOSTICS_TIMEOUT_MS + ASK_OTOMOTO_STALE_MARGIN_MS;
+  const retryStaleAfterMs = () =>
+    (dependencies.providerTimeoutMs ?? getDiagnosticsTimeoutMs()) *
+      (DIAGNOSTICS_PROVIDER_MAX_RETRIES + 1) +
+    ASK_OTOMOTO_STALE_MARGIN_MS;
   const repo = async () => dependencies.repository ?? (await defaultRepository());
 
   async function loadClaimedGeneration(
@@ -1563,7 +1567,7 @@ export function createDiagnosticsAssistantService(
         providerModel: response.resolvedModel,
         createdAt: contextAsOf,
         updatedAt: contextAsOf,
-        photos: [],
+        photos: input.generation.selectedPhotoMetadata ?? [],
       };
     }
   }
@@ -1753,7 +1757,7 @@ export function createDiagnosticsAssistantService(
         turn = await repository.claimLatestRetry(
           input.workOrderId,
           input.threadId,
-          new Date(now().getTime() - staleAfterMs).toISOString()
+          retryStaleAfterMs()
         );
       } catch (error) {
         throw stablePublicError(error);
@@ -1856,13 +1860,18 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
   } catch (error) {
     const code =
       error && typeof error === "object" && "code" in error ? String(error.code) : "";
-    if (code !== "23505") throw error;
-    const recovered = await repository.findTriggerThread(
-      input.workOrderId,
-      triggerType,
-      input.triggerEntityId
-    );
-    if (!recovered) throw error;
+    if (code !== "23505") throw stablePublicError(error);
+    let recovered: DiagnosticsThreadSummary | null;
+    try {
+      recovered = await repository.findTriggerThread(
+        input.workOrderId,
+        triggerType,
+        input.triggerEntityId
+      );
+    } catch (recoveryError) {
+      throw stablePublicError(recoveryError);
+    }
+    if (!recovered) throw stablePublicError(error);
     return assertExpectedTrigger(recovered);
   }
 }

@@ -1,7 +1,7 @@
 -- pgTAP: atomic Ask OTOMOTO generation lifecycle and service-role boundary.
 -- Run only against the isolated local stack with `supabase test db`.
 begin;
-select plan(36);
+select plan(38);
 
 select has_column(
   'public',
@@ -50,8 +50,20 @@ select has_function(
 select has_function(
   'public',
   'ask_otomoto_claim_retry',
-  array['uuid', 'uuid', 'timestamptz'],
+  array['uuid', 'uuid', 'interval'],
   'latest-turn retry claim RPC exists'
+);
+select is(
+  (
+    select procedure.prosecdef
+    from pg_proc as procedure
+    join pg_namespace as namespace
+      on namespace.oid = procedure.pronamespace
+    where namespace.nspname = 'private'
+      and procedure.proname = 'ai_assistant_validate_promoted_note_policy'
+  ),
+  false,
+  'AI promotion policy trigger runs as the invoking session'
 );
 
 select ok(
@@ -91,7 +103,7 @@ select ok(
   )
   and not has_function_privilege(
     'authenticated',
-    'public.ask_otomoto_claim_retry(uuid,uuid,timestamptz)',
+    'public.ask_otomoto_claim_retry(uuid,uuid,interval)',
     'EXECUTE'
   ),
   'authenticated cannot execute lifecycle write RPCs'
@@ -450,7 +462,7 @@ select *
 from public.ask_otomoto_claim_retry(
   '91000000-0000-4000-8000-000000000001',
   '71000000-0000-4000-8000-000000000001',
-  now() - interval '90 seconds'
+  interval '270 seconds'
 );
 
 select ok(
@@ -468,8 +480,26 @@ select ok(
 );
 
 update public.ai_assistant_message
+set updated_at = clock_timestamp() - interval '4 minutes'
+where ai_assistant_message_id = (select assistant_message_id from second_turn);
+
+select throws_ok(
+  $$
+    select *
+    from public.ask_otomoto_claim_retry(
+      '91000000-0000-4000-8000-000000000001',
+      '71000000-0000-4000-8000-000000000001',
+      interval '270 seconds'
+    )
+  $$,
+  'P0001',
+  'ASK_OTOMOTO_RETRY_NOT_FOUND',
+  'maximum configured two-attempt timeout plus margin is not stale at four minutes'
+);
+
+update public.ai_assistant_message
 set
-  updated_at = now() - interval '5 minutes',
+  updated_at = clock_timestamp() - interval '5 minutes',
   phase = 'repair_in_progress'
 where ai_assistant_message_id = (select assistant_message_id from second_turn);
 
@@ -478,7 +508,7 @@ select *
 from public.ask_otomoto_claim_retry(
   '91000000-0000-4000-8000-000000000001',
   '71000000-0000-4000-8000-000000000001',
-  now() - interval '90 seconds'
+  interval '270 seconds'
 );
 
 select throws_ok(
@@ -539,7 +569,7 @@ select throws_ok(
     from public.ask_otomoto_claim_retry(
       '91000000-0000-4000-8000-000000000001',
       '71000000-0000-4000-8000-000000000001',
-      now()
+      interval '0 seconds'
     )
   $$,
   'P0001',

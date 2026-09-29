@@ -3,6 +3,7 @@ import {
   assertViewerCanAccessWorkOrder,
   canViewerAccessWorkOrder,
   canViewerAccessWorkOrderLocation,
+  canViewerReadWorkOrderLocation,
   floorAssignedLocationIds,
   isWorkOrderAssignedToTechnician,
   scopeWorkOrdersForViewer,
@@ -271,5 +272,25 @@ describe("canViewerAccessWorkOrderLocation", () => {
         membershipLocationIds: ["ott", "tor"],
       })
     ).toBe(true);
+  });
+});
+
+describe("canViewerReadWorkOrderLocation", () => {
+  it("allows read-only access at any member location for front office", () => {
+    expect(
+      canViewerReadWorkOrderLocation({
+        workOrderLocationId: "tor",
+        membershipLocationIds: ["ott", "tor"],
+      })
+    ).toBe(true);
+  });
+
+  it("denies locations outside the viewer's memberships", () => {
+    expect(
+      canViewerReadWorkOrderLocation({
+        workOrderLocationId: "tor",
+        membershipLocationIds: ["ott"],
+      })
+    ).toBe(false);
   });
 });

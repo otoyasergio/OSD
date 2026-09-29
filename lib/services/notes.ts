@@ -462,9 +462,19 @@ export async function promoteReviewedTechnicianNote(
     note: input.text,
     noteType: input.noteType,
   });
-  await Promise.allSettled([
+  const metadataWrites = await Promise.allSettled([
     deps.recordTimeline({ note, actor, workOrder }),
     deps.recordAudit({ note, actor, workOrder }),
   ]);
+  for (const [index, result] of metadataWrites.entries()) {
+    if (result.status === "rejected") {
+      console.error("Ask OTOMOTO promotion metadata write failed", {
+        kind: index === 0 ? "timeline" : "audit",
+        technicianNoteId: note.technician_note_id,
+        workOrderId: note.work_order_id,
+        sourceAiMessageId: note.source_ai_message_id,
+      });
+    }
+  }
   return note;
 }

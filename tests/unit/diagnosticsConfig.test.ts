@@ -4,6 +4,7 @@ import {
   DEFAULT_DIAGNOSTICS_MODEL,
   DEFAULT_DIAGNOSTICS_TIMEOUT_MS,
   getDiagnosticsConfig,
+  getDiagnosticsTimeoutMs,
   isDiagnosticsAiConfigured,
 } from "@/lib/diagnostics/config";
 
@@ -31,6 +32,14 @@ describe("diagnostics AI configuration", () => {
       timeoutMs: 30_000,
       maxOutputTokens: 2_048,
     });
+  });
+
+  it("reads the maximum configured timeout without requiring provider credentials", () => {
+    expect(
+      getDiagnosticsTimeoutMs({
+        OTOMOTO_DIAGNOSTICS_TIMEOUT_MS: "120000",
+      })
+    ).toBe(120_000);
   });
 
   it("fails clearly when the server key is missing", () => {

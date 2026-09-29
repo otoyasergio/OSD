@@ -37,6 +37,7 @@ export const DIAGNOSTICS_MAX_HISTORY_CHARS = 64_000;
 export const DIAGNOSTICS_MAX_MESSAGE_CHARS = 8_000;
 export const DIAGNOSTICS_MAX_IMAGES = 3;
 export const DIAGNOSTICS_MAX_IMAGE_DATA_URL_CHARS = 7_000_000;
+export const DIAGNOSTICS_PROVIDER_MAX_RETRIES = 1;
 
 export type DiagnosticsHistoryMessage = {
   role: "user" | "assistant";
@@ -300,7 +301,7 @@ export async function generateDiagnosticsDraft(
     dependencies.client ??
     new OpenAI({
       apiKey: config.apiKey,
-      maxRetries: 1,
+      maxRetries: DIAGNOSTICS_PROVIDER_MAX_RETRIES,
       timeout: config.timeoutMs,
     });
 
@@ -330,7 +331,7 @@ export async function generateDiagnosticsDraft(
       },
       {
         timeout: config.timeoutMs,
-        maxRetries: 1,
+        maxRetries: DIAGNOSTICS_PROVIDER_MAX_RETRIES,
       }
     );
 

@@ -95,6 +95,18 @@ export function canViewerAccessWorkOrderLocation(input: {
   return input.workOrderLocationId === input.activeLocationId;
 }
 
+/**
+ * Read-only multi-location access. Diagnostics and other explicitly
+ * read-shaped surfaces may show a member location without treating it as the
+ * viewer's active mutation location.
+ */
+export function canViewerReadWorkOrderLocation(input: {
+  workOrderLocationId: string;
+  membershipLocationIds: readonly string[];
+}): boolean {
+  return input.membershipLocationIds.includes(input.workOrderLocationId);
+}
+
 export function assertViewerCanAccessWorkOrderLocation(
   user: {
     role: UserRole;

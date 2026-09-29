@@ -196,6 +196,7 @@ describe("reviewed Ask OTOMOTO note promotion", () => {
     const deps = dependencies();
     vi.mocked(deps.recordTimeline).mockRejectedValue(new Error("timeline unavailable"));
     vi.mocked(deps.recordAudit).mockRejectedValue(new Error("audit unavailable"));
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     await expect(
       promoteReviewedTechnicianNote(
@@ -211,6 +212,12 @@ describe("reviewed Ask OTOMOTO note promotion", () => {
     ).resolves.toMatchObject({
       source_ai_message_id: "61111111-1111-4111-8111-111111111111",
     });
+    expect(errorLog).toHaveBeenCalledTimes(2);
+    const serializedLogs = JSON.stringify(errorLog.mock.calls);
+    expect(serializedLogs).not.toContain("Reviewed finding");
+    expect(serializedLogs).not.toContain("timeline unavailable");
+    expect(serializedLogs).not.toContain("audit unavailable");
+    errorLog.mockRestore();
   });
 
   it.each([
