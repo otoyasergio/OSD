@@ -43,8 +43,13 @@ export class DiagnosticsOutputPolicyError extends Error {
   }
 }
 
+/** Models emit typographic quotes ("can’t"); the screening patterns are ASCII. */
+function normalizeQuotes(value: string): string {
+  return value.replace(/[\u2018\u2019\u02BC]/g, "'").replace(/[\u201C\u201D]/g, '"');
+}
+
 function generatedText(output: DiagnosticsResponse): string {
-  return JSON.stringify(output);
+  return normalizeQuotes(JSON.stringify(output));
 }
 
 function outputTextFields(output: DiagnosticsResponse): string[] {
@@ -65,7 +70,9 @@ function outputTextFields(output: DiagnosticsResponse): string[] {
     ...output.sources.flatMap((item) => [item.label, item.citation, item.applies_to]),
     ...output.limitations,
     ...(output.shop_log_entry ? Object.values(output.shop_log_entry) : []),
-  ].filter((value): value is string => typeof value === "string");
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map(normalizeQuotes);
 }
 
 function hasPositiveClaim(
@@ -98,6 +105,10 @@ function hasPositiveClaim(
           ) ||
           /\b(?:check|confirm|determine)\s+whether\b/i.test(clause) ||
           /\b(?:not|never|cannot|can't|do not|don't|must not|no|no evidence|avoid claiming)\b(?:\W+\w+){0,3}\W*$/i.test(
+            negationScope
+          ) ||
+          // "X does not mean/prove/establish (that) Y": Y is explicitly not asserted.
+          /\b(?:not|never|cannot|can't|doesn't|don't|isn't|no)\s+(?:necessarily\s+)?(?:mean|imply|prove|establish|confirm|indicate|show|demonstrate|guarantee|suggest)\b/i.test(
             negationScope
           )
         ) {
@@ -728,7 +739,7 @@ export function inspectDiagnosticsOutput(
     violations,
     fields,
     claims.hasCurrentRecallSource,
-    /\bno\s+(?:open\s+|outstanding\s+)?recalls?\b|\brecall\s+status\s+(?:is\s+)?(?:clear|none)\b/i,
+    /\bno\s+(?:open\s+|outstanding\s+)?recalls?\b(?!\s+(?:findings?|results?|lookups?|information|data|records?|verification|checks?|evidence|history|documentation|sources?|status\b))|\brecall\s+status\s+(?:is\s+)?(?:clear|none)\b/i,
     "RECALL_STATUS_CLAIM",
     "The draft claims recall status without a current official lookup."
   );

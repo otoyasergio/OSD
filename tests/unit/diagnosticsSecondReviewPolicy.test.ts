@@ -350,12 +350,52 @@ describe("second review output-policy regressions", () => {
     expect(
       codes(draft({ answer: "I cannot confirm what the OEM manual states for this limit." }))
     ).not.toContain("UNREAD_MANUAL_CLAIM");
+    expect(
+      codes(
+        draft({
+          answer:
+            "We can’t confirm whether any recalls apply. This does not mean the motorcycle has no recalls.",
+        })
+      )
+    ).not.toContain("RECALL_STATUS_CLAIM");
+    expect(
+      codes(draft({ answer: "I can’t say there are no open recalls." }))
+    ).not.toContain("RECALL_STATUS_CLAIM");
+    expect(
+      codes(
+        draft({
+          assessments: [
+            {
+              conclusion: "The supplied record does not establish recall status.",
+              confidence: "confirmed",
+              evidence: [
+                "The work order records the customer’s recall question but no recall findings.",
+                "No recall lookup result is supplied.",
+              ],
+              confirming_test: null,
+            },
+          ],
+        })
+      )
+    ).not.toContain("RECALL_STATUS_CLAIM");
     expect(codes(draft({ answer: "There are no open recalls for this motorcycle." }))).toContain(
       "RECALL_STATUS_CLAIM"
     );
+    expect(
+      codes(draft({ answer: "The test does not show faults, so there are no open recalls." }))
+    ).toContain("RECALL_STATUS_CLAIM");
     expect(codes(draft({ answer: "The recall status is clear." }))).toContain(
       "RECALL_STATUS_CLAIM"
     );
+  });
+
+  it("treats typographic apostrophes like ASCII when screening claims", () => {
+    expect(codes(draft({ answer: "Don’t worry, it’s safe to ride." }))).toContain(
+      "ROADWORTHINESS_CLAIM"
+    );
+    expect(
+      codes(draft({ answer: "The customer hasn’t approved; the repair isn’t approved." }))
+    ).not.toContain("AUTHORIZATION_CLAIM");
   });
 
   it("recognizes 'per the service manual' as an exact-source claim", () => {
