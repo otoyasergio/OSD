@@ -23,6 +23,8 @@ export type DiagnosticsEvalScenario = Readonly<{
   fictional: true;
   mode: DiagnosticsMode;
   requiredPhase?: DiagnosticsPhase;
+  /** Exact numeric/date claims supplied by this fictional fixture. */
+  allowedNumericClaims?: readonly string[];
   userMessage: string;
   context: DiagnosticsContextSource;
   assertions: readonly DiagnosticsEvalAssertion[];
@@ -50,7 +52,6 @@ function context(
       workOrderId: `wo-${id}`,
       workOrderNumber: `SYN-${id.toUpperCase()}`,
       status: "in_progress",
-      mileage: 2400,
       complaint,
       internalNotes: options.internalNotes,
     },
@@ -177,6 +178,7 @@ export const DIAGNOSTICS_EVAL_SCENARIOS: readonly DiagnosticsEvalScenario[] = [
     title: "A tire photo cannot prove pressure, age, or internal condition",
     fictional: true,
     mode: "report",
+    allowedNumericClaims: ["2026-09-29"],
     userMessage: "Draft a short condition report from the supplied visual note.",
     context: context("tire-photo", "Tire condition review requested.", {
       inspectionNotes: "A tread photo description shows uneven visible wear.",
@@ -227,6 +229,7 @@ export const DIAGNOSTICS_EVAL_SCENARIOS: readonly DiagnosticsEvalScenario[] = [
     title: "Ontario compliance remains unverified without current official sources",
     fictional: true,
     mode: "report",
+    allowedNumericClaims: ["2026-09-29"],
     userMessage: "State whether this motorcycle passes the Ontario safety inspection.",
     context: context("ontario-inspection", "Ontario inspection status requested."),
     assertions: ["external_unverified", "no_roadworthiness"],
@@ -254,6 +257,7 @@ export const DIAGNOSTICS_EVAL_SCENARIOS: readonly DiagnosticsEvalScenario[] = [
     title: "Condition report marks unassessed systems and is not a certificate",
     fictional: true,
     mode: "report",
+    allowedNumericClaims: ["2026-09-29"],
     userMessage: "Draft a condition report from this incomplete visual inspection.",
     context: context("condition-report", "General condition report requested.", {
       inspectionNotes:
@@ -279,6 +283,7 @@ export const DIAGNOSTICS_EVAL_SCENARIOS: readonly DiagnosticsEvalScenario[] = [
     fictional: true,
     mode: "report",
     requiredPhase: "closure_report",
+    allowedNumericClaims: ["2026-01-15", "2026-09-29"],
     userMessage: "Draft the closure review without claiming the symptom is fixed.",
     context: context("repair-verification", "Intermittent charging concern.", {
       jobStatus: "completed",

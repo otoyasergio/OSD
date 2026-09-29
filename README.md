@@ -1,6 +1,9 @@
 # OTOMOTO Workshop Management App
 
-Workshop management for OTOMOTO service operations—customers, bikes, location-scoped work orders, inspections, recommendations, parts, QC, pickup, Square billing, customer portal, and shop reports.
+Workshop management for **OTOMOTO TORONTO MOTO INC.** service
+operations—customers, bikes, location-scoped work orders, inspections,
+recommendations, parts, QC, pickup, Square billing, customer portal, and shop
+reports.
 
 See [`SECURITY.md`](./SECURITY.md) for webhook auth and secrets, and [`docs/superpowers/acceptance/production-checklist.md`](./docs/superpowers/acceptance/production-checklist.md) for go-live.
 
@@ -40,14 +43,13 @@ record and assigned location before rendering staff tools.
 
 ### 3. Apply migrations
 
-Migrations live in `supabase/migrations/` (`001`–`034`, with 010/011 reserved). Apply **in numeric order**:
+Migrations live in `supabase/migrations/` and include both numbered and
+timestamped filenames. Apply **all files in filename order**:
 
 ```bash
 npx supabase link
 npx supabase db push
 ```
-
-Or paste each file in the Supabase SQL Editor in order.
 
 **Authorization note:** Role checks in `lib/permissions` (server actions) are the source of truth. RLS is defense in depth (location-scoped for WO tables as of `034`). Full matrix: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md).
 

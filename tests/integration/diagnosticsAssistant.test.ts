@@ -324,6 +324,46 @@ describeIntegration("Ask OTOMOTO persistence integration", () => {
       expect(retried.assistant_message_id).toBe(first.assistant_message_id);
       expect(retried.generation_attempt_id).not.toBe(first.generation_attempt_id);
 
+      const staleComplete = await client.rpc("ask_otomoto_complete_turn", {
+        p_thread_id: IDS.thread,
+        p_assistant_message_id: first.assistant_message_id,
+        p_generation_attempt_id: first.generation_attempt_id,
+        p_body: "Stale output must not persist",
+        p_requested_input: null,
+        p_phase: "diagnosis",
+        p_requested_provider_model: "stale-alias",
+        p_resolved_provider_model: "stale-resolved",
+        p_provider_response_id: "stale-response",
+        p_prompt_version: "stale-prompt",
+        p_input_token_count: null,
+        p_output_token_count: null,
+        p_context_as_of: null,
+        p_context_hash: null,
+      });
+      expect(staleComplete.error?.message).toMatch(/ASK_OTOMOTO_COMPLETE_CONFLICT/);
+
+      const staleFail = await client.rpc("ask_otomoto_fail_turn", {
+        p_thread_id: IDS.thread,
+        p_assistant_message_id: first.assistant_message_id,
+        p_generation_attempt_id: first.generation_attempt_id,
+        p_safe_error_code: "DIAGNOSTICS_AI_PROVIDER_UNAVAILABLE",
+      });
+      expect(staleFail.error).toBeNull();
+      expect(staleFail.data).toBe(false);
+
+      const reclaimed = await client
+        .from("ai_assistant_message")
+        .select("generation_status, generation_attempt_id, body, safe_error_code")
+        .eq("ai_assistant_message_id", retried.assistant_message_id)
+        .single();
+      expect(reclaimed.error).toBeNull();
+      expect(reclaimed.data).toMatchObject({
+        generation_status: "generating",
+        generation_attempt_id: retried.generation_attempt_id,
+        body: null,
+        safe_error_code: null,
+      });
+
       const completed = await client.rpc("ask_otomoto_complete_turn", {
         p_thread_id: IDS.thread,
         p_assistant_message_id: retried.assistant_message_id,

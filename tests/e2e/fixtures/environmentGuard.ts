@@ -12,10 +12,35 @@ const PRODUCTION_HOST_SUFFIX = "torontomoto.com";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:3000";
 
+const STATEFUL_E2E_OUTBOUND_KEYS = [
+  "OPENAI_API_KEY",
+  "TWILIO_ACCOUNT_SID",
+  "TWILIO_AUTH_TOKEN",
+  "TWILIO_API_KEY_SID",
+  "TWILIO_API_KEY_SECRET",
+  "TWILIO_MESSAGING_SERVICE_SID",
+  "TWILIO_FROM_NUMBER",
+  "TWILIO_TWIML_APP_SID",
+  "RESEND_API_KEY",
+] as const;
+
 export type MutationEnvironmentCheck = {
   ok: boolean;
   reasons: string[];
 };
+
+/** Child-process env for stateful E2E: preserve test config, clear outbound credentials. */
+export function statefulE2EWebServerEnvironment(
+  env: Record<string, string | undefined> = process.env
+): Record<string, string> {
+  const child = Object.fromEntries(
+    Object.entries(env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined
+    )
+  );
+  for (const key of STATEFUL_E2E_OUTBOUND_KEYS) child[key] = "";
+  return child;
+}
 
 function hostnameOf(url: string): string | null {
   try {

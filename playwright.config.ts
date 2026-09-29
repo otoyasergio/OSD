@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { statefulE2EWebServerEnvironment } from "./tests/e2e/fixtures/environmentGuard";
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 const allowMutation = process.env.E2E_ALLOW_MUTATION === "1";
@@ -94,7 +95,8 @@ export default defineConfig({
     : {
         command: "npm run start",
         url: baseURL,
-        reuseExistingServer: !process.env.CI,
+        reuseExistingServer: allowMutation ? false : !process.env.CI,
+        env: allowMutation ? statefulE2EWebServerEnvironment(process.env) : undefined,
         timeout: 120_000,
       },
 });

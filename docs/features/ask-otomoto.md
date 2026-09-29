@@ -120,23 +120,45 @@ The UI distinguishes:
 
 ## Setup and verification
 
-Apply all Ask OTOMOTO migration files before deploying code. Against a linked
-**non-production** Supabase project, regenerate types with `npm run db:types`, then
+Apply these Ask OTOMOTO migrations in filename order before deploying matching
+code:
+
+1. `20260929030828_create_ai_assistant_storage.sql`
+2. `20260929045500_guard_ai_note_promotion_uniqueness.sql`
+3. `20260929051836_ask_otomoto_atomic_lifecycle.sql`
+4. `20260929060837_ask_otomoto_atomic_seed_begin.sql`
+5. `20260929062500_add_ai_assistant_closure_phase.sql`
+
+First verify them against an isolated local/QA database. Against a linked
+**non-production** Supabase project, regenerate types with `npm run db:types` and
 review the diff; do not generate against production as the first check.
 
-Configure and validate Vercel Preview first with server-only keys. Then run:
+Configure and validate a Vercel Preview separately with server-only keys. Stateful
+Playwright must not target that keyed Preview: it runs only against a local or
+disposable QA app that reports Ask OTOMOTO as unconfigured. The suite clears AI
+and outbound messaging credentials on its local web server and performs an
+authenticated configuration preflight before starting specs.
+
+Then run:
 
 1. pgTAP (`supabase test db`) on an isolated local/QA database;
 2. `npm run test:integration` with explicit `TEST_SUPABASE_*` credentials;
 3. stateful Playwright with an isolated QA database and
-   `E2E_ALLOW_MUTATION=1`, with provider keys and outbound messaging keys unset;
+   `E2E_ALLOW_MUTATION=1`, against the unconfigured local/disposable QA app;
 4. the opt-in fictional live-model suite from the
-   [acceptance worksheet](./ask-otomoto-acceptance.md);
+   [acceptance worksheet](./ask-otomoto-acceptance.md), treating automated
+   results as heuristic screening rather than reviewer approval;
 5. manual Safari checks on iPad and desktop; and
 6. qualified technician and service-advisor review/signoff.
 
-Any blocking failure stops release. Only after those gates pass should production
-be handled as a separate operation from `main`:
+The integration job in `.github/workflows/ci.yml` currently has
+`continue-on-error: true`. Until it becomes required, successful pgTAP and
+integration runs remain a mandatory, manually confirmed release gate.
+
+Any blocking failure stops release. Only after those gates pass, apply the
+verified migration files to the production database in the order above. Confirm
+that migration step succeeded before the separate production code deployment
+from `main`:
 
 ```bash
 git checkout main

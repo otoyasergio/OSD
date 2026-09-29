@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertSafeMutationEnvironment,
   checkMutationEnvironment,
+  statefulE2EWebServerEnvironment,
 } from "@/tests/e2e/fixtures/environmentGuard";
 import { readSyntheticServiceRoleCredentials } from "@/tests/e2e/fixtures/seedSyntheticShop";
 
@@ -286,5 +287,35 @@ describe("synthetic seed credentials", () => {
       url: "http://127.0.0.1:54321",
       key: "isolated-service-role",
     });
+  });
+});
+
+describe("stateful E2E web server environment", () => {
+  it("explicitly clears AI and outbound messaging credentials", () => {
+    const env = statefulE2EWebServerEnvironment({
+      OPENAI_API_KEY: "provider-key",
+      TWILIO_ACCOUNT_SID: "account",
+      TWILIO_AUTH_TOKEN: "auth",
+      TWILIO_API_KEY_SID: "api",
+      TWILIO_API_KEY_SECRET: "secret",
+      TWILIO_MESSAGING_SERVICE_SID: "messaging",
+      TWILIO_FROM_NUMBER: "+14165550000",
+      RESEND_API_KEY: "email",
+      TEST_SUPABASE_URL: "http://127.0.0.1:54321",
+      UNDEFINED_VALUE: undefined,
+    });
+
+    expect(env).toMatchObject({
+      OPENAI_API_KEY: "",
+      TWILIO_ACCOUNT_SID: "",
+      TWILIO_AUTH_TOKEN: "",
+      TWILIO_API_KEY_SID: "",
+      TWILIO_API_KEY_SECRET: "",
+      TWILIO_MESSAGING_SERVICE_SID: "",
+      TWILIO_FROM_NUMBER: "",
+      RESEND_API_KEY: "",
+      TEST_SUPABASE_URL: "http://127.0.0.1:54321",
+    });
+    expect(env).not.toHaveProperty("UNDEFINED_VALUE");
   });
 });

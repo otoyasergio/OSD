@@ -1,9 +1,10 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { storageStatePath } from "./fixtures/auth";
 import {
   ASSISTANT_FIXTURES,
   FIXTURE_USERS,
   FIXTURE_WORK_ORDER,
+  ISOLATION_JOB,
   ISOLATION_WORK_ORDER,
   JOB_A,
 } from "./fixtures/ids";
@@ -12,23 +13,19 @@ function officeAssistantUrl(threadId: string): string {
   return `/work_orders/${FIXTURE_WORK_ORDER.id}?tab=assistant&thread=${threadId}`;
 }
 
-function floorAssistantUrl(threadId: string): string {
+function floorAssistantUrl(
+  threadId: string,
+  workOrderId: string = FIXTURE_WORK_ORDER.id,
+  jobId: string = JOB_A.id
+): string {
   const params = new URLSearchParams({
-    wo: FIXTURE_WORK_ORDER.id,
-    job: JOB_A.id,
+    wo: workOrderId,
+    job: jobId,
     panel: "packet",
     packetSection: "assistant",
     assistantThread: threadId,
   });
   return `/technician?${params.toString()}`;
-}
-
-function observeProviderRequests(page: Page): string[] {
-  const requests: string[] = [];
-  page.on("request", (request) => {
-    if (/openai\.com/i.test(request.url())) requests.push(request.url());
-  });
-  return requests;
 }
 
 test.describe("Ask OTOMOTO advisor verification", () => {
@@ -37,7 +34,6 @@ test.describe("Ask OTOMOTO advisor verification", () => {
   test("advisor draft is copy-only and missing configuration preserves history", async ({
     page,
   }) => {
-    const providerRequests = observeProviderRequests(page);
     await page.goto(officeAssistantUrl(ASSISTANT_FIXTURES.advisor.threadId));
 
     await expect(page.getByRole("heading", { name: "Ask OTOMOTO" })).toBeVisible();
@@ -60,7 +56,6 @@ test.describe("Ask OTOMOTO advisor verification", () => {
     await expect(
       page.getByRole("button", { name: "Send to Ask OTOMOTO" })
     ).toBeDisabled();
-    expect(providerRequests).toEqual([]);
   });
 
   test("selected thread cannot cross its work-order boundary", async ({ page }) => {
@@ -78,7 +73,6 @@ test.describe("Ask OTOMOTO assigned-technician verification", () => {
   test("assigned technician sees the technical packet but no advisor thread", async ({
     page,
   }) => {
-    const providerRequests = observeProviderRequests(page);
     await page.goto(floorAssistantUrl(ASSISTANT_FIXTURES.technical.threadId));
 
     await expect(page.getByRole("tabpanel")).toContainText(
@@ -87,7 +81,6 @@ test.describe("Ask OTOMOTO assigned-technician verification", () => {
     await expect(page.getByRole("link", { name: /Technician \(\/shop\)/ })).toBeVisible();
     await expect(page.getByText(/The cause has not been verified/)).toHaveCount(0);
     await expect(page.getByRole("link", { name: /Service Advisor/ })).toHaveCount(0);
-    expect(providerRequests).toEqual([]);
   });
 
   test("technician cannot open a front-office or another-work-order thread", async ({
@@ -97,8 +90,14 @@ test.describe("Ask OTOMOTO assigned-technician verification", () => {
     await expect(page.getByText(/selected conversation is unavailable/i)).toBeVisible();
     await expect(page.getByText(/The cause has not been verified/)).toHaveCount(0);
 
-    await page.goto(floorAssistantUrl(ASSISTANT_FIXTURES.isolated.threadId));
-    await expect(page.getByText(/selected conversation is unavailable/i)).toBeVisible();
+    await page.goto(
+      floorAssistantUrl(
+        ASSISTANT_FIXTURES.isolated.threadId,
+        ISOLATION_WORK_ORDER.id,
+        ISOLATION_JOB.id
+      )
+    );
+    await expect(page.getByText(/Couldn't open notes & photos/i)).toBeVisible();
     await expect(page.getByText(/belongs only to WO-QA-0002/i)).toHaveCount(0);
   });
 
@@ -121,7 +120,12 @@ test.describe("Ask OTOMOTO role preview", () => {
 
   test.afterEach(async ({ page }) => {
     const exit = page.getByRole("button", { name: "Exit preview" });
-    if (await exit.isVisible().catch(() => false)) await exit.click();
+    if (await exit.isVisible().catch(() => false)) {
+      await exit.click();
+      await expect(page.getByText(/Viewing as Service Advisor\./)).toHaveCount(0, {
+        timeout: 15_000,
+      });
+    }
   });
 
   test("owner previewing an advisor gets a read-only assistant surface", async ({

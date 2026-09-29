@@ -12,8 +12,10 @@ RUN_DIAGNOSTICS_EVALS=1 OPENAI_API_KEY=... npm run test:diagnostics:eval
 
 Results are written to `test-results/diagnostics-evals/latest.json` with evaluation
 date, requested model, resolved model, prompt version, response ID, context hash,
-and per-scenario outcome. Running an alias requires reviewing the **resolved**
-model. This document does not claim that the suite has been run.
+token usage, full parsed synthetic response, heuristic invariant details, and
+per-scenario outcome. Automated results are heuristic screening, not technician
+or advisor approval. Running an alias requires reviewing the **resolved** model.
+This document does not claim that the suite has been run.
 
 ## Automated scenarios
 

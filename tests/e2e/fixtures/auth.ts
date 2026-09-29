@@ -1,7 +1,13 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { Browser, Page } from "@playwright/test";
-import { FIXTURE_PASSWORD, FIXTURE_USERS, type FixtureRole } from "./ids";
+import {
+  ASSISTANT_FIXTURES,
+  FIXTURE_PASSWORD,
+  FIXTURE_USERS,
+  FIXTURE_WORK_ORDER,
+  type FixtureRole,
+} from "./ids";
 
 /**
  * Login helpers for the synthetic QA users. Storage states are written once
@@ -62,5 +68,36 @@ export async function ensureAuthStates(browser: Browser): Promise<void> {
     } finally {
       await context.close();
     }
+  }
+}
+
+/**
+ * Authenticated server-config preflight. This is required even when Playwright
+ * skips its own web server and targets a remote QA host: stateful specs must
+ * never run against an app capable of calling the live model.
+ */
+export async function assertAskOtomotoUnconfigured(browser: Browser): Promise<void> {
+  const context = await browser.newContext({
+    baseURL: BASE_URL,
+    storageState: storageStatePath("advisor"),
+  });
+  const page = await context.newPage();
+  try {
+    await page.goto(
+      `/work_orders/${FIXTURE_WORK_ORDER.id}?tab=assistant&thread=${ASSISTANT_FIXTURES.advisor.threadId}`
+    );
+    await page
+      .getByRole("status")
+      .filter({ hasText: "Ask OTOMOTO is not configured on this server" })
+      .waitFor({ state: "visible", timeout: 30_000 });
+  } catch (error) {
+    throw new Error(
+      "[e2e] Ask OTOMOTO provider preflight failed. Stateful E2E requires an " +
+        "authenticated local/disposable-QA server with OPENAI_API_KEY unset; " +
+        "the server did not report 'not configured'. No specs were started.",
+      { cause: error }
+    );
+  } finally {
+    await context.close();
   }
 }

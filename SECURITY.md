@@ -48,9 +48,11 @@ distributed/account-wide limit; every server process has its own counter.
 
 Ask OTOMOTO is an internal drafting tool for **OTOMOTO TORONTO MOTO INC.** Minimize
 provider context to the authorized work order/job: omit customer contact details,
-full VIN unless genuinely required, signatures, storage URLs, unrelated notes,
-and unselected photos. Only explicitly selected current-turn photos may be sent.
-Never use production/customer data in provider evals.
+signatures, storage URLs, unrelated notes, and unselected photos. A full VIN is
+never sent to OpenAI; it may be loaded server-side only as a redaction term and
+is then excluded from the shaped provider context. Only explicitly selected
+current-turn photos may be sent. Never use production/customer data in provider
+evals.
 
 Responses API requests use `store: false`, but OpenAI abuse-monitoring logs may
 still retain content for up to 30 days unless the account has an applicable
