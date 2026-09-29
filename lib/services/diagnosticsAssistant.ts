@@ -38,6 +38,7 @@ import {
   type DiagnosticsImagePreparationResult,
   type DiagnosticsPhotoRow,
 } from "@/lib/diagnostics/images";
+import { DIAGNOSTICS_PHOTO_PURPOSE_MAX } from "@/lib/diagnostics/photoSelection";
 import {
   generateDiagnosticsDraft,
   DIAGNOSTICS_MAX_HISTORY_CHARS,
@@ -684,6 +685,8 @@ function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
 const HISTORY_CLIPPED_MARKER = "\n[CLIPPED FROM STORED HISTORY]";
 const CURRENT_MESSAGE_CLIPPED_MARKER =
   "\n[CLIPPED AFTER REDACTION TO PROVIDER MESSAGE LIMIT]";
+const PHOTO_PURPOSE_CLIPPED_MARKER =
+  "\n[CLIPPED AFTER REDACTION TO PROVIDER PHOTO PURPOSE LIMIT]";
 
 function clipStoredHistoryText(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
@@ -696,6 +699,14 @@ function clipCurrentProviderMessage(value: string): string {
     0,
     DIAGNOSTICS_MAX_MESSAGE_CHARS - CURRENT_MESSAGE_CLIPPED_MARKER.length
   )}${CURRENT_MESSAGE_CLIPPED_MARKER}`;
+}
+
+function clipProviderPhotoPurpose(value: string): string {
+  if (value.length <= DIAGNOSTICS_PHOTO_PURPOSE_MAX) return value;
+  return `${value.slice(
+    0,
+    DIAGNOSTICS_PHOTO_PURPOSE_MAX - PHOTO_PURPOSE_CLIPPED_MARKER.length
+  )}${PHOTO_PURPOSE_CLIPPED_MARKER}`;
 }
 
 function compactAssistantHistory(message: DiagnosticsMessageView): string {
@@ -2077,7 +2088,9 @@ export function createDiagnosticsAssistantService(
       );
       const safeSelections = input.generation.photos.map((photo) => ({
         ...photo,
-        purpose: redactDiagnosticsText(photo.purpose, loaded.redactTerms),
+        purpose: clipProviderPhotoPurpose(
+          redactDiagnosticsText(photo.purpose, loaded.redactTerms)
+        ),
       }));
       const prepared = await prepare(
         {

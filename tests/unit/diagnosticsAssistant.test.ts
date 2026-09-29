@@ -20,6 +20,7 @@ import {
   type DiagnosticsGenerationRequest,
   type DiagnosticsGenerationResult,
 } from "@/lib/diagnostics/openai";
+import { DIAGNOSTICS_PHOTO_PURPOSE_MAX } from "@/lib/diagnostics/photoSelection";
 
 const actor = (role: AppUser["role"], overrides: Partial<AppUser> = {}): AppUser => ({
   user_id: "11111111-1111-4111-8111-111111111111",
@@ -1151,6 +1152,98 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       "b1111111-1111-4111-8111-111111111111",
       "a1111111-1111-4111-8111-111111111111"
     );
+  });
+
+  it("clips a photo purpose expanded by redaction only in the provider copy", async () => {
+    const { repo, thread, generated } = generationRepository();
+    const photoId = "c1111111-1111-4111-8111-111111111111";
+    const rawPurpose = "Ann ".repeat(125).trim();
+    expect(rawPurpose.length).toBeLessThanOrEqual(DIAGNOSTICS_PHOTO_PURPOSE_MAX);
+    vi.mocked(repo.loadPhotoRows).mockResolvedValue([
+      {
+        photoId,
+        workOrderId: scope().workOrderId,
+        jobId: thread.jobId,
+        category: "job_work",
+        storagePath: "private/photo.jpg",
+      },
+    ]);
+    vi.mocked(repo.loadGenerationInput).mockResolvedValue({
+      userMessageId: "b1111111-1111-4111-8111-111111111111",
+      assistantMessageId: generated.messageId,
+      userMessage: "Inspect the selected photo.",
+      photos: [{ photoId, purpose: rawPurpose }],
+      history: [],
+    });
+    vi.mocked(repo.loadContextSource).mockResolvedValue({
+      source: contextSource(),
+      redactTerms: { customerName: "Ann" },
+    });
+    const prepareImages = vi.fn(
+      async (input: { selections: Array<{ photoId: string; purpose: string }> }) => ({
+        images: [],
+        photoMetadata: input.selections.map((selection) => ({
+          ...selection,
+          sortOrder: 0,
+          limitation: null,
+        })),
+      })
+    );
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft: async () => generationResult(),
+      prepareImages,
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await service.submitTurn({
+      workOrderId: scope().workOrderId,
+      threadId: thread.threadId,
+      jobId: thread.jobId,
+      mode: "shop",
+      text: "Inspect the selected photo.",
+      photos: [{ photoId, purpose: rawPurpose }],
+    });
+
+    expect(repo.beginTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        photos: [expect.objectContaining({ purpose: rawPurpose })],
+      })
+    );
+    const providerPurpose = prepareImages.mock.calls[0]![0].selections[0]!.purpose;
+    expect(providerPurpose).not.toContain("Ann");
+    expect(providerPurpose.length).toBeLessThanOrEqual(DIAGNOSTICS_PHOTO_PURPOSE_MAX);
+    expect(
+      providerPurpose.endsWith(
+        "\n[CLIPPED AFTER REDACTION TO PROVIDER PHOTO PURPOSE LIMIT]"
+      )
+    ).toBe(true);
+  });
+
+  it("rejects a raw photo purpose over the storage limit before persistence", async () => {
+    const { repo, thread } = generationRepository();
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+    });
+
+    await expect(
+      service.submitTurn({
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        jobId: thread.jobId,
+        mode: "shop",
+        text: "Inspect the selected photo.",
+        photos: [
+          {
+            photoId: "c1111111-1111-4111-8111-111111111111",
+            purpose: "x".repeat(DIAGNOSTICS_PHOTO_PURPOSE_MAX + 1),
+          },
+        ],
+      })
+    ).rejects.toThrow();
+    expect(repo.beginTurn).not.toHaveBeenCalled();
   });
 
   it("re-budgets complete newest history turns after redaction markers expand", async () => {
