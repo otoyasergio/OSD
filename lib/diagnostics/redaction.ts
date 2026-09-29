@@ -2,6 +2,7 @@ export type DiagnosticsRedactTerms = {
   customerName?: string | null;
   phone?: string | null;
   email?: string | null;
+  address?: string | null;
   fullVin?: string | null;
 };
 
@@ -18,6 +19,7 @@ export function redactDiagnosticsText(
   const exactTerms: Array<[string | null | undefined, string]> = [
     [terms.phone, "[REDACTED_PHONE]"],
     [terms.email, "[REDACTED_EMAIL]"],
+    [terms.address, "[REDACTED_ADDRESS]"],
     [terms.fullVin, "[REDACTED_VIN]"],
   ];
   for (const [term, marker] of exactTerms.sort(

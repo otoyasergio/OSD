@@ -218,6 +218,28 @@ const MESSAGES: Record<string, string> = {
   BREAK_OUTSIDE_PUNCH: "Break must fall within the punch clock-in and clock-out.",
   BREAK_NOT_FOUND: "That break slot no longer exists.",
   RATE_LIMITED: "Too many requests. Please wait a moment and try again.",
+  ROLE_PREVIEW_MUTATION_BLOCKED:
+    "Changes are disabled while role preview is active. Exit preview and try again.",
+  ASK_OTOMOTO_THREAD_NOT_FOUND:
+    "That Ask OTOMOTO conversation is no longer available.",
+  ASK_OTOMOTO_THREAD_SCOPE_MISMATCH:
+    "That Ask OTOMOTO conversation does not match this work order, job, or mode.",
+  ASK_OTOMOTO_TURN_NOT_FOUND:
+    "That Ask OTOMOTO turn is no longer available.",
+  ASK_OTOMOTO_RETRY_NOT_FOUND:
+    "There is no failed Ask OTOMOTO response to retry.",
+  ASK_OTOMOTO_NOTE_SOURCE_NOT_FOUND:
+    "That Ask OTOMOTO response is no longer available.",
+  ASK_OTOMOTO_NOTE_SOURCE_NOT_ASSISTANT:
+    "Only an assistant response can be promoted to a technician note.",
+  ASK_OTOMOTO_NOTE_SOURCE_NOT_READY:
+    "Only a completed Ask OTOMOTO response can be promoted.",
+  ASK_OTOMOTO_NOTE_SOURCE_NOT_TECHNICAL:
+    "Advisor and intake drafts cannot be promoted as technician evidence.",
+  ASK_OTOMOTO_NOTE_JOB_MISMATCH:
+    "The reviewed note must stay with the assistant response's job.",
+  ASK_OTOMOTO_NOTE_ALREADY_PROMOTED:
+    "That Ask OTOMOTO response was already promoted to a technician note.",
   INVALID_PIN: "Enter a valid 4-digit PIN.",
   PIN_LOCKED: "Too many incorrect PIN attempts. Wait 60 seconds and try again.",
   PIN_NOT_SET: "This person does not have a time clock PIN yet.",
