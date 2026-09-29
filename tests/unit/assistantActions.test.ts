@@ -142,6 +142,7 @@ describe("Ask OTOMOTO server actions", () => {
   it("authorizes exact thread writes before selected-photo upload", async () => {
     const form = new FormData();
     form.set("thread_id", THREAD);
+    form.set("purpose", "Caliper");
     form.set("file", new File(["photo"], "photo.jpg", { type: "image/jpeg" }));
     authorizeThreadWrite.mockRejectedValue(new Error("FOREIGN_LOCATION"));
 
@@ -213,6 +214,7 @@ describe("Ask OTOMOTO server actions", () => {
     authorizeThreadWrite.mockResolvedValue({ thread: { jobId: null }, messages: [] });
     const form = new FormData();
     form.set("thread_id", THREAD);
+    form.set("purpose", "Caliper");
     form.set("file", new File(["photo"], "photo.jpg", { type: "image/jpeg" }));
 
     const result = await uploadAssistantPhotoAction(
@@ -226,6 +228,66 @@ describe("Ask OTOMOTO server actions", () => {
       error: "Select the matching job before attaching a job work or proof photo.",
     });
     expect(uploadIntakePhoto).not.toHaveBeenCalled();
+  });
+
+  describe("upload purpose validation", () => {
+    function uploadForm(purpose?: string) {
+      const form = new FormData();
+      form.set("thread_id", THREAD);
+      if (purpose !== undefined) form.set("purpose", purpose);
+      form.set("file", new File(["photo"], "photo.jpg", { type: "image/jpeg" }));
+      return form;
+    }
+    const PURPOSE_ERROR =
+      "Describe why each selected photo is relevant in 500 characters or fewer.";
+
+    it.each([
+      ["missing", undefined],
+      ["blank", "   "],
+      ["too long", "x".repeat(501)],
+      ["control characters", "bad\u0000purpose"],
+    ])("rejects a %s purpose before storing anything", async (_name, purpose) => {
+      const result = await uploadAssistantPhotoAction(
+        WO,
+        { status: "idle", error: null },
+        uploadForm(purpose)
+      );
+
+      expect(result).toEqual({ status: "error", error: PURPOSE_ERROR });
+      expect(uploadIntakePhoto).not.toHaveBeenCalled();
+    });
+
+    it("stores a trimmed, redacted purpose as the photo notes at the 500 limit", async () => {
+      uploadIntakePhoto.mockResolvedValue({
+        photo_id: MESSAGE,
+        work_order_id: WO,
+        job_id: JOB,
+        category: "job_work",
+        notes: "x",
+        created_at: "2026-09-29T00:00:00.000Z",
+      });
+      await uploadAssistantPhotoAction(
+        WO,
+        { status: "idle", error: null },
+        uploadForm("  Call 647-424-1088 or jane@example.com about the caliper  ")
+      );
+      expect(uploadIntakePhoto).toHaveBeenLastCalledWith(
+        WO,
+        expect.objectContaining({
+          notes: "Call [REDACTED_PHONE] or [REDACTED_EMAIL] about the caliper",
+        })
+      );
+
+      await uploadAssistantPhotoAction(
+        WO,
+        { status: "idle", error: null },
+        uploadForm("y".repeat(500))
+      );
+      expect(uploadIntakePhoto).toHaveBeenLastCalledWith(
+        WO,
+        expect.objectContaining({ notes: "y".repeat(500) })
+      );
+    });
   });
 
   it("passes owner role-preview read shaping to list and load", async () => {

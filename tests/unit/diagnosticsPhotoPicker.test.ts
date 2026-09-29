@@ -49,6 +49,7 @@ type HarnessProps = {
   photos?: DiagnosticsPhotoSourceRow[];
   jobId?: string | null;
   requestedPrompt?: string | null;
+  requestKey?: string | null;
   canMutate?: boolean;
   preview?: boolean;
   readOnly?: boolean;
@@ -60,6 +61,7 @@ function Harness({
   photos = [],
   jobId = JOB,
   requestedPrompt = null,
+  requestKey,
   canMutate = true,
   preview = false,
   readOnly = false,
@@ -76,11 +78,24 @@ function Harness({
       selections,
       onSelectionsChange: setSelections,
       requestedPrompt,
+      requestKey: requestKey ?? (requestedPrompt ? "request-1" : null),
       canMutate,
       preview,
       readOnly,
       disabled,
     }),
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        "data-testid": "external-fill",
+        onClick: () =>
+          setSelections(
+            [id(20), id(21), id(22)].map((photoId) => ({ photoId, purpose: "external" }))
+          ),
+      },
+      "fill"
+    ),
     React.createElement(
       "output",
       { "data-testid": "payload" },
@@ -131,6 +146,12 @@ describe("DiagnosticsPhotoPicker", () => {
     container.querySelector<HTMLInputElement>('input[type="file"][capture]');
   const libraryInput = () =>
     container.querySelector<HTMLInputElement>('input[type="file"]:not([capture])');
+  const buttonByText = (text: string) =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (b) => b.textContent?.trim() === text
+    )!;
+  const cameraButton = () => buttonByText("Camera");
+  const libraryButton = () => buttonByText("Library");
 
   async function pick(input: HTMLInputElement, files: File[]) {
     Object.defineProperty(input, "files", { value: files, configurable: true });
@@ -218,6 +239,8 @@ describe("DiagnosticsPhotoPicker", () => {
     expect(thumbButtons()[3].disabled).toBe(true);
     expect(cameraInput()!.disabled).toBe(true);
     expect(libraryInput()!.disabled).toBe(true);
+    expect(cameraButton().disabled).toBe(true);
+    expect(libraryButton().disabled).toBe(true);
     expect(container.textContent).toMatch(/3 of 3/);
   });
 
@@ -366,8 +389,20 @@ describe("DiagnosticsPhotoPicker", () => {
   ])("is inert when %s", async (_name, flags) => {
     await render({ photos: [photo(1)], ...flags });
     expect(thumbButtons().every((b) => b.disabled)).toBe(true);
-    expect(cameraInput()).toBeNull();
-    expect(libraryInput()).toBeNull();
+    expect(cameraButton().disabled).toBe(true);
+    expect(cameraButton().getAttribute("aria-disabled")).toBe("true");
+    expect(libraryButton().disabled).toBe(true);
+    expect(cameraInput()!.disabled).toBe(true);
+    expect(libraryInput()!.disabled).toBe(true);
+
+    const clickSpy = vi.spyOn(cameraInput()!, "click");
+    await click(cameraButton());
+    expect(clickSpy).not.toHaveBeenCalled();
+
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    await pick(cameraInput()!, [file]);
+    expect(readPickedPhotoFiles).not.toHaveBeenCalled();
+    expect(uploadAssistantPhotoAction).not.toHaveBeenCalled();
   });
 
   it("revokes local preview object URLs when unmounted", async () => {
@@ -406,5 +441,227 @@ describe("DiagnosticsPhotoPicker", () => {
   it("does not steal focus without a photo request", async () => {
     await render({ photos: [photo(1)] });
     expect(document.activeElement).toBe(document.body);
+  });
+
+  it("uses real focusable Camera and Library buttons that open the hidden inputs", async () => {
+    await render();
+    for (const [button, input] of [
+      [cameraButton(), cameraInput()!],
+      [libraryButton(), libraryInput()!],
+    ] as const) {
+      expect(button.tagName).toBe("BUTTON");
+      expect(button.type).toBe("button");
+      expect(button.tabIndex).toBe(0);
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute("aria-disabled")).toBe("false");
+      expect(input.tabIndex).toBe(-1);
+      expect(input.getAttribute("aria-hidden")).toBe("true");
+      const spy = vi.spyOn(input, "click");
+      await click(button);
+      expect(spy).toHaveBeenCalledTimes(1);
+    }
+    expect(cameraInput()!.getAttribute("capture")).toBe("environment");
+    expect(libraryInput()!.hasAttribute("capture")).toBe(false);
+    expect(container.textContent).toMatch(/saved to this device/i);
+  });
+
+  it("focuses the picker only when a new photo request first arrives", async () => {
+    await render({
+      photos: [photo(1)],
+      requestedPrompt: "Show the caliper",
+      requestKey: "m1",
+    });
+    const region = container.querySelector<HTMLElement>('[role="group"]')!;
+    expect(document.activeElement).toBe(region);
+
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    outside.focus();
+
+    // Toggling interactive (e.g. pending/error) must not steal focus back.
+    await render({
+      photos: [photo(1)],
+      requestedPrompt: "Show the caliper",
+      requestKey: "m1",
+      disabled: true,
+    });
+    await render({
+      photos: [photo(1)],
+      requestedPrompt: "Show the caliper",
+      requestKey: "m1",
+    });
+    expect(document.activeElement).toBe(outside);
+
+    // The same prompt on a later assistant message is a new request.
+    await render({
+      photos: [photo(1)],
+      requestedPrompt: "Show the caliper",
+      requestKey: "m2",
+    });
+    expect(document.activeElement).toBe(region);
+    outside.remove();
+  });
+
+  it("does not focus when the request first arrives while inert", async () => {
+    await render({
+      photos: [photo(1)],
+      requestedPrompt: "Show the caliper",
+      requestKey: "m1",
+      disabled: true,
+    });
+    await render({
+      photos: [photo(1)],
+      requestedPrompt: "Show the caliper",
+      requestKey: "m1",
+    });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  const uploaded = (n: number, extra: Record<string, unknown> = {}) => ({
+    status: "success",
+    error: null,
+    data: {
+      photoId: id(n),
+      workOrderId: WO,
+      jobId: JOB,
+      category: "job_work",
+      notes: null,
+      createdAt: "2026-09-29T15:00:00.000Z",
+      ...extra,
+    },
+  });
+
+  it("locks selection changes while an upload is pending", async () => {
+    const gate = deferred<unknown>();
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    readPickedPhotoFiles.mockResolvedValue([file]);
+    uploadAssistantPhotoAction.mockReturnValue(gate.promise);
+    await render({
+      photos: [photo(1), photo(2)],
+      initialSelections: [{ photoId: id(1), purpose: "a" }],
+    });
+
+    await pick(cameraInput()!, [file]);
+
+    expect(container.textContent).toContain("Uploading photo");
+    expect(thumbButtons().every((b) => b.disabled)).toBe(true);
+    expect(purposeInputs().every((i) => i.disabled)).toBe(true);
+    expect(
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>('button[aria-label^="Remove"]')
+      ).every((b) => b.disabled)
+    ).toBe(true);
+    expect(cameraButton().disabled).toBe(true);
+    expect(libraryButton().disabled).toBe(true);
+
+    await act(async () => gate.resolve(uploaded(9)));
+
+    expect(payload().map((p: { photoId: string }) => p.photoId)).toEqual([id(1), id(9)]);
+    expect(thumbButtons().some((b) => b.disabled)).toBe(false);
+  });
+
+  it("announces when an upload is stored but the selection filled up meanwhile, and keeps it selectable", async () => {
+    const gate = deferred<unknown>();
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    readPickedPhotoFiles.mockResolvedValue([file]);
+    uploadAssistantPhotoAction.mockReturnValue(gate.promise);
+    await render();
+    await pick(cameraInput()!, [file]);
+
+    await click(container.querySelector('[data-testid="external-fill"]')!);
+    expect(payload()).toHaveLength(3);
+    await act(async () => gate.resolve(uploaded(9)));
+
+    expect(payload().map((p: { photoId: string }) => p.photoId)).not.toContain(id(9));
+    const notice = Array.from(container.querySelectorAll('[role="status"]')).find((el) =>
+      /saved.*not selected|already 3 selected/i.test(el.textContent ?? "")
+    );
+    expect(notice).toBeTruthy();
+    const newThumb = thumbButtons().find((b) => b.querySelector('img[src^="blob:"]'));
+    expect(newThumb).toBeTruthy();
+    expect(newThumb!.getAttribute("aria-pressed")).toBe("false");
+
+    // Free a slot, then select the stored photo.
+    await click(
+      container.querySelector<HTMLButtonElement>('button[aria-label^="Remove photo 1"]')!
+    );
+    await click(newThumb!);
+    expect(payload().map((p: { photoId: string }) => p.photoId)).toContain(id(9));
+  });
+
+  it("stops uploading remaining files once capacity is gone", async () => {
+    const gate = deferred<unknown>();
+    const files = [1, 2].map(
+      (n) => new File([String(n)], `f${n}.jpg`, { type: "image/jpeg" })
+    );
+    readPickedPhotoFiles.mockResolvedValue(files);
+    uploadAssistantPhotoAction
+      .mockReturnValueOnce(gate.promise)
+      .mockResolvedValue(uploaded(10));
+    await render();
+    await pick(libraryInput()!, files);
+    await click(container.querySelector('[data-testid="external-fill"]')!);
+    await act(async () => gate.resolve(uploaded(9)));
+
+    expect(uploadAssistantPhotoAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects an upload response with an unexpected category and selects nothing", async () => {
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    readPickedPhotoFiles.mockResolvedValue([file]);
+    uploadAssistantPhotoAction.mockResolvedValue(uploaded(9, { category: "vin" }));
+    await render();
+    await pick(cameraInput()!, [file]);
+
+    expect(payload()).toEqual([]);
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(
+      /could not be selected|refresh/i
+    );
+  });
+
+  it("revokes the local preview URL when a local photo is deselected and recreates it on reselect", async () => {
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    readPickedPhotoFiles.mockResolvedValue([file]);
+    uploadAssistantPhotoAction.mockResolvedValue(uploaded(9));
+    await render();
+    await pick(cameraInput()!, [file]);
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+
+    await click(thumbButtons()[0]);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:local-1");
+    expect(container.querySelector('img[src^="blob:"]')).toBeNull();
+
+    await click(thumbButtons()[0]);
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('img[src="blob:local-2"]')).not.toBeNull();
+  });
+
+  it("revokes the local preview once the server list supplies its own thumbnail", async () => {
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    readPickedPhotoFiles.mockResolvedValue([file]);
+    uploadAssistantPhotoAction.mockResolvedValue(uploaded(9));
+    await render();
+    await pick(cameraInput()!, [file]);
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+
+    await render({
+      photos: [photo(9, { thumb_url: "https://signed.example/server-9.jpg" })],
+      initialSelections: [],
+    });
+
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:local-1");
+    expect(
+      container.querySelector('img[src="https://signed.example/server-9.jpg"]')
+    ).not.toBeNull();
+    expect(container.querySelector('img[src^="blob:"]')).toBeNull();
   });
 });

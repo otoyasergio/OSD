@@ -28,7 +28,7 @@ vi.mock("@/app/(app)/work_orders/note-actions", () => ({
   addTechnicianNoteAction: vi.fn(),
 }));
 
-import { DiagnosticsThreadReadOnly } from "@/components/diagnostics/DiagnosticsThreadReadOnly";
+import { AskOtomotoThreadPanel } from "@/components/diagnostics/AskOtomotoThreadPanel";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
 import type { AssistantComposerFlags } from "@/lib/diagnostics/assistantPageState";
 import type { DiagnosticsPhotoSourceRow } from "@/lib/diagnostics/photoSelection";
@@ -86,7 +86,7 @@ function workspace(
   };
 }
 
-describe("DiagnosticsThreadReadOnly", () => {
+describe("AskOtomotoThreadPanel", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -108,7 +108,7 @@ describe("DiagnosticsThreadReadOnly", () => {
   it("shows the selected automatic thread, status, messages, and review label", async () => {
     await act(async () => {
       root.render(
-        React.createElement(DiagnosticsThreadReadOnly, {
+        React.createElement(AskOtomotoThreadPanel, {
           workspace: workspace(),
         })
       );
@@ -125,7 +125,7 @@ describe("DiagnosticsThreadReadOnly", () => {
   it("shows refresh while pending and Retry only for failed threads", async () => {
     await act(async () => {
       root.render(
-        React.createElement(DiagnosticsThreadReadOnly, {
+        React.createElement(AskOtomotoThreadPanel, {
           workspace: workspace({ status: "generating" }),
         })
       );
@@ -138,8 +138,9 @@ describe("DiagnosticsThreadReadOnly", () => {
 
     await act(async () => {
       root.render(
-        React.createElement(DiagnosticsThreadReadOnly, {
+        React.createElement(AskOtomotoThreadPanel, {
           workspace: workspace({ status: "failed" }),
+          canMutate: true,
         })
       );
     });
@@ -175,7 +176,7 @@ describe("DiagnosticsThreadReadOnly", () => {
     expect(container.textContent).toContain("Inspect the battery terminals next.");
   });
 
-  it("passes only eligible thread photos and the mutation flags into the floor packet composer", async () => {
+  it("gives the floor packet composer only the separate sanitized assistant photos plus mutation flags", async () => {
     const packet = {
       work_order_id: WORK_ORDER,
       work_order_number: "WO-100",
@@ -213,6 +214,17 @@ describe("DiagnosticsThreadReadOnly", () => {
             photos: [
               row("a1111111-1111-4111-8111-111111111111", "job_work", JOB),
               row("a2222222-2222-4222-8222-222222222222", "vin", null),
+              row("a3333333-3333-4333-8333-333333333333", "job_work", JOB),
+            ],
+            assistantPhotos: [
+              {
+                photo_id: "a1111111-1111-4111-8111-111111111111",
+                work_order_id: WORK_ORDER,
+                job_id: JOB,
+                category: "job_work",
+                created_at: "2026-09-29T14:05:00.000Z",
+                thumb_url: "https://signed.example/a1.jpg",
+              },
             ],
             assistantFlags: flags,
           })
@@ -258,7 +270,7 @@ describe("DiagnosticsThreadReadOnly", () => {
     ) {
       await act(async () => {
         root.render(
-          React.createElement(DiagnosticsThreadReadOnly, {
+          React.createElement(AskOtomotoThreadPanel, {
             workspace: ws,
             photos,
             canMutate: true,
@@ -328,7 +340,15 @@ describe("DiagnosticsThreadReadOnly", () => {
       await renderThread(jobWorkspace(threadOverrides as never), props);
       expect(textarea().disabled).toBe(true);
       expect(sendButton().disabled).toBe(true);
-      expect(container.querySelector('input[type="file"]')).toBeNull();
+      const fileInputs = Array.from(
+        container.querySelectorAll<HTMLInputElement>('input[type="file"]')
+      );
+      expect(fileInputs.every((input) => input.disabled)).toBe(true);
+      expect(
+        Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+          .filter((b) => /^(camera|library)$/i.test(b.textContent?.trim() ?? ""))
+          .every((b) => b.disabled)
+      ).toBe(true);
     });
 
     it("keeps the composer available and Retry visible on a failed thread", async () => {
@@ -494,6 +514,198 @@ describe("DiagnosticsThreadReadOnly", () => {
       expect(container.querySelector("img[src='x']")).toBeNull();
       expect(container.textContent).toContain("<img src=x onerror=alert(1)> please look");
       expect(container.textContent).toContain("Staff review required");
+    });
+  });
+
+  describe("send/retry gating and lifecycle", () => {
+    const failedWs = () => workspace({ jobId: JOB, triggerType: null, status: "failed" });
+
+    async function mount(
+      ws: DiagnosticsThreadWorkspace,
+      props: Record<string, unknown> = {}
+    ) {
+      await act(async () => {
+        root.render(
+          React.createElement(AskOtomotoThreadPanel, {
+            workspace: ws,
+            photos: [],
+            canMutate: true,
+            ...props,
+          })
+        );
+      });
+    }
+    const ta = () => container.querySelector<HTMLTextAreaElement>("textarea")!;
+    const send = () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
+        /^(send|sending)/i.test(b.textContent?.trim() ?? "")
+      )!;
+    const retry = () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((b) =>
+        /^retry/i.test(b.textContent?.trim() ?? "")
+      );
+    async function typeText(value: string) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(
+          HTMLTextAreaElement.prototype,
+          "value"
+        )!.set!.call(ta(), value);
+        ta().dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    function deferred<T>() {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+    const forms = () => Array.from(container.querySelectorAll("form"));
+
+    it.each([
+      ["readOnly", { readOnly: true }],
+      ["preview", { preview: true }],
+      ["canMutate=false", { canMutate: false }],
+    ])("hides Retry on a failed thread when %s", async (_name, props) => {
+      await mount(failedWs(), props);
+      expect(retry()).toBeUndefined();
+      expect(container.textContent).toContain("Generation failed");
+    });
+
+    it("shows Retry on a failed thread when mutation is allowed", async () => {
+      await mount(failedWs());
+      expect(retry()?.disabled).toBe(false);
+    });
+
+    it("ignores duplicate submits while a send is in flight and blocks Retry meanwhile", async () => {
+      const gate = deferred<unknown>();
+      submitAssistantTurnAction.mockReturnValue(gate.promise);
+      await mount(failedWs());
+      await typeText("Check the battery");
+
+      await act(async () => {
+        forms()[0].requestSubmit();
+      });
+      await act(async () => {
+        forms()[0].requestSubmit();
+      });
+
+      expect(submitAssistantTurnAction).toHaveBeenCalledTimes(1);
+      expect(send().disabled).toBe(true);
+      expect(retry()?.disabled).toBe(true);
+      await act(async () => {
+        forms()[1].requestSubmit();
+      });
+      expect(retryAssistantTurnAction).not.toHaveBeenCalled();
+
+      await act(async () => gate.resolve({ status: "success", error: null }));
+      expect(retry()?.disabled).toBe(false);
+    });
+
+    it("blocks Send while a Retry is in flight and ignores duplicate Retry submits", async () => {
+      const gate = deferred<unknown>();
+      retryAssistantTurnAction.mockReturnValue(gate.promise);
+      await mount(failedWs());
+      await typeText("Check the battery");
+      expect(send().disabled).toBe(false);
+
+      await act(async () => {
+        forms()[1].requestSubmit();
+      });
+      await act(async () => {
+        forms()[1].requestSubmit();
+      });
+
+      expect(retryAssistantTurnAction).toHaveBeenCalledTimes(1);
+      expect(send().disabled).toBe(true);
+      expect(ta().disabled).toBe(true);
+      await act(async () => {
+        forms()[0].requestSubmit();
+      });
+      expect(submitAssistantTurnAction).not.toHaveBeenCalled();
+
+      await act(async () => gate.resolve({ status: "success", error: null }));
+      expect(send().disabled).toBe(false);
+    });
+
+    it("does not call the action for a blank message even if the form is submitted directly", async () => {
+      await mount(workspace({ jobId: JOB, triggerType: null }));
+      await act(async () => {
+        forms()[0].requestSubmit();
+      });
+      expect(submitAssistantTurnAction).not.toHaveBeenCalled();
+    });
+
+    it("returns focus to the message box after a failed send instead of the photo picker", async () => {
+      submitAssistantTurnAction.mockResolvedValue({
+        status: "error",
+        error: "Ask OTOMOTO is temporarily unavailable.",
+      });
+      const request = {
+        ...workspace().messages[0],
+        requestedInput: {
+          type: "photo",
+          prompt: "Show the caliper",
+          purpose: null,
+          tool_placement: null,
+          conditions: null,
+          units: null,
+        },
+      };
+      await mount({
+        ...workspace({ jobId: JOB, triggerType: null }),
+        messages: [request],
+      });
+      expect(document.activeElement).toBe(container.querySelector('[role="group"]'));
+
+      await typeText("Here is the answer");
+      ta().focus();
+      await act(async () => {
+        forms()[0].requestSubmit();
+      });
+
+      expect(container.textContent).toContain("temporarily unavailable");
+      expect(document.activeElement).toBe(ta());
+    });
+
+    it("allows the first send on a new manual pending thread with no messages", async () => {
+      await mount({
+        ...workspace({ jobId: JOB, triggerType: null, status: "pending" }),
+        messages: [],
+      });
+      expect(ta().disabled).toBe(false);
+      await typeText("First question");
+      expect(send().disabled).toBe(false);
+      expect(container.textContent).not.toContain("Pending automatic review");
+    });
+
+    it.each([
+      [
+        "automatic pending trigger",
+        { triggerType: "inspection_completed", status: "pending" },
+        [],
+      ],
+      [
+        "automatic pending job trigger",
+        { triggerType: "job_completed", status: "pending" },
+        [],
+      ],
+      [
+        "manual pending with messages",
+        { triggerType: null, status: "pending" },
+        "messages",
+      ],
+      ["manual generating", { triggerType: null, status: "generating" }, []],
+      [
+        "automatic generating",
+        { triggerType: "inspection_completed", status: "generating" },
+        [],
+      ],
+    ])("keeps the composer locked for %s", async (_name, overrides, messages) => {
+      const base = workspace({ jobId: JOB, ...overrides } as never);
+      await mount(messages === "messages" ? base : { ...base, messages: [] });
+      expect(ta().disabled).toBe(true);
+      expect(send().disabled).toBe(true);
     });
   });
 });

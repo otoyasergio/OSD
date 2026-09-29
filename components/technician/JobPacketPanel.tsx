@@ -13,10 +13,17 @@ import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { formatDateTime } from "@/lib/datetime/format";
-import { DiagnosticsThreadReadOnly } from "@/components/diagnostics/DiagnosticsThreadReadOnly";
+import { AskOtomotoThreadPanel } from "@/components/diagnostics/AskOtomotoThreadPanel";
 import type { DiagnosticsThreadWorkspace } from "@/lib/services/diagnosticsAssistant";
 import type { AssistantComposerFlags } from "@/lib/diagnostics/assistantPageState";
-import { toDiagnosticsPhotoSourceRows } from "@/lib/diagnostics/photoSelection";
+import type { DiagnosticsPhotoSourceRow } from "@/lib/diagnostics/photoSelection";
+
+const NO_ASSISTANT_ACCESS: AssistantComposerFlags = {
+  canMutate: false,
+  preview: false,
+  readOnly: false,
+};
+const NO_ASSISTANT_PHOTOS: DiagnosticsPhotoSourceRow[] = [];
 
 function toNoteJobs(packet: JobPacket): WorkOrderJob[] {
   return packet.jobs.map(
@@ -50,7 +57,8 @@ export function JobPacketPanel({
   photos = [],
   selectedJobId = null,
   assistantWorkspace = null,
-  assistantFlags = { canMutate: false, preview: false, readOnly: false },
+  assistantFlags = NO_ASSISTANT_ACCESS,
+  assistantPhotos = NO_ASSISTANT_PHOTOS,
   stage,
 }: {
   packet: JobPacket;
@@ -61,6 +69,8 @@ export function JobPacketPanel({
   selectedJobId?: string | null;
   assistantWorkspace?: DiagnosticsThreadWorkspace | null;
   assistantFlags?: AssistantComposerFlags;
+  /** Server-sanitized eligible photos; the client never derives these from `photos`. */
+  assistantPhotos?: DiagnosticsPhotoSourceRow[];
   stage: FloorStage | null;
 }) {
   const tabRefs = useRef(new Map<string, HTMLAnchorElement>());
@@ -341,12 +351,9 @@ export function JobPacketPanel({
 
           {activeTab === "assistant" ? (
             assistantWorkspace ? (
-              <DiagnosticsThreadReadOnly
+              <AskOtomotoThreadPanel
                 workspace={assistantWorkspace}
-                photos={toDiagnosticsPhotoSourceRows(photos, {
-                  workOrderId: packet.work_order_id,
-                  jobId: assistantWorkspace.thread.jobId,
-                })}
+                photos={assistantPhotos}
                 canMutate={assistantFlags.canMutate}
                 preview={assistantFlags.preview}
                 readOnly={assistantFlags.readOnly}

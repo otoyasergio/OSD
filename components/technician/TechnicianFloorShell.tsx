@@ -62,6 +62,7 @@ import type { IntakePhoto } from "@/lib/services/photos";
 import type { DiagnosticsThreadWorkspace } from "@/lib/services/diagnosticsAssistant";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
 import type { AssistantComposerFlags } from "@/lib/diagnostics/assistantPageState";
+import type { DiagnosticsPhotoSourceRow } from "@/lib/diagnostics/photoSelection";
 import {
   currentPitStep,
   deriveDefaultStage,
@@ -174,6 +175,7 @@ export function TechnicianFloorShell({
   packetPhotos,
   packetAssistantWorkspace,
   packetAssistantFlags,
+  packetAssistantPhotos,
   packetWorkOrderId,
   packetJobId,
 }: {
@@ -191,6 +193,7 @@ export function TechnicianFloorShell({
   packetPhotos?: IntakePhoto[];
   packetAssistantWorkspace?: DiagnosticsThreadWorkspace | null;
   packetAssistantFlags?: AssistantComposerFlags;
+  packetAssistantPhotos?: DiagnosticsPhotoSourceRow[];
   packetWorkOrderId?: string | null;
   packetJobId?: string | null;
 }) {
@@ -674,6 +677,7 @@ export function TechnicianFloorShell({
                     photos={packetPhotos ?? []}
                     assistantWorkspace={packetAssistantWorkspace ?? null}
                     assistantFlags={packetAssistantFlags}
+                    assistantPhotos={packetAssistantPhotos}
                     selectedJobId={packetJobId ?? null}
                     closeHref={technicianClosePacketHref({
                       workOrderId: packetWorkOrderId,

@@ -7,7 +7,9 @@ import {
   createObjectUrlRegistry,
   defaultPhotoPurpose,
   isDiagnosticsPhotoEligible,
+  parseUploadedAssistantPhoto,
   photoPromptFromMessages,
+  photoRequestFromMessages,
   toDiagnosticsPhotoSourceRows,
   validatePhotoSelections,
   type DiagnosticsPhotoSourceRow,
@@ -336,5 +338,79 @@ describe("client-safe limits mirror the server", () => {
   it("matches the service text and photo limits", () => {
     expect(DIAGNOSTICS_TURN_TEXT_MAX).toBe(ASK_OTOMOTO_MAX_TEXT_CHARS);
     expect(DIAGNOSTICS_PHOTO_MAX_SELECTED).toBe(ASK_OTOMOTO_MAX_PHOTOS);
+  });
+});
+
+describe("photoRequestFromMessages", () => {
+  const msg = (messageId: string, requestedInput: unknown, role = "assistant") => ({
+    messageId,
+    role,
+    generationStatus: "ready",
+    requestedInput,
+  });
+
+  it("returns a stable per-message key with the trimmed prompt", () => {
+    expect(
+      photoRequestFromMessages([msg("m1", { type: "photo", prompt: " Show it " })])
+    ).toEqual({ key: "m1", prompt: "Show it" });
+  });
+
+  it("gives a new key when a later assistant message repeats the same prompt", () => {
+    const first = photoRequestFromMessages([
+      msg("m1", { type: "photo", prompt: "Show it" }),
+    ]);
+    const second = photoRequestFromMessages([
+      msg("m1", { type: "photo", prompt: "Show it" }),
+      msg("m2", null, "user"),
+      msg("m3", { type: "photo", prompt: "Show it" }),
+    ]);
+    expect(first?.key).not.toBe(second?.key);
+  });
+
+  it("is null when nothing is requested", () => {
+    expect(
+      photoRequestFromMessages([msg("m1", { type: "none", prompt: null })])
+    ).toBeNull();
+    expect(photoRequestFromMessages([])).toBeNull();
+  });
+});
+
+describe("parseUploadedAssistantPhoto", () => {
+  const scope = { workOrderId: WO, jobId: JOB };
+  const valid = {
+    photoId: photoId(9),
+    workOrderId: WO,
+    jobId: JOB,
+    category: "job_work",
+    notes: "x",
+    createdAt: "2026-09-29T15:00:00.000Z",
+  };
+
+  it("accepts a job_work photo for this work order and job", () => {
+    expect(parseUploadedAssistantPhoto(valid, scope)).toEqual({
+      photoId: photoId(9),
+      category: "job_work",
+      createdAt: "2026-09-29T15:00:00.000Z",
+    });
+  });
+
+  it.each([
+    ["non-object", "nope"],
+    ["null", null],
+    ["missing id", { ...valid, photoId: undefined }],
+    ["non-uuid id", { ...valid, photoId: "not-a-uuid" }],
+    ["wrong category", { ...valid, category: "vin" }],
+    ["unknown category", { ...valid, category: "__proto__" }],
+    ["other work order", { ...valid, workOrderId: OTHER_WO }],
+    ["other job", { ...valid, jobId: OTHER_JOB }],
+    ["no job", { ...valid, jobId: null }],
+  ])("rejects %s", (_name, data) => {
+    expect(parseUploadedAssistantPhoto(data, scope)).toBeNull();
+  });
+
+  it("rejects a WO-only thread scope", () => {
+    expect(
+      parseUploadedAssistantPhoto(valid, { workOrderId: WO, jobId: null })
+    ).toBeNull();
   });
 });

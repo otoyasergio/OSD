@@ -13,6 +13,8 @@ import { promoteReviewedTechnicianNote } from "@/lib/services/notes";
 import { uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { diagnosticsErrorMessageForCode } from "@/lib/diagnostics/errors";
+import { redactDiagnosticsText } from "@/lib/diagnostics/redaction";
+import { DIAGNOSTICS_PHOTO_PURPOSE_MAX } from "@/lib/diagnostics/photoSelection";
 
 export type AssistantActionState = {
   status: "idle" | "success" | "error";
@@ -37,6 +39,21 @@ const promoteSchema = z
     text: z.string().trim().min(1).max(8_000),
   })
   .strict();
+
+/** Photo purpose stored as notes: required, bounded, no control chars, PII-redacted. */
+function parseUploadPurpose(value: FormDataEntryValue | null): string {
+  const purpose = typeof value === "string" ? value.trim() : "";
+  if (
+    !purpose ||
+    purpose.length > DIAGNOSTICS_PHOTO_PURPOSE_MAX ||
+    /[\u0000-\u001f\u007f]/.test(purpose)
+  ) {
+    throw new Error("DIAGNOSTICS_IMAGE_PURPOSE_INVALID");
+  }
+  const redacted = redactDiagnosticsText(purpose).trim();
+  if (!redacted) throw new Error("DIAGNOSTICS_IMAGE_PURPOSE_INVALID");
+  return redacted.slice(0, DIAGNOSTICS_PHOTO_PURPOSE_MAX);
+}
 
 function success(data?: unknown): AssistantActionState {
   return { status: "success", error: null, ...(data === undefined ? {} : { data }) };
@@ -219,10 +236,11 @@ export async function uploadAssistantPhotoAction(
     }
     const workspace = await service.authorizeThreadWrite(parsedWorkOrderId, threadId);
     if (!workspace.thread.jobId) throw new Error("DIAGNOSTICS_IMAGE_JOB_REQUIRED");
+    const purpose = parseUploadPurpose(formData.get("purpose"));
     const photo = await uploadIntakePhoto(parsedWorkOrderId, {
       category: "job_work",
       job_id: workspace.thread.jobId,
-      notes: String(formData.get("purpose") ?? "").trim() || null,
+      notes: purpose,
       inspection_result_id: null,
       file,
     });

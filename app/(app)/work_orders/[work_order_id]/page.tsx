@@ -128,7 +128,7 @@ import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { floorTechWorkOrderRedirect } from "@/lib/technician/assignmentHref";
 import { isRouteUuid } from "@/lib/technician/routeState";
 import { createDiagnosticsAssistantService } from "@/lib/services/diagnosticsAssistant";
-import { DiagnosticsThreadReadOnly } from "@/components/diagnostics/DiagnosticsThreadReadOnly";
+import { AskOtomotoThreadPanel } from "@/components/diagnostics/AskOtomotoThreadPanel";
 import {
   assistantComposerFlags,
   loadAssistantWorkspaceOrNull,
@@ -637,7 +637,7 @@ export default async function WorkOrderDetailPage({
       ) : null}
       {activeTab === "assistant" ? (
         assistantWorkspace ? (
-          <DiagnosticsThreadReadOnly
+          <AskOtomotoThreadPanel
             workspace={assistantWorkspace}
             photos={assistantPhotos}
             canMutate={assistantFlags.canMutate}

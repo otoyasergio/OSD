@@ -15,6 +15,7 @@ import {
   assistantComposerFlags,
   loadAssistantWorkspaceOrNull,
 } from "@/lib/diagnostics/assistantPageState";
+import { toDiagnosticsPhotoSourceRows } from "@/lib/diagnostics/photoSelection";
 import { TechnicianFloorShell } from "@/components/technician/TechnicianFloorShell";
 import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import {
@@ -98,20 +99,27 @@ export default async function TechnicianPage({
               : null;
           const assistantFlags = assistantComposerFlags({
             isForeignLocation: false,
-            isPreviewing: techPreview,
+            isPreviewing: preview.isPreviewing,
             workOrderStatus: packet?.wo_status ?? "",
             hasWriteRole:
               isFloorTech(viewRole) ||
               canEditWorkOrder(viewRole) ||
               canCreateWorkOrder(viewRole),
           });
-          return { packet, photos, assistantWorkspace, assistantFlags };
+          const assistantPhotos = assistantWorkspace
+            ? toDiagnosticsPhotoSourceRows(photos, {
+                workOrderId: route.workOrderId!,
+                jobId: assistantWorkspace.thread.jobId,
+              })
+            : [];
+          return { packet, photos, assistantWorkspace, assistantFlags, assistantPhotos };
         })()
       : Promise.resolve({
           packet: null,
           photos: [],
           assistantWorkspace: null,
           assistantFlags: undefined,
+          assistantPhotos: [],
         }),
   ]);
 
@@ -131,6 +139,7 @@ export default async function TechnicianPage({
       packetPhotos={packetBundle.photos}
       packetAssistantWorkspace={packetBundle.assistantWorkspace}
       packetAssistantFlags={packetBundle.assistantFlags}
+      packetAssistantPhotos={packetBundle.assistantPhotos}
       packetWorkOrderId={route.workOrderId}
       packetJobId={route.jobId}
     />

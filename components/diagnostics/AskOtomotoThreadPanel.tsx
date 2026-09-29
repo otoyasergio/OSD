@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   retryAssistantTurnAction,
@@ -10,7 +10,7 @@ import {
 import { DiagnosticsPhotoPicker } from "@/components/diagnostics/DiagnosticsPhotoPicker";
 import {
   buildPhotosPayload,
-  photoPromptFromMessages,
+  photoRequestFromMessages,
   validatePhotoSelections,
   type DiagnosticsPhotoSelection,
   type DiagnosticsPhotoSourceRow,
@@ -37,37 +37,67 @@ function TurnComposer({
   canMutate,
   preview,
   readOnly,
+  retryPending,
+  onBusyChange,
 }: {
   workspace: DiagnosticsThreadWorkspace;
   photos: DiagnosticsPhotoSourceRow[];
   canMutate: boolean;
   preview: boolean;
   readOnly: boolean;
+  retryPending: boolean;
+  onBusyChange: (busy: boolean) => void;
 }) {
   const router = useRouter();
   const { thread, messages } = workspace;
   const [text, setText] = useState("");
   const [selections, setSelections] = useState<DiagnosticsPhotoSelection[]>([]);
   const [uploading, setUploading] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const sendInFlight = useRef(false);
+  const wasPending = useRef(false);
 
   const [state, formAction, pending] = useActionState(
     async (previous: AssistantActionState, formData: FormData) => {
-      const result = await submitAssistantTurnAction(
-        thread.workOrderId,
-        previous,
-        formData
-      );
-      if (result.status === "success") {
-        setText("");
-        setSelections([]);
-        router.refresh();
+      if (sendInFlight.current) return previous;
+      sendInFlight.current = true;
+      try {
+        const result = await submitAssistantTurnAction(
+          thread.workOrderId,
+          previous,
+          formData
+        );
+        if (result.status === "success") {
+          setText("");
+          setSelections([]);
+          router.refresh();
+        }
+        return result;
+      } finally {
+        sendInFlight.current = false;
       }
-      return result;
     },
     INITIAL_ACTION_STATE
   );
 
-  const threadBusy = thread.status === "pending" || thread.status === "generating";
+  const busy = pending || uploading;
+  useEffect(() => {
+    onBusyChange(busy);
+  }, [busy, onBusyChange]);
+
+  useEffect(() => {
+    if (wasPending.current && !pending && state.status === "error") {
+      textareaRef.current?.focus();
+    }
+    wasPending.current = pending;
+  }, [pending, state]);
+
+  // A brand-new manual thread starts "pending" with no messages and must accept
+  // its first message; automatic triggers stay locked until generation finishes.
+  const firstManualTurn =
+    thread.status === "pending" && thread.triggerType === null && messages.length === 0;
+  const threadBusy =
+    thread.status === "generating" || (thread.status === "pending" && !firstManualTurn);
   const archived = thread.status === "archived";
   const blockedReason = preview
     ? "Role preview is read-only. Exit preview to send a message."
@@ -79,9 +109,15 @@ function TurnComposer({
           ? "This conversation is archived."
           : threadBusy
             ? "Ask OTOMOTO is still working on the previous message."
-            : null;
+            : retryPending
+              ? "Retrying the failed response…"
+              : null;
   const locked = blockedReason !== null;
-  const validation = validatePhotoSelections(selections);
+  const validation = useMemo(() => validatePhotoSelections(selections), [selections]);
+  const photosJson = useMemo(
+    () => JSON.stringify(buildPhotosPayload(selections)),
+    [selections]
+  );
   const trimmed = text.trim();
   const canSend =
     !locked &&
@@ -90,24 +126,27 @@ function TurnComposer({
     trimmed.length > 0 &&
     trimmed.length <= DIAGNOSTICS_TURN_TEXT_MAX &&
     validation.ok;
-  const requestedPrompt = photoPromptFromMessages(messages);
+  const request = useMemo(() => photoRequestFromMessages(messages), [messages]);
 
   return (
-    <form action={formAction} className="flex flex-col gap-3">
+    <form
+      action={formAction}
+      onSubmit={(event) => {
+        if (!canSend) event.preventDefault();
+      }}
+      className="flex flex-col gap-3"
+    >
       <input type="hidden" name="thread_id" value={thread.threadId} />
       <input type="hidden" name="job_id" value={thread.jobId ?? ""} />
       <input type="hidden" name="mode" value={thread.mode} />
-      <input
-        type="hidden"
-        name="photos"
-        value={JSON.stringify(buildPhotosPayload(selections))}
-      />
+      <input type="hidden" name="photos" value={photosJson} />
 
       <div className="flex flex-col gap-1">
         <label htmlFor={`turn-text-${thread.threadId}`} className="text-sm font-medium">
           Message to Ask OTOMOTO
         </label>
         <textarea
+          ref={textareaRef}
           id={`turn-text-${thread.threadId}`}
           name="text"
           className="input min-h-24"
@@ -128,7 +167,8 @@ function TurnComposer({
         photos={photos}
         selections={selections}
         onSelectionsChange={setSelections}
-        requestedPrompt={requestedPrompt}
+        requestedPrompt={request?.prompt ?? null}
+        requestKey={request?.key ?? null}
         canMutate={canMutate}
         preview={preview}
         readOnly={readOnly}
@@ -161,7 +201,7 @@ function TurnComposer({
   );
 }
 
-export function DiagnosticsThreadReadOnly({
+export function AskOtomotoThreadPanel({
   workspace,
   photos = [],
   canMutate = false,
@@ -177,10 +217,28 @@ export function DiagnosticsThreadReadOnly({
 }) {
   const router = useRouter();
   const { thread, messages } = workspace;
+  const [sendBusy, setSendBusy] = useState(false);
+  const retryInFlight = useRef(false);
   const [retryState, retryAction, retryPending] = useActionState(
-    retryAssistantTurnAction.bind(null, thread.workOrderId),
+    async (previous: AssistantActionState, formData: FormData) => {
+      if (retryInFlight.current) return previous;
+      retryInFlight.current = true;
+      try {
+        const result = await retryAssistantTurnAction(
+          thread.workOrderId,
+          previous,
+          formData
+        );
+        if (result.status === "success") router.refresh();
+        return result;
+      } finally {
+        retryInFlight.current = false;
+      }
+    },
     INITIAL_ACTION_STATE
   );
+  const mutationAllowed = canMutate && !readOnly && !preview;
+  const canRetry = mutationAllowed && !retryPending && !sendBusy;
   const automaticLabel =
     thread.triggerType === "inspection_completed"
       ? "Automatic arrival-inspection review"
@@ -208,11 +266,14 @@ export function DiagnosticsThreadReadOnly({
         </p>
       ) : null}
 
-      {thread.status === "pending" || thread.status === "generating" ? (
+      {thread.status === "generating" ? (
         <p role="status" className="text-sm">
-          {thread.status === "pending"
-            ? "Pending automatic review."
-            : "Generating automatic review."}
+          {automaticLabel ? "Generating automatic review." : "Generating response."}
+        </p>
+      ) : null}
+      {thread.status === "pending" && thread.triggerType ? (
+        <p role="status" className="text-sm">
+          Pending automatic review.
         </p>
       ) : null}
       {thread.status === "failed" ? (
@@ -265,6 +326,8 @@ export function DiagnosticsThreadReadOnly({
         canMutate={canMutate}
         preview={preview}
         readOnly={readOnly}
+        retryPending={retryPending}
+        onBusyChange={setSendBusy}
       />
 
       <div className="flex flex-wrap gap-2">
@@ -275,10 +338,15 @@ export function DiagnosticsThreadReadOnly({
         >
           Refresh
         </button>
-        {thread.status === "failed" ? (
-          <form action={retryAction}>
+        {thread.status === "failed" && mutationAllowed ? (
+          <form
+            action={retryAction}
+            onSubmit={(event) => {
+              if (!canRetry) event.preventDefault();
+            }}
+          >
             <input type="hidden" name="thread_id" value={thread.threadId} />
-            <button type="submit" className="btn btn-primary" disabled={retryPending}>
+            <button type="submit" className="btn btn-primary" disabled={!canRetry}>
               {retryPending ? "Retrying…" : "Retry"}
             </button>
           </form>

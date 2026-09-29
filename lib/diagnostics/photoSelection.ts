@@ -129,19 +129,23 @@ export function buildPhotosPayload(
 }
 
 type PromptMessage = {
+  messageId?: string;
   role: string;
   generationStatus: string;
   requestedInput: unknown;
 };
 
+export type PhotoRequest = { key: string; prompt: string };
+
 /**
- * The photo prompt the assistant is waiting on: only when the latest message
+ * The photo request the assistant is waiting on: only when the latest message
  * is a ready assistant reply that asked for a photo. Other input types
- * (measurement, question, test) are answered in the text box.
+ * (measurement, question, test) are answered in the text box. `key` is the
+ * message id, so a repeated prompt on a later message is a new request.
  */
-export function photoPromptFromMessages(
+export function photoRequestFromMessages(
   messages: readonly PromptMessage[]
-): string | null {
+): PhotoRequest | null {
   const latest = messages[messages.length - 1];
   if (!latest || latest.role !== "assistant" || latest.generationStatus !== "ready") {
     return null;
@@ -150,7 +154,43 @@ export function photoPromptFromMessages(
   if (!input || typeof input !== "object") return null;
   const { type, prompt } = input as { type?: unknown; prompt?: unknown };
   if (type !== "photo" || typeof prompt !== "string") return null;
-  return prompt.trim() || null;
+  const trimmed = prompt.trim();
+  if (!trimmed) return null;
+  return { key: latest.messageId ?? `index-${messages.length - 1}`, prompt: trimmed };
+}
+
+export function photoPromptFromMessages(
+  messages: readonly PromptMessage[]
+): string | null {
+  return photoRequestFromMessages(messages)?.prompt ?? null;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type UploadedAssistantPhoto = {
+  photoId: string;
+  category: "job_work";
+  createdAt: string;
+};
+
+/** Runtime check of the upload action's `data`; never trust it as typed. */
+export function parseUploadedAssistantPhoto(
+  data: unknown,
+  scope: DiagnosticsPhotoScope
+): UploadedAssistantPhoto | null {
+  if (!data || typeof data !== "object" || !scope.jobId) return null;
+  const record = data as Record<string, unknown>;
+  if (typeof record.photoId !== "string" || !UUID_PATTERN.test(record.photoId)) {
+    return null;
+  }
+  if (record.category !== "job_work") return null;
+  if (record.workOrderId !== scope.workOrderId) return null;
+  if (record.jobId !== scope.jobId) return null;
+  const createdAt =
+    typeof record.createdAt === "string" && !Number.isNaN(Date.parse(record.createdAt))
+      ? record.createdAt
+      : new Date().toISOString();
+  return { photoId: record.photoId, category: "job_work", createdAt };
 }
 
 export type ObjectUrlRegistry = {

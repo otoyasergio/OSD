@@ -24,6 +24,7 @@ import {
   createObjectUrlRegistry,
   defaultPhotoPurpose,
   isDiagnosticsPhotoEligible,
+  parseUploadedAssistantPhoto,
   type DiagnosticsPhotoSelection,
   type DiagnosticsPhotoSourceRow,
 } from "@/lib/diagnostics/photoSelection";
@@ -39,22 +40,7 @@ type GridPhoto = {
   previewUrl: string | null;
 };
 
-type UploadedPhotoMeta = {
-  photoId: string;
-  category: PhotoCategory;
-  createdAt: string;
-};
-
-function parseUploadedPhoto(data: unknown): UploadedPhotoMeta | null {
-  if (!data || typeof data !== "object") return null;
-  const { photoId, category, createdAt } = data as Record<string, unknown>;
-  if (typeof photoId !== "string" || typeof category !== "string") return null;
-  return {
-    photoId,
-    category: category as PhotoCategory,
-    createdAt: typeof createdAt === "string" ? createdAt : new Date().toISOString(),
-  };
-}
+type LocalPhoto = GridPhoto & { file: File };
 
 function formatWhen(iso: string): string {
   const date = new Date(iso);
@@ -79,6 +65,7 @@ export function DiagnosticsPhotoPicker({
   selections,
   onSelectionsChange,
   requestedPrompt,
+  requestKey,
   canMutate,
   preview,
   readOnly,
@@ -90,6 +77,8 @@ export function DiagnosticsPhotoPicker({
   selections: DiagnosticsPhotoSelection[];
   onSelectionsChange: Dispatch<SetStateAction<DiagnosticsPhotoSelection[]>>;
   requestedPrompt: string | null;
+  /** Identifies the assistant message that asked for a photo (focus once per key). */
+  requestKey: string | null;
   canMutate: boolean;
   preview: boolean;
   readOnly: boolean;
@@ -97,12 +86,16 @@ export function DiagnosticsPhotoPicker({
   onBusyChange?: (busy: boolean) => void;
 }) {
   const headingId = useId();
-  const cameraInputId = useId();
-  const libraryInputId = useId();
+  const noteId = useId();
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const libraryInputRef = useRef<HTMLInputElement>(null);
   const regionRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
+  const selectionsRef = useRef(selections);
+  const interactiveRef = useRef(false);
+  const focusedRequests = useRef(new Set<string>());
   const [registry] = useState(() => createObjectUrlRegistry());
-  const [localPhotos, setLocalPhotos] = useState<GridPhoto[]>([]);
+  const [localPhotos, setLocalPhotos] = useState<LocalPhoto[]>([]);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +106,12 @@ export function DiagnosticsPhotoPicker({
   const jobScoped = Boolean(thread.jobId);
   const atLimit = selections.length >= DIAGNOSTICS_PHOTO_MAX_SELECTED;
   const uploadEnabled = interactive && jobScoped && !atLimit && !uploading;
+  const selectionEditable = interactive && !uploading;
+
+  useEffect(() => {
+    selectionsRef.current = selections;
+    interactiveRef.current = interactive;
+  }, [selections, interactive]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -123,33 +122,59 @@ export function DiagnosticsPhotoPicker({
   }, [registry]);
 
   useEffect(() => {
-    if (!requestedPrompt || !interactive) return;
+    if (!requestKey || !requestedPrompt) return;
+    if (focusedRequests.current.has(requestKey)) return;
+    focusedRequests.current.add(requestKey);
+    if (!interactiveRef.current) return;
     const region = regionRef.current;
     region?.focus();
     region?.scrollIntoView?.({ block: "nearest" });
-  }, [requestedPrompt, interactive]);
+  }, [requestKey, requestedPrompt]);
+
+  const serverThumbs = useMemo(() => {
+    const thumbs = new Map<string, string>();
+    for (const photo of photos) {
+      if (photo.thumb_url) thumbs.set(photo.photo_id, photo.thumb_url);
+    }
+    return thumbs;
+  }, [photos]);
+
+  // Once the server list has its own thumbnail the local blob is redundant.
+  useEffect(() => {
+    for (const photo of localPhotos) {
+      if (serverThumbs.has(photo.photoId)) registry.revoke(photo.photoId);
+    }
+  }, [serverThumbs, localPhotos, registry]);
 
   const gridPhotos = useMemo<GridPhoto[]>(() => {
     const scope = { workOrderId: thread.workOrderId, jobId: thread.jobId };
-    const server = photos
+    const localUrls = new Map(
+      localPhotos.map((photo) => [photo.photoId, photo.previewUrl])
+    );
+    const server: GridPhoto[] = photos
       .filter((photo) => isDiagnosticsPhotoEligible(photo, scope))
       .map((photo) => ({
         photoId: photo.photo_id,
         category: photo.category,
         createdAt: photo.created_at,
-        previewUrl: photo.thumb_url ?? null,
+        previewUrl: photo.thumb_url ?? localUrls.get(photo.photo_id) ?? null,
       }));
     const serverIds = new Set(server.map((photo) => photo.photoId));
-    return [
-      ...localPhotos.filter((photo) => !serverIds.has(photo.photoId)),
-      ...server,
-    ].map((photo) => ({
-      ...photo,
-      previewUrl: registry.get(photo.photoId) ?? photo.previewUrl,
-    }));
-    // registry.get is stable; localPhotos changes whenever a preview is added.
-  }, [photos, localPhotos, registry, thread.workOrderId, thread.jobId]);
+    const local: GridPhoto[] = localPhotos
+      .filter((photo) => !serverIds.has(photo.photoId))
+      .map(({ photoId, category, createdAt, previewUrl }) => ({
+        photoId,
+        category,
+        createdAt,
+        previewUrl,
+      }));
+    return [...local, ...server];
+  }, [photos, localPhotos, thread.workOrderId, thread.jobId]);
 
+  const selectedIds = useMemo(
+    () => new Set(selections.map((selection) => selection.photoId)),
+    [selections]
+  );
   const byId = useMemo(
     () => new Map(gridPhotos.map((photo) => [photo.photoId, photo])),
     [gridPhotos]
@@ -158,16 +183,32 @@ export function DiagnosticsPhotoPicker({
 
   function toggle(photoId: string) {
     setNotice(null);
-    const isSelected = selections.some((selection) => selection.photoId === photoId);
-    if (isSelected) {
+    const local = localPhotos.find((photo) => photo.photoId === photoId);
+    if (selectedIds.has(photoId)) {
       onSelectionsChange((previous) =>
         previous.filter((selection) => selection.photoId !== photoId)
       );
+      if (local) {
+        registry.revoke(photoId);
+        setLocalPhotos((previous) =>
+          previous.map((photo) =>
+            photo.photoId === photoId ? { ...photo, previewUrl: null } : photo
+          )
+        );
+      }
       return;
     }
-    onSelectionsChange((previous) => {
-      return addPhotoSelection(previous, photoId, defaultPurpose).selections;
-    });
+    onSelectionsChange(
+      (previous) => addPhotoSelection(previous, photoId, defaultPurpose).selections
+    );
+    if (local && !local.previewUrl && !serverThumbs.has(photoId)) {
+      const previewUrl = registry.create(local.file, photoId);
+      setLocalPhotos((previous) =>
+        previous.map((photo) =>
+          photo.photoId === photoId ? { ...photo, previewUrl } : photo
+        )
+      );
+    }
   }
 
   function setPurpose(photoId: string, purpose: string) {
@@ -185,23 +226,27 @@ export function DiagnosticsPhotoPicker({
   }
 
   async function uploadFromInput(input: HTMLInputElement) {
-    setError(null);
-    setNotice(null);
     if (!uploadEnabled) {
       input.value = "";
       return;
     }
-    const slots = DIAGNOSTICS_PHOTO_MAX_SELECTED - selections.length;
+    setError(null);
+    setNotice(null);
     setBusy(true);
     try {
       const prepared = await readPickedPhotoFiles(input);
-      const files = prepared.slice(0, slots);
-      if (prepared.length > files.length) {
-        setNotice(
-          `Only ${DIAGNOSTICS_PHOTO_MAX_SELECTED} photos can be sent per message; extra photos were not uploaded.`
-        );
-      }
-      for (const file of files) {
+      const scope = { workOrderId: thread.workOrderId, jobId: thread.jobId };
+      for (const [index, file] of prepared.entries()) {
+        if (selectionsRef.current.length >= DIAGNOSTICS_PHOTO_MAX_SELECTED) {
+          if (mountedRef.current) {
+            setNotice(
+              `Only ${DIAGNOSTICS_PHOTO_MAX_SELECTED} photos can be sent per message; ${
+                prepared.length - index
+              } extra photo(s) were not uploaded.`
+            );
+          }
+          break;
+        }
         const result = await withPhotoUploadRetries(
           () => {
             const form = new FormData();
@@ -215,24 +260,43 @@ export function DiagnosticsPhotoPicker({
             getFailureMessage: (value) => value.error,
           }
         );
-        const uploaded =
-          result.status === "success" ? parseUploadedPhoto(result.data) : null;
-        if (!uploaded) {
+        if (result.status !== "success") {
           if (mountedRef.current) {
             setError(result.error ?? "Could not upload that photo. Try again.");
           }
           break;
         }
+        const stored = parseUploadedAssistantPhoto(result.data, scope);
+        if (!stored) {
+          if (mountedRef.current) {
+            setError(
+              "The photo was uploaded, but it could not be selected. Refresh, then select it from the photo list."
+            );
+          }
+          break;
+        }
         if (!mountedRef.current) break;
-        const previewUrl = registry.create(file, uploaded.photoId);
+        const previewUrl = registry.create(file, stored.photoId);
         setLocalPhotos((previous) => [
-          ...previous.filter((photo) => photo.photoId !== uploaded.photoId),
-          { ...uploaded, previewUrl },
+          ...previous.filter((photo) => photo.photoId !== stored.photoId),
+          { ...stored, previewUrl, file },
         ]);
-        onSelectionsChange(
-          (previous) =>
-            addPhotoSelection(previous, uploaded.photoId, defaultPurpose).selections
+        const added = addPhotoSelection(
+          selectionsRef.current,
+          stored.photoId,
+          defaultPurpose
         );
+        if (added.added) {
+          selectionsRef.current = added.selections;
+          onSelectionsChange(added.selections);
+        } else {
+          setNotice(
+            added.reason === "limit"
+              ? `Photo saved, but not selected: ${DIAGNOSTICS_PHOTO_MAX_SELECTED} photos are already selected. Deselect one, then select the new photo.`
+              : "Photo saved, but it was already selected."
+          );
+          break;
+        }
       }
     } catch {
       if (mountedRef.current) setError(UNREADABLE_PHOTO_MESSAGE);
@@ -277,7 +341,7 @@ export function DiagnosticsPhotoPicker({
       {gridPhotos.length > 0 ? (
         <ul className="flex flex-wrap gap-2" aria-label="Available photos">
           {gridPhotos.map((photo) => {
-            const selected = selections.some((s) => s.photoId === photo.photoId);
+            const selected = selectedIds.has(photo.photoId);
             const label = photoLabel(photo);
             return (
               <li key={photo.photoId}>
@@ -285,7 +349,7 @@ export function DiagnosticsPhotoPicker({
                   type="button"
                   aria-pressed={selected}
                   aria-label={`${selected ? "Deselect" : "Select"} ${label}`}
-                  disabled={!interactive || (!selected && atLimit)}
+                  disabled={!selectionEditable || (!selected && atLimit)}
                   onClick={() => toggle(photo.photoId)}
                   className={`flex h-20 w-20 items-center justify-center overflow-hidden rounded border-2 bg-[var(--surface-muted)] text-xs ${
                     selected ? "border-[var(--brand,#0a58ca)]" : "border-transparent"
@@ -334,7 +398,7 @@ export function DiagnosticsPhotoPicker({
                     className="input flex-1"
                     value={selection.purpose}
                     maxLength={DIAGNOSTICS_PHOTO_PURPOSE_MAX}
-                    disabled={!interactive}
+                    disabled={!selectionEditable}
                     onChange={(event) =>
                       setPurpose(selection.photoId, event.target.value)
                     }
@@ -346,7 +410,7 @@ export function DiagnosticsPhotoPicker({
                     type="button"
                     className="btn btn-secondary"
                     aria-label={`Remove photo ${index + 1} (${label})`}
-                    disabled={!interactive}
+                    disabled={!selectionEditable}
                     onClick={() => toggle(selection.photoId)}
                   >
                     Remove
@@ -365,45 +429,53 @@ export function DiagnosticsPhotoPicker({
         </p>
       ) : null}
 
-      {interactive && jobScoped ? (
+      {jobScoped ? (
         <div className="flex flex-wrap items-center gap-2">
           <input
-            id={cameraInputId}
+            ref={cameraInputRef}
             type="file"
             accept={cameraProps.accept}
             capture={cameraProps.capture}
             className="photo-file-input"
             tabIndex={-1}
-            aria-label="Take a photo with the camera"
+            aria-hidden="true"
             disabled={!uploadEnabled}
             onChange={(event) => void uploadFromInput(event.currentTarget)}
           />
           <input
-            id={libraryInputId}
+            ref={libraryInputRef}
             type="file"
             accept={libraryProps.accept}
             multiple
             className="photo-file-input"
             tabIndex={-1}
-            aria-label="Choose photos from the library"
+            aria-hidden="true"
             disabled={!uploadEnabled}
             onChange={(event) => void uploadFromInput(event.currentTarget)}
           />
-          <label
-            htmlFor={cameraInputId}
+          <button
+            type="button"
+            className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!uploadEnabled}
             aria-disabled={!uploadEnabled}
-            className="btn btn-secondary"
+            aria-describedby={noteId}
+            onClick={() => cameraInputRef.current?.click()}
           >
             Camera
-          </label>
-          <label
-            htmlFor={libraryInputId}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!uploadEnabled}
             aria-disabled={!uploadEnabled}
-            className="btn btn-secondary"
+            aria-describedby={noteId}
+            onClick={() => libraryInputRef.current?.click()}
           >
             Library
-          </label>
-          <span className="text-xs text-[var(--status-neutral)]">{CAMERA_ROLL_HINT}</span>
+          </button>
+          <span id={noteId} className="text-xs text-[var(--status-neutral)]">
+            {CAMERA_ROLL_HINT}
+          </span>
         </div>
       ) : null}
 
