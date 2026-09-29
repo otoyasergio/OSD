@@ -70,21 +70,43 @@ export function getDiagnosticsConfig(
   };
 }
 
+export type AskOtomotoConfigReason =
+  "not_configured" | "model_invalid" | "timeout_invalid" | "output_limit_invalid";
+
 export type AskOtomotoPublicConfig = {
   configured: boolean;
   /** Display-only model alias; never the provider key. */
   modelLabel: string | null;
+  reason: AskOtomotoConfigReason | null;
 };
 
+const PUBLIC_CONFIG_REASONS: Readonly<Record<string, AskOtomotoConfigReason>> = {
+  DIAGNOSTICS_AI_NOT_CONFIGURED: "not_configured",
+  DIAGNOSTICS_AI_MODEL_INVALID: "model_invalid",
+  DIAGNOSTICS_AI_TIMEOUT_INVALID: "timeout_invalid",
+  DIAGNOSTICS_AI_OUTPUT_LIMIT_INVALID: "output_limit_invalid",
+};
+
+/**
+ * Same validation as the generation path, reduced to a client-safe summary so
+ * the UI never offers sends the server would reject.
+ */
 export function getAskOtomotoPublicConfig(
   env: DiagnosticsEnvironment = process.env
 ): AskOtomotoPublicConfig {
   const model = env.OTOMOTO_DIAGNOSTICS_MODEL?.trim() || DEFAULT_DIAGNOSTICS_MODEL;
-  const modelValid = MODEL_ALIAS_PATTERN.test(model);
-  return {
-    configured: Boolean(env.OPENAI_API_KEY?.trim()) && modelValid,
-    modelLabel: modelValid ? model : null,
-  };
+  const modelLabel = MODEL_ALIAS_PATTERN.test(model) ? model : null;
+  try {
+    getDiagnosticsConfig(env);
+    return { configured: true, modelLabel, reason: null };
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    return {
+      configured: false,
+      modelLabel,
+      reason: PUBLIC_CONFIG_REASONS[code] ?? "not_configured",
+    };
+  }
 }
 
 export function isDiagnosticsAiConfigured(

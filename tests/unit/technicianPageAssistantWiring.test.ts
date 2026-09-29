@@ -103,7 +103,7 @@ type PacketAssistant = {
   jobs: Array<{ jobId: string; label: string }>;
   defaultJobId: string | null;
   photos: Array<Record<string, unknown>>;
-  config: { configured: boolean; modelLabel: string | null };
+  config: { configured: boolean; modelLabel: string | null; reason: string | null };
   capabilities: Record<string, unknown>;
 };
 
@@ -171,6 +171,7 @@ describe("technician page Ask OTOMOTO wiring", () => {
     expect(packetAssistant?.config).toEqual({
       configured: true,
       modelLabel: "gpt-6-astra",
+      reason: null,
     });
     expect(JSON.stringify(packetAssistant)).not.toContain("sk-test-secret");
   });

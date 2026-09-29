@@ -199,7 +199,7 @@ describe("work order page Ask OTOMOTO wiring", () => {
       selectedThreadId: THREAD,
       jobs: [{ jobId: JOB, label: "Brake service" }],
       defaultJobId: null,
-      config: { configured: true, modelLabel: "gpt-6-astra" },
+      config: { configured: true, modelLabel: "gpt-6-astra", reason: null },
       capabilities: {
         canMutate: true,
         canUseFrontOfficeModes: true,

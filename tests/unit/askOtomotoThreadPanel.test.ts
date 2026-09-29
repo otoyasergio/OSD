@@ -54,7 +54,7 @@ function packetAssistant(
     jobs: [],
     defaultJobId: null,
     photos: [],
-    config: { configured: true, modelLabel: null },
+    config: { configured: true, modelLabel: null, reason: null },
     capabilities: {
       canMutate: false,
       preview: false,

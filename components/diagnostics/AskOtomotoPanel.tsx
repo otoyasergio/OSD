@@ -5,8 +5,8 @@ import Link from "next/link";
 import { AskOtomotoNewConversation } from "@/components/diagnostics/AskOtomotoNewConversation";
 import { AskOtomotoThreadList } from "@/components/diagnostics/AskOtomotoThreadList";
 import {
-  ASSISTANT_NOT_CONFIGURED_COPY,
   AskOtomotoThreadPanel,
+  assistantUnavailableCopy,
 } from "@/components/diagnostics/AskOtomotoThreadPanel";
 import {
   askOtomotoThreadHref,
@@ -61,7 +61,7 @@ export function AskOtomotoPanel({
             role="status"
             className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950"
           >
-            {ASSISTANT_NOT_CONFIGURED_COPY}
+            {assistantUnavailableCopy(config.reason)}
           </p>
         ) : null}
       </header>

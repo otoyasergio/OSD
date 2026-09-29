@@ -145,7 +145,7 @@ function props(overrides: Partial<PanelProps> = {}): PanelProps {
     ],
     defaultJobId: null,
     photos: [],
-    config: { configured: true, modelLabel: "gpt-6-astra" },
+    config: { configured: true, modelLabel: "gpt-6-astra", reason: null },
     capabilities: FULL_CAPS,
     historyUnavailable: false,
     ...overrides,
@@ -526,7 +526,11 @@ describe("AskOtomotoPanel", () => {
     });
 
     it("never creates when AI configuration is missing", async () => {
-      await render(props({ config: { configured: false, modelLabel: null } }));
+      await render(
+        props({
+          config: { configured: false, modelLabel: null, reason: "not_configured" },
+        })
+      );
       expect(createButton()?.disabled).toBe(true);
       await act(async () => createForm()!.requestSubmit());
       expect(createAssistantThreadAction).not.toHaveBeenCalled();
@@ -577,10 +581,21 @@ describe("AskOtomotoPanel", () => {
       expect(text).toContain("gpt-6-astra");
     });
 
+    it.each(["model_invalid", "timeout_invalid", "output_limit_invalid"] as const)(
+      "explains invalid server settings (%s) without asking for a key",
+      async (reason) => {
+        await render(props({ config: { configured: false, modelLabel: null, reason } }));
+        const text = container.textContent ?? "";
+        expect(text).toMatch(/settings on this server are invalid/i);
+        expect(text).not.toMatch(/add the OpenAI API key/i);
+        expect(createButton()?.disabled).toBe(true);
+      }
+    );
+
     it("keeps history readable and copyable but disables generation when not configured", async () => {
       await render(
         withThread(workspace({ status: "failed" }), {
-          config: { configured: false, modelLabel: null },
+          config: { configured: false, modelLabel: null, reason: "not_configured" },
           photos: [
             {
               photo_id: "b1111111-1111-4111-8111-111111111111",

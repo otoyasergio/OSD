@@ -32,6 +32,7 @@ import {
   parseRequestedInput,
   type AskOtomotoLockReason,
 } from "@/lib/diagnostics/askOtomotoView";
+import type { AskOtomotoConfigReason } from "@/lib/diagnostics/config";
 import type { DiagnosticsThreadWorkspace } from "@/lib/services/diagnosticsAssistant";
 
 const INITIAL_ACTION_STATE: AssistantActionState = {
@@ -41,6 +42,15 @@ const INITIAL_ACTION_STATE: AssistantActionState = {
 
 export const ASSISTANT_NOT_CONFIGURED_COPY =
   "Ask OTOMOTO is not configured on this server, so new drafts can't be generated. An owner or manager needs to add the OpenAI API key to the server environment settings. Existing conversations stay readable and copyable.";
+
+export const ASSISTANT_SETTINGS_INVALID_COPY =
+  "Ask OTOMOTO settings on this server are invalid, so new drafts can't be generated. An owner or manager needs to correct the Ask OTOMOTO model, timeout, or output-limit setting. Existing conversations stay readable and copyable.";
+
+export function assistantUnavailableCopy(reason: AskOtomotoConfigReason | null): string {
+  return reason === null || reason === "not_configured"
+    ? ASSISTANT_NOT_CONFIGURED_COPY
+    : ASSISTANT_SETTINGS_INVALID_COPY;
+}
 
 function readOnlyReason(lockReason: AskOtomotoLockReason | null | undefined): string {
   if (lockReason === "foreign") {

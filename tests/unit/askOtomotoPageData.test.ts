@@ -16,7 +16,11 @@ describe("getAskOtomotoPublicConfig", () => {
       OPENAI_API_KEY: "sk-secret-value",
       OTOMOTO_DIAGNOSTICS_MODEL: "gpt-6-astra",
     });
-    expect(config).toEqual({ configured: true, modelLabel: "gpt-6-astra" });
+    expect(config).toEqual({
+      configured: true,
+      modelLabel: "gpt-6-astra",
+      reason: null,
+    });
     expect(JSON.stringify(config)).not.toContain("sk-secret");
   });
 
@@ -24,8 +28,12 @@ describe("getAskOtomotoPublicConfig", () => {
     expect(getAskOtomotoPublicConfig({})).toEqual({
       configured: false,
       modelLabel: "gpt-6-astra",
+      reason: "not_configured",
     });
-    expect(getAskOtomotoPublicConfig({ OPENAI_API_KEY: "  " }).configured).toBe(false);
+    expect(getAskOtomotoPublicConfig({ OPENAI_API_KEY: "  " })).toMatchObject({
+      configured: false,
+      reason: "not_configured",
+    });
   });
 
   it("hides an invalid model alias and treats it as not configured", () => {
@@ -34,7 +42,32 @@ describe("getAskOtomotoPublicConfig", () => {
         OPENAI_API_KEY: "sk-x",
         OTOMOTO_DIAGNOSTICS_MODEL: "bad model<script>",
       })
-    ).toEqual({ configured: false, modelLabel: null });
+    ).toEqual({ configured: false, modelLabel: null, reason: "model_invalid" });
+  });
+
+  it.each([
+    ["OTOMOTO_DIAGNOSTICS_TIMEOUT_MS", "999", "timeout_invalid"],
+    ["OTOMOTO_DIAGNOSTICS_TIMEOUT_MS", "abc", "timeout_invalid"],
+    ["OTOMOTO_DIAGNOSTICS_MAX_OUTPUT_TOKENS", "32769", "output_limit_invalid"],
+    ["OTOMOTO_DIAGNOSTICS_MAX_OUTPUT_TOKENS", "1.5", "output_limit_invalid"],
+  ])("matches the server config validation when %s=%s", (name, value, reason) => {
+    const config = getAskOtomotoPublicConfig({
+      OPENAI_API_KEY: "sk-secret-value",
+      [name]: value,
+    });
+    expect(config).toEqual({ configured: false, modelLabel: "gpt-6-astra", reason });
+    expect(JSON.stringify(config)).not.toContain("sk-secret");
+  });
+
+  it("accepts the same boundary settings the server accepts", () => {
+    expect(
+      getAskOtomotoPublicConfig({
+        OPENAI_API_KEY: "sk-x",
+        OTOMOTO_DIAGNOSTICS_MODEL: "gpt-6-sol",
+        OTOMOTO_DIAGNOSTICS_TIMEOUT_MS: "120000",
+        OTOMOTO_DIAGNOSTICS_MAX_OUTPUT_TOKENS: "1024",
+      })
+    ).toEqual({ configured: true, modelLabel: "gpt-6-sol", reason: null });
   });
 });
 
