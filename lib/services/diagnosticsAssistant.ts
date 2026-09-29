@@ -1743,10 +1743,25 @@ export function createDiagnosticsAssistantService(
             message.role === "assistant" && message.generationStatus === "ready"
         )
         .map((message) => message.messageId);
-      const promoted =
-        readyAssistantIds.length > 0
-          ? await repository.listPromotedNoteIds(parsedWorkOrderId, readyAssistantIds)
-          : new Map<string, string>();
+      let promoted = new Map<string, string>();
+      if (readyAssistantIds.length > 0) {
+        try {
+          promoted = await repository.listPromotedNoteIds(
+            parsedWorkOrderId,
+            readyAssistantIds
+          );
+        } catch (error) {
+          // History stays readable; a repeat save is still refused server-side.
+          console.warn("ask otomoto promotion lookup failed", {
+            workOrderId: parsedWorkOrderId,
+            threadId: workspace.thread.threadId,
+            code:
+              error instanceof Error && /^[A-Z][A-Z0-9_]{2,60}$/.test(error.message)
+                ? error.message
+                : "UNKNOWN",
+          });
+        }
+      }
       return {
         thread: workspace.thread,
         messages: workspace.messages.map((message) => ({
