@@ -18,6 +18,7 @@ function safeEnv(
 ): Record<string, string | undefined> {
   return {
     E2E_ALLOW_MUTATION: "1",
+    E2E_ENV_GUARD_SECRET: "synthetic-unit-guard-secret",
     NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
     ...overrides,
   };
@@ -58,6 +59,15 @@ describe("checkMutationEnvironment", () => {
         const result = checkMutationEnvironment(safeEnv({ E2E_ALLOW_MUTATION: value }));
         expect(result.ok).toBe(false);
       }
+    });
+
+    it("requires a nonempty runner/server fingerprint secret", () => {
+      expect(reasonsFor(safeEnv({ E2E_ENV_GUARD_SECRET: undefined }))).toContainEqual(
+        expect.stringContaining("E2E_ENV_GUARD_SECRET")
+      );
+      expect(reasonsFor(safeEnv({ E2E_ENV_GUARD_SECRET: "   " }))).toContainEqual(
+        expect.stringContaining("E2E_ENV_GUARD_SECRET")
+      );
     });
   });
 
@@ -291,23 +301,16 @@ describe("synthetic seed credentials", () => {
 });
 
 describe("stateful E2E web server environment", () => {
-  it("pins local app Supabase variables to explicit TEST_SUPABASE values", () => {
+  it("maps only the test service role and carries the guard secret", () => {
     const env = statefulE2EWebServerEnvironment({
-      NEXT_PUBLIC_SUPABASE_URL: "https://production.invalid",
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "production-publishable",
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: "production-anon",
       SUPABASE_SERVICE_ROLE_KEY: "production-service",
-      TEST_SUPABASE_URL: "http://127.0.0.1:54321",
-      TEST_SUPABASE_PUBLISHABLE_KEY: "test-publishable",
-      TEST_SUPABASE_ANON_KEY: "test-anon",
       TEST_SUPABASE_SERVICE_ROLE_KEY: "test-service",
+      E2E_ENV_GUARD_SECRET: "guard-secret",
     });
 
     expect(env).toMatchObject({
-      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
-      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "test-publishable",
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-anon",
       SUPABASE_SERVICE_ROLE_KEY: "test-service",
+      E2E_ENV_GUARD_SECRET: "guard-secret",
     });
   });
 

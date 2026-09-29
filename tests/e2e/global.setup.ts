@@ -2,12 +2,13 @@ import { chromium } from "@playwright/test";
 import { assertSafeMutationEnvironment } from "./fixtures/environmentGuard";
 import { seedSyntheticShop } from "./fixtures/seedSyntheticShop";
 import { assertAskOtomotoUnconfigured, ensureAuthStates } from "./fixtures/auth";
+import { assertAppEnvironmentFingerprint } from "./fixtures/appEnvironmentPreflight";
 
 /**
  * No-ops for stateless runs (default `npm run test:e2e`). With
- * E2E_ALLOW_MUTATION=1 it verifies the environment is an isolated QA target,
- * seeds the synthetic shop, captures per-role auth storage states, and aborts
- * unless the authenticated app reports that Ask OTOMOTO is unconfigured.
+ * E2E_ALLOW_MUTATION=1 it verifies the running app fingerprint and outbound
+ * configuration before any mutation, then seeds the isolated synthetic shop,
+ * captures per-role auth states, and confirms Ask OTOMOTO is unconfigured.
  */
 export default async function globalSetup(): Promise<void> {
   if (process.env.E2E_ALLOW_MUTATION !== "1") {
@@ -19,6 +20,7 @@ export default async function globalSetup(): Promise<void> {
   }
 
   assertSafeMutationEnvironment();
+  await assertAppEnvironmentFingerprint();
   await seedSyntheticShop();
 
   const browser = await chromium.launch();

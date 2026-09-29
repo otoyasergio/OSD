@@ -38,20 +38,12 @@ export function statefulE2EWebServerEnvironment(
       (entry): entry is [string, string] => entry[1] !== undefined
     )
   );
-  const testSupabaseMappings = [
-    ["NEXT_PUBLIC_SUPABASE_URL", env.TEST_SUPABASE_URL],
-    [
-      "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
-      env.TEST_SUPABASE_PUBLISHABLE_KEY ?? env.TEST_SUPABASE_ANON_KEY,
-    ],
-    [
-      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-      env.TEST_SUPABASE_ANON_KEY ?? env.TEST_SUPABASE_PUBLISHABLE_KEY,
-    ],
-    ["SUPABASE_SERVICE_ROLE_KEY", env.TEST_SUPABASE_SERVICE_ROLE_KEY],
-  ] as const;
-  for (const [appKey, testValue] of testSupabaseMappings) {
-    if (testValue?.trim()) child[appKey] = testValue;
+  // NEXT_PUBLIC_SUPABASE_* is fixed by `next build`; runtime env cannot retarget it.
+  if (env.TEST_SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    child.SUPABASE_SERVICE_ROLE_KEY = env.TEST_SUPABASE_SERVICE_ROLE_KEY;
+  }
+  if (env.E2E_ENV_GUARD_SECRET?.trim()) {
+    child.E2E_ENV_GUARD_SECRET = env.E2E_ENV_GUARD_SECRET;
   }
   for (const key of STATEFUL_E2E_OUTBOUND_KEYS) child[key] = "";
   return child;
@@ -93,6 +85,9 @@ export function checkMutationEnvironment(
 
   if (env.E2E_ALLOW_MUTATION !== "1") {
     reasons.push("E2E_ALLOW_MUTATION must be '1' to run tests that mutate data.");
+  }
+  if (!env.E2E_ENV_GUARD_SECRET?.trim()) {
+    reasons.push("E2E_ENV_GUARD_SECRET must be nonempty on both runner and app server.");
   }
 
   const baseUrl = env.PLAYWRIGHT_BASE_URL ?? DEFAULT_BASE_URL;

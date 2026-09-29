@@ -52,14 +52,31 @@ function regexMatches(value: string, pattern: RegExp): RegExpMatchArray[] {
   return [...value.matchAll(new RegExp(pattern.source, flags))];
 }
 
+function clauseBounds(value: string, index: number): { start: number; end: number } {
+  const before = value.slice(0, index);
+  const start =
+    Math.max(
+      before.lastIndexOf(","),
+      before.lastIndexOf(";"),
+      before.lastIndexOf(":"),
+      before.lastIndexOf("—")
+    ) + 1;
+  const after = value.slice(index);
+  const boundaries = [",", ";", ":", "—"]
+    .map((boundary) => after.indexOf(boundary))
+    .filter((boundaryIndex) => boundaryIndex >= 0);
+  const end = boundaries.length > 0 ? index + Math.min(...boundaries) : value.length;
+  return { start, end };
+}
+
+function clauseAt(value: string, index: number): string {
+  const { start, end } = clauseBounds(value, index);
+  return value.slice(start, end);
+}
+
 function actionIsNegated(sentence: string, index: number): boolean {
-  const nearby = sentence.slice(Math.max(0, index - 120), index);
-  const clauseBoundary = Math.max(
-    nearby.lastIndexOf(";"),
-    nearby.lastIndexOf(":"),
-    nearby.lastIndexOf("—")
-  );
-  const before = nearby.slice(clauseBoundary + 1);
+  const { start } = clauseBounds(sentence, index);
+  const before = sentence.slice(Math.max(start, index - 120), index);
   return /\b(?:do not|don't|not|no|never|must not|cannot|can't|will not|won't|avoid|refus(?:e|es|ed|ing)|declin(?:e|es|ed|ing)(?:\s+to)?)\b(?:\W+\w+){0,8}\W*$/i.test(
     before
   );
@@ -137,17 +154,32 @@ const COMPONENT_FAILURE_PATTERN =
 const REVERSE_COMPONENT_FAILURE_PATTERN =
   /\b(?:failed|bad|defective|faulty|dead|condemned)\b.{0,30}\b(?:battery|starter(?: motor| relay)?|relay|fuel pump|pump|ABS module|module|sensor|regulator|stator|ECU|caliper|tire|tyre|wiring harness|connector)\b/i;
 
+function assessmentClauses(conclusion: string): string[] {
+  return conclusion
+    .split(/\s*(?:;|—|\bbut\b)\s*/i)
+    .flatMap((segment) =>
+      /^\s*(?:if|when|unless|once)\b/i.test(segment) ? [segment] : segment.split(",")
+    )
+    .map((clause) => clause.trim())
+    .filter(Boolean);
+}
+
 function unsupportedComponentCondemnations(response: DiagnosticsResponse): string[] {
   const findings: string[] = [];
   for (const assessment of response.assessments) {
-    const conditionalOrRecommendation =
-      /\b(?:recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?|if|only if|unless|pending|may|might|could|would)\b/i.test(
-        assessment.conclusion
-      );
-    const condemns =
-      COMPONENT_FAILURE_PATTERN.test(assessment.conclusion) ||
-      REVERSE_COMPONENT_FAILURE_PATTERN.test(assessment.conclusion);
-    if (!condemns || conditionalOrRecommendation) continue;
+    const condemningClauses = assessmentClauses(assessment.conclusion).filter(
+      (clause) => {
+        const condemns =
+          COMPONENT_FAILURE_PATTERN.test(clause) ||
+          REVERSE_COMPONENT_FAILURE_PATTERN.test(clause);
+        const conditionalOrRecommendation =
+          /\b(?:recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?|if|only if|unless|pending|may|might|could|would)\b/i.test(
+            clause
+          );
+        return condemns && !conditionalOrRecommendation;
+      }
+    );
+    if (condemningClauses.length === 0) continue;
     const objectiveEvidence = assessment.evidence.some((item) => {
       const match = /\b(?:measured|tested|observed|found|confirmed)\b/i.exec(item);
       return Boolean(
@@ -158,7 +190,7 @@ function unsupportedComponentCondemnations(response: DiagnosticsResponse): strin
       );
     });
     if (!objectiveEvidence) {
-      findings.push(assessment.conclusion);
+      findings.push(...condemningClauses);
     }
   }
 
@@ -174,7 +206,7 @@ function automaticActionClaims(fields: readonly string[]): string[] {
         const attributedHistoricalRecord =
           patternIndex === 1 &&
           /\b(?:record(?:ed|s)?|work[- ]order|history|historical|previously|yesterday|technician)\b/i.test(
-            sentence
+            clauseAt(sentence, match.index)
           );
         if (!attributedHistoricalRecord) claims.push(match[0]);
       }

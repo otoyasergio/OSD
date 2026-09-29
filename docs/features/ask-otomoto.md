@@ -138,14 +138,39 @@ own migrated **non-production** Supabase project. The keyed Preview must not use
 the production database.
 
 Stateful Playwright must not target that keyed Preview: it runs only against a
-local or disposable remote QA app that reports Ask OTOMOTO as unconfigured. For
-the local mutation web server, explicit `TEST_SUPABASE_*` values are pinned into
-the matching app Supabase variables, while AI, SMS, and email credentials are
-cleared. A remote QA target requires a dedicated migrated non-production
-Supabase project with outbound AI, SMS, and email disabled in its deployment
-configuration. The authenticated preflight proves only that Ask OTOMOTO reports
-AI as unconfigured; it cannot inspect or prove that remote messaging/email keys
-are absent.
+local or disposable remote QA app. `NEXT_PUBLIC_SUPABASE_*` values are embedded
+at build time; changing them in the `next start` environment does **not** retarget
+an existing build.
+
+For a local stateful run, use this order:
+
+1. create/migrate the dedicated non-production database;
+2. export `TEST_SUPABASE_URL`, `TEST_SUPABASE_PUBLISHABLE_KEY` (or the local
+   anon equivalent), `TEST_SUPABASE_ANON_KEY`, and
+   `TEST_SUPABASE_SERVICE_ROLE_KEY`;
+3. export a new nonempty server-only `E2E_ENV_GUARD_SECRET`;
+4. set `NEXT_PUBLIC_SUPABASE_URL` and
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from those isolated `TEST_*` values,
+   then run `npm run build`;
+5. only after that build succeeds, run stateful Playwright with
+   `E2E_ALLOW_MUTATION=1`.
+
+In the normal local path, the Playwright web-server configuration starts that
+exact build with `npm run start`, maps only the test service-role value into the
+server process, and clears AI, Twilio, and Resend credentials. Do not reuse an
+already-running server in mutation mode.
+
+Before seeding, global setup calls the E2E-only guarded fingerprint endpoint.
+The endpoint exists only in mutation mode with a matching
+`E2E_ENV_GUARD_SECRET`; it returns only a SHA-256 Supabase-target fingerprint
+and provider-configured booleans. Global setup compares that fingerprint with
+`TEST_SUPABASE_URL` and requires all outbound booleans to be false. A mismatch
+means the app must be rebuilt with the isolated values.
+
+For `PLAYWRIGHT_SKIP_WEBSERVER=1`, the disposable remote QA deployment must use
+the same guard secret as the runner, a dedicated migrated non-production
+Supabase project, and disabled OpenAI/Twilio/Resend credentials. The same
+fingerprint preflight runs before any remote QA mutation.
 
 Then run:
 
