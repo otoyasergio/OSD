@@ -22,8 +22,8 @@ describe("Vercel compute allocation", () => {
     expect(config.fluid).toBe(true);
   });
 
-  it("pins functions to iad1, matching live traffic and US-East data sources", () => {
-    expect(config.regions).toEqual(["iad1"]);
+  it("co-locates functions with the Supabase us-west-2 database", () => {
+    expect(config.regions).toEqual(["pdx1"]);
   });
 
   it("does not set function memory in vercel.json (invalid with Fluid; dashboard only)", () => {

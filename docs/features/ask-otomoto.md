@@ -144,6 +144,7 @@ code:
 4. `20260929060837_ask_otomoto_atomic_seed_begin.sql`
 5. `20260929062500_add_ai_assistant_closure_phase.sql`
 6. `20260929070000_harden_ai_assistant_identity.sql`
+7. `20260929123008_platform_hardening.sql`
 
 First verify them against an isolated local/QA database. Against a linked
 **non-production** Supabase project, regenerate types with `npm run db:types` and

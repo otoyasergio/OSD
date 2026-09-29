@@ -134,3 +134,5 @@ See the production runbook: [`docs/superpowers/acceptance/production-checklist.m
 - V1 acceptance checklist: [`docs/superpowers/acceptance/v1-checklist.md`](./docs/superpowers/acceptance/v1-checklist.md)
 - RLS audit: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md)
 - Production checklist: [`docs/superpowers/acceptance/production-checklist.md`](./docs/superpowers/acceptance/production-checklist.md)
+- Supabase/Vercel health: [`docs/ops/platform-health.md`](./docs/ops/platform-health.md)
+- Ask OTOMOTO setup: [`docs/features/ask-otomoto.md`](./docs/features/ask-otomoto.md)

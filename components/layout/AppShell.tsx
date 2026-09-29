@@ -36,6 +36,7 @@ import {
   staffNotificationTitle,
   type StaffAssignmentNotification,
 } from "@/lib/staffNotifications/shared";
+import { registerStaffNotificationRealtime } from "@/lib/staffNotifications/realtime";
 import { staffNotificationHref } from "@/lib/technician/assignmentHref";
 import { FloorTopBar } from "@/components/technician/FloorTopBar";
 import { CommsLayer } from "@/components/comms/CommsLayer";
@@ -207,21 +208,13 @@ export function AppShell({
     document.addEventListener("visibilitychange", onVisible);
 
     const supabase = createClient();
-    const channel = supabase
-      .channel(`staff-notifications:${user.user_id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "staff_notification",
-          filter: `recipient_user_id=eq.${user.user_id}`,
-        },
-        () => {
-          void refreshNotifications();
-        }
-      )
-      .subscribe();
+    const channel = registerStaffNotificationRealtime(
+      supabase.channel(`staff-notifications:${user.user_id}`),
+      user.user_id,
+      () => {
+        void refreshNotifications();
+      }
+    ).subscribe();
 
     return () => {
       window.removeEventListener("focus", onVisible);

@@ -5,6 +5,7 @@ import { isSquareConfigured } from "@/lib/square/config";
 import { isTwilioConfigured } from "@/lib/twilio/config";
 import { isTwilioVoiceConfigured } from "@/lib/twilio/voiceConfig";
 import { isWixContactsConfigured } from "@/lib/wix/config";
+import { askOtomotoHealthStatus } from "@/lib/diagnostics/health";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,7 @@ export async function GET() {
     twilioSms: isTwilioConfigured() ? "ok" : "missing",
     twilioVoice: isTwilioVoiceConfigured() ? "ok" : "missing",
     square: isSquareConfigured() ? "ok" : "missing",
+    askOtomoto: askOtomotoHealthStatus(),
     cron: process.env.CRON_SECRET?.trim() ? "ok" : "missing",
     sentry:
       process.env.SENTRY_DSN?.trim() || process.env.NEXT_PUBLIC_SENTRY_DSN?.trim()
@@ -41,7 +43,8 @@ export async function GET() {
     integrations.supabase === "ok" &&
     integrations.cron === "ok" &&
     integrations.wix === "ok" &&
-    integrations.partsCanada === "ok";
+    integrations.partsCanada === "ok" &&
+    integrations.askOtomoto === "ok";
 
   return NextResponse.json(
     {
