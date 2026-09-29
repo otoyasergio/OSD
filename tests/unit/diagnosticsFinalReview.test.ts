@@ -39,6 +39,29 @@ function codes(
   }).map((violation) => violation.code);
 }
 
+function shopLogCodes(
+  overrides: Partial<NonNullable<DiagnosticsResponse["shop_log_entry"]>>,
+  claims: Parameters<typeof inspectDiagnosticsOutput>[1]["claims"] = {}
+): string[] {
+  const output = draft("Shop log draft.");
+  output.shop_log_entry = {
+    date_time: null,
+    bike_or_ro: "TOR-1001",
+    complaint: "No crank",
+    tests_and_conditions: "Not supplied",
+    results_and_units: "Not supplied",
+    conclusions_and_confidence: "Not supplied",
+    repairs_performed: "None",
+    verification: "None",
+    authorization: "Not supplied",
+    open_items: "Pending",
+    ...overrides,
+  };
+  return inspectDiagnosticsOutput(output, { mode: "report", claims }).map(
+    (violation) => violation.code
+  );
+}
+
 function source(): DiagnosticsContextSource {
   return {
     workOrder: {
@@ -93,14 +116,18 @@ describe("final diagnostics review regressions", () => {
     "The regulator would be repaired.",
     "The regulator will be installed.",
     "The regulator needs to be replaced.",
+    "The regulator may have been replaced.",
     "I recommend the battery be replaced.",
     "I suggest the connector be repaired.",
+    "The stator is recommended to be replaced.",
+    "Recommendation: stator replaced.",
     "The customer installed an aftermarket exhaust.",
     "The owner replaced the battery.",
     "The previous owner repaired the wiring.",
+    "Previous owner: stator replaced.",
+    "Aftermarket history: new battery installed.",
     "An aftermarket alarm was installed by the previous owner.",
     "Fixed range selection is available.",
-    "Fuel pump installed.",
   ])("does not treat proposed or historical work as completed: %s", (answer) => {
     expect(codes(answer)).not.toContain("COMPLETED_WORK_CLAIM");
   });
@@ -118,6 +145,13 @@ describe("final diagnostics review regressions", () => {
     "Installed the relay.",
     "Repaired the harness.",
     "Fixed the connector.",
+    "Stator replaced.",
+    "New battery installed.",
+    "Fuel pump installed.",
+    "Repair is complete.",
+    "Work was completed.",
+    "Job has been completed.",
+    "We completed the repair.",
   ])("flags only explicit completed-work forms: %s", (answer) => {
     expect(codes(answer)).toContain("COMPLETED_WORK_CLAIM");
   });
@@ -135,9 +169,22 @@ describe("final diagnostics review regressions", () => {
     "The bike is safe to ride.",
     "The motorcycle is safe to operate.",
     "This vehicle is safe to use.",
+    "CB500F is safe to ride.",
+    "Ninja 650 is okay to operate.",
+    "Safe to ride.",
+    "OK to operate.",
     "The Ducati is roadworthy.",
   ])("flags actual roadworthiness language: %s", (answer) => {
     expect(codes(answer)).toContain("ROADWORTHINESS_CLAIM");
+  });
+
+  it.each([
+    "If the CB500F is safe to ride, record the technician's decision.",
+    "Once safe to ride, the technician may record a decision.",
+    "Safe to probe the connector.",
+    "Safe to test at the battery posts.",
+  ])("preserves conditional and procedural safety exemptions: %s", (answer) => {
+    expect(codes(answer)).not.toContain("ROADWORTHINESS_CLAIM");
   });
 
   it("flags generic recorded verification after repair, but permits future checks", () => {
@@ -197,5 +244,47 @@ describe("final diagnostics review regressions", () => {
         allowedSpecificationValues: [],
       })
     ).not.toContain("UNSOURCED_TECHNICAL_VALUE");
+  });
+
+  it.each(["None", "Not performed", "Not recorded", "Pending"])(
+    "accepts explicit no-completed-work Shop Log value: %s",
+    (repairs_performed) => {
+      expect(shopLogCodes({ repairs_performed })).not.toContain("COMPLETED_WORK_CLAIM");
+    }
+  );
+
+  it.each(["Not verified", "Pending", "Not supplied", "Not performed", "None"])(
+    "accepts explicit no-verification Shop Log value: %s",
+    (verification) => {
+      expect(shopLogCodes({ verification })).not.toContain("VERIFICATION_CLAIM");
+    }
+  );
+
+  it("withholds terse positive or ambiguous Shop Log claims without records", () => {
+    expect(shopLogCodes({ repairs_performed: "Stator replaced." })).toContain(
+      "COMPLETED_WORK_CLAIM"
+    );
+    expect(shopLogCodes({ repairs_performed: "No entry." })).toContain(
+      "COMPLETED_WORK_CLAIM"
+    );
+    expect(shopLogCodes({ verification: "Charging verified." })).toContain(
+      "VERIFICATION_CLAIM"
+    );
+    expect(shopLogCodes({ verification: "No entry." })).toContain("VERIFICATION_CLAIM");
+  });
+
+  it("permits positive Shop Log entries only with matching recorded evidence", () => {
+    const result = shopLogCodes(
+      {
+        repairs_performed: "Stator replaced.",
+        verification: "Charging verified.",
+      },
+      {
+        hasRecordedCompletedWork: true,
+        hasVerificationEvidence: true,
+      }
+    );
+    expect(result).not.toContain("COMPLETED_WORK_CLAIM");
+    expect(result).not.toContain("VERIFICATION_CLAIM");
   });
 });

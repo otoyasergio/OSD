@@ -138,7 +138,7 @@ function hasCompletedWorkClaim(fields: string[]): boolean {
 
   const historicalActor = /\b(?:customer|owner|previous[- ]owner|aftermarket)\b/i;
   const proposed =
-    /\b(?:may|might|could|should|would|will|need(?:s|ed)?|recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?|if|once|after|before|whether|until|when|retest|check|inspect|measure|not|never|cannot|can't|don't)\b/i;
+    /\b(?:may|might|could|should|would|will|need(?:s|ed)?|recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?|if|once|after|before|whether|until|when|retest|check|inspect|measure|not|never|cannot|can't|don't|to|be)\b/i;
   const passive = new RegExp(
     String.raw`((?:\b[\w'-]+\s+){0,6})(?:was|were|has\s+been|have\s+been)\s+${completedVerb}\b`,
     "i"
@@ -146,10 +146,31 @@ function hasCompletedWorkClaim(fields: string[]): boolean {
   if (
     hasPositiveClaim(fields, passive, (sentence, match) => {
       const subject = match[1] ?? "";
+      const before = sentence.slice(0, match.index ?? 0);
       const after = sentence.slice((match.index ?? 0) + match[0].length, 160);
       return (
         !historicalActor.test(subject) &&
+        !historicalActor.test(before) &&
         !proposed.test(subject) &&
+        !proposed.test(before) &&
+        !/^\s*(?:by|for)\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after)
+      );
+    })
+  ) {
+    return true;
+  }
+
+  const terse = new RegExp(String.raw`((?:\b[\w'-]+\s+){1,5})${completedVerb}\b`, "i");
+  if (
+    hasPositiveClaim(fields, terse, (sentence, match) => {
+      const subject = match[1] ?? "";
+      const before = sentence.slice(0, match.index ?? 0);
+      const after = sentence.slice((match.index ?? 0) + match[0].length, 160);
+      return (
+        !historicalActor.test(subject) &&
+        !historicalActor.test(before) &&
+        !proposed.test(subject) &&
+        !proposed.test(before) &&
         !/^\s*(?:by|for)\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after)
       );
     })
@@ -158,11 +179,48 @@ function hasCompletedWorkClaim(fields: string[]): boolean {
   }
 
   const sentenceBeginning = new RegExp(String.raw`^\s*${completedVerb}\b`, "i");
-  return hasPositiveClaim(fields, sentenceBeginning, (sentence, match) => {
-    if (/^\s*fixed\s+(?:range|interval)\b/i.test(sentence)) return false;
-    const after = sentence.slice((match.index ?? 0) + match[0].length);
-    return !/\bby\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after);
-  });
+  if (
+    hasPositiveClaim(fields, sentenceBeginning, (sentence, match) => {
+      if (/^\s*fixed\s+(?:range|interval)\b/i.test(sentence)) return false;
+      const after = sentence.slice((match.index ?? 0) + match[0].length);
+      return !/\bby\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after);
+    })
+  ) {
+    return true;
+  }
+
+  const completionStatus =
+    /\b(?:repair|work|job)\s+(?:is|was|has\s+been)\s+complete(?:d)?\b/i;
+  if (
+    hasPositiveClaim(fields, completionStatus, (sentence, match) => {
+      const before = sentence.slice(0, match.index ?? 0);
+      const after = sentence.slice((match.index ?? 0) + match[0].length);
+      return (
+        !historicalActor.test(before) &&
+        !proposed.test(before) &&
+        !/\bby\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after)
+      );
+    })
+  ) {
+    return true;
+  }
+
+  return hasPositiveClaim(
+    fields,
+    /\bwe\s+(?:have\s+)?completed\s+(?:the\s+)?(?:repair|work|job)\b/i
+  );
+}
+
+function isExplicitNoCompletedWork(value: string): boolean {
+  return /^(?:none|not (?:performed|recorded)|pending|repairs? (?:not (?:performed|recorded)|pending)|no (?:repairs?|work)(?: (?:was|were))? (?:performed|recorded))$/i.test(
+    value.trim().replace(/[.!]+$/, "")
+  );
+}
+
+function isExplicitNoVerification(value: string): boolean {
+  return /^(?:none|(?:verification\s+)?(?:not verified|pending|not supplied|not performed))$/i.test(
+    value.trim().replace(/[.!]+$/, "")
+  );
 }
 
 function requestedInputMatchesNextStep(output: DiagnosticsResponse): boolean {
@@ -480,7 +538,7 @@ export function inspectDiagnosticsOutput(
     violations,
     fields,
     false,
-    /\b(?:(?:(?:the\s+)?(?:bike|motorcycle|vehicle)\s+(?:is|was|has been)|it(?:\s+(?:is|was|has been)|'s))(?:\s+now)?\s+(?:safe\s+to\s+(?:ride|operate|use)|ok(?:ay)?\s+to\s+ride)|(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the)\b)(?:[\w'-]+\s+){0,5}[\w'-]+\s+(?:is|was|has been|'s)(?:\s+now)?\s+roadworthy|pass(?:es|ed)\s+(?:the\s+)?(?:safety\s+inspection|safety|inspection)|cleared\s+for\s+release|ready\s+for\s+pickup)\b/i,
+    /\b(?:(?:(?:the\s+)?(?:bike|motorcycle|vehicle)\s+(?:is|was|has been)|it(?:\s+(?:is|was|has been)|'s))(?:\s+now)?\s+(?:safe\s+to\s+(?:ride|operate|use)|ok(?:ay)?\s+to\s+ride)|(?:(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the|do|not|never|claim|say)\b)[\w'-]+\s+){1,6}(?:is|was|has been|'s)(?:\s+now)?\s+(?:safe|ok(?:ay)?)\s+to\s+(?:ride|operate)|^\s*(?:safe|ok(?:ay)?)\s+to\s+(?:ride|operate)|(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the)\b)(?:[\w'-]+\s+){0,5}[\w'-]+\s+(?:is|was|has been|'s)(?:\s+now)?\s+roadworthy|pass(?:es|ed)\s+(?:the\s+)?(?:safety\s+inspection|safety|inspection)|cleared\s+for\s+release|ready\s+for\s+pickup)\b/i,
     "ROADWORTHINESS_CLAIM",
     "The draft makes an unsupported inspection or roadworthiness claim."
   );
@@ -506,6 +564,30 @@ export function inspectDiagnosticsOutput(
     "VERIFICATION_CLAIM",
     "The draft claims successful verification without a supplied retest result."
   );
+  if (output.shop_log_entry) {
+    if (
+      !claims.hasRecordedCompletedWork &&
+      !isExplicitNoCompletedWork(output.shop_log_entry.repairs_performed) &&
+      !violations.some((violation) => violation.code === "COMPLETED_WORK_CLAIM")
+    ) {
+      violations.push({
+        code: "COMPLETED_WORK_CLAIM",
+        message:
+          "Shop Log repairs must remain explicitly unrecorded without completed-work evidence.",
+      });
+    }
+    if (
+      !claims.hasVerificationEvidence &&
+      !isExplicitNoVerification(output.shop_log_entry.verification) &&
+      !violations.some((violation) => violation.code === "VERIFICATION_CLAIM")
+    ) {
+      violations.push({
+        code: "VERIFICATION_CLAIM",
+        message:
+          "Shop Log verification must remain explicitly unverified without recorded evidence.",
+      });
+    }
+  }
   addClaimViolation(
     violations,
     text,
