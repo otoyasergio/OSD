@@ -73,11 +73,108 @@ const ALLOWED_DIAGNOSTICS_PHOTO_CATEGORIES = new Set([
 const VERIFICATION_NOTE_TYPES = new Set(["road_test", "quality_check"]);
 
 type VerificationClauseResult =
-  "failed" | "pending" | "passed" | "restrictive_recorded" | "neutral";
+  "failed" | "pending" | "passed" | "safe_context" | "restrictive_recorded" | "neutral";
 
 const VERIFICATION_TEST_CONTEXT = String.raw`(?:road[- ]test|retest|test ride)`;
 const VERIFICATION_NO_RECURRENCE_TEST_CONTEXT = String.raw`(?:road[- ]test|retest)`;
 const BROAD_VERIFICATION_TEST_CONTEXT = String.raw`(?:road[- ]test|retest|test ride|quality check|qc)`;
+
+const SAFE_VERIFICATION_CONTEXT_WORDS = new Set([
+  "a",
+  "an",
+  "the",
+  "original",
+  "same",
+  "comparable",
+  "recorded",
+  "under",
+  "after",
+  "before",
+  "during",
+  "over",
+  "for",
+  "at",
+  "on",
+  "in",
+  "with",
+  "condition",
+  "conditions",
+  "load",
+  "loaded",
+  "highway",
+  "city",
+  "local",
+  "urban",
+  "rural",
+  "hot",
+  "cold",
+  "warm",
+  "wet",
+  "dry",
+  "idle",
+  "idling",
+  "operating",
+  "temperature",
+  "speed",
+  "speeds",
+  "mostly",
+  "fully",
+  "final",
+  "post",
+  "repair",
+  "km",
+  "kilometer",
+  "kilometers",
+  "kilometre",
+  "kilometres",
+  "mi",
+  "mile",
+  "miles",
+  "mph",
+  "kph",
+  "minute",
+  "minutes",
+  "hour",
+  "hours",
+  "cycle",
+  "cycles",
+]);
+
+function hasOnlySafeVerificationContextWords(value: string): boolean {
+  if (value.length > 160) return false;
+  const tokens = value.match(/[a-z0-9]+/g) ?? [];
+  return (
+    tokens.length <= 16 &&
+    tokens.every(
+      (token) =>
+        SAFE_VERIFICATION_CONTEXT_WORDS.has(token) || /^\d+(?:\.\d+)?$/.test(token)
+    )
+  );
+}
+
+function isSafeTestContextClause(clause: string): boolean {
+  const testContext = new RegExp(String.raw`\b(?:${VERIFICATION_TEST_CONTEXT}|qc)\b`);
+  if (!testContext.test(clause) || hasVerificationNegator(clause)) return false;
+  return hasOnlySafeVerificationContextWords(clause.replace(testContext, ""));
+}
+
+function isSafeAbsentObservationClause(clause: string): boolean {
+  const observation =
+    /^(?:the\s+)?(?:original\s+)?(?:noise|leak|clunk|symptom|concern|complaint|issue|problem|fault|failure|code)\s+(?:(?:is|was)\s+)?(?:not|no longer)\s+present\b/;
+  const match = clause.match(observation);
+  return Boolean(
+    match && hasOnlySafeVerificationContextWords(clause.slice(match[0].length).trim())
+  );
+}
+
+function isSafeNoCodesObservationClause(clause: string): boolean {
+  return (
+    clause.length <= 160 &&
+    /^no(?:\s+[a-z0-9'-]+){0,5}\s+codes?(?:\s+(?:present|stored|active|recorded))?$/.test(
+      clause
+    )
+  );
+}
 
 function conditionedNoRecurrencePattern(): RegExp {
   return new RegExp(
@@ -122,8 +219,8 @@ function hasVerificationNegator(clause: string): boolean {
 }
 
 function hasImmediatelyNegatedVerificationOutcome(clause: string): boolean {
-  const outcome = String.raw`(?:resolv(?:e|ed|ing)|fix(?:ed|ing)?|repair(?:ed|ing)?|gone|cur(?:e|ed|ing)|correct(?:ed|ing|ion)?|improv(?:e|ed|ing|ement)|pass(?:ed|ing)?|success(?:ful|fully)?|verif(?:y|ied|ication))`;
-  const bridge = String.raw`(?:(?:be|been|being|yet|fully|completely)\s+){0,3}`;
+  const outcome = String.raw`(?:resolv(?:e|ed|ing)|fix(?:ed|ing)?|repair(?:ed|ing)?|gone|cur(?:e|ed|ing)|correct(?:ed|ing|ion)?|improv(?:e|ed|ing|ement)|help(?:ed|ing)?|pass(?:ed|ing)?|success(?:ful|fully)?|verif(?:y|ied|ication))`;
+  const bridge = String.raw`(?:(?:be|been|being|yet|fully|completely|entirely|really)\s+){0,3}`;
 
   return (
     new RegExp(
@@ -132,6 +229,60 @@ function hasImmediatelyNegatedVerificationOutcome(clause: string): boolean {
     new RegExp(String.raw`\bunable\s+to\s+${bridge}${outcome}\b`).test(clause) ||
     new RegExp(String.raw`\b[a-z]+n't\s+${bridge}${outcome}\b`).test(clause)
   );
+}
+
+function isSafePassingClause(input: {
+  clause: string;
+  conditionedNoRecurrence: boolean;
+  explicitTestOutcome: boolean;
+  explicitQcOutcome: boolean;
+  explicitRepairVerification: boolean;
+  explicitResolvedConcern: boolean;
+  inheritedTestOutcome: boolean;
+}): boolean {
+  let remainder = input.clause;
+
+  if (input.conditionedNoRecurrence) {
+    remainder = remainder
+      .replace(/\b(?:the\s+)?(?:original\s+)?symptom\s+has not recurred\s+after\b/, "")
+      .replace(
+        new RegExp(String.raw`\b${VERIFICATION_NO_RECURRENCE_TEST_CONTEXT}\b`),
+        ""
+      );
+  } else if (input.explicitTestOutcome) {
+    remainder = remainder.replace(
+      new RegExp(
+        String.raw`\b${VERIFICATION_TEST_CONTEXT}\s+(?:passed|was successful)\b`
+      ),
+      ""
+    );
+  } else if (input.explicitQcOutcome) {
+    remainder = remainder
+      .replace(/\bqc\s+(?:passed|was successful)\b/, "")
+      .replace(/\bpassed\s+(?:the\s+)?qc\b/, "");
+  } else if (input.explicitRepairVerification) {
+    remainder = remainder
+      .replace(/\b(?:the\s+)?(?:repair|fix)\s+(?:(?:was|is|has been)\s+)?verified\b/, "")
+      .replace(/\bverified\s+(?:the\s+)?(?:repair|fix)\b/, "");
+  } else if (input.explicitResolvedConcern) {
+    remainder = remainder
+      .replace(
+        /\b(?:the\s+)?(?:(?:original|customer)\s+)?(?:concern|complaint|symptom)\s+(?:(?:is|was|has been)\s+)?resolved\b/,
+        ""
+      )
+      .replace(
+        /\b(?:the\s+)?(?:original\s+)?(?:concern|complaint|symptom)\s+(?:(?:is|was|has been)\s+)?no longer present\b/,
+        ""
+      );
+  } else if (input.inheritedTestOutcome) {
+    remainder = remainder.replace(/^(?:passed|was successful)$/, "");
+  }
+
+  remainder = remainder.replace(
+    new RegExp(String.raw`\b(?:${VERIFICATION_TEST_CONTEXT}|qc)\b`, "g"),
+    ""
+  );
+  return hasOnlySafeVerificationContextWords(remainder);
 }
 
 function classifyVerificationClause(
@@ -147,8 +298,9 @@ function classifyVerificationClause(
   if (
     /\b(?:failed|failure|unsuccessful|recurred)\b/.test(failureText) ||
     /\b(?:still\s+present|persists?|remains?)\b/.test(failureText) ||
-    /\b(?:returned|unchanged|worsened)\b/.test(failureText) ||
-    /\b(?:came|comes)\s+back\b/.test(failureText) ||
+    /\b(?:returned|returns?|unchanged|worsened|worse)\b/.test(failureText) ||
+    /\b(?:came|comes|is)\s+back\b/.test(failureText) ||
+    /\bno\s+changes?\b/.test(failureText) ||
     /\bstill\s+(?!(?:pending|required|needed|to|awaiting|waiting)\b)[a-z0-9]+/.test(
       failureText
     ) ||
@@ -178,6 +330,7 @@ function classifyVerificationClause(
     /\b(?:pending|incomplete|required|awaiting|waiting|retest required|requires? (?:a )?retest)\b/.test(
       clause
     ) ||
+    /\b(?:unresolved|unverified)\b/.test(clause) ||
     /\bverification\s+(?:is\s+)?(?:not|still)\b/.test(clause) ||
     /\bneeded\b/.test(clause) ||
     /\bmust\b/.test(clause) ||
@@ -253,7 +406,25 @@ function classifyVerificationClause(
     explicitResolvedConcern ||
     inheritedTestOutcome
   ) {
-    return "passed";
+    return isSafePassingClause({
+      clause,
+      conditionedNoRecurrence,
+      explicitTestOutcome,
+      explicitQcOutcome,
+      explicitRepairVerification,
+      explicitResolvedConcern,
+      inheritedTestOutcome,
+    })
+      ? "passed"
+      : "restrictive_recorded";
+  }
+
+  if (
+    isSafeTestContextClause(clause) ||
+    isSafeAbsentObservationClause(clause) ||
+    isSafeNoCodesObservationClause(clause)
+  ) {
+    return "safe_context";
   }
 
   return "neutral";
@@ -275,7 +446,11 @@ export function classifyVerificationNote(
   if (results.includes("failed")) return "failed";
   if (results.includes("pending")) return "pending";
   if (results.includes("restrictive_recorded")) return "recorded";
-  if (results.includes("passed")) return "passed";
+  if (results.includes("passed")) {
+    return results.every((result) => result === "passed" || result === "safe_context")
+      ? "passed"
+      : "recorded";
+  }
   return "recorded";
 }
 

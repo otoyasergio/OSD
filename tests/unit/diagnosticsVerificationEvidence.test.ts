@@ -85,6 +85,11 @@ describe("recorded verification-note classification", () => {
     "Mostly highway road test; passed.",
     "Road test passed, noise not present.",
     "Mostly highway road test, passed.",
+    "25 km road test; passed.",
+    "Cold 25 km test ride; passed.",
+    "Final QC; passed.",
+    "Road test passed; no diagnostic trouble codes.",
+    "Road test passed; noise no longer present under the original conditions.",
   ])("accepts only an unambiguous positive outcome: %s", (note) => {
     expect(classifyVerificationNote(note)).toBe("passed");
   });
@@ -149,9 +154,18 @@ describe("recorded verification-note classification", () => {
     ["Cannot fix the leak.", "pending"],
     ["Can't cure the clunk.", "pending"],
     ["Without improvement.", "pending"],
+    ["Concern unresolved.", "pending"],
+    ["Repair unverified.", "pending"],
+    ["Issue not entirely resolved.", "pending"],
+    ["Did not really fix it.", "pending"],
+    ["Didn't help.", "pending"],
     ["Noise returned after 30 km.", "failed"],
+    ["Noise worse.", "failed"],
+    ["Noise returns.", "failed"],
     ["Noise unchanged.", "failed"],
     ["Clunk came back.", "failed"],
+    ["Clunk is back.", "failed"],
+    ["No change.", "failed"],
     ["Noise comes back under load.", "failed"],
     ["Handling worsened.", "failed"],
     ["Still noisy.", "failed"],
@@ -186,6 +200,11 @@ describe("recorded verification-note classification", () => {
     "Comparable retest to follow.",
     "Road test will be completed after repair.",
     "Road test still to follow.",
+    "Road test passed; 25 km.",
+    "Road test passed; customer notified.",
+    "Customer notified; road test passed.",
+    "Road test passed and customer notified.",
+    `${"highway ".repeat(25)}road test; passed.`,
   ])("keeps unknown or qualified wording recorded-only: %s", (note) => {
     expect(classifyVerificationNote(note)).toBe("recorded");
   });
@@ -250,6 +269,11 @@ describe("recorded verification-note classification", () => {
     [
       "unresolved clause after a passing test",
       "Road test passed; issue not resolved.",
+      false,
+    ],
+    [
+      "unknown clause after a passing test",
+      "Road test passed; customer notified.",
       false,
     ],
     ["explicit post-repair outcome", "Road test passed.", true],
