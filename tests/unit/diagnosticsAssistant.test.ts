@@ -1176,7 +1176,11 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       source: contextSource(),
       redactTerms: { customerName: "Ann" },
     });
-    const generateDraft = vi.fn().mockResolvedValue(generationResult());
+    const generateDraft = vi
+      .fn<
+        (request: DiagnosticsGenerationRequest) => Promise<DiagnosticsGenerationResult>
+      >()
+      .mockResolvedValue(generationResult());
     const service = createDiagnosticsAssistantService({
       repository: repo,
       requireUser: async () => actor("technician"),

@@ -58,24 +58,37 @@ export function assistantUnavailableCopy(reason: AskOtomotoConfigReason | null):
 export function useDeadlineReached(
   deadline: string | null | undefined,
   enabled: boolean
-): boolean {
-  const [reachedDeadline, setReachedDeadline] = useState<string | null>(null);
+): boolean | null {
+  const [evaluation, setEvaluation] = useState<{
+    deadline: string;
+    reached: boolean;
+  } | null>(null);
   useEffect(() => {
     if (!enabled || !deadline) return;
     const deadlineTimestamp = Date.parse(deadline);
-    if (!Number.isFinite(deadlineTimestamp)) return;
     const remaining = deadlineTimestamp - Date.now();
-    if (remaining <= 0) {
-      setReachedDeadline(deadline);
-      return;
-    }
-    const timer = setTimeout(
-      () => setReachedDeadline(deadline),
-      Math.min(remaining, 2_147_483_647)
+    const evaluationTimer = setTimeout(
+      () =>
+        setEvaluation({
+          deadline,
+          reached: Number.isFinite(deadlineTimestamp) && remaining <= 0,
+        }),
+      0
     );
-    return () => clearTimeout(timer);
+    const deadlineTimer =
+      Number.isFinite(deadlineTimestamp) && remaining > 0
+        ? setTimeout(
+            () => setEvaluation({ deadline, reached: true }),
+            Math.min(remaining, 2_147_483_647)
+          )
+        : undefined;
+    return () => {
+      clearTimeout(evaluationTimer);
+      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    };
   }, [deadline, enabled]);
-  return enabled && Boolean(deadline) && reachedDeadline === deadline;
+  if (!enabled || !deadline) return false;
+  return evaluation?.deadline === deadline ? evaluation.reached : null;
 }
 
 function readOnlyReason(lockReason: AskOtomotoLockReason | null | undefined): string {
@@ -340,7 +353,7 @@ export function AskOtomotoThreadPanel({
   const retryAvailable =
     mutationAllowed &&
     configured &&
-    (thread.status === "failed" || generatingRetryDue) &&
+    (thread.status === "failed" || generatingRetryDue === true) &&
     !nonRecoverableHistoryFailure;
   const canRetry = retryAvailable && !retryPending && !sendBusy;
   const automaticLabel = thread.triggerType
@@ -355,10 +368,12 @@ export function AskOtomotoThreadPanel({
     thread.triggerType !== null &&
     messages.length === 0;
   const working =
-    (isAssistantThreadWorking(workspace) &&
+    generatingRetryDue !== null &&
+    automaticRecoveryDue !== null &&
+    ((isAssistantThreadWorking(workspace) &&
       !generatingRetryDue &&
       !automaticRecoveryDue) ||
-    recoveryPolling;
+      recoveryPolling);
   const latest = messages[messages.length - 1];
   const pollKey = `${thread.threadId}:${thread.status}:${latest?.messageId ?? ""}:${
     latest?.generationStatus ?? ""
@@ -367,7 +382,7 @@ export function AskOtomotoThreadPanel({
   const automaticRecoveryAvailable =
     mutationAllowed &&
     configured &&
-    automaticRecoveryDue &&
+    automaticRecoveryDue === true &&
     (!recoveryPolling || timedOut) &&
     !recoveryPending &&
     !sendBusy;
