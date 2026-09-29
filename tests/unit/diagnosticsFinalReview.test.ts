@@ -199,6 +199,20 @@ describe("final diagnostics review regressions", () => {
     expect(codes(answer)).not.toContain("ROADWORTHINESS_CLAIM");
   });
 
+  it.each([
+    "No faults found so the bike is safe to ride.",
+    "The tire is not worn but the bike is safe to ride.",
+  ])("does not carry negation across a conjunction: %s", (answer) => {
+    expect(codes(answer)).toContain("ROADWORTHINESS_CLAIM");
+  });
+
+  it.each(["The bike is not safe to ride.", "There is no evidence it is safe to ride."])(
+    "preserves genuine roadworthiness negation: %s",
+    (answer) => {
+      expect(codes(answer)).not.toContain("ROADWORTHINESS_CLAIM");
+    }
+  );
+
   it("flags generic recorded verification after repair, but permits future checks", () => {
     expect(codes("Charging system verified after repair.")).toContain(
       "VERIFICATION_CLAIM"

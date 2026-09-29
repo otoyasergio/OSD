@@ -95,6 +95,10 @@ function hasPositiveClaim(
             before.lastIndexOf(":")
           ) + 1
         );
+        const negationScope = clause.replace(
+          /^.*\b(?:and|but|so|or|yet|however|therefore|then)\b/i,
+          ""
+        );
         if (
           /\b(?:once|after|before|if|whether|until|when)\b/i.test(clause) ||
           /\b(?:retest|test|check|inspect|measure)\s+to\s+(?:confirm|determine|verify)\b/i.test(
@@ -102,7 +106,7 @@ function hasPositiveClaim(
           ) ||
           /\b(?:check|confirm|determine)\s+whether\b/i.test(clause) ||
           /\b(?:not|never|cannot|can't|do not|don't|must not|no|no evidence|avoid claiming)\b(?:\W+\w+){0,3}\W*$/i.test(
-            clause
+            negationScope
           )
         ) {
           continue;
@@ -607,7 +611,7 @@ export function inspectDiagnosticsOutput(
     violations,
     fields,
     false,
-    /\b(?:(?:(?:the\s+)?(?:bike|motorcycle|vehicle)\s+(?:is|was|has been)|it(?:\s+(?:is|was|has been)|'s))(?:\s+now)?\s+(?:safe\s+to\s+(?:ride|operate|use)|ok(?:ay)?\s+to\s+ride)|(?:(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the|do|not|never|claim|say)\b)[\w'-]+\s+){1,6}(?:is|was|has been|'s)(?:\s+now)?\s+(?:safe|ok(?:ay)?)\s+to\s+(?:ride|operate)|^\s*(?:safe|ok(?:ay)?)\s+to\s+(?:ride|operate)|(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the)\b)(?:[\w'-]+\s+){0,5}[\w'-]+\s+(?:is|was|has been|'s)(?:\s+now)?\s+roadworthy|pass(?:es|ed)\s+(?:the\s+)?(?:safety\s+inspection|safety|inspection)|cleared\s+for\s+release|ready\s+for\s+pickup)\b/i,
+    /\b(?:(?:(?:the\s+)?(?:bike|motorcycle|vehicle)\s+(?:is|was|has been)|it(?:\s+(?:is|was|has been)|'s))(?:\s+now)?\s+(?:safe\s+to\s+(?:ride|operate|use)|ok(?:ay)?\s+to\s+ride)|(?:(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the|do|not|no|without|never|claim|say)\b)[\w'-]+\s+){1,6}(?:is|was|has been|'s)(?:\s+now)?\s+(?:safe|ok(?:ay)?)\s+to\s+(?:ride|operate)|^\s*(?:safe|ok(?:ay)?)\s+to\s+(?:ride|operate)|(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the|not|no|without)\b)(?:[\w'-]+\s+){0,5}[\w'-]+\s+(?:is|was|has been|'s)(?:\s+now)?\s+roadworthy|pass(?:es|ed)\s+(?:the\s+)?(?:safety\s+inspection|safety|inspection)|cleared\s+for\s+release|ready\s+for\s+pickup)\b/i,
     "ROADWORTHINESS_CLAIM",
     "The draft makes an unsupported inspection or roadworthiness claim."
   );
