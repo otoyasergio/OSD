@@ -4,6 +4,7 @@ import {
   type DiagnosticsContextSource,
 } from "@/lib/diagnostics/context";
 import { inspectDiagnosticsOutput } from "@/lib/diagnostics/outputPolicy";
+import { buildDiagnosticsInstructions } from "@/lib/diagnostics/prompts";
 import type { DiagnosticsResponse } from "@/lib/diagnostics/responseSchema";
 
 function draft(answer: string): DiagnosticsResponse {
@@ -127,6 +128,15 @@ describe("final diagnostics review regressions", () => {
     "Previous owner: stator replaced.",
     "Aftermarket history: new battery installed.",
     "An aftermarket alarm was installed by the previous owner.",
+    "Which battery is installed?",
+    "Is caliper fixed or floating?",
+    "Record part number of regulator installed under seat.",
+    "Battery installed under seat.",
+    "Regulator installed on left side.",
+    "Sensor installed in the tail.",
+    "Module installed at the rear.",
+    "Caliper fixed or floating.",
+    "Installed state is unknown.",
     "Fixed range selection is available.",
   ])("does not treat proposed or historical work as completed: %s", (answer) => {
     expect(codes(answer)).not.toContain("COMPLETED_WORK_CLAIM");
@@ -152,6 +162,8 @@ describe("final diagnostics review regressions", () => {
     "Work was completed.",
     "Job has been completed.",
     "We completed the repair.",
+    "Due to low output, the stator was replaced.",
+    "Returned to the bench; stator replaced.",
   ])("flags only explicit completed-work forms: %s", (answer) => {
     expect(codes(answer)).toContain("COMPLETED_WORK_CLAIM");
   });
@@ -246,19 +258,43 @@ describe("final diagnostics review regressions", () => {
     ).not.toContain("UNSOURCED_TECHNICAL_VALUE");
   });
 
-  it.each(["None", "Not performed", "Not recorded", "Pending"])(
-    "accepts explicit no-completed-work Shop Log value: %s",
-    (repairs_performed) => {
-      expect(shopLogCodes({ repairs_performed })).not.toContain("COMPLETED_WORK_CLAIM");
-    }
-  );
+  it.each([
+    "None",
+    "No",
+    "Not performed",
+    "Not recorded",
+    "Not supplied",
+    "Not completed",
+    "None recorded",
+    "No repairs performed",
+    "No work was completed",
+    "Repairs not recorded",
+    "Work was not supplied",
+    "Pending",
+    "Not recorded — awaiting diagnosis",
+    "None: awaiting diagnosis",
+    "No repairs performed (estimate pending)",
+  ])("accepts explicit no-completed-work Shop Log value: %s", (repairs_performed) => {
+    expect(shopLogCodes({ repairs_performed })).not.toContain("COMPLETED_WORK_CLAIM");
+  });
 
-  it.each(["Not verified", "Pending", "Not supplied", "Not performed", "None"])(
-    "accepts explicit no-verification Shop Log value: %s",
-    (verification) => {
-      expect(shopLogCodes({ verification })).not.toContain("VERIFICATION_CLAIM");
-    }
-  );
+  it.each([
+    "None",
+    "No",
+    "Not verified",
+    "Not recorded",
+    "None recorded",
+    "Pending",
+    "Pending retest",
+    "Not supplied",
+    "Not performed",
+    "Verification not recorded",
+    "No verification performed",
+    "Not verified — pending retest",
+    "None (retest pending)",
+  ])("accepts explicit no-verification Shop Log value: %s", (verification) => {
+    expect(shopLogCodes({ verification })).not.toContain("VERIFICATION_CLAIM");
+  });
 
   it("withholds terse positive or ambiguous Shop Log claims without records", () => {
     expect(shopLogCodes({ repairs_performed: "Stator replaced." })).toContain(
@@ -271,6 +307,15 @@ describe("final diagnostics review regressions", () => {
       "VERIFICATION_CLAIM"
     );
     expect(shopLogCodes({ verification: "No entry." })).toContain("VERIFICATION_CLAIM");
+    expect(shopLogCodes({ repairs_performed: "None — stator replaced." })).toContain(
+      "COMPLETED_WORK_CLAIM"
+    );
+    expect(
+      shopLogCodes({ repairs_performed: "Not recorded (work completed)." })
+    ).toContain("COMPLETED_WORK_CLAIM");
+    expect(shopLogCodes({ verification: "Not recorded — charging verified." })).toContain(
+      "VERIFICATION_CLAIM"
+    );
   });
 
   it("permits positive Shop Log entries only with matching recorded evidence", () => {
@@ -286,5 +331,11 @@ describe("final diagnostics review regressions", () => {
     );
     expect(result).not.toContain("COMPLETED_WORK_CLAIM");
     expect(result).not.toContain("VERIFICATION_CLAIM");
+  });
+
+  it("prompts explicit absent Shop Log work and verification values", () => {
+    const prompt = buildDiagnosticsInstructions("report");
+    expect(prompt).toContain("repairs_performed: Not recorded");
+    expect(prompt).toContain("verification: Not verified");
   });
 });

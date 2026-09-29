@@ -101,7 +101,7 @@ function hasPositiveClaim(
             clause
           ) ||
           /\b(?:check|confirm|determine)\s+whether\b/i.test(clause) ||
-          /\b(?:not|never|cannot|can't|do not|don't|must not|no evidence|avoid claiming)\b(?:\W+\w+){0,3}\W*$/i.test(
+          /\b(?:not|never|cannot|can't|do not|don't|must not|no|no evidence|avoid claiming)\b(?:\W+\w+){0,3}\W*$/i.test(
             clause
           )
         ) {
@@ -130,15 +130,16 @@ function addPositiveViolation(
 
 function hasCompletedWorkClaim(fields: string[]): boolean {
   const completedVerb = String.raw`(?:replaced|repaired|installed|fixed)`;
+  const historicalActor = /\b(?:customer|owner|previous[- ]owner|aftermarket)\b/i;
+  const recommendationContext = /\b(?:recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?)\b/i;
+  const proposed =
+    /\b(?:may|might|could|should|would|will|need(?:s|ed)?|recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?|if|once|after|before|whether|until|when|retest|check|inspect|measure|not|never|cannot|can't|don't|to|be)\b/i;
   const actualAgent = new RegExp(
     String.raw`\b(?:we|(?:the\s+)?technician|(?:the\s+)?shop)\s+(?:(?:have|has)\s+)?${completedVerb}\b`,
     "i"
   );
   if (hasPositiveClaim(fields, actualAgent)) return true;
 
-  const historicalActor = /\b(?:customer|owner|previous[- ]owner|aftermarket)\b/i;
-  const proposed =
-    /\b(?:may|might|could|should|would|will|need(?:s|ed)?|recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?|if|once|after|before|whether|until|when|retest|check|inspect|measure|not|never|cannot|can't|don't|to|be)\b/i;
   const passive = new RegExp(
     String.raw`((?:\b[\w'-]+\s+){0,6})(?:was|were|has\s+been|have\s+been)\s+${completedVerb}\b`,
     "i"
@@ -152,7 +153,7 @@ function hasCompletedWorkClaim(fields: string[]): boolean {
         !historicalActor.test(subject) &&
         !historicalActor.test(before) &&
         !proposed.test(subject) &&
-        !proposed.test(before) &&
+        !recommendationContext.test(before) &&
         !/^\s*(?:by|for)\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after)
       );
     })
@@ -160,29 +161,53 @@ function hasCompletedWorkClaim(fields: string[]): boolean {
     return true;
   }
 
-  const terse = new RegExp(String.raw`((?:\b[\w'-]+\s+){1,5})${completedVerb}\b`, "i");
-  if (
-    hasPositiveClaim(fields, terse, (sentence, match) => {
-      const subject = match[1] ?? "";
-      const before = sentence.slice(0, match.index ?? 0);
-      const after = sentence.slice((match.index ?? 0) + match[0].length, 160);
-      return (
-        !historicalActor.test(subject) &&
-        !historicalActor.test(before) &&
-        !proposed.test(subject) &&
-        !proposed.test(before) &&
-        !/^\s*(?:by|for)\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after)
-      );
-    })
-  ) {
-    return true;
+  const terse = new RegExp(
+    String.raw`(?:^|[:;])\s*((?:[\w'-]+\s+){1,5})(${completedVerb})\b([^.!?\n:;]*)`,
+    "gi"
+  );
+  for (const field of fields) {
+    for (const sentence of field.split(/(?<=[.!?])\s+|\r?\n/)) {
+      if (sentence.trimEnd().endsWith("?")) continue;
+      for (const match of sentence.matchAll(terse)) {
+        if (match.index === undefined) continue;
+        const subject = match[1] ?? "";
+        const verb = match[2]?.toLowerCase() ?? "";
+        const after = match[3] ?? "";
+        const separator = sentence[match.index];
+        const priorClause =
+          separator === ":" || separator === ";"
+            ? (sentence.slice(0, match.index).split(/[:;]/).at(-1) ?? "")
+            : "";
+        if (
+          historicalActor.test(subject) ||
+          proposed.test(subject) ||
+          historicalActor.test(priorClause) ||
+          recommendationContext.test(priorClause) ||
+          /^(?:which|what|is|are|record|note|identify|confirm|determine|check|inspect|photograph|find)\b/i.test(
+            subject
+          ) ||
+          ((verb === "installed" || verb === "fixed") &&
+            /^\s+(?:on|in|under|at|or|state|status|position|location)\b/i.test(after))
+        ) {
+          continue;
+        }
+        return true;
+      }
+    }
   }
 
   const sentenceBeginning = new RegExp(String.raw`^\s*${completedVerb}\b`, "i");
   if (
     hasPositiveClaim(fields, sentenceBeginning, (sentence, match) => {
+      if (sentence.trimEnd().endsWith("?")) return false;
       if (/^\s*fixed\s+(?:range|interval)\b/i.test(sentence)) return false;
       const after = sentence.slice((match.index ?? 0) + match[0].length);
+      if (
+        /^(?:installed|fixed)$/i.test(match[0].trim()) &&
+        /^\s+(?:on|in|under|at|or|state|status|position|location)\b/i.test(after)
+      ) {
+        return false;
+      }
       return !/\bby\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after);
     })
   ) {
@@ -197,7 +222,7 @@ function hasCompletedWorkClaim(fields: string[]): boolean {
       const after = sentence.slice((match.index ?? 0) + match[0].length);
       return (
         !historicalActor.test(before) &&
-        !proposed.test(before) &&
+        !recommendationContext.test(before) &&
         !/\bby\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after)
       );
     })
@@ -212,14 +237,58 @@ function hasCompletedWorkClaim(fields: string[]): boolean {
 }
 
 function isExplicitNoCompletedWork(value: string): boolean {
-  return /^(?:none|not (?:performed|recorded)|pending|repairs? (?:not (?:performed|recorded)|pending)|no (?:repairs?|work)(?: (?:was|were))? (?:performed|recorded))$/i.test(
-    value.trim().replace(/[.!]+$/, "")
+  const { state, qualifier } = splitMissingState(value);
+  const action = String.raw`(?:performed|recorded|supplied|completed)`;
+  const accepted = new RegExp(
+    String.raw`^(?:none|no|pending|not ${action}|none ${action}|no (?:repairs?|work)?(?: (?:was|were))? ?${action}|(?:repairs?|work)(?: (?:was|were|is|has been))? not ${action}|no (?:repairs?|work))$`,
+    "i"
   );
+  return accepted.test(state) && (!qualifier || !qualifierHasCompletedWork(qualifier));
 }
 
 function isExplicitNoVerification(value: string): boolean {
-  return /^(?:none|(?:verification\s+)?(?:not verified|pending|not supplied|not performed))$/i.test(
-    value.trim().replace(/[.!]+$/, "")
+  const { state, qualifier } = splitMissingState(value);
+  const accepted =
+    /^(?:none|no|pending(?: retest)?|not (?:verified|recorded|supplied|performed)|none (?:recorded|supplied|performed)|no verification(?: (?:was|were))? ?(?:recorded|supplied|performed)?|verification(?: (?:was|is|has been))? (?:not (?:verified|recorded|supplied|performed)|pending(?: retest)?))$/i;
+  return (
+    accepted.test(state) && (!qualifier || !qualifierHasPositiveVerification(qualifier))
+  );
+}
+
+function splitMissingState(value: string): {
+  state: string;
+  qualifier: string | null;
+} {
+  const normalized = value.trim().replace(/[.!]+$/, "");
+  const parenthetical = normalized.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+  if (parenthetical?.[1] && parenthetical[2]) {
+    return {
+      state: parenthetical[1].trim(),
+      qualifier: parenthetical[2].trim(),
+    };
+  }
+  const separated = normalized.match(/^(.*?)\s*(?:[-–—]|:)\s*(.+)$/);
+  return separated?.[1] && separated[2]
+    ? { state: separated[1].trim(), qualifier: separated[2].trim() }
+    : { state: normalized, qualifier: null };
+}
+
+function qualifierHasCompletedWork(value: string): boolean {
+  if (hasCompletedWorkClaim([value])) return true;
+  const withoutNegated = value.replace(
+    /\b(?:no|not)\b(?:\s+\w+){0,3}\s+(?:performed|completed|finished|done)\b/gi,
+    ""
+  );
+  return /\b(?:performed|completed|finished|done)\b/i.test(withoutNegated);
+}
+
+function qualifierHasPositiveVerification(value: string): boolean {
+  const withoutNegated = value.replace(
+    /\b(?:no|not)\b(?:\s+\w+){0,3}\s+(?:verified|passed|resolved|successful|confirmed|complete)\b/gi,
+    ""
+  );
+  return /\b(?:verified|passed|resolved|successful|confirmed|complete)\b/i.test(
+    withoutNegated
   );
 }
 

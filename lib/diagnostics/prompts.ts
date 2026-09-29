@@ -122,7 +122,9 @@ describe that same single request.
 Use "none" only when no additional evidence is requested. State a tailored safety
 boundary or null fields when none is warranted. Always set review_status to
 "staff_review_required". Generated content is an AI draft until staff review.
-Reports require a compact shop_log_entry. Never expose hidden reasoning.
+Reports require a compact shop_log_entry. When completed work is absent, set
+repairs_performed: Not recorded. When verification evidence is absent, set
+verification: Not verified. Never expose hidden reasoning.
 `.trim();
 
 const MODE_INSTRUCTIONS: Record<DiagnosticsMode, string> = {
