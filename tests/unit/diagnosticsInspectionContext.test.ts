@@ -89,10 +89,11 @@ function source(rows: TemplateRow[]): DiagnosticsContextSource {
   };
 }
 
-function parsedContext(input: DiagnosticsContextSource) {
+function parsedContext(input: DiagnosticsContextSource, jobId?: string) {
   const shaped = shapeDiagnosticsContext(input, {
     mode: "shop",
     workOrderId: "wo-1",
+    jobId,
   });
   return {
     shaped,
@@ -118,6 +119,26 @@ function parsedContext(input: DiagnosticsContextSource) {
         omittedMeaning: string | null;
         recordedStatusCounts: Record<string, number>;
       };
+      selectedJob: {
+        parts: unknown[];
+        checklist: unknown[];
+        verification: unknown[];
+        truncation: {
+          parts: { total: number; included: number; omitted: number; clipped: boolean };
+          checklist: {
+            total: number;
+            included: number;
+            omitted: number;
+            clipped: boolean;
+          };
+          verification: {
+            total: number;
+            included: number;
+            omitted: number;
+            clipped: boolean;
+          };
+        };
+      } | null;
       truncation: {
         inspectionResults: {
           total: number;
@@ -274,6 +295,35 @@ describe("diagnostics inspection context", () => {
       status: "in_progress",
       notes: `Job note ${index} ${"j".repeat(450)}`,
     }));
+    input.jobs[0] = {
+      ...input.jobs[0]!,
+      parts: Array.from({ length: 100 }, (_, index) => ({
+        partId: `part-${String(index).padStart(3, "0")}`,
+        description: `Selected job part ${index} ${"p".repeat(450)}`,
+        quantityRequired: 1,
+        quantityReceived: 1,
+        quantityAllocated: 1,
+        quantityInstalled: index % 2,
+        state: index % 2 ? "installed" : "allocated",
+        notes: `Part evidence ${index} ${"p".repeat(450)}`,
+      })),
+      checklist: Array.from({ length: 100 }, (_, index) => ({
+        checklistItemId: `checklist-${String(index).padStart(3, "0")}`,
+        title: `Selected job checklist ${index} ${"c".repeat(450)}`,
+        checkedAt:
+          index % 2 === 0
+            ? `2026-09-29T07:${String(index % 60).padStart(2, "0")}:00.000Z`
+            : null,
+      })),
+      verification: Array.from({ length: 100 }, (_, index) => ({
+        verificationId: `verification-${String(index).padStart(3, "0")}`,
+        result: index === 99 ? "failed" : "recorded",
+        notes: `Selected job verification ${index} ${"v".repeat(450)}`,
+        recordedAt: `2026-09-${String(1 + (index % 29)).padStart(2, "0")}T${String(
+          index % 24
+        ).padStart(2, "0")}:00:00.000Z`,
+      })),
+    };
     input.technicianNotes = Array.from({ length: 100 }, (_, index) => ({
       technicianNoteId: `note-${index}`,
       workOrderId: "wo-1",
@@ -335,7 +385,7 @@ describe("diagnostics inspection context", () => {
       notes: index >= 60 ? `Flagged evidence ${index}` : null,
     }));
 
-    const { shaped, parsed } = parsedContext(input);
+    const { shaped, parsed } = parsedContext(input, "job-0");
     const suppliedCategories = parsed.inspection.categories.map(
       (category) => category.category
     );
@@ -360,5 +410,17 @@ describe("diagnostics inspection context", () => {
     );
     expect(suppliedMeasured.length).toBeGreaterThan(0);
     expect(suppliedAllOk).toHaveLength(0);
+    expect(parsed.selectedJob).not.toBeNull();
+    expect(parsed.selectedJob?.parts.length).toBeGreaterThan(0);
+    expect(parsed.selectedJob?.checklist.length).toBeGreaterThan(0);
+    expect(parsed.selectedJob?.verification.length).toBeGreaterThan(0);
+    expect(parsed.selectedJob?.truncation).toMatchObject({
+      parts: { total: 100, clipped: true, omitted: expect.any(Number) },
+      checklist: { total: 100, clipped: true, omitted: expect.any(Number) },
+      verification: { total: 100, clipped: true, omitted: expect.any(Number) },
+    });
+    expect(parsed.selectedJob!.truncation.parts.omitted).toBeGreaterThan(0);
+    expect(parsed.selectedJob!.truncation.checklist.omitted).toBeGreaterThan(0);
+    expect(parsed.selectedJob!.truncation.verification.omitted).toBeGreaterThan(0);
   });
 });
