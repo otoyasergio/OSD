@@ -327,7 +327,10 @@ export function toAskOtomotoWorkspaceView(
       role: message.role,
       body: message.body,
       generationStatus: message.generationStatus,
-      safeErrorCode: message.safeErrorCode,
+      ...(message.generationStatus === "failed" ||
+      message.generationStatus === "policy_withheld"
+        ? { safeErrorCode: message.safeErrorCode }
+        : {}),
       requestedInput: sanitizeRequestedInput(message.requestedInput),
       phase: message.phase,
       promotedNoteId: message.promotedNoteId ?? null,

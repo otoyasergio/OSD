@@ -319,6 +319,8 @@ describe("loadAskOtomotoPanelData", () => {
         triggerType: null,
         createdAt: "2026-09-29T10:00:00.000Z",
         updatedAt: "2026-09-29T10:00:00.000Z",
+        retryableAt: null,
+        automaticRecoveryAt: null,
       },
       messages: [
         {
