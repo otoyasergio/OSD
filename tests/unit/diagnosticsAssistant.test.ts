@@ -996,6 +996,7 @@ describe("Ask OTOMOTO internal trigger primitive", () => {
       status: "pending" as const,
       diagnosticPhase: null,
       triggerType: "job_completed" as const,
+      triggerEntityId: "51111111-1111-4111-8111-111111111111",
       createdAt: "2026-09-29T00:00:00.000Z",
       updatedAt: "2026-09-29T00:00:00.000Z",
     };
@@ -1095,6 +1096,7 @@ describe("Ask OTOMOTO internal trigger primitive", () => {
       status: "pending" as const,
       diagnosticPhase: null,
       triggerType: "inspection_completed" as const,
+      triggerEntityId: "e1111111-1111-4111-8111-111111111111",
       createdAt: "2026-09-29T00:00:00.000Z",
       updatedAt: "2026-09-29T00:00:00.000Z",
     };
@@ -1626,7 +1628,7 @@ describe("Ask OTOMOTO internal job-completion generation", () => {
       .fn()
       .mockImplementation(
         async (
-          request: DiagnosticsGenerationRequest
+          _request: DiagnosticsGenerationRequest
         ): Promise<DiagnosticsGenerationResult> => ({
           ...generationResult(),
           response: {
