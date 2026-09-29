@@ -1182,6 +1182,57 @@ describe("AskOtomotoPanel", () => {
       );
     });
 
+    function deferredSave() {
+      let resolve!: (value: { status: "success"; error: null }) => void;
+      promoteAssistantNoteAction.mockReturnValue(
+        new Promise((r) => {
+          resolve = r;
+        })
+      );
+      return () => resolve({ status: "success", error: null });
+    }
+
+    it("offers no way to cancel or discard while a save is in flight", async () => {
+      const finishSave = deferredSave();
+      await render(withThread(workspace()));
+      await click(reviewButton());
+      await setValue(noteText(), "Edited finding");
+      await click(confirm());
+      await act(async () => reviewForm().requestSubmit());
+
+      expect(saveButton().textContent).toMatch(/saving/i);
+      expect(cancelButton()?.disabled).toBe(true);
+      await pressEscape();
+      expect(reviewForm()).not.toBeNull();
+      expect(discardButton()).toBeUndefined();
+      expect(keepEditingButton()).toBeUndefined();
+
+      await act(async () => finishSave());
+      expect(promoteAssistantNoteAction).toHaveBeenCalledTimes(1);
+      expect(
+        container.querySelector('form[aria-label="Review AI draft as note"]')
+      ).toBeNull();
+      expect((document.activeElement as HTMLElement).textContent).toMatch(
+        /saved as a technician note/i
+      );
+    });
+
+    it("withdraws an open discard prompt once saving starts", async () => {
+      const finishSave = deferredSave();
+      await render(withThread(workspace()));
+      await click(reviewButton());
+      await click(confirm());
+      await click(cancelButton());
+      expect(discardButton()).toBeDefined();
+
+      await act(async () => reviewForm().requestSubmit());
+      expect(discardButton()).toBeUndefined();
+      expect(keepEditingButton()).toBeUndefined();
+
+      await act(async () => finishSave());
+      expect(container.textContent).toMatch(/saved as a technician note/i);
+    });
+
     it("moves focus to a stable saved status after saving, surviving the refresh", async () => {
       promoteAssistantNoteAction.mockResolvedValue({ status: "success", error: null });
       await render(withThread(workspace()));

@@ -108,11 +108,12 @@ export function AssistantNoteReview({
         event.preventDefault();
         if (!canSave || inFlight.current) return;
         inFlight.current = true;
+        setConfirmingDiscard(false);
         const formData = new FormData(event.currentTarget);
         startTransition(() => dispatch(formData));
       }}
       onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
+        if (event.key !== "Escape" || pending) return;
         // Escape also dismisses an IME candidate list; that must not close the review.
         if (event.nativeEvent.isComposing || event.keyCode === 229) return;
         event.preventDefault();
@@ -205,7 +206,7 @@ export function AssistantNoteReview({
         </button>
       </div>
 
-      {confirmingDiscard ? (
+      {confirmingDiscard && !pending ? (
         <div className="flex flex-col gap-2 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
           <p id={`note-discard-${fieldId}`}>
             Discard your changes to this note? Nothing has been saved.
