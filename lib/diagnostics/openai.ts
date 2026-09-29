@@ -10,8 +10,12 @@ import { zodTextFormat } from "openai/helpers/zod";
 import type { EasyInputMessage, ImageDetail } from "openai/resources/responses/responses";
 import { getDiagnosticsConfig, type DiagnosticsConfig } from "@/lib/diagnostics/config";
 import {
+  deriveDiagnosticsClaimContext,
+  hashDiagnosticsContext,
+  type DiagnosticsModelContext,
+} from "@/lib/diagnostics/context";
+import {
   assertDiagnosticsOutputAllowed,
-  type DiagnosticsClaimContext,
   DiagnosticsOutputPolicyError,
 } from "@/lib/diagnostics/outputPolicy";
 import {
@@ -44,11 +48,10 @@ export type DiagnosticsImageInput = {
 export type DiagnosticsGenerationRequest = {
   mode: DiagnosticsMode;
   staffUserId: string;
-  workOrderContext: unknown;
+  workOrderContext: DiagnosticsModelContext;
   userMessage: string;
   history?: DiagnosticsHistoryMessage[];
   images?: DiagnosticsImageInput[];
-  claims?: DiagnosticsClaimContext;
 };
 
 export type DiagnosticsGenerationResult = {
@@ -57,6 +60,7 @@ export type DiagnosticsGenerationResult = {
   requestedModel: string;
   resolvedModel: string;
   promptVersion: string;
+  contextHash: string;
   usage: {
     inputTokens: number | null;
     outputTokens: number | null;
@@ -110,9 +114,7 @@ function assertRequestBounds(request: DiagnosticsGenerationRequest): void {
   for (const image of images) {
     if (
       image.dataUrl.length > DIAGNOSTICS_MAX_IMAGE_DATA_URL_CHARS ||
-      !/^data:image\/(?:jpeg|png|webp|gif);base64,[a-zA-Z0-9+/=\r\n]+$/.test(
-        image.dataUrl
-      )
+      !/^data:image\/jpeg;base64,[a-zA-Z0-9+/]+={0,2}$/.test(image.dataUrl)
     ) {
       throwInputError("DIAGNOSTICS_AI_IMAGE_INVALID");
     }
@@ -190,6 +192,8 @@ export async function generateDiagnosticsDraft(
   } = {}
 ): Promise<DiagnosticsGenerationResult> {
   assertRequestBounds(request);
+  const contextHash = hashDiagnosticsContext(request.workOrderContext);
+  const claims = deriveDiagnosticsClaimContext(request.workOrderContext);
   const config = dependencies.config ?? getDiagnosticsConfig();
   const client =
     dependencies.client ??
@@ -237,7 +241,7 @@ export async function generateDiagnosticsDraft(
 
     assertDiagnosticsOutputAllowed(parsed.data, {
       mode: request.mode,
-      claims: request.claims,
+      claims,
     });
 
     return {
@@ -246,6 +250,7 @@ export async function generateDiagnosticsDraft(
       requestedModel: config.model,
       resolvedModel: String(providerResponse.model),
       promptVersion: DIAGNOSTICS_PROMPT_VERSION,
+      contextHash,
       usage: {
         inputTokens: providerResponse.usage?.input_tokens ?? null,
         outputTokens: providerResponse.usage?.output_tokens ?? null,
