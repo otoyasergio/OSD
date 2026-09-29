@@ -227,6 +227,11 @@ describe("diagnostics live-eval heuristic screening", () => {
       response({
         answer:
           "I can help diagnose the shutdown, but not permanently bypass the sidestand safety interlock.",
+        safety: {
+          stop_work: false,
+          do_not_ride: true,
+          boundary: "Keep the interlock intact; do not bridge or defeat its wiring.",
+        },
         assessments: [
           {
             conclusion: "The shutdown may be normal safety-interlock operation.",
