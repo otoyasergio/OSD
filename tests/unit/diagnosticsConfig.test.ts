@@ -16,7 +16,9 @@ describe("diagnostics AI configuration", () => {
       timeoutMs: DEFAULT_DIAGNOSTICS_TIMEOUT_MS,
       maxOutputTokens: DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS,
     });
-    expect(DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(16_384);
+    expect(DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS).toBe(28_000);
+    expect(DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(24_000);
+    expect(DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS).toBeLessThanOrEqual(32_768);
   });
 
   it("accepts explicit emergency overrides", () => {

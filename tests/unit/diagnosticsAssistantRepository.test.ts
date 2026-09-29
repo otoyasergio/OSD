@@ -794,6 +794,77 @@ describe("Supabase diagnostics repository boundaries", () => {
     expect(adminCalls).toEqual(["ai_assistant_message"]);
   });
 
+  it("records acceptance metadata once per location and resolved model", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    const admin = {
+      from: vi.fn(() => ({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        contains: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        insert,
+      })),
+    } as unknown as DbClient;
+    const repository = new SupabaseDiagnosticsRepository(fakeClient({}, []), () => admin);
+
+    await repository.recordModelChangeAudit({
+      actorUserId: "user-1",
+      locationId: "loc-1",
+      messageId: "message-1",
+      previousModel: "model-old",
+      requestedModel: "model-alias",
+      resolvedModel: "model-new",
+      promptVersion: "otomoto-moto-diagnostics-v1.4.0",
+      acceptanceRerunRequired: true,
+      scenarioCount: 18,
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        new_value: {
+          requested_model: "model-alias",
+          resolved_model: "model-new",
+          prompt_version: "otomoto-moto-diagnostics-v1.4.0",
+          acceptance_rerun_required: true,
+          scenario_count: 18,
+        },
+      })
+    );
+  });
+
+  it("does not duplicate a model acceptance audit for the same location and resolved model", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    const admin = {
+      from: vi.fn(() => ({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        contains: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: { audit_id: "audit-1" },
+          error: null,
+        }),
+        insert,
+      })),
+    } as unknown as DbClient;
+    const repository = new SupabaseDiagnosticsRepository(fakeClient({}, []), () => admin);
+
+    await repository.recordModelChangeAudit({
+      actorUserId: "user-1",
+      locationId: "loc-1",
+      messageId: "message-2",
+      previousModel: "model-old",
+      requestedModel: "model-alias",
+      resolvedModel: "model-new",
+      promptVersion: "otomoto-moto-diagnostics-v1.4.0",
+      acceptanceRerunRequired: true,
+      scenarioCount: 18,
+    });
+
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("does not fall back to service-role storage when session download is denied", async () => {
     const session = {
       storage: {

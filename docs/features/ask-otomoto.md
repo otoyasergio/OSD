@@ -25,10 +25,17 @@ inactive and is not an operating shop or an alternate data source.
 The current default is the rolling latest alias `gpt-6-astra`.
 `OTOMOTO_DIAGNOSTICS_MODEL` is an emergency server-side override. Each successful
 message stores both the requested alias and the provider-resolved model plus the
-prompt version. The model-change audit records a resolved-model change. Review
-those actual resolved values; an alias name alone is not an audit. Any alias,
-resolved-model, prompt, schema, or policy change requires the full live-model
-acceptance suite and qualified shop review again before release.
+prompt version. A location/model change audit records the resolved model, prompt
+version, `acceptance_rerun_required: true`, and the 18-scenario suite count, with
+repeat entries for the same location/resolved model suppressed where possible.
+Review those actual resolved values; an alias name alone is not an audit. Any
+alias, resolved-model, prompt, schema, or policy change requires the full
+live-model acceptance suite and qualified shop review again before release.
+
+High-reasoning requests default to a bounded 28,000 output-token ceiling
+(`OTOMOTO_DIAGNOSTICS_MAX_OUTPUT_TOKENS`, hard cap 32,768). This is a ceiling,
+not expected usage, but raising it can materially increase a request's provider
+cost. Review actual token usage and current provider pricing before changing it.
 
 ## Context, photos, and sources
 
@@ -128,6 +135,7 @@ code:
 3. `20260929051836_ask_otomoto_atomic_lifecycle.sql`
 4. `20260929060837_ask_otomoto_atomic_seed_begin.sql`
 5. `20260929062500_add_ai_assistant_closure_phase.sql`
+6. `20260929070000_harden_ai_assistant_identity.sql`
 
 First verify them against an isolated local/QA database. Against a linked
 **non-production** Supabase project, regenerate types with `npm run db:types` and

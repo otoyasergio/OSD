@@ -58,6 +58,7 @@ export const ASK_OTOMOTO_MAX_TEXT_CHARS = 8_000;
 export const ASK_OTOMOTO_MAX_PHOTOS = 3;
 export const ASK_OTOMOTO_STALE_MARGIN_MS = 30_000;
 export const ASK_OTOMOTO_PENDING_RECOVERY_GRACE_MS = 30_000;
+export const ASK_OTOMOTO_ACCEPTANCE_SCENARIO_COUNT = 18;
 
 const ALLOWED_DIAGNOSTICS_PHOTO_CATEGORIES = new Set([
   "inspection_tires",
@@ -344,6 +345,9 @@ export interface DiagnosticsAssistantRepository {
     previousModel: string;
     requestedModel: string;
     resolvedModel: string;
+    promptVersion: string;
+    acceptanceRerunRequired: true;
+    scenarioCount: number;
   }): Promise<void>;
 }
 
@@ -1549,7 +1553,21 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
     previousModel: string;
     requestedModel: string;
     resolvedModel: string;
+    promptVersion: string;
+    acceptanceRerunRequired: true;
+    scenarioCount: number;
   }): Promise<void> {
+    const { data: existing, error } = await this.admin
+      .from("audit_log")
+      .select("audit_id")
+      .eq("location_id", input.locationId)
+      .eq("action", "ask_otomoto_model_alias_changed")
+      .contains("new_value", { resolved_model: input.resolvedModel })
+      .limit(1)
+      .maybeSingle();
+    throwQuery(error);
+    if (existing) return;
+
     await addAuditLog(this.admin, {
       actor_user_id: input.actorUserId,
       location_id: input.locationId,
@@ -1561,6 +1579,9 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
       new_value: {
         requested_model: input.requestedModel,
         resolved_model: input.resolvedModel,
+        prompt_version: input.promptVersion,
+        acceptance_rerun_required: input.acceptanceRerunRequired,
+        scenario_count: input.scenarioCount,
       },
     });
   }
@@ -1874,6 +1895,9 @@ export function createDiagnosticsAssistantService(
           previousModel: priorModel.resolvedModel,
           requestedModel: response.requestedModel,
           resolvedModel: response.resolvedModel,
+          promptVersion: response.promptVersion,
+          acceptanceRerunRequired: true,
+          scenarioCount: ASK_OTOMOTO_ACCEPTANCE_SCENARIO_COUNT,
         });
       } catch {
         // Metadata-only audit is best effort after the response is committed.

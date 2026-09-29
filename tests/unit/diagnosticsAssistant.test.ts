@@ -1388,6 +1388,9 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       previousModel: "model-resolved-1",
       requestedModel: "model-alias",
       resolvedModel: "model-resolved-2",
+      promptVersion: "prompt-v1",
+      acceptanceRerunRequired: true,
+      scenarioCount: 18,
     });
     expect(
       JSON.stringify(vi.mocked(repo.recordModelChangeAudit).mock.calls)

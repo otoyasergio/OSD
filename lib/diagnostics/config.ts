@@ -1,6 +1,6 @@
 export const DEFAULT_DIAGNOSTICS_MODEL = "gpt-6-astra";
 export const DEFAULT_DIAGNOSTICS_TIMEOUT_MS = 60_000;
-export const DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS = 16_384;
+export const DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS = 28_000;
 
 export type DiagnosticsConfig = {
   apiKey: string;
