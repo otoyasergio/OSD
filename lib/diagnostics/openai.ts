@@ -14,7 +14,7 @@ import { getDiagnosticsConfig, type DiagnosticsConfig } from "@/lib/diagnostics/
 import {
   buildDiagnosticsContextBlock,
   deriveDiagnosticsClaimContext,
-  type DiagnosticsModelContext,
+  type ShapedDiagnosticsModelContext,
 } from "@/lib/diagnostics/context";
 import {
   assertDiagnosticsOutputAllowed,
@@ -53,7 +53,7 @@ export type DiagnosticsImageInput = {
 export type DiagnosticsGenerationRequest = {
   mode: DiagnosticsMode;
   staffUserId: string;
-  workOrderContext: DiagnosticsModelContext;
+  workOrderContext: ShapedDiagnosticsModelContext;
   userMessage: string;
   history?: DiagnosticsHistoryMessage[];
   images?: DiagnosticsImageInput[];
@@ -136,6 +136,64 @@ function assertRequestBounds(request: DiagnosticsGenerationRequest): void {
   }
 }
 
+function assertSafeContextShape(
+  context: ShapedDiagnosticsModelContext,
+  mode: DiagnosticsMode
+): void {
+  const seen = new WeakSet<object>();
+  let remainingNodes = 10_000;
+  const technical = diagnosticsAudienceForMode(mode) === "technical";
+
+  const visit = (value: unknown, depth: number): void => {
+    remainingNodes -= 1;
+    if (remainingNodes < 0 || depth > 8) throwInputError("DIAGNOSTICS_AI_CONTEXT_UNSAFE");
+    if (typeof value === "string") {
+      if (
+        value.length > 500 ||
+        /(?:https?:\/\/|data:image\/|(?:^|\/)(?:storage|photos?|images?|signatures?|documents?|tokens?)(?:\/|$)|\b[A-HJ-NPR-Z0-9]{17}\b|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|(?:\+?1[\s.()-]*)?[2-9]\d{2}[\s.()-]*[2-9]\d{2}[\s.()-]*\d{4}\b)/i.test(
+          value
+        )
+      ) {
+        throwInputError("DIAGNOSTICS_AI_CONTEXT_UNSAFE");
+      }
+      return;
+    }
+    if (
+      value === null ||
+      typeof value === "boolean" ||
+      (typeof value === "number" && Number.isFinite(value))
+    ) {
+      return;
+    }
+    if (typeof value !== "object" || seen.has(value)) {
+      throwInputError("DIAGNOSTICS_AI_CONTEXT_UNSAFE");
+    }
+    seen.add(value);
+    if (Array.isArray(value)) {
+      if (value.length > 100) throwInputError("DIAGNOSTICS_AI_CONTEXT_UNSAFE");
+      value.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (
+        (key !== "photoCount" &&
+          /(?:photo|image|signature|signed_by|initials|token|url|path|email|phone|vin|address)/i.test(
+            key
+          )) ||
+        (technical &&
+          /(?:price|cost|authorization|currency|laborCents|partsCents|feesCents|discountCents|taxCents|totalCents)/i.test(
+            key
+          ))
+      ) {
+        throwInputError("DIAGNOSTICS_AI_CONTEXT_UNSAFE");
+      }
+      visit(child, depth + 1);
+    }
+  };
+
+  visit(context, 0);
+}
+
 function requestInput(
   request: DiagnosticsGenerationRequest,
   currentContext: string
@@ -190,6 +248,9 @@ function requestInput(
 
 function providerError(error: unknown): Error {
   if (error instanceof DiagnosticsOutputPolicyError) return error;
+  if (error instanceof SyntaxError) {
+    return new Error("DIAGNOSTICS_AI_RESPONSE_PARSE_FAILED", { cause: error });
+  }
   if (error instanceof APIConnectionTimeoutError) {
     return new Error("DIAGNOSTICS_AI_PROVIDER_TIMEOUT", { cause: error });
   }
@@ -234,6 +295,7 @@ export async function generateDiagnosticsDraft(
   ) {
     throw new Error("DIAGNOSTICS_AI_CONTEXT_AUDIENCE_MISMATCH");
   }
+  assertSafeContextShape(request.workOrderContext, request.mode);
   const contextBlock = buildDiagnosticsContextBlock(request.workOrderContext);
   const contextHash = createHash("sha256").update(contextBlock).digest("hex");
   const claims = deriveDiagnosticsClaimContext(request.workOrderContext);
@@ -250,7 +312,10 @@ export async function generateDiagnosticsDraft(
     const providerResponse = await client.responses.parse(
       {
         model: config.model,
-        instructions: buildDiagnosticsInstructions(request.mode),
+        instructions: buildDiagnosticsInstructions(
+          request.mode,
+          request.workOrderContext.missingReferences
+        ),
         input: requestInput(request, contextBlock),
         text: {
           format: zodTextFormat(

@@ -5,15 +5,43 @@ export const DIAGNOSTICS_PROMPT_VERSION = "otomoto-moto-diagnostics-v1.2.0";
 
 export type DiagnosticsAudience = "technical" | "front_office";
 
-const MISSING_REFERENCE_NOTICE = `
-The following named resources are not installed in this application and must never
-be claimed as consulted: OTOMOTO_Universal_Diagnostic_Tree_2026.docx, the official
-Visual Motorcycle Inspection Report template, the backup Universal Motorcycle
-Diagnostic Decision Tree, exact-model OEM manuals and wiring diagrams, and the ten
-PDFs from the earlier local Codex plugin. This version has no live recall, Ontario
-inspection, OEM-document, supplier, or web lookup. Mark those sources not supplied,
-not accessible, not checked, or not verified as applicable.
-`.trim();
+type DiagnosticsMissingReferences = Partial<
+  Record<
+    | "exactModelOem"
+    | "currentRecallLookup"
+    | "currentOntarioInspection"
+    | "officialInspectionTemplate"
+    | "universalDiagnosticTree",
+    boolean
+  >
+>;
+
+function missingReferenceNotice(
+  missingReferences: DiagnosticsMissingReferences = {}
+): string {
+  const isMissing = (name: keyof DiagnosticsMissingReferences) =>
+    missingReferences[name] ?? true;
+  const missing = [
+    isMissing("universalDiagnosticTree")
+      ? "OTOMOTO_Universal_Diagnostic_Tree_2026.docx and the backup Universal Motorcycle Diagnostic Decision Tree"
+      : null,
+    isMissing("officialInspectionTemplate")
+      ? "the official Visual Motorcycle Inspection Report template"
+      : null,
+    isMissing("exactModelOem") ? "exact-model OEM manuals and wiring diagrams" : null,
+    isMissing("currentRecallLookup") ? "current official recall lookup" : null,
+    isMissing("currentOntarioInspection")
+      ? "current official Ontario inspection source"
+      : null,
+    "the ten PDFs from the earlier local Codex plugin",
+  ].filter((value): value is string => Boolean(value));
+  return [
+    `The following named resources are not installed or were not included in this context and must never be claimed as consulted: ${missing.join(
+      ", "
+    )}.`,
+    "There is no supplier or web lookup. Mark missing sources not supplied, not accessible, not checked, or not verified as applicable.",
+  ].join(" ");
+}
 
 const CORE_INSTRUCTIONS = `
 You are Ask OTOMOTO, a diagnostic drafting assistant for OTOMOTO Toronto Moto Inc.
@@ -140,12 +168,15 @@ export function diagnosticsAudienceForMode(mode: DiagnosticsMode): DiagnosticsAu
   return mode === "advisor" || mode === "intake" ? "front_office" : "technical";
 }
 
-export function buildDiagnosticsInstructions(mode: DiagnosticsMode): string {
+export function buildDiagnosticsInstructions(
+  mode: DiagnosticsMode,
+  missingReferences?: DiagnosticsMissingReferences
+): string {
   return [
     `Prompt policy version: ${DIAGNOSTICS_PROMPT_VERSION}`,
     CORE_INSTRUCTIONS,
     MODE_INSTRUCTIONS[mode],
-    MISSING_REFERENCE_NOTICE,
+    missingReferenceNotice(missingReferences),
   ].join("\n\n");
 }
 

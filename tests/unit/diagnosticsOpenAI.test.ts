@@ -6,7 +6,7 @@ import {
   generateDiagnosticsDraft,
 } from "@/lib/diagnostics/openai";
 import type { DiagnosticsConfig } from "@/lib/diagnostics/config";
-import type { DiagnosticsModelContext } from "@/lib/diagnostics/context";
+import type { ShapedDiagnosticsModelContext } from "@/lib/diagnostics/context";
 import type { DiagnosticsResponse } from "@/lib/diagnostics/responseSchema";
 
 const config: DiagnosticsConfig = {
@@ -76,7 +76,7 @@ function providerResult(output: DiagnosticsResponse = validResponse()) {
 }
 
 function request() {
-  const workOrderContext: DiagnosticsModelContext = {
+  const workOrderContext = {
     mode: "shop",
     audience: "technical",
     contextAsOf: "2026-09-29T03:30:00.000Z",
@@ -131,9 +131,8 @@ function request() {
       recommendations: { total: 0, included: 0, omitted: 0, clipped: false },
       qualityChecks: { total: 0, included: 0, omitted: 0, clipped: false },
       safetyChecks: { total: 0, included: 0, omitted: 0, clipped: false },
-      aggregate: { total: 1, included: 1, omitted: 0, clipped: false },
     },
-  };
+  } as unknown as ShapedDiagnosticsModelContext;
   return {
     mode: "shop" as const,
     staffUserId: "staff-user-123",
@@ -321,6 +320,15 @@ describe("OpenAI diagnostics provider", () => {
       generateDiagnosticsDraft(request(), { client: parseClient, config })
     ).rejects.toThrow("DIAGNOSTICS_AI_RESPONSE_PARSE_FAILED");
 
+    const syntaxClient = {
+      responses: {
+        parse: vi.fn().mockRejectedValue(new SyntaxError("Unexpected token in JSON")),
+      },
+    } as unknown as OpenAI;
+    await expect(
+      generateDiagnosticsDraft(request(), { client: syntaxClient, config })
+    ).rejects.toThrow("DIAGNOSTICS_AI_RESPONSE_PARSE_FAILED");
+
     const refusalClient = {
       responses: {
         parse: vi.fn().mockResolvedValue({
@@ -347,5 +355,36 @@ describe("OpenAI diagnostics provider", () => {
     await expect(
       generateDiagnosticsDraft(request(), { client: noModelClient, config })
     ).rejects.toThrow("DIAGNOSTICS_AI_RESPONSE_MODEL_MISSING");
+  });
+
+  it("rejects caller-constructed technical context containing front-office facts", async () => {
+    const parse = vi.fn();
+    const client = { responses: { parse } } as unknown as OpenAI;
+    const unsafe = request();
+    Object.assign(unsafe.workOrderContext, {
+      pricing: { totalCents: 12_000 },
+      authorization: { decision: "approved" },
+    });
+
+    await expect(generateDiagnosticsDraft(unsafe, { client, config })).rejects.toThrow(
+      "DIAGNOSTICS_AI_CONTEXT_UNSAFE"
+    );
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it("lists only references actually missing from the bounded context", async () => {
+    const parse = vi.fn().mockResolvedValue(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+    const supplied = request();
+    supplied.workOrderContext.missingReferences.exactModelOem = false;
+    supplied.workOrderContext.referenceEvidence.exactModelOem =
+      "Exact-model manual excerpt.";
+
+    await generateDiagnosticsDraft(supplied, { client, config });
+    const instructions = String(
+      (parse.mock.calls[0]?.[0] as { instructions: unknown }).instructions
+    );
+    expect(instructions).not.toContain("exact-model OEM manuals and wiring diagrams");
+    expect(instructions).toContain("current official recall lookup");
   });
 });

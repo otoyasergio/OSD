@@ -5,7 +5,7 @@ import type {
 } from "@/lib/diagnostics/responseSchema";
 import {
   extractDiagnosticsPriceCents,
-  extractDiagnosticsTechnicalValues,
+  extractDiagnosticsTechnicalValueMatches,
 } from "@/lib/diagnostics/evidence";
 
 export type DiagnosticsClaimContext = {
@@ -17,8 +17,12 @@ export type DiagnosticsClaimContext = {
   hasCurrentOntarioInspectionSource?: boolean;
   hasSuppliedPrices?: boolean;
   allowedTechnicalValues?: string[];
+  allowedMeasuredValues?: string[];
+  allowedSpecificationValues?: string[];
   allowedPriceCents?: number[];
   availableNamedReferences?: string[];
+  hasProvidedReferenceEvidence?: boolean;
+  includedReferenceEvidence?: string[];
 };
 
 export type DiagnosticsPolicyViolation = {
@@ -76,12 +80,32 @@ function hasPositiveClaim(fields: string[], pattern: RegExp): boolean {
   return fields.some((field) => {
     const sentences = field.split(/(?<=[.!?])\s+|\r?\n/);
     return sentences.some((sentence) => {
-      const match = sentence.match(pattern);
-      if (!match || match.index === undefined) return false;
-      const before = sentence.slice(0, match.index).toLowerCase();
-      return !/\b(?:not|never|cannot|can't|do not|don't|must not|no evidence|avoid claiming)\b/.test(
-        before
-      );
+      const matcher = new RegExp(pattern.source, `${pattern.flags.replace("g", "")}g`);
+      for (const match of sentence.matchAll(matcher)) {
+        if (match.index === undefined) continue;
+        const before = sentence.slice(0, match.index);
+        const clause = before.slice(
+          Math.max(
+            before.lastIndexOf(","),
+            before.lastIndexOf(";"),
+            before.lastIndexOf(":")
+          ) + 1
+        );
+        if (
+          /\b(?:once|after|before|if|whether|until|when)\b/i.test(clause) ||
+          /\b(?:retest|test|check|inspect|measure)\s+to\s+(?:confirm|determine|verify)\b/i.test(
+            clause
+          ) ||
+          /\b(?:check|confirm|determine)\s+whether\b/i.test(clause) ||
+          /\b(?:not|never|cannot|can't|do not|don't|must not|no evidence|avoid claiming)\b(?:\W+\w+){0,3}\W*$/i.test(
+            clause
+          )
+        ) {
+          continue;
+        }
+        return true;
+      }
+      return false;
     });
   });
 }
@@ -115,6 +139,17 @@ function requestedInputMatchesNextStep(output: DiagnosticsResponse): boolean {
     "your",
     "please",
     "record",
+    "measure",
+    "measurement",
+    "test",
+    "result",
+    "reading",
+    "inspect",
+    "photograph",
+    "provide",
+    "confirm",
+    "obtain",
+    "using",
   ]);
   const tokens = (value: string) =>
     new Set(
@@ -125,7 +160,38 @@ function requestedInputMatchesNextStep(output: DiagnosticsResponse): boolean {
     );
   const promptTokens = tokens(prompt);
   const nextTokens = tokens(output.next_step);
-  return [...promptTokens].some((token) => nextTokens.has(token));
+  if ([...promptTokens].some((token) => nextTokens.has(token))) return true;
+
+  const semanticPrompt = prompt.toLowerCase();
+  const semanticNext = output.next_step.toLowerCase();
+  const semanticPatterns: Partial<
+    Record<DiagnosticsResponse["requested_input"]["type"], RegExp>
+  > = {
+    measurement:
+      /\b(?:measure|meter|multimeter|reading|voltage|potential|pressure|clearance|resistance|current|amperage|temperature|continuity)\b/,
+    technical_data:
+      /\b(?:manual|source|specification|technical data|wiring diagram|bulletin|limit)\b/,
+    photo: /\b(?:photo|photograph|picture|image|show)\b/,
+    test_result: /\b(?:test|result|reading|record|measure|observe|measurement)\b/,
+    question: /\b(?:ask|confirm|describe|state|provide|report|explain)\b/,
+  };
+  if (!semanticPatterns[output.requested_input.type]?.test(semanticNext)) return false;
+
+  const domains = [
+    /\b(?:battery|voltage|potential|electrical|terminal|posts?)\b/,
+    /\b(?:pressure|tire|tyre|gauge)\b/,
+    /\b(?:brake|rotor|disc|pad|caliper)\b/,
+    /\b(?:clearance|gap|distance)\b/,
+    /\b(?:resistance|ohms?|continuity)\b/,
+    /\b(?:current|amps?|amperage)\b/,
+    /\b(?:temperature|celsius|fahrenheit|heat)\b/,
+    /\b(?:manual|source|specification|diagram|bulletin|limit)\b/,
+  ];
+  const promptDomains = domains.filter((domain) => domain.test(semanticPrompt));
+  return (
+    promptDomains.length === 0 ||
+    promptDomains.some((domain) => domain.test(semanticNext))
+  );
 }
 
 function hasMultipleActions(value: string): boolean {
@@ -139,6 +205,53 @@ function hasMultipleActions(value: string): boolean {
     /\band\s+then\s+(?:measure|inspect|replace|test|record|photograph|check|remove|install)\b/i.test(
       value
     )
+  );
+}
+
+function normalizedSourceText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function hasMatchingProvidedReference(
+  sourceText: string,
+  claims: DiagnosticsClaimContext
+): boolean {
+  if (!claims.hasProvidedReferenceEvidence) return false;
+  const source = normalizedSourceText(sourceText);
+  return (claims.includedReferenceEvidence ?? []).some((evidence) => {
+    const included = normalizedSourceText(evidence);
+    return Boolean(included && (included.includes(source) || source.includes(included)));
+  });
+}
+
+function isMeasuredTechnicalUse(text: string, index: number, end: number): boolean {
+  const clauseStart = Math.max(
+    text.lastIndexOf(".", index - 1),
+    text.lastIndexOf(";", index - 1),
+    text.lastIndexOf("\n", index - 1)
+  );
+  const clauseEndCandidates = [
+    text.indexOf(".", end),
+    text.indexOf(";", end),
+    text.indexOf("\n", end),
+  ].filter((value) => value >= 0);
+  const clauseEnd =
+    clauseEndCandidates.length > 0 ? Math.min(...clauseEndCandidates) : text.length;
+  const clause = text.slice(clauseStart + 1, clauseEnd);
+  const relativeIndex = index - clauseStart - 1;
+  const before = clause.slice(Math.max(0, relativeIndex - 80), relativeIndex);
+  const after = clause.slice(relativeIndex + (end - index), relativeIndex + 60);
+  const specification =
+    /\b(?:spec(?:ification)?|limit|setpoint|threshold|target|maximum|minimum|max|min|required|requirement|should|must|expect(?:ed)?|capacity|clearance|interval|torque|tighten|set)\b/i;
+  if (specification.test(before) || specification.test(after)) return false;
+  return (
+    /\b(?:measur(?:e[ds]?|ement)|record(?:ed|ing)?|reading|actual|found|observed|result(?:ed)?|show(?:ed|s)|tested)\b/i.test(
+      before
+    ) ||
+    /^\s*(?:was\s+)?(?:measur(?:ed|ement)|recorded|observed|found|reading)\b/i.test(after)
   );
 }
 
@@ -210,9 +323,22 @@ export function inspectDiagnosticsOutput(
   }
 
   for (const source of output.sources) {
+    const sourceText = `${source.label} ${source.citation ?? ""}`;
+    const normalizedSource = normalizedSourceText(sourceText);
+    const namesExactModelSource =
+      /\b(?:manual|oem|factory|bulletin|tsb|wiring(?: diagram)?)\b/.test(
+        normalizedSource
+      );
+    const namesRecallSource = /\brecall\b/.test(normalizedSource);
+    const namesOntarioRegulatorySource =
+      /\b(?:ontario|o reg|regulation|inspection standard|inspection program)\b/.test(
+        normalizedSource
+      );
     if (
       source.status === "consulted" &&
-      (source.authority === "official_oem" || source.authority === "model_specific") &&
+      (source.authority === "official_oem" ||
+        source.authority === "model_specific" ||
+        namesExactModelSource) &&
       !claims.hasExactModelSource
     ) {
       violations.push({
@@ -226,22 +352,26 @@ export function inspectDiagnosticsOutput(
         message: "An unverified reference cannot be marked consulted.",
       });
     }
-    if (source.status === "consulted" && source.authority === "regulatory") {
-      const sourceText = `${source.label} ${source.applies_to}`.toLowerCase();
-      if (/recall/.test(sourceText) && !claims.hasCurrentRecallSource) {
+    if (
+      source.status === "consulted" &&
+      (source.authority === "regulatory" ||
+        namesRecallSource ||
+        namesOntarioRegulatorySource)
+    ) {
+      if (namesRecallSource && !claims.hasCurrentRecallSource) {
         violations.push({
           code: "SOURCE_RECALL_UNAVAILABLE",
           message: "Recall status requires a supplied current official source.",
         });
       } else if (
-        /(ontario|inspection|regulation|law)/.test(sourceText) &&
+        namesOntarioRegulatorySource &&
         !claims.hasCurrentOntarioInspectionSource
       ) {
         violations.push({
           code: "SOURCE_REGULATORY_UNAVAILABLE",
           message: "The matching current official regulatory source was not supplied.",
         });
-      } else if (!/(recall|ontario|inspection|regulation|law)/.test(sourceText)) {
+      } else if (!namesRecallSource && !namesOntarioRegulatorySource) {
         violations.push({
           code: "SOURCE_REGULATORY_UNAVAILABLE",
           message: "The regulatory source cannot be matched to supplied evidence.",
@@ -250,10 +380,19 @@ export function inspectDiagnosticsOutput(
     }
     if (
       source.status === "consulted" &&
+      source.authority === "provided_reference" &&
+      !hasMatchingProvidedReference(sourceText, claims)
+    ) {
+      violations.push({
+        code: "SOURCE_REFERENCE_UNAVAILABLE",
+        message:
+          "A provided reference cannot be consulted unless its evidence was included.",
+      });
+    }
+    if (
+      source.status === "consulted" &&
       (() => {
-        const normalized = `${source.label} ${source.citation ?? ""}`
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, " ");
+        const normalized = normalizedSource;
         const referenceName = /universal diagnostic tree/.test(normalized)
           ? "universalDiagnosticTree"
           : /visual motorcycle inspection report/.test(normalized)
@@ -278,7 +417,7 @@ export function inspectDiagnosticsOutput(
     violations,
     fields,
     false,
-    /\b(?:(?:the\s+)?(?:bike|motorcycle|it)(?:\s+is|'s)(?:\s+now)?\s+(?:safe(?:\s+to\s+(?:ride|operate))?|roadworthy|ok(?:ay)?\s+to\s+ride)|(?:safe|ok(?:ay)?)\s+to\s+ride|(?:bike|motorcycle)\s+(?:passes|passed)\s+(?:the\s+)?(?:safety|inspection))\b/i,
+    /\b(?:(?:is|was|has been|'s)(?:\s+now)?\s+(?:safe(?:\s+to\s+(?:ride|operate))?|roadworthy|ok(?:ay)?\s+to\s+ride|cleared\s+for\s+release|ready\s+for\s+pickup)|pass(?:es|ed)\s+(?:the\s+)?(?:safety\s+inspection|safety|inspection)|cleared\s+for\s+release|ready\s+for\s+pickup)\b/i,
     "ROADWORTHINESS_CLAIM",
     "The draft makes an unsupported inspection or roadworthiness claim."
   );
@@ -286,7 +425,7 @@ export function inspectDiagnosticsOutput(
     violations,
     fields,
     claims.hasRecordedCustomerAuthorization,
-    /\b(?:(?:customer|client)\s+(?:has\s+)?approved|(?:repair|work|estimate)\s+(?:is|was|has been)\s+approved(?:\s+by\s+(?:the\s+)?customer)?|approved\s+by\s+(?:the\s+)?customer|authorization\s+(?:is|was|has been)\s+(?:received|confirmed|granted))\b/i,
+    /\b(?:(?:customer|client)\s+(?:(?:has\s+)?approved|authorized|gave\s+approval)|(?:repair|work|estimate)\s+(?:is|was|has been)\s+approved(?:\s+by\s+(?:the\s+)?customer)?|approved\s+by\s+(?:the\s+)?customer|(?:authorization|approval)\s+(?:(?:is|was|has been)\s+)?(?:received|confirmed|granted))\b/i,
     "AUTHORIZATION_CLAIM",
     "The draft claims customer authorization without a supplied record."
   );
@@ -294,7 +433,7 @@ export function inspectDiagnosticsOutput(
     violations,
     fields,
     claims.hasRecordedCompletedWork,
-    /\b(?:(?:we|the\s+(?:technician|shop))\s+(?:have\s+|has\s+)?(?:repaired|replaced|installed|completed|fixed)|(?:repair|work)\s+(?:is|was|has been)?\s*complete(?:d)?|(?:starter|battery|relay|wiring|component|part)\s+(?:was\s+|has been\s+)?(?:repaired|replaced|installed|fixed)|(?:repaired|replaced|installed|fixed)\s+(?:the\s+)?(?:starter|battery|relay|wiring|component|part))\b/i,
+    /\b(?:(?:we|the\s+(?:technician|shop))\s+(?:have\s+|has\s+)?(?:repaired|replaced|installed|completed|fixed)|(?:repair|work)\s+(?:is|was|has been)?\s*complete(?:d)?|(?:[\w-]+\s+){0,3}[\w-]+\s+(?:was\s+|has been\s+)?(?:repaired|replaced|installed|fixed)|(?:repaired|replaced|installed|fixed)\s+(?:the\s+)?(?:[\w-]+\s+){0,3}[\w-]+)\b/i,
     "COMPLETED_WORK_CLAIM",
     "The draft claims completed work without a supplied record."
   );
@@ -302,7 +441,7 @@ export function inspectDiagnosticsOutput(
     violations,
     fields,
     claims.hasVerificationEvidence,
-    /\b(?:(?:repair|work)\s+(?:is|was|has been)\s+verified|verification\s+(?:passed|is complete|was completed)|(?:(?:original\s+)?(?:complaint|symptom))\s+(?:is|was|has been)?\s*(?:resolved|fixed)|complaint\s+resolved)\b/i,
+    /\b(?:(?:[\w-]+\s+){0,3}(?:system|component|repair|work|operation|bike|motorcycle|it)\s+(?:is|was|has been)\s+verified|verification\s+(?:passed|is complete|was completed)|(?:(?:original\s+)?(?:complaint|symptom))\s+(?:is|was|has been)?\s*(?:resolved|fixed)|complaint\s+resolved)\b/i,
     "VERIFICATION_CLAIM",
     "The draft claims successful verification without a supplied retest result."
   );
@@ -310,7 +449,7 @@ export function inspectDiagnosticsOutput(
     violations,
     text,
     claims.hasExactModelSource,
-    /\baccording to\s+(?:the\s+)?(?:oem|factory|service)\s+manual\b|\bthe\s+(?:oem|factory|service)\s+manual\s+(?:states|specifies|requires)\b/i,
+    /\baccording to\s+(?:the\s+)?(?:oem|factory|service)\s+manual\b|\bper\s+(?:the\s+)?(?:oem|factory|service)\s+manual\b|\bthe\s+(?:oem|factory|service)\s+manual\s+(?:states|specifies|requires)\b/i,
     "UNREAD_MANUAL_CLAIM",
     "The draft claims access to an exact-model manual that was not supplied."
   );
@@ -330,10 +469,21 @@ export function inspectDiagnosticsOutput(
     "ONTARIO_REQUIREMENT_CLAIM",
     "The draft claims an Ontario requirement without a current official source."
   );
-  const suppliedTechnicalValues = new Set(claims.allowedTechnicalValues ?? []);
-  const technicalValues = extractDiagnosticsTechnicalValues(text);
-  const unsupportedTechnical = technicalValues.filter(
-    (value) => !suppliedTechnicalValues.has(value)
+  const legacyTechnicalValues = claims.allowedTechnicalValues ?? [];
+  const measuredTechnicalValues = new Set(
+    claims.allowedMeasuredValues ?? legacyTechnicalValues
+  );
+  const specificationTechnicalValues = new Set(
+    claims.allowedSpecificationValues ?? legacyTechnicalValues
+  );
+  const unsupportedTechnical = fields.flatMap((field) =>
+    extractDiagnosticsTechnicalValueMatches(field)
+      .filter((match) =>
+        isMeasuredTechnicalUse(field, match.index, match.end)
+          ? !measuredTechnicalValues.has(match.normalized)
+          : !specificationTechnicalValues.has(match.normalized)
+      )
+      .map((match) => match.normalized)
   );
   if (unsupportedTechnical.length > 0) {
     violations.push({
@@ -415,7 +565,14 @@ export function renderDiagnosticsDraft(output: DiagnosticsResponse): string {
     output.answer.trim(),
     `**Sources/status:** ${
       output.sources.length > 0
-        ? output.sources.map((source) => `${source.label} — ${source.status}`).join("; ")
+        ? output.sources
+            .map(
+              (source) =>
+                `${source.label} — ${source.authority} — ${source.status}${
+                  source.citation ? ` — ${source.citation}` : ""
+                }`
+            )
+            .join("; ")
         : "No sources supplied."
     }\n${output.source_summary}`,
     `**Limitations:** ${

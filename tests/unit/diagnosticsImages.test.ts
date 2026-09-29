@@ -203,6 +203,17 @@ describe("diagnostics selected image preparation", () => {
         dependencies([row({ category: "job_work", jobId: "job-2" })])
       )
     ).rejects.toThrow("DIAGNOSTICS_IMAGE_JOB_MISMATCH");
+
+    await expect(
+      prepareDiagnosticsImages(
+        {
+          workOrderId: "wo-1",
+          jobId: "job-1",
+          selections: [{ photoId: "photo-1", purpose: "Wrong inspection job" }],
+        },
+        dependencies([row({ category: "inspection_item", jobId: "job-2" })])
+      )
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_JOB_MISMATCH");
   });
 
   it("caps selection and downloaded/normalized bytes, failing closed", async () => {
@@ -383,5 +394,42 @@ describe("diagnostics selected image preparation", () => {
         deps
       )
     ).rejects.toThrow("DIAGNOSTICS_IMAGE_NORMALIZATION_FAILED");
+  });
+
+  it("preserves image-purpose context while redacting PII and URLs", async () => {
+    const deps = dependencies([row()]);
+    const result = await prepareDiagnosticsImages(
+      {
+        workOrderId: "wo-1",
+        selections: [
+          {
+            photoId: "photo-1",
+            purpose:
+              "Before https://private.test/a.jpg after for rider@test.ca at 647-424-1088",
+          },
+        ],
+      },
+      deps
+    );
+
+    expect(result.photoMetadata[0]?.purpose).toBe(
+      "Before [REDACTED_URL] after for [REDACTED_EMAIL] at [REDACTED_PHONE]"
+    );
+  });
+
+  it("uses a separate normalized-size failure code", async () => {
+    const deps = {
+      ...dependencies([row()]),
+      normalizeImage: vi.fn().mockResolvedValue(Buffer.alloc(5 * 1024 * 1024 + 1, 1)),
+    };
+    await expect(
+      prepareDiagnosticsImages(
+        {
+          workOrderId: "wo-1",
+          selections: [{ photoId: "photo-1", purpose: "Inspect" }],
+        },
+        deps
+      )
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_NORMALIZED_TOO_LARGE");
   });
 });

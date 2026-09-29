@@ -1,5 +1,9 @@
 import sharp from "sharp";
 import type { DiagnosticsImageInput } from "@/lib/diagnostics/openai";
+import {
+  redactDiagnosticsText,
+  type DiagnosticsRedactTerms,
+} from "@/lib/diagnostics/redaction";
 
 export const DIAGNOSTICS_MAX_SELECTED_IMAGES = 3;
 export const DIAGNOSTICS_IMAGE_MAX_EDGE = 2_048;
@@ -39,6 +43,7 @@ export type DiagnosticsImagePreparationRequest = {
   workOrderId: string;
   jobId?: string | null;
   selections: DiagnosticsImageSelection[];
+  redactTerms?: DiagnosticsRedactTerms;
 };
 
 export type DiagnosticsImagePersistenceMetadata = {
@@ -87,7 +92,7 @@ async function normalizeToJpeg(
     .toBuffer();
 
   if (output.byteLength === 0 || output.byteLength > options.maxBytes) {
-    throw new Error("DIAGNOSTICS_IMAGE_TOO_LARGE");
+    throw new Error("DIAGNOSTICS_IMAGE_NORMALIZED_TOO_LARGE");
   }
   return output;
 }
@@ -163,19 +168,11 @@ async function assertSupportedInput(
   return { format: magic, width: metadata.width, height: metadata.height };
 }
 
-function normalizePurpose(value: string): string {
-  if (
-    /(?:https?:\/\/|data:image\/|(?:^|\/)(?:storage|photos?|images?|signatures?|documents?|tokens?)(?:\/|$))/i.test(
-      value
-    )
-  ) {
-    throw new Error("DIAGNOSTICS_IMAGE_PURPOSE_INVALID");
-  }
-  const purpose = value
-    .trim()
-    .replace(/\b[A-HJ-NPR-Z0-9]{17}\b/gi, "[REDACTED_VIN]")
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED_EMAIL]")
-    .replace(/(?:\+?1[\s.()-]*)?(?:\d[\s.()-]*){10}\b/g, "[REDACTED_PHONE]");
+function normalizePurpose(
+  value: string,
+  redactTerms: DiagnosticsRedactTerms = {}
+): string {
+  const purpose = redactDiagnosticsText(value.trim(), redactTerms);
   if (!purpose || purpose.length > DIAGNOSTICS_MAX_IMAGE_PURPOSE_CHARS) {
     throw new Error("DIAGNOSTICS_IMAGE_PURPOSE_INVALID");
   }
@@ -199,7 +196,7 @@ function assertSelections(request: DiagnosticsImagePreparationRequest): void {
       throw new Error("DIAGNOSTICS_IMAGE_DUPLICATE");
     }
     ids.add(selection.photoId);
-    normalizePurpose(selection.purpose);
+    normalizePurpose(selection.purpose, request.redactTerms);
   }
 }
 
@@ -226,6 +223,49 @@ async function assertNormalizedJpeg(bytes: Uint8Array): Promise<void> {
       throw error;
     }
     throw new Error("DIAGNOSTICS_IMAGE_NORMALIZATION_FAILED", { cause: error });
+  }
+}
+
+async function downloadWithinLimit(
+  path: string,
+  download: DiagnosticsImageDependencies["download"]
+): Promise<Uint8Array> {
+  const bytes = await download(path, { maxBytes: DIAGNOSTICS_MAX_IMAGE_BYTES });
+  if (
+    !bytes ||
+    bytes.byteLength === 0 ||
+    bytes.byteLength > DIAGNOSTICS_MAX_IMAGE_BYTES
+  ) {
+    throw new Error("DIAGNOSTICS_IMAGE_TOO_LARGE");
+  }
+  return bytes;
+}
+
+async function normalizeJpegThumbnailFallback(
+  storagePath: string,
+  dependencies: DiagnosticsImageDependencies,
+  inspectImage: NonNullable<DiagnosticsImageDependencies["inspectImage"]>,
+  normalize: NonNullable<DiagnosticsImageDependencies["normalizeImage"]>
+): Promise<Uint8Array> {
+  const thumbnail = await downloadWithinLimit(storagePath, dependencies.download);
+  const thumbnailMetadata = await assertSupportedInput(thumbnail, inspectImage);
+  if (thumbnailMetadata.format !== "jpeg") {
+    throw new Error("DIAGNOSTICS_IMAGE_FORMAT_UNSUPPORTED");
+  }
+  try {
+    return await normalize(thumbnail, {
+      maxEdge: DIAGNOSTICS_IMAGE_MAX_EDGE,
+      maxBytes: DIAGNOSTICS_MAX_NORMALIZED_IMAGE_BYTES,
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === "DIAGNOSTICS_IMAGE_NORMALIZED_TOO_LARGE" ||
+        error.message === "DIAGNOSTICS_IMAGE_NORMALIZATION_FAILED")
+    ) {
+      throw error;
+    }
+    throw new Error("DIAGNOSTICS_IMAGE_DECODE_FAILED", { cause: error });
   }
 }
 
@@ -268,6 +308,9 @@ export async function prepareDiagnosticsImages(
         throw new Error("DIAGNOSTICS_IMAGE_JOB_MISMATCH");
       }
     }
+    if (request.jobId && row.jobId && row.jobId !== request.jobId) {
+      throw new Error("DIAGNOSTICS_IMAGE_JOB_MISMATCH");
+    }
     if (!row.storagePath.trim()) {
       throw new Error("DIAGNOSTICS_IMAGE_STORAGE_PATH_INVALID");
     }
@@ -280,16 +323,10 @@ export async function prepareDiagnosticsImages(
   const inspectImage = dependencies.inspectImage ?? inspectWithSharp;
 
   for (const [sortOrder, item] of ordered.entries()) {
-    const downloaded = await dependencies.download(item.row.storagePath, {
-      maxBytes: DIAGNOSTICS_MAX_IMAGE_BYTES,
-    });
-    if (
-      !downloaded ||
-      downloaded.byteLength === 0 ||
-      downloaded.byteLength > DIAGNOSTICS_MAX_IMAGE_BYTES
-    ) {
-      throw new Error("DIAGNOSTICS_IMAGE_TOO_LARGE");
-    }
+    const downloaded = await downloadWithinLimit(
+      item.row.storagePath,
+      dependencies.download
+    );
 
     let inputMetadata: Awaited<ReturnType<typeof assertSupportedInput>> | undefined;
     let normalized: Uint8Array | undefined;
@@ -297,37 +334,24 @@ export async function prepareDiagnosticsImages(
     try {
       inputMetadata = await assertSupportedInput(downloaded, inspectImage);
     } catch (metadataError) {
-      if (magicFormat(downloaded) !== "heif" || !item.row.thumbStoragePath) {
+      if (
+        magicFormat(downloaded) !== "heif" ||
+        !item.row.thumbStoragePath ||
+        !(metadataError instanceof Error) ||
+        metadataError.message !== "DIAGNOSTICS_IMAGE_DECODE_FAILED"
+      ) {
         throw metadataError;
       }
     }
 
     if (!inputMetadata) {
-      const thumbnail = await dependencies.download(item.row.thumbStoragePath!, {
-        maxBytes: DIAGNOSTICS_MAX_IMAGE_BYTES,
-      });
-      if (
-        !thumbnail ||
-        thumbnail.byteLength === 0 ||
-        thumbnail.byteLength > DIAGNOSTICS_MAX_IMAGE_BYTES
-      ) {
-        throw new Error("DIAGNOSTICS_IMAGE_TOO_LARGE");
-      }
-      const thumbnailMetadata = await assertSupportedInput(thumbnail, inspectImage);
-      if (thumbnailMetadata.format !== "jpeg") {
-        throw new Error("DIAGNOSTICS_IMAGE_FORMAT_UNSUPPORTED");
-      }
-      try {
-        normalized = await normalize(thumbnail, {
-          maxEdge: DIAGNOSTICS_IMAGE_MAX_EDGE,
-          maxBytes: DIAGNOSTICS_MAX_NORMALIZED_IMAGE_BYTES,
-        });
-        limitation = DIAGNOSTICS_HEIF_FALLBACK_LIMITATION;
-      } catch (fallbackError) {
-        throw new Error("DIAGNOSTICS_IMAGE_DECODE_FAILED", {
-          cause: fallbackError,
-        });
-      }
+      normalized = await normalizeJpegThumbnailFallback(
+        item.row.thumbStoragePath!,
+        dependencies,
+        inspectImage,
+        normalize
+      );
+      limitation = DIAGNOSTICS_HEIF_FALLBACK_LIMITATION;
     } else {
       try {
         normalized = await normalize(downloaded, {
@@ -335,40 +359,24 @@ export async function prepareDiagnosticsImages(
           maxBytes: DIAGNOSTICS_MAX_NORMALIZED_IMAGE_BYTES,
         });
       } catch (error) {
-        if (inputMetadata.format === "heif" && item.row.thumbStoragePath) {
-          const thumbnail = await dependencies.download(item.row.thumbStoragePath, {
-            maxBytes: DIAGNOSTICS_MAX_IMAGE_BYTES,
-          });
-          if (
-            !thumbnail ||
-            thumbnail.byteLength === 0 ||
-            thumbnail.byteLength > DIAGNOSTICS_MAX_IMAGE_BYTES
-          ) {
-            throw new Error("DIAGNOSTICS_IMAGE_TOO_LARGE");
-          }
-          const thumbnailMetadata = await assertSupportedInput(thumbnail, inspectImage);
-          if (thumbnailMetadata.format !== "jpeg") {
-            throw new Error("DIAGNOSTICS_IMAGE_FORMAT_UNSUPPORTED");
-          }
-          try {
-            normalized = await normalize(thumbnail, {
-              maxEdge: DIAGNOSTICS_IMAGE_MAX_EDGE,
-              maxBytes: DIAGNOSTICS_MAX_NORMALIZED_IMAGE_BYTES,
-            });
-            limitation = DIAGNOSTICS_HEIF_FALLBACK_LIMITATION;
-          } catch (fallbackError) {
-            throw new Error("DIAGNOSTICS_IMAGE_DECODE_FAILED", {
-              cause: fallbackError,
-            });
-          }
+        const knownNormalizationError =
+          error instanceof Error &&
+          (error.message === "DIAGNOSTICS_IMAGE_NORMALIZED_TOO_LARGE" ||
+            error.message === "DIAGNOSTICS_IMAGE_NORMALIZATION_FAILED");
+        if (
+          inputMetadata.format === "heif" &&
+          item.row.thumbStoragePath &&
+          !knownNormalizationError
+        ) {
+          normalized = await normalizeJpegThumbnailFallback(
+            item.row.thumbStoragePath,
+            dependencies,
+            inspectImage,
+            normalize
+          );
+          limitation = DIAGNOSTICS_HEIF_FALLBACK_LIMITATION;
         } else {
-          if (
-            error instanceof Error &&
-            (error.message === "DIAGNOSTICS_IMAGE_TOO_LARGE" ||
-              error.message === "DIAGNOSTICS_IMAGE_NORMALIZATION_FAILED")
-          ) {
-            throw error;
-          }
+          if (knownNormalizationError) throw error;
           throw new Error("DIAGNOSTICS_IMAGE_DECODE_FAILED", { cause: error });
         }
       }
@@ -378,20 +386,21 @@ export async function prepareDiagnosticsImages(
       normalized.byteLength === 0 ||
       normalized.byteLength > DIAGNOSTICS_MAX_NORMALIZED_IMAGE_BYTES
     ) {
-      throw new Error("DIAGNOSTICS_IMAGE_TOO_LARGE");
+      throw new Error("DIAGNOSTICS_IMAGE_NORMALIZED_TOO_LARGE");
     }
     await assertNormalizedJpeg(normalized);
+    const purpose = normalizePurpose(item.selection.purpose, request.redactTerms);
 
     images.push({
       photoId: item.row.photoId,
-      purpose: normalizePurpose(item.selection.purpose),
+      purpose,
       limitation,
       dataUrl: `data:image/jpeg;base64,${Buffer.from(normalized).toString("base64")}`,
       detail: "high",
     });
     photoMetadata.push({
       photoId: item.row.photoId,
-      purpose: normalizePurpose(item.selection.purpose),
+      purpose,
       sortOrder,
       limitation,
     });

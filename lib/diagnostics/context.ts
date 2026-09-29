@@ -6,6 +6,10 @@ import {
   diagnosticsAudienceForMode,
   type DiagnosticsAudience,
 } from "@/lib/diagnostics/prompts";
+import {
+  redactDiagnosticsText,
+  type DiagnosticsRedactTerms,
+} from "@/lib/diagnostics/redaction";
 import type { DiagnosticsMode } from "@/lib/diagnostics/responseSchema";
 
 export const DIAGNOSTICS_MAX_CONTEXT_TEXT_CHARS = 500;
@@ -14,6 +18,8 @@ export const DIAGNOSTICS_MAX_CONTEXT_BLOCK_CHARS = 48_000;
 
 const DEEP_MAX_DEPTH = 3;
 const DEEP_MAX_ITEMS = 40;
+const DEEP_GLOBAL_NODE_BUDGET = 24;
+const DEEP_TEXT_CHARS = 80;
 const SECTION_BUDGETS = {
   customerRequestJobs: 2_000,
   inspectionResults: 8_000,
@@ -181,6 +187,7 @@ export type DiagnosticsContextOptions = {
   workOrderId: string;
   jobId?: string | null;
   serverNowIso?: string | null;
+  redactTerms?: DiagnosticsRedactTerms;
 };
 
 export type DiagnosticsTruncation = {
@@ -314,8 +321,12 @@ export type DiagnosticsModelContext = {
     recommendations: DiagnosticsTruncation;
     qualityChecks: DiagnosticsTruncation;
     safetyChecks: DiagnosticsTruncation;
-    aggregate: DiagnosticsTruncation;
   };
+};
+
+declare const shapedDiagnosticsContextBrand: unique symbol;
+export type ShapedDiagnosticsModelContext = DiagnosticsModelContext & {
+  readonly [shapedDiagnosticsContextBrand]: true;
 };
 
 type ShapedCheck = {
@@ -327,7 +338,7 @@ type ShapedCheck = {
 };
 
 export type ShapedDiagnosticsContext = {
-  context: DiagnosticsModelContext;
+  context: ShapedDiagnosticsModelContext;
   contextBlock: string;
   contextHash: string;
   claims: DiagnosticsClaimContext;
@@ -356,24 +367,10 @@ const SERVICE_INFORMATION_KEYS = [
   "notes",
 ] as const;
 
-function redactSensitiveText(value: string): string | null {
-  if (
-    /(?:https?:\/\/|data:image\/|(?:^|\/)(?:storage|photos?|images?|signatures?|documents?|tokens?)(?:\/|$)|\.(?:jpe?g|png|webp|heic|heif|pdf)(?:$|[?#]))/i.test(
-      value
-    )
-  ) {
-    return null;
-  }
-  return value
-    .replace(/\b[A-HJ-NPR-Z0-9]{17}\b/gi, "[REDACTED_VIN]")
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[REDACTED_EMAIL]")
-    .replace(/(?:\+?1[\s.()-]*)?(?:\d[\s.()-]*){10}\b/g, "[REDACTED_PHONE]");
-}
-
 function boundedText(value: NullableText): string | null {
   const normalized = value?.trim();
   if (!normalized) return null;
-  const redacted = redactSensitiveText(normalized);
+  const redacted = redactDiagnosticsText(normalized);
   if (!redacted) return null;
   if (redacted.length <= DIAGNOSTICS_MAX_CONTEXT_TEXT_CHARS) return redacted;
   const marker = "[CLIPPED]";
@@ -415,8 +412,19 @@ function budgetItems<T>(
   };
 }
 
-function noTruncation(total = 0): DiagnosticsTruncation {
-  return { total, included: total, omitted: 0, clipped: false };
+function redactSourceValues<T>(value: T, terms: DiagnosticsRedactTerms): T {
+  if (typeof value === "string") {
+    return redactDiagnosticsText(value, terms) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactSourceValues(item, terms)) as T;
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, redactSourceValues(child, terms)])
+    ) as T;
+  }
+  return value;
 }
 
 function byId<T>(getId: (value: T) => string): (a: T, b: T) => number {
@@ -541,15 +549,23 @@ function shapeJob(job: DiagnosticsContextJobSource, frontOffice: boolean): Shape
   return shaped;
 }
 
-function sanitizeChecklist(value: unknown, depth = 0): unknown {
+function sanitizeChecklist(
+  value: unknown,
+  depth: number,
+  work: { remaining: number }
+): unknown {
   if (depth > DEEP_MAX_DEPTH) return null;
+  if (work.remaining <= 0) return "[CLIPPED_WORK_BUDGET]";
+  work.remaining -= 1;
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "string") return boundedText(value);
+  if (typeof value === "string") {
+    return boundedText(value)?.slice(0, DEEP_TEXT_CHARS) ?? null;
+  }
   if (Array.isArray(value)) {
     return value
       .slice(0, DEEP_MAX_ITEMS)
-      .map((item) => sanitizeChecklist(item, depth + 1));
+      .map((item) => sanitizeChecklist(item, depth + 1, work));
   }
   if (typeof value !== "object") return null;
 
@@ -557,21 +573,25 @@ function sanitizeChecklist(value: unknown, depth = 0): unknown {
   for (const key of Object.keys(value as Record<string, unknown>)
     .filter(
       (key) =>
-        !/(photo|image|signature|token|url|path|customer|contact|address|email|phone|vin|price|cost)/i.test(
+        !/(photo|image|signature|signed_?by|initials|token|url|path|customer|contact|address|email|phone|vin|price|cost)/i.test(
           key
-        )
+        ) && !/name$/i.test(key)
     )
     .sort()
     .slice(0, DEEP_MAX_ITEMS)) {
     result[key.slice(0, 100)] = sanitizeChecklist(
       (value as Record<string, unknown>)[key],
-      depth + 1
+      depth + 1,
+      work
     );
   }
   return result;
 }
 
-function shapeChecks(rows: DiagnosticsCheckSource[] | undefined): ShapedCheck[] {
+function shapeChecks(
+  rows: DiagnosticsCheckSource[] | undefined,
+  work: { remaining: number }
+): ShapedCheck[] {
   return [...(rows ?? [])]
     .sort(
       (a, b) =>
@@ -581,7 +601,7 @@ function shapeChecks(rows: DiagnosticsCheckSource[] | undefined): ShapedCheck[] 
     .map((row) => ({
       attemptId: boundedRequiredText(row.attemptId),
       outcome: boundedRequiredText(row.outcome),
-      checklist: sanitizeChecklist(row.checklist ?? null),
+      checklist: sanitizeChecklist(row.checklist ?? null, 0, work),
       notes: boundedText(row.notes),
       performedAt: row.performedAt,
     }));
@@ -617,14 +637,26 @@ export function deriveDiagnosticsClaimContext(
     }
   }
   const exactModelReference = context.referenceEvidence.exactModelOem;
-  const technicalEvidence = [
-    exactModelReference,
+  const measuredEvidence = [
     ...context.inspection.results.map((item) => item.measurement),
     ...(selected?.verification.flatMap((item) => [item.result, item.notes]) ?? []),
     ...context.technicianNotes.map((item) => item.note),
     ...context.checks.quality.map((item) => item.notes),
     ...context.checks.safety.map((item) => item.notes),
+    ...context.checks.quality.map((item) => JSON.stringify(item.checklist)),
+    ...context.checks.safety.map((item) => JSON.stringify(item.checklist)),
   ].filter((value): value is string => Boolean(value));
+  const allowedMeasuredValues = [
+    ...new Set(
+      measuredEvidence.flatMap((value) => extractDiagnosticsTechnicalValues(value))
+    ),
+  ].sort();
+  const allowedSpecificationValues = exactModelReference
+    ? extractDiagnosticsTechnicalValues(exactModelReference)
+    : [];
+  const includedReferenceEvidence = REFERENCE_NAMES.map(
+    (name) => context.referenceEvidence[name]
+  ).filter((value): value is string => Boolean(value));
   return {
     hasRecordedCustomerAuthorization:
       selected?.authorization?.decision.toLowerCase() === "approved",
@@ -645,22 +677,25 @@ export function deriveDiagnosticsClaimContext(
       context.referenceEvidence.currentOntarioInspection
     ),
     hasSuppliedPrices: allowedPriceCents.size > 0,
+    allowedMeasuredValues,
+    allowedSpecificationValues,
     allowedTechnicalValues: [
-      ...new Set(
-        technicalEvidence.flatMap((value) => extractDiagnosticsTechnicalValues(value))
-      ),
+      ...new Set([...allowedMeasuredValues, ...allowedSpecificationValues]),
     ].sort(),
     allowedPriceCents: [...allowedPriceCents].sort((a, b) => a - b),
     availableNamedReferences: REFERENCE_NAMES.filter(
       (name) => context.referenceEvidence[name] !== null
     ),
+    hasProvidedReferenceEvidence: includedReferenceEvidence.length > 0,
+    includedReferenceEvidence,
   };
 }
 
 export function shapeDiagnosticsContext(
-  source: DiagnosticsContextSource,
+  sourceInput: DiagnosticsContextSource,
   options: DiagnosticsContextOptions
 ): ShapedDiagnosticsContext {
+  const source = redactSourceValues(sourceInput, options.redactTerms ?? {});
   if (
     options.serverNowIso != null &&
     (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(options.serverNowIso) ||
@@ -797,16 +832,17 @@ export function shapeDiagnosticsContext(
       })),
     SECTION_BUDGETS.recommendations
   );
+  const checklistWork = { remaining: DEEP_GLOBAL_NODE_BUDGET };
   const qualityChecks = budgetItems(
-    shapeChecks(source.checks?.quality),
+    shapeChecks(source.checks?.quality, checklistWork),
     SECTION_BUDGETS.qualityChecks
   );
   const safetyChecks = budgetItems(
-    shapeChecks(source.checks?.safety),
+    shapeChecks(source.checks?.safety, checklistWork),
     SECTION_BUDGETS.safetyChecks
   );
 
-  const context: DiagnosticsModelContext = {
+  const context = {
     missingReferences,
     mode: options.mode,
     audience: diagnosticsAudienceForMode(options.mode),
@@ -861,19 +897,8 @@ export function shapeDiagnosticsContext(
       recommendations: recommendations.truncation,
       qualityChecks: qualityChecks.truncation,
       safetyChecks: safetyChecks.truncation,
-      aggregate: noTruncation(1),
     },
-  };
-
-  for (let iteration = 0; iteration < 3; iteration += 1) {
-    const total = JSON.stringify(context).length;
-    context.truncation.aggregate = {
-      total,
-      included: total,
-      omitted: 0,
-      clipped: false,
-    };
-  }
+  } as ShapedDiagnosticsModelContext;
   const contextBlock = buildDiagnosticsContextBlock(context);
   return {
     context,
