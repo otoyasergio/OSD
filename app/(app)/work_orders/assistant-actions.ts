@@ -86,12 +86,6 @@ function failure(error: unknown): AssistantActionState {
   };
 }
 
-async function trustedReadView() {
-  const preview = await getRolePreviewContext();
-  if (!preview?.isPreviewing) return undefined;
-  return { role: preview.role, subjectUserId: preview.subjectUserId };
-}
-
 async function assertMutationNotPreviewed(): Promise<void> {
   const preview = await getRolePreviewContext();
   if (!preview) throw new Error("UNAUTHORIZED");
@@ -104,35 +98,6 @@ function revalidateAssistant(workOrderId: string): void {
   revalidatePath("/dashboard");
   revalidatePath("/technician");
   revalidatePath("/technician/docket");
-}
-
-export async function listAssistantThreadsAction(
-  workOrderId: string
-): Promise<AssistantActionState> {
-  try {
-    return success(
-      await service.listThreads(uuid.parse(workOrderId), await trustedReadView())
-    );
-  } catch (error) {
-    return failure(error);
-  }
-}
-
-export async function loadAssistantThreadAction(
-  workOrderId: string,
-  threadId: string
-): Promise<AssistantActionState> {
-  try {
-    return success(
-      await service.loadThread(
-        uuid.parse(workOrderId),
-        uuid.parse(threadId),
-        await trustedReadView()
-      )
-    );
-  } catch (error) {
-    return failure(error);
-  }
 }
 
 export async function createAssistantThreadAction(

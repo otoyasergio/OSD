@@ -46,8 +46,6 @@ vi.mock("@/lib/services/photos", () => ({ uploadIntakePhoto }));
 
 import {
   createAssistantThreadAction,
-  listAssistantThreadsAction,
-  loadAssistantThreadAction,
   promoteAssistantNoteAction,
   retryAssistantTurnAction,
   submitAssistantTurnAction,
@@ -334,22 +332,15 @@ describe("Ask OTOMOTO server actions", () => {
     });
   });
 
-  it("passes owner role-preview read shaping to list and load", async () => {
-    getRolePreviewContext.mockResolvedValue(preview(true));
-    listThreads.mockResolvedValue([]);
-    loadThread.mockResolvedValue({ thread: {}, messages: [] });
-
-    await listAssistantThreadsAction(WO);
-    await loadAssistantThreadAction(WO, THREAD);
-
-    expect(listThreads).toHaveBeenCalledWith(WO, {
-      role: "technician",
-      subjectUserId: "11111111-1111-4111-8111-111111111111",
-    });
-    expect(loadThread).toHaveBeenCalledWith(WO, THREAD, {
-      role: "technician",
-      subjectUserId: "11111111-1111-4111-8111-111111111111",
-    });
+  it("exposes no callable raw thread read actions", async () => {
+    const actions = await import("@/app/(app)/work_orders/assistant-actions");
+    expect(Object.keys(actions).sort()).toEqual([
+      "createAssistantThreadAction",
+      "promoteAssistantNoteAction",
+      "retryAssistantTurnAction",
+      "submitAssistantTurnAction",
+      "uploadAssistantPhotoAction",
+    ]);
   });
 
   it("maps raw database errors to a stable generic action message", async () => {
