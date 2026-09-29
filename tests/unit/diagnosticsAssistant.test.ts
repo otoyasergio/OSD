@@ -81,6 +81,27 @@ describe("Ask OTOMOTO authorization", () => {
     ).not.toThrow();
   });
 
+  it.each([
+    ["owner", "shop", true],
+    ["owner", "advisor", true],
+    ["manager", "shop", true],
+    ["manager", "advisor", true],
+    ["service_advisor", "shop", true],
+    ["service_advisor", "advisor", true],
+    ["admin", "shop", true],
+    ["admin", "advisor", true],
+    ["technician", "shop", true],
+    ["technician", "advisor", false],
+    ["head_tech", "shop", true],
+    ["head_tech", "advisor", false],
+    ["time_clock_kiosk", "shop", false],
+    ["time_clock_kiosk", "advisor", false],
+  ] as const)("authorizes role=%s mode=%s expected=%s", (role, mode, expected) => {
+    const check = () => assertDiagnosticsAccess(actor(role), scope(), mode, "read");
+    if (expected) expect(check).not.toThrow();
+    else expect(check).toThrow("FORBIDDEN");
+  });
+
   it("allows a member to read a foreign-location WO but denies mutations", () => {
     const foreignLocation = "61111111-1111-4111-8111-111111111111";
     const advisor = actor("service_advisor", {
@@ -364,6 +385,33 @@ describe("Ask OTOMOTO generation lifecycle", () => {
         ],
       })
     ).rejects.toThrow("DIAGNOSTICS_IMAGE_JOB_MISMATCH");
+    expect(repo.beginTurn).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-WO photos through the scoped lookup", async () => {
+    const { repo, thread } = generationRepository();
+    vi.mocked(repo.loadPhotoRows).mockResolvedValue([]);
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await expect(
+      service.submitTurn({
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        jobId: thread.jobId,
+        mode: "shop",
+        text: "Help diagnose it",
+        photos: [
+          {
+            photoId: "c1111111-1111-4111-8111-111111111111",
+            purpose: "Inspect terminal",
+          },
+        ],
+      })
+    ).rejects.toThrow("DIAGNOSTICS_IMAGE_NOT_FOUND");
     expect(repo.beginTurn).not.toHaveBeenCalled();
   });
 
