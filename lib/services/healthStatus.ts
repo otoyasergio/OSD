@@ -8,9 +8,10 @@ type IntegrationHealthInput = {
   askOtomoto: IntegrationStatus;
 };
 
-export function summarizeIntegrationHealth(
-  integrations: IntegrationHealthInput
-): { ok: boolean; degraded: boolean } {
+export function summarizeIntegrationHealth(integrations: IntegrationHealthInput): {
+  ok: boolean;
+  degraded: boolean;
+} {
   const ok =
     integrations.supabase === "ok" &&
     integrations.wix === "ok" &&

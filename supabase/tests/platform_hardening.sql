@@ -1,6 +1,6 @@
 -- pgTAP: platform hardening privileges and operational indexes.
 begin;
-select plan(12);
+select plan(17);
 
 select ok(
   not has_function_privilege(
@@ -128,6 +128,68 @@ select is(
   ),
   4,
   'targeted relationship indexes exist'
+);
+
+select ok(
+  has_table_privilege('authenticated', 'public.work_order_sequence', 'INSERT')
+    and not has_table_privilege(
+      'authenticated',
+      'public.work_order_sequence',
+      'SELECT'
+    )
+    and not has_table_privilege(
+      'authenticated',
+      'public.work_order_sequence',
+      'UPDATE'
+    )
+    and not has_table_privilege(
+      'authenticated',
+      'public.work_order_sequence',
+      'DELETE'
+    ),
+  'signed-in clients may seed but cannot read or advance sequence counters'
+);
+select ok(
+  has_table_privilege('service_role', 'public.work_order_sequence', 'SELECT')
+    and has_table_privilege('service_role', 'public.work_order_sequence', 'INSERT')
+    and has_table_privilege('service_role', 'public.work_order_sequence', 'UPDATE'),
+  'service role can manage sequence counters through the mint helper'
+);
+select ok(
+  exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'work_order_sequence'
+      and policyname = 'work_order_sequence_insert_owner'
+  ),
+  'owner-only sequence seed policy exists'
+);
+
+insert into public.location (location_id, name, code, status)
+values (
+  'fa000000-0000-4000-8000-000000000001',
+  'Platform hardening test',
+  'PHT',
+  'active'
+);
+
+set local role service_role;
+select is(
+  public.mint_work_order_number('fa000000-0000-4000-8000-000000000001'),
+  'WO-1001',
+  'service role can mint the first number for an active location'
+);
+reset role;
+
+select is(
+  (
+    select next_number
+    from public.work_order_sequence
+    where location_id = 'fa000000-0000-4000-8000-000000000001'
+  ),
+  1002,
+  'mint advances the protected counter exactly once'
 );
 
 select * from finish();

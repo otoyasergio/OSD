@@ -53,7 +53,8 @@ curl -i https://service.torontomoto.com/login
 Expected:
 
 - `/api/health` returns `200` with every configured production integration
-  marked `ok`.
+  marked `ok`, `degraded: false`, and `region: "pdx1"` after the regional
+  deployment ships.
 - `/` redirects to `/login` with `private, no-store`.
 - TLS is valid and HSTS is enabled.
 
@@ -96,10 +97,13 @@ version returned by the approved production procedure.
 4. Run pgTAP, integration tests, stateful Safari E2E, and the Ask OTOMOTO
    acceptance worksheet.
 5. Obtain technician and service-advisor signoff.
-6. During a separately approved production rollout, apply verified production
+6. Confirm with the shop owner whether signed Wix booking webhooks should
+   automatically create work orders. The platform-hardening migration repairs
+   that previously blocked path.
+7. During a separately approved production rollout, apply verified production
    migrations first.
-7. Deploy current `main` with `npm run deploy:production`.
-8. Re-run health, logs, advisors, and smoke checks.
+8. Deploy current `main` with `npm run deploy:production`.
+9. Re-run health, logs, advisors, and smoke checks.
 
 Do not apply production migrations or deploy production from a feature branch.
 

@@ -74,6 +74,24 @@ GRANT EXECUTE ON FUNCTION public.workflow_v2_job_is_authorized(uuid)
 GRANT EXECUTE ON FUNCTION public.mint_work_order_number(uuid)
   TO service_role;
 
+-- Sequence state is internal. Owners may seed a row when creating a location;
+-- only the service-role mint function may read or advance counters.
+REVOKE ALL ON TABLE public.work_order_sequence FROM anon, authenticated;
+GRANT INSERT ON TABLE public.work_order_sequence TO authenticated;
+GRANT ALL ON TABLE public.work_order_sequence TO service_role;
+
+DROP POLICY IF EXISTS work_order_sequence_select
+  ON public.work_order_sequence;
+DROP POLICY IF EXISTS work_order_sequence_write
+  ON public.work_order_sequence;
+DROP POLICY IF EXISTS work_order_sequence_update
+  ON public.work_order_sequence;
+CREATE POLICY work_order_sequence_insert_owner
+  ON public.work_order_sequence
+  FOR INSERT
+  TO authenticated
+  WITH CHECK ((SELECT public.current_app_user_role()) = 'owner');
+
 -- Cover foreign keys used as filters/joins by current application services.
 CREATE INDEX IF NOT EXISTS idx_technician_note_job_id
   ON public.technician_note (job_id)

@@ -28,7 +28,7 @@ Authorization truth remains in `lib/permissions` + `lib/services/*`. RLS is defe
 | `timeline_event`                 | active          | active    | —         | —        | Append-only in app                          |
 | `location`                       | active          | active    | active    | —        | Owner-gated in app                          |
 | `user_location`                  | active          | active    | —         | active   | Membership edits owner-gated                |
-| `work_order_sequence`            | active          | active    | active    | —        | Prefer `mint_work_order_number`             |
+| `work_order_sequence`            | —               | **owner** | —         | —        | Service role advances counters via mint RPC |
 | `audit_log`                      | **owner only**  | active    | **deny**  | **deny** | Append-only; UI via `lib/services/audit.ts` |
 | `user_preference`                | own rows        | own rows  | own rows  | own rows | `user_id = current_app_user_id()`           |
 
@@ -40,29 +40,31 @@ Authenticated active users: SELECT / INSERT / UPDATE / DELETE on objects in buck
 
 ## Hardening applied (012)
 
-1. **`mint_work_order_number`** — `SECURITY DEFINER` + fixed `search_path = public` + active-user guard (fixes mutable search_path advisor).
+1. **`mint_work_order_number`** — `SECURITY DEFINER`, fixed empty
+   `search_path`, active-location validation, and service-role-only execution.
 2. **Revoke anon/PUBLIC EXECUTE** on `current_app_user_id`, `current_app_user_role`, `is_active_app_user`, `mint_work_order_number`; grant to `authenticated` + `service_role` only.
 3. **`app_user` owner INSERT/UPDATE** policies (previously SELECT-only → writes silently failed under RLS).
 4. **`audit_log` explicit deny** UPDATE/DELETE for `authenticated`.
 
 ## Role checks (SQL / expected)
 
-| Check                                      | Expected                     |
-| ------------------------------------------ | ---------------------------- |
-| Technician JWT `SELECT audit_log`          | 0 rows (owner policy)        |
-| Non-owner `UPDATE app_user`                | 0 rows / denied              |
-| User A `SELECT user_preference` for user B | 0 rows                       |
-| Anon `rpc/current_app_user_id`             | permission denied            |
-| Authenticated `rpc/mint_work_order_number` | allowed when active app user |
+| Check                                      | Expected                    |
+| ------------------------------------------ | --------------------------- |
+| Technician JWT `SELECT audit_log`          | 0 rows (owner policy)       |
+| Non-owner `UPDATE app_user`                | 0 rows / denied             |
+| User A `SELECT user_preference` for user B | 0 rows                      |
+| Anon `rpc/current_app_user_id`             | permission denied           |
+| Authenticated `rpc/mint_work_order_number` | permission denied           |
+| Service role `rpc/mint_work_order_number`  | allowed for active location |
 
 ## Remaining advisor warnings (accepted)
 
 Re-ran Supabase security advisors after 012. Cleared: mutable search_path on mint; anon EXECUTE on SECURITY DEFINER helpers.
 
-| Finding                                                                                                                     | Level | Disposition                                                                                                                                                                                                                                                                                                                                          |
-| --------------------------------------------------------------------------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `authenticated` can EXECUTE SECURITY DEFINER helpers (`current_app_user_*`, `is_active_app_user`, `mint_work_order_number`) | WARN  | **Accepted.** Required for RLS policies and WO number minting via the authenticated client. Functions only expose session-derived identity or guarded mint; not secrets. Remediation docs: [lint 0029](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).                      |
-| Leaked password protection disabled (HaveIBeenPwned)                                                                        | WARN  | **Ops follow-up (manual).** Enable in [Auth → Providers / Password security](https://supabase.com/dashboard/project/eofxprepuajpqyvlolhw/auth/providers) (Pro plan+). Toggle “Prevent use of leaked passwords”. Docs: [password security](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). |
+| Finding                                                                                                                              | Level | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authenticated` can EXECUTE SECURITY DEFINER RLS helpers (`current_app_user_*`, `is_active_app_user`, membership/participant checks) | WARN  | **Accepted for reviewed policy helpers only.** These functions return caller-scoped identity, role, membership, or boolean state needed by RLS. Workflow authorization details and work-order minting are service-role-only after `20260929123008_platform_hardening.sql`. Remediation docs: [lint 0029](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable). |
+| Leaked password protection disabled (HaveIBeenPwned)                                                                                 | WARN  | **Ops follow-up (manual).** Enable in [Auth → Providers / Password security](https://supabase.com/dashboard/project/eofxprepuajpqyvlolhw/auth/providers) (Pro plan+). Toggle “Prevent use of leaked passwords”. Docs: [password security](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection).                                                                              |
 
 ## Known RLS design notes
 

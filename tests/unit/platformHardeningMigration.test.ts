@@ -59,4 +59,15 @@ describe("platform hardening migration", () => {
       /alter\s+table\s+public\.staff_notification\s+replica\s+identity\s+full/i
     );
   });
+
+  it("keeps work-order sequence counters owner-seeded and server-managed", () => {
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+table\s+public\.work_order_sequence\s+from\s+anon,\s*authenticated/i
+    );
+    expect(sql).toMatch(
+      /grant\s+insert\s+on\s+table\s+public\.work_order_sequence\s+to\s+authenticated/i
+    );
+    expect(sql).toMatch(/create\s+policy\s+work_order_sequence_insert_owner/i);
+    expect(sql).not.toMatch(/create\s+policy\s+work_order_sequence_update/i);
+  });
 });
