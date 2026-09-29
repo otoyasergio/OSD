@@ -20,11 +20,11 @@ authenticated server render and action.
 
 Configure values in the Vercel project, never in tracked `.env` files.
 
-| Environment | Supabase target | Notes |
-| --- | --- | --- |
-| Production | Production Supabase | `main` only |
-| Preview | Dedicated migrated non-production project | Never production customer data |
-| Development | Local/disposable project | Pull with `vercel env pull` |
+| Environment | Supabase target                           | Notes                          |
+| ----------- | ----------------------------------------- | ------------------------------ |
+| Production  | Production Supabase                       | `main` only                    |
+| Preview     | Dedicated migrated non-production project | Never production customer data |
+| Development | Local/disposable project                  | Pull with `vercel env pull`    |
 
 Required core names:
 

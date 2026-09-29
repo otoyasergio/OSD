@@ -6,11 +6,7 @@ describe("staff notification Realtime registration", () => {
     const registrations: Array<Record<string, unknown>> = [];
     const channel = {
       on: vi.fn(
-        (
-          _kind: string,
-          filter: Record<string, unknown>,
-          _callback: () => void
-        ) => {
+        (_kind: string, filter: Record<string, unknown>, _callback: () => void) => {
           registrations.push(filter);
           return channel;
         }
@@ -35,8 +31,6 @@ describe("staff notification Realtime registration", () => {
         filter: "recipient_user_id=eq.user-123",
       },
     ]);
-    expect(registrations).not.toContainEqual(
-      expect.objectContaining({ event: "*" })
-    );
+    expect(registrations).not.toContainEqual(expect.objectContaining({ event: "*" }));
   });
 });
