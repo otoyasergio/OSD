@@ -220,16 +220,12 @@ const MESSAGES: Record<string, string> = {
   RATE_LIMITED: "Too many requests. Please wait a moment and try again.",
   ROLE_PREVIEW_MUTATION_BLOCKED:
     "Changes are disabled while role preview is active. Exit preview and try again.",
-  ASK_OTOMOTO_THREAD_NOT_FOUND:
-    "That Ask OTOMOTO conversation is no longer available.",
+  ASK_OTOMOTO_THREAD_NOT_FOUND: "That Ask OTOMOTO conversation is no longer available.",
   ASK_OTOMOTO_THREAD_SCOPE_MISMATCH:
     "That Ask OTOMOTO conversation does not match this work order, job, or mode.",
-  ASK_OTOMOTO_TURN_NOT_FOUND:
-    "That Ask OTOMOTO turn is no longer available.",
-  ASK_OTOMOTO_RETRY_NOT_FOUND:
-    "There is no failed Ask OTOMOTO response to retry.",
-  ASK_OTOMOTO_NOTE_SOURCE_NOT_FOUND:
-    "That Ask OTOMOTO response is no longer available.",
+  ASK_OTOMOTO_TURN_NOT_FOUND: "That Ask OTOMOTO turn is no longer available.",
+  ASK_OTOMOTO_RETRY_NOT_FOUND: "There is no failed Ask OTOMOTO response to retry.",
+  ASK_OTOMOTO_NOTE_SOURCE_NOT_FOUND: "That Ask OTOMOTO response is no longer available.",
   ASK_OTOMOTO_NOTE_SOURCE_NOT_ASSISTANT:
     "Only an assistant response can be promoted to a technician note.",
   ASK_OTOMOTO_NOTE_SOURCE_NOT_READY:

@@ -11,11 +11,7 @@ import type {
   AiAssistantTriggerType,
   DbClient,
 } from "@/lib/database/types";
-import {
-  canViewClients,
-  canViewPricing,
-  isFloorTech,
-} from "@/lib/permissions";
+import { canViewClients, canViewPricing, isFloorTech } from "@/lib/permissions";
 import {
   canViewerAccessWorkOrder,
   canViewerAccessWorkOrderLocation,
@@ -219,6 +215,11 @@ export interface DiagnosticsAssistantRepository {
     triggerType: AiAssistantTriggerType,
     triggerEntityId: string
   ): Promise<DiagnosticsThreadSummary | null>;
+  triggerEntityBelongsToWorkOrder(
+    workOrderId: string,
+    triggerType: AiAssistantTriggerType,
+    triggerEntityId: string
+  ): Promise<boolean>;
   loadJob(workOrderId: string, jobId: string): Promise<DiagnosticsJobScope | null>;
   beginTurn(input: BeginTurnInput): Promise<TurnRecord>;
   loadGenerationInput(
@@ -232,19 +233,13 @@ export interface DiagnosticsAssistantRepository {
     assistantMessageId: string;
     safeErrorCode: string;
   }): Promise<void>;
-  loadLatestFailedTurn(
-    workOrderId: string,
-    threadId: string
-  ): Promise<FailedTurn | null>;
+  loadLatestFailedTurn(workOrderId: string, threadId: string): Promise<FailedTurn | null>;
   loadContextSource(
     workOrderId: string,
     jobId: string | null,
     includeFrontOffice: boolean
   ): Promise<LoadedContext>;
-  loadPhotoRows(
-    workOrderId: string,
-    photoIds: string[]
-  ): Promise<DiagnosticsPhotoRow[]>;
+  loadPhotoRows(workOrderId: string, photoIds: string[]): Promise<DiagnosticsPhotoRow[]>;
   downloadPhoto(storagePath: string, options: { maxBytes: number }): Promise<Uint8Array>;
   recordModelChangeAudit?(input: {
     actorUserId: string;
@@ -462,16 +457,11 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
           threadId: String(message.thread_id),
           role: message.role as DiagnosticsMessageView["role"],
           body: message.body == null ? null : String(message.body),
-          generationStatus:
-            message.generation_status as AiAssistantGenerationStatus,
+          generationStatus: message.generation_status as AiAssistantGenerationStatus,
           requestedInput: message.requested_input ?? null,
           phase: (message.phase as AiAssistantPhase | null) ?? null,
-          safeErrorCode: message.safe_error_code
-            ? String(message.safe_error_code)
-            : null,
-          providerModel: message.provider_model
-            ? String(message.provider_model)
-            : null,
+          safeErrorCode: message.safe_error_code ? String(message.safe_error_code) : null,
+          providerModel: message.provider_model ? String(message.provider_model) : null,
           createdAt: String(message.created_at),
           updatedAt: String(message.updated_at),
           photos: links
@@ -533,10 +523,24 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
     return data ? rowToThread(data as Record<string, unknown>) : null;
   }
 
-  async loadJob(
+  async triggerEntityBelongsToWorkOrder(
     workOrderId: string,
-    jobId: string
-  ): Promise<DiagnosticsJobScope | null> {
+    triggerType: AiAssistantTriggerType,
+    triggerEntityId: string
+  ): Promise<boolean> {
+    const table = triggerType === "inspection_completed" ? "inspection" : "job";
+    const idColumn = triggerType === "inspection_completed" ? "inspection_id" : "job_id";
+    const { data, error } = await this.session
+      .from(table)
+      .select(idColumn)
+      .eq("work_order_id", workOrderId)
+      .eq(idColumn, triggerEntityId)
+      .maybeSingle();
+    throwQuery(error);
+    return Boolean(data);
+  }
+
+  async loadJob(workOrderId: string, jobId: string): Promise<DiagnosticsJobScope | null> {
     const { data, error } = await this.session
       .from("job")
       .select("job_id, work_order_id")
@@ -562,6 +566,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       .select("ai_assistant_message_id")
       .single();
     throwQuery(userError);
+    if (!userMessage) throw new Error("ASK_OTOMOTO_TURN_CREATE_FAILED");
     const userMessageId = String(userMessage.ai_assistant_message_id);
     if (input.photos.length > 0) {
       const { error } = await this.admin.from("ai_assistant_message_photo").insert(
@@ -584,6 +589,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       .select("ai_assistant_message_id")
       .single();
     throwQuery(assistantError);
+    if (!assistantMessage) throw new Error("ASK_OTOMOTO_TURN_CREATE_FAILED");
     const { error: threadError } = await this.admin
       .from("ai_assistant_thread")
       .update({ status: "generating", updated_at: new Date().toISOString() })
@@ -621,7 +627,9 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       history: workspace.messages
         .slice(0, assistantIndex - 1)
         .filter(
-          (message): message is DiagnosticsMessageView & {
+          (
+            message
+          ): message is DiagnosticsMessageView & {
             role: "user" | "assistant";
             body: string;
           } =>
@@ -698,8 +706,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
     const failed = [...workspace.messages]
       .reverse()
       .find(
-        (message) =>
-          message.role === "assistant" && message.generationStatus === "failed"
+        (message) => message.role === "assistant" && message.generationStatus === "failed"
       );
     if (!failed) return null;
     const loaded = await this.loadGenerationInput(
@@ -707,7 +714,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       threadId,
       failed.messageId
     );
-    const { error } = await this.admin
+    const { data: claimed, error } = await this.admin
       .from("ai_assistant_message")
       .update({
         generation_status: "generating",
@@ -716,8 +723,11 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       })
       .eq("thread_id", threadId)
       .eq("ai_assistant_message_id", failed.messageId)
-      .eq("generation_status", "failed");
+      .eq("generation_status", "failed")
+      .select("ai_assistant_message_id")
+      .maybeSingle();
     throwQuery(error);
+    if (!claimed) return null;
     await this.admin
       .from("ai_assistant_thread")
       .update({ status: "generating", updated_at: new Date().toISOString() })
@@ -742,6 +752,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       .eq("work_order_id", workOrderId)
       .single();
     throwQuery(workOrderError);
+    if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
     const { data: motorcycle, error: motorcycleError } = await this.admin
       .from("motorcycle")
       .select(
@@ -750,12 +761,14 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       .eq("motorcycle_id", workOrder.motorcycle_id)
       .single();
     throwQuery(motorcycleError);
+    if (!motorcycle) throw new Error("MOTORCYCLE_NOT_FOUND");
     const { data: customer, error: customerError } = await this.admin
       .from("customer")
       .select("first_name, last_name, email, phone, address")
       .eq("customer_id", motorcycle.customer_id)
       .single();
     throwQuery(customerError);
+    if (!customer) throw new Error("CUSTOMER_NOT_FOUND");
 
     let jobsQuery = this.admin
       .from("job")
@@ -797,9 +810,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
         .maybeSingle(),
       this.admin
         .from("technician_note")
-        .select(
-          "technician_note_id, work_order_id, job_id, note_type, note, created_at"
-        )
+        .select("technician_note_id, work_order_id, job_id, note_type, note, created_at")
         .eq("work_order_id", workOrderId),
       this.admin
         .from("recommendation")
@@ -857,12 +868,15 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
     const proofRows = (proofResult.data ?? []) as Array<Record<string, unknown>>;
     const pricingByJob = includeFrontOffice
       ? await this.loadPricing(workOrderId, jobIds)
-      : new Map<string, {
-          prices?: NonNullable<DiagnosticsContextSource["jobs"][number]["prices"]>;
-          authorization?: NonNullable<
-            DiagnosticsContextSource["jobs"][number]["authorization"]
-          >;
-        }>();
+      : new Map<
+          string,
+          {
+            prices?: NonNullable<DiagnosticsContextSource["jobs"][number]["prices"]>;
+            authorization?: NonNullable<
+              DiagnosticsContextSource["jobs"][number]["authorization"]
+            >;
+          }
+        >();
     const inspection = inspectionResult.data as Record<string, unknown> | null;
 
     return {
@@ -874,8 +888,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
           lifecycleState: workOrder.lifecycle_state
             ? String(workOrder.lifecycle_state)
             : null,
-          mileage:
-            workOrder.mileage == null ? null : Number(workOrder.mileage),
+          mileage: workOrder.mileage == null ? null : Number(workOrder.mileage),
           complaint: null,
           internalNotes: workOrder.internal_notes
             ? String(workOrder.internal_notes)
@@ -948,8 +961,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
               })),
             proof: {
               required: true,
-              photoCount: proofRows.filter((photo) => String(photo.job_id) === id)
-                .length,
+              photoCount: proofRows.filter((photo) => String(photo.job_id) === id).length,
               exceptionRecorded: (notesResult.data ?? []).some(
                 (note: Record<string, unknown>) =>
                   String(note.job_id) === id && note.note_type === "proof_exception"
@@ -972,9 +984,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
                   itemName: String(result.item_name_snapshot),
                   displayOrder: Number(result.display_order_snapshot),
                   status: result.status ? String(result.status) : null,
-                  measurement: result.measurement
-                    ? String(result.measurement)
-                    : null,
+                  measurement: result.measurement ? String(result.measurement) : null,
                   notes: result.notes ? String(result.notes) : null,
                 })
               ),
@@ -1010,32 +1020,26 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
           })
         ),
         checks: {
-          quality: (qualityResult.data ?? []).map(
-            (check: Record<string, unknown>) => ({
-              attemptId: String(check.attempt_id),
-              workOrderId,
-              outcome: String(check.outcome),
-              checklist: check.checklist,
-              notes: check.notes ? String(check.notes) : null,
-              performedAt: String(check.performed_at),
-            })
-          ),
-          safety: (safetyResult.data ?? []).map(
-            (check: Record<string, unknown>) => ({
-              attemptId: String(check.attempt_id),
-              workOrderId,
-              outcome: String(check.outcome),
-              checklist: check.checklist,
-              notes: check.notes ? String(check.notes) : null,
-              performedAt: String(check.performed_at),
-            })
-          ),
+          quality: (qualityResult.data ?? []).map((check: Record<string, unknown>) => ({
+            attemptId: String(check.attempt_id),
+            workOrderId,
+            outcome: String(check.outcome),
+            checklist: check.checklist,
+            notes: check.notes ? String(check.notes) : null,
+            performedAt: String(check.performed_at),
+          })),
+          safety: (safetyResult.data ?? []).map((check: Record<string, unknown>) => ({
+            attemptId: String(check.attempt_id),
+            workOrderId,
+            outcome: String(check.outcome),
+            checklist: check.checklist,
+            notes: check.notes ? String(check.notes) : null,
+            performedAt: String(check.performed_at),
+          })),
         },
       },
       redactTerms: {
-        customerName: [customer.first_name, customer.last_name]
-          .filter(Boolean)
-          .join(" "),
+        customerName: [customer.first_name, customer.last_name].filter(Boolean).join(" "),
         email: customer.email ? String(customer.email) : null,
         phone: customer.phone ? String(customer.phone) : null,
         address: customer.address ? String(customer.address) : null,
@@ -1068,21 +1072,23 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
       .maybeSingle();
     throwQuery(error);
     if (!estimate?.current_version_id) return result;
-    const [{ data: prices, error: priceError }, { data: decisions, error: decisionError }] =
-      await Promise.all([
-        this.admin
-          .from("estimate_job")
-          .select(
-            "job_id, labor_cents, parts_cents, fees_cents, discount_cents, tax_cents, total_cents"
-          )
-          .eq("estimate_version_id", estimate.current_version_id)
-          .in("job_id", jobIds),
-        this.admin
-          .from("estimate_job_decision")
-          .select("job_id, decision, decided_at, method, reason")
-          .eq("estimate_version_id", estimate.current_version_id)
-          .in("job_id", jobIds),
-      ]);
+    const [
+      { data: prices, error: priceError },
+      { data: decisions, error: decisionError },
+    ] = await Promise.all([
+      this.admin
+        .from("estimate_job")
+        .select(
+          "job_id, labor_cents, parts_cents, fees_cents, discount_cents, tax_cents, total_cents"
+        )
+        .eq("estimate_version_id", estimate.current_version_id)
+        .in("job_id", jobIds),
+      this.admin
+        .from("estimate_job_decision")
+        .select("job_id, decision, decided_at, method, reason")
+        .eq("estimate_version_id", estimate.current_version_id)
+        .in("job_id", jobIds),
+    ]);
     throwQuery(priceError);
     throwQuery(decisionError);
     for (const price of (prices ?? []) as Array<Record<string, unknown>>) {
@@ -1298,10 +1304,9 @@ export function createDiagnosticsAssistantService(
         history: input.generation.history,
         images: prepared.images,
       });
-      const priorReady = (await input.repository.loadThread(
-        input.thread.workOrderId,
-        input.thread.threadId
-      ))?.messages
+      const priorReady = (
+        await input.repository.loadThread(input.thread.workOrderId, input.thread.threadId)
+      )?.messages
         .filter(
           (message) =>
             message.messageId !== input.generation.assistantMessageId &&
@@ -1420,11 +1425,7 @@ export function createDiagnosticsAssistantService(
       const user = await authenticate();
       const input = submitDiagnosticsTurnSchema.parse(raw);
       const repository = await repo();
-      const workspace = await assertThread(
-        repository,
-        input.workOrderId,
-        input.threadId
-      );
+      const workspace = await assertThread(repository, input.workOrderId, input.threadId);
       if (
         workspace.thread.mode !== input.mode ||
         workspace.thread.jobId !== (input.jobId ?? null) ||
@@ -1452,12 +1453,18 @@ export function createDiagnosticsAssistantService(
         if (row.workOrderId !== input.workOrderId) {
           throw new Error("DIAGNOSTICS_IMAGE_WORK_ORDER_MISMATCH");
         }
-        if (
-          input.jobId &&
-          row.jobId &&
-          row.jobId !== input.jobId
-        ) {
+        if (input.jobId && row.jobId && row.jobId !== input.jobId) {
           throw new Error("DIAGNOSTICS_IMAGE_JOB_MISMATCH");
+        }
+        if (
+          (row.category === "job_work" || row.category === "job_proof") &&
+          (!input.jobId || row.jobId !== input.jobId)
+        ) {
+          throw new Error(
+            input.jobId
+              ? "DIAGNOSTICS_IMAGE_JOB_MISMATCH"
+              : "DIAGNOSTICS_IMAGE_JOB_REQUIRED"
+          );
         }
       }
       const turn = await repository.beginTurn({
@@ -1489,11 +1496,7 @@ export function createDiagnosticsAssistantService(
       const user = await authenticate();
       const input = retryDiagnosticsTurnSchema.parse(raw);
       const repository = await repo();
-      const workspace = await assertThread(
-        repository,
-        input.workOrderId,
-        input.threadId
-      );
+      const workspace = await assertThread(repository, input.workOrderId, input.threadId);
       const workOrder = await requireScope(
         repository,
         user,
@@ -1549,9 +1552,19 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
   );
   await assertJob(repository, input.workOrderId, input.jobId ?? null);
   const triggerType: AiAssistantTriggerType =
-    input.trigger === "inspection_completion"
-      ? "inspection_completed"
-      : "job_completed";
+    input.trigger === "inspection_completion" ? "inspection_completed" : "job_completed";
+  if (input.trigger === "job_completion" && input.jobId !== input.triggerEntityId) {
+    throw new Error("ASK_OTOMOTO_TRIGGER_NOT_FOUND");
+  }
+  if (
+    !(await repository.triggerEntityBelongsToWorkOrder(
+      input.workOrderId,
+      triggerType,
+      input.triggerEntityId
+    ))
+  ) {
+    throw new Error("ASK_OTOMOTO_TRIGGER_NOT_FOUND");
+  }
   const existing = await repository.findTriggerThread(
     input.workOrderId,
     triggerType,
@@ -1571,9 +1584,7 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
     });
   } catch (error) {
     const code =
-      error && typeof error === "object" && "code" in error
-        ? String(error.code)
-        : "";
+      error && typeof error === "object" && "code" in error ? String(error.code) : "";
     if (code !== "23505") throw error;
     const recovered = await repository.findTriggerThread(
       input.workOrderId,

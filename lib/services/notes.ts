@@ -295,10 +295,12 @@ async function createDefaultReviewedNoteDependencies(): Promise<ReviewedNoteProm
         status: data.status,
         primaryTechnicianId: data.primary_technician_id,
         qualityCheckAssignedTo: data.quality_check_assigned_to,
-        jobs: ((data.jobs ?? []) as Array<{
-          job_id: string;
-          assigned_technician_id: string | null;
-        }>).map((job) => ({
+        jobs: (
+          (data.jobs ?? []) as Array<{
+            job_id: string;
+            assigned_technician_id: string | null;
+          }>
+        ).map((job) => ({
           jobId: job.job_id,
           assignedTechnicianId: job.assigned_technician_id,
         })),
@@ -358,8 +360,7 @@ async function createDefaultReviewedNoteDependencies(): Promise<ReviewedNoteProm
       return data as TechnicianNote;
     },
     async recordTimeline({ note, actor }) {
-      const typeLabel =
-        TECHNICIAN_NOTE_TYPE_LABELS[note.note_type] ?? note.note_type;
+      const typeLabel = TECHNICIAN_NOTE_TYPE_LABELS[note.note_type] ?? note.note_type;
       await addTimelineEvent(supabase, {
         work_order_id: note.work_order_id,
         user_id: actor.user_id,
@@ -428,10 +429,7 @@ export async function promoteReviewedTechnicianNote(
     throw new Error("JOB_NOT_FOUND");
   }
 
-  const source = await deps.loadSourceMessage(
-    workOrderId,
-    input.sourceMessageId
-  );
+  const source = await deps.loadSourceMessage(workOrderId, input.sourceMessageId);
   if (!source || source.workOrderId !== workOrderId) {
     throw new Error("ASK_OTOMOTO_NOTE_SOURCE_NOT_FOUND");
   }
@@ -447,9 +445,7 @@ export async function promoteReviewedTechnicianNote(
   if (input.jobId && source.jobId && input.jobId !== source.jobId) {
     throw new Error("ASK_OTOMOTO_NOTE_JOB_MISMATCH");
   }
-  if (
-    await deps.findExistingPromotion(workOrderId, input.sourceMessageId)
-  ) {
+  if (await deps.findExistingPromotion(workOrderId, input.sourceMessageId)) {
     throw new Error("ASK_OTOMOTO_NOTE_ALREADY_PROMOTED");
   }
 

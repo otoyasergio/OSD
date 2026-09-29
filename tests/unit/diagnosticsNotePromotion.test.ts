@@ -73,9 +73,7 @@ describe("reviewed Ask OTOMOTO note promotion", () => {
       deps
     );
 
-    expect(note.source_ai_message_id).toBe(
-      "61111111-1111-4111-8111-111111111111"
-    );
+    expect(note.source_ai_message_id).toBe("61111111-1111-4111-8111-111111111111");
     expect(deps.insertNote).toHaveBeenCalledWith(
       expect.objectContaining({
         note: "Edited and verified finding",

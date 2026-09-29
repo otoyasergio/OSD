@@ -1,8 +1,5 @@
 import { expect, it } from "vitest";
-import {
-  createServiceClient,
-  describeIntegration,
-} from "@/tests/integration/helpers";
+import { createServiceClient, describeIntegration } from "@/tests/integration/helpers";
 
 describeIntegration("Ask OTOMOTO persistence integration", () => {
   it("has assistant storage and reviewed-note provenance columns", async () => {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AppUser } from "@/lib/auth/session";
 import {
   assertDiagnosticsAccess,
+  createOrReuseDiagnosticsTriggerThreadInternal,
   createDiagnosticsAssistantService,
   deriveDiagnosticsAudience,
   type DiagnosticsAssistantRepository,
@@ -13,10 +14,7 @@ import type {
   DiagnosticsGenerationResult,
 } from "@/lib/diagnostics/openai";
 
-const actor = (
-  role: AppUser["role"],
-  overrides: Partial<AppUser> = {}
-): AppUser => ({
+const actor = (role: AppUser["role"], overrides: Partial<AppUser> = {}): AppUser => ({
   user_id: "11111111-1111-4111-8111-111111111111",
   auth_user_id: "21111111-1111-4111-8111-111111111111",
   first_name: "Test",
@@ -86,10 +84,7 @@ describe("Ask OTOMOTO authorization", () => {
   it("allows a member to read a foreign-location WO but denies mutations", () => {
     const foreignLocation = "61111111-1111-4111-8111-111111111111";
     const advisor = actor("service_advisor", {
-      location_ids: [
-        "31111111-1111-4111-8111-111111111111",
-        foreignLocation,
-      ],
+      location_ids: ["31111111-1111-4111-8111-111111111111", foreignLocation],
     });
     const foreignScope = scope({ locationId: foreignLocation });
 
@@ -113,6 +108,7 @@ function repository(): DiagnosticsAssistantRepository {
       jobId: "51111111-1111-4111-8111-111111111111",
       workOrderId: scope().workOrderId,
     }),
+    triggerEntityBelongsToWorkOrder: vi.fn().mockResolvedValue(true),
     beginTurn: vi.fn(),
     loadGenerationInput: vi.fn(),
     completeGeneration: vi.fn(),
@@ -145,10 +141,7 @@ describe("Ask OTOMOTO service boundaries", () => {
     });
 
     await expect(
-      service.loadThread(
-        scope().workOrderId,
-        "71111111-1111-4111-8111-111111111111"
-      )
+      service.loadThread(scope().workOrderId, "71111111-1111-4111-8111-111111111111")
     ).rejects.toThrow("ASK_OTOMOTO_THREAD_NOT_FOUND");
     expect(repo.loadThread).toHaveBeenCalledWith(
       scope().workOrderId,
@@ -377,7 +370,9 @@ describe("Ask OTOMOTO generation lifecycle", () => {
   it("redacts PII and omits pricing from technical provider context", async () => {
     const { repo, thread } = generationRepository();
     const generateDraft = vi
-      .fn<(request: DiagnosticsGenerationRequest) => Promise<DiagnosticsGenerationResult>>()
+      .fn<
+        (request: DiagnosticsGenerationRequest) => Promise<DiagnosticsGenerationResult>
+      >()
       .mockResolvedValue(generationResult());
     const service = createDiagnosticsAssistantService({
       repository: repo,
@@ -504,8 +499,65 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       previousModel: "model-resolved-1",
       resolvedModel: "model-resolved-2",
     });
-    expect(JSON.stringify(vi.mocked(repo.recordModelChangeAudit).mock.calls)).not.toContain(
-      "Generated answer"
-    );
+    expect(
+      JSON.stringify(vi.mocked(repo.recordModelChangeAudit).mock.calls)
+    ).not.toContain("Generated answer");
+  });
+});
+
+describe("Ask OTOMOTO internal trigger primitive", () => {
+  it("rejects a trigger entity outside the authorized work order", async () => {
+    const repo = repository();
+    vi.mocked(repo.triggerEntityBelongsToWorkOrder).mockResolvedValue(false);
+
+    await expect(
+      createOrReuseDiagnosticsTriggerThreadInternal(
+        actor("service_advisor"),
+        {
+          workOrderId: scope().workOrderId,
+          jobId: null,
+          mode: "shop",
+          trigger: "inspection_completion",
+          triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_NOT_FOUND");
+    expect(repo.createThread).not.toHaveBeenCalled();
+  });
+
+  it("recovers a concurrent unique conflict by loading the scoped trigger", async () => {
+    const repo = repository();
+    const existing = {
+      threadId: "71111111-1111-4111-8111-111111111111",
+      workOrderId: scope().workOrderId,
+      jobId: "51111111-1111-4111-8111-111111111111",
+      locationId: scope().locationId,
+      mode: "shop" as const,
+      audience: "technical" as const,
+      status: "pending" as const,
+      diagnosticPhase: null,
+      triggerType: "job_completed" as const,
+      createdAt: "2026-09-29T00:00:00.000Z",
+      updatedAt: "2026-09-29T00:00:00.000Z",
+    };
+    vi.mocked(repo.findTriggerThread)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existing);
+    vi.mocked(repo.createThread).mockRejectedValue({ code: "23505" });
+
+    await expect(
+      createOrReuseDiagnosticsTriggerThreadInternal(
+        actor("service_advisor"),
+        {
+          workOrderId: scope().workOrderId,
+          jobId: "51111111-1111-4111-8111-111111111111",
+          mode: "shop",
+          trigger: "job_completion",
+          triggerEntityId: "51111111-1111-4111-8111-111111111111",
+        },
+        { repository: repo }
+      )
+    ).resolves.toEqual(existing);
   });
 });
