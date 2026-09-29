@@ -766,6 +766,143 @@ describe("Ask OTOMOTO generation lifecycle", () => {
     );
   });
 
+  it("allows a normal retest follow-up in a job-completion thread to enter verification", async () => {
+    const { repo, thread, generated } = generationRepository();
+    const triggerThread = {
+      ...thread,
+      triggerType: "job_completed" as const,
+      triggerEntityId: thread.jobId,
+      createdByUserId: actor("technician").user_id,
+    };
+    vi.mocked(repo.loadThread).mockResolvedValue({
+      thread: triggerThread,
+      messages: [generated],
+    });
+    vi.mocked(repo.loadGenerationInput).mockResolvedValue({
+      userMessageId: generated.parentUserMessageId!,
+      assistantMessageId: generated.messageId,
+      userMessage: "Comparable retest passed under the original conditions.",
+      photos: [],
+      history: [
+        { role: "user", content: JOB_COMPLETION_SEED_REQUEST },
+        { role: "assistant", content: "Repair performed; verification pending." },
+      ],
+    });
+    const source = contextSource();
+    source.jobs[0] = {
+      ...source.jobs[0]!,
+      status: "completed",
+      completedAt: "2026-09-29T00:30:00.000Z",
+      verification: [
+        {
+          verificationId: "verification-1",
+          result: "passed",
+          notes: "Comparable retest passed under the original conditions.",
+          recordedAt: "2026-09-29T01:00:00.000Z",
+        },
+      ],
+    };
+    vi.mocked(repo.loadContextSource).mockResolvedValue({
+      source,
+      redactTerms: {},
+    });
+    const verificationResult: DiagnosticsGenerationResult = {
+      ...generationResult(),
+      response: {
+        ...generationResult().response,
+        phase: "verification",
+        answer: "The stored comparable retest records successful verification.",
+      },
+    };
+    const generateDraft = vi
+      .fn()
+      .mockImplementation(async (request: DiagnosticsGenerationRequest) => {
+        if (request.requiredPhase) {
+          throw new Error("DIAGNOSTICS_AI_OUTPUT_WITHHELD");
+        }
+        return verificationResult;
+      });
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft,
+      prepareImages: async () => ({ images: [], photoMetadata: [] }),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await expect(
+      service.submitTurn({
+        workOrderId: scope().workOrderId,
+        threadId: triggerThread.threadId,
+        jobId: triggerThread.jobId,
+        mode: "shop",
+        text: "Comparable retest passed under the original conditions.",
+        photos: [],
+      })
+    ).resolves.toBeDefined();
+
+    expect(generateDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ requiredPhase: undefined })
+    );
+    expect(repo.completeGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({ phase: "verification" })
+    );
+  });
+
+  it("keeps closure required when retrying the failed automatic job seed", async () => {
+    const { repo, thread, generated } = generationRepository();
+    const triggerThread = {
+      ...thread,
+      status: "failed" as const,
+      triggerType: "job_completed" as const,
+      triggerEntityId: thread.jobId,
+      createdByUserId: actor("technician").user_id,
+    };
+    vi.mocked(repo.loadThread).mockResolvedValue({
+      thread: triggerThread,
+      messages: [generated],
+    });
+    vi.mocked(repo.claimLatestRetry).mockResolvedValue({
+      userMessageId: generated.parentUserMessageId!,
+      assistantMessageId: generated.messageId,
+      attemptId: "seed-retry-attempt",
+    });
+    vi.mocked(repo.loadGenerationInput).mockResolvedValue({
+      userMessageId: generated.parentUserMessageId!,
+      assistantMessageId: generated.messageId,
+      userMessage: JOB_COMPLETION_SEED_REQUEST,
+      photos: [],
+      history: [],
+    });
+    const source = contextSource();
+    source.jobs[0] = {
+      ...source.jobs[0]!,
+      status: "completed",
+      completedAt: "2026-09-29T00:30:00.000Z",
+    };
+    vi.mocked(repo.loadContextSource).mockResolvedValue({
+      source,
+      redactTerms: {},
+    });
+    const generateDraft = vi.fn().mockResolvedValue(generationResult());
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft,
+      prepareImages: async () => ({ images: [], photoMetadata: [] }),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await service.retryLatestFailed({
+      workOrderId: scope().workOrderId,
+      threadId: triggerThread.threadId,
+    });
+
+    expect(generateDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ requiredPhase: "closure_report" })
+    );
+  });
+
   it("writes metadata-only audit when the resolved model changes", async () => {
     const { repo, thread } = generationRepository();
     repo.recordModelChangeAudit = vi.fn();
@@ -1322,6 +1459,7 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
           thread: { ...thread, status },
           messages: [],
         });
+      vi.mocked(repo.isActiveUserAtLocation).mockResolvedValue(false);
       const generateDraft = vi.fn();
 
       await expect(
@@ -1341,6 +1479,7 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
       ).resolves.toBeNull();
 
       expect(repo.beginSeedTurn).not.toHaveBeenCalled();
+      expect(repo.isActiveUserAtLocation).not.toHaveBeenCalled();
       expect(generateDraft).not.toHaveBeenCalled();
     }
   );
@@ -1353,6 +1492,7 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
         thread: { ...thread, status: "failed" },
         messages: [],
       });
+    vi.mocked(repo.isActiveUserAtLocation).mockResolvedValue(false);
     const generateDraft = vi.fn();
 
     await expect(
@@ -1373,6 +1513,7 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
 
     expect(repo.beginSeedTurn).not.toHaveBeenCalled();
     expect(repo.claimLatestRetry).not.toHaveBeenCalled();
+    expect(repo.isActiveUserAtLocation).not.toHaveBeenCalled();
     expect(generateDraft).not.toHaveBeenCalled();
   });
 

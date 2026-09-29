@@ -224,6 +224,8 @@ describe("diagnostics structured response", () => {
       "Release pending.",
       "The motorcycle was not released to the customer.",
       "Pickup is not approved.",
+      "The throttle was released and returned normally.",
+      "The brake lever released cleanly after the test.",
     ]) {
       expect(
         inspectDiagnosticsOutput(

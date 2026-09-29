@@ -1475,6 +1475,20 @@ async function requireThreadWrite(
   return { workOrder, workspace };
 }
 
+function requiredPhaseForRetry(
+  thread: DiagnosticsThreadSummary,
+  generation: GenerationInput
+): DiagnosticsGenerationRequest["requiredPhase"] {
+  const isAutomaticJobSeed =
+    thread.triggerType === "job_completed" &&
+    thread.jobId !== null &&
+    thread.triggerEntityId === thread.jobId &&
+    generation.history.length === 0 &&
+    generation.photos.length === 0 &&
+    generation.userMessage === JOB_COMPLETION_SEED_REQUEST;
+  return isAutomaticJobSeed ? "closure_report" : undefined;
+}
+
 export function createDiagnosticsAssistantService(
   dependencies: DiagnosticsAssistantDependencies = {}
 ) {
@@ -1524,6 +1538,7 @@ export function createDiagnosticsAssistantService(
     scope: DiagnosticsWorkOrderScope;
     thread: DiagnosticsThreadSummary;
     generation: GenerationInput;
+    requiredPhase?: DiagnosticsGenerationRequest["requiredPhase"];
   }): Promise<DiagnosticsMessageView> {
     const contextAsOf = now().toISOString();
     let renderedBody: string;
@@ -1573,8 +1588,7 @@ export function createDiagnosticsAssistantService(
       }
       response = await generate({
         mode: input.thread.mode,
-        requiredPhase:
-          input.thread.triggerType === "job_completed" ? "closure_report" : undefined,
+        requiredPhase: input.requiredPhase,
         staffUserId: input.actor.user_id,
         workOrderContext: shaped.context,
         userMessage: safeUserMessage,
@@ -1857,6 +1871,7 @@ export function createDiagnosticsAssistantService(
         scope: workOrder,
         thread: workspace.thread,
         generation,
+        requiredPhase: requiredPhaseForRetry(workspace.thread, generation),
       });
     },
 
@@ -1870,6 +1885,7 @@ export function createDiagnosticsAssistantService(
       scope: DiagnosticsWorkOrderScope;
       thread: DiagnosticsThreadSummary;
       turn: TurnRecord;
+      requiredPhase?: DiagnosticsGenerationRequest["requiredPhase"];
     }): Promise<DiagnosticsMessageView> {
       const generation = await loadClaimedGeneration(
         input.repository,
@@ -1883,6 +1899,7 @@ export function createDiagnosticsAssistantService(
         scope: input.scope,
         thread: input.thread,
         generation,
+        requiredPhase: input.requiredPhase,
       });
     },
   };
@@ -2117,9 +2134,14 @@ export async function generateDiagnosticsTriggerResponseInternal(
   };
   const thread = validateThread(workspace);
   if (
-    !(await repository.isActiveUserAtLocation(trustedActor.userId, thread.locationId))
+    thread.status === "ready" ||
+    thread.status === "generating" ||
+    thread.status === "failed"
   ) {
-    throw new Error("ASK_OTOMOTO_TRIGGER_CREATOR_INACTIVE");
+    return null;
+  }
+  if (thread.status === "archived") {
+    throw new Error("ASK_OTOMOTO_THREAD_ARCHIVED");
   }
   if (scope.status === "completed" || scope.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
@@ -2137,14 +2159,9 @@ export async function generateDiagnosticsTriggerResponseInternal(
   }
 
   if (
-    thread.status === "ready" ||
-    thread.status === "generating" ||
-    thread.status === "failed"
+    !(await repository.isActiveUserAtLocation(trustedActor.userId, thread.locationId))
   ) {
-    return null;
-  }
-  if (thread.status === "archived") {
-    throw new Error("ASK_OTOMOTO_THREAD_ARCHIVED");
+    throw new Error("ASK_OTOMOTO_TRIGGER_CREATOR_INACTIVE");
   }
 
   let turn: TurnRecord;
@@ -2199,5 +2216,6 @@ export async function generateDiagnosticsTriggerResponseInternal(
     scope,
     thread,
     turn,
+    requiredPhase: input.trigger === "job_completion" ? "closure_report" : undefined,
   });
 }

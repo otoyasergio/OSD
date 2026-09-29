@@ -133,6 +133,9 @@ function addPositiveViolation(
   }
 }
 
+const CLOSURE_WORKFLOW_CLAIM_PATTERN =
+  /\b(?:(?:qc|quality check)\s+(?:(?:has\s+)?passed|failed|(?:is\s+|was\s+|has\s+been\s+)?complete(?:d)?)|passed\s+(?:qc|quality check)|(?:job|repair|work)\s+(?:passed|failed)|(?:motorcycle|bike|vehicle|job|work order|it)\s+(?:(?:is|was|has been)\s+)?(?:released(?:\s+to\s+(?:the\s+)?customer)?|ready\s+for\s+(?:pickup|release)|can\s+be\s+released)|release\s+(?:is\s+|has\s+been\s+)?(?:approved|authorized|complete(?:d)?)|pickup\s+(?:is\s+|has\s+been\s+)?(?:ready|approved|authorized)|customer\s+pickup\s+(?:is\s+)?approved)\b|^\s*(?:released\s+to\s+(?:the\s+)?customer|ready\s+for\s+(?:pickup|release)|can\s+be\s+released)\b/i;
+
 function hasCompletedWorkClaim(fields: string[]): boolean {
   const completedVerb = String.raw`(?:replaced|repaired|installed|fixed)`;
   const historicalActor = /\b(?:customer|owner|previous[- ]owner|aftermarket)\b/i;
@@ -533,13 +536,7 @@ export function inspectDiagnosticsOutput(
       message: "A closure report requires a supplied completed-work record.",
     });
   }
-  if (
-    closureRequired &&
-    hasPositiveClaim(
-      fields,
-      /\b(?:(?:qc|quality check)\s+(?:(?:has\s+)?passed|failed|(?:is\s+|was\s+|has\s+been\s+)?complete(?:d)?)|passed\s+(?:qc|quality check)|(?:job|repair|work)\s+(?:passed|failed)|(?:(?:motorcycle|bike|vehicle|job|work order)\s+(?:(?:is|was|has been)\s+)?|(?:it\s+)?)(?:released(?:\s+to\s+(?:the\s+)?customer)?|ready\s+for\s+(?:pickup|release)|can\s+be\s+released)|release\s+(?:is\s+|has\s+been\s+)?(?:approved|authorized|complete(?:d)?)|pickup\s+(?:is\s+|has\s+been\s+)?(?:ready|approved|authorized)|customer\s+pickup\s+(?:is\s+)?approved)\b/i
-    )
-  ) {
+  if (closureRequired && hasPositiveClaim(fields, CLOSURE_WORKFLOW_CLAIM_PATTERN)) {
     violations.push({
       code: "CLOSURE_WORKFLOW_CLAIM",
       message: "A closure draft cannot claim QC, pass/fail, or release status.",
