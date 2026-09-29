@@ -13,6 +13,8 @@ import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { formatDateTime } from "@/lib/datetime/format";
+import { DiagnosticsThreadReadOnly } from "@/components/diagnostics/DiagnosticsThreadReadOnly";
+import type { DiagnosticsThreadWorkspace } from "@/lib/services/diagnosticsAssistant";
 
 function toNoteJobs(packet: JobPacket): WorkOrderJob[] {
   return packet.jobs.map(
@@ -32,6 +34,7 @@ const TABS: Array<{ id: PacketTabId; label: string }> = [
   { id: "notes", label: "Notes" },
   { id: "photos", label: "Photos" },
   { id: "jobs", label: "Jobs" },
+  { id: "assistant", label: "Ask OTOMOTO" },
 ];
 
 function tabKey(id: PacketTabId): string {
@@ -44,6 +47,7 @@ export function JobPacketPanel({
   closeHref,
   photos = [],
   selectedJobId = null,
+  assistantWorkspace = null,
   stage,
 }: {
   packet: JobPacket;
@@ -52,6 +56,7 @@ export function JobPacketPanel({
   closeHref: string;
   photos?: IntakePhoto[];
   selectedJobId?: string | null;
+  assistantWorkspace?: DiagnosticsThreadWorkspace | null;
   stage: FloorStage | null;
 }) {
   const tabRefs = useRef(new Map<string, HTMLAnchorElement>());
@@ -66,6 +71,7 @@ export function JobPacketPanel({
       jobId: selectedJobId,
       section: tab,
       stage,
+      assistantThreadId: tab === "assistant" ? assistantWorkspace?.thread.threadId : null,
     });
   }
 
@@ -327,6 +333,17 @@ export function JobPacketPanel({
                 </ul>
               )}
             </>
+          ) : null}
+
+          {activeTab === "assistant" ? (
+            assistantWorkspace ? (
+              <DiagnosticsThreadReadOnly workspace={assistantWorkspace} />
+            ) : (
+              <div className="floor-packet-summary">
+                <h3 className="floor-section-title">Ask OTOMOTO</h3>
+                <p className="floor-muted">The selected conversation is unavailable.</p>
+              </div>
+            )
           ) : null}
         </section>
       </div>

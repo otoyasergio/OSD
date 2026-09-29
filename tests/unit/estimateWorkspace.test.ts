@@ -51,6 +51,7 @@ describe("resolveWorkOrderTabId", () => {
   it("keeps valid tab ids", () => {
     expect(resolveWorkOrderTabId("estimate")).toBe("estimate");
     expect(resolveWorkOrderTabId("parts")).toBe("parts");
+    expect(resolveWorkOrderTabId("assistant")).toBe("assistant");
   });
 
   it("routes retired jobs/recommendations bookmarks to the merged tab", () => {

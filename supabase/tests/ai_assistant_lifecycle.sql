@@ -1,7 +1,7 @@
 -- pgTAP: atomic Ask OTOMOTO generation lifecycle and service-role boundary.
 -- Run only against the isolated local stack with `supabase test db`.
 begin;
-select plan(38);
+select plan(46);
 
 select has_column(
   'public',
@@ -52,6 +52,12 @@ select has_function(
   'ask_otomoto_claim_retry',
   array['uuid', 'uuid', 'interval'],
   'latest-turn retry claim RPC exists'
+);
+select has_function(
+  'public',
+  'ask_otomoto_begin_seed_turn',
+  array['uuid', 'uuid', 'text', 'uuid', 'uuid', 'text'],
+  'atomic trigger-seed begin RPC exists'
 );
 select is(
   (
@@ -107,6 +113,27 @@ select ok(
     'EXECUTE'
   ),
   'authenticated cannot execute lifecycle write RPCs'
+);
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.ask_otomoto_begin_seed_turn(uuid,uuid,text,uuid,uuid,text)',
+    'EXECUTE'
+  ),
+  'service role can begin an automatic seed'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.ask_otomoto_begin_seed_turn(uuid,uuid,text,uuid,uuid,text)',
+    'EXECUTE'
+  )
+  and not has_function_privilege(
+    'anon',
+    'public.ask_otomoto_begin_seed_turn(uuid,uuid,text,uuid,uuid,text)',
+    'EXECUTE'
+  ),
+  'client roles cannot begin an automatic seed'
 );
 
 insert into public.location (location_id, name, code, status)
@@ -181,6 +208,93 @@ insert into public.ai_assistant_thread (
   '11000000-0000-4000-8000-000000000001',
   'shop', 'technical', 'pending',
   '21000000-0000-4000-8000-000000000001'
+);
+
+insert into public.inspection (
+  inspection_id, work_order_id, started_at, completed_at, completed_by_user_id
+) values (
+  'a1000000-0000-4000-8000-000000000010',
+  '71000000-0000-4000-8000-000000000001',
+  now(), now(),
+  '21000000-0000-4000-8000-000000000001'
+);
+
+insert into public.ai_assistant_thread (
+  ai_assistant_thread_id, work_order_id, location_id, mode, audience,
+  status, trigger_type, trigger_entity_id, created_by_user_id
+) values (
+  '91000000-0000-4000-8000-000000000002',
+  '71000000-0000-4000-8000-000000000001',
+  '11000000-0000-4000-8000-000000000001',
+  'shop', 'technical', 'pending',
+  'inspection_completed', 'a1000000-0000-4000-8000-000000000010',
+  '21000000-0000-4000-8000-000000000001'
+);
+
+create temporary table seed_turn as
+select *
+from public.ask_otomoto_begin_seed_turn(
+  '91000000-0000-4000-8000-000000000002',
+  '71000000-0000-4000-8000-000000000001',
+  'inspection_completed',
+  'a1000000-0000-4000-8000-000000000010',
+  '21000000-0000-4000-8000-000000000001',
+  'Review the completed arrival inspection'
+);
+
+select ok(
+  user_message_id is not null
+    and assistant_message_id is not null
+    and generation_attempt_id is not null,
+  'seed claim returns one parent, assistant, and generation attempt'
+)
+from seed_turn;
+select is(
+  (
+    select count(*)::integer
+    from public.ai_assistant_message
+    where thread_id = '91000000-0000-4000-8000-000000000002'
+  ),
+  2,
+  'seed claim creates exactly one message pair'
+);
+select is(
+  (
+    select public.ask_otomoto_fail_turn(
+      '91000000-0000-4000-8000-000000000002',
+      assistant_message_id,
+      generation_attempt_id,
+      'DIAGNOSTICS_AI_PROVIDER_UNAVAILABLE'
+    )
+    from seed_turn
+  ),
+  true,
+  'the first seed callback may fail after its atomic claim'
+);
+select throws_ok(
+  $$
+    select *
+    from public.ask_otomoto_begin_seed_turn(
+      '91000000-0000-4000-8000-000000000002',
+      '71000000-0000-4000-8000-000000000001',
+      'inspection_completed',
+      'a1000000-0000-4000-8000-000000000010',
+      '21000000-0000-4000-8000-000000000001',
+      'Concurrent duplicate callback'
+    )
+  $$,
+  'P0001',
+  'ASK_OTOMOTO_SEED_ALREADY_CLAIMED',
+  'a concurrent seed callback cannot create a second pair after fast failure'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.ai_assistant_message
+    where thread_id = '91000000-0000-4000-8000-000000000002'
+  ),
+  2,
+  'failed duplicate seed claim leaves exactly one message pair'
 );
 
 insert into public.intake_photo (

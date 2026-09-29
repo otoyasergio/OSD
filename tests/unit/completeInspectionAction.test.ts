@@ -45,6 +45,11 @@ vi.mock("@/lib/services/inspections", () => ({
 vi.mock("@/lib/services/diagnosticsAssistant", () => ({
   createOrReuseDiagnosticsTriggerThreadInternal: createThread,
   generateDiagnosticsTriggerResponseInternal: generateTriggerResponse,
+  diagnosticsSafeFailureCode: (error: unknown) =>
+    error instanceof Error &&
+    /^(?:ASK_OTOMOTO|DIAGNOSTICS)_[A-Z0-9_]+$/.test(error.message)
+      ? error.message
+      : "ASK_OTOMOTO_LIFECYCLE_FAILED",
 }));
 vi.mock("@/lib/services/uxEvents", () => ({ recordUxFailure }));
 
@@ -56,6 +61,7 @@ const INSPECTION = "e1111111-1111-4111-8111-111111111111";
 const THREAD = "71111111-1111-4111-8111-111111111111";
 const USER = "11111111-1111-4111-8111-111111111111";
 const LOCATION = "31111111-1111-4111-8111-111111111111";
+const THREAD_LOCATION = "61111111-1111-4111-8111-111111111111";
 
 function form(returnTo?: string): FormData {
   const data = new FormData();
@@ -76,7 +82,7 @@ describe("completeInspectionAction automatic handoff", () => {
       last_name: "Tech",
       email: "tech@example.invalid",
       profile_photo_path: null,
-      role: "technician",
+      role: "service_advisor",
       status: "active",
       location_ids: [LOCATION],
       active_location_id: LOCATION,
@@ -91,7 +97,7 @@ describe("completeInspectionAction automatic handoff", () => {
     });
     createThread.mockImplementation(async () => {
       events.push("thread-created");
-      return { threadId: THREAD };
+      return { threadId: THREAD, locationId: THREAD_LOCATION };
     });
     generateTriggerResponse.mockResolvedValue(null);
     recordUxFailure.mockResolvedValue("Could not complete inspection.");
@@ -111,7 +117,7 @@ describe("completeInspectionAction automatic handoff", () => {
     expect(scheduled).toHaveLength(1);
     await scheduled[0]!();
     expect(generateTriggerResponse).toHaveBeenCalledWith(
-      { userId: USER, locationId: LOCATION },
+      { userId: USER, locationId: THREAD_LOCATION },
       {
         workOrderId: WO,
         threadId: THREAD,
@@ -138,19 +144,23 @@ describe("completeInspectionAction automatic handoff", () => {
         work_order_id: WO,
         inspection_id: INSPECTION,
         thread_id: THREAD,
+        safe_error_code: "DIAGNOSTICS_AI_NOT_CONFIGURED",
       })
     );
-    expect(JSON.stringify(log.mock.calls)).not.toContain("DIAGNOSTICS_AI_NOT_CONFIGURED");
     log.mockRestore();
   });
 
-  it("opens the assistant packet on a validated floor return with the parsed job", async () => {
-    const returnTo = `/technician?job=${JOB}&wo=${WO}&stage=work`;
+  it("opens the assistant packet preserving a validated floor job and stage", async () => {
+    requireUser.mockResolvedValueOnce({
+      ...(await requireUser()),
+      role: "technician",
+    });
+    const returnTo = `/technician?job=${JOB}&wo=${WO}&stage=proof`;
 
     await expect(
       completeInspectionAction(WO, { error: null }, form(returnTo))
     ).rejects.toThrow(
-      `NEXT_REDIRECT:/technician?wo=${WO}&panel=packet&job=${JOB}&packetSection=assistant&stage=work&assistantThread=${THREAD}`
+      `NEXT_REDIRECT:/technician?wo=${WO}&panel=packet&job=${JOB}&packetSection=assistant&stage=proof&assistantThread=${THREAD}`
     );
 
     expect(createThread).toHaveBeenCalledWith(
@@ -162,6 +172,21 @@ describe("completeInspectionAction automatic handoff", () => {
         trigger: "inspection_completion",
         triggerEntityId: INSPECTION,
       }
+    );
+  });
+
+  it("keeps a floor technician on the assistant packet without return_to", async () => {
+    requireUser.mockResolvedValueOnce({
+      ...(await requireUser()),
+      role: "technician",
+    });
+
+    await expect(completeInspectionAction(WO, { error: null }, form())).rejects.toThrow(
+      `NEXT_REDIRECT:/technician?wo=${WO}&panel=packet&packetSection=assistant&stage=work&assistantThread=${THREAD}`
+    );
+    expect(createThread).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ jobId: null })
     );
   });
 
@@ -194,6 +219,7 @@ describe("completeInspectionAction automatic handoff", () => {
     expect(log).toHaveBeenCalledWith("Inspection assistant handoff unavailable", {
       work_order_id: WO,
       inspection_id: INSPECTION,
+      safe_error_code: "ASK_OTOMOTO_LIFECYCLE_FAILED",
     });
     expect(JSON.stringify(log.mock.calls)).not.toContain("raw database detail");
     log.mockRestore();

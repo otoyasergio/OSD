@@ -5,6 +5,7 @@ export const WORK_ORDER_TABS = [
   { id: "parts", label: "Parts" },
   { id: "photos", label: "Photos" },
   { id: "notes", label: "Notes" },
+  { id: "assistant", label: "Ask OTOMOTO" },
   { id: "timeline", label: "Activity" },
   { id: "service-info", label: "Service Info" },
   { id: "contract", label: "Contract" },
@@ -23,6 +24,7 @@ export const PRIMARY_TAB_IDS: WorkOrderTabId[] = [
 ];
 
 export const MORE_TAB_IDS: WorkOrderTabId[] = [
+  "assistant",
   "timeline",
   "service-info",
   "contract",

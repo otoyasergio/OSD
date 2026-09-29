@@ -11,12 +11,15 @@ import {
 } from "@/lib/services/inspections";
 import {
   createOrReuseDiagnosticsTriggerThreadInternal,
+  diagnosticsSafeFailureCode,
   generateDiagnosticsTriggerResponseInternal,
 } from "@/lib/services/diagnosticsAssistant";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { recordUxFailure } from "@/lib/services/uxEvents";
 import type { InspectionResultStatus } from "@/lib/database/types";
+import { isFloorTech } from "@/lib/permissions";
 import {
+  floorAssistantPacketHref,
   floorAssistantReturnHref,
   floorReturnJobIdForWorkOrder,
   safeFloorReturnTo,
@@ -75,6 +78,7 @@ export async function completeInspectionAction(
   const floorReturn = safeFloorReturnTo(rawReturnTo);
   const jobId = floorReturnJobIdForWorkOrder(workOrderId, floorReturn);
   let threadId: string | null = null;
+  let threadLocationId: string | null = null;
   try {
     const thread = await createOrReuseDiagnosticsTriggerThreadInternal(actor, {
       workOrderId,
@@ -84,10 +88,12 @@ export async function completeInspectionAction(
       triggerEntityId: completion.inspectionId,
     });
     threadId = thread.threadId;
-  } catch {
+    threadLocationId = thread.locationId;
+  } catch (error) {
     console.error("Inspection assistant handoff unavailable", {
       work_order_id: workOrderId,
       inspection_id: completion.inspectionId,
+      safe_error_code: diagnosticsSafeFailureCode(error),
     });
   }
 
@@ -100,16 +106,17 @@ export async function completeInspectionAction(
     };
     const actorSnapshot = {
       userId: actor.user_id,
-      locationId: actor.active_location_id!,
+      locationId: threadLocationId!,
     };
     after(async () => {
       try {
         await generateDiagnosticsTriggerResponseInternal(actorSnapshot, trigger);
-      } catch {
+      } catch (error) {
         console.error("Inspection assistant generation failed", {
           work_order_id: trigger.workOrderId,
           inspection_id: trigger.triggerEntityId,
           thread_id: trigger.threadId,
+          safe_error_code: diagnosticsSafeFailureCode(error),
         });
       }
     });
@@ -120,6 +127,10 @@ export async function completeInspectionAction(
     const assistantFloorReturn =
       threadId && floorAssistantReturnHref(workOrderId, threadId, floorReturn);
     redirect(assistantFloorReturn ?? floorReturn);
+  }
+  if (threadId && isFloorTech(actor.role)) {
+    const floorHref = floorAssistantPacketHref(workOrderId, threadId);
+    if (floorHref) redirect(floorHref);
   }
   if (threadId) {
     const params = new URLSearchParams({ tab: "assistant", thread: threadId });

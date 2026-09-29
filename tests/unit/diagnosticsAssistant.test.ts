@@ -133,6 +133,7 @@ function repository(): DiagnosticsAssistantRepository {
     }),
     triggerEntityBelongsToWorkOrder: vi.fn().mockResolvedValue(true),
     beginTurn: vi.fn(),
+    beginSeedTurn: vi.fn(),
     loadGenerationInput: vi.fn(),
     completeGeneration: vi.fn(),
     failGeneration: vi.fn(),
@@ -1048,6 +1049,77 @@ describe("Ask OTOMOTO internal trigger primitive", () => {
     ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
   });
 
+  it("reuses an inspection trigger's stored job when re-entry carries another job", async () => {
+    const repo = repository();
+    const existing = {
+      threadId: "71111111-1111-4111-8111-111111111111",
+      workOrderId: scope().workOrderId,
+      jobId: "51111111-1111-4111-8111-111111111111",
+      locationId: scope().locationId,
+      mode: "shop" as const,
+      audience: "technical" as const,
+      status: "pending" as const,
+      diagnosticPhase: null,
+      triggerType: "inspection_completed" as const,
+      createdAt: "2026-09-29T00:00:00.000Z",
+      updatedAt: "2026-09-29T00:00:00.000Z",
+    };
+    vi.mocked(repo.findTriggerThread).mockResolvedValue(existing);
+
+    await expect(
+      createOrReuseDiagnosticsTriggerThreadInternal(
+        actor("service_advisor"),
+        {
+          workOrderId: scope().workOrderId,
+          jobId: "81111111-1111-4111-8111-111111111111",
+          mode: "shop",
+          trigger: "inspection_completion",
+          triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+        },
+        { repository: repo }
+      )
+    ).resolves.toEqual(existing);
+    expect(repo.loadJob).not.toHaveBeenCalledWith(
+      scope().workOrderId,
+      "81111111-1111-4111-8111-111111111111"
+    );
+  });
+
+  it("falls back to a WO-level inspection trigger when the return job is stale", async () => {
+    const repo = repository();
+    vi.mocked(repo.findTriggerThread).mockResolvedValue(null);
+    vi.mocked(repo.loadJob).mockResolvedValue(null);
+    vi.mocked(repo.createThread).mockImplementation(async (input) => ({
+      threadId: "71111111-1111-4111-8111-111111111111",
+      workOrderId: input.workOrderId,
+      jobId: input.jobId,
+      locationId: input.locationId,
+      mode: input.mode,
+      audience: input.audience,
+      status: "pending",
+      diagnosticPhase: null,
+      triggerType: input.triggerType ?? null,
+      createdAt: "2026-09-29T00:00:00.000Z",
+      updatedAt: "2026-09-29T00:00:00.000Z",
+    }));
+
+    await createOrReuseDiagnosticsTriggerThreadInternal(
+      actor("service_advisor"),
+      {
+        workOrderId: scope().workOrderId,
+        jobId: "81111111-1111-4111-8111-111111111111",
+        mode: "shop",
+        trigger: "inspection_completion",
+        triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+      },
+      { repository: repo }
+    );
+
+    expect(repo.createThread).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: null })
+    );
+  });
+
   it("maps trigger creation database failures to a stable public error", async () => {
     const repo = repository();
     vi.mocked(repo.findTriggerThread).mockResolvedValue(null);
@@ -1136,7 +1208,7 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
         thread: { ...thread, status: "ready" },
         messages: [generated],
       });
-    vi.mocked(repo.beginTurn).mockResolvedValue({
+    vi.mocked(repo.beginSeedTurn).mockResolvedValue({
       userMessageId: generated.parentUserMessageId!,
       assistantMessageId: generated.messageId,
       attemptId: "attempt-1",
@@ -1188,12 +1260,13 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
       /no statutory pass\/fail or roadworthiness/i
     );
     expect(INSPECTION_COMPLETION_SEED_REQUEST).toMatch(/exactly one NEXT STEP/i);
-    expect(repo.beginTurn).toHaveBeenCalledWith({
+    expect(repo.beginSeedTurn).toHaveBeenCalledWith({
       workOrderId: scope().workOrderId,
       threadId: thread.threadId,
+      triggerType: "inspection_completed",
+      triggerEntityId,
       userId: actor("technician").user_id,
       text: INSPECTION_COMPLETION_SEED_REQUEST,
-      photos: [],
     });
     expect(prepareImages).toHaveBeenCalledWith(
       expect.objectContaining({ selections: [] }),
@@ -1230,49 +1303,118 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
         )
       ).resolves.toBeNull();
 
-      expect(repo.beginTurn).not.toHaveBeenCalled();
+      expect(repo.beginSeedTurn).not.toHaveBeenCalled();
       expect(generateDraft).not.toHaveBeenCalled();
     }
   );
 
-  it("retries the existing failed seed without creating another user message", async () => {
-    const { repo, thread, generated } = triggerRepository();
+  it("leaves an existing failed seed for an explicit Retry", async () => {
+    const { repo, thread } = triggerRepository();
     vi.mocked(repo.loadThread)
       .mockReset()
-      .mockResolvedValueOnce({
+      .mockResolvedValue({
         thread: { ...thread, status: "failed" },
         messages: [],
-      })
-      .mockResolvedValueOnce({
-        thread: { ...thread, status: "ready" },
-        messages: [generated],
       });
-    vi.mocked(repo.claimLatestRetry).mockResolvedValue({
-      userMessageId: generated.parentUserMessageId!,
-      assistantMessageId: generated.messageId,
-      attemptId: "attempt-2",
-    });
+    const generateDraft = vi.fn();
 
-    await generateDiagnosticsTriggerResponseInternal(
-      {
-        userId: actor("technician").user_id,
-        locationId: scope().locationId,
-      },
-      {
-        workOrderId: scope().workOrderId,
-        threadId: thread.threadId,
-        trigger: "inspection_completion",
-        triggerEntityId,
-      },
-      {
-        repository: repo,
-        generateDraft: async () => generationResult(),
-        prepareImages: async () => ({ images: [], photoMetadata: [] }),
-      }
+    await expect(
+      generateDiagnosticsTriggerResponseInternal(
+        {
+          userId: actor("technician").user_id,
+          locationId: scope().locationId,
+        },
+        {
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          trigger: "inspection_completion",
+          triggerEntityId,
+        },
+        { repository: repo, generateDraft }
+      )
+    ).resolves.toBeNull();
+
+    expect(repo.beginSeedTurn).not.toHaveBeenCalled();
+    expect(repo.claimLatestRetry).not.toHaveBeenCalled();
+    expect(generateDraft).not.toHaveBeenCalled();
+  });
+
+  it("reloads and returns idempotently when another callback wins then fails", async () => {
+    const { repo, thread } = triggerRepository();
+    vi.mocked(repo.loadThread)
+      .mockReset()
+      .mockResolvedValueOnce({ thread, messages: [] })
+      .mockResolvedValueOnce({
+        thread: { ...thread, status: "failed" },
+        messages: [
+          {
+            messageId: "a1111111-1111-4111-8111-111111111111",
+            threadId: thread.threadId,
+            role: "assistant",
+            body: null,
+            generationStatus: "failed",
+            requestedInput: null,
+            phase: null,
+            safeErrorCode: "DIAGNOSTICS_AI_PROVIDER_UNAVAILABLE",
+            parentUserMessageId: "b1111111-1111-4111-8111-111111111111",
+            requestedProviderModel: null,
+            providerModel: null,
+            createdAt: "2026-09-29T00:00:00.000Z",
+            updatedAt: "2026-09-29T00:00:00.000Z",
+            photos: [],
+          },
+        ],
+      });
+    vi.mocked(repo.beginSeedTurn).mockRejectedValue(
+      new Error("ASK_OTOMOTO_SEED_ALREADY_CLAIMED")
+    );
+    const generateDraft = vi.fn();
+
+    await expect(
+      generateDiagnosticsTriggerResponseInternal(
+        {
+          userId: actor("technician").user_id,
+          locationId: scope().locationId,
+        },
+        {
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          trigger: "inspection_completion",
+          triggerEntityId,
+        },
+        { repository: repo, generateDraft }
+      )
+    ).resolves.toBeNull();
+
+    expect(repo.loadThread).toHaveBeenCalledTimes(2);
+    expect(generateDraft).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a seed-race reload failure to a stable error", async () => {
+    const { repo, thread } = triggerRepository();
+    vi.mocked(repo.loadThread)
+      .mockReset()
+      .mockResolvedValueOnce({ thread, messages: [] })
+      .mockRejectedValueOnce(new Error("raw database transport detail"));
+    vi.mocked(repo.beginSeedTurn).mockRejectedValue(
+      new Error("ASK_OTOMOTO_SEED_ALREADY_CLAIMED")
     );
 
-    expect(repo.beginTurn).not.toHaveBeenCalled();
-    expect(repo.claimLatestRetry).toHaveBeenCalledOnce();
+    await expect(
+      generateDiagnosticsTriggerResponseInternal(
+        {
+          userId: actor("technician").user_id,
+          locationId: scope().locationId,
+        },
+        {
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          trigger: "inspection_completion",
+          triggerEntityId,
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_LIFECYCLE_FAILED");
   });
 
   it("revalidates the trusted creator and exact trigger scope before beginning", async () => {
@@ -1302,7 +1444,7 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
         { repository: repo }
       )
     ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
-    expect(repo.beginTurn).not.toHaveBeenCalled();
+    expect(repo.beginSeedTurn).not.toHaveBeenCalled();
   });
 
   it("rejects a trigger thread whose optional job is outside the work-order scope", async () => {
@@ -1332,7 +1474,7 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
         { repository: repo }
       )
     ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
-    expect(repo.beginTurn).not.toHaveBeenCalled();
+    expect(repo.beginSeedTurn).not.toHaveBeenCalled();
   });
 
   it.each([

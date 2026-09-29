@@ -59,6 +59,7 @@ import {
 } from "@/lib/technician/routeState";
 import type { JobPacket } from "@/lib/services/jobPacket";
 import type { IntakePhoto } from "@/lib/services/photos";
+import type { DiagnosticsThreadWorkspace } from "@/lib/services/diagnosticsAssistant";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
 import {
   currentPitStep,
@@ -170,6 +171,7 @@ export function TechnicianFloorShell({
   packet,
   packetSection,
   packetPhotos,
+  packetAssistantWorkspace,
   packetWorkOrderId,
   packetJobId,
 }: {
@@ -185,6 +187,7 @@ export function TechnicianFloorShell({
   packet?: JobPacket | null;
   packetSection?: JobPacketSection | null;
   packetPhotos?: IntakePhoto[];
+  packetAssistantWorkspace?: DiagnosticsThreadWorkspace | null;
   packetWorkOrderId?: string | null;
   packetJobId?: string | null;
 }) {
@@ -666,6 +669,7 @@ export function TechnicianFloorShell({
                     packet={packet}
                     section={packetSection ?? null}
                     photos={packetPhotos ?? []}
+                    assistantWorkspace={packetAssistantWorkspace ?? null}
                     selectedJobId={packetJobId ?? null}
                     closeHref={technicianClosePacketHref({
                       workOrderId: packetWorkOrderId,

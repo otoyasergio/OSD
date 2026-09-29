@@ -18,8 +18,10 @@ import {
   type TechnicianRouteParams,
 } from "@/lib/technician/routeState";
 import type { FloorStage } from "@/lib/technician/floorStage";
+import { createDiagnosticsAssistantService } from "@/lib/services/diagnosticsAssistant";
 
 export const dynamic = "force-dynamic";
+const diagnosticsAssistant = createDiagnosticsAssistantService();
 
 function modeForFetch(stage: FloorStage | null): FloorOsMode {
   if (stage === "inspect") return "inspection";
@@ -75,9 +77,24 @@ export default async function TechnicianPage({
           const photos = packet
             ? await listIntakePhotos(route.workOrderId!).catch(() => [])
             : [];
-          return { packet, photos };
+          const assistantWorkspace =
+            packet && route.packetSection === "assistant" && route.assistantThreadId
+              ? await diagnosticsAssistant
+                  .loadThread(
+                    route.workOrderId!,
+                    route.assistantThreadId,
+                    view
+                      ? {
+                          role: view.role,
+                          subjectUserId: view.subjectUserId,
+                        }
+                      : undefined
+                  )
+                  .catch(() => null)
+              : null;
+          return { packet, photos, assistantWorkspace };
         })()
-      : Promise.resolve({ packet: null, photos: [] }),
+      : Promise.resolve({ packet: null, photos: [], assistantWorkspace: null }),
   ]);
 
   // Explicit stage only — the shell derives the default per surface, so URLs
@@ -94,6 +111,7 @@ export default async function TechnicianPage({
       packet={packetBundle.packet}
       packetSection={route.packetSection}
       packetPhotos={packetBundle.photos}
+      packetAssistantWorkspace={packetBundle.assistantWorkspace}
       packetWorkOrderId={route.workOrderId}
       packetJobId={route.jobId}
     />

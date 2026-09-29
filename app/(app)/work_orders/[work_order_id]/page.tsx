@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
+import type { ReadView } from "@/lib/auth/role-preview-shared";
 import {
   canAssignTechnician,
   canCompleteInspection,
@@ -125,8 +126,12 @@ import {
 } from "@/app/(app)/work_orders/contract-actions";
 import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { floorTechWorkOrderRedirect } from "@/lib/technician/assignmentHref";
+import { isRouteUuid } from "@/lib/technician/routeState";
+import { createDiagnosticsAssistantService } from "@/lib/services/diagnosticsAssistant";
+import { DiagnosticsThreadReadOnly } from "@/components/diagnostics/DiagnosticsThreadReadOnly";
 
 export const dynamic = "force-dynamic";
+const diagnosticsAssistant = createDiagnosticsAssistantService();
 
 export default async function WorkOrderDetailPage({
   params,
@@ -138,6 +143,7 @@ export default async function WorkOrderDetailPage({
     from_result?: string;
     intake?: string;
     follow_up?: string;
+    thread?: string | string[];
   }>;
 }) {
   const preview = await getRolePreviewContext();
@@ -152,6 +158,7 @@ export default async function WorkOrderDetailPage({
     from_result: fromResultId,
     intake,
     follow_up: followUpParam,
+    thread: rawThreadParam,
   } = await searchParams;
   // Old ?tab=jobs / ?tab=recommendations bookmarks route to Estimate & Jobs.
   const activeTab: WorkOrderTabId = resolveWorkOrderTabId(tabParam);
@@ -159,9 +166,14 @@ export default async function WorkOrderDetailPage({
     followUpParam === "signature" || followUpParam === "paper_copy"
       ? followUpParam
       : undefined;
+  const threadParam = Array.isArray(rawThreadParam) ? rawThreadParam[0] : rawThreadParam;
+  const assistantThreadId = isRouteUuid(threadParam) ? threadParam : null;
+  const assistantReadView: ReadView | undefined = preview.isPreviewing
+    ? { role: viewRole, subjectUserId: preview.subjectUserId }
+    : undefined;
 
   if (isFloorTech(viewRole)) {
-    redirect(floorTechWorkOrderRedirect(work_order_id, tabParam));
+    redirect(floorTechWorkOrderRedirect(work_order_id, tabParam, assistantThreadId));
   }
 
   const detail = await getWorkOrderDetail(work_order_id).catch((error: unknown) => {
@@ -204,6 +216,7 @@ export default async function WorkOrderDetailPage({
     communicationLogs,
     liveEstimate,
     estimateVersionRows,
+    assistantWorkspace,
   ] = await Promise.all([
     listIntakePhotos(work_order_id),
     needsTechs ? listTechniciansForActiveLocation() : Promise.resolve([]),
@@ -237,6 +250,13 @@ export default async function WorkOrderDetailPage({
           return [];
         })
       : Promise.resolve([]),
+    activeTab === "assistant" && assistantThreadId
+      ? diagnosticsAssistant.loadThread(
+          work_order_id,
+          assistantThreadId,
+          assistantReadView
+        )
+      : Promise.resolve(null),
   ]);
 
   const canAssign = canAssignTechnician(viewRole);
@@ -595,6 +615,16 @@ export default async function WorkOrderDetailPage({
           canAdd={canAddNotes}
           addAction={addTechnicianNoteAction.bind(null, detail.work_order_id)}
         />
+      ) : null}
+      {activeTab === "assistant" ? (
+        assistantWorkspace ? (
+          <DiagnosticsThreadReadOnly workspace={assistantWorkspace} />
+        ) : (
+          <div className="empty-state">
+            <p className="empty-state-title">Ask OTOMOTO</p>
+            <p className="empty-state-desc">The selected conversation is unavailable.</p>
+          </div>
+        )
       ) : null}
       {activeTab === "timeline" ? <TimelineList events={timeline} /> : null}
       {activeTab === "service-info" ? (

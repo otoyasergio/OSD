@@ -1,3 +1,5 @@
+import "server-only";
+
 import { z } from "zod";
 import { requireUser as requireSessionUser, type AppUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
@@ -191,6 +193,15 @@ type BeginTurnInput = {
   photos: Array<{ photoId: string; purpose: string; sortOrder: number }>;
 };
 
+type BeginSeedTurnInput = {
+  workOrderId: string;
+  threadId: string;
+  triggerType: AiAssistantTriggerType;
+  triggerEntityId: string;
+  userId: string;
+  text: string;
+};
+
 type TurnRecord = {
   userMessageId: string;
   assistantMessageId: string;
@@ -255,6 +266,7 @@ export interface DiagnosticsAssistantRepository {
   ): Promise<boolean>;
   loadJob(workOrderId: string, jobId: string): Promise<DiagnosticsJobScope | null>;
   beginTurn(input: BeginTurnInput): Promise<TurnRecord>;
+  beginSeedTurn(input: BeginSeedTurnInput): Promise<TurnRecord>;
   loadGenerationInput(
     workOrderId: string,
     threadId: string,
@@ -664,6 +676,31 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
         purpose: photo.purpose,
         sort_order: photo.sortOrder,
       })),
+    });
+    throwQuery(error);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (
+      !row?.user_message_id ||
+      !row?.assistant_message_id ||
+      !row?.generation_attempt_id
+    ) {
+      throw new Error("ASK_OTOMOTO_LIFECYCLE_FAILED");
+    }
+    return {
+      userMessageId: String(row.user_message_id),
+      assistantMessageId: String(row.assistant_message_id),
+      attemptId: String(row.generation_attempt_id),
+    };
+  }
+
+  async beginSeedTurn(input: BeginSeedTurnInput): Promise<TurnRecord> {
+    const { data, error } = await this.admin.rpc("ask_otomoto_begin_seed_turn", {
+      p_thread_id: input.threadId,
+      p_work_order_id: input.workOrderId,
+      p_trigger_type: input.triggerType,
+      p_trigger_entity_id: input.triggerEntityId,
+      p_user_id: input.userId,
+      p_body: input.text,
     });
     throwQuery(error);
     const row = Array.isArray(data) ? data[0] : data;
@@ -1320,6 +1357,10 @@ function safeFailureCode(error: unknown): string {
   return exact?.slice(0, 120) ?? "ASK_OTOMOTO_LIFECYCLE_FAILED";
 }
 
+export function diagnosticsSafeFailureCode(error: unknown): string {
+  return safeFailureCode(error);
+}
+
 function stablePublicError(error: unknown): Error {
   return new Error(safeFailureCode(error));
 }
@@ -1844,11 +1885,13 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
     input.mode,
     "write"
   );
-  await assertJob(repository, input.workOrderId, input.jobId ?? null);
   const triggerType: AiAssistantTriggerType =
     input.trigger === "inspection_completion" ? "inspection_completed" : "job_completed";
-  if (input.trigger === "job_completion" && input.jobId !== input.triggerEntityId) {
-    throw new Error("ASK_OTOMOTO_TRIGGER_NOT_FOUND");
+  if (input.trigger === "job_completion") {
+    if (input.jobId !== input.triggerEntityId) {
+      throw new Error("ASK_OTOMOTO_TRIGGER_NOT_FOUND");
+    }
+    await assertJob(repository, input.workOrderId, input.jobId ?? null);
   }
   if (
     !(await repository.triggerEntityBelongsToWorkOrder(
@@ -1867,10 +1910,12 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
   const assertExpectedTrigger = (
     thread: DiagnosticsThreadSummary
   ): DiagnosticsThreadSummary => {
+    const jobMatches =
+      input.trigger === "inspection_completion" || thread.jobId === (input.jobId ?? null);
     if (
       thread.workOrderId !== input.workOrderId ||
       thread.locationId !== workOrder.locationId ||
-      thread.jobId !== (input.jobId ?? null) ||
+      !jobMatches ||
       thread.mode !== input.mode ||
       thread.audience !== deriveDiagnosticsAudience(input.mode) ||
       thread.triggerType !== triggerType
@@ -1881,10 +1926,17 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
     return thread;
   };
   if (existing) return assertExpectedTrigger(existing);
+  let createJobId = input.jobId ?? null;
+  if (input.trigger === "inspection_completion" && createJobId) {
+    const requestedJob = await repository.loadJob(input.workOrderId, createJobId);
+    if (!requestedJob || requestedJob.workOrderId !== input.workOrderId) {
+      createJobId = null;
+    }
+  }
   try {
     return await repository.createThread({
       workOrderId: input.workOrderId,
-      jobId: input.jobId ?? null,
+      jobId: createJobId,
       locationId: workOrder.locationId,
       mode: input.mode,
       audience: deriveDiagnosticsAudience(input.mode),
@@ -1962,25 +2014,32 @@ export async function generateDiagnosticsTriggerResponseInternal(
   const repository = dependencies.repository ?? defaultInternalRepository();
   const workspace = await repository.loadThread(input.workOrderId, input.threadId);
   if (!workspace) throw new Error("ASK_OTOMOTO_THREAD_NOT_FOUND");
-  const thread = workspace.thread;
   const scope = await repository.loadWorkOrderScope(input.workOrderId);
   if (!scope) throw new Error("WORK_ORDER_NOT_FOUND");
 
-  if (
-    thread.threadId !== input.threadId ||
-    thread.workOrderId !== input.workOrderId ||
-    thread.locationId !== scope.locationId ||
-    thread.locationId !== trustedActor.locationId ||
-    thread.mode !== "shop" ||
-    thread.audience !== "technical" ||
-    thread.triggerType !== "inspection_completed" ||
-    thread.triggerEntityId !== input.triggerEntityId ||
-    thread.createdByUserId !== trustedActor.userId ||
-    scope.locationStatus !== "active" ||
-    (thread.jobId !== null && !scope.jobs.some((job) => job.jobId === thread.jobId))
-  ) {
-    throw new Error("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
-  }
+  const validateThread = (
+    candidate: DiagnosticsThreadWorkspace
+  ): DiagnosticsThreadSummary => {
+    const candidateThread = candidate.thread;
+    if (
+      candidateThread.threadId !== input.threadId ||
+      candidateThread.workOrderId !== input.workOrderId ||
+      candidateThread.locationId !== scope.locationId ||
+      candidateThread.locationId !== trustedActor.locationId ||
+      candidateThread.mode !== "shop" ||
+      candidateThread.audience !== "technical" ||
+      candidateThread.triggerType !== "inspection_completed" ||
+      candidateThread.triggerEntityId !== input.triggerEntityId ||
+      candidateThread.createdByUserId !== trustedActor.userId ||
+      scope.locationStatus !== "active" ||
+      (candidateThread.jobId !== null &&
+        !scope.jobs.some((job) => job.jobId === candidateThread.jobId))
+    ) {
+      throw new Error("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+    }
+    return candidateThread;
+  };
+  const thread = validateThread(workspace);
   if (scope.status === "completed" || scope.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
@@ -1994,35 +2053,47 @@ export async function generateDiagnosticsTriggerResponseInternal(
     throw new Error("ASK_OTOMOTO_TRIGGER_NOT_FOUND");
   }
 
-  if (thread.status === "ready" || thread.status === "generating") return null;
+  if (
+    thread.status === "ready" ||
+    thread.status === "generating" ||
+    thread.status === "failed"
+  ) {
+    return null;
+  }
   if (thread.status === "archived") {
     throw new Error("ASK_OTOMOTO_THREAD_ARCHIVED");
   }
 
-  let turn: TurnRecord | null;
-  if (thread.status === "failed") {
-    const staleAfterMs =
-      (dependencies.providerTimeoutMs ?? getDiagnosticsTimeoutMs()) *
-        (DIAGNOSTICS_PROVIDER_MAX_RETRIES + 1) +
-      ASK_OTOMOTO_STALE_MARGIN_MS;
-    turn = await repository.claimLatestRetry(
-      input.workOrderId,
-      input.threadId,
-      staleAfterMs
-    );
-    if (!turn) return null;
-  } else if (thread.status === "pending") {
+  let turn: TurnRecord;
+  if (thread.status === "pending") {
     try {
-      turn = await repository.beginTurn({
+      turn = await repository.beginSeedTurn({
         workOrderId: input.workOrderId,
         threadId: input.threadId,
+        triggerType: "inspection_completed",
+        triggerEntityId: input.triggerEntityId,
         userId: trustedActor.userId,
         text: INSPECTION_COMPLETION_SEED_REQUEST,
-        photos: [],
       });
     } catch (error) {
-      if (safeFailureCode(error) === "ASK_OTOMOTO_THREAD_BUSY") return null;
-      throw stablePublicError(error);
+      const stable = stablePublicError(error);
+      if (stable.message !== "ASK_OTOMOTO_SEED_ALREADY_CLAIMED") throw stable;
+      let reloaded: DiagnosticsThreadWorkspace | null;
+      try {
+        reloaded = await repository.loadThread(input.workOrderId, input.threadId);
+      } catch (reloadError) {
+        throw stablePublicError(reloadError);
+      }
+      if (!reloaded) throw new Error("ASK_OTOMOTO_THREAD_NOT_FOUND");
+      const reloadedThread = validateThread(reloaded);
+      if (
+        reloadedThread.status === "generating" ||
+        reloadedThread.status === "ready" ||
+        reloadedThread.status === "failed"
+      ) {
+        return null;
+      }
+      throw stable;
     }
   } else {
     throw new Error("ASK_OTOMOTO_THREAD_NOT_WRITABLE");

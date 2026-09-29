@@ -543,6 +543,21 @@ export type Database = {
           generation_attempt_id: string;
         }[];
       };
+      ask_otomoto_begin_seed_turn: {
+        Args: {
+          p_thread_id: string;
+          p_work_order_id: string;
+          p_trigger_type: string;
+          p_trigger_entity_id: string;
+          p_user_id: string;
+          p_body: string;
+        };
+        Returns: {
+          user_message_id: string;
+          assistant_message_id: string;
+          generation_attempt_id: string;
+        }[];
+      };
       ask_otomoto_complete_turn: {
         Args: {
           p_thread_id: string;

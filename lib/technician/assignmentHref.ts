@@ -94,11 +94,24 @@ export function floorAssistantReturnHref(
   const url = new URL(safe, "https://example.invalid");
   if (url.searchParams.get("wo") !== workOrderId) return null;
   const job = floorReturnJobIdForWorkOrder(workOrderId, safe);
+  const stage = url.searchParams.get("stage");
+  return floorAssistantPacketHref(workOrderId, assistantThreadId, {
+    jobId: job,
+    stage: isFloorStage(stage) ? stage : "work",
+  });
+}
+
+export function floorAssistantPacketHref(
+  workOrderId: string,
+  assistantThreadId: string,
+  options: { jobId?: string | null; stage?: string | null } = {}
+): string | null {
+  if (!isRouteUuid(assistantThreadId)) return null;
   return technicianPacketHref({
     workOrderId,
-    jobId: job,
+    jobId: options.jobId ?? null,
     section: "assistant",
-    stage: "work",
+    stage: isFloorStage(options.stage) ? options.stage : "work",
     assistantThreadId,
   });
 }
@@ -116,12 +129,22 @@ export function floorReturnJobIdForWorkOrder(
   return isRouteUuid(job) ? job : null;
 }
 
-export function floorTechWorkOrderRedirect(workOrderId: string, tab?: string): string {
+export function floorTechWorkOrderRedirect(
+  workOrderId: string,
+  tab?: string,
+  assistantThreadId?: string | null
+): string {
   if (tab === "inspection") {
     return floorInspectionHrefs({ workOrderId }).inspectPage;
   }
   if (tab === "notes" || tab === "photos") {
     return techJobPacketHref(workOrderId, { section: tab });
+  }
+  if (tab === "assistant" && assistantThreadId) {
+    return (
+      floorAssistantPacketHref(workOrderId, assistantThreadId) ??
+      techJobPacketHref(workOrderId)
+    );
   }
   return techJobPacketHref(workOrderId);
 }

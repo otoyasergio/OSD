@@ -90,6 +90,16 @@ describe("floorAssistantReturnHref", () => {
     );
   });
 
+  it("preserves a validated non-work stage while adding assistant packet params", () => {
+    expect(
+      floorAssistantReturnHref(
+        "41111111-1111-4111-8111-111111111111",
+        "71111111-1111-4111-8111-111111111111",
+        "/technician?job=51111111-1111-4111-8111-111111111111&wo=41111111-1111-4111-8111-111111111111&stage=proof"
+      )
+    ).toContain("stage=proof");
+  });
+
   it("rejects a return for another work order and drops an invalid job", () => {
     expect(
       floorAssistantReturnHref(
@@ -134,5 +144,17 @@ describe("floorTechWorkOrderRedirect", () => {
       "/technician?wo=w1&panel=packet"
     );
     expect(floorTechWorkOrderRedirect("w1")).toBe("/technician?wo=w1&panel=packet");
+  });
+
+  it("maps the assistant tab and validated thread to the floor packet", () => {
+    expect(
+      floorTechWorkOrderRedirect(
+        "41111111-1111-4111-8111-111111111111",
+        "assistant",
+        "71111111-1111-4111-8111-111111111111"
+      )
+    ).toBe(
+      "/technician?wo=41111111-1111-4111-8111-111111111111&panel=packet&packetSection=assistant&stage=work&assistantThread=71111111-1111-4111-8111-111111111111"
+    );
   });
 });

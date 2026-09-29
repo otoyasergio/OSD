@@ -336,6 +336,46 @@ describe("Supabase diagnostics repository boundaries", () => {
     });
   });
 
+  it("maps the trigger-only atomic seed RPC without photos", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [
+        {
+          user_message_id: "seed-user-1",
+          assistant_message_id: "seed-assistant-1",
+          generation_attempt_id: "seed-attempt-1",
+        },
+      ],
+      error: null,
+    });
+    const repository = new SupabaseDiagnosticsRepository(fakeClient({}, []), () => {
+      return { rpc } as unknown as DbClient;
+    });
+
+    await expect(
+      repository.beginSeedTurn({
+        workOrderId: "wo-1",
+        threadId: "thread-1",
+        triggerType: "inspection_completed",
+        triggerEntityId: "inspection-1",
+        userId: "user-1",
+        text: "Review the completed inspection",
+      })
+    ).resolves.toEqual({
+      userMessageId: "seed-user-1",
+      assistantMessageId: "seed-assistant-1",
+      attemptId: "seed-attempt-1",
+    });
+
+    expect(rpc).toHaveBeenCalledWith("ask_otomoto_begin_seed_turn", {
+      p_thread_id: "thread-1",
+      p_work_order_id: "wo-1",
+      p_trigger_type: "inspection_completed",
+      p_trigger_entity_id: "inspection-1",
+      p_user_id: "user-1",
+      p_body: "Review the completed inspection",
+    });
+  });
+
   it("passes retry staleness as a database-clock interval", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: [
