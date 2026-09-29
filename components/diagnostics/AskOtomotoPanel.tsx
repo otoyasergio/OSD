@@ -114,6 +114,7 @@ export function AskOtomotoPanel({
                 configured={config.configured}
                 canPromoteNotes={capabilities.canPromoteNotes}
                 jobLabel={workspaceJobLabel}
+                newConversationHref={askOtomotoThreadHref(route, null)}
                 headingLevel={subheadingLevel}
               />
             </>

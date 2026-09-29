@@ -36,6 +36,9 @@ import {
 } from "@/lib/diagnostics/images";
 import {
   generateDiagnosticsDraft,
+  DIAGNOSTICS_MAX_HISTORY_CHARS,
+  DIAGNOSTICS_MAX_HISTORY_MESSAGES,
+  DIAGNOSTICS_MAX_MESSAGE_CHARS,
   DIAGNOSTICS_PROVIDER_MAX_RETRIES,
   type DiagnosticsGenerationRequest,
   type DiagnosticsGenerationResult,
@@ -460,6 +463,139 @@ function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
+const HISTORY_CLIPPED_MARKER = "\n[CLIPPED FROM STORED HISTORY]";
+
+function clipStoredHistoryText(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, maxChars - HISTORY_CLIPPED_MARKER.length)}${HISTORY_CLIPPED_MARKER}`;
+}
+
+function compactAssistantHistory(message: DiagnosticsMessageView): string {
+  const body = message.body ?? "";
+  const paragraphs = body
+    .replace(/\r\n?/g, "\n")
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const safety = paragraphs.find((part) => /^\*\*SAFETY\b/i.test(part));
+  const assessmentIndex = paragraphs.findIndex((part) => /^\*\*Assessments:/i.test(part));
+  const assessment = assessmentIndex >= 0 ? paragraphs[assessmentIndex] : undefined;
+  const answer =
+    assessmentIndex >= 0
+      ? paragraphs
+          .slice(assessmentIndex + 1)
+          .find((part) => !/^\*\*/.test(part) && !/^AI draft\b/i.test(part))
+      : undefined;
+  const nextStep = paragraphs.find((part) => /^\*\*NEXT STEP:/i.test(part));
+  const requestedInput =
+    message.requestedInput &&
+    typeof message.requestedInput === "object" &&
+    !Array.isArray(message.requestedInput) &&
+    typeof (message.requestedInput as Record<string, unknown>).prompt === "string"
+      ? `**REQUESTED INPUT:** ${String(
+          (message.requestedInput as Record<string, unknown>).prompt
+        ).trim()}`
+      : undefined;
+
+  if (!safety || !assessment || (!nextStep && !requestedInput)) {
+    return clipStoredHistoryText(body, DIAGNOSTICS_MAX_MESSAGE_CHARS);
+  }
+
+  const compact = [
+    clipStoredHistoryText(safety, 1_200),
+    clipStoredHistoryText(assessment, 3_500),
+    answer ? clipStoredHistoryText(answer, 2_000) : null,
+    clipStoredHistoryText(nextStep ?? requestedInput!, 1_000),
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join("\n\n");
+  return clipStoredHistoryText(compact, DIAGNOSTICS_MAX_MESSAGE_CHARS);
+}
+
+function boundedReadyHistory(
+  messages: readonly DiagnosticsMessageView[],
+  currentUserIndex: number
+): DiagnosticsHistoryMessage[] {
+  const prior = messages.slice(0, currentUserIndex);
+  const users = new Map<
+    string,
+    { index: number; message: DiagnosticsMessageView & { body: string; role: "user" } }
+  >();
+  prior.forEach((message, index) => {
+    if (
+      message.role === "user" &&
+      message.generationStatus === "ready" &&
+      Boolean(message.body?.trim())
+    ) {
+      users.set(message.messageId, {
+        index,
+        message: message as DiagnosticsMessageView & {
+          body: string;
+          role: "user";
+        },
+      });
+    }
+  });
+
+  const turnByUserId = new Map<
+    string,
+    {
+      order: number;
+      user: DiagnosticsHistoryMessage;
+      assistant: DiagnosticsHistoryMessage;
+    }
+  >();
+  prior.forEach((message, index) => {
+    if (
+      message.role !== "assistant" ||
+      message.generationStatus !== "ready" ||
+      !message.body?.trim() ||
+      !message.parentUserMessageId
+    ) {
+      return;
+    }
+    const parent = users.get(message.parentUserMessageId);
+    if (!parent) return;
+    turnByUserId.set(parent.message.messageId, {
+      order: Math.max(parent.index, index),
+      user: {
+        role: "user",
+        content: clipStoredHistoryText(
+          parent.message.body,
+          DIAGNOSTICS_MAX_MESSAGE_CHARS
+        ),
+      },
+      assistant: {
+        role: "assistant",
+        content: compactAssistantHistory(message),
+      },
+    });
+  });
+
+  const selected: Array<{
+    order: number;
+    user: DiagnosticsHistoryMessage;
+    assistant: DiagnosticsHistoryMessage;
+  }> = [];
+  let aggregateChars = 0;
+  const newestFirst = [...turnByUserId.values()].sort((a, b) => b.order - a.order);
+  for (const turn of newestFirst) {
+    const turnChars = turn.user.content.length + turn.assistant.content.length;
+    if (
+      selected.length * 2 + 2 > DIAGNOSTICS_MAX_HISTORY_MESSAGES ||
+      aggregateChars + turnChars > DIAGNOSTICS_MAX_HISTORY_CHARS
+    ) {
+      continue;
+    }
+    selected.push(turn);
+    aggregateChars += turnChars;
+  }
+
+  return selected
+    .sort((a, b) => a.order - b.order)
+    .flatMap((turn) => [turn.user, turn.assistant]);
+}
+
 export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
   private adminClient: DbClient | null = null;
 
@@ -812,20 +948,7 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
         purpose: photo.purpose,
       })),
       selectedPhotoMetadata: user.photos,
-      history: workspace.messages
-        .slice(0, userIndex)
-        .filter(
-          (
-            message
-          ): message is DiagnosticsMessageView & {
-            role: "user" | "assistant";
-            body: string;
-          } =>
-            (message.role === "user" || message.role === "assistant") &&
-            message.generationStatus === "ready" &&
-            Boolean(message.body)
-        )
-        .map((message) => ({ role: message.role, content: message.body })),
+      history: boundedReadyHistory(workspace.messages, userIndex),
     };
   }
 

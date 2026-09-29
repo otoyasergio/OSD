@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   retryAssistantTurnAction,
   submitAssistantTurnAction,
@@ -245,6 +246,7 @@ export function AskOtomotoThreadPanel({
   configured = true,
   canPromoteNotes = false,
   jobLabel = null,
+  newConversationHref = null,
   headingLevel = 3,
 }: {
   workspace: AskOtomotoWorkspaceView;
@@ -258,6 +260,7 @@ export function AskOtomotoThreadPanel({
   configured?: boolean;
   canPromoteNotes?: boolean;
   jobLabel?: string | null;
+  newConversationHref?: string | null;
   headingLevel?: AskOtomotoSubheadingLevel;
 }) {
   const router = useRouter();
@@ -277,7 +280,19 @@ export function AskOtomotoThreadPanel({
     INITIAL_ACTION_STATE
   );
   const mutationAllowed = canMutate && !readOnly && !preview;
-  const retryAvailable = mutationAllowed && configured && thread.status === "failed";
+  const latestFailedAssistant = [...messages]
+    .reverse()
+    .find(
+      (message) => message.role === "assistant" && message.generationStatus === "failed"
+    );
+  const nonRecoverableHistoryFailure =
+    latestFailedAssistant?.safeErrorCode === "DIAGNOSTICS_AI_HISTORY_INVALID" ||
+    latestFailedAssistant?.safeErrorCode === "DIAGNOSTICS_AI_HISTORY_TOO_LARGE";
+  const retryAvailable =
+    mutationAllowed &&
+    configured &&
+    thread.status === "failed" &&
+    !nonRecoverableHistoryFailure;
   const canRetry = retryAvailable && !retryPending && !sendBusy;
   const automaticLabel = thread.triggerType
     ? ASSISTANT_TRIGGER_LABELS[thread.triggerType]
@@ -410,6 +425,11 @@ export function AskOtomotoThreadPanel({
         >
           Refresh
         </button>
+        {nonRecoverableHistoryFailure && mutationAllowed && newConversationHref ? (
+          <Link href={newConversationHref} className="btn btn-primary">
+            Start a new conversation
+          </Link>
+        ) : null}
         {retryAvailable ? (
           <form
             action={retryAction}

@@ -284,6 +284,7 @@ export type AskOtomotoMessageView = {
   role: DiagnosticsMessageView["role"];
   body: string | null;
   generationStatus: AiAssistantGenerationStatus;
+  safeErrorCode?: string | null;
   requestedInput: AskOtomotoRequestedInputView | null;
   phase: AiAssistantPhase | null;
   promotedNoteId: string | null;
@@ -318,6 +319,7 @@ export function toAskOtomotoWorkspaceView(
       role: message.role,
       body: message.body,
       generationStatus: message.generationStatus,
+      safeErrorCode: message.safeErrorCode,
       requestedInput: sanitizeRequestedInput(message.requestedInput),
       phase: message.phase,
       promotedNoteId: message.promotedNoteId ?? null,

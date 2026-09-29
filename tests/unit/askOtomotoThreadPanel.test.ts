@@ -627,6 +627,27 @@ describe("AskOtomotoThreadPanel", () => {
         expect(container.textContent).not.toMatch(/retry/i);
         expect(container.textContent).toMatch(wording);
       });
+
+      it("offers a new conversation instead of Retry for a non-recoverable history failure", async () => {
+        await mount(
+          {
+            ...failedWs(),
+            messages: [
+              {
+                ...failedMessage(),
+                safeErrorCode: "DIAGNOSTICS_AI_HISTORY_INVALID",
+              } as AskOtomotoMessageView,
+            ],
+          },
+          { newConversationHref: "/work_orders/example?tab=assistant" }
+        );
+
+        expect(retry()).toBeUndefined();
+        const start = Array.from(container.querySelectorAll("a")).find((link) =>
+          /start a new conversation/i.test(link.textContent ?? "")
+        );
+        expect(start?.getAttribute("href")).toBe("/work_orders/example?tab=assistant");
+      });
     });
 
     it("shows Retry on a failed thread when mutation is allowed", async () => {

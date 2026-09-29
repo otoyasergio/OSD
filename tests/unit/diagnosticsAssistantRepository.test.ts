@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DbClient } from "@/lib/database/types";
-import { SupabaseDiagnosticsRepository } from "@/lib/services/diagnosticsAssistant";
+import {
+  SupabaseDiagnosticsRepository,
+  type DiagnosticsMessageView,
+} from "@/lib/services/diagnosticsAssistant";
+import {
+  DIAGNOSTICS_MAX_HISTORY_CHARS,
+  DIAGNOSTICS_MAX_HISTORY_MESSAGES,
+  DIAGNOSTICS_MAX_MESSAGE_CHARS,
+} from "@/lib/diagnostics/openai";
 
 type Result = { data: unknown; error: null };
 
@@ -76,6 +84,64 @@ function fakeClient(
       from: vi.fn(),
     },
   } as unknown as DbClient;
+}
+
+function threadRow() {
+  return {
+    ai_assistant_thread_id: "thread-1",
+    work_order_id: "wo-1",
+    job_id: null,
+    location_id: "loc-1",
+    mode: "shop",
+    audience: "technical",
+    status: "generating",
+    diagnostic_phase: "diagnosis",
+    trigger_type: null,
+    created_at: "2026-09-29T00:00:00.000Z",
+    updated_at: "2026-09-29T00:00:00.000Z",
+  };
+}
+
+function messageRow(
+  id: string,
+  role: DiagnosticsMessageView["role"],
+  body: string | null,
+  options: {
+    parentUserMessageId?: string | null;
+    generationStatus?: DiagnosticsMessageView["generationStatus"];
+    requestedInput?: unknown;
+    createdAt?: string;
+  } = {}
+) {
+  return {
+    ai_assistant_message_id: id,
+    thread_id: "thread-1",
+    role,
+    body,
+    generation_status: options.generationStatus ?? "ready",
+    requested_input: options.requestedInput ?? null,
+    phase: role === "assistant" ? "diagnosis" : null,
+    safe_error_code: null,
+    parent_user_message_id: options.parentUserMessageId ?? null,
+    requested_provider_model: null,
+    provider_model: null,
+    created_at: options.createdAt ?? "2026-09-29T00:00:00.000Z",
+    updated_at: options.createdAt ?? "2026-09-29T00:00:00.000Z",
+  };
+}
+
+function generationRepository(messages: Array<Record<string, unknown>>) {
+  return new SupabaseDiagnosticsRepository(
+    fakeClient(
+      {
+        ai_assistant_thread: threadRow(),
+        ai_assistant_message: messages,
+        ai_assistant_message_photo: [],
+      },
+      []
+    ),
+    vi.fn()
+  );
 }
 
 describe("Supabase diagnostics repository boundaries", () => {
@@ -304,6 +370,141 @@ describe("Supabase diagnostics repository boundaries", () => {
       userMessageId: "user-1",
       assistantMessageId: "assistant-1",
       userMessage: "Explicit request",
+    });
+  });
+
+  describe("claimed-turn history compatibility", () => {
+    function currentRows(prior: Array<Record<string, unknown>>, body = "Latest request") {
+      return [
+        ...prior,
+        messageRow("current-user", "user", body),
+        messageRow("current-assistant", "assistant", null, {
+          parentUserMessageId: "current-user",
+          generationStatus: "generating",
+        }),
+      ];
+    }
+
+    async function load(prior: Array<Record<string, unknown>>, body?: string) {
+      return generationRepository(currentRows(prior, body)).loadGenerationInput(
+        "wo-1",
+        "thread-1",
+        "current-user",
+        "current-assistant"
+      );
+    }
+
+    it("keeps the complete current staff request and compacts an oversized ready answer", async () => {
+      const oversized = [
+        "**SAFETY — BOUNDARY:** Keep the motorcycle secure.",
+        "",
+        "**Assessments:** possible: charging fault.",
+        "",
+        "The recorded evidence does not yet isolate the fault.",
+        "",
+        "**Sources/status:** No exact-model source supplied.",
+        "",
+        "**Limitations:** " + "x".repeat(DIAGNOSTICS_MAX_MESSAGE_CHARS * 2),
+        "",
+        "**NEXT STEP:** Measure battery voltage under load.",
+      ].join("\n");
+      const latestRequest = "Complete latest staff request " + "u".repeat(2_000);
+      const result = await load(
+        [
+          messageRow("user-1", "user", "Earlier request"),
+          messageRow("assistant-1", "assistant", oversized, {
+            parentUserMessageId: "user-1",
+          }),
+        ],
+        latestRequest
+      );
+
+      expect(result.userMessage).toBe(latestRequest);
+      expect(result.history).toHaveLength(2);
+      expect(result.history[1]).toMatchObject({ role: "assistant" });
+      expect(result.history[1]!.content).toContain("SAFETY");
+      expect(result.history[1]!.content).toContain("Assessments");
+      expect(result.history[1]!.content).toContain("NEXT STEP");
+      expect(result.history[1]!.content.length).toBeLessThanOrEqual(
+        DIAGNOSTICS_MAX_MESSAGE_CHARS
+      );
+    });
+
+    it("keeps exactly the provider message and aggregate boundaries", async () => {
+      const prior = Array.from(
+        { length: DIAGNOSTICS_MAX_HISTORY_MESSAGES / 2 },
+        (_, index) => {
+          const userId = `user-${index}`;
+          return [
+            messageRow(userId, "user", `u${index}`.padEnd(4_000, "u")),
+            messageRow(
+              `assistant-${index}`,
+              "assistant",
+              `a${index}`.padEnd(4_000, "a"),
+              { parentUserMessageId: userId }
+            ),
+          ];
+        }
+      ).flat();
+      const result = await load(prior);
+
+      expect(result.history).toHaveLength(DIAGNOSTICS_MAX_HISTORY_MESSAGES);
+      expect(result.history.reduce((sum, item) => sum + item.content.length, 0)).toBe(
+        DIAGNOSTICS_MAX_HISTORY_CHARS
+      );
+      expect(result.history.every((item) => item.content.length === 4_000)).toBe(true);
+    });
+
+    it("selects complete newest turns first when stored history exceeds both limits", async () => {
+      const prior = Array.from({ length: 12 }, (_, index) => {
+        const userId = `user-${String(index).padStart(2, "0")}`;
+        return [
+          messageRow(userId, "user", `request-${index}-${"u".repeat(4_090)}`),
+          messageRow(
+            `assistant-${String(index).padStart(2, "0")}`,
+            "assistant",
+            `answer-${index}-${"a".repeat(4_090)}`,
+            { parentUserMessageId: userId }
+          ),
+        ];
+      }).flat();
+      const result = await load(prior);
+      const content = result.history.map((item) => item.content);
+
+      expect(result.history.length).toBeLessThanOrEqual(DIAGNOSTICS_MAX_HISTORY_MESSAGES);
+      expect(
+        result.history.reduce((sum, item) => sum + item.content.length, 0)
+      ).toBeLessThanOrEqual(DIAGNOSTICS_MAX_HISTORY_CHARS);
+      expect(
+        result.history.every(
+          (item) => item.content.length <= DIAGNOSTICS_MAX_MESSAGE_CHARS
+        )
+      ).toBe(true);
+      expect(content.join("\n")).toContain("request-11-");
+      expect(content.join("\n")).not.toContain("request-0-");
+      expect(result.history.map((item) => item.role)).toEqual(
+        Array.from({ length: result.history.length / 2 }, () => [
+          "user",
+          "assistant",
+        ]).flat()
+      );
+    });
+
+    it("excludes orphaned or cross-parent answers instead of attributing them to a staff turn", async () => {
+      const result = await load([
+        messageRow("user-1", "user", "Matched staff request"),
+        messageRow("assistant-orphan", "assistant", "Unrelated answer", {
+          parentUserMessageId: "missing-user",
+        }),
+        messageRow("assistant-1", "assistant", "Matched answer", {
+          parentUserMessageId: "user-1",
+        }),
+      ]);
+
+      expect(result.history).toEqual([
+        { role: "user", content: "Matched staff request" },
+        { role: "assistant", content: "Matched answer" },
+      ]);
     });
   });
 
