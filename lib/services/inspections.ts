@@ -614,10 +614,16 @@ export async function saveInspectionResult(
   return result;
 }
 
+export type CompletedInspection = {
+  inspectionId: string;
+  completedAt: string;
+  completedByUserId: string;
+};
+
 export async function completeInspection(
   workOrderId: string,
   options: { force?: boolean; signatureDataUrl?: string | null } = {}
-): Promise<void> {
+): Promise<CompletedInspection> {
   const user = await requireUser();
   if (!canCompleteInspection(user.role)) throw new Error("FORBIDDEN");
 
@@ -763,4 +769,9 @@ export async function completeInspection(
   }
 
   await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+  return {
+    inspectionId: inspection.inspection_id,
+    completedAt: now,
+    completedByUserId: user.user_id,
+  };
 }

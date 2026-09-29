@@ -1,5 +1,6 @@
 import {
   isFloorStage,
+  isRouteUuid,
   technicianFloorHref,
   technicianPacketHref,
   type JobPacketSection,
@@ -77,6 +78,42 @@ export function safeFloorReturnTo(
   } catch {
     return null;
   }
+}
+
+/**
+ * Convert a validated floor completion return into an assistant packet link.
+ * The return must select the same work order; untrusted or malformed jobs are dropped.
+ */
+export function floorAssistantReturnHref(
+  workOrderId: string,
+  assistantThreadId: string,
+  rawReturnTo: string | string[] | null | undefined
+): string | null {
+  const safe = safeFloorReturnTo(rawReturnTo);
+  if (!safe || !isRouteUuid(assistantThreadId)) return null;
+  const url = new URL(safe, "https://example.invalid");
+  if (url.searchParams.get("wo") !== workOrderId) return null;
+  const job = floorReturnJobIdForWorkOrder(workOrderId, safe);
+  return technicianPacketHref({
+    workOrderId,
+    jobId: job,
+    section: "assistant",
+    stage: "work",
+    assistantThreadId,
+  });
+}
+
+/** Read an optional UUID job only from a same-origin floor return for this WO. */
+export function floorReturnJobIdForWorkOrder(
+  workOrderId: string,
+  rawReturnTo: string | string[] | null | undefined
+): string | null {
+  const safe = safeFloorReturnTo(rawReturnTo);
+  if (!safe) return null;
+  const url = new URL(safe, "https://example.invalid");
+  if (url.searchParams.get("wo") !== workOrderId) return null;
+  const job = url.searchParams.get("job");
+  return isRouteUuid(job) ? job : null;
 }
 
 export function floorTechWorkOrderRedirect(workOrderId: string, tab?: string): string {

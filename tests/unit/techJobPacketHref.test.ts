@@ -5,6 +5,7 @@ import {
   floorInspectionHrefs,
   safeFloorReturnTo,
   floorWorkReturnFromInspectBack,
+  floorAssistantReturnHref,
 } from "@/lib/technician/assignmentHref";
 
 describe("techJobPacketHref", () => {
@@ -52,9 +53,59 @@ describe("safeFloorReturnTo", () => {
     expect(safeFloorReturnTo("https://example.com/technician")).toBeNull();
   });
 
+  it("rejects cross-origin and protocol-relative assistant returns", () => {
+    expect(
+      floorAssistantReturnHref(
+        "41111111-1111-4111-8111-111111111111",
+        "71111111-1111-4111-8111-111111111111",
+        "https://evil.example/technician?wo=41111111-1111-4111-8111-111111111111"
+      )
+    ).toBeNull();
+    expect(
+      floorAssistantReturnHref(
+        "41111111-1111-4111-8111-111111111111",
+        "71111111-1111-4111-8111-111111111111",
+        "//evil.example/technician?wo=41111111-1111-4111-8111-111111111111"
+      )
+    ).toBeNull();
+  });
+
   it("maps an inspect-stage back URL to Work", () => {
     expect(floorWorkReturnFromInspectBack("/technician?job=j1&wo=w1&stage=inspect")).toBe(
       "/technician?job=j1&wo=w1&stage=work"
+    );
+  });
+});
+
+describe("floorAssistantReturnHref", () => {
+  it("preserves the validated work order and job on the assistant packet", () => {
+    expect(
+      floorAssistantReturnHref(
+        "41111111-1111-4111-8111-111111111111",
+        "71111111-1111-4111-8111-111111111111",
+        "/technician?job=51111111-1111-4111-8111-111111111111&wo=41111111-1111-4111-8111-111111111111&stage=work"
+      )
+    ).toBe(
+      "/technician?wo=41111111-1111-4111-8111-111111111111&panel=packet&job=51111111-1111-4111-8111-111111111111&packetSection=assistant&stage=work&assistantThread=71111111-1111-4111-8111-111111111111"
+    );
+  });
+
+  it("rejects a return for another work order and drops an invalid job", () => {
+    expect(
+      floorAssistantReturnHref(
+        "41111111-1111-4111-8111-111111111111",
+        "71111111-1111-4111-8111-111111111111",
+        "/technician?wo=81111111-1111-4111-8111-111111111111&stage=work"
+      )
+    ).toBeNull();
+    expect(
+      floorAssistantReturnHref(
+        "41111111-1111-4111-8111-111111111111",
+        "71111111-1111-4111-8111-111111111111",
+        "/technician?job=not-a-uuid&wo=41111111-1111-4111-8111-111111111111&stage=work"
+      )
+    ).toBe(
+      "/technician?wo=41111111-1111-4111-8111-111111111111&panel=packet&packetSection=assistant&stage=work&assistantThread=71111111-1111-4111-8111-111111111111"
     );
   });
 });

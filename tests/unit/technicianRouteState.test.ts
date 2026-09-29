@@ -22,6 +22,7 @@ describe("parseTechnicianRouteState", () => {
         stage: "proof",
         panel: "packet",
         packetSection: "photos",
+        assistantThread: "71111111-1111-4111-8111-111111111111",
       })
     ).toEqual({
       jobId: "j1",
@@ -29,6 +30,7 @@ describe("parseTechnicianRouteState", () => {
       stage: "proof",
       panel: "packet",
       packetSection: "photos",
+      assistantThreadId: "71111111-1111-4111-8111-111111111111",
     });
 
     expect(
@@ -36,6 +38,7 @@ describe("parseTechnicianRouteState", () => {
         stage: "warp-speed",
         panel: "sidebar",
         packetSection: "secrets",
+        assistantThread: "not-a-uuid",
       })
     ).toEqual({
       jobId: null,
@@ -43,6 +46,7 @@ describe("parseTechnicianRouteState", () => {
       stage: null,
       panel: null,
       packetSection: null,
+      assistantThreadId: null,
     });
   });
 
@@ -81,6 +85,18 @@ describe("parseTechnicianRouteState", () => {
     expect(state.jobId).toBeNull();
     expect(state.workOrderId).toBeNull();
   });
+
+  it("accepts only UUID assistant thread deep links", () => {
+    expect(
+      parseTechnicianRouteState({
+        assistantThread: "71111111-1111-4111-8111-111111111111",
+      }).assistantThreadId
+    ).toBe("71111111-1111-4111-8111-111111111111");
+    expect(
+      parseTechnicianRouteState({ assistantThread: "javascript:alert(1)" })
+        .assistantThreadId
+    ).toBeNull();
+  });
 });
 
 describe("stage-preserving href builders", () => {
@@ -90,6 +106,7 @@ describe("stage-preserving href builders", () => {
       jobId: "j1",
       section: "photos",
       stage: "proof",
+      assistantThreadId: "71111111-1111-4111-8111-111111111111",
     });
     const params = paramsOf(href);
     expect(params.get("wo")).toBe("w1");
@@ -97,6 +114,7 @@ describe("stage-preserving href builders", () => {
     expect(params.get("panel")).toBe("packet");
     expect(params.get("packetSection")).toBe("photos");
     expect(params.get("stage")).toBe("proof");
+    expect(params.get("assistantThread")).toBe("71111111-1111-4111-8111-111111111111");
   });
 
   it("keeps the stage and selection when closing the packet", () => {

@@ -5,6 +5,8 @@ import {
   createOrReuseDiagnosticsTriggerThreadInternal,
   createDiagnosticsAssistantService,
   deriveDiagnosticsAudience,
+  generateDiagnosticsTriggerResponseInternal,
+  INSPECTION_COMPLETION_SEED_REQUEST,
   type DiagnosticsAssistantRepository,
   type DiagnosticsWorkOrderScope,
 } from "@/lib/services/diagnosticsAssistant";
@@ -1088,5 +1090,285 @@ describe("Ask OTOMOTO internal trigger primitive", () => {
         { repository: repo }
       )
     ).rejects.toThrow("ASK_OTOMOTO_LIFECYCLE_FAILED");
+  });
+});
+
+describe("Ask OTOMOTO internal inspection-completion generation", () => {
+  const triggerEntityId = "e1111111-1111-4111-8111-111111111111";
+  const triggerThread = () => ({
+    threadId: "71111111-1111-4111-8111-111111111111",
+    workOrderId: scope().workOrderId,
+    jobId: null,
+    locationId: scope().locationId,
+    mode: "shop" as const,
+    audience: "technical" as const,
+    status: "pending" as const,
+    diagnosticPhase: null,
+    triggerType: "inspection_completed" as const,
+    triggerEntityId,
+    createdByUserId: actor("technician").user_id,
+    createdAt: "2026-09-29T00:00:00.000Z",
+    updatedAt: "2026-09-29T00:00:00.000Z",
+  });
+
+  function triggerRepository() {
+    const repo = repository();
+    const thread = triggerThread();
+    const generated = {
+      messageId: "a1111111-1111-4111-8111-111111111111",
+      threadId: thread.threadId,
+      role: "assistant" as const,
+      body: "Generated arrival-inspection review",
+      generationStatus: "ready" as const,
+      requestedInput: generationResult().response.requested_input,
+      phase: generationResult().response.phase,
+      safeErrorCode: null,
+      parentUserMessageId: "b1111111-1111-4111-8111-111111111111",
+      requestedProviderModel: "model-alias",
+      providerModel: "model-resolved-2",
+      createdAt: "2026-09-29T01:00:00.000Z",
+      updatedAt: "2026-09-29T01:00:00.000Z",
+      photos: [],
+    };
+    vi.mocked(repo.loadThread)
+      .mockResolvedValueOnce({ thread, messages: [] })
+      .mockResolvedValueOnce({
+        thread: { ...thread, status: "ready" },
+        messages: [generated],
+      });
+    vi.mocked(repo.beginTurn).mockResolvedValue({
+      userMessageId: generated.parentUserMessageId!,
+      assistantMessageId: generated.messageId,
+      attemptId: "attempt-1",
+    });
+    vi.mocked(repo.loadGenerationInput).mockResolvedValue({
+      userMessageId: generated.parentUserMessageId!,
+      assistantMessageId: generated.messageId,
+      userMessage: INSPECTION_COMPLETION_SEED_REQUEST,
+      photos: [],
+      history: [],
+    });
+    vi.mocked(repo.loadContextSource).mockResolvedValue({
+      source: contextSource(),
+      redactTerms: {},
+    });
+    return { repo, thread, generated };
+  }
+
+  it("atomically seeds one photo-free inspection review with the required meaning", async () => {
+    const { repo, thread } = triggerRepository();
+    const generateDraft = vi.fn().mockResolvedValue(generationResult());
+    const prepareImages = vi.fn().mockResolvedValue({
+      images: [],
+      photoMetadata: [],
+    });
+
+    await generateDiagnosticsTriggerResponseInternal(
+      {
+        userId: actor("technician").user_id,
+        locationId: scope().locationId,
+      },
+      {
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        trigger: "inspection_completion",
+        triggerEntityId,
+      },
+      { repository: repo, generateDraft, prepareImages }
+    );
+
+    expect(INSPECTION_COMPLETION_SEED_REQUEST).toMatch(/reported symptoms/i);
+    expect(INSPECTION_COMPLETION_SEED_REQUEST).toMatch(/measured.*observed/i);
+    expect(INSPECTION_COMPLETION_SEED_REQUEST).toMatch(/confirmed.*probable.*possible/i);
+    expect(INSPECTION_COMPLETION_SEED_REQUEST).toMatch(
+      /not-inspected.*not-tested.*incomplete/i
+    );
+    expect(INSPECTION_COMPLETION_SEED_REQUEST).toMatch(/single highest-value safe/i);
+    expect(INSPECTION_COMPLETION_SEED_REQUEST).toMatch(
+      /no statutory pass\/fail or roadworthiness/i
+    );
+    expect(INSPECTION_COMPLETION_SEED_REQUEST).toMatch(/exactly one NEXT STEP/i);
+    expect(repo.beginTurn).toHaveBeenCalledWith({
+      workOrderId: scope().workOrderId,
+      threadId: thread.threadId,
+      userId: actor("technician").user_id,
+      text: INSPECTION_COMPLETION_SEED_REQUEST,
+      photos: [],
+    });
+    expect(prepareImages).toHaveBeenCalledWith(
+      expect.objectContaining({ selections: [] }),
+      repo
+    );
+    expect(generateDraft).toHaveBeenCalledWith(expect.objectContaining({ images: [] }));
+  });
+
+  it.each(["ready", "generating"] as const)(
+    "returns idempotently when the trigger thread is already %s",
+    async (status) => {
+      const { repo, thread } = triggerRepository();
+      vi.mocked(repo.loadThread)
+        .mockReset()
+        .mockResolvedValue({
+          thread: { ...thread, status },
+          messages: [],
+        });
+      const generateDraft = vi.fn();
+
+      await expect(
+        generateDiagnosticsTriggerResponseInternal(
+          {
+            userId: actor("technician").user_id,
+            locationId: scope().locationId,
+          },
+          {
+            workOrderId: scope().workOrderId,
+            threadId: thread.threadId,
+            trigger: "inspection_completion",
+            triggerEntityId,
+          },
+          { repository: repo, generateDraft }
+        )
+      ).resolves.toBeNull();
+
+      expect(repo.beginTurn).not.toHaveBeenCalled();
+      expect(generateDraft).not.toHaveBeenCalled();
+    }
+  );
+
+  it("retries the existing failed seed without creating another user message", async () => {
+    const { repo, thread, generated } = triggerRepository();
+    vi.mocked(repo.loadThread)
+      .mockReset()
+      .mockResolvedValueOnce({
+        thread: { ...thread, status: "failed" },
+        messages: [],
+      })
+      .mockResolvedValueOnce({
+        thread: { ...thread, status: "ready" },
+        messages: [generated],
+      });
+    vi.mocked(repo.claimLatestRetry).mockResolvedValue({
+      userMessageId: generated.parentUserMessageId!,
+      assistantMessageId: generated.messageId,
+      attemptId: "attempt-2",
+    });
+
+    await generateDiagnosticsTriggerResponseInternal(
+      {
+        userId: actor("technician").user_id,
+        locationId: scope().locationId,
+      },
+      {
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        trigger: "inspection_completion",
+        triggerEntityId,
+      },
+      {
+        repository: repo,
+        generateDraft: async () => generationResult(),
+        prepareImages: async () => ({ images: [], photoMetadata: [] }),
+      }
+    );
+
+    expect(repo.beginTurn).not.toHaveBeenCalled();
+    expect(repo.claimLatestRetry).toHaveBeenCalledOnce();
+  });
+
+  it("revalidates the trusted creator and exact trigger scope before beginning", async () => {
+    const { repo, thread } = triggerRepository();
+    vi.mocked(repo.loadThread)
+      .mockReset()
+      .mockResolvedValue({
+        thread: {
+          ...thread,
+          createdByUserId: "f1111111-1111-4111-8111-111111111111",
+        },
+        messages: [],
+      });
+
+    await expect(
+      generateDiagnosticsTriggerResponseInternal(
+        {
+          userId: actor("technician").user_id,
+          locationId: scope().locationId,
+        },
+        {
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          trigger: "inspection_completion",
+          triggerEntityId,
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+    expect(repo.beginTurn).not.toHaveBeenCalled();
+  });
+
+  it("rejects a trigger thread whose optional job is outside the work-order scope", async () => {
+    const { repo, thread } = triggerRepository();
+    vi.mocked(repo.loadThread)
+      .mockReset()
+      .mockResolvedValue({
+        thread: {
+          ...thread,
+          jobId: "f1111111-1111-4111-8111-111111111111",
+        },
+        messages: [],
+      });
+
+    await expect(
+      generateDiagnosticsTriggerResponseInternal(
+        {
+          userId: actor("technician").user_id,
+          locationId: scope().locationId,
+        },
+        {
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          trigger: "inspection_completion",
+          triggerEntityId,
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+    expect(repo.beginTurn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "DIAGNOSTICS_AI_NOT_CONFIGURED",
+    "DIAGNOSTICS_AI_PROVIDER_UNAVAILABLE",
+    "DIAGNOSTICS_AI_OUTPUT_WITHHELD",
+  ])("persists %s as a retryable failed seed", async (safeErrorCode) => {
+    const { repo, thread, generated } = triggerRepository();
+
+    await expect(
+      generateDiagnosticsTriggerResponseInternal(
+        {
+          userId: actor("technician").user_id,
+          locationId: scope().locationId,
+        },
+        {
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          trigger: "inspection_completion",
+          triggerEntityId,
+        },
+        {
+          repository: repo,
+          generateDraft: async () => {
+            throw new Error(safeErrorCode);
+          },
+          prepareImages: async () => ({ images: [], photoMetadata: [] }),
+        }
+      )
+    ).rejects.toThrow(safeErrorCode);
+
+    expect(repo.failGeneration).toHaveBeenCalledWith({
+      threadId: thread.threadId,
+      assistantMessageId: generated.messageId,
+      attemptId: "attempt-1",
+      safeErrorCode,
+    });
   });
 });

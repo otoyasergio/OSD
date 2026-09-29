@@ -130,6 +130,8 @@ export type DiagnosticsThreadSummary = {
   status: AiAssistantThreadStatus;
   diagnosticPhase: AiAssistantPhase | null;
   triggerType: AiAssistantTriggerType | null;
+  triggerEntityId?: string | null;
+  createdByUserId?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -417,13 +419,15 @@ function rowToThread(row: Record<string, unknown>): DiagnosticsThreadSummary {
     status: row.status as AiAssistantThreadStatus,
     diagnosticPhase: (row.diagnostic_phase as AiAssistantPhase | null) ?? null,
     triggerType: (row.trigger_type as AiAssistantTriggerType | null) ?? null,
+    triggerEntityId: row.trigger_entity_id ? String(row.trigger_entity_id) : null,
+    createdByUserId: row.created_by_user_id ? String(row.created_by_user_id) : null,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
 }
 
 const THREAD_COLUMNS =
-  "ai_assistant_thread_id, work_order_id, job_id, location_id, mode, audience, status, diagnostic_phase, trigger_type, created_at, updated_at";
+  "ai_assistant_thread_id, work_order_id, job_id, location_id, mode, audience, status, diagnostic_phase, trigger_type, trigger_entity_id, created_by_user_id, created_at, updated_at";
 const MESSAGE_COLUMNS =
   "ai_assistant_message_id, thread_id, role, body, generation_status, requested_input, phase, safe_error_code, parent_user_message_id, requested_provider_model, provider_model, created_at, updated_at";
 
@@ -1292,6 +1296,11 @@ async function defaultRepository(): Promise<DiagnosticsAssistantRepository> {
   );
 }
 
+function defaultInternalRepository(): DiagnosticsAssistantRepository {
+  const admin = createDiagnosticsAdminClient();
+  return new SupabaseDiagnosticsRepository(admin, () => admin);
+}
+
 function safeFailureCode(error: unknown): string {
   const value =
     error instanceof Error
@@ -1439,7 +1448,7 @@ export function createDiagnosticsAssistantService(
   }
 
   async function generateTurn(input: {
-    actor: AppUser;
+    actor: Pick<AppUser, "user_id">;
     repository: DiagnosticsAssistantRepository;
     scope: DiagnosticsWorkOrderScope;
     thread: DiagnosticsThreadSummary;
@@ -1777,6 +1786,32 @@ export function createDiagnosticsAssistantService(
         generation,
       });
     },
+
+    /**
+     * Internal continuation for a turn already claimed by a trusted,
+     * server-owned trigger. It deliberately performs no session lookup.
+     */
+    async generateClaimedTurnForInternalTrigger(input: {
+      actor: Pick<AppUser, "user_id">;
+      repository: DiagnosticsAssistantRepository;
+      scope: DiagnosticsWorkOrderScope;
+      thread: DiagnosticsThreadSummary;
+      turn: TurnRecord;
+    }): Promise<DiagnosticsMessageView> {
+      const generation = await loadClaimedGeneration(
+        input.repository,
+        input.thread.workOrderId,
+        input.thread.threadId,
+        input.turn
+      );
+      return generateTurn({
+        actor: input.actor,
+        repository: input.repository,
+        scope: input.scope,
+        thread: input.thread,
+        generation,
+      });
+    },
   };
 }
 
@@ -1874,4 +1909,134 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
     if (!recovered) throw stablePublicError(error);
     return assertExpectedTrigger(recovered);
   }
+}
+
+export const INSPECTION_COMPLETION_SEED_REQUEST = [
+  "Review the completed arrival inspection.",
+  "Clearly distinguish reported symptoms from measured or observed findings,",
+  "and distinguish confirmed, probable, and possible conclusions.",
+  "Preserve every explicit not-inspected, not-tested, or incomplete item as such.",
+  "Suggest the single highest-value safe discriminating check or input.",
+  "Make no statutory pass/fail or roadworthiness conclusion.",
+  "Return exactly one NEXT STEP using the response schema.",
+].join(" ");
+
+export type DiagnosticsTriggerActorSnapshot = {
+  userId: string;
+  locationId: string;
+};
+
+type DiagnosticsInternalGenerationDependencies = Pick<
+  DiagnosticsAssistantDependencies,
+  "repository" | "generateDraft" | "prepareImages" | "now" | "providerTimeoutMs"
+>;
+
+/**
+ * Generate the seed response for an exact trigger thread after the originating
+ * action has authenticated, authorized, completed the domain mutation, and
+ * created/reused that thread. This path is request-independent by design.
+ */
+export async function generateDiagnosticsTriggerResponseInternal(
+  actor: DiagnosticsTriggerActorSnapshot,
+  raw: {
+    workOrderId: string;
+    threadId: string;
+    trigger: "inspection_completion";
+    triggerEntityId: string;
+  },
+  dependencies: DiagnosticsInternalGenerationDependencies = {}
+): Promise<DiagnosticsMessageView | null> {
+  const input = z
+    .object({
+      workOrderId: uuidSchema,
+      threadId: uuidSchema,
+      trigger: z.literal("inspection_completion"),
+      triggerEntityId: uuidSchema,
+    })
+    .strict()
+    .parse(raw);
+  const trustedActor = z
+    .object({ userId: uuidSchema, locationId: uuidSchema })
+    .strict()
+    .parse(actor);
+  const repository = dependencies.repository ?? defaultInternalRepository();
+  const workspace = await repository.loadThread(input.workOrderId, input.threadId);
+  if (!workspace) throw new Error("ASK_OTOMOTO_THREAD_NOT_FOUND");
+  const thread = workspace.thread;
+  const scope = await repository.loadWorkOrderScope(input.workOrderId);
+  if (!scope) throw new Error("WORK_ORDER_NOT_FOUND");
+
+  if (
+    thread.threadId !== input.threadId ||
+    thread.workOrderId !== input.workOrderId ||
+    thread.locationId !== scope.locationId ||
+    thread.locationId !== trustedActor.locationId ||
+    thread.mode !== "shop" ||
+    thread.audience !== "technical" ||
+    thread.triggerType !== "inspection_completed" ||
+    thread.triggerEntityId !== input.triggerEntityId ||
+    thread.createdByUserId !== trustedActor.userId ||
+    scope.locationStatus !== "active" ||
+    (thread.jobId !== null && !scope.jobs.some((job) => job.jobId === thread.jobId))
+  ) {
+    throw new Error("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+  }
+  if (scope.status === "completed" || scope.status === "cancelled") {
+    throw new Error("WORK_ORDER_LOCKED");
+  }
+  if (
+    !(await repository.triggerEntityBelongsToWorkOrder(
+      input.workOrderId,
+      "inspection_completed",
+      input.triggerEntityId
+    ))
+  ) {
+    throw new Error("ASK_OTOMOTO_TRIGGER_NOT_FOUND");
+  }
+
+  if (thread.status === "ready" || thread.status === "generating") return null;
+  if (thread.status === "archived") {
+    throw new Error("ASK_OTOMOTO_THREAD_ARCHIVED");
+  }
+
+  let turn: TurnRecord | null;
+  if (thread.status === "failed") {
+    const staleAfterMs =
+      (dependencies.providerTimeoutMs ?? getDiagnosticsTimeoutMs()) *
+        (DIAGNOSTICS_PROVIDER_MAX_RETRIES + 1) +
+      ASK_OTOMOTO_STALE_MARGIN_MS;
+    turn = await repository.claimLatestRetry(
+      input.workOrderId,
+      input.threadId,
+      staleAfterMs
+    );
+    if (!turn) return null;
+  } else if (thread.status === "pending") {
+    try {
+      turn = await repository.beginTurn({
+        workOrderId: input.workOrderId,
+        threadId: input.threadId,
+        userId: trustedActor.userId,
+        text: INSPECTION_COMPLETION_SEED_REQUEST,
+        photos: [],
+      });
+    } catch (error) {
+      if (safeFailureCode(error) === "ASK_OTOMOTO_THREAD_BUSY") return null;
+      throw stablePublicError(error);
+    }
+  } else {
+    throw new Error("ASK_OTOMOTO_THREAD_NOT_WRITABLE");
+  }
+
+  const service = createDiagnosticsAssistantService({
+    ...dependencies,
+    repository,
+  });
+  return service.generateClaimedTurnForInternalTrigger({
+    actor: { user_id: trustedActor.userId },
+    repository,
+    scope,
+    thread,
+    turn,
+  });
 }

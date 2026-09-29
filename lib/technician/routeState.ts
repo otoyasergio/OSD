@@ -1,7 +1,7 @@
 import type { FloorStage } from "@/lib/technician/floorStage";
 
 /** Packet sections. `null` section = packet overview (top summary). */
-export type JobPacketSection = "notes" | "photos" | "jobs";
+export type JobPacketSection = "notes" | "photos" | "jobs" | "assistant";
 
 export const FLOOR_STAGES: readonly FloorStage[] = [
   "inspect",
@@ -12,7 +12,14 @@ export const FLOOR_STAGES: readonly FloorStage[] = [
   "safety",
 ];
 
-const PACKET_SECTIONS: readonly JobPacketSection[] = ["notes", "photos", "jobs"];
+const PACKET_SECTIONS: readonly JobPacketSection[] = [
+  "notes",
+  "photos",
+  "jobs",
+  "assistant",
+];
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type TechnicianRouteState = {
   jobId: string | null;
@@ -22,6 +29,8 @@ export type TechnicianRouteState = {
   panel: "packet" | null;
   /** Validated packet section; null means the packet opens on its top summary. */
   packetSection: JobPacketSection | null;
+  /** Validated assistant thread selected inside the packet. */
+  assistantThreadId: string | null;
 };
 
 export type TechnicianRouteParams = {
@@ -32,6 +41,7 @@ export type TechnicianRouteParams = {
   mode?: string;
   panel?: string;
   packetSection?: string;
+  assistantThread?: string;
 };
 
 export function isFloorStage(value: string | null | undefined): value is FloorStage {
@@ -42,6 +52,10 @@ export function isJobPacketSection(
   value: string | null | undefined
 ): value is JobPacketSection {
   return Boolean(value) && PACKET_SECTIONS.includes(value as JobPacketSection);
+}
+
+export function isRouteUuid(value: string | null | undefined): value is string {
+  return Boolean(value) && UUID_PATTERN.test(value as string);
 }
 
 function stageFromLegacyMode(mode: string | undefined): FloorStage | null {
@@ -76,6 +90,9 @@ export function parseTechnicianRouteState(
     stage,
     panel: params.panel === "packet" ? "packet" : null,
     packetSection: isJobPacketSection(params.packetSection) ? params.packetSection : null,
+    assistantThreadId: isRouteUuid(params.assistantThread)
+      ? params.assistantThread
+      : null,
   };
 }
 
@@ -99,7 +116,10 @@ export function technicianFloorHref(input: TechnicianHrefInput): string {
  * back on the same work-surface stage. Omitting `section` opens the summary.
  */
 export function technicianPacketHref(
-  input: TechnicianHrefInput & { section?: JobPacketSection | null }
+  input: TechnicianHrefInput & {
+    section?: JobPacketSection | null;
+    assistantThreadId?: string | null;
+  }
 ): string {
   const params = new URLSearchParams();
   params.set("wo", input.workOrderId);
@@ -107,6 +127,9 @@ export function technicianPacketHref(
   if (input.jobId) params.set("job", input.jobId);
   if (input.section) params.set("packetSection", input.section);
   if (input.stage) params.set("stage", input.stage);
+  if (isRouteUuid(input.assistantThreadId)) {
+    params.set("assistantThread", input.assistantThreadId);
+  }
   return `/technician?${params.toString()}`;
 }
 
