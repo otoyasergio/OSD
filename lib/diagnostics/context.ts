@@ -563,9 +563,15 @@ function sanitizeChecklist(
     return boundedText(value)?.slice(0, DEEP_TEXT_CHARS) ?? null;
   }
   if (Array.isArray(value)) {
-    return value
-      .slice(0, DEEP_MAX_ITEMS)
-      .map((item) => sanitizeChecklist(item, depth + 1, work));
+    const result: unknown[] = [];
+    for (const item of value.slice(0, DEEP_MAX_ITEMS)) {
+      if (work.remaining <= 0) {
+        result.push("[CLIPPED_WORK_BUDGET]");
+        break;
+      }
+      result.push(sanitizeChecklist(item, depth + 1, work));
+    }
+    return result;
   }
   if (typeof value !== "object") return null;
 
@@ -579,6 +585,10 @@ function sanitizeChecklist(
     )
     .sort()
     .slice(0, DEEP_MAX_ITEMS)) {
+    if (work.remaining <= 0) {
+      result.__truncated = "[CLIPPED_WORK_BUDGET]";
+      break;
+    }
     result[key.slice(0, 100)] = sanitizeChecklist(
       (value as Record<string, unknown>)[key],
       depth + 1,
