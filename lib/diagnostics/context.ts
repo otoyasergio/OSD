@@ -98,6 +98,7 @@ export type DiagnosticsContextSource = {
     status: string;
     lifecycleState?: string | null;
     mileage?: number | null;
+    mileageUnit?: NullableText;
     complaint?: NullableText;
     internalNotes?: NullableText;
   };
@@ -1002,7 +1003,7 @@ export function shapeDiagnosticsContext(
       lifecycleState: boundedText(source.workOrder.lifecycleState),
       mileage: {
         value: source.workOrder.mileage ?? null,
-        unit: boundedText(source.motorcycle.odometerUnit),
+        unit: boundedText(source.workOrder.mileageUnit),
       },
       complaint: boundedText(source.workOrder.complaint),
       internalNotes: boundedText(source.workOrder.internalNotes),

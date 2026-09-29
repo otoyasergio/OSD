@@ -519,6 +519,7 @@ describe("Supabase diagnostics repository boundaries", () => {
           status: "in_progress",
           lifecycle_state: "active",
           mileage: 100,
+          mileage_unit: "mi",
           internal_notes: null,
           motorcycle_id: "motorcycle-1",
         },
@@ -531,13 +532,60 @@ describe("Supabase diagnostics repository boundaries", () => {
           odometer_unit: "km",
           notes: null,
         },
-        job: [],
+        job: [
+          {
+            job_id: "job-1",
+            work_order_id: "wo-1",
+            origin: "customer_request",
+            service_name_snapshot: "Charging repair",
+            status: "completed",
+            work_state: "completed",
+            notes: "Connector repaired",
+            completed_at: "2026-09-29T00:30:00.000Z",
+          },
+        ],
         motorcycle_service_information: null,
         inspection: null,
-        technician_note: [],
+        technician_note: [
+          {
+            technician_note_id: "note-pass",
+            work_order_id: "wo-1",
+            job_id: "job-1",
+            note_type: "road_test",
+            note: "Comparable road test passed under the original conditions.",
+            created_at: "2026-09-29T01:00:00.000Z",
+          },
+          {
+            technician_note_id: "note-pending",
+            work_order_id: "wo-1",
+            job_id: "job-1",
+            note_type: "quality_check",
+            note: "Quality check pending final electrical retest.",
+            created_at: "2026-09-29T01:01:00.000Z",
+          },
+          {
+            technician_note_id: "note-failed",
+            work_order_id: "wo-1",
+            job_id: "job-1",
+            note_type: "road_test",
+            note: "Road test failed: original symptom recurred.",
+            created_at: "2026-09-29T01:02:00.000Z",
+          },
+          {
+            technician_note_id: "note-other-job",
+            work_order_id: "wo-1",
+            job_id: "job-2",
+            note_type: "road_test",
+            note: "Other job passed.",
+            created_at: "2026-09-29T01:03:00.000Z",
+          },
+        ],
         recommendation: [],
         quality_check_attempt: [],
         safety_check_attempt: [],
+        job_checklist_item: [],
+        job_part_requirement: [],
+        intake_photo: [],
       },
       sessionCalls
     );
@@ -559,7 +607,7 @@ describe("Supabase diagnostics repository boundaries", () => {
     );
     const repository = new SupabaseDiagnosticsRepository(session, () => admin);
 
-    const context = await repository.loadContextSource("wo-1", null, false);
+    const context = await repository.loadContextSource("wo-1", "job-1", false);
 
     expect(sessionCalls).toEqual(
       expect.arrayContaining([
@@ -576,6 +624,34 @@ describe("Supabase diagnostics repository boundaries", () => {
       customerName: "Private Customer",
       fullVin: "VIN-SECRET",
     });
+    expect(context.source.workOrder).toMatchObject({
+      mileage: 100,
+      mileageUnit: "mi",
+    });
+    expect(context.source.motorcycle.odometerUnit).toBe("km");
+    expect(context.source.jobs[0]?.verification).toEqual([
+      {
+        verificationId: "note-pass",
+        result: "passed",
+        notes: "Comparable road test passed under the original conditions.",
+        recordedAt: "2026-09-29T01:00:00.000Z",
+      },
+      {
+        verificationId: "note-pending",
+        result: "pending",
+        notes: "Quality check pending final electrical retest.",
+        recordedAt: "2026-09-29T01:01:00.000Z",
+      },
+      {
+        verificationId: "note-failed",
+        result: "failed",
+        notes: "Road test failed: original symptom recurred.",
+        recordedAt: "2026-09-29T01:02:00.000Z",
+      },
+    ]);
+    expect(JSON.stringify(context.source.jobs[0]?.verification)).not.toContain(
+      "Other job passed"
+    );
   });
 
   it("maps atomic lifecycle RPC arguments exactly", async () => {

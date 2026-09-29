@@ -64,13 +64,16 @@ export async function updateJobStatusAction(
 ): Promise<JobFormState> {
   try {
     const status = String(formData.get("status") ?? "") as JobStatus;
-    const assistantHandoff =
-      status === "completed" ? await prepareJobCompletionAssistantHandoff() : null;
     await updateJobStatus(jobId, status, {
       note: String(formData.get("note") ?? ""),
     });
-    if (assistantHandoff) {
-      await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });
+    if (status === "completed") {
+      try {
+        const assistantHandoff = await prepareJobCompletionAssistantHandoff();
+        await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });
+      } catch {
+        // Completion has committed; the assistant handoff must remain best-effort.
+      }
     }
   } catch (error) {
     return { error: toFormErrorMessage(error) };

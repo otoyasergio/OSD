@@ -24,6 +24,9 @@ const mocks = vi.hoisted(() => {
     clearParkOnComplete: vi.fn(async () => {
       events.push("clear-park");
     }),
+    assignPeerQcByTechnician: vi.fn(async () => {
+      events.push("assign-qc");
+    }),
     requireUser: vi.fn(async () => {
       events.push("domain-auth");
       return { user_id: "11111111-1111-4111-8111-111111111111" };
@@ -85,6 +88,11 @@ vi.mock("@/lib/services/jobFloorState", () => ({
 vi.mock("@/lib/services/inspectionGate", () => ({
   assertInspectionCompletedForJobFinish: mocks.assertInspectionCompletedForJobFinish,
 }));
+vi.mock("@/lib/services/peerQc", () => ({
+  assignPeerQcByTechnician: mocks.assignPeerQcByTechnician,
+  failPeerQualityCheck: vi.fn(),
+  passPeerQualityCheck: vi.fn(),
+}));
 vi.mock("@/lib/status/recalculateWorkOrderStatus", () => ({
   recalculateWorkOrderStatus: mocks.recalculateWorkOrderStatus,
 }));
@@ -136,10 +144,11 @@ import { updateJobStatusAction } from "@/app/(app)/work_orders/job-actions";
 const WORK_ORDER = "41111111-1111-4111-8111-111111111111";
 const JOB = "51111111-1111-4111-8111-111111111111";
 
-function floorForm(): FormData {
+function floorForm(qcAssigneeId?: string): FormData {
   const data = new FormData();
   data.set("work_order_id", WORK_ORDER);
   data.set("job_id", JOB);
+  if (qcAssigneeId) data.set("qc_assignee_id", qcAssigneeId);
   return data;
 }
 
@@ -158,37 +167,47 @@ describe("job-completion action handoffs", () => {
   });
 
   it.each([
-    ["legacy", false, ["update:completed"]],
-    ["V2", true, ["domain-auth", "v2-complete"]],
+    ["legacy", false, ["update:completed", "clear-park"]],
+    ["V2", true, ["domain-auth", "v2-complete", "recalculate"]],
   ] as const)(
-    "schedules the %s floor completion handoff after the domain succeeds and before redirect",
-    async (_label, workflowV2, domainEvents) => {
+    "schedules the %s floor completion handoff after all status work and before redirect",
+    async (_label, workflowV2, statusEvents) => {
       mocks.setWorkflowV2(workflowV2);
 
       await expect(completeJobFloorAction(null, floorForm())).rejects.toThrow(
         "NEXT_REDIRECT"
       );
 
-      expect(mocks.events[0]).toBe("authenticate-handoff");
+      const authenticateIndex = mocks.events.indexOf("authenticate-handoff");
       const afterIndex = mocks.events.indexOf("after");
       const redirectIndex = mocks.events.findIndex((event) =>
         event.startsWith("redirect:")
       );
-      expect(afterIndex).toBeGreaterThan(
-        Math.max(...domainEvents.map((event) => mocks.events.indexOf(event)))
+      expect(authenticateIndex).toBeGreaterThan(
+        Math.max(...statusEvents.map((event) => mocks.events.indexOf(event)))
       );
+      expect(afterIndex).toBeGreaterThan(authenticateIndex);
       expect(afterIndex).toBeLessThan(redirectIndex);
-      if (!workflowV2) {
-        expect(afterIndex).toBeLessThan(mocks.events.indexOf("clear-park"));
-      } else {
-        expect(afterIndex).toBeLessThan(mocks.events.indexOf("recalculate"));
-      }
       expect(mocks.afterSuccessfulCompletion).toHaveBeenCalledWith({
         workOrderId: WORK_ORDER,
         jobId: JOB,
       });
     }
   );
+
+  it("assigns legacy peer QC before preparing the assistant handoff", async () => {
+    await expect(
+      completeJobFloorAction(null, floorForm("61111111-1111-4111-8111-111111111111"))
+    ).rejects.toThrow("NEXT_REDIRECT");
+
+    expect(mocks.events.slice(0, 5)).toEqual([
+      "update:completed",
+      "clear-park",
+      "assign-qc",
+      "authenticate-handoff",
+      "after",
+    ]);
+  });
 
   it.each([
     ["legacy status update", false, mocks.updateJobStatus],
@@ -214,9 +233,9 @@ describe("job-completion action handoffs", () => {
       error: "RECALCULATE_FAILED",
     });
     expect(mocks.events).toEqual([
-      "authenticate-handoff",
       "domain-auth",
       "v2-complete",
+      "authenticate-handoff",
       "after",
     ]);
     expect(mocks.afterSuccessfulCompletion).toHaveBeenCalledOnce();
@@ -230,16 +249,33 @@ describe("job-completion action handoffs", () => {
     await expect(completeJobFloorAction(null, floorForm())).resolves.toEqual({
       error: "CLEAR_FAILED",
     });
-    expect(mocks.events).toEqual(["authenticate-handoff", "update:completed", "after"]);
+    expect(mocks.events).toEqual(["update:completed", "authenticate-handoff", "after"]);
     expect(mocks.afterSuccessfulCompletion).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    ["preparation", mocks.prepareHandoff],
+    ["scheduling", mocks.afterSuccessfulCompletion],
+  ] as const)(
+    "does not turn a completed floor action into failure when handoff %s fails",
+    async (_label, failure) => {
+      failure.mockRejectedValueOnce(new Error("HANDOFF_FAILED"));
+
+      await expect(completeJobFloorAction(null, floorForm())).rejects.toThrow(
+        "NEXT_REDIRECT"
+      );
+
+      expect(mocks.events).toContain("update:completed");
+      expect(mocks.redirect).toHaveBeenCalledOnce();
+    }
+  );
 
   it("hands off an explicit completed status only after its update succeeds", async () => {
     await expect(
       updateJobStatusAction(WORK_ORDER, JOB, { error: null }, statusForm("completed"))
     ).resolves.toEqual({ error: null });
 
-    expect(mocks.events).toEqual(["authenticate-handoff", "update:completed", "after"]);
+    expect(mocks.events).toEqual(["update:completed", "authenticate-handoff", "after"]);
     expect(mocks.afterSuccessfulCompletion).toHaveBeenCalledWith({
       workOrderId: WORK_ORDER,
       jobId: JOB,
@@ -264,7 +300,25 @@ describe("job-completion action handoffs", () => {
       updateJobStatusAction(WORK_ORDER, JOB, { error: null }, statusForm("completed"))
     ).resolves.toEqual({ error: "DOMAIN_FAILED" });
 
-    expect(mocks.prepareHandoff).toHaveBeenCalledOnce();
+    expect(mocks.prepareHandoff).not.toHaveBeenCalled();
     expect(mocks.afterSuccessfulCompletion).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["preparation", mocks.prepareHandoff],
+    ["scheduling", mocks.afterSuccessfulCompletion],
+  ] as const)(
+    "preserves a successful completed-status update when handoff %s fails",
+    async (_label, failure) => {
+      failure.mockRejectedValueOnce(new Error("HANDOFF_FAILED"));
+
+      await expect(
+        updateJobStatusAction(WORK_ORDER, JOB, { error: null }, statusForm("completed"))
+      ).resolves.toEqual({ error: null });
+
+      expect(mocks.updateJobStatus).toHaveBeenCalledWith(JOB, "completed", {
+        note: "",
+      });
+    }
+  );
 });

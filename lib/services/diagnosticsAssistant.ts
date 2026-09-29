@@ -68,6 +68,29 @@ const ALLOWED_DIAGNOSTICS_PHOTO_CATEGORIES = new Set([
   "job_proof",
 ]);
 
+const VERIFICATION_NOTE_TYPES = new Set(["road_test", "quality_check"]);
+
+function classifyVerificationNote(note: string): string {
+  if (
+    /\b(?:failed|failure|unsuccessful|did not pass|symptom (?:recurred|remains))\b/i.test(
+      note
+    )
+  ) {
+    return "failed";
+  }
+  if (
+    /\b(?:pending|incomplete|not (?:yet )?(?:verified|passed|complete)|retest required|requires? (?:a )?retest|verification (?:is )?(?:not|still))\b/i.test(
+      note
+    )
+  ) {
+    return "pending";
+  }
+  if (/\b(?:passed|successful|verified|resolved)\b/i.test(note)) {
+    return "passed";
+  }
+  return "recorded";
+}
+
 const uuidSchema = z.string().uuid();
 const nullableUuidSchema = z.string().uuid().nullable().optional();
 const modeSchema = z.enum(["shop", "teach", "intake", "advisor", "report"]);
@@ -1041,7 +1064,7 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
     const { data: workOrder, error: workOrderError } = await this.session
       .from("work_order")
       .select(
-        "work_order_id, work_order_number, status, lifecycle_state, mileage, internal_notes, motorcycle_id"
+        "work_order_id, work_order_number, status, lifecycle_state, mileage, mileage_unit, internal_notes, motorcycle_id"
       )
       .eq("work_order_id", workOrderId)
       .single();
@@ -1204,6 +1227,7 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
             ? String(workOrder.lifecycle_state)
             : null,
           mileage: workOrder.mileage == null ? null : Number(workOrder.mileage),
+          mileageUnit: workOrder.mileage_unit ? String(workOrder.mileage_unit) : null,
           complaint: null,
           internalNotes: workOrder.internal_notes
             ? String(workOrder.internal_notes)
@@ -1282,7 +1306,23 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
                   String(note.job_id) === id && note.note_type === "proof_exception"
               ),
             },
-            verification: [],
+            verification: (notesResult.data ?? [])
+              .filter(
+                (note: Record<string, unknown>) =>
+                  String(note.job_id) === id &&
+                  VERIFICATION_NOTE_TYPES.has(String(note.note_type))
+              )
+              .map((note: Record<string, unknown>) => ({
+                verificationId: String(note.technician_note_id),
+                result: classifyVerificationNote(String(note.note)),
+                notes: String(note.note),
+                recordedAt: String(note.created_at),
+              }))
+              .sort(
+                (a, b) =>
+                  a.recordedAt.localeCompare(b.recordedAt) ||
+                  a.verificationId.localeCompare(b.verificationId)
+              ),
           };
         }),
         inspection: inspection

@@ -230,20 +230,31 @@ export async function completeJobFloorAction(
   _prev: FloorActionState,
   formData: FormData
 ): Promise<FloorActionState> {
+  const jobId = String(formData.get("job_id") ?? "");
+  const workOrderId = String(formData.get("work_order_id") ?? "");
+  let completionCommitted = false;
+  let handoffAttempted = false;
+  const scheduleCommittedHandoff = async () => {
+    if (!completionCommitted || handoffAttempted) return;
+    handoffAttempted = true;
+    try {
+      const assistantHandoff = await prepareJobCompletionAssistantHandoff();
+      await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });
+    } catch {
+      // The domain completion is already committed; assistant handoff is best-effort.
+    }
+  };
+
   try {
-    const jobId = String(formData.get("job_id") ?? "");
-    const workOrderId = String(formData.get("work_order_id") ?? "");
     const qcAssigneeId = String(formData.get("qc_assignee_id") ?? "").trim();
-    const assistantHandoff = await prepareJobCompletionAssistantHandoff();
     if (v2WritesEnabled(readWorkflowV2Flags())) {
       const completion = await completeJobViaWorkflowV2(
         jobId,
         workOrderId,
         qcAssigneeId || null
       );
-      await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });
-      // Keep the legacy work-order status projection (quality_check, …) in sync
-      // after the committed job has already received its best-effort handoff.
+      completionCommitted = true;
+      // Keep the legacy work-order status projection (quality_check, …) in sync.
       await recalculateWorkOrderStatus(
         completion.admin,
         workOrderId,
@@ -251,13 +262,14 @@ export async function completeJobFloorAction(
       );
     } else {
       await updateJobStatus(jobId, "completed");
-      await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });
+      completionCommitted = true;
       await clearParkOnComplete(jobId);
       if (qcAssigneeId) {
         const { assignPeerQcByTechnician } = await import("@/lib/services/peerQc");
         await assignPeerQcByTechnician(workOrderId, qcAssigneeId);
       }
     }
+    await scheduleCommittedHandoff();
     revalidateFloor(workOrderId);
 
     const { getTechnicianFloorOs } = await import("@/lib/services/technicianFloor");
@@ -284,6 +296,8 @@ export async function completeJobFloorAction(
       throw error;
     }
     return { error: toFormErrorMessage(error) };
+  } finally {
+    await scheduleCommittedHandoff();
   }
 }
 
