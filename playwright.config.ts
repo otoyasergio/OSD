@@ -19,6 +19,7 @@ const STATEFUL_SPECS = [
   "**/accessibility.spec.ts",
   "**/keyboard.spec.ts",
   "**/responsive.spec.ts",
+  "**/diagnostics-assistant.spec.ts",
 ];
 
 /**

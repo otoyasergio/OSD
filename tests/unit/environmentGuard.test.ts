@@ -3,6 +3,7 @@ import {
   assertSafeMutationEnvironment,
   checkMutationEnvironment,
 } from "@/tests/e2e/fixtures/environmentGuard";
+import { readSyntheticServiceRoleCredentials } from "@/tests/e2e/fixtures/seedSyntheticShop";
 
 /**
  * CI proof that mutating tests can never point at production: every rule in
@@ -257,5 +258,28 @@ describe("assertSafeMutationEnvironment", () => {
     expect(() => assertSafeMutationEnvironment(env)).toThrow(
       /E2E_ALLOW_MUTATION[\s\S]*production site/
     );
+  });
+});
+
+describe("synthetic seed credentials", () => {
+  it("requires isolated TEST_* credentials and never falls back to public app env", () => {
+    expect(() =>
+      readSyntheticServiceRoleCredentials({
+        NEXT_PUBLIC_SUPABASE_URL: "https://production.example.invalid",
+        SUPABASE_SERVICE_ROLE_KEY: "production-service-role",
+      })
+    ).toThrow(/TEST_SUPABASE_URL/);
+  });
+
+  it("accepts an explicit isolated URL and service-role key", () => {
+    expect(
+      readSyntheticServiceRoleCredentials({
+        TEST_SUPABASE_URL: "http://127.0.0.1:54321",
+        TEST_SUPABASE_SERVICE_ROLE_KEY: "isolated-service-role",
+      })
+    ).toEqual({
+      url: "http://127.0.0.1:54321",
+      key: "isolated-service-role",
+    });
   });
 });

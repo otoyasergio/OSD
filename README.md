@@ -28,6 +28,11 @@ cp .env.local.example .env.local
 
 Fill in `.env.local` from [`.env.local.example`](./.env.local.example) (Supabase, Square, Twilio, Wix, cron, Sentry, Parts Canada).
 
+Ask OTOMOTO additionally needs the server-only `OPENAI_API_KEY`; the rolling model
+alias can be overridden with `OTOMOTO_DIAGNOSTICS_MODEL`. Apply its migrations
+before deploying code. Setup, boundaries, and rollout order are documented in
+[`docs/features/ask-otomoto.md`](./docs/features/ask-otomoto.md).
+
 Supabase Auth uses cookie-backed SSR sessions. `proxy.ts` verifies/refreshes the
 session and protects every app page except `/login`, customer portal links under
 `/c/*`, and API handlers. The `(app)` layout then requires an active `app_user`
@@ -94,11 +99,17 @@ Dashboard board load uses one nested `work_order` query (jobs, recommendations, 
 npm test                 # unit (Vitest)
 npm run test:coverage    # coverage thresholds on core libs
 npm run test:e2e         # Playwright smoke (login, middleware, webhooks)
+npm run test:integration # isolated TEST_SUPABASE_* database only
 npm run typecheck
 npm run lint
 ```
 
 Watch mode: `npm run test:watch`
+
+Ask OTOMOTO’s live-provider acceptance suite is opt-in, synthetic-only, and
+excluded from normal tests/CI. See the
+[`acceptance worksheet`](./docs/features/ask-otomoto-acceptance.md) before running
+`npm run test:diagnostics:eval`.
 
 ## Build
 
@@ -113,6 +124,8 @@ See the production runbook: [`docs/superpowers/acceptance/production-checklist.m
 ## Documentation
 
 - Security: [`SECURITY.md`](./SECURITY.md)
+- Ask OTOMOTO: [`docs/features/ask-otomoto.md`](./docs/features/ask-otomoto.md)
+- Ask OTOMOTO acceptance: [`docs/features/ask-otomoto-acceptance.md`](./docs/features/ask-otomoto-acceptance.md)
 - Changelog: [`CHANGELOG.md`](./CHANGELOG.md)
 - Design: [`docs/superpowers/specs/`](./docs/superpowers/specs/)
 - Implementation plan: [`docs/superpowers/plans/`](./docs/superpowers/plans/)

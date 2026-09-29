@@ -126,6 +126,31 @@ export const FIXTURE_WORK_ORDER = Object.freeze({
   mileage: 12034,
 });
 
+/** Separate synthetic scope used to prove work-order/thread isolation. */
+export const ISOLATION_CUSTOMER = Object.freeze({
+  id: "ac000000-0000-4000-8000-000000000002",
+  firstName: "Iris",
+  lastName: "Isolation",
+  email: "qa-isolation@otomoto.invalid",
+  phone: "+14165550101",
+});
+
+export const ISOLATION_MOTORCYCLE = Object.freeze({
+  id: "ad000000-0000-4000-8000-000000000002",
+  year: 2021,
+  make: "Honda",
+  model: "CB500F",
+  vin: "QA1TESTVIN0000002",
+  colour: "Blue",
+});
+
+export const ISOLATION_WORK_ORDER = Object.freeze({
+  id: "ae000000-0000-4000-8000-000000000002",
+  number: "WO-QA-0002",
+  status: "open",
+  mileage: 8300,
+});
+
 export const DROP_OFF_AGREEMENT_ID = "bc000000-0000-4000-8000-000000000001";
 
 /** Ontario HST applied to estimates. */
@@ -190,6 +215,66 @@ export const JOB_C = Object.freeze({
 });
 
 export const FIXTURE_JOBS = Object.freeze([JOB_A, JOB_B, JOB_C]);
+
+export const ISOLATION_JOB = Object.freeze({
+  id: "ba000000-0000-4000-8000-000000000004",
+  serviceId: SERVICE_A.id,
+  name: "QA Isolated Diagnostic Job",
+  status: "approved",
+  totalCents: 12_500,
+});
+
+export const ASSISTANT_FIXTURES = Object.freeze({
+  technical: Object.freeze({
+    threadId: "c1000000-0000-4000-8000-000000000001",
+    userMessageId: "c2000000-0000-4000-8000-000000000001",
+    assistantMessageId: "c2000000-0000-4000-8000-000000000002",
+    userBody: "Help isolate the fictional no-crank complaint.",
+    assistantBody:
+      "**SAFETY — BOUNDARY:** Secure the motorcycle in neutral and keep clear of moving parts.\n\nAI draft — staff review required\n\nThe no-crank symptom is reported; the cause is not verified.\n\n**NEXT STEP:** Measure battery voltage directly across the posts while the starter is requested.",
+    requestedInput: Object.freeze({
+      type: "measurement",
+      prompt:
+        "Measure battery voltage directly across the posts while the starter is requested.",
+      purpose: "Check supply behaviour under demand.",
+      tool_placement: "Across the battery posts in DC voltage mode.",
+      conditions: "Motorcycle secure, transmission in neutral, starter requested.",
+      units: "V DC",
+    }),
+  }),
+  advisor: Object.freeze({
+    threadId: "c1000000-0000-4000-8000-000000000002",
+    userMessageId: "c2000000-0000-4000-8000-000000000003",
+    assistantMessageId: "c2000000-0000-4000-8000-000000000004",
+    userBody: "Draft a fictional customer update without sending it.",
+    assistantBody:
+      "AI draft — staff review required\n\nYou reported that the motorcycle does not start. The cause has not been verified. We recommend authorizing one diagnostic test before discussing repairs. No message has been sent.\n\n**NEXT STEP:** Confirm whether the customer authorizes diagnostic testing only.",
+    requestedInput: Object.freeze({
+      type: "question",
+      prompt: "Confirm whether the customer authorizes diagnostic testing only.",
+      purpose: "Keep diagnostic authorization separate from repair authorization.",
+      tool_placement: null,
+      conditions: null,
+      units: null,
+    }),
+  }),
+  isolated: Object.freeze({
+    threadId: "c1000000-0000-4000-8000-000000000003",
+    userMessageId: "c2000000-0000-4000-8000-000000000005",
+    assistantMessageId: "c2000000-0000-4000-8000-000000000006",
+    userBody: "Review only this separate fictional work order.",
+    assistantBody:
+      "AI draft — staff review required\n\nThis draft belongs only to WO-QA-0002.\n\n**NEXT STEP:** Record the exact operating condition when the symptom occurs.",
+    requestedInput: Object.freeze({
+      type: "question",
+      prompt: "Record the exact operating condition when the symptom occurs.",
+      purpose: "Keep evidence scoped to this work order.",
+      tool_placement: null,
+      conditions: null,
+      units: null,
+    }),
+  }),
+});
 
 /** Expected estimate math (all integer cents, HST 13%). */
 export const ESTIMATE_TOTALS = Object.freeze({

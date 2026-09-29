@@ -34,7 +34,7 @@ You reported [concern]. Our technician [actually completed observation/test], wh
 
 ## Draft motorcycle condition report
 
-**OTOMOTO Toronto Moto Inc. — Condition Report Draft**
+**OTOMOTO TORONTO MOTO INC. — Condition Report Draft**
 **Status:** Prepared from supplied observations and records; not a statutory inspection certificate. Generated format; the official shop template was not supplied.
 
 1. **Vehicle identification and complaint:** RO, year/make/model/submodel/market, mileage/units, relevant VIN identifier, date, technician identity only if supplied, complaint/conditions.

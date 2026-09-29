@@ -33,13 +33,35 @@ In-memory limits apply per IP on:
 - Webhooks — 60–120 / minute
 
 For multi-instance production at scale, prefer Vercel Firewall or Upstash Redis.
+Ask OTOMOTO is also process-local (12 turns per staff ID per minute). It is not a
+distributed/account-wide limit; every server process has its own counter.
 
 ## Secrets
 
 - Never commit `.env.local`
 - `SUPABASE_SERVICE_ROLE_KEY` is server-only (bypasses RLS)
+- `OPENAI_API_KEY` is server-only; never use a `NEXT_PUBLIC_*` AI key
 - Rotate `CRON_SECRET`, webhook secrets, and demo passwords before production
 - Enable **leaked password protection** in Supabase Auth → Password security
+
+## Ask OTOMOTO AI data
+
+Ask OTOMOTO is an internal drafting tool for **OTOMOTO TORONTO MOTO INC.** Minimize
+provider context to the authorized work order/job: omit customer contact details,
+full VIN unless genuinely required, signatures, storage URLs, unrelated notes,
+and unselected photos. Only explicitly selected current-turn photos may be sent.
+Never use production/customer data in provider evals.
+
+Responses API requests use `store: false`, but OpenAI abuse-monitoring logs may
+still retain content for up to 30 days unless the account has an applicable
+approved retention control. App conversation history remains in Supabase and is
+subject to work-order access, retention, and cascade rules.
+
+Record and review both the requested alias and resolved provider model. Any alias,
+resolved-model, prompt, schema, policy, or source-set change requires the complete
+synthetic live-model acceptance suite and qualified technician/advisor signoff.
+The current AI rate limit is per process, so it must not be represented as a
+global abuse-control boundary.
 
 ## Session hygiene
 

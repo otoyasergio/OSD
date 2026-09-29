@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
+  ASSISTANT_FIXTURES,
   DROP_OFF_AGREEMENT_ID,
   FIXTURE_CUSTOMER,
   FIXTURE_MOTORCYCLE,
@@ -7,6 +8,10 @@ import {
   FIXTURE_ROLES,
   FIXTURE_USERS,
   FIXTURE_WORK_ORDER,
+  ISOLATION_CUSTOMER,
+  ISOLATION_JOB,
+  ISOLATION_MOTORCYCLE,
+  ISOLATION_WORK_ORDER,
   JOB_A,
   JOB_B,
   JOB_C,
@@ -31,19 +36,24 @@ function centsToDollars(cents: number): number {
   return cents / 100;
 }
 
-export function createServiceRoleClient(): SupabaseClient {
-  const url = process.env.TEST_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key =
-    process.env.TEST_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+export function readSyntheticServiceRoleCredentials(
+  env: Record<string, string | undefined> = process.env
+): { url: string; key: string } {
+  const url = env.TEST_SUPABASE_URL?.trim();
+  const key = env.TEST_SUPABASE_SERVICE_ROLE_KEY?.trim();
 
   if (!url || !key) {
     throw new Error(
-      "Synthetic seed needs TEST_SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL) and " +
-        "TEST_SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_ROLE_KEY). " +
+      "Synthetic seed needs TEST_SUPABASE_URL and TEST_SUPABASE_SERVICE_ROLE_KEY. " +
+        "NEXT_PUBLIC_* and production service-role fallbacks are intentionally refused. " +
         "Run `supabase start` and export the values from `supabase status -o env`."
     );
   }
+  return { url, key };
+}
 
+export function createServiceRoleClient(): SupabaseClient {
+  const { url, key } = readSyntheticServiceRoleCredentials();
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -145,6 +155,107 @@ async function seedTimeClockPunches(supabase: SupabaseClient): Promise<void> {
   }
 }
 
+async function seedAssistantFixtures(supabase: SupabaseClient): Promise<void> {
+  const createdAt = "2026-09-29T07:00:00.000Z";
+  const threads = [
+    {
+      fixture: ASSISTANT_FIXTURES.technical,
+      workOrderId: FIXTURE_WORK_ORDER.id,
+      jobId: JOB_A.id,
+      mode: "shop",
+      audience: "technical",
+      creatorId: FIXTURE_USERS.techA.id,
+    },
+    {
+      fixture: ASSISTANT_FIXTURES.advisor,
+      workOrderId: FIXTURE_WORK_ORDER.id,
+      jobId: null,
+      mode: "advisor",
+      audience: "front_office",
+      creatorId: FIXTURE_USERS.advisor.id,
+    },
+    {
+      fixture: ASSISTANT_FIXTURES.isolated,
+      workOrderId: ISOLATION_WORK_ORDER.id,
+      jobId: ISOLATION_JOB.id,
+      mode: "shop",
+      audience: "technical",
+      creatorId: FIXTURE_USERS.techB.id,
+    },
+  ] as const;
+
+  const { error: threadError } = await supabase.from("ai_assistant_thread").upsert(
+    threads.map((entry, index) => ({
+      ai_assistant_thread_id: entry.fixture.threadId,
+      work_order_id: entry.workOrderId,
+      job_id: entry.jobId,
+      location_id: QA_LOCATION.id,
+      mode: entry.mode,
+      audience: entry.audience,
+      status: "ready",
+      diagnostic_phase: "information_needed",
+      trigger_type: null,
+      trigger_entity_id: null,
+      created_by_user_id: entry.creatorId,
+      created_at: new Date(Date.parse(createdAt) + index * 60_000).toISOString(),
+      updated_at: new Date(Date.parse(createdAt) + index * 60_000).toISOString(),
+    })),
+    { onConflict: "ai_assistant_thread_id" }
+  );
+  if (threadError) throw describeError("ai_assistant_thread upsert", threadError);
+
+  const messages = threads.flatMap((entry, index) => {
+    const userCreatedAt = new Date(
+      Date.parse(createdAt) + index * 60_000 + 1_000
+    ).toISOString();
+    const assistantCreatedAt = new Date(
+      Date.parse(createdAt) + index * 60_000 + 2_000
+    ).toISOString();
+    return [
+      {
+        ai_assistant_message_id: entry.fixture.userMessageId,
+        thread_id: entry.fixture.threadId,
+        role: "user",
+        body: entry.fixture.userBody,
+        generation_status: "ready",
+        requested_input: null,
+        phase: null,
+        created_by_user_id: entry.creatorId,
+        parent_user_message_id: null,
+        requested_provider_model: null,
+        provider_model: null,
+        provider_response_id: null,
+        prompt_version: null,
+        safe_error_code: null,
+        created_at: userCreatedAt,
+        updated_at: userCreatedAt,
+      },
+      {
+        ai_assistant_message_id: entry.fixture.assistantMessageId,
+        thread_id: entry.fixture.threadId,
+        role: "assistant",
+        body: entry.fixture.assistantBody,
+        generation_status: "ready",
+        requested_input: entry.fixture.requestedInput,
+        phase: "information_needed",
+        created_by_user_id: null,
+        parent_user_message_id: entry.fixture.userMessageId,
+        requested_provider_model: "qa-synthetic-model",
+        provider_model: "qa-synthetic-model-resolved",
+        provider_response_id: `qa-synthetic-response-${index + 1}`,
+        prompt_version: "qa-synthetic-prompt",
+        safe_error_code: null,
+        created_at: assistantCreatedAt,
+        updated_at: assistantCreatedAt,
+      },
+    ];
+  });
+  const { error: messageError } = await supabase
+    .from("ai_assistant_message")
+    .upsert(messages, { onConflict: "ai_assistant_message_id" });
+  if (messageError) throw describeError("ai_assistant_message upsert", messageError);
+}
+
 export async function seedSyntheticShop(): Promise<void> {
   const supabase = createServiceRoleClient();
 
@@ -202,45 +313,61 @@ export async function seedSyntheticShop(): Promise<void> {
   }
 
   const { error: customerError } = await supabase.from("customer").upsert(
-    {
-      customer_id: FIXTURE_CUSTOMER.id,
-      first_name: FIXTURE_CUSTOMER.firstName,
-      last_name: FIXTURE_CUSTOMER.lastName,
-      email: FIXTURE_CUSTOMER.email,
-      phone: FIXTURE_CUSTOMER.phone,
-    },
+    [FIXTURE_CUSTOMER, ISOLATION_CUSTOMER].map((customer) => ({
+      customer_id: customer.id,
+      first_name: customer.firstName,
+      last_name: customer.lastName,
+      email: customer.email,
+      phone: customer.phone,
+    })),
     { onConflict: "customer_id" }
   );
   if (customerError) throw describeError("customer upsert", customerError);
 
   const { error: motorcycleError } = await supabase.from("motorcycle").upsert(
-    {
-      motorcycle_id: FIXTURE_MOTORCYCLE.id,
-      customer_id: FIXTURE_CUSTOMER.id,
-      year: FIXTURE_MOTORCYCLE.year,
-      make: FIXTURE_MOTORCYCLE.make,
-      model: FIXTURE_MOTORCYCLE.model,
-      vin: FIXTURE_MOTORCYCLE.vin,
-      colour: FIXTURE_MOTORCYCLE.colour,
-    },
+    [
+      { fixture: FIXTURE_MOTORCYCLE, customerId: FIXTURE_CUSTOMER.id },
+      { fixture: ISOLATION_MOTORCYCLE, customerId: ISOLATION_CUSTOMER.id },
+    ].map(({ fixture, customerId }) => ({
+      motorcycle_id: fixture.id,
+      customer_id: customerId,
+      year: fixture.year,
+      make: fixture.make,
+      model: fixture.model,
+      vin: fixture.vin,
+      colour: fixture.colour,
+    })),
     { onConflict: "motorcycle_id" }
   );
   if (motorcycleError) throw describeError("motorcycle upsert", motorcycleError);
 
   const { error: workOrderError } = await supabase.from("work_order").upsert(
-    {
-      work_order_id: FIXTURE_WORK_ORDER.id,
+    [
+      {
+        fixture: FIXTURE_WORK_ORDER,
+        motorcycleId: FIXTURE_MOTORCYCLE.id,
+        customerId: FIXTURE_CUSTOMER.id,
+        primaryTechnicianId: FIXTURE_USERS.techA.id,
+      },
+      {
+        fixture: ISOLATION_WORK_ORDER,
+        motorcycleId: ISOLATION_MOTORCYCLE.id,
+        customerId: ISOLATION_CUSTOMER.id,
+        primaryTechnicianId: FIXTURE_USERS.techB.id,
+      },
+    ].map(({ fixture, motorcycleId, customerId, primaryTechnicianId }) => ({
+      work_order_id: fixture.id,
       location_id: QA_LOCATION.id,
-      motorcycle_id: FIXTURE_MOTORCYCLE.id,
+      motorcycle_id: motorcycleId,
       // Snapshot columns required since migration 017.
-      customer_id: FIXTURE_CUSTOMER.id,
-      work_order_number: FIXTURE_WORK_ORDER.number,
-      status: FIXTURE_WORK_ORDER.status,
-      mileage: FIXTURE_WORK_ORDER.mileage,
+      customer_id: customerId,
+      work_order_number: fixture.number,
+      status: fixture.status,
+      mileage: fixture.mileage,
       mileage_unit: "km",
       created_by_user_id: FIXTURE_USERS.advisor.id,
       // Reset workflow state so re-seeding restores a deterministic baseline.
-      primary_technician_id: null,
+      primary_technician_id: primaryTechnicianId,
       opened_at: null,
       quality_checked_at: null,
       quality_checked_by_user_id: null,
@@ -248,7 +375,7 @@ export async function seedSyntheticShop(): Promise<void> {
       safety_checked_by_user_id: null,
       ready_for_pickup_at: null,
       completed_at: null,
-    },
+    })),
     { onConflict: "work_order_id" }
   );
   if (workOrderError) throw describeError("work_order upsert", workOrderError);
@@ -317,14 +444,35 @@ export async function seedSyntheticShop(): Promise<void> {
     approval_recorded_by_user_id: null,
   };
   const jobs = [
-    { job: JOB_A, approval: approvedFields },
-    { job: JOB_B, approval: approvedFields },
-    { job: JOB_C, approval: pendingFields },
+    {
+      job: JOB_A,
+      approval: approvedFields,
+      workOrderId: FIXTURE_WORK_ORDER.id,
+      assignedTechnicianId: FIXTURE_USERS.techA.id,
+    },
+    {
+      job: JOB_B,
+      approval: approvedFields,
+      workOrderId: FIXTURE_WORK_ORDER.id,
+      assignedTechnicianId: null,
+    },
+    {
+      job: JOB_C,
+      approval: pendingFields,
+      workOrderId: FIXTURE_WORK_ORDER.id,
+      assignedTechnicianId: null,
+    },
+    {
+      job: ISOLATION_JOB,
+      approval: approvedFields,
+      workOrderId: ISOLATION_WORK_ORDER.id,
+      assignedTechnicianId: FIXTURE_USERS.techB.id,
+    },
   ];
   const { error: jobError } = await supabase.from("job").upsert(
-    jobs.map(({ job, approval }) => ({
+    jobs.map(({ job, approval, workOrderId, assignedTechnicianId }) => ({
       job_id: job.id,
-      work_order_id: FIXTURE_WORK_ORDER.id,
+      work_order_id: workOrderId,
       service_id: job.serviceId,
       service_name_snapshot: job.name,
       // Legacy schema stores dollars (numeric); fixtures are integer cents.
@@ -332,7 +480,7 @@ export async function seedSyntheticShop(): Promise<void> {
       estimated_labour_snapshot: 1,
       status: job.status,
       created_by_user_id: FIXTURE_USERS.advisor.id,
-      assigned_technician_id: null,
+      assigned_technician_id: assignedTechnicianId,
       started_at: null,
       completed_at: null,
       declined_at: null,
@@ -358,6 +506,7 @@ export async function seedSyntheticShop(): Promise<void> {
   );
   if (partError) throw describeError("part upsert", partError);
 
+  await seedAssistantFixtures(supabase);
   await seedTimeClockPunches(supabase);
 
   console.log("[seed] synthetic QA shop ready");
@@ -394,15 +543,36 @@ export async function resetSyntheticShop(): Promise<void> {
     Object.values(TIME_CLOCK_ENTRIES),
     { tolerateMissingTable: true }
   );
+  await deleteByIds(
+    supabase,
+    "ai_assistant_thread",
+    "ai_assistant_thread_id",
+    Object.values(ASSISTANT_FIXTURES).map((fixture) => fixture.threadId),
+    { tolerateMissingTable: true }
+  );
   await deleteByIds(supabase, "part", "part_id", [PART_A.id]);
-  await deleteByIds(supabase, "job", "job_id", [JOB_A.id, JOB_B.id, JOB_C.id]);
+  await deleteByIds(supabase, "job", "job_id", [
+    JOB_A.id,
+    JOB_B.id,
+    JOB_C.id,
+    ISOLATION_JOB.id,
+  ]);
   await deleteByIds(supabase, "drop_off_agreement", "agreement_id", [
     DROP_OFF_AGREEMENT_ID,
   ]);
   // Cascades the remaining work-order children (timeline events, photos, …).
-  await deleteByIds(supabase, "work_order", "work_order_id", [FIXTURE_WORK_ORDER.id]);
-  await deleteByIds(supabase, "motorcycle", "motorcycle_id", [FIXTURE_MOTORCYCLE.id]);
-  await deleteByIds(supabase, "customer", "customer_id", [FIXTURE_CUSTOMER.id]);
+  await deleteByIds(supabase, "work_order", "work_order_id", [
+    FIXTURE_WORK_ORDER.id,
+    ISOLATION_WORK_ORDER.id,
+  ]);
+  await deleteByIds(supabase, "motorcycle", "motorcycle_id", [
+    FIXTURE_MOTORCYCLE.id,
+    ISOLATION_MOTORCYCLE.id,
+  ]);
+  await deleteByIds(supabase, "customer", "customer_id", [
+    FIXTURE_CUSTOMER.id,
+    ISOLATION_CUSTOMER.id,
+  ]);
   await deleteByIds(supabase, "service", "service_id", [
     SERVICE_A.id,
     SERVICE_B.id,
