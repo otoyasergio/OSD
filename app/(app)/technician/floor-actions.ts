@@ -195,7 +195,7 @@ async function completeJobViaWorkflowV2(
   jobId: string,
   workOrderId: string,
   qcAssigneeId: string | null
-): Promise<void> {
+) {
   const user = await requireUser();
   const supabase = await createClient();
 
@@ -223,9 +223,7 @@ async function completeJobViaWorkflowV2(
     p_idempotency_key: floorIdempotencyKey("complete", jobId, user.user_id),
   });
   if (error) throw new Error(toRpcErrorCode(error));
-
-  // Keep the legacy work-order status projection (quality_check, …) in sync.
-  await recalculateWorkOrderStatus(admin, workOrderId, user.user_id);
+  return { admin, actorUserId: user.user_id };
 }
 
 export async function completeJobFloorAction(
@@ -238,8 +236,19 @@ export async function completeJobFloorAction(
     const qcAssigneeId = String(formData.get("qc_assignee_id") ?? "").trim();
     const assistantHandoff = await prepareJobCompletionAssistantHandoff();
     if (v2WritesEnabled(readWorkflowV2Flags())) {
-      await completeJobViaWorkflowV2(jobId, workOrderId, qcAssigneeId || null);
+      const completion = await completeJobViaWorkflowV2(
+        jobId,
+        workOrderId,
+        qcAssigneeId || null
+      );
       await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });
+      // Keep the legacy work-order status projection (quality_check, …) in sync
+      // after the committed job has already received its best-effort handoff.
+      await recalculateWorkOrderStatus(
+        completion.admin,
+        workOrderId,
+        completion.actorUserId
+      );
     } else {
       await updateJobStatus(jobId, "completed");
       await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });

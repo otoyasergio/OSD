@@ -29,6 +29,7 @@ import { redactDiagnosticsText } from "@/lib/diagnostics/redaction";
 import {
   diagnosticsResponseSchema,
   type DiagnosticsMode,
+  type DiagnosticsPhase,
   type DiagnosticsResponse,
 } from "@/lib/diagnostics/responseSchema";
 
@@ -54,6 +55,7 @@ export type DiagnosticsImageInput = {
 
 export type DiagnosticsGenerationRequest = {
   mode: DiagnosticsMode;
+  requiredPhase?: DiagnosticsPhase;
   staffUserId: string;
   workOrderContext: ShapedDiagnosticsModelContext;
   userMessage: string;
@@ -360,6 +362,7 @@ export async function generateDiagnosticsDraft(
 
     assertDiagnosticsOutputAllowed(parsed.data, {
       mode: request.mode,
+      requiredPhase: request.requiredPhase,
       claims,
     });
 

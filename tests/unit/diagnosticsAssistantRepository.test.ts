@@ -79,6 +79,38 @@ function fakeClient(
 }
 
 describe("Supabase diagnostics repository boundaries", () => {
+  it("requires an active trigger creator with membership at the thread location", async () => {
+    const filters: string[] = [];
+    const repository = new SupabaseDiagnosticsRepository(
+      fakeClient(
+        {
+          app_user: { user_id: "user-1", status: "active" },
+          user_location: {
+            user_id: "user-1",
+            location_id: "loc-1",
+            location: { status: "active" },
+          },
+        },
+        [],
+        [],
+        filters
+      ),
+      vi.fn()
+    );
+
+    await expect(repository.isActiveUserAtLocation("user-1", "loc-1")).resolves.toBe(
+      true
+    );
+    expect(filters).toEqual(
+      expect.arrayContaining([
+        "app_user:user_id=user-1",
+        "app_user:status=active",
+        "user_location:user_id=user-1",
+        "user_location:location_id=loc-1",
+      ])
+    );
+  });
+
   it("accepts a job-completion trigger entity only when the job is completed", async () => {
     const filters: string[] = [];
     const repository = new SupabaseDiagnosticsRepository(

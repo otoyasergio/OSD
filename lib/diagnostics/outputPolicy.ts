@@ -1,5 +1,6 @@
 import type {
   DiagnosticsMode,
+  DiagnosticsPhase,
   DiagnosticsResponse,
   DiagnosticsShopLog,
 } from "@/lib/diagnostics/responseSchema";
@@ -453,6 +454,7 @@ export function inspectDiagnosticsOutput(
   output: DiagnosticsResponse,
   options: {
     mode: DiagnosticsMode;
+    requiredPhase?: DiagnosticsPhase;
     claims?: DiagnosticsClaimContext;
   }
 ): DiagnosticsPolicyViolation[] {
@@ -505,23 +507,37 @@ export function inspectDiagnosticsOutput(
       message: "Reports require a compact Shop Log Entry.",
     });
   }
-  if (output.phase === "closure_report" && output.shop_log_entry === null) {
+  if (options.requiredPhase && output.phase !== options.requiredPhase) {
+    violations.push({
+      code: "REQUIRED_PHASE_MISMATCH",
+      message: `This response requires the ${options.requiredPhase} phase.`,
+    });
+  }
+  if (output.phase === "closure_report" && options.requiredPhase !== "closure_report") {
+    violations.push({
+      code: "CLOSURE_PHASE_NOT_REQUIRED",
+      message:
+        "Closure reports are allowed only for an explicit internal closure request.",
+    });
+  }
+  const closureRequired = options.requiredPhase === "closure_report";
+  if (closureRequired && output.shop_log_entry === null) {
     violations.push({
       code: "CLOSURE_SHOP_LOG_MISSING",
       message: "Closure reports require a compact Shop Log Entry.",
     });
   }
-  if (output.phase === "closure_report" && !claims.hasRecordedCompletedWork) {
+  if (closureRequired && !claims.hasRecordedCompletedWork) {
     violations.push({
       code: "CLOSURE_WORK_NOT_RECORDED",
       message: "A closure report requires a supplied completed-work record.",
     });
   }
   if (
-    output.phase === "closure_report" &&
+    closureRequired &&
     hasPositiveClaim(
       fields,
-      /\b(?:(?:qc|quality check)\s+(?:passed|failed|complete(?:d)?)|(?:job|repair|work)\s+(?:passed|failed)|(?:motorcycle|bike|vehicle|job|work order)\s+(?:is|was|has been)\s+released)\b/i
+      /\b(?:(?:qc|quality check)\s+(?:(?:has\s+)?passed|failed|(?:is\s+|was\s+|has\s+been\s+)?complete(?:d)?)|passed\s+(?:qc|quality check)|(?:job|repair|work)\s+(?:passed|failed)|(?:(?:motorcycle|bike|vehicle|job|work order)\s+(?:(?:is|was|has been)\s+)?|(?:it\s+)?)(?:released(?:\s+to\s+(?:the\s+)?customer)?|ready\s+for\s+(?:pickup|release)|can\s+be\s+released)|release\s+(?:is\s+|has\s+been\s+)?(?:approved|authorized|complete(?:d)?)|pickup\s+(?:is\s+|has\s+been\s+)?(?:ready|approved|authorized)|customer\s+pickup\s+(?:is\s+)?approved)\b/i
     )
   ) {
     violations.push({
@@ -760,6 +776,7 @@ export function assertDiagnosticsOutputAllowed(
   output: DiagnosticsResponse,
   options: {
     mode: DiagnosticsMode;
+    requiredPhase?: DiagnosticsPhase;
     claims?: DiagnosticsClaimContext;
   }
 ): void {

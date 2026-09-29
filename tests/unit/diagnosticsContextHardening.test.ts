@@ -75,6 +75,27 @@ describe("diagnostics context hardening", () => {
     ).not.toThrow();
   });
 
+  it("labels verification rows as recorded evidence without implying success", () => {
+    const input = baseSource();
+    input.jobs[0]!.verification = [
+      {
+        verificationId: "verification-1",
+        result: "pending",
+        notes: "Comparable retest still required",
+        recordedAt: "2026-09-29T01:00:00.000Z",
+      },
+    ];
+
+    const result = shapeDiagnosticsContext(input, {
+      mode: "shop",
+      workOrderId: "wo-1",
+      jobId: "job-1",
+    });
+
+    expect(result.context.selectedJob?.verificationEvidenceRecorded).toBe(true);
+    expect(result.claims.hasVerificationEvidence).toBe(false);
+  });
+
   it("redacts PII in every free-text field and sanitizes deep values", () => {
     const input = baseSource();
     input.workOrder.internalNotes =

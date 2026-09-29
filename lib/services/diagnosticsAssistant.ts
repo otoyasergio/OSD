@@ -264,6 +264,7 @@ export interface DiagnosticsAssistantRepository {
     triggerType: AiAssistantTriggerType,
     triggerEntityId: string
   ): Promise<boolean>;
+  isActiveUserAtLocation(userId: string, locationId: string): Promise<boolean>;
   loadJob(workOrderId: string, jobId: string): Promise<DiagnosticsJobScope | null>;
   beginTurn(input: BeginTurnInput): Promise<TurnRecord>;
   beginSeedTurn(input: BeginSeedTurnInput): Promise<TurnRecord>;
@@ -655,6 +656,30 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
     const { data, error } = await query.maybeSingle();
     throwQuery(error);
     return Boolean(data);
+  }
+
+  async isActiveUserAtLocation(userId: string, locationId: string): Promise<boolean> {
+    const { data: user, error: userError } = await this.session
+      .from("app_user")
+      .select("user_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .maybeSingle();
+    throwQuery(userError);
+    if (!user) return false;
+
+    const { data: membership, error: membershipError } = await this.session
+      .from("user_location")
+      .select("user_id, location_id, location:location_id(status)")
+      .eq("user_id", userId)
+      .eq("location_id", locationId)
+      .maybeSingle();
+    throwQuery(membershipError);
+    if (!membership) return false;
+    const location = unwrapOne(
+      (membership as Record<string, unknown>).location as { status?: string } | null
+    );
+    return location?.status === "active";
   }
 
   async loadJob(workOrderId: string, jobId: string): Promise<DiagnosticsJobScope | null> {
@@ -1548,6 +1573,8 @@ export function createDiagnosticsAssistantService(
       }
       response = await generate({
         mode: input.thread.mode,
+        requiredPhase:
+          input.thread.triggerType === "job_completed" ? "closure_report" : undefined,
         staffUserId: input.actor.user_id,
         workOrderContext: shaped.context,
         userMessage: safeUserMessage,
@@ -2089,6 +2116,11 @@ export async function generateDiagnosticsTriggerResponseInternal(
     return candidateThread;
   };
   const thread = validateThread(workspace);
+  if (
+    !(await repository.isActiveUserAtLocation(trustedActor.userId, thread.locationId))
+  ) {
+    throw new Error("ASK_OTOMOTO_TRIGGER_CREATOR_INACTIVE");
+  }
   if (scope.status === "completed" || scope.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }

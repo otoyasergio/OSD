@@ -234,7 +234,7 @@ type ShapedJob = {
     notes: string | null;
     recordedAt: string;
   }>;
-  verificationStatus: "recorded" | "pending";
+  verificationEvidenceRecorded: boolean;
   pricing?: NonNullable<DiagnosticsContextJobSource["prices"]>;
   authorization?: NonNullable<DiagnosticsContextJobSource["authorization"]>;
   truncation: {
@@ -538,7 +538,7 @@ function shapeJob(job: DiagnosticsContextJobSource, frontOffice: boolean): Shape
         }
       : null,
     verification: verification.items,
-    verificationStatus: verification.items.length > 0 ? "recorded" : "pending",
+    verificationEvidenceRecorded: verification.items.length > 0,
     truncation: {
       parts: parts.truncation,
       checklist: checklist.truncation,

@@ -133,6 +133,7 @@ function repository(): DiagnosticsAssistantRepository {
       workOrderId: scope().workOrderId,
     }),
     triggerEntityBelongsToWorkOrder: vi.fn().mockResolvedValue(true),
+    isActiveUserAtLocation: vi.fn().mockResolvedValue(true),
     beginTurn: vi.fn(),
     beginSeedTurn: vi.fn(),
     loadGenerationInput: vi.fn(),
@@ -1684,13 +1685,41 @@ describe("Ask OTOMOTO internal job-completion generation", () => {
     );
     const request = generateDraft.mock.calls[0]![0] as DiagnosticsGenerationRequest;
     expect(request.images).toEqual([]);
+    expect(request.requiredPhase).toBe("closure_report");
     expect(request.workOrderContext.selectedJob).toMatchObject({
       jobId,
       status: "completed",
       completedAt: "2026-09-29T00:30:00.000Z",
       verification: [],
-      verificationStatus: "pending",
+      verificationEvidenceRecorded: false,
     });
+  });
+
+  it("rejects an inactive trigger-thread creator before claiming or generating", async () => {
+    const { repo } = jobTriggerRepository();
+    vi.mocked(repo.isActiveUserAtLocation).mockResolvedValue(false);
+
+    await expect(
+      generateDiagnosticsTriggerResponseInternal(
+        {
+          userId: actor("technician").user_id,
+          locationId: scope().locationId,
+        },
+        {
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          jobId,
+          trigger: "job_completion",
+          triggerEntityId,
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_CREATOR_INACTIVE");
+    expect(repo.isActiveUserAtLocation).toHaveBeenCalledWith(
+      actor("technician").user_id,
+      scope().locationId
+    );
+    expect(repo.beginSeedTurn).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -1746,7 +1775,7 @@ describe("Ask OTOMOTO internal job-completion generation", () => {
         },
         { repository: repo }
       )
-    ).rejects.toThrow();
+    ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
     expect(repo.loadThread).not.toHaveBeenCalled();
     expect(repo.beginSeedTurn).not.toHaveBeenCalled();
   });

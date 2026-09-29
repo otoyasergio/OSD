@@ -1,7 +1,7 @@
 -- pgTAP: atomic Ask OTOMOTO generation lifecycle and service-role boundary.
 -- Run only against the isolated local stack with `supabase test db`.
 begin;
-select plan(46);
+select plan(49);
 
 select has_column(
   'public',
@@ -295,6 +295,72 @@ select is(
   ),
   2,
   'failed duplicate seed claim leaves exactly one message pair'
+);
+
+insert into public.job (
+  job_id, work_order_id, service_id, service_name_snapshot, status, completed_at
+) values (
+  '81000000-0000-4000-8000-000000000002',
+  '71000000-0000-4000-8000-000000000001',
+  '61000000-0000-4000-8000-000000000001',
+  'Completed lifecycle diagnostics service', 'completed', now()
+);
+
+insert into public.ai_assistant_thread (
+  ai_assistant_thread_id, work_order_id, job_id, location_id, mode, audience,
+  status, trigger_type, trigger_entity_id, created_by_user_id
+) values (
+  '91000000-0000-4000-8000-000000000003',
+  '71000000-0000-4000-8000-000000000001',
+  '81000000-0000-4000-8000-000000000002',
+  '11000000-0000-4000-8000-000000000001',
+  'shop', 'technical', 'pending',
+  'job_completed', '81000000-0000-4000-8000-000000000002',
+  '21000000-0000-4000-8000-000000000001'
+);
+
+create temporary table job_seed_turn as
+select *
+from public.ask_otomoto_begin_seed_turn(
+  '91000000-0000-4000-8000-000000000003',
+  '71000000-0000-4000-8000-000000000001',
+  'job_completed',
+  '81000000-0000-4000-8000-000000000002',
+  '21000000-0000-4000-8000-000000000001',
+  'Review the completed job'
+);
+
+select ok(
+  user_message_id is not null
+    and assistant_message_id is not null
+    and generation_attempt_id is not null,
+  'job-completion seed atomically creates one claimed turn'
+)
+from job_seed_turn;
+select throws_ok(
+  $$
+    select *
+    from public.ask_otomoto_begin_seed_turn(
+      '91000000-0000-4000-8000-000000000003',
+      '71000000-0000-4000-8000-000000000001',
+      'job_completed',
+      '81000000-0000-4000-8000-000000000002',
+      '21000000-0000-4000-8000-000000000001',
+      'Duplicate completed-job callback'
+    )
+  $$,
+  'P0001',
+  'ASK_OTOMOTO_SEED_ALREADY_CLAIMED',
+  'duplicate job-completion callback cannot claim a second seed'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.ai_assistant_message
+    where thread_id = '91000000-0000-4000-8000-000000000003'
+  ),
+  2,
+  'duplicate job-completion callback leaves exactly one seed pair'
 );
 
 insert into public.intake_photo (

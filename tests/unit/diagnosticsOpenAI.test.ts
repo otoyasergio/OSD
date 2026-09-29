@@ -201,6 +201,60 @@ describe("OpenAI diagnostics provider", () => {
     ).rejects.toThrow("DIAGNOSTICS_AI_OUTPUT_WITHHELD");
   });
 
+  it("enforces an internally required closure phase and Shop Log after parsing", async () => {
+    const nonClosureParse = vi.fn().mockResolvedValue(providerResult(validResponse()));
+    const nonClosureClient = {
+      responses: { parse: nonClosureParse },
+    } as unknown as OpenAI;
+
+    await expect(
+      generateDiagnosticsDraft(
+        {
+          ...request(),
+          requiredPhase: "closure_report",
+          workOrderContext: {
+            ...request().workOrderContext,
+            selectedJob: {
+              jobId: "job-1",
+              status: "completed",
+              completedAt: "2026-09-29T00:30:00.000Z",
+              verification: [],
+            },
+          } as ShapedDiagnosticsModelContext,
+        },
+        { client: nonClosureClient, config }
+      )
+    ).rejects.toThrow("DIAGNOSTICS_AI_OUTPUT_WITHHELD");
+
+    const noLogParse = vi.fn().mockResolvedValue(
+      providerResult(
+        validResponse({
+          phase: "closure_report",
+          shop_log_entry: null,
+        })
+      )
+    );
+    const noLogClient = { responses: { parse: noLogParse } } as unknown as OpenAI;
+    await expect(
+      generateDiagnosticsDraft(
+        {
+          ...request(),
+          requiredPhase: "closure_report",
+          workOrderContext: {
+            ...request().workOrderContext,
+            selectedJob: {
+              jobId: "job-1",
+              status: "completed",
+              completedAt: "2026-09-29T00:30:00.000Z",
+              verification: [],
+            },
+          } as ShapedDiagnosticsModelContext,
+        },
+        { client: noLogClient, config }
+      )
+    ).rejects.toThrow("DIAGNOSTICS_AI_OUTPUT_WITHHELD");
+  });
+
   it("sends only images explicitly attached to the current turn", async () => {
     const parse = vi.fn().mockResolvedValue(providerResult());
     const client = { responses: { parse } } as unknown as OpenAI;

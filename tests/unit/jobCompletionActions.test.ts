@@ -159,7 +159,7 @@ describe("job-completion action handoffs", () => {
 
   it.each([
     ["legacy", false, ["update:completed"]],
-    ["V2", true, ["domain-auth", "v2-complete", "recalculate"]],
+    ["V2", true, ["domain-auth", "v2-complete"]],
   ] as const)(
     "schedules the %s floor completion handoff after the domain succeeds and before redirect",
     async (_label, workflowV2, domainEvents) => {
@@ -180,6 +180,8 @@ describe("job-completion action handoffs", () => {
       expect(afterIndex).toBeLessThan(redirectIndex);
       if (!workflowV2) {
         expect(afterIndex).toBeLessThan(mocks.events.indexOf("clear-park"));
+      } else {
+        expect(afterIndex).toBeLessThan(mocks.events.indexOf("recalculate"));
       }
       expect(mocks.afterSuccessfulCompletion).toHaveBeenCalledWith({
         workOrderId: WORK_ORDER,
@@ -190,7 +192,7 @@ describe("job-completion action handoffs", () => {
 
   it.each([
     ["legacy status update", false, mocks.updateJobStatus],
-    ["V2 recalculate", true, mocks.recalculateWorkOrderStatus],
+    ["V2 completion RPC", true, mocks.rpc],
   ] as const)("does not hand off when %s fails", async (_label, workflowV2, failure) => {
     mocks.setWorkflowV2(workflowV2);
     failure.mockRejectedValueOnce(new Error("DOMAIN_FAILED"));
@@ -199,6 +201,26 @@ describe("job-completion action handoffs", () => {
       error: "DOMAIN_FAILED",
     });
     expect(mocks.afterSuccessfulCompletion).not.toHaveBeenCalled();
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("keeps the V2 handoff when status recalculation fails after the commit", async () => {
+    mocks.setWorkflowV2(true);
+    mocks.recalculateWorkOrderStatus.mockRejectedValueOnce(
+      new Error("RECALCULATE_FAILED")
+    );
+
+    await expect(completeJobFloorAction(null, floorForm())).resolves.toEqual({
+      error: "RECALCULATE_FAILED",
+    });
+    expect(mocks.events).toEqual([
+      "authenticate-handoff",
+      "domain-auth",
+      "v2-complete",
+      "after",
+    ]);
+    expect(mocks.afterSuccessfulCompletion).toHaveBeenCalledOnce();
+    expect(mocks.recalculateWorkOrderStatus).toHaveBeenCalledOnce();
     expect(mocks.redirect).not.toHaveBeenCalled();
   });
 

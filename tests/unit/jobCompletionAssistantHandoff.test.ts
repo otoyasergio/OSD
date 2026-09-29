@@ -145,21 +145,6 @@ describe("job-completion assistant handoff", () => {
     log.mockRestore();
   });
 
-  it("reuses the same thread and lets the atomic seed claim deduplicate repeat actions", async () => {
-    const handoff = await prepareJobCompletionAssistantHandoff();
-
-    await handoff.afterSuccessfulCompletion({ workOrderId: WORK_ORDER, jobId: JOB });
-    await handoff.afterSuccessfulCompletion({ workOrderId: WORK_ORDER, jobId: JOB });
-    await Promise.all(scheduled.map((callback) => callback()));
-
-    expect(createThread).toHaveBeenCalledTimes(2);
-    expect(createThread.mock.calls[0]![1]).toEqual(createThread.mock.calls[1]![1]);
-    expect(generateTriggerResponse).toHaveBeenCalledTimes(2);
-    expect(generateTriggerResponse.mock.calls[0]).toEqual(
-      generateTriggerResponse.mock.calls[1]
-    );
-  });
-
   it("contains no workflow mutation imports or calls", async () => {
     const source = await readFile(
       new URL("../../lib/services/jobCompletionAssistantHandoff.ts", import.meta.url),

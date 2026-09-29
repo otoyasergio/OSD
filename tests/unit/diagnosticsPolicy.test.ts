@@ -132,13 +132,18 @@ describe("diagnostics structured response", () => {
     expect(
       inspectDiagnosticsOutput(closure, {
         mode: "shop",
+        requiredPhase: "closure_report",
         claims: { hasRecordedCompletedWork: true },
       })
     ).toEqual([]);
     expect(
       inspectDiagnosticsOutput(
         { ...closure, shop_log_entry: null },
-        { mode: "shop", claims: { hasRecordedCompletedWork: true } }
+        {
+          mode: "shop",
+          requiredPhase: "closure_report",
+          claims: { hasRecordedCompletedWork: true },
+        }
       )
     ).toEqual(
       expect.arrayContaining([
@@ -148,6 +153,7 @@ describe("diagnostics structured response", () => {
     expect(
       inspectDiagnosticsOutput(closure, {
         mode: "shop",
+        requiredPhase: "closure_report",
         claims: { hasRecordedCompletedWork: false },
       })
     ).toEqual(
@@ -155,22 +161,80 @@ describe("diagnostics structured response", () => {
         expect.objectContaining({ code: "CLOSURE_WORK_NOT_RECORDED" }),
       ])
     );
+    expect(
+      inspectDiagnosticsOutput(
+        { ...closure, phase: "verification" },
+        {
+          mode: "shop",
+          requiredPhase: "closure_report",
+          claims: { hasRecordedCompletedWork: true },
+        }
+      )
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "REQUIRED_PHASE_MISMATCH" }),
+      ])
+    );
+    expect(
+      inspectDiagnosticsOutput(closure, {
+        mode: "shop",
+        claims: { hasRecordedCompletedWork: true },
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "CLOSURE_PHASE_NOT_REQUIRED" }),
+      ])
+    );
     for (const answer of [
       "QC passed.",
+      "Passed QC.",
+      "QC has passed.",
+      "QC complete.",
       "The quality check failed.",
       "The job passed.",
       "The motorcycle was released.",
+      "The motorcycle is ready for release.",
+      "The motorcycle can be released.",
+      "The motorcycle was released to the customer.",
+      "The motorcycle is ready for pickup.",
+      "Released to customer.",
+      "Ready for pickup.",
+      "Release is approved.",
+      "Pickup is ready.",
+      "Customer pickup is approved.",
     ]) {
       expect(
         inspectDiagnosticsOutput(
           { ...closure, answer },
-          { mode: "shop", claims: { hasRecordedCompletedWork: true } }
+          {
+            mode: "shop",
+            requiredPhase: "closure_report",
+            claims: { hasRecordedCompletedWork: true },
+          }
         )
       ).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ code: "CLOSURE_WORKFLOW_CLAIM" }),
         ])
       );
+    }
+    for (const answer of [
+      "QC pending.",
+      "QC not performed.",
+      "Release pending.",
+      "The motorcycle was not released to the customer.",
+      "Pickup is not approved.",
+    ]) {
+      expect(
+        inspectDiagnosticsOutput(
+          { ...closure, answer },
+          {
+            mode: "shop",
+            requiredPhase: "closure_report",
+            claims: { hasRecordedCompletedWork: true },
+          }
+        ).map((violation) => violation.code)
+      ).not.toContain("CLOSURE_WORKFLOW_CLAIM");
     }
   });
 
