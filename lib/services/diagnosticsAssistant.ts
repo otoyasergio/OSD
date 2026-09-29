@@ -356,10 +356,17 @@ function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
 }
 
 class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
+  private adminClient: DbClient | null = null;
+
   constructor(
     private readonly session: DbClient,
-    private readonly admin: DbClient
+    private readonly createAdmin: () => DbClient
   ) {}
+
+  private get admin(): DbClient {
+    this.adminClient ??= this.createAdmin();
+    return this.adminClient;
+  }
 
   async loadWorkOrderScope(
     workOrderId: string
@@ -836,7 +843,18 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
         ? this.admin
             .from("job_part_requirement")
             .select(
-              "requirement_id, job_id, description, part_number, quantity_required, quantity_received, quantity_allocated, quantity_installed, state, sell_price_cents"
+              [
+                "requirement_id",
+                "job_id",
+                "description",
+                "part_number",
+                "quantity_required",
+                "quantity_received",
+                "quantity_allocated",
+                "quantity_installed",
+                "state",
+                ...(includeFrontOffice ? ["sell_price_cents"] : []),
+              ].join(", ")
             )
             .in("job_id", jobIds)
         : Promise.resolve({ data: [], error: null }),
@@ -864,7 +882,9 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
     }
 
     const checklistRows = (checklistResult.data ?? []) as Array<Record<string, unknown>>;
-    const partRows = (partsResult.data ?? []) as Array<Record<string, unknown>>;
+    const partRows = (partsResult.data ?? []) as unknown as Array<
+      Record<string, unknown>
+    >;
     const proofRows = (proofResult.data ?? []) as Array<Record<string, unknown>>;
     const pricingByJob = includeFrontOffice
       ? await this.loadPricing(workOrderId, jobIds)
@@ -1181,7 +1201,7 @@ class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
 async function defaultRepository(): Promise<DiagnosticsAssistantRepository> {
   return new SupabaseDiagnosticsRepository(
     await createClient(),
-    createDiagnosticsAdminClient()
+    createDiagnosticsAdminClient
   );
 }
 

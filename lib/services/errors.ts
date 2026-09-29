@@ -223,6 +223,10 @@ const MESSAGES: Record<string, string> = {
   ASK_OTOMOTO_THREAD_NOT_FOUND: "That Ask OTOMOTO conversation is no longer available.",
   ASK_OTOMOTO_THREAD_SCOPE_MISMATCH:
     "That Ask OTOMOTO conversation does not match this work order, job, or mode.",
+  ASK_OTOMOTO_DIAGNOSTICS_MISCONFIGURED:
+    "Ask OTOMOTO storage is not configured on this server.",
+  ASK_OTOMOTO_TRIGGER_NOT_FOUND:
+    "That completed inspection or job does not belong to this work order.",
   ASK_OTOMOTO_TURN_NOT_FOUND: "That Ask OTOMOTO turn is no longer available.",
   ASK_OTOMOTO_RETRY_NOT_FOUND: "There is no failed Ask OTOMOTO response to retry.",
   ASK_OTOMOTO_NOTE_SOURCE_NOT_FOUND: "That Ask OTOMOTO response is no longer available.",
@@ -236,6 +240,8 @@ const MESSAGES: Record<string, string> = {
     "The reviewed note must stay with the assistant response's job.",
   ASK_OTOMOTO_NOTE_ALREADY_PROMOTED:
     "That Ask OTOMOTO response was already promoted to a technician note.",
+  DIAGNOSTICS_IMAGE_SELECTION_INVALID:
+    "The selected Ask OTOMOTO photos could not be read. Select them again.",
   INVALID_PIN: "Enter a valid 4-digit PIN.",
   PIN_LOCKED: "Too many incorrect PIN attempts. Wait 60 seconds and try again.",
   PIN_NOT_SET: "This person does not have a time clock PIN yet.",
