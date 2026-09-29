@@ -276,6 +276,40 @@ export const ASSISTANT_FIXTURES = Object.freeze({
   }),
 });
 
+export const ASSISTANT_STATE_FIXTURES = Object.freeze({
+  manualPending: Object.freeze({
+    threadId: "c1000000-0000-4000-8000-000000000010",
+  }),
+  automaticPending: Object.freeze({
+    threadId: "c1000000-0000-4000-8000-000000000011",
+    triggerEntityId: "c3000000-0000-4000-8000-000000000011",
+  }),
+  staleInspection: Object.freeze({
+    threadId: "c1000000-0000-4000-8000-000000000012",
+    triggerEntityId: "c3000000-0000-4000-8000-000000000012",
+    userMessageId: "c2000000-0000-4000-8000-000000000012",
+    assistantMessageId: "c2000000-0000-4000-8000-000000000013",
+  }),
+  failed: Object.freeze({
+    threadId: "c1000000-0000-4000-8000-000000000013",
+    userMessageId: "c2000000-0000-4000-8000-000000000014",
+    assistantMessageId: "c2000000-0000-4000-8000-000000000015",
+  }),
+  verificationReady: Object.freeze({
+    threadId: "c1000000-0000-4000-8000-000000000014",
+    userMessageId: "c2000000-0000-4000-8000-000000000016",
+    assistantMessageId: "c2000000-0000-4000-8000-000000000017",
+  }),
+});
+
+export const ASSISTANT_PHOTOS = Object.freeze({
+  jobWork: Object.freeze({
+    id: "c4000000-0000-4000-8000-000000000001",
+    category: "job_work" as const,
+    storagePath: "qa-assistant/job-work.jpg",
+  }),
+});
+
 /** Expected estimate math (all integer cents, HST 13%). */
 export const ESTIMATE_TOTALS = Object.freeze({
   presentedSubtotalCents: 41_000,

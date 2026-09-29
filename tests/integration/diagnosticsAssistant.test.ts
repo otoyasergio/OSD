@@ -1,4 +1,12 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import type { AppUser } from "@/lib/auth/session";
+import type { DbClient } from "@/lib/database/types";
+import type { DiagnosticsImageSelection } from "@/lib/diagnostics/images";
+import type { DiagnosticsGenerationResult } from "@/lib/diagnostics/openai";
+import {
+  createDiagnosticsAssistantService,
+  SupabaseDiagnosticsRepository,
+} from "@/lib/services/diagnosticsAssistant";
 import {
   createAnonClient,
   createServiceClient,
@@ -15,6 +23,7 @@ const IDS = {
   workOrder: "d7000000-0000-4000-8000-000000000001",
   job: "d8000000-0000-4000-8000-000000000001",
   thread: "d9000000-0000-4000-8000-000000000001",
+  photo: "dc000000-0000-4000-8000-000000000001",
 } as const;
 
 const missingId = "da000000-0000-4000-8000-000000000001";
@@ -86,6 +95,7 @@ async function cleanupLifecycleFixture(): Promise<void> {
   const client = createServiceClient();
   const deletes: Array<[string, string, string]> = [
     ["ai_assistant_thread", "ai_assistant_thread_id", IDS.thread],
+    ["intake_photo", "photo_id", IDS.photo],
     ["job", "job_id", IDS.job],
     ["work_order", "work_order_id", IDS.workOrder],
     ["motorcycle", "motorcycle_id", IDS.motorcycle],
@@ -165,6 +175,19 @@ async function seedLifecycleFixture(): Promise<void> {
         status: "in_progress",
         created_by_user_id: IDS.user,
         assigned_technician_id: IDS.user,
+      },
+    ],
+    [
+      "intake_photo",
+      {
+        photo_id: IDS.photo,
+        work_order_id: IDS.workOrder,
+        job_id: IDS.job,
+        uploaded_by_user_id: IDS.user,
+        storage_path: "integration/selected-terminal.jpg",
+        category: "job_work",
+        notes: "Synthetic selected terminal photo metadata",
+        created_at: "2026-09-29T08:00:00.000Z",
       },
     ],
     [
@@ -409,6 +432,139 @@ describeIntegration("Ask OTOMOTO persistence integration", () => {
         provider_model: "synthetic-resolved",
         safe_error_code: null,
       });
+    } finally {
+      await cleanupLifecycleFixture();
+    }
+  });
+
+  it("runs the real repository lifecycle with shaped context and a fake provider", async () => {
+    await seedLifecycleFixture();
+    const client = createServiceClient();
+    const db = client as unknown as DbClient;
+    const repository = new SupabaseDiagnosticsRepository(db, () => db);
+    const actor: AppUser = {
+      user_id: IDS.user,
+      auth_user_id: IDS.authUser,
+      first_name: "Integration",
+      last_name: "Technician",
+      email: "integration-technician@otomoto.invalid",
+      profile_photo_path: null,
+      role: "technician",
+      status: "active",
+      location_ids: [IDS.location],
+      active_location_id: IDS.location,
+    };
+    const fakeProviderResult: DiagnosticsGenerationResult = {
+      response: {
+        phase: "information_needed",
+        review_status: "staff_review_required",
+        answer: "A recorded measurement is still needed.",
+        assessments: [],
+        requested_input: {
+          type: "measurement",
+          prompt: "Record battery voltage during the starter request.",
+          purpose: "Compare supply behavior under demand.",
+          tool_placement: "Across the battery posts.",
+          conditions: "Motorcycle secured in neutral.",
+          units: "V DC",
+        },
+        next_step: "Record battery voltage during the starter request.",
+        safety: { stop_work: false, do_not_ride: false, boundary: null },
+        sources: [],
+        source_summary: "No exact-model source supplied.",
+        limitations: ["The selected photo does not prove electrical operation."],
+        shop_log_entry: null,
+      },
+      responseId: "integration-fake-response",
+      requestedModel: "integration-fake-model",
+      resolvedModel: "integration-fake-model-resolved",
+      promptVersion: "integration-fake-prompt",
+      contextHash: "b".repeat(64),
+      usage: { inputTokens: 12, outputTokens: 24, totalTokens: 36 },
+    };
+    const fakeProvider = vi.fn().mockResolvedValue(fakeProviderResult);
+    const prepareImages = vi.fn(
+      async ({ selections }: { selections: DiagnosticsImageSelection[] }) => ({
+        images: selections.map((selection) => ({
+          photoId: selection.photoId,
+          purpose: selection.purpose,
+          dataUrl: "data:image/jpeg;base64,/9j/2Q==",
+          detail: "low" as const,
+        })),
+        photoMetadata: selections.map((selection, sortOrder) => ({
+          ...selection,
+          sortOrder,
+          limitation: null,
+        })),
+      })
+    );
+    const service = createDiagnosticsAssistantService({
+      repository,
+      requireUser: async () => actor,
+      generateDraft: fakeProvider,
+      prepareImages,
+      consumeRateLimit: () => ({ success: true, remaining: 11, resetAt: 1 }),
+      assertConfigured: () => undefined,
+      now: () => new Date("2026-09-29T08:30:00.000Z"),
+    });
+
+    try {
+      const completed = await service.submitTurn({
+        workOrderId: IDS.workOrder,
+        threadId: IDS.thread,
+        jobId: IDS.job,
+        mode: "shop",
+        text: "Use this selected photo and tell me the next recorded check.",
+        photos: [
+          {
+            photoId: IDS.photo,
+            purpose: "Inspect the visible battery terminal condition.",
+          },
+        ],
+      });
+
+      expect(completed).toMatchObject({
+        generationStatus: "ready",
+        phase: "information_needed",
+        requestedProviderModel: "integration-fake-model",
+        providerModel: "integration-fake-model-resolved",
+      });
+      expect(fakeProvider).toHaveBeenCalledOnce();
+      expect(fakeProvider).toHaveBeenCalledWith(
+        expect.objectContaining({
+          staffUserId: IDS.user,
+          workOrderContext: expect.objectContaining({
+            workOrder: expect.objectContaining({
+              workOrderId: IDS.workOrder,
+              identifier: "AI-INTEGRATION-1",
+            }),
+            selectedJob: expect.objectContaining({ jobId: IDS.job }),
+          }),
+          images: [
+            expect.objectContaining({
+              photoId: IDS.photo,
+              purpose: "Inspect the visible battery terminal condition.",
+            }),
+          ],
+        })
+      );
+
+      const workspace = await repository.loadThread(IDS.workOrder, IDS.thread);
+      expect(workspace?.thread).toMatchObject({
+        status: "ready",
+        diagnosticPhase: "information_needed",
+      });
+      expect(
+        workspace?.messages.find((message) => message.role === "user")?.photos
+      ).toEqual([
+        expect.objectContaining({
+          photoId: IDS.photo,
+          category: "job_work",
+          notes: "Synthetic selected terminal photo metadata",
+          purpose: "Inspect the visible battery terminal condition.",
+          sortOrder: 0,
+        }),
+      ]);
     } finally {
       await cleanupLifecycleFixture();
     }

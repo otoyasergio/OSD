@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { storageStatePath } from "./fixtures/auth";
 import {
   ASSISTANT_FIXTURES,
+  ASSISTANT_STATE_FIXTURES,
   FIXTURE_USERS,
   FIXTURE_WORK_ORDER,
   ISOLATION_JOB,
@@ -81,6 +82,79 @@ test.describe("Ask OTOMOTO assigned-technician verification", () => {
     await expect(page.getByRole("link", { name: /Technician \(\/shop\)/ })).toBeVisible();
     await expect(page.getByText(/The cause has not been verified/)).toHaveCount(0);
     await expect(page.getByRole("link", { name: /Service Advisor/ })).toHaveCount(0);
+    const requested = page.getByRole("region", { name: "Next evidence requested" });
+    await expect(requested).toContainText("Next evidence requested · Measurement");
+    await expect(requested).toContainText("V DC");
+  });
+
+  test("provider-free fixtures render pending, failure, stale retry, and recovery states", async ({
+    page,
+  }) => {
+    await page.goto(floorAssistantUrl(ASSISTANT_STATE_FIXTURES.manualPending.threadId));
+    await expect(page.getByText(/Pending · Job:/)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Send to Ask OTOMOTO" })
+    ).toBeDisabled();
+
+    await page.goto(
+      floorAssistantUrl(ASSISTANT_STATE_FIXTURES.automaticPending.threadId)
+    );
+    await expect(page.getByText("Pending automatic review.")).toBeVisible();
+    await expect(page.getByText("Automatic arrival-inspection review")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Run automatic review" })).toHaveCount(
+      0
+    );
+
+    await page.goto(floorAssistantUrl(ASSISTANT_STATE_FIXTURES.staleInspection.threadId));
+    await expect(page.getByText("Reviewing submitted inspection…")).toBeVisible();
+    await expect(
+      page.getByText("The response took too long. Retry is now available.")
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+
+    await page.goto(floorAssistantUrl(ASSISTANT_STATE_FIXTURES.failed.threadId));
+    await expect(
+      page.getByText("Generation failed. Work-order records were not changed.")
+    ).toBeVisible();
+    await expect(page.getByText("Response unavailable.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await expect(
+      page.getByText("Generation failed. Work-order records were not changed.")
+    ).toBeVisible();
+  });
+
+  test("renders verification-ready photo evidence without enabling a provider", async ({
+    page,
+  }) => {
+    await page.goto(
+      floorAssistantUrl(ASSISTANT_STATE_FIXTURES.verificationReady.threadId)
+    );
+
+    await expect(
+      page.getByText(/Ready · Ready for technician verification/)
+    ).toBeVisible();
+    await expect(page.getByText("Repair performed; verification pending.")).toBeVisible();
+    const requested = page.getByRole("region", { name: "Next evidence requested" });
+    await expect(requested).toContainText("Next evidence requested · Photo");
+    await expect(requested).toContainText(
+      "Select a close photo of the repaired connector for visual context."
+    );
+    await expect(
+      page.getByText(
+        "Photo requested: Select a close photo of the repaired connector for visual context."
+      )
+    ).toBeVisible();
+    await page.getByRole("button", { name: /^Select Work photo/ }).click();
+    await expect(page.getByText("Selected 1 of 3")).toBeVisible();
+    await expect(page.getByLabel(/Purpose for photo 1/)).toHaveValue(
+      "Select a close photo of the repaired connector for visual context."
+    );
+    await expect(page.getByRole("button", { name: "Camera" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Library" })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Send to Ask OTOMOTO" })
+    ).toBeDisabled();
   });
 
   test("technician cannot open a front-office or another-work-order thread", async ({

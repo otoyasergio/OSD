@@ -71,6 +71,7 @@ export function DiagnosticsPhotoPicker({
   preview,
   readOnly,
   disabled = false,
+  uploadAllowed = true,
   onBusyChange,
   headingLevel = 4,
 }: {
@@ -85,6 +86,8 @@ export function DiagnosticsPhotoPicker({
   preview: boolean;
   readOnly: boolean;
   disabled?: boolean;
+  /** Existing rows may be staged locally even when new assistant uploads are off. */
+  uploadAllowed?: boolean;
   onBusyChange?: (busy: boolean) => void;
   /** One level below the conversation heading it sits under. */
   headingLevel?: 4 | 5;
@@ -110,7 +113,8 @@ export function DiagnosticsPhotoPicker({
   const interactive = canMutate && !preview && !readOnly && !disabled;
   const jobScoped = Boolean(thread.jobId);
   const atLimit = selections.length >= DIAGNOSTICS_PHOTO_MAX_SELECTED;
-  const uploadEnabled = interactive && jobScoped && !atLimit && !uploading;
+  const uploadEnabled =
+    interactive && uploadAllowed && jobScoped && !atLimit && !uploading;
   const selectionEditable = interactive && !uploading;
 
   useEffect(() => {

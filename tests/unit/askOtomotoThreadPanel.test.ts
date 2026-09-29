@@ -421,6 +421,28 @@ describe("AskOtomotoThreadPanel", () => {
       expect(container.querySelectorAll("button[aria-pressed]")).toHaveLength(1);
     });
 
+    it("allows local selection of existing evidence without provider configuration", async () => {
+      await renderThread(jobWorkspace(), { configured: false });
+      const photoButton =
+        container.querySelector<HTMLButtonElement>("button[aria-pressed]")!;
+      expect(photoButton.disabled).toBe(false);
+
+      await act(async () => photoButton.click());
+
+      expect(JSON.parse(hidden("photos")!.value)).toEqual([
+        { photoId: PHOTO, purpose: "Work photo for analysis" },
+      ]);
+      expect(textarea().disabled).toBe(true);
+      expect(sendButton().disabled).toBe(true);
+      expect(
+        Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+          .filter((button) =>
+            /^(camera|library)$/i.test(button.textContent?.trim() ?? "")
+          )
+          .every((button) => button.disabled)
+      ).toBe(true);
+    });
+
     it("blocks Send while a selected photo has a blank purpose", async () => {
       await renderThread(jobWorkspace());
       await type("What does this show?");

@@ -230,7 +230,8 @@ function TurnComposer({
         canMutate={canMutate}
         preview={preview}
         readOnly={readOnly}
-        disabled={locked || pending}
+        disabled={archived || threadBusy || retryPending || pending}
+        uploadAllowed={configured}
         onBusyChange={setUploading}
         headingLevel={photoHeadingLevel}
       />

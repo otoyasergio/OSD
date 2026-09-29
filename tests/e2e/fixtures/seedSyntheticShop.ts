@@ -1,6 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   ASSISTANT_FIXTURES,
+  ASSISTANT_PHOTOS,
+  ASSISTANT_STATE_FIXTURES,
   DROP_OFF_AGREEMENT_ID,
   FIXTURE_CUSTOMER,
   FIXTURE_MOTORCYCLE,
@@ -157,6 +159,23 @@ async function seedTimeClockPunches(supabase: SupabaseClient): Promise<void> {
 
 async function seedAssistantFixtures(supabase: SupabaseClient): Promise<void> {
   const createdAt = "2026-09-29T07:00:00.000Z";
+  const stateCreatedAt = "2026-09-29T06:00:00.000Z";
+
+  const { error: photoError } = await supabase.from("intake_photo").upsert(
+    {
+      photo_id: ASSISTANT_PHOTOS.jobWork.id,
+      work_order_id: FIXTURE_WORK_ORDER.id,
+      job_id: JOB_A.id,
+      uploaded_by_user_id: FIXTURE_USERS.techA.id,
+      storage_path: ASSISTANT_PHOTOS.jobWork.storagePath,
+      category: ASSISTANT_PHOTOS.jobWork.category,
+      notes: "Synthetic battery-terminal photo for provider-free UI coverage.",
+      created_at: stateCreatedAt,
+    },
+    { onConflict: "photo_id" }
+  );
+  if (photoError) throw describeError("assistant intake_photo upsert", photoError);
+
   const threads = [
     {
       fixture: ASSISTANT_FIXTURES.technical,
@@ -203,6 +222,60 @@ async function seedAssistantFixtures(supabase: SupabaseClient): Promise<void> {
     { onConflict: "ai_assistant_thread_id" }
   );
   if (threadError) throw describeError("ai_assistant_thread upsert", threadError);
+
+  const stateThreads = [
+    {
+      ai_assistant_thread_id: ASSISTANT_STATE_FIXTURES.manualPending.threadId,
+      status: "pending",
+      diagnostic_phase: null,
+      trigger_type: null,
+      trigger_entity_id: null,
+    },
+    {
+      ai_assistant_thread_id: ASSISTANT_STATE_FIXTURES.automaticPending.threadId,
+      status: "pending",
+      diagnostic_phase: null,
+      trigger_type: "inspection_completed",
+      trigger_entity_id: ASSISTANT_STATE_FIXTURES.automaticPending.triggerEntityId,
+    },
+    {
+      ai_assistant_thread_id: ASSISTANT_STATE_FIXTURES.staleInspection.threadId,
+      status: "generating",
+      diagnostic_phase: "information_needed",
+      trigger_type: "inspection_completed",
+      trigger_entity_id: ASSISTANT_STATE_FIXTURES.staleInspection.triggerEntityId,
+    },
+    {
+      ai_assistant_thread_id: ASSISTANT_STATE_FIXTURES.failed.threadId,
+      status: "failed",
+      diagnostic_phase: "diagnosis",
+      trigger_type: null,
+      trigger_entity_id: null,
+    },
+    {
+      ai_assistant_thread_id: ASSISTANT_STATE_FIXTURES.verificationReady.threadId,
+      status: "ready",
+      diagnostic_phase: "ready_for_technician_verification",
+      trigger_type: null,
+      trigger_entity_id: null,
+    },
+  ].map((thread, index) => ({
+    ...thread,
+    work_order_id: FIXTURE_WORK_ORDER.id,
+    job_id: JOB_A.id,
+    location_id: QA_LOCATION.id,
+    mode: "shop",
+    audience: "technical",
+    created_by_user_id: FIXTURE_USERS.techA.id,
+    created_at: new Date(Date.parse(stateCreatedAt) + index * 60_000).toISOString(),
+    updated_at: new Date(Date.parse(stateCreatedAt) + index * 60_000).toISOString(),
+  }));
+  const { error: stateThreadError } = await supabase
+    .from("ai_assistant_thread")
+    .upsert(stateThreads, { onConflict: "ai_assistant_thread_id" });
+  if (stateThreadError) {
+    throw describeError("assistant state thread upsert", stateThreadError);
+  }
 
   const messages = threads.flatMap((entry, index) => {
     const userCreatedAt = new Date(
@@ -254,6 +327,121 @@ async function seedAssistantFixtures(supabase: SupabaseClient): Promise<void> {
     .from("ai_assistant_message")
     .upsert(messages, { onConflict: "ai_assistant_message_id" });
   if (messageError) throw describeError("ai_assistant_message upsert", messageError);
+
+  const stateMessages = [
+    {
+      ai_assistant_message_id: ASSISTANT_STATE_FIXTURES.staleInspection.userMessageId,
+      thread_id: ASSISTANT_STATE_FIXTURES.staleInspection.threadId,
+      role: "user",
+      body: "Review the submitted inspection.",
+      generation_status: "ready",
+      requested_input: null,
+      phase: null,
+      safe_error_code: null,
+      parent_user_message_id: null,
+      generation_attempt_id: null,
+    },
+    {
+      ai_assistant_message_id:
+        ASSISTANT_STATE_FIXTURES.staleInspection.assistantMessageId,
+      thread_id: ASSISTANT_STATE_FIXTURES.staleInspection.threadId,
+      role: "assistant",
+      body: null,
+      generation_status: "generating",
+      requested_input: null,
+      phase: "information_needed",
+      safe_error_code: null,
+      parent_user_message_id: ASSISTANT_STATE_FIXTURES.staleInspection.userMessageId,
+      generation_attempt_id: "c5000000-0000-4000-8000-000000000012",
+    },
+    {
+      ai_assistant_message_id: ASSISTANT_STATE_FIXTURES.failed.userMessageId,
+      thread_id: ASSISTANT_STATE_FIXTURES.failed.threadId,
+      role: "user",
+      body: "Continue the fictional diagnosis.",
+      generation_status: "ready",
+      requested_input: null,
+      phase: null,
+      safe_error_code: null,
+      parent_user_message_id: null,
+      generation_attempt_id: null,
+    },
+    {
+      ai_assistant_message_id: ASSISTANT_STATE_FIXTURES.failed.assistantMessageId,
+      thread_id: ASSISTANT_STATE_FIXTURES.failed.threadId,
+      role: "assistant",
+      body: null,
+      generation_status: "failed",
+      requested_input: null,
+      phase: "diagnosis",
+      safe_error_code: "DIAGNOSTICS_AI_PROVIDER_UNAVAILABLE",
+      parent_user_message_id: ASSISTANT_STATE_FIXTURES.failed.userMessageId,
+      generation_attempt_id: "c5000000-0000-4000-8000-000000000013",
+    },
+    {
+      ai_assistant_message_id: ASSISTANT_STATE_FIXTURES.verificationReady.userMessageId,
+      thread_id: ASSISTANT_STATE_FIXTURES.verificationReady.threadId,
+      role: "user",
+      body: "The connector repair is recorded complete.",
+      generation_status: "ready",
+      requested_input: null,
+      phase: null,
+      safe_error_code: null,
+      parent_user_message_id: null,
+      generation_attempt_id: null,
+    },
+    {
+      ai_assistant_message_id:
+        ASSISTANT_STATE_FIXTURES.verificationReady.assistantMessageId,
+      thread_id: ASSISTANT_STATE_FIXTURES.verificationReady.threadId,
+      role: "assistant",
+      body: "AI draft — staff review required\n\nRepair performed; verification pending.\n\n**NEXT STEP:** Record a comparable retest before making a success claim.",
+      generation_status: "ready",
+      requested_input: {
+        type: "photo",
+        prompt: "Select a close photo of the repaired connector for visual context.",
+        purpose: "Document visible connector condition without claiming operation.",
+        tool_placement: null,
+        conditions: "Ignition off and motorcycle secured.",
+        units: null,
+      },
+      phase: "ready_for_technician_verification",
+      safe_error_code: null,
+      parent_user_message_id: ASSISTANT_STATE_FIXTURES.verificationReady.userMessageId,
+      generation_attempt_id: null,
+    },
+  ].map((message, index) => ({
+    ...message,
+    created_by_user_id: message.role === "user" ? FIXTURE_USERS.techA.id : null,
+    requested_provider_model:
+      message.generation_status === "ready" && message.role === "assistant"
+        ? "qa-synthetic-model"
+        : null,
+    provider_model:
+      message.generation_status === "ready" && message.role === "assistant"
+        ? "qa-synthetic-model-resolved"
+        : null,
+    provider_response_id:
+      message.generation_status === "ready" && message.role === "assistant"
+        ? "qa-synthetic-verification-response"
+        : null,
+    prompt_version:
+      message.generation_status === "ready" && message.role === "assistant"
+        ? "qa-synthetic-prompt"
+        : null,
+    created_at: new Date(
+      Date.parse(stateCreatedAt) + 10_000 + index * 1_000
+    ).toISOString(),
+    updated_at: new Date(
+      Date.parse(stateCreatedAt) + 10_000 + index * 1_000
+    ).toISOString(),
+  }));
+  const { error: stateMessageError } = await supabase
+    .from("ai_assistant_message")
+    .upsert(stateMessages, { onConflict: "ai_assistant_message_id" });
+  if (stateMessageError) {
+    throw describeError("assistant state message upsert", stateMessageError);
+  }
 }
 
 export async function seedSyntheticShop(): Promise<void> {
@@ -547,9 +735,13 @@ export async function resetSyntheticShop(): Promise<void> {
     supabase,
     "ai_assistant_thread",
     "ai_assistant_thread_id",
-    Object.values(ASSISTANT_FIXTURES).map((fixture) => fixture.threadId),
+    [
+      ...Object.values(ASSISTANT_FIXTURES),
+      ...Object.values(ASSISTANT_STATE_FIXTURES),
+    ].map((fixture) => fixture.threadId),
     { tolerateMissingTable: true }
   );
+  await deleteByIds(supabase, "intake_photo", "photo_id", [ASSISTANT_PHOTOS.jobWork.id]);
   await deleteByIds(supabase, "part", "part_id", [PART_A.id]);
   await deleteByIds(supabase, "job", "job_id", [
     JOB_A.id,

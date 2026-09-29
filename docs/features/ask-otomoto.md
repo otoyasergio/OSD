@@ -197,6 +197,17 @@ Then run:
 5. manual Safari checks on iPad and desktop; and
 6. qualified technician and service-advisor review/signoff.
 
+Provider-free stateful E2E uses seeded messages to cover pending, stale,
+failed, recovery-eligible, measurement-request, photo-request, and
+verification-ready rendering plus local selection of existing photo evidence
+while outbound credentials remain disabled. New assistant uploads and sending
+stay locked in that provider-free run. The remaining model suggestion and
+photo-analysis journey is an explicit opt-in live/manual gate: use fictional
+data and selected synthetic photos in a dedicated non-production environment,
+run the live-model acceptance command, and have a qualified reviewer verify the
+suggestion, image limitations, retry, and recovery behavior. Never enable
+OpenAI for the deterministic stateful E2E suite.
+
 The integration job in `.github/workflows/ci.yml` currently has
 `continue-on-error: true`. Until it becomes required, successful pgTAP and
 integration runs remain a mandatory, manually confirmed release gate.
