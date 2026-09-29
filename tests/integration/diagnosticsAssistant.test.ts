@@ -18,6 +18,9 @@ const IDS = {
 } as const;
 
 const missingId = "da000000-0000-4000-8000-000000000001";
+const authProbeId = "db000000-0000-4000-8000-000000000001";
+const authProbeEmail = "diagnostics-rpc-probe@otomoto.invalid";
+const authProbePassword = "Synthetic-Rpc-Probe-2026!";
 
 function rpcArguments(name: string): Record<string, unknown> {
   switch (name) {
@@ -231,6 +234,38 @@ describeIntegration("Ask OTOMOTO persistence integration", () => {
         expect(error?.message ?? "").toMatch(
           /permission denied|could not find the function|schema cache/i
         );
+      }
+    }
+  );
+
+  it.skipIf(!process.env.TEST_SUPABASE_ANON_KEY)(
+    "denies every lifecycle RPC to authenticated",
+    async () => {
+      const service = createServiceClient();
+      await service.auth.admin.deleteUser(authProbeId);
+      const created = await service.auth.admin.createUser({
+        id: authProbeId,
+        email: authProbeEmail,
+        password: authProbePassword,
+        email_confirm: true,
+      });
+      expect(created.error).toBeNull();
+      const client = createAnonClient();
+      try {
+        const signedIn = await client.auth.signInWithPassword({
+          email: authProbeEmail,
+          password: authProbePassword,
+        });
+        expect(signedIn.error).toBeNull();
+        for (const name of LIFECYCLE_RPCS) {
+          const { error } = await client.rpc(name, rpcArguments(name));
+          expect(error, `${name} must not execute as authenticated`).not.toBeNull();
+          expect(error?.message ?? "").toMatch(
+            /permission denied|could not find the function|schema cache/i
+          );
+        }
+      } finally {
+        await service.auth.admin.deleteUser(authProbeId);
       }
     }
   );
