@@ -59,6 +59,130 @@ export type Database = {
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
       };
+      ai_assistant_thread: {
+        Row: {
+          ai_assistant_thread_id: string;
+          work_order_id: string;
+          job_id: string | null;
+          location_id: string;
+          mode: "shop" | "teach" | "intake" | "advisor" | "report";
+          audience: "technical" | "front_office";
+          status: "pending" | "generating" | "ready" | "failed" | "archived";
+          diagnostic_phase: string | null;
+          trigger_type: string | null;
+          trigger_entity_id: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          ai_assistant_thread_id?: string;
+          work_order_id: string;
+          job_id?: string | null;
+          location_id: string;
+          mode: "shop" | "teach" | "intake" | "advisor" | "report";
+          audience?: "technical" | "front_office";
+          status?: "pending" | "generating" | "ready" | "failed" | "archived";
+          diagnostic_phase?: string | null;
+          trigger_type?: string | null;
+          trigger_entity_id?: string | null;
+          created_by_user_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["ai_assistant_thread"]["Insert"]
+        >;
+      };
+      ai_assistant_message: {
+        Row: {
+          ai_assistant_message_id: string;
+          thread_id: string;
+          role: "system" | "user" | "assistant" | "tool";
+          body: string | null;
+          generation_status: "pending" | "generating" | "ready" | "failed";
+          requested_input: Json | null;
+          phase: string | null;
+          created_by_user_id: string | null;
+          provider_model: string | null;
+          provider_response_id: string | null;
+          prompt_version: string | null;
+          input_token_count: number | null;
+          output_token_count: number | null;
+          context_as_of: string | null;
+          context_hash: string | null;
+          safe_error_code: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          ai_assistant_message_id?: string;
+          thread_id: string;
+          role: "system" | "user" | "assistant" | "tool";
+          body?: string | null;
+          generation_status?: "pending" | "generating" | "ready" | "failed";
+          requested_input?: Json | null;
+          phase?: string | null;
+          created_by_user_id?: string | null;
+          provider_model?: string | null;
+          provider_response_id?: string | null;
+          prompt_version?: string | null;
+          input_token_count?: number | null;
+          output_token_count?: number | null;
+          context_as_of?: string | null;
+          context_hash?: string | null;
+          safe_error_code?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["ai_assistant_message"]["Insert"]
+        >;
+      };
+      ai_assistant_message_photo: {
+        Row: {
+          message_id: string;
+          photo_id: string;
+          sort_order: number;
+          purpose: string;
+          created_at: string;
+        };
+        Insert: {
+          message_id: string;
+          photo_id: string;
+          sort_order?: number;
+          purpose: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["ai_assistant_message_photo"]["Insert"]
+        >;
+      };
+      technician_note: {
+        Row: {
+          technician_note_id: string;
+          work_order_id: string;
+          job_id: string | null;
+          created_by_user_id: string | null;
+          source_ai_message_id: string | null;
+          note: string;
+          note_type: string;
+          created_at: string;
+        };
+        Insert: {
+          technician_note_id?: string;
+          work_order_id: string;
+          job_id?: string | null;
+          created_by_user_id?: string | null;
+          source_ai_message_id?: string | null;
+          note: string;
+          note_type?: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["technician_note"]["Insert"]
+        >;
+      };
       motorcycle: {
         Row: {
           motorcycle_id: string;

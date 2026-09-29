@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database, Json } from "@/lib/database/supabase.generated";
 
 export type UserRole =
   | "owner"
@@ -180,7 +181,37 @@ export type WorkOrderDisplayStage =
   | "on_hold"
   | "cancelled";
 
-export type { Database } from "@/lib/database/supabase.generated";
+export type AiAssistantMode = "shop" | "teach" | "intake" | "advisor" | "report";
+
+export type AiAssistantAudience = "technical" | "front_office";
+
+export type AiAssistantThreadStatus =
+  | "pending"
+  | "generating"
+  | "ready"
+  | "failed"
+  | "archived";
+
+export type AiAssistantMessageRole = "system" | "user" | "assistant" | "tool";
+
+export type AiAssistantGenerationStatus =
+  | "pending"
+  | "generating"
+  | "ready"
+  | "failed";
+
+export type AiAssistantRequestedInput = Json;
+
+export type AiAssistantThread =
+  Database["public"]["Tables"]["ai_assistant_thread"]["Row"];
+
+export type AiAssistantMessage =
+  Database["public"]["Tables"]["ai_assistant_message"]["Row"];
+
+export type AiAssistantMessagePhoto =
+  Database["public"]["Tables"]["ai_assistant_message_photo"]["Row"];
+
+export type { Database, Json } from "@/lib/database/supabase.generated";
 
 /** Untyped until createClient is wired with generated Database generics. */
 export type DbClient = SupabaseClient;
