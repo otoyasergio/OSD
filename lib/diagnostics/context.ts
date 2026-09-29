@@ -412,16 +412,30 @@ function budgetItems<T>(
   };
 }
 
-function redactSourceValues<T>(value: T, terms: DiagnosticsRedactTerms): T {
+function redactSourceValues<T>(
+  value: T,
+  terms: DiagnosticsRedactTerms,
+  redactStrings = false
+): T {
   if (typeof value === "string") {
-    return redactDiagnosticsText(value, terms) as T;
+    return (redactStrings ? redactDiagnosticsText(value, terms) : value) as T;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => redactSourceValues(item, terms)) as T;
+    return value.map((item) => redactSourceValues(item, terms, redactStrings)) as T;
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value).map(([key, child]) => [key, redactSourceValues(child, terms)])
+      Object.entries(value).map(([key, child]) => [
+        key,
+        redactSourceValues(
+          child,
+          terms,
+          redactStrings ||
+            /^(?:complaint|internalNotes|notes?|description|reason|measurement|text|title|itemName|method|checklist|serviceName|result|serviceInformation|references)$/i.test(
+              key
+            )
+        ),
+      ])
     ) as T;
   }
   return value;
@@ -648,6 +662,11 @@ export function deriveDiagnosticsClaimContext(
   }
   const exactModelReference = context.referenceEvidence.exactModelOem;
   const measuredEvidence = [
+    context.workOrder.complaint,
+    context.workOrder.internalNotes,
+    selected?.notes,
+    ...context.customerRequestJobs.map((item) => item.notes),
+    ...context.recommendations.map((item) => item.notes),
     ...context.inspection.results.map((item) => item.measurement),
     ...(selected?.verification.flatMap((item) => [item.result, item.notes]) ?? []),
     ...context.technicianNotes.map((item) => item.note),

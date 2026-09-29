@@ -76,7 +76,11 @@ function outputTextFields(output: DiagnosticsResponse): string[] {
   ].filter((value): value is string => typeof value === "string");
 }
 
-function hasPositiveClaim(fields: string[], pattern: RegExp): boolean {
+function hasPositiveClaim(
+  fields: string[],
+  pattern: RegExp,
+  acceptMatch?: (sentence: string, match: RegExpMatchArray) => boolean
+): boolean {
   return fields.some((field) => {
     const sentences = field.split(/(?<=[.!?])\s+|\r?\n/);
     return sentences.some((sentence) => {
@@ -103,6 +107,7 @@ function hasPositiveClaim(fields: string[], pattern: RegExp): boolean {
         ) {
           continue;
         }
+        if (acceptMatch && !acceptMatch(sentence, match)) continue;
         return true;
       }
       return false;
@@ -121,6 +126,43 @@ function addPositiveViolation(
   if (!allowed && hasPositiveClaim(fields, pattern)) {
     violations.push({ code, message });
   }
+}
+
+function hasCompletedWorkClaim(fields: string[]): boolean {
+  const completedVerb = String.raw`(?:replaced|repaired|installed|fixed)`;
+  const actualAgent = new RegExp(
+    String.raw`\b(?:we|(?:the\s+)?technician|(?:the\s+)?shop)\s+(?:(?:have|has)\s+)?${completedVerb}\b`,
+    "i"
+  );
+  if (hasPositiveClaim(fields, actualAgent)) return true;
+
+  const historicalActor = /\b(?:customer|owner|previous[- ]owner|aftermarket)\b/i;
+  const proposed =
+    /\b(?:may|might|could|should|would|will|need(?:s|ed)?|recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?|if|once|after|before|whether|until|when|retest|check|inspect|measure|not|never|cannot|can't|don't)\b/i;
+  const passive = new RegExp(
+    String.raw`((?:\b[\w'-]+\s+){0,6})(?:was|were|has\s+been|have\s+been)\s+${completedVerb}\b`,
+    "i"
+  );
+  if (
+    hasPositiveClaim(fields, passive, (sentence, match) => {
+      const subject = match[1] ?? "";
+      const after = sentence.slice((match.index ?? 0) + match[0].length, 160);
+      return (
+        !historicalActor.test(subject) &&
+        !proposed.test(subject) &&
+        !/^\s*(?:by|for)\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after)
+      );
+    })
+  ) {
+    return true;
+  }
+
+  const sentenceBeginning = new RegExp(String.raw`^\s*${completedVerb}\b`, "i");
+  return hasPositiveClaim(fields, sentenceBeginning, (sentence, match) => {
+    if (/^\s*fixed\s+(?:range|interval)\b/i.test(sentence)) return false;
+    const after = sentence.slice((match.index ?? 0) + match[0].length);
+    return !/\bby\s+(?:the\s+)?(?:customer|owner|previous[- ]owner)\b/i.test(after);
+  });
 }
 
 function requestedInputMatchesNextStep(output: DiagnosticsResponse): boolean {
@@ -252,6 +294,27 @@ function isMeasuredTechnicalUse(text: string, index: number, end: number): boole
       before
     ) ||
     /^\s*(?:was\s+)?(?:measur(?:ed|ement)|recorded|observed|found|reading)\b/i.test(after)
+  );
+}
+
+function percentageHasTechnicalContext(
+  text: string,
+  index: number,
+  end: number
+): boolean {
+  const start = Math.max(
+    text.lastIndexOf(".", index - 1),
+    text.lastIndexOf(";", index - 1),
+    text.lastIndexOf("\n", index - 1)
+  );
+  const nextBoundaries = [
+    text.indexOf(".", end),
+    text.indexOf(";", end),
+    text.indexOf("\n", end),
+  ].filter((value) => value >= 0);
+  const finish = nextBoundaries.length > 0 ? Math.min(...nextBoundaries) : text.length;
+  return /\b(?:spec(?:ification)?|limit|setpoint|mixture|measur(?:e[ds]?|ement)|reading|recorded)\b/i.test(
+    text.slice(start + 1, finish)
   );
 }
 
@@ -417,7 +480,7 @@ export function inspectDiagnosticsOutput(
     violations,
     fields,
     false,
-    /\b(?:(?:is|was|has been|'s)(?:\s+now)?\s+(?:safe(?:\s+to\s+(?:ride|operate))?|roadworthy|ok(?:ay)?\s+to\s+ride|cleared\s+for\s+release|ready\s+for\s+pickup)|pass(?:es|ed)\s+(?:the\s+)?(?:safety\s+inspection|safety|inspection)|cleared\s+for\s+release|ready\s+for\s+pickup)\b/i,
+    /\b(?:(?:(?:the\s+)?(?:bike|motorcycle|vehicle)\s+(?:is|was|has been)|it(?:\s+(?:is|was|has been)|'s))(?:\s+now)?\s+(?:safe\s+to\s+(?:ride|operate|use)|ok(?:ay)?\s+to\s+ride)|(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the)\b)(?:[\w'-]+\s+){0,5}[\w'-]+\s+(?:is|was|has been|'s)(?:\s+now)?\s+roadworthy|pass(?:es|ed)\s+(?:the\s+)?(?:safety\s+inspection|safety|inspection)|cleared\s+for\s+release|ready\s+for\s+pickup)\b/i,
     "ROADWORTHINESS_CLAIM",
     "The draft makes an unsupported inspection or roadworthiness claim."
   );
@@ -429,19 +492,17 @@ export function inspectDiagnosticsOutput(
     "AUTHORIZATION_CLAIM",
     "The draft claims customer authorization without a supplied record."
   );
-  addPositiveViolation(
-    violations,
-    fields,
-    claims.hasRecordedCompletedWork,
-    /\b(?:(?:we|the\s+(?:technician|shop))\s+(?:have\s+|has\s+)?(?:repaired|replaced|installed|completed|fixed)|(?:repair|work)\s+(?:is|was|has been)?\s*complete(?:d)?|(?:[\w-]+\s+){0,3}[\w-]+\s+(?:was\s+|has been\s+)?(?:repaired|replaced|installed|fixed)|(?:repaired|replaced|installed|fixed)\s+(?:the\s+)?(?:[\w-]+\s+){0,3}[\w-]+)\b/i,
-    "COMPLETED_WORK_CLAIM",
-    "The draft claims completed work without a supplied record."
-  );
+  if (!claims.hasRecordedCompletedWork && hasCompletedWorkClaim(fields)) {
+    violations.push({
+      code: "COMPLETED_WORK_CLAIM",
+      message: "The draft claims completed work without a supplied record.",
+    });
+  }
   addPositiveViolation(
     violations,
     fields,
     claims.hasVerificationEvidence,
-    /\b(?:(?:[\w-]+\s+){0,3}(?:system|component|repair|work|operation|bike|motorcycle|it)\s+(?:is|was|has been)\s+verified|verification\s+(?:passed|is complete|was completed)|(?:(?:original\s+)?(?:complaint|symptom))\s+(?:is|was|has been)?\s*(?:resolved|fixed)|complaint\s+resolved)\b/i,
+    /\b(?:(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the)\b)(?:[\w-]+\s+){0,3}(?:system|component|repair|work|operation|bike|motorcycle|it)\s+(?:is|was|has been)\s+verified|(?:(?!(?:once|after|before|if|whether|until|when|retest|test|check|inspect|measure|confirm|determine|to|the|may|might|could|should|would|will|be)\b)[\w-]+\s+){1,4}verified\s+after\s+(?:the\s+)?repair|verification\s+(?:passed|is complete|was completed)|(?:(?:original\s+)?(?:complaint|symptom))\s+(?:is|was|has been)?\s*(?:resolved|fixed)|complaint\s+resolved)\b/i,
     "VERIFICATION_CLAIM",
     "The draft claims successful verification without a supplied retest result."
   );
@@ -478,6 +539,11 @@ export function inspectDiagnosticsOutput(
   );
   const unsupportedTechnical = fields.flatMap((field) =>
     extractDiagnosticsTechnicalValueMatches(field)
+      .filter(
+        (match) =>
+          !match.normalized.endsWith(":percent") ||
+          percentageHasTechnicalContext(field, match.index, match.end)
+      )
       .filter((match) =>
         isMeasuredTechnicalUse(field, match.index, match.end)
           ? !measuredTechnicalValues.has(match.normalized)

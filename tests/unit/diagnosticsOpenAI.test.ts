@@ -372,6 +372,20 @@ describe("OpenAI diagnostics provider", () => {
     expect(parse).not.toHaveBeenCalled();
   });
 
+  it("allows harmless photo, image, and token string values in shaped context", async () => {
+    const parse = vi.fn().mockResolvedValue(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+    const harmless = request();
+    harmless.workOrderContext.workOrder.complaint = "photo";
+    harmless.workOrderContext.workOrder.internalNotes = "image";
+    harmless.workOrderContext.motorcycle.notes = "token";
+
+    await expect(
+      generateDiagnosticsDraft(harmless, { client, config })
+    ).resolves.toMatchObject({ responseId: "resp_test" });
+    expect(parse).toHaveBeenCalledOnce();
+  });
+
   it("lists only references actually missing from the bounded context", async () => {
     const parse = vi.fn().mockResolvedValue(providerResult());
     const client = { responses: { parse } } as unknown as OpenAI;

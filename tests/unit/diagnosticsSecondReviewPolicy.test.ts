@@ -48,7 +48,7 @@ describe("second review output-policy regressions", () => {
     ["The customer authorized the repair.", "AUTHORIZATION_CLAIM"],
     ["The customer gave approval.", "AUTHORIZATION_CLAIM"],
     ["Approval was received.", "AUTHORIZATION_CLAIM"],
-    ["Fuel pump installed.", "COMPLETED_WORK_CLAIM"],
+    ["Installed fuel pump.", "COMPLETED_WORK_CLAIM"],
     ["Repaired the charging circuit.", "COMPLETED_WORK_CLAIM"],
     ["Fixed the loose connector.", "COMPLETED_WORK_CLAIM"],
     ["The charging system was verified.", "VERIFICATION_CLAIM"],

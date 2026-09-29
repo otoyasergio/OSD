@@ -25,6 +25,7 @@ import {
   diagnosticsAudienceForMode,
   DIAGNOSTICS_PROMPT_VERSION,
 } from "@/lib/diagnostics/prompts";
+import { redactDiagnosticsText } from "@/lib/diagnostics/redaction";
 import {
   diagnosticsResponseSchema,
   type DiagnosticsMode,
@@ -148,12 +149,7 @@ function assertSafeContextShape(
     remainingNodes -= 1;
     if (remainingNodes < 0 || depth > 8) throwInputError("DIAGNOSTICS_AI_CONTEXT_UNSAFE");
     if (typeof value === "string") {
-      if (
-        value.length > 500 ||
-        /(?:https?:\/\/|data:image\/|(?:^|\/)(?:storage|photos?|images?|signatures?|documents?|tokens?)(?:\/|$)|\b[A-HJ-NPR-Z0-9]{17}\b|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b|(?:\+?1[\s.()-]*)?[2-9]\d{2}[\s.()-]*[2-9]\d{2}[\s.()-]*\d{4}\b)/i.test(
-          value
-        )
-      ) {
+      if (value.length > 500 || redactDiagnosticsText(value) !== value) {
         throwInputError("DIAGNOSTICS_AI_CONTEXT_UNSAFE");
       }
       return;

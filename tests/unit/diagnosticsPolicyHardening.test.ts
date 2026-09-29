@@ -114,14 +114,14 @@ describe("diagnostics output hardening", () => {
   });
 
   it.each([
-    ["The bike is now safe.", "ROADWORTHINESS_CLAIM"],
+    ["The bike is now safe to ride.", "ROADWORTHINESS_CLAIM"],
     ["It's safe to ride.", "ROADWORTHINESS_CLAIM"],
     ["The motorcycle is OK to ride.", "ROADWORTHINESS_CLAIM"],
     ["The repair was approved by the customer.", "AUTHORIZATION_CLAIM"],
     ["Authorization has been confirmed.", "AUTHORIZATION_CLAIM"],
-    ["Starter replaced and wiring repaired.", "COMPLETED_WORK_CLAIM"],
+    ["Starter was replaced and wiring repaired.", "COMPLETED_WORK_CLAIM"],
     ["Replaced the starter.", "COMPLETED_WORK_CLAIM"],
-    ["Repair completed.", "COMPLETED_WORK_CLAIM"],
+    ["The wiring was repaired.", "COMPLETED_WORK_CLAIM"],
     ["Verification passed; complaint resolved.", "VERIFICATION_CLAIM"],
   ])("catches broader unsupported positive claim: %s", (answer, code) => {
     expect(inspectDiagnosticsOutput(response({ answer }), { mode: "shop" })).toEqual(
@@ -138,7 +138,7 @@ describe("diagnostics output hardening", () => {
         tests_and_conditions: "None",
         results_and_units: "None",
         conclusions_and_confidence: "Possible",
-        repairs_performed: "Starter replaced.",
+        repairs_performed: "Starter was replaced.",
         verification: "Complaint resolved.",
         authorization: "Repair was approved.",
         open_items: "None",
