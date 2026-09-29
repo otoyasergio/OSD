@@ -1559,7 +1559,7 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
   }): Promise<void> {
     const { data: existing, error } = await this.admin
       .from("audit_log")
-      .select("audit_id")
+      .select("audit_log_id")
       .eq("location_id", input.locationId)
       .eq("action", "ask_otomoto_model_alias_changed")
       .contains("new_value", { resolved_model: input.resolvedModel })

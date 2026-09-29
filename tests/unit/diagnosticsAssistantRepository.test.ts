@@ -796,9 +796,10 @@ describe("Supabase diagnostics repository boundaries", () => {
 
   it("records acceptance metadata once per location and resolved model", async () => {
     const insert = vi.fn().mockResolvedValue({ error: null });
+    const select = vi.fn().mockReturnThis();
     const admin = {
       from: vi.fn(() => ({
-        select: vi.fn().mockReturnThis(),
+        select,
         eq: vi.fn().mockReturnThis(),
         contains: vi.fn().mockReturnThis(),
         limit: vi.fn().mockReturnThis(),
@@ -820,6 +821,7 @@ describe("Supabase diagnostics repository boundaries", () => {
       scenarioCount: 18,
     });
 
+    expect(select).toHaveBeenCalledWith("audit_log_id");
     expect(insert).toHaveBeenCalledWith(
       expect.objectContaining({
         new_value: {
@@ -835,14 +837,15 @@ describe("Supabase diagnostics repository boundaries", () => {
 
   it("does not duplicate a model acceptance audit for the same location and resolved model", async () => {
     const insert = vi.fn().mockResolvedValue({ error: null });
+    const select = vi.fn().mockReturnThis();
     const admin = {
       from: vi.fn(() => ({
-        select: vi.fn().mockReturnThis(),
+        select,
         eq: vi.fn().mockReturnThis(),
         contains: vi.fn().mockReturnThis(),
         limit: vi.fn().mockReturnThis(),
         maybeSingle: vi.fn().mockResolvedValue({
-          data: { audit_id: "audit-1" },
+          data: { audit_log_id: "audit-1" },
           error: null,
         }),
         insert,
@@ -862,6 +865,7 @@ describe("Supabase diagnostics repository boundaries", () => {
       scenarioCount: 18,
     });
 
+    expect(select).toHaveBeenCalledWith("audit_log_id");
     expect(insert).not.toHaveBeenCalled();
   });
 

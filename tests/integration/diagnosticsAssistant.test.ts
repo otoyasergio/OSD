@@ -23,6 +23,8 @@ const IDS = {
   workOrder: "d7000000-0000-4000-8000-000000000001",
   job: "d8000000-0000-4000-8000-000000000001",
   thread: "d9000000-0000-4000-8000-000000000001",
+  priorThread: "d9000000-0000-4000-8000-000000000002",
+  priorMessage: "dd000000-0000-4000-8000-000000000001",
   photo: "dc000000-0000-4000-8000-000000000001",
 } as const;
 
@@ -93,8 +95,17 @@ const LIFECYCLE_RPCS = [
 
 async function cleanupLifecycleFixture(): Promise<void> {
   const client = createServiceClient();
+  const auditCleanup = await client
+    .from("audit_log")
+    .delete()
+    .eq("location_id", IDS.location)
+    .eq("action", "ask_otomoto_model_alias_changed");
+  if (auditCleanup.error) {
+    throw new Error(`[integration cleanup] audit_log: ${auditCleanup.error.message}`);
+  }
   const deletes: Array<[string, string, string]> = [
     ["ai_assistant_thread", "ai_assistant_thread_id", IDS.thread],
+    ["ai_assistant_thread", "ai_assistant_thread_id", IDS.priorThread],
     ["intake_photo", "photo_id", IDS.photo],
     ["job", "job_id", IDS.job],
     ["work_order", "work_order_id", IDS.workOrder],
@@ -203,11 +214,90 @@ async function seedLifecycleFixture(): Promise<void> {
         created_by_user_id: IDS.user,
       },
     ],
+    [
+      "ai_assistant_thread",
+      {
+        ai_assistant_thread_id: IDS.priorThread,
+        work_order_id: IDS.workOrder,
+        job_id: IDS.job,
+        location_id: IDS.location,
+        mode: "shop",
+        audience: "technical",
+        status: "ready",
+        diagnostic_phase: "diagnosis",
+        created_by_user_id: IDS.user,
+        created_at: "2026-09-29T07:00:00.000Z",
+        updated_at: "2026-09-29T07:00:00.000Z",
+      },
+    ],
+    [
+      "ai_assistant_message",
+      {
+        ai_assistant_message_id: IDS.priorMessage,
+        thread_id: IDS.priorThread,
+        role: "assistant",
+        body: "Synthetic prior model output",
+        generation_status: "ready",
+        phase: "diagnosis",
+        requested_provider_model: "integration-old-alias",
+        provider_model: "integration-old-resolved",
+        provider_response_id: "integration-old-response",
+        prompt_version: "integration-old-prompt",
+        created_at: "2026-09-29T07:00:01.000Z",
+        updated_at: "2026-09-29T07:00:01.000Z",
+      },
+    ],
   ];
   for (const [table, row] of inserts) {
     const { error } = await client.from(table).insert(row);
     if (error) throw new Error(`[integration seed] ${table}: ${error.message}`);
   }
+}
+
+function integrationActor(): AppUser {
+  return {
+    user_id: IDS.user,
+    auth_user_id: IDS.authUser,
+    first_name: "Integration",
+    last_name: "Technician",
+    email: "integration-technician@otomoto.invalid",
+    profile_photo_path: null,
+    role: "technician",
+    status: "active",
+    location_ids: [IDS.location],
+    active_location_id: IDS.location,
+  };
+}
+
+function fakeGenerationResult(responseId: string): DiagnosticsGenerationResult {
+  return {
+    response: {
+      phase: "information_needed",
+      review_status: "staff_review_required",
+      answer: "A recorded measurement is still needed.",
+      assessments: [],
+      requested_input: {
+        type: "measurement",
+        prompt: "Record battery voltage during the starter request.",
+        purpose: "Compare supply behavior under demand.",
+        tool_placement: "Across the battery posts.",
+        conditions: "Motorcycle secured in neutral.",
+        units: "V DC",
+      },
+      next_step: "Record battery voltage during the starter request.",
+      safety: { stop_work: false, do_not_ride: false, boundary: null },
+      sources: [],
+      source_summary: "No exact-model source supplied.",
+      limitations: ["The selected photo does not prove electrical operation."],
+      shop_log_entry: null,
+    },
+    responseId,
+    requestedModel: "integration-fake-model",
+    resolvedModel: "integration-fake-model-resolved",
+    promptVersion: "integration-fake-prompt",
+    contextHash: "b".repeat(64),
+    usage: { inputTokens: 12, outputTokens: 24, totalTokens: 36 },
+  };
 }
 
 describeIntegration("Ask OTOMOTO persistence integration", () => {
@@ -442,47 +532,10 @@ describeIntegration("Ask OTOMOTO persistence integration", () => {
     const client = createServiceClient();
     const db = client as unknown as DbClient;
     const repository = new SupabaseDiagnosticsRepository(db, () => db);
-    const actor: AppUser = {
-      user_id: IDS.user,
-      auth_user_id: IDS.authUser,
-      first_name: "Integration",
-      last_name: "Technician",
-      email: "integration-technician@otomoto.invalid",
-      profile_photo_path: null,
-      role: "technician",
-      status: "active",
-      location_ids: [IDS.location],
-      active_location_id: IDS.location,
-    };
-    const fakeProviderResult: DiagnosticsGenerationResult = {
-      response: {
-        phase: "information_needed",
-        review_status: "staff_review_required",
-        answer: "A recorded measurement is still needed.",
-        assessments: [],
-        requested_input: {
-          type: "measurement",
-          prompt: "Record battery voltage during the starter request.",
-          purpose: "Compare supply behavior under demand.",
-          tool_placement: "Across the battery posts.",
-          conditions: "Motorcycle secured in neutral.",
-          units: "V DC",
-        },
-        next_step: "Record battery voltage during the starter request.",
-        safety: { stop_work: false, do_not_ride: false, boundary: null },
-        sources: [],
-        source_summary: "No exact-model source supplied.",
-        limitations: ["The selected photo does not prove electrical operation."],
-        shop_log_entry: null,
-      },
-      responseId: "integration-fake-response",
-      requestedModel: "integration-fake-model",
-      resolvedModel: "integration-fake-model-resolved",
-      promptVersion: "integration-fake-prompt",
-      contextHash: "b".repeat(64),
-      usage: { inputTokens: 12, outputTokens: 24, totalTokens: 36 },
-    };
-    const fakeProvider = vi.fn().mockResolvedValue(fakeProviderResult);
+    const actor = integrationActor();
+    const fakeProvider = vi
+      .fn()
+      .mockResolvedValue(fakeGenerationResult("integration-fake-response"));
     const prepareImages = vi.fn(
       async ({ selections }: { selections: DiagnosticsImageSelection[] }) => ({
         images: selections.map((selection) => ({
@@ -565,6 +618,82 @@ describeIntegration("Ask OTOMOTO persistence integration", () => {
           sortOrder: 0,
         }),
       ]);
+    } finally {
+      await cleanupLifecycleFixture();
+    }
+  });
+
+  it("records one model-change acceptance audit and dedupes a repeat generation", async () => {
+    await seedLifecycleFixture();
+    const client = createServiceClient();
+    const db = client as unknown as DbClient;
+    const repository = new SupabaseDiagnosticsRepository(db, () => db);
+    let generation = 0;
+    const fakeProvider = vi.fn(async () =>
+      fakeGenerationResult(`integration-audit-response-${(generation += 1)}`)
+    );
+    const service = createDiagnosticsAssistantService({
+      repository,
+      requireUser: async () => integrationActor(),
+      generateDraft: fakeProvider,
+      prepareImages: async () => ({ images: [], photoMetadata: [] }),
+      consumeRateLimit: () => ({ success: true, remaining: 11, resetAt: 1 }),
+      assertConfigured: () => undefined,
+      now: () => new Date("2026-09-29T09:00:00.000Z"),
+    });
+
+    try {
+      await service.submitTurn({
+        workOrderId: IDS.workOrder,
+        threadId: IDS.thread,
+        jobId: IDS.job,
+        mode: "shop",
+        text: "Generate the first synthetic model-change response.",
+        photos: [],
+      });
+
+      const makeOldModelLatest = await client
+        .from("ai_assistant_message")
+        .update({
+          created_at: "2026-09-30T00:00:00.000Z",
+          updated_at: "2026-09-30T00:00:00.000Z",
+        })
+        .eq("ai_assistant_message_id", IDS.priorMessage);
+      expect(makeOldModelLatest.error).toBeNull();
+
+      await service.submitTurn({
+        workOrderId: IDS.workOrder,
+        threadId: IDS.thread,
+        jobId: IDS.job,
+        mode: "shop",
+        text: "Generate the repeated synthetic model-change response.",
+        photos: [],
+      });
+
+      const audits = await client
+        .from("audit_log")
+        .select("audit_log_id, actor_user_id, action, entity_type, new_value", {
+          count: "exact",
+        })
+        .eq("location_id", IDS.location)
+        .eq("action", "ask_otomoto_model_alias_changed");
+      expect(audits.error).toBeNull();
+      expect(audits.count).toBe(1);
+      expect(audits.data).toHaveLength(1);
+      expect(audits.data?.[0]).toMatchObject({
+        audit_log_id: expect.any(String),
+        actor_user_id: IDS.user,
+        action: "ask_otomoto_model_alias_changed",
+        entity_type: "ai_assistant_message",
+        new_value: {
+          requested_model: "integration-fake-model",
+          resolved_model: "integration-fake-model-resolved",
+          prompt_version: "integration-fake-prompt",
+          acceptance_rerun_required: true,
+          scenario_count: 18,
+        },
+      });
+      expect(fakeProvider).toHaveBeenCalledTimes(2);
     } finally {
       await cleanupLifecycleFixture();
     }
