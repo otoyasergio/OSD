@@ -107,7 +107,7 @@ function actionIsNegated(sentence: string, index: number): boolean {
       prefix.lastIndexOf("—")
     ) + 1;
   const before = prefix.slice(Math.max(start, prefix.length - 120));
-  return /\b(?:do not|don't|not|no|never|must not|cannot|can't|will not|won't|avoid|refus(?:e|es|ed|ing)|declin(?:e|es|ed|ing)(?:\s+to)?)\b(?:\W+\w+){0,8}\W*$/i.test(
+  return /\b(?:do not|don't|not|no|never|must not|cannot|can't|will not|won't|without|avoid|refus(?:e|es|ed|ing)|declin(?:e|es|ed|ing)(?:\s+to)?)\b(?:\W+\w+){0,8}\W*$/i.test(
     before
   );
 }
