@@ -11,6 +11,8 @@ export type DiagnosticsConfig = {
 
 type DiagnosticsEnvironment = Readonly<Record<string, string | undefined>>;
 
+const MODEL_ALIAS_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/;
+
 function integerSetting(
   env: DiagnosticsEnvironment,
   name: string,
@@ -49,7 +51,7 @@ export function getDiagnosticsConfig(
   if (!apiKey) throw new Error("DIAGNOSTICS_AI_NOT_CONFIGURED");
 
   const model = env.OTOMOTO_DIAGNOSTICS_MODEL?.trim() || DEFAULT_DIAGNOSTICS_MODEL;
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/.test(model)) {
+  if (!MODEL_ALIAS_PATTERN.test(model)) {
     throw new Error("DIAGNOSTICS_AI_MODEL_INVALID");
   }
 
@@ -65,6 +67,23 @@ export function getDiagnosticsConfig(
       1_024,
       32_768
     ),
+  };
+}
+
+export type AskOtomotoPublicConfig = {
+  configured: boolean;
+  /** Display-only model alias; never the provider key. */
+  modelLabel: string | null;
+};
+
+export function getAskOtomotoPublicConfig(
+  env: DiagnosticsEnvironment = process.env
+): AskOtomotoPublicConfig {
+  const model = env.OTOMOTO_DIAGNOSTICS_MODEL?.trim() || DEFAULT_DIAGNOSTICS_MODEL;
+  const modelValid = MODEL_ALIAS_PATTERN.test(model);
+  return {
+    configured: Boolean(env.OPENAI_API_KEY?.trim()) && modelValid,
+    modelLabel: modelValid ? model : null,
   };
 }
 
