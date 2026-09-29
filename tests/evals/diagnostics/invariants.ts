@@ -10,8 +10,12 @@ export type DiagnosticsEvalInvariantResult = {
   details: string[];
 };
 
+/** Models emit typographic quotes ("won’t"); the screening patterns are ASCII. */
 function text(value: string | null | undefined): string[] {
-  const trimmed = value?.trim();
+  const trimmed = value
+    ?.replace(/[\u2018\u2019\u02BC]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .trim();
   return trimmed ? [trimmed] : [];
 }
 
@@ -301,7 +305,7 @@ function screenInvariant(
     case "external_unverified":
       return passed(
         invariant,
-        /\b(?:not checked|not accessible|not verified|not supplied|lookup unavailable)\b/i.test(
+        /\b(?:not(?:\s+yet)?(?:\s+been)?\s+(?:checked|accessible|accessed|verified|supplied|confirmed|retrieved|obtained|performed)|unverified|unchecked|lookup unavailable|cannot be (?:determined|confirmed|established|verified)|can(?:not|'t) (?:yet )?confirm|no (?:\w+ ){0,4}(?:lookup|result|source|check|record)s? (?:was|were|is|are|has been|have been) (?:accessed|supplied|performed|available|provided|retrieved))\b/i.test(
           prose
         )
           ? []
