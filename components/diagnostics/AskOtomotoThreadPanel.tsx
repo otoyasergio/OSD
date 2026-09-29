@@ -55,23 +55,23 @@ export function assistantUnavailableCopy(reason: AskOtomotoConfigReason | null):
     : ASSISTANT_SETTINGS_INVALID_COPY;
 }
 
-function useDeadlineReached(
+export function useDeadlineReached(
   deadline: string | null | undefined,
   enabled: boolean
 ): boolean {
-  const [reachedDeadline, setReachedDeadline] = useState<string | null>(() => {
-    if (!enabled || !deadline) return null;
-    const timestamp = Date.parse(deadline);
-    return Number.isFinite(timestamp) && timestamp <= Date.now() ? deadline : null;
-  });
+  const [reachedDeadline, setReachedDeadline] = useState<string | null>(null);
   useEffect(() => {
     if (!enabled || !deadline) return;
     const deadlineTimestamp = Date.parse(deadline);
     if (!Number.isFinite(deadlineTimestamp)) return;
     const remaining = deadlineTimestamp - Date.now();
+    if (remaining <= 0) {
+      setReachedDeadline(deadline);
+      return;
+    }
     const timer = setTimeout(
       () => setReachedDeadline(deadline),
-      Math.max(0, Math.min(remaining, 2_147_483_647))
+      Math.min(remaining, 2_147_483_647)
     );
     return () => clearTimeout(timer);
   }, [deadline, enabled]);

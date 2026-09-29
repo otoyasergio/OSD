@@ -73,4 +73,21 @@ describe("toFormErrorMessage", () => {
     expect(message).not.toBe(code);
     expect(message).toMatch(/Ask OTOMOTO|assistant|note|conversation|request/i);
   });
+
+  it.each([
+    [
+      "ASK_OTOMOTO_RECOVERY_NOT_FOUND",
+      "That automatic Ask OTOMOTO review is no longer available. Refresh and try again.",
+    ],
+    [
+      "ASK_OTOMOTO_RECOVERY_NOT_READY",
+      "That automatic Ask OTOMOTO review is not ready yet. Refresh and try again.",
+    ],
+    [
+      "ASK_OTOMOTO_TRIGGER_CREATOR_INACTIVE",
+      "The staff member who triggered this Ask OTOMOTO review is no longer active at this location.",
+    ],
+  ])("maps automatic recovery code %s to friendly text", (code, expected) => {
+    expect(toFormErrorMessage(new Error(code))).toBe(expected);
+  });
 });

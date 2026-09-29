@@ -239,6 +239,12 @@ const MESSAGES: Record<string, string> = {
     "That completed inspection or job does not belong to this work order.",
   ASK_OTOMOTO_TURN_NOT_FOUND: "That Ask OTOMOTO turn is no longer available.",
   ASK_OTOMOTO_RETRY_NOT_FOUND: "There is no failed Ask OTOMOTO response to retry.",
+  ASK_OTOMOTO_RECOVERY_NOT_FOUND:
+    "That automatic Ask OTOMOTO review is no longer available. Refresh and try again.",
+  ASK_OTOMOTO_RECOVERY_NOT_READY:
+    "That automatic Ask OTOMOTO review is not ready yet. Refresh and try again.",
+  ASK_OTOMOTO_TRIGGER_CREATOR_INACTIVE:
+    "The staff member who triggered this Ask OTOMOTO review is no longer active at this location.",
   ASK_OTOMOTO_NOTE_SOURCE_NOT_FOUND: "That Ask OTOMOTO response is no longer available.",
   ASK_OTOMOTO_NOTE_SOURCE_NOT_ASSISTANT:
     "Only an assistant response can be promoted to a technician note.",

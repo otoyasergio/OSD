@@ -2,6 +2,7 @@
 
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -31,7 +32,10 @@ vi.mock("@/app/(app)/work_orders/note-actions", () => ({
   addTechnicianNoteAction: vi.fn(),
 }));
 
-import { AskOtomotoThreadPanel } from "@/components/diagnostics/AskOtomotoThreadPanel";
+import {
+  AskOtomotoThreadPanel,
+  useDeadlineReached,
+} from "@/components/diagnostics/AskOtomotoThreadPanel";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
 import type { AssistantComposerFlags } from "@/lib/diagnostics/assistantPageState";
 import type {
@@ -125,6 +129,20 @@ describe("AskOtomotoThreadPanel", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+  });
+
+  it("keeps deadline state neutral during server rendering", () => {
+    const now = vi.spyOn(Date, "now");
+    function DeadlineProbe() {
+      return React.createElement(
+        "span",
+        null,
+        useDeadlineReached("2000-01-01T00:00:00.000Z", true) ? "due" : "neutral"
+      );
+    }
+
+    expect(renderToString(React.createElement(DeadlineProbe))).toContain("neutral");
+    expect(now).not.toHaveBeenCalled();
   });
 
   it("shows the selected automatic thread, status, messages, and review label", async () => {
