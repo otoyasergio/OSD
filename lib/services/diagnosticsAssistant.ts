@@ -71,108 +71,180 @@ const ALLOWED_DIAGNOSTICS_PHOTO_CATEGORIES = new Set([
 
 const VERIFICATION_NOTE_TYPES = new Set(["road_test", "quality_check"]);
 
-export function classifyVerificationNote(
-  note: string
-): "failed" | "pending" | "passed" | "recorded" {
-  const normalized = note.replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim().toLowerCase();
-  const noRecurrencePattern =
-    /\b(?:the\s+)?(?:original\s+)?symptom\s+has not recurred\s+after\s+(?:a\s+)?(?:\d+(?:\.\d+)?\s*(?:km|kilomet(?:er|re)s?|mi|miles?)\s+)?(?:road[- ]test|test ride|retest)\b/;
-  const explicitNoRecurrence = noRecurrencePattern.test(normalized);
-  const failureText = normalized
-    .replace(/\bno failure codes?\b/g, "")
-    .replace(explicitNoRecurrence ? noRecurrencePattern : /$^/, "");
+type VerificationClauseResult =
+  "failed" | "pending" | "passed" | "restrictive_recorded" | "neutral";
 
+const VERIFICATION_TEST_CONTEXT = String.raw`(?:road[- ]test|retest|test ride)`;
+const BROAD_VERIFICATION_TEST_CONTEXT = String.raw`(?:road[- ]test|retest|test ride|quality check|qc)`;
+
+function hasConditionedNoRecurrence(clause: string): boolean {
+  const match = clause.match(
+    new RegExp(
+      String.raw`\b(?:the\s+)?(?:original\s+)?symptom\s+has not recurred\s+after\s+(.+?)\s+${VERIFICATION_TEST_CONTEXT}\b`
+    )
+  );
+  if (!match) return false;
+
+  return !/^(?:a|an|the)$/.test(match[1]!.trim());
+}
+
+function hasVerificationCandidate(clause: string): boolean {
+  return (
+    new RegExp(
+      String.raw`\b${BROAD_VERIFICATION_TEST_CONTEXT}\b.{0,80}\b(?:pass(?:ed)?|successful)\b`
+    ).test(clause) ||
+    /\b(?:repair|fix)\b.{0,80}\bverif(?:y|ied)\b/.test(clause) ||
+    /\bverif(?:y|ied)\b.{0,40}\b(?:repair|fix)\b/.test(clause) ||
+    /\b(?:concern|complaint|symptom)\b.{0,60}\b(?:resolv(?:e|ed)|no longer present)\b/.test(
+      clause
+    )
+  );
+}
+
+function hasVerificationNegator(clause: string): boolean {
+  const tokens = clause.match(/[a-z0-9]+(?:'[a-z]+)?/g) ?? [];
+  const negators = new Set([
+    "not",
+    "no",
+    "never",
+    "without",
+    "unable",
+    "cannot",
+    "can't",
+  ]);
+
+  return tokens.some((token) => token.endsWith("n't") || negators.has(token));
+}
+
+function classifyVerificationClause(
+  clause: string,
+  previousClause: string | undefined
+): VerificationClauseResult {
+  const failureText = clause
+    .replace(/\bno failure codes?\b/g, "")
+    .replace(
+      /\b(?:(?:has|have|had|did)\s+(?:not|never)|(?:hasn't|haven't|hadn't|didn't))\s+recurred?\b/g,
+      ""
+    );
   if (
     /\b(?:failed|failure|unsuccessful|recurred)\b/.test(failureText) ||
-    /\b(?:still\s+present|persists?|remains?|partially|partly|mostly|not completely)\b/.test(
-      normalized
+    /\b(?:still\s+present|persists?|remains?)\b/.test(failureText) ||
+    /\b(?:partially|partly|mostly)\s+(?:successful|resolved|verified|complete|completed|fixed|repaired|pass(?:ed)?)\b/.test(
+      failureText
+    ) ||
+    /\bnot\s+completely\s+(?:successful|resolved|verified|complete|completed|fixed|repaired|pass(?:ed)?)\b/.test(
+      failureText
     )
   ) {
     return "failed";
   }
 
-  const negationText = explicitNoRecurrence
-    ? normalized.replace(noRecurrencePattern, "")
-    : normalized;
-  const tokens = negationText.match(/[a-z0-9]+(?:'[a-z]+)?/g) ?? [];
-  const negators = new Set([
-    "not",
-    "never",
-    "cannot",
-    "can't",
-    "couldn't",
-    "wasn't",
-    "hasn't",
-    "haven't",
-    "didn't",
-    "unable",
-  ]);
-  const negatedOutcomes = new Set([
-    "pass",
-    "passed",
-    "successful",
-    "successfully",
-    "verified",
-    "resolved",
-    "complete",
-    "completed",
-    "recurred",
-    "present",
-  ]);
-  for (let index = 0; index < tokens.length; index += 1) {
-    if (!negators.has(tokens[index]!)) continue;
-    const outcome = tokens
-      .slice(index + 1, index + 9)
-      .find((token) => negatedOutcomes.has(token));
-    if (outcome) {
-      return outcome === "pass" || outcome === "passed" ? "failed" : "pending";
-    }
+  if (
+    /\bverified\b.{0,60}\b(?:concern|complaint|noise|leak|fault|code|symptom|issue|problem)\b.{0,40}\b(?:present|active|reproduced|confirmed)\b/.test(
+      clause
+    ) ||
+    /\b(?:concern|complaint|noise|leak|fault|code|symptom|issue|problem)\b.{0,40}\b(?:present|active|reproduced|confirmed)\b.{0,60}\bverified\b/.test(
+      clause
+    ) ||
+    /\breproduced\b/.test(clause)
+  ) {
+    return "restrictive_recorded";
   }
 
   if (
-    /\b(?:pending|incomplete|retest required|requires? (?:a )?retest)\b/.test(
-      normalized
-    ) ||
-    /\bverification\s+(?:is\s+)?(?:not|still)\b/.test(normalized)
+    /\b(?:pending|incomplete|retest required|requires? (?:a )?retest)\b/.test(clause) ||
+    /\bverification\s+(?:is\s+)?(?:not|still)\b/.test(clause) ||
+    /\bneeded\b/.test(clause) ||
+    /\bmust\b/.test(clause) ||
+    /\bto\s+be\b/.test(clause)
   ) {
     return "pending";
   }
+
+  const conditionedNoRecurrence = hasConditionedNoRecurrence(clause);
+  const resolvedNoLongerPresent =
+    /\b(?:concern|complaint|symptom)\s+(?:(?:is|was|has been)\s+)?no longer present\b/.test(
+      clause
+    );
+  const candidate = hasVerificationCandidate(clause) || /\bverif(?:y|ied)\b/.test(clause);
   if (
-    /\bverified\b[^.!?]{0,60}\b(?:concern|complaint|noise|leak|fault|code|symptom|issue|problem)\b[^.!?]{0,40}\b(?:present|active|reproduced|confirmed)\b/.test(
-      normalized
-    )
+    candidate &&
+    !conditionedNoRecurrence &&
+    !resolvedNoLongerPresent &&
+    hasVerificationNegator(clause)
   ) {
-    return "recorded";
+    if (
+      new RegExp(
+        String.raw`\b${BROAD_VERIFICATION_TEST_CONTEXT}\b.{0,50}\b(?:never|did not|didn't|hasn't|haven't)\s+pass(?:ed)?\b`
+      ).test(clause)
+    ) {
+      return "failed";
+    }
+    return "pending";
   }
+
   if (
+    /\b(?:recommend(?:ed|s|ing)?|should|will|once|until)\b/.test(clause) ||
+    /\bbefore\s+repair\b/.test(clause) ||
+    /\bto\s+follow\b/.test(clause) ||
     /\b(?:may|might|could|possibly|perhaps|appears?|seems?|reportedly|likely|probably|potentially)\b/.test(
-      normalized
+      clause
     )
   ) {
-    return "recorded";
+    return "restrictive_recorded";
   }
-  const explicitTestOutcome =
-    /\b(?:road[- ]test|retest|test ride|quality check|qc)\b(?=[^.!?]{0,80}\b(?:passed|successful|successfully)\b)/.test(
-      normalized
-    ) ||
-    /\b(?:passed|successful)\s+(?:road[- ]test|retest|test ride|quality check|qc)\b/.test(
-      normalized
-    );
+
+  const explicitTestOutcome = new RegExp(
+    String.raw`\b${VERIFICATION_TEST_CONTEXT}\s+(?:passed|was successful)\b`
+  ).test(clause);
+  const explicitQcOutcome =
+    /\bqc\s+(?:passed|was successful)\b/.test(clause) ||
+    /\bpassed\s+(?:the\s+)?qc\b/.test(clause);
   const explicitRepairVerification =
-    /\b(?:repair|fix)\b(?=[^.!?]{0,60}\bverified\b)/.test(normalized) ||
-    /\bverified\b[^.!?]{0,40}\b(?:repair|fix)\b/.test(normalized);
+    /\b(?:repair|fix)\s+(?:(?:was|is|has been)\s+)?verified\b/.test(clause) ||
+    /\bverified\s+(?:the\s+)?(?:repair|fix)\b/.test(clause);
   const explicitResolvedConcern =
-    /\b(?:concern|complaint|symptom)\b(?=[^.!?]{0,60}\b(?:resolved|no longer present)\b)/.test(
-      normalized
+    /\b(?:concern|complaint|symptom)\s+(?:(?:is|was|has been)\s+)?resolved\b/.test(
+      clause
+    ) || resolvedNoLongerPresent;
+  const inheritedTestOutcome =
+    /^(?:passed|was successful)$/.test(clause) &&
+    Boolean(
+      previousClause &&
+      new RegExp(String.raw`\b(?:${VERIFICATION_TEST_CONTEXT}|qc)\b`).test(previousClause)
     );
+
   if (
-    explicitNoRecurrence ||
+    conditionedNoRecurrence ||
     explicitTestOutcome ||
+    explicitQcOutcome ||
     explicitRepairVerification ||
-    explicitResolvedConcern
+    explicitResolvedConcern ||
+    inheritedTestOutcome
   ) {
     return "passed";
   }
+
+  return "neutral";
+}
+
+export function classifyVerificationNote(
+  note: string
+): "failed" | "pending" | "passed" | "recorded" {
+  const clauses = note
+    .replace(/[’‘]/g, "'")
+    .toLowerCase()
+    .split(/[.;:!?\n]+/)
+    .map((clause) => clause.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const results = clauses.map((clause, index) =>
+    classifyVerificationClause(clause, clauses[index - 1])
+  );
+
+  if (results.includes("failed")) return "failed";
+  if (results.includes("pending")) return "pending";
+  if (results.includes("restrictive_recorded")) return "recorded";
+  if (results.includes("passed")) return "passed";
   return "recorded";
 }
 
