@@ -7,11 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const {
   refresh,
   retryAssistantTurnAction,
+  runAutomaticAssistantReviewAction,
   submitAssistantTurnAction,
   uploadAssistantPhotoAction,
 } = vi.hoisted(() => ({
   refresh: vi.fn(),
   retryAssistantTurnAction: vi.fn(),
+  runAutomaticAssistantReviewAction: vi.fn(),
   submitAssistantTurnAction: vi.fn(),
   uploadAssistantPhotoAction: vi.fn(),
 }));
@@ -21,6 +23,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("@/app/(app)/work_orders/assistant-actions", () => ({
   retryAssistantTurnAction,
+  runAutomaticAssistantReviewAction,
   submitAssistantTurnAction,
   uploadAssistantPhotoAction,
 }));
@@ -167,6 +170,25 @@ describe("AskOtomotoThreadPanel", () => {
     });
     expect(container.textContent).toContain("Failed");
     expect(submitButtons().some((b) => /retry/i.test(b.textContent ?? ""))).toBe(true);
+  });
+
+  it("uses the exact inspection-review progress text", async () => {
+    await act(async () => {
+      root.render(
+        React.createElement(AskOtomotoThreadPanel, {
+          workspace: {
+            ...workspace({
+              status: "generating",
+              triggerType: "inspection_completed",
+            }),
+            messages: [],
+          },
+        })
+      );
+    });
+
+    expect(container.textContent).toContain("Reviewing submitted inspection…");
+    expect(container.textContent).not.toContain("Generating automatic review.");
   });
 
   it("renders the exact selected workspace in the floor assistant packet", async () => {
@@ -653,6 +675,110 @@ describe("AskOtomotoThreadPanel", () => {
     it("shows Retry on a failed thread when mutation is allowed", async () => {
       await mount(failedWs());
       expect(retry()?.disabled).toBe(false);
+    });
+
+    it("shows Retry for a generating thread once the server retry deadline is stale", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-29T00:04:31.000Z"));
+      await mount(
+        workspace({
+          jobId: JOB,
+          triggerType: null,
+          status: "generating",
+          retryableAt: "2026-09-29T00:04:30.000Z",
+        } as never)
+      );
+      await act(async () => {
+        await vi.runOnlyPendingTimersAsync();
+      });
+
+      expect(retry()?.disabled).toBe(false);
+      expect(container.textContent).toMatch(/response took too long/i);
+    });
+
+    describe("lost automatic callback recovery", () => {
+      const recoveryWorkspace = () => ({
+        ...workspace({
+          jobId: JOB,
+          triggerType: "inspection_completed",
+          status: "pending",
+          automaticRecoveryAt: "2026-09-29T00:00:30.000Z",
+        } as never),
+        messages: [],
+      });
+
+      it("offers Run automatic review only after grace with writable configuration", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-09-29T00:00:31.000Z"));
+        await mount(recoveryWorkspace());
+        await act(async () => {
+          await vi.runOnlyPendingTimersAsync();
+        });
+
+        expect(
+          Array.from(container.querySelectorAll("button")).find((button) =>
+            /run automatic review/i.test(button.textContent ?? "")
+          )
+        ).toBeDefined();
+      });
+
+      it.each([
+        ["preview", { preview: true }],
+        ["read-only", { readOnly: true }],
+        ["role lock", { canMutate: false }],
+        ["configuration lock", { configured: false }],
+      ])("hides automatic recovery under the %s lock", async (_name, props) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-09-29T00:00:31.000Z"));
+        await mount(recoveryWorkspace(), props);
+        await act(async () => {
+          await vi.runOnlyPendingTimersAsync();
+        });
+
+        expect(container.textContent).not.toMatch(/run automatic review/i);
+      });
+
+      it("refreshes after successful recovery scheduling", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-09-29T00:00:31.000Z"));
+        runAutomaticAssistantReviewAction.mockResolvedValue({
+          status: "success",
+          error: null,
+        });
+        await mount(recoveryWorkspace());
+        await act(async () => {
+          await vi.runOnlyPendingTimersAsync();
+        });
+        const button = Array.from(container.querySelectorAll("button")).find((item) =>
+          /run automatic review/i.test(item.textContent ?? "")
+        )!;
+
+        await act(async () => button.closest("form")!.requestSubmit());
+
+        expect(runAutomaticAssistantReviewAction).toHaveBeenCalledOnce();
+        expect(refresh).toHaveBeenCalled();
+      });
+
+      it("shows a failed recovery without refreshing", async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-09-29T00:00:31.000Z"));
+        runAutomaticAssistantReviewAction.mockResolvedValue({
+          status: "error",
+          error: "Automatic review is not ready.",
+        });
+        await mount(recoveryWorkspace());
+        await act(async () => {
+          await vi.runOnlyPendingTimersAsync();
+        });
+        const button = Array.from(container.querySelectorAll("button")).find((item) =>
+          /run automatic review/i.test(item.textContent ?? "")
+        )!;
+
+        await act(async () => button.closest("form")!.requestSubmit());
+
+        expect(refresh).not.toHaveBeenCalled();
+        expect(container.textContent).toContain("Automatic review is not ready.");
+      });
     });
 
     it("ignores duplicate submits while a send is in flight and blocks Retry meanwhile", async () => {

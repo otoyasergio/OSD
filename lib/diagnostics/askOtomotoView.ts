@@ -144,6 +144,8 @@ export type AskOtomotoThreadListItem = {
   triggerType: AiAssistantTriggerType | null;
   createdAt: string;
   updatedAt: string;
+  retryableAt?: string | null;
+  automaticRecoveryAt?: string | null;
 };
 
 function timestamp(value: string): number {
@@ -168,6 +170,8 @@ export function toAskOtomotoThreadListItems(
       triggerType: thread.triggerType,
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
+      retryableAt: thread.retryableAt ?? null,
+      automaticRecoveryAt: thread.automaticRecoveryAt ?? null,
     }))
     .sort(
       (a, b) =>
@@ -270,6 +274,8 @@ export type AskOtomotoThreadView = {
   triggerType: AiAssistantTriggerType | null;
   createdAt: string;
   updatedAt: string;
+  retryableAt?: string | null;
+  automaticRecoveryAt?: string | null;
 };
 
 export type AskOtomotoMessagePhotoView = {
@@ -313,6 +319,8 @@ export function toAskOtomotoWorkspaceView(
       triggerType: thread.triggerType,
       createdAt: thread.createdAt,
       updatedAt: thread.updatedAt,
+      retryableAt: thread.retryableAt ?? null,
+      automaticRecoveryAt: thread.automaticRecoveryAt ?? null,
     },
     messages: messages.map((message) => ({
       messageId: message.messageId,

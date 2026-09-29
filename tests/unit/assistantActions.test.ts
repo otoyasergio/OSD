@@ -7,10 +7,14 @@ const {
   authorizeThreadWrite,
   submitTurn,
   retryLatestFailed,
+  authorizeAutomaticTriggerRecovery,
+  generateTriggerResponse,
   promoteReviewedTechnicianNote,
   uploadIntakePhoto,
   revalidatePath,
   getRolePreviewContext,
+  after,
+  scheduled,
 } = vi.hoisted(() => ({
   createThread: vi.fn(),
   listThreads: vi.fn(),
@@ -18,13 +22,20 @@ const {
   authorizeThreadWrite: vi.fn(),
   submitTurn: vi.fn(),
   retryLatestFailed: vi.fn(),
+  authorizeAutomaticTriggerRecovery: vi.fn(),
+  generateTriggerResponse: vi.fn(),
   promoteReviewedTechnicianNote: vi.fn(),
   uploadIntakePhoto: vi.fn(),
   revalidatePath: vi.fn(),
   getRolePreviewContext: vi.fn(),
+  scheduled: [] as Array<() => Promise<void> | void>,
+  after: vi.fn((callback: () => Promise<void> | void) => {
+    scheduled.push(callback);
+  }),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath }));
+vi.mock("next/server", () => ({ after }));
 vi.mock("@/lib/auth/role-preview", () => ({ getRolePreviewContext }));
 vi.mock("@/lib/services/diagnosticsAssistant", async (importOriginal) => {
   const original =
@@ -38,7 +49,9 @@ vi.mock("@/lib/services/diagnosticsAssistant", async (importOriginal) => {
       authorizeThreadWrite,
       submitTurn,
       retryLatestFailed,
+      authorizeAutomaticTriggerRecovery,
     }),
+    generateDiagnosticsTriggerResponseInternal: generateTriggerResponse,
   };
 });
 vi.mock("@/lib/services/notes", () => ({ promoteReviewedTechnicianNote }));
@@ -48,6 +61,7 @@ import {
   createAssistantThreadAction,
   promoteAssistantNoteAction,
   retryAssistantTurnAction,
+  runAutomaticAssistantReviewAction,
   submitAssistantTurnAction,
   uploadAssistantPhotoAction,
 } from "@/app/(app)/work_orders/assistant-actions";
@@ -73,6 +87,7 @@ function preview(isPreviewing: boolean) {
 describe("Ask OTOMOTO server actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    scheduled.length = 0;
     getRolePreviewContext.mockResolvedValue(preview(false));
     authorizeThreadWrite.mockResolvedValue({
       thread: { jobId: JOB },
@@ -94,6 +109,7 @@ describe("Ask OTOMOTO server actions", () => {
       },
     ],
     ["retry", retryAssistantTurnAction, { thread_id: THREAD }],
+    ["automatic recovery", runAutomaticAssistantReviewAction, { thread_id: THREAD }],
     [
       "promote",
       promoteAssistantNoteAction,
@@ -118,6 +134,7 @@ describe("Ask OTOMOTO server actions", () => {
     expect(createThread).not.toHaveBeenCalled();
     expect(submitTurn).not.toHaveBeenCalled();
     expect(retryLatestFailed).not.toHaveBeenCalled();
+    expect(authorizeAutomaticTriggerRecovery).not.toHaveBeenCalled();
     expect(promoteReviewedTechnicianNote).not.toHaveBeenCalled();
   });
 
@@ -338,9 +355,98 @@ describe("Ask OTOMOTO server actions", () => {
       "createAssistantThreadAction",
       "promoteAssistantNoteAction",
       "retryAssistantTurnAction",
+      "runAutomaticAssistantReviewAction",
       "submitAssistantTurnAction",
       "uploadAssistantPhotoAction",
     ]);
+  });
+
+  it("re-authorizes and schedules the exact automatic seed without changing domain records", async () => {
+    const recovery = {
+      actor: {
+        userId: "11111111-1111-4111-8111-111111111111",
+        locationId: "31111111-1111-4111-8111-111111111111",
+      },
+      trigger: {
+        workOrderId: WO,
+        threadId: THREAD,
+        jobId: JOB,
+        trigger: "job_completion",
+        triggerEntityId: JOB,
+      },
+    };
+    authorizeAutomaticTriggerRecovery.mockResolvedValue(recovery);
+    generateTriggerResponse.mockResolvedValue(null);
+    const form = new FormData();
+    form.set("thread_id", THREAD);
+
+    const result = await runAutomaticAssistantReviewAction(
+      WO,
+      { status: "idle", error: null },
+      form
+    );
+
+    expect(result).toEqual({ status: "success", error: null });
+    expect(authorizeAutomaticTriggerRecovery).toHaveBeenCalledWith({
+      workOrderId: WO,
+      threadId: THREAD,
+    });
+    expect(after).toHaveBeenCalledOnce();
+    expect(generateTriggerResponse).not.toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalled();
+    await scheduled[0]!();
+    expect(generateTriggerResponse).toHaveBeenCalledWith(
+      recovery.actor,
+      recovery.trigger
+    );
+  });
+
+  it("keeps a lost scheduled callback recoverable and concurrent recovery idempotent", async () => {
+    const recovery = {
+      actor: {
+        userId: "11111111-1111-4111-8111-111111111111",
+        locationId: "31111111-1111-4111-8111-111111111111",
+      },
+      trigger: {
+        workOrderId: WO,
+        threadId: THREAD,
+        trigger: "inspection_completion",
+        triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+      },
+    };
+    authorizeAutomaticTriggerRecovery.mockResolvedValue(recovery);
+    generateTriggerResponse.mockResolvedValue(null);
+    const form = new FormData();
+    form.set("thread_id", THREAD);
+
+    await Promise.all([
+      runAutomaticAssistantReviewAction(WO, { status: "idle", error: null }, form),
+      runAutomaticAssistantReviewAction(WO, { status: "idle", error: null }, form),
+    ]);
+
+    expect(scheduled).toHaveLength(2);
+    expect(generateTriggerResponse).not.toHaveBeenCalled();
+    await Promise.all(scheduled.map((callback) => callback()));
+    expect(generateTriggerResponse).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not schedule or refresh a locked automatic recovery", async () => {
+    authorizeAutomaticTriggerRecovery.mockRejectedValue(
+      new Error("DIAGNOSTICS_AI_NOT_CONFIGURED")
+    );
+    const form = new FormData();
+    form.set("thread_id", THREAD);
+
+    const result = await runAutomaticAssistantReviewAction(
+      WO,
+      { status: "idle", error: null },
+      form
+    );
+
+    expect(result.status).toBe("error");
+    expect(result.error).toMatch(/not configured/i);
+    expect(after).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("maps raw database errors to a stable generic action message", async () => {

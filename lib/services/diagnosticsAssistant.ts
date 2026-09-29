@@ -28,7 +28,11 @@ import {
   redactDiagnosticsText,
   type DiagnosticsRedactTerms,
 } from "@/lib/diagnostics/redaction";
-import { getDiagnosticsTimeoutMs } from "@/lib/diagnostics/config";
+import {
+  DEFAULT_DIAGNOSTICS_TIMEOUT_MS,
+  getDiagnosticsConfig,
+  getDiagnosticsTimeoutMs,
+} from "@/lib/diagnostics/config";
 import {
   prepareDiagnosticsImages,
   type DiagnosticsImagePreparationResult,
@@ -53,6 +57,7 @@ export const ASK_OTOMOTO_RATE_WINDOW_MS = 60_000;
 export const ASK_OTOMOTO_MAX_TEXT_CHARS = 8_000;
 export const ASK_OTOMOTO_MAX_PHOTOS = 3;
 export const ASK_OTOMOTO_STALE_MARGIN_MS = 30_000;
+export const ASK_OTOMOTO_PENDING_RECOVERY_GRACE_MS = 30_000;
 
 const ALLOWED_DIAGNOSTICS_PHOTO_CATEGORIES = new Set([
   "inspection_tires",
@@ -139,6 +144,8 @@ export type DiagnosticsThreadSummary = {
   createdByUserId?: string | null;
   createdAt: string;
   updatedAt: string;
+  retryableAt?: string | null;
+  automaticRecoveryAt?: string | null;
 };
 
 export type DiagnosticsMessagePhotoView = {
@@ -335,6 +342,7 @@ export type DiagnosticsAssistantDependencies = {
   consumeRateLimit?: (userId: string) => RateLimitResult;
   now?: () => Date;
   providerTimeoutMs?: number;
+  assertConfigured?: () => void;
 };
 
 export function deriveDiagnosticsAudience(mode: AiAssistantMode): AiAssistantAudience {
@@ -1647,11 +1655,46 @@ export function createDiagnosticsAssistantService(
   const generate = dependencies.generateDraft ?? generateDiagnosticsDraft;
   const prepare = dependencies.prepareImages ?? defaultPrepareImages;
   const consumeRateLimit = dependencies.consumeRateLimit ?? defaultRateLimit;
+  const assertConfigured =
+    dependencies.assertConfigured ?? (() => void getDiagnosticsConfig());
   const retryStaleAfterMs = () =>
     (dependencies.providerTimeoutMs ?? getDiagnosticsTimeoutMs()) *
       (DIAGNOSTICS_PROVIDER_MAX_RETRIES + 1) +
     ASK_OTOMOTO_STALE_MARGIN_MS;
+  const recoveryStaleAfterMs = () => {
+    try {
+      return retryStaleAfterMs();
+    } catch {
+      return (
+        DEFAULT_DIAGNOSTICS_TIMEOUT_MS * (DIAGNOSTICS_PROVIDER_MAX_RETRIES + 1) +
+        ASK_OTOMOTO_STALE_MARGIN_MS
+      );
+    }
+  };
   const repo = async () => dependencies.repository ?? (await defaultRepository());
+
+  function recoveryDeadline(updatedAt: string, delayMs: number): string | null {
+    const timestamp = Date.parse(updatedAt);
+    return Number.isFinite(timestamp)
+      ? new Date(timestamp + delayMs).toISOString()
+      : null;
+  }
+
+  function withRecoveryDeadlines(
+    thread: DiagnosticsThreadSummary
+  ): DiagnosticsThreadSummary {
+    return {
+      ...thread,
+      retryableAt:
+        thread.status === "generating"
+          ? recoveryDeadline(thread.updatedAt, recoveryStaleAfterMs())
+          : null,
+      automaticRecoveryAt:
+        thread.status === "pending" && thread.triggerType !== null
+          ? recoveryDeadline(thread.updatedAt, ASK_OTOMOTO_PENDING_RECOVERY_GRACE_MS)
+          : null,
+    };
+  }
 
   async function loadClaimedGeneration(
     repository: DiagnosticsAssistantRepository,
@@ -1829,14 +1872,16 @@ export function createDiagnosticsAssistantService(
       const scope = await repository.loadWorkOrderScope(uuidSchema.parse(workOrderId));
       if (!scope) throw new Error("WORK_ORDER_NOT_FOUND");
       const rows = await repository.listThreads(workOrderId);
-      return rows.filter((thread) => {
-        try {
-          assertDiagnosticsAccess(user, scope, thread.mode, "read");
-          return true;
-        } catch {
-          return false;
-        }
-      });
+      return rows
+        .filter((thread) => {
+          try {
+            assertDiagnosticsAccess(user, scope, thread.mode, "read");
+            return true;
+          } catch {
+            return false;
+          }
+        })
+        .map(withRecoveryDeadlines);
     },
 
     async loadThread(
@@ -1886,7 +1931,7 @@ export function createDiagnosticsAssistantService(
         }
       }
       return {
-        thread: workspace.thread,
+        thread: withRecoveryDeadlines(workspace.thread),
         messages: workspace.messages.map((message) => ({
           ...message,
           promotedNoteId: promoted.get(message.messageId) ?? null,
@@ -1907,6 +1952,104 @@ export function createDiagnosticsAssistantService(
         uuidSchema.parse(threadId)
       );
       return authorized.workspace;
+    },
+
+    async authorizeAutomaticTriggerRecovery(raw: {
+      workOrderId: string;
+      threadId: string;
+    }): Promise<{
+      actor: DiagnosticsTriggerActorSnapshot;
+      trigger:
+        | {
+            workOrderId: string;
+            threadId: string;
+            trigger: "inspection_completion";
+            triggerEntityId: string;
+          }
+        | {
+            workOrderId: string;
+            threadId: string;
+            jobId: string;
+            trigger: "job_completion";
+            triggerEntityId: string;
+          };
+    }> {
+      const user = await authenticate();
+      const input = retryDiagnosticsTurnSchema.parse(raw);
+      const repository = await repo();
+      const { workOrder, workspace } = await requireThreadWrite(
+        repository,
+        user,
+        input.workOrderId,
+        input.threadId
+      );
+      const thread = workspace.thread;
+      if (
+        thread.status !== "pending" ||
+        workspace.messages.length !== 0 ||
+        thread.mode !== "shop" ||
+        thread.audience !== "technical" ||
+        !thread.triggerType ||
+        !thread.triggerEntityId ||
+        !thread.createdByUserId
+      ) {
+        throw new Error("ASK_OTOMOTO_RECOVERY_NOT_FOUND");
+      }
+      const recoveryAt = recoveryDeadline(
+        thread.updatedAt,
+        ASK_OTOMOTO_PENDING_RECOVERY_GRACE_MS
+      );
+      if (!recoveryAt || now().getTime() < Date.parse(recoveryAt)) {
+        throw new Error("ASK_OTOMOTO_RECOVERY_NOT_READY");
+      }
+      if (
+        thread.triggerType === "job_completed" &&
+        (thread.jobId === null || thread.jobId !== thread.triggerEntityId)
+      ) {
+        throw new Error("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+      }
+      if (
+        !(await repository.triggerEntityBelongsToWorkOrder(
+          input.workOrderId,
+          thread.triggerType,
+          thread.triggerEntityId
+        ))
+      ) {
+        throw new Error("ASK_OTOMOTO_TRIGGER_NOT_FOUND");
+      }
+      if (
+        !(await repository.isActiveUserAtLocation(
+          thread.createdByUserId,
+          workOrder.locationId
+        ))
+      ) {
+        throw new Error("ASK_OTOMOTO_TRIGGER_CREATOR_INACTIVE");
+      }
+      assertConfigured();
+      const actor = {
+        userId: thread.createdByUserId,
+        locationId: workOrder.locationId,
+      };
+      return thread.triggerType === "job_completed"
+        ? {
+            actor,
+            trigger: {
+              workOrderId: input.workOrderId,
+              threadId: input.threadId,
+              jobId: thread.jobId!,
+              trigger: "job_completion",
+              triggerEntityId: thread.triggerEntityId,
+            },
+          }
+        : {
+            actor,
+            trigger: {
+              workOrderId: input.workOrderId,
+              threadId: input.threadId,
+              trigger: "inspection_completion",
+              triggerEntityId: thread.triggerEntityId,
+            },
+          };
     },
 
     async createThread(

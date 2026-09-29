@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   createDiagnosticsAssistantService,
   createDiagnosticsThreadSchema,
+  diagnosticsSafeFailureCode,
+  generateDiagnosticsTriggerResponseInternal,
   retryDiagnosticsTurnSchema,
   submitDiagnosticsTurnSchema,
 } from "@/lib/services/diagnosticsAssistant";
@@ -166,6 +169,41 @@ export async function retryAssistantTurnAction(
     const message = await service.retryLatestFailed(input);
     revalidateAssistant(workOrderId);
     return success(message);
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function runAutomaticAssistantReviewAction(
+  workOrderId: string,
+  _previous: AssistantActionState,
+  formData: FormData
+): Promise<AssistantActionState> {
+  try {
+    await assertMutationNotPreviewed();
+    const input = retryDiagnosticsTurnSchema.parse({
+      workOrderId,
+      threadId: String(formData.get("thread_id") ?? ""),
+    });
+    const recovery = await service.authorizeAutomaticTriggerRecovery(input);
+    after(async () => {
+      try {
+        await generateDiagnosticsTriggerResponseInternal(
+          recovery.actor,
+          recovery.trigger
+        );
+      } catch (error) {
+        console.error("Automatic assistant recovery failed", {
+          work_order_id: input.workOrderId,
+          thread_id: input.threadId,
+          safe_error_code: diagnosticsSafeFailureCode(error),
+        });
+      } finally {
+        revalidateAssistant(input.workOrderId);
+      }
+    });
+    revalidateAssistant(workOrderId);
+    return success();
   } catch (error) {
     return failure(error);
   }

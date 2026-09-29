@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   retryAssistantTurnAction,
+  runAutomaticAssistantReviewAction,
   submitAssistantTurnAction,
   type AssistantActionState,
 } from "@/app/(app)/work_orders/assistant-actions";
@@ -52,6 +53,29 @@ export function assistantUnavailableCopy(reason: AskOtomotoConfigReason | null):
   return reason === null || reason === "not_configured"
     ? ASSISTANT_NOT_CONFIGURED_COPY
     : ASSISTANT_SETTINGS_INVALID_COPY;
+}
+
+function useDeadlineReached(
+  deadline: string | null | undefined,
+  enabled: boolean
+): boolean {
+  const [reachedDeadline, setReachedDeadline] = useState<string | null>(null);
+  useEffect(() => {
+    if (!enabled || !deadline) return;
+    const timestamp = Date.parse(deadline);
+    if (!Number.isFinite(timestamp)) return;
+    const remaining = timestamp - Date.now();
+    if (remaining <= 0) {
+      setReachedDeadline(deadline);
+      return;
+    }
+    const timer = setTimeout(
+      () => setReachedDeadline(deadline),
+      Math.min(remaining, 2_147_483_647)
+    );
+    return () => clearTimeout(timer);
+  }, [deadline, enabled]);
+  return enabled && Boolean(deadline) && reachedDeadline === deadline;
 }
 
 function readOnlyReason(lockReason: AskOtomotoLockReason | null | undefined): string {
@@ -279,6 +303,18 @@ export function AskOtomotoThreadPanel({
     },
     INITIAL_ACTION_STATE
   );
+  const [recoveryState, recoveryAction, recoveryPending] = useActionState(
+    async (previous: AssistantActionState, formData: FormData) => {
+      const result = await runAutomaticAssistantReviewAction(
+        thread.workOrderId,
+        previous,
+        formData
+      );
+      if (result.status === "success") router.refresh();
+      return result;
+    },
+    INITIAL_ACTION_STATE
+  );
   const mutationAllowed = canMutate && !readOnly && !preview;
   const latestFailedAssistant = [...messages]
     .reverse()
@@ -288,19 +324,34 @@ export function AskOtomotoThreadPanel({
   const nonRecoverableHistoryFailure =
     latestFailedAssistant?.safeErrorCode === "DIAGNOSTICS_AI_HISTORY_INVALID" ||
     latestFailedAssistant?.safeErrorCode === "DIAGNOSTICS_AI_HISTORY_TOO_LARGE";
+  const generatingRetryDue = useDeadlineReached(
+    thread.retryableAt,
+    thread.status === "generating"
+  );
+  const automaticRecoveryDue = useDeadlineReached(
+    thread.automaticRecoveryAt,
+    thread.status === "pending" && thread.triggerType !== null && messages.length === 0
+  );
   const retryAvailable =
     mutationAllowed &&
     configured &&
-    thread.status === "failed" &&
+    (thread.status === "failed" || generatingRetryDue) &&
     !nonRecoverableHistoryFailure;
   const canRetry = retryAvailable && !retryPending && !sendBusy;
+  const automaticRecoveryAvailable =
+    mutationAllowed &&
+    configured &&
+    automaticRecoveryDue &&
+    !recoveryPending &&
+    !sendBusy;
   const automaticLabel = thread.triggerType
     ? ASSISTANT_TRIGGER_LABELS[thread.triggerType]
     : null;
   const frontOffice = thread.audience === "front_office";
   const promotable = mutationAllowed && canPromoteNotes;
 
-  const working = isAssistantThreadWorking(workspace);
+  const working =
+    isAssistantThreadWorking(workspace) && !generatingRetryDue && !automaticRecoveryDue;
   const latest = messages[messages.length - 1];
   const pollKey = `${thread.threadId}:${thread.status}:${latest?.messageId ?? ""}:${
     latest?.generationStatus ?? ""
@@ -358,7 +409,11 @@ export function AskOtomotoThreadPanel({
 
       {thread.status === "generating" ? (
         <p role="status" className="text-sm">
-          {automaticLabel ? "Generating automatic review." : "Generating response."}
+          {thread.triggerType === "inspection_completed"
+            ? "Reviewing submitted inspection…"
+            : thread.triggerType === "job_completed"
+              ? "Reviewing completed job…"
+              : "Generating response."}
         </p>
       ) : null}
       {thread.status === "pending" && thread.triggerType ? (
@@ -369,6 +424,11 @@ export function AskOtomotoThreadPanel({
       {timedOut ? (
         <p role="status" className="text-sm">
           Still working. Use Refresh to check again.
+        </p>
+      ) : null}
+      {generatingRetryDue ? (
+        <p role="status" className="text-sm">
+          The response took too long. Retry is now available.
         </p>
       ) : null}
       {thread.status === "failed" ? (
@@ -430,6 +490,23 @@ export function AskOtomotoThreadPanel({
             Start a new conversation
           </Link>
         ) : null}
+        {automaticRecoveryAvailable ? (
+          <form
+            action={recoveryAction}
+            onSubmit={(event) => {
+              if (!automaticRecoveryAvailable) event.preventDefault();
+            }}
+          >
+            <input type="hidden" name="thread_id" value={thread.threadId} />
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!automaticRecoveryAvailable}
+            >
+              {recoveryPending ? "Starting review…" : "Run automatic review"}
+            </button>
+          </form>
+        ) : null}
         {retryAvailable ? (
           <form
             action={retryAction}
@@ -447,6 +524,11 @@ export function AskOtomotoThreadPanel({
       {retryState.error ? (
         <p role="alert" className="text-sm text-red-700">
           {retryState.error}
+        </p>
+      ) : null}
+      {recoveryState.error ? (
+        <p role="alert" className="text-sm text-red-700">
+          {recoveryState.error}
         </p>
       ) : null}
     </section>

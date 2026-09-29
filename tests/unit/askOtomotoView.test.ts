@@ -176,6 +176,8 @@ describe("toAskOtomotoThreadListItems", () => {
       triggerType: "job_completed",
       createdAt: newer.createdAt,
       updatedAt: newer.updatedAt,
+      retryableAt: null,
+      automaticRecoveryAt: null,
     });
     expect(JSON.stringify(items)).not.toMatch(
       /locationId|createdByUserId|triggerEntityId/
@@ -188,6 +190,25 @@ describe("toAskOtomotoThreadListItems", () => {
       jobLabels: {},
     });
     expect(items.map((item) => item.threadId)).toEqual([older.threadId]);
+  });
+
+  it("serializes only the server-computed recovery deadlines into a workspace", () => {
+    const workspace = toAskOtomotoWorkspaceView({
+      thread: summary({
+        status: "generating",
+        retryableAt: "2026-09-29T10:02:30.000Z",
+        automaticRecoveryAt: null,
+      }),
+      messages: [],
+    });
+
+    expect(workspace.thread).toMatchObject({
+      retryableAt: "2026-09-29T10:02:30.000Z",
+      automaticRecoveryAt: null,
+    });
+    expect(JSON.stringify(workspace.thread)).not.toMatch(
+      /locationId|createdByUserId|triggerEntityId/
+    );
   });
 });
 

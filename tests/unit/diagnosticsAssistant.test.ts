@@ -475,6 +475,220 @@ describe("Ask OTOMOTO service boundaries", () => {
       )
     ).rejects.toThrow("FOREIGN_LOCATION");
   });
+
+  it("exposes server-computed stale and automatic recovery deadlines", async () => {
+    const repo = repository();
+    const base = {
+      threadId: "71111111-1111-4111-8111-111111111111",
+      workOrderId: scope().workOrderId,
+      jobId: null,
+      locationId: scope().locationId,
+      mode: "shop" as const,
+      audience: "technical" as const,
+      diagnosticPhase: null,
+      triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+      createdByUserId: actor("technician").user_id,
+      createdAt: "2026-09-29T00:00:00.000Z",
+      updatedAt: "2026-09-29T00:00:00.000Z",
+    };
+    vi.mocked(repo.listThreads).mockResolvedValue([
+      { ...base, status: "generating", triggerType: null },
+      {
+        ...base,
+        threadId: "72222222-2222-4222-8222-222222222222",
+        status: "pending",
+        triggerType: "inspection_completed",
+      },
+    ]);
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      providerTimeoutMs: 120_000,
+    });
+
+    const threads = await service.listThreads(scope().workOrderId);
+
+    expect(threads[0]).toMatchObject({
+      retryableAt: "2026-09-29T00:04:30.000Z",
+      automaticRecoveryAt: null,
+    });
+    expect(threads[1]).toMatchObject({
+      retryableAt: null,
+      automaticRecoveryAt: "2026-09-29T00:00:30.000Z",
+    });
+  });
+
+  it("re-authorizes an aged empty automatic thread and returns the exact internal seed", async () => {
+    const repo = repository();
+    const assertConfigured = vi.fn();
+    vi.mocked(repo.loadThread).mockResolvedValue({
+      thread: {
+        threadId: "71111111-1111-4111-8111-111111111111",
+        workOrderId: scope().workOrderId,
+        jobId: "51111111-1111-4111-8111-111111111111",
+        locationId: scope().locationId,
+        mode: "shop",
+        audience: "technical",
+        status: "pending",
+        diagnosticPhase: null,
+        triggerType: "job_completed",
+        triggerEntityId: "51111111-1111-4111-8111-111111111111",
+        createdByUserId: actor("technician").user_id,
+        createdAt: "2026-09-29T00:00:00.000Z",
+        updatedAt: "2026-09-29T00:00:00.000Z",
+      },
+      messages: [],
+    });
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      now: () => new Date("2026-09-29T00:00:31.000Z"),
+      assertConfigured,
+    });
+
+    await expect(
+      service.authorizeAutomaticTriggerRecovery({
+        workOrderId: scope().workOrderId,
+        threadId: "71111111-1111-4111-8111-111111111111",
+      })
+    ).resolves.toEqual({
+      actor: {
+        userId: actor("technician").user_id,
+        locationId: scope().locationId,
+      },
+      trigger: {
+        workOrderId: scope().workOrderId,
+        threadId: "71111111-1111-4111-8111-111111111111",
+        jobId: "51111111-1111-4111-8111-111111111111",
+        trigger: "job_completion",
+        triggerEntityId: "51111111-1111-4111-8111-111111111111",
+      },
+    });
+    expect(assertConfigured).toHaveBeenCalledOnce();
+    expect(repo.triggerEntityBelongsToWorkOrder).toHaveBeenCalledWith(
+      scope().workOrderId,
+      "job_completed",
+      "51111111-1111-4111-8111-111111111111"
+    );
+    expect(repo.beginSeedTurn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["grace", {}, [], "2026-09-29T00:00:29.999Z", "ASK_OTOMOTO_RECOVERY_NOT_READY"],
+    [
+      "messages",
+      {},
+      [{ messageId: "existing" }],
+      "2026-09-29T00:00:31.000Z",
+      "ASK_OTOMOTO_RECOVERY_NOT_FOUND",
+    ],
+    [
+      "read-only work order",
+      { workOrderStatus: "completed" },
+      [],
+      "2026-09-29T00:00:31.000Z",
+      "WORK_ORDER_LOCKED",
+    ],
+    [
+      "foreign location",
+      { foreign: true },
+      [],
+      "2026-09-29T00:00:31.000Z",
+      "FOREIGN_LOCATION",
+    ],
+  ])(
+    "rejects automatic recovery under the %s lock",
+    async (_name, options, messages, nowIso, code) => {
+      const repo = repository();
+      const foreignLocation = "61111111-1111-4111-8111-111111111111";
+      if ("workOrderStatus" in options) {
+        vi.mocked(repo.loadWorkOrderScope).mockResolvedValue(
+          scope({ status: String(options.workOrderStatus) })
+        );
+      }
+      if ("foreign" in options) {
+        vi.mocked(repo.loadWorkOrderScope).mockResolvedValue(
+          scope({ locationId: foreignLocation })
+        );
+      }
+      vi.mocked(repo.loadThread).mockResolvedValue({
+        thread: {
+          threadId: "71111111-1111-4111-8111-111111111111",
+          workOrderId: scope().workOrderId,
+          jobId: null,
+          locationId: "foreign" in options ? foreignLocation : scope().locationId,
+          mode: "shop",
+          audience: "technical",
+          status: "pending",
+          diagnosticPhase: null,
+          triggerType: "inspection_completed",
+          triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+          createdByUserId: actor("technician").user_id,
+          createdAt: "2026-09-29T00:00:00.000Z",
+          updatedAt: "2026-09-29T00:00:00.000Z",
+        },
+        messages: messages as never,
+      });
+      const service = createDiagnosticsAssistantService({
+        repository: repo,
+        requireUser: async () =>
+          actor("technician", {
+            location_ids:
+              "foreign" in options
+                ? [scope().locationId, foreignLocation]
+                : [scope().locationId],
+          }),
+        now: () => new Date(nowIso),
+        assertConfigured: vi.fn(),
+      });
+
+      await expect(
+        service.authorizeAutomaticTriggerRecovery({
+          workOrderId: scope().workOrderId,
+          threadId: "71111111-1111-4111-8111-111111111111",
+        })
+      ).rejects.toThrow(code);
+      expect(repo.beginSeedTurn).not.toHaveBeenCalled();
+    }
+  );
+
+  it("does not schedule automatic recovery when provider configuration is locked", async () => {
+    const repo = repository();
+    vi.mocked(repo.loadThread).mockResolvedValue({
+      thread: {
+        threadId: "71111111-1111-4111-8111-111111111111",
+        workOrderId: scope().workOrderId,
+        jobId: null,
+        locationId: scope().locationId,
+        mode: "shop",
+        audience: "technical",
+        status: "pending",
+        diagnosticPhase: null,
+        triggerType: "inspection_completed",
+        triggerEntityId: "e1111111-1111-4111-8111-111111111111",
+        createdByUserId: actor("technician").user_id,
+        createdAt: "2026-09-29T00:00:00.000Z",
+        updatedAt: "2026-09-29T00:00:00.000Z",
+      },
+      messages: [],
+    });
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      now: () => new Date("2026-09-29T00:00:31.000Z"),
+      assertConfigured: () => {
+        throw new Error("DIAGNOSTICS_AI_NOT_CONFIGURED");
+      },
+    });
+
+    await expect(
+      service.authorizeAutomaticTriggerRecovery({
+        workOrderId: scope().workOrderId,
+        threadId: "71111111-1111-4111-8111-111111111111",
+      })
+    ).rejects.toThrow("DIAGNOSTICS_AI_NOT_CONFIGURED");
+    expect(repo.beginSeedTurn).not.toHaveBeenCalled();
+  });
 });
 
 const contextSource = (): DiagnosticsContextSource => ({
