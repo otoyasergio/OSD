@@ -1,7 +1,7 @@
 -- pgTAP: Ask OTOMOTO storage, integrity, grants, and read visibility.
 -- Run via `supabase test db` against the isolated local stack.
 begin;
-select plan(69);
+select plan(72);
 
 select has_table('public', 'ai_assistant_thread', 'assistant thread table exists');
 select has_table('public', 'ai_assistant_message', 'assistant message table exists');
@@ -579,6 +579,24 @@ select throws_ok(
 );
 select throws_ok(
   $$
+    update public.ai_assistant_thread
+    set mode = 'teach'
+    where ai_assistant_thread_id = '90000000-0000-0000-0000-000000000001'
+  $$,
+  'AI_ASSISTANT_THREAD_SCOPE_IMMUTABLE',
+  'thread mode is immutable after creation'
+);
+select throws_ok(
+  $$
+    update public.ai_assistant_thread
+    set mode = 'advisor', audience = 'front_office'
+    where ai_assistant_thread_id = '90000000-0000-0000-0000-000000000001'
+  $$,
+  'AI_ASSISTANT_THREAD_SCOPE_IMMUTABLE',
+  'thread audience is immutable after creation'
+);
+select throws_ok(
+  $$
     update public.ai_assistant_message
     set thread_id = '90000000-0000-0000-0000-000000000006'
     where ai_assistant_message_id = 'a0000000-0000-0000-0000-000000000001'
@@ -719,6 +737,15 @@ select lives_ok(
   'viewable ready technical assistant output can be cited'
 );
 reset role;
+select throws_ok(
+  $$
+    update public.ai_assistant_message
+    set role = 'user'
+    where ai_assistant_message_id = 'a0000000-0000-0000-0000-000000000001'
+  $$,
+  'AI_ASSISTANT_MESSAGE_ROLE_IMMUTABLE',
+  'a cited assistant message cannot be rewritten as another role'
+);
 
 select set_config(
   'request.jwt.claim.sub',
