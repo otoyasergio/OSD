@@ -8,19 +8,23 @@ import {
 } from "@/lib/services/technicianFloor";
 import { getTechnicianDocket } from "@/lib/services/technicianDocket";
 import { listReadyForPickup } from "@/lib/services/readyForPickup";
-import { getJobPacket } from "@/lib/services/jobPacket";
-import { listIntakePhotos } from "@/lib/services/photos";
-import { canCreateWorkOrder, canEditWorkOrder, isFloorTech } from "@/lib/permissions";
+import { getJobPacket, type JobPacket } from "@/lib/services/jobPacket";
+import { listIntakePhotos, type IntakePhoto } from "@/lib/services/photos";
+import type { UserRole } from "@/lib/database/types";
+import { isFloorTech } from "@/lib/permissions";
 import {
-  assistantComposerFlags,
-  loadAssistantWorkspaceOrNull,
+  askOtomotoCapabilities,
+  loadAskOtomotoPanelData,
 } from "@/lib/diagnostics/assistantPageState";
+import type { AskOtomotoPanelData } from "@/lib/diagnostics/askOtomotoView";
+import { getAskOtomotoPublicConfig } from "@/lib/diagnostics/config";
 import { toDiagnosticsPhotoSourceRows } from "@/lib/diagnostics/photoSelection";
 import { TechnicianFloorShell } from "@/components/technician/TechnicianFloorShell";
 import { techJobPacketHref } from "@/lib/technician/assignmentHref";
 import {
   parseTechnicianRouteState,
   type TechnicianRouteParams,
+  type TechnicianRouteState,
 } from "@/lib/technician/routeState";
 import type { FloorStage } from "@/lib/technician/floorStage";
 import { createDiagnosticsAssistantService } from "@/lib/services/diagnosticsAssistant";
@@ -33,6 +37,89 @@ function modeForFetch(stage: FloorStage | null): FloorOsMode {
   if (stage === "qc") return "qc";
   if (stage === "safety") return "safety";
   return "job";
+}
+
+type PacketBundle = {
+  packet: JobPacket | null;
+  photos: IntakePhoto[];
+  assistant: AskOtomotoPanelData | null;
+};
+
+const EMPTY_PACKET: PacketBundle = { packet: null, photos: [], assistant: null };
+
+async function loadPacketBundle({
+  route,
+  viewRole,
+  isPreviewing,
+  packetView,
+  assistantView,
+}: {
+  route: TechnicianRouteState;
+  viewRole: UserRole;
+  isPreviewing: boolean;
+  packetView: ReadView | undefined;
+  assistantView: ReadView | undefined;
+}): Promise<PacketBundle> {
+  const workOrderId = route.workOrderId!;
+  // Photos and assistant data load only after the subject's packet access check passes.
+  const packet = await getJobPacket(workOrderId, { view: packetView }).catch(() => null);
+  if (!packet) return EMPTY_PACKET;
+
+  const assistantActive = route.packetSection === "assistant";
+  const jobLabels = Object.fromEntries(
+    packet.jobs.map((job) => [job.job_id, job.service_name])
+  );
+  const [photos, assistantData] = await Promise.all([
+    listIntakePhotos(workOrderId).catch(() => []),
+    assistantActive
+      ? loadAskOtomotoPanelData({
+          service: diagnosticsAssistant,
+          surface: "floor",
+          workOrderId,
+          threadId: route.assistantThreadId,
+          readView: assistantView,
+          jobLabels,
+        })
+      : Promise.resolve(null),
+  ]);
+  if (!assistantData) return { packet, photos, assistant: null };
+
+  const currentJob = packet.jobs.find((job) => job.job_id === route.jobId) ?? null;
+  const { workspace } = assistantData;
+  return {
+    packet,
+    photos,
+    assistant: {
+      route: {
+        surface: "floor",
+        workOrderId,
+        jobId: route.jobId,
+        stage: route.stage,
+      },
+      threads: assistantData.threads,
+      selectedThreadId: route.assistantThreadId,
+      workspace,
+      jobs: currentJob
+        ? [{ jobId: currentJob.job_id, label: currentJob.service_name }]
+        : [],
+      defaultJobId: currentJob?.job_id ?? null,
+      photos: workspace
+        ? toDiagnosticsPhotoSourceRows(photos, {
+            workOrderId,
+            jobId: workspace.thread.jobId,
+          })
+        : [],
+      config: getAskOtomotoPublicConfig(),
+      capabilities: askOtomotoCapabilities({
+        surface: "floor",
+        viewRole,
+        isForeignLocation: false,
+        isPreviewing,
+        workOrderStatus: packet.wo_status,
+      }),
+      historyUnavailable: assistantData.historyUnavailable,
+    },
+  };
 }
 
 export default async function TechnicianPage({
@@ -50,6 +137,10 @@ export default async function TechnicianPage({
     ? { role: viewRole, subjectUserId: preview.subjectUserId }
     : undefined;
   const subjectUserId = techPreview ? preview.subjectUserId : user.user_id;
+  // Assistant reads mirror any previewed role, not only a previewed technician.
+  const assistantView: ReadView | undefined = preview.isPreviewing
+    ? { role: viewRole, subjectUserId: preview.subjectUserId }
+    : undefined;
 
   const params = await searchParams;
   const route = parseTechnicianRouteState(params);
@@ -74,53 +165,14 @@ export default async function TechnicianPage({
       ? Promise.resolve([])
       : listReadyForPickup({ hrefFor: (id) => techJobPacketHref(id) }).catch(() => []),
     loadPacket
-      ? (async () => {
-          // Photos load only after the subject's packet access check passes.
-          const packet = await getJobPacket(route.workOrderId!, { view }).catch(
-            () => null
-          );
-          const photos = packet
-            ? await listIntakePhotos(route.workOrderId!).catch(() => [])
-            : [];
-          const assistantWorkspace =
-            packet && route.packetSection === "assistant" && route.assistantThreadId
-              ? await loadAssistantWorkspaceOrNull(() =>
-                  diagnosticsAssistant.loadThread(
-                    route.workOrderId!,
-                    route.assistantThreadId!,
-                    view
-                      ? {
-                          role: view.role,
-                          subjectUserId: view.subjectUserId,
-                        }
-                      : undefined
-                  )
-                )
-              : null;
-          const assistantFlags = assistantComposerFlags({
-            isForeignLocation: false,
-            isPreviewing: preview.isPreviewing,
-            workOrderStatus: packet?.wo_status ?? "",
-            hasWriteRole:
-              isFloorTech(viewRole) ||
-              canEditWorkOrder(viewRole) ||
-              canCreateWorkOrder(viewRole),
-          });
-          const assistantPhotos = assistantWorkspace
-            ? toDiagnosticsPhotoSourceRows(photos, {
-                workOrderId: route.workOrderId!,
-                jobId: assistantWorkspace.thread.jobId,
-              })
-            : [];
-          return { packet, photos, assistantWorkspace, assistantFlags, assistantPhotos };
-        })()
-      : Promise.resolve({
-          packet: null,
-          photos: [],
-          assistantWorkspace: null,
-          assistantFlags: undefined,
-          assistantPhotos: [],
-        }),
+      ? loadPacketBundle({
+          route,
+          viewRole,
+          isPreviewing: preview.isPreviewing,
+          packetView: view,
+          assistantView,
+        })
+      : EMPTY_PACKET,
   ]);
 
   // Explicit stage only — the shell derives the default per surface, so URLs
@@ -137,9 +189,7 @@ export default async function TechnicianPage({
       packet={packetBundle.packet}
       packetSection={route.packetSection}
       packetPhotos={packetBundle.photos}
-      packetAssistantWorkspace={packetBundle.assistantWorkspace}
-      packetAssistantFlags={packetBundle.assistantFlags}
-      packetAssistantPhotos={packetBundle.assistantPhotos}
+      packetAssistant={packetBundle.assistant}
       packetWorkOrderId={route.workOrderId}
       packetJobId={route.jobId}
     />

@@ -31,6 +31,7 @@ vi.mock("@/app/(app)/work_orders/note-actions", () => ({
 import { AskOtomotoThreadPanel } from "@/components/diagnostics/AskOtomotoThreadPanel";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
 import type { AssistantComposerFlags } from "@/lib/diagnostics/assistantPageState";
+import type { AskOtomotoPanelData } from "@/lib/diagnostics/askOtomotoView";
 import type { DiagnosticsPhotoSourceRow } from "@/lib/diagnostics/photoSelection";
 import type {
   DiagnosticsMessageView,
@@ -40,6 +41,31 @@ import type {
 const JOB = "51111111-1111-4111-8111-111111111111";
 const WORK_ORDER = "41111111-1111-4111-8111-111111111111";
 const THREAD = "71111111-1111-4111-8111-111111111111";
+
+function packetAssistant(
+  ws: DiagnosticsThreadWorkspace,
+  overrides: Partial<AskOtomotoPanelData> = {}
+): AskOtomotoPanelData {
+  return {
+    route: { surface: "floor", workOrderId: WORK_ORDER, jobId: null, stage: "work" },
+    threads: [],
+    selectedThreadId: ws.thread.threadId,
+    workspace: ws,
+    jobs: [],
+    defaultJobId: null,
+    photos: [],
+    config: { configured: true, modelLabel: null },
+    capabilities: {
+      canMutate: false,
+      preview: false,
+      readOnly: false,
+      lockReason: "role",
+      canUseFrontOfficeModes: false,
+      canPromoteNotes: false,
+    },
+    ...overrides,
+  };
+}
 
 function submitButtons(): HTMLButtonElement[] {
   return Array.from(
@@ -115,7 +141,7 @@ describe("AskOtomotoThreadPanel", () => {
     });
 
     expect(container.textContent).toContain("Ask OTOMOTO");
-    expect(container.textContent).toContain("Shop");
+    expect(container.textContent).toContain("Technician (/shop)");
     expect(container.textContent).toContain("Ready");
     expect(container.textContent).toContain("Automatic arrival-inspection review");
     expect(container.textContent).toContain("Staff review required");
@@ -131,9 +157,11 @@ describe("AskOtomotoThreadPanel", () => {
       );
     });
     expect(container.textContent).toContain("Generating");
-    expect(container.querySelector('button[type="button"]')?.textContent).toMatch(
-      /refresh/i
-    );
+    expect(
+      Array.from(container.querySelectorAll('button[type="button"]')).some((b) =>
+        /^refresh$/i.test(b.textContent?.trim() ?? "")
+      )
+    ).toBe(true);
     expect(submitButtons().some((b) => /retry/i.test(b.textContent ?? ""))).toBe(false);
 
     await act(async () => {
@@ -165,7 +193,7 @@ describe("AskOtomotoThreadPanel", () => {
           section: "assistant",
           closeHref: `/technician?wo=${WORK_ORDER}`,
           stage: "work",
-          assistantWorkspace: workspace(),
+          assistant: packetAssistant(workspace()),
         })
       );
     });
@@ -210,23 +238,29 @@ describe("AskOtomotoThreadPanel", () => {
             section: "assistant",
             closeHref: `/technician?wo=${WORK_ORDER}`,
             stage: "work",
-            assistantWorkspace: workspace({ jobId: JOB, triggerType: null }),
+            assistant: packetAssistant(workspace({ jobId: JOB, triggerType: null }), {
+              photos: [
+                {
+                  photo_id: "a1111111-1111-4111-8111-111111111111",
+                  work_order_id: WORK_ORDER,
+                  job_id: JOB,
+                  category: "job_work",
+                  created_at: "2026-09-29T14:05:00.000Z",
+                  thumb_url: "https://signed.example/a1.jpg",
+                },
+              ],
+              capabilities: {
+                ...flags,
+                lockReason: flags.preview ? "preview" : null,
+                canUseFrontOfficeModes: false,
+                canPromoteNotes: flags.canMutate,
+              },
+            }),
             photos: [
               row("a1111111-1111-4111-8111-111111111111", "job_work", JOB),
               row("a2222222-2222-4222-8222-222222222222", "vin", null),
               row("a3333333-3333-4333-8333-333333333333", "job_work", JOB),
             ],
-            assistantPhotos: [
-              {
-                photo_id: "a1111111-1111-4111-8111-111111111111",
-                work_order_id: WORK_ORDER,
-                job_id: JOB,
-                category: "job_work",
-                created_at: "2026-09-29T14:05:00.000Z",
-                thumb_url: "https://signed.example/a1.jpg",
-              },
-            ],
-            assistantFlags: flags,
           })
         );
       });

@@ -9,14 +9,29 @@ import {
 } from "@/app/(app)/work_orders/assistant-actions";
 import { DiagnosticsPhotoPicker } from "@/components/diagnostics/DiagnosticsPhotoPicker";
 import {
+  AskOtomotoMessage,
+  RequestedInputCard,
+} from "@/components/diagnostics/AskOtomotoMessage";
+import { useAssistantPolling } from "@/components/diagnostics/useAssistantPolling";
+import {
   buildPhotosPayload,
   photoRequestFromMessages,
   validatePhotoSelections,
   type DiagnosticsPhotoSelection,
   type DiagnosticsPhotoSourceRow,
 } from "@/lib/diagnostics/photoSelection";
-import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { DIAGNOSTICS_TURN_TEXT_MAX } from "@/lib/diagnostics/turnLimits";
+import {
+  ASSISTANT_MODE_DESCRIPTIONS,
+  ASSISTANT_MODE_LABELS,
+  ASSISTANT_PHASE_LABELS,
+  ASSISTANT_STATUS_LABELS,
+  ASSISTANT_TRIGGER_LABELS,
+  canPromoteAssistantMessage,
+  isAssistantThreadWorking,
+  parseRequestedInput,
+  type AskOtomotoLockReason,
+} from "@/lib/diagnostics/askOtomotoView";
 import type { DiagnosticsThreadWorkspace } from "@/lib/services/diagnosticsAssistant";
 
 const INITIAL_ACTION_STATE: AssistantActionState = {
@@ -24,11 +39,17 @@ const INITIAL_ACTION_STATE: AssistantActionState = {
   error: null,
 };
 
-function titleCase(value: string): string {
-  return value
-    .split("_")
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join(" ");
+export const ASSISTANT_NOT_CONFIGURED_COPY =
+  "Ask OTOMOTO is not configured on this server, so new drafts can't be generated. An owner or manager needs to add the OpenAI API key to the server environment settings. Existing conversations stay readable and copyable.";
+
+function readOnlyReason(lockReason: AskOtomotoLockReason | null | undefined): string {
+  if (lockReason === "foreign") {
+    return "This work order belongs to another location. Switch location to make changes.";
+  }
+  if (lockReason === "locked") {
+    return "This work order is completed or cancelled, so this conversation is read-only.";
+  }
+  return "This work order is read-only.";
 }
 
 function TurnComposer({
@@ -37,6 +58,8 @@ function TurnComposer({
   canMutate,
   preview,
   readOnly,
+  lockReason,
+  configured,
   retryPending,
   onBusyChange,
 }: {
@@ -45,6 +68,8 @@ function TurnComposer({
   canMutate: boolean;
   preview: boolean;
   readOnly: boolean;
+  lockReason: AskOtomotoLockReason | null;
+  configured: boolean;
   retryPending: boolean;
   onBusyChange: (busy: boolean) => void;
 }) {
@@ -95,16 +120,18 @@ function TurnComposer({
   const blockedReason = preview
     ? "Role preview is read-only. Exit preview to send a message."
     : readOnly
-      ? "This work order is read-only."
+      ? readOnlyReason(lockReason)
       : !canMutate
         ? "You can't send messages on this thread."
         : archived
           ? "This conversation is archived."
-          : threadBusy
-            ? "Ask OTOMOTO is still working on the previous message."
-            : retryPending
-              ? "Retrying the failed response…"
-              : null;
+          : !configured
+            ? "Sending is disabled until Ask OTOMOTO is configured."
+            : threadBusy
+              ? "Ask OTOMOTO is still working on the previous message."
+              : retryPending
+                ? "Retrying the failed response…"
+                : null;
   const locked = blockedReason !== null;
   const validation = useMemo(() => validatePhotoSelections(selections), [selections]);
   const photosJson = useMemo(
@@ -200,6 +227,10 @@ export function AskOtomotoThreadPanel({
   canMutate = false,
   preview = false,
   readOnly = false,
+  lockReason = null,
+  configured = true,
+  canPromoteNotes = false,
+  jobLabel = null,
 }: {
   workspace: DiagnosticsThreadWorkspace;
   /** Authorized, already-filtered staff photos for this work order. */
@@ -207,6 +238,11 @@ export function AskOtomotoThreadPanel({
   canMutate?: boolean;
   preview?: boolean;
   readOnly?: boolean;
+  lockReason?: AskOtomotoLockReason | null;
+  /** Server AI configuration present; history stays usable without it. */
+  configured?: boolean;
+  canPromoteNotes?: boolean;
+  jobLabel?: string | null;
 }) {
   const router = useRouter();
   const { thread, messages } = workspace;
@@ -224,21 +260,46 @@ export function AskOtomotoThreadPanel({
     INITIAL_ACTION_STATE
   );
   const mutationAllowed = canMutate && !readOnly && !preview;
-  const canRetry = mutationAllowed && !retryPending && !sendBusy;
-  const automaticLabel =
-    thread.triggerType === "inspection_completed"
-      ? "Automatic arrival-inspection review"
-      : thread.triggerType === "job_completed"
-        ? "Automatic job-completion review"
-        : null;
+  const retryAvailable = mutationAllowed && configured && thread.status === "failed";
+  const canRetry = retryAvailable && !retryPending && !sendBusy;
+  const automaticLabel = thread.triggerType
+    ? ASSISTANT_TRIGGER_LABELS[thread.triggerType]
+    : null;
+  const frontOffice = thread.audience === "front_office";
+  const promotable = mutationAllowed && canPromoteNotes;
+
+  const working = isAssistantThreadWorking(workspace);
+  const latest = messages[messages.length - 1];
+  const pollKey = `${thread.threadId}:${thread.status}:${latest?.messageId ?? ""}:${
+    latest?.generationStatus ?? ""
+  }`;
+  const { timedOut } = useAssistantPolling(working, pollKey, () => router.refresh());
+
+  const requested =
+    latest?.role === "assistant" && latest.generationStatus === "ready"
+      ? parseRequestedInput(latest.requestedInput)
+      : null;
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-[var(--border)] bg-white p-4">
+    <section
+      aria-label="Selected conversation"
+      className="flex flex-col gap-3 rounded-lg border border-[var(--border)] bg-white p-4"
+    >
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="text-base font-semibold">Ask OTOMOTO</h2>
+          <h3 className="text-base font-semibold">
+            Ask OTOMOTO · {ASSISTANT_MODE_LABELS[thread.mode]}
+          </h3>
           <p className="text-sm text-[var(--status-neutral)]">
-            {titleCase(thread.mode)} · {titleCase(thread.status)}
+            Mode: {ASSISTANT_MODE_LABELS[thread.mode]} · fixed for this conversation
+          </p>
+          <p className="text-sm text-[var(--status-neutral)]">
+            {ASSISTANT_STATUS_LABELS[thread.status]}
+            {thread.diagnosticPhase
+              ? ` · ${ASSISTANT_PHASE_LABELS[thread.diagnosticPhase]}`
+              : ""}
+            {" · "}
+            {thread.jobId ? `Job: ${jobLabel ?? "Selected job"}` : "Whole work order"}
           </p>
         </div>
         <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">
@@ -249,6 +310,17 @@ export function AskOtomotoThreadPanel({
       {automaticLabel ? (
         <p className="text-xs font-medium text-[var(--status-neutral)]">
           {automaticLabel}
+        </p>
+      ) : null}
+      {thread.mode === "report" ? (
+        <p className="text-xs text-[var(--status-neutral)]">
+          {ASSISTANT_MODE_DESCRIPTIONS.report}
+        </p>
+      ) : null}
+      {frontOffice ? (
+        <p className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm">
+          Copy only. Nothing is sent to the customer from here — review the draft and
+          contact the customer yourself if appropriate.
         </p>
       ) : null}
 
@@ -262,52 +334,37 @@ export function AskOtomotoThreadPanel({
           Pending automatic review.
         </p>
       ) : null}
+      {timedOut ? (
+        <p role="status" className="text-sm">
+          Still working. Use Refresh to check again.
+        </p>
+      ) : null}
       {thread.status === "failed" ? (
         <p role="status" className="text-sm text-red-700">
-          Generation failed. The completed inspection is unchanged.
+          Generation failed. Work-order records were not changed.
         </p>
       ) : null}
 
       <div className="flex flex-col gap-2">
         {messages.map((message) => (
-          <article
+          <AskOtomotoMessage
             key={message.messageId}
-            className="rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3"
-          >
-            <p className="mb-1 text-xs font-semibold uppercase text-[var(--status-neutral)]">
-              {message.role === "assistant" ? "Ask OTOMOTO" : "Staff request"}
-            </p>
-            <div className="whitespace-pre-wrap text-sm">
-              {message.body ??
-                (message.generationStatus === "failed"
-                  ? mutationAllowed
-                    ? "Response unavailable — use Retry."
-                    : preview || readOnly
-                      ? "Response unavailable (read-only view)."
-                      : "Response unavailable."
-                  : "Response pending.")}
-            </div>
-            {message.photos.length > 0 ? (
-              <ul
-                aria-label="Attached photos"
-                className="mt-2 flex flex-wrap gap-1 text-xs"
-              >
-                {message.photos.map((photo) => (
-                  <li
-                    key={photo.photoId}
-                    className="rounded-full border border-[var(--border)] bg-white px-2 py-1"
-                  >
-                    {PHOTO_CATEGORY_LABELS[
-                      photo.category as keyof typeof PHOTO_CATEGORY_LABELS
-                    ] ?? "Photo"}{" "}
-                    · {photo.purpose}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </article>
+            message={message}
+            workOrderId={thread.workOrderId}
+            jobId={thread.jobId}
+            jobLabel={jobLabel}
+            canPromote={canPromoteAssistantMessage({
+              message,
+              thread,
+              canPromoteNotes: promotable,
+            })}
+            retryAvailable={retryAvailable}
+            readOnlyView={preview || readOnly}
+          />
         ))}
       </div>
+
+      {requested ? <RequestedInputCard request={requested} /> : null}
 
       <TurnComposer
         key={thread.threadId}
@@ -316,6 +373,8 @@ export function AskOtomotoThreadPanel({
         canMutate={canMutate}
         preview={preview}
         readOnly={readOnly}
+        lockReason={lockReason}
+        configured={configured}
         retryPending={retryPending}
         onBusyChange={setSendBusy}
       />
@@ -328,7 +387,7 @@ export function AskOtomotoThreadPanel({
         >
           Refresh
         </button>
-        {thread.status === "failed" && mutationAllowed ? (
+        {retryAvailable ? (
           <form
             action={retryAction}
             onSubmit={(event) => {

@@ -128,11 +128,12 @@ import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { floorTechWorkOrderRedirect } from "@/lib/technician/assignmentHref";
 import { isRouteUuid } from "@/lib/technician/routeState";
 import { createDiagnosticsAssistantService } from "@/lib/services/diagnosticsAssistant";
-import { AskOtomotoThreadPanel } from "@/components/diagnostics/AskOtomotoThreadPanel";
+import { AskOtomotoPanel } from "@/components/diagnostics/AskOtomotoPanel";
 import {
-  assistantComposerFlags,
-  loadAssistantWorkspaceOrNull,
+  askOtomotoCapabilities,
+  loadAskOtomotoPanelData,
 } from "@/lib/diagnostics/assistantPageState";
+import { getAskOtomotoPublicConfig } from "@/lib/diagnostics/config";
 import { toDiagnosticsPhotoSourceRows } from "@/lib/diagnostics/photoSelection";
 
 export const dynamic = "force-dynamic";
@@ -221,7 +222,7 @@ export default async function WorkOrderDetailPage({
     communicationLogs,
     liveEstimate,
     estimateVersionRows,
-    assistantWorkspace,
+    assistantData,
   ] = await Promise.all([
     listIntakePhotos(work_order_id),
     needsTechs ? listTechniciansForActiveLocation() : Promise.resolve([]),
@@ -255,14 +256,17 @@ export default async function WorkOrderDetailPage({
           return [];
         })
       : Promise.resolve([]),
-    activeTab === "assistant" && assistantThreadId
-      ? loadAssistantWorkspaceOrNull(() =>
-          diagnosticsAssistant.loadThread(
-            work_order_id,
-            assistantThreadId,
-            assistantReadView
-          )
-        )
+    activeTab === "assistant"
+      ? loadAskOtomotoPanelData({
+          service: diagnosticsAssistant,
+          surface: "office",
+          workOrderId: work_order_id,
+          threadId: assistantThreadId,
+          readView: assistantReadView,
+          jobLabels: Object.fromEntries(
+            detail.jobs.map((job) => [job.job_id, job.service_name_snapshot])
+          ),
+        })
       : Promise.resolve(null),
   ]);
 
@@ -282,18 +286,7 @@ export default async function WorkOrderDetailPage({
   const canUploadPhotos =
     canEditWorkOrder(viewRole) || canCreateWorkOrder(viewRole) || isFloorTech(viewRole);
   const canDeletePhotos = canDeleteIntakePhoto(viewRole);
-  const assistantFlags = assistantComposerFlags({
-    isForeignLocation: detail.is_foreign_location,
-    isPreviewing: preview.isPreviewing,
-    workOrderStatus: detail.status,
-    hasWriteRole: canUploadPhotos,
-  });
-  const assistantPhotos = assistantWorkspace
-    ? toDiagnosticsPhotoSourceRows(photos, {
-        workOrderId: detail.work_order_id,
-        jobId: assistantWorkspace.thread.jobId,
-      })
-    : [];
+  const assistantWorkspace = assistantData?.workspace ?? null;
   const canAddNotes = canComplete || canEdit || canAdd;
   const canRunQc = canRunQualityCheck(viewRole);
   const canClearFlags = canClearAdminFlag(viewRole);
@@ -635,21 +628,34 @@ export default async function WorkOrderDetailPage({
           addAction={addTechnicianNoteAction.bind(null, detail.work_order_id)}
         />
       ) : null}
-      {activeTab === "assistant" ? (
-        assistantWorkspace ? (
-          <AskOtomotoThreadPanel
-            workspace={assistantWorkspace}
-            photos={assistantPhotos}
-            canMutate={assistantFlags.canMutate}
-            preview={assistantFlags.preview}
-            readOnly={assistantFlags.readOnly}
-          />
-        ) : (
-          <div className="empty-state">
-            <p className="empty-state-title">Ask OTOMOTO</p>
-            <p className="empty-state-desc">The selected conversation is unavailable.</p>
-          </div>
-        )
+      {activeTab === "assistant" && assistantData ? (
+        <AskOtomotoPanel
+          route={{ surface: "office", workOrderId: detail.work_order_id }}
+          threads={assistantData.threads}
+          selectedThreadId={assistantThreadId}
+          workspace={assistantWorkspace}
+          jobs={detail.jobs
+            .filter((job) => job.status !== "cancelled" && job.status !== "declined")
+            .map((job) => ({ jobId: job.job_id, label: job.service_name_snapshot }))}
+          defaultJobId={null}
+          photos={
+            assistantWorkspace
+              ? toDiagnosticsPhotoSourceRows(photos, {
+                  workOrderId: detail.work_order_id,
+                  jobId: assistantWorkspace.thread.jobId,
+                })
+              : []
+          }
+          config={getAskOtomotoPublicConfig()}
+          capabilities={askOtomotoCapabilities({
+            surface: "office",
+            viewRole,
+            isForeignLocation: detail.is_foreign_location,
+            isPreviewing: preview.isPreviewing,
+            workOrderStatus: detail.status,
+          })}
+          historyUnavailable={assistantData.historyUnavailable}
+        />
       ) : null}
       {activeTab === "timeline" ? <TimelineList events={timeline} /> : null}
       {activeTab === "service-info" ? (
