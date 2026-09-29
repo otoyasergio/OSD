@@ -84,7 +84,13 @@ async function loadPacketBundle({
   ]);
   if (!assistantData) return { packet, photos, assistant: null };
 
-  const currentJob = packet.jobs.find((job) => job.job_id === route.jobId) ?? null;
+  // A route job only scopes a new thread when this viewer may work it; a floor
+  // tech's query string can't claim another technician's job.
+  const currentJob =
+    packet.jobs.find(
+      (job) =>
+        job.job_id === route.jobId && (!isFloorTech(viewRole) || job.assigned_to_me)
+    ) ?? null;
   const { workspace } = assistantData;
   return {
     packet,
@@ -113,7 +119,7 @@ async function loadPacketBundle({
       capabilities: askOtomotoCapabilities({
         surface: "floor",
         viewRole,
-        isForeignLocation: false,
+        isForeignLocation: packet.is_foreign_location !== false,
         isPreviewing,
         workOrderStatus: packet.wo_status,
       }),

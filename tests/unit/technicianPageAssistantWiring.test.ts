@@ -95,6 +95,19 @@ const threadSummary = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+function packet(overrides: Record<string, unknown> = {}) {
+  return {
+    work_order_id: WO,
+    wo_status: "in_progress",
+    is_foreign_location: false,
+    jobs: [
+      { job_id: JOB, service_name: "Brake service", assigned_to_me: true },
+      { job_id: OTHER_JOB, service_name: "Tire swap", assigned_to_me: false },
+    ],
+    ...overrides,
+  };
+}
+
 type PacketAssistant = {
   route: Record<string, unknown>;
   threads: Array<Record<string, unknown>>;
@@ -136,14 +149,7 @@ describe("technician page Ask OTOMOTO wiring", () => {
     getTechnicianFloorOs.mockResolvedValue({ selected: null });
     getTechnicianDocket.mockResolvedValue({ items: [] });
     listReadyForPickup.mockResolvedValue([]);
-    getJobPacket.mockResolvedValue({
-      work_order_id: WO,
-      wo_status: "in_progress",
-      jobs: [
-        { job_id: JOB, service_name: "Brake service", assigned_to_me: true },
-        { job_id: OTHER_JOB, service_name: "Tire swap", assigned_to_me: false },
-      ],
-    });
+    getJobPacket.mockResolvedValue(packet());
     listIntakePhotos.mockResolvedValue([
       fullPhoto("a1111111-1111-4111-8111-111111111111", "job_work", JOB),
       fullPhoto("a2222222-2222-4222-8222-222222222222", "vin", null),
@@ -193,6 +199,44 @@ describe("technician page Ask OTOMOTO wiring", () => {
     });
   });
 
+  it("locks writes visibly when the packet belongs to another location", async () => {
+    getJobPacket.mockResolvedValue(packet({ is_foreign_location: true }));
+    const { packetAssistant } = await shellProps("technician", false);
+    expect(packetAssistant?.capabilities).toMatchObject({
+      canMutate: false,
+      readOnly: true,
+      lockReason: "foreign",
+      canPromoteNotes: false,
+    });
+  });
+
+  it("treats a packet without a location flag as foreign rather than writable", async () => {
+    const { is_foreign_location: _omitted, ...legacy } = packet();
+    getJobPacket.mockResolvedValue(legacy);
+    const { packetAssistant } = await shellProps("technician", false);
+    expect(packetAssistant?.capabilities).toMatchObject({
+      canMutate: false,
+      lockReason: "foreign",
+    });
+  });
+
+  it.each(["technician", "head_tech"])(
+    "never offers a %s another technician's job from the query string",
+    async (role) => {
+      const { packetAssistant } = await shellProps(role, false, { job: OTHER_JOB });
+      expect(packetAssistant?.jobs).toEqual([]);
+      expect(packetAssistant?.defaultJobId).toBeNull();
+      expect(packetAssistant?.capabilities).toMatchObject({ canMutate: true });
+      expect(packetAssistant?.route).toMatchObject({ jobId: OTHER_JOB });
+    }
+  );
+
+  it("offers any work-order job to a front-office role the backend allows", async () => {
+    const { packetAssistant } = await shellProps("manager", false, { job: OTHER_JOB });
+    expect(packetAssistant?.jobs).toEqual([{ jobId: OTHER_JOB, label: "Tire swap" }]);
+    expect(packetAssistant?.defaultJobId).toBe(OTHER_JOB);
+  });
+
   it("ignores a route job that is not on this work order", async () => {
     const { packetAssistant } = await shellProps("technician", false, {
       job: "59999999-9999-4999-8999-999999999999",
@@ -220,11 +264,7 @@ describe("technician page Ask OTOMOTO wiring", () => {
   );
 
   it("treats a completed work order as locked", async () => {
-    getJobPacket.mockResolvedValue({
-      work_order_id: WO,
-      wo_status: "completed",
-      jobs: [],
-    });
+    getJobPacket.mockResolvedValue(packet({ wo_status: "completed", jobs: [] }));
     const { packetAssistant } = await shellProps("technician", false);
     expect(packetAssistant?.capabilities).toMatchObject({
       canMutate: false,
@@ -273,11 +313,7 @@ describe("technician page Ask OTOMOTO wiring", () => {
     expect(props.packetAssistant).toBeNull();
 
     vi.clearAllMocks();
-    getJobPacket.mockResolvedValue({
-      work_order_id: WO,
-      wo_status: "in_progress",
-      jobs: [],
-    });
+    getJobPacket.mockResolvedValue(packet({ jobs: [] }));
     listIntakePhotos.mockResolvedValue([]);
     props = await shellProps("technician", false, { packetSection: "notes" });
     expect(listThreads).not.toHaveBeenCalled();

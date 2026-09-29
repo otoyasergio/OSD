@@ -43,6 +43,8 @@ export type JobPacket = {
   wo_status: WorkOrderStatus;
   wo_status_label: string;
   motorcycle_label: string;
+  /** Readable via membership but not the actor's active location — writes are refused. */
+  is_foreign_location: boolean;
   jobs: JobPacketJob[];
   pending_recommendations: JobPacketPendingRecommendation[];
   notes: TechnicianNote[];
@@ -203,6 +205,7 @@ export async function getJobPacket(
     motorcycle_label: motorcycleLabel(
       moto ? { year: moto.year, make: moto.make, model: moto.model } : null
     ),
+    is_foreign_location: wo.location_id !== locationId,
     jobs: mapJobPacketJobs(jobRows, wo.work_order_id, subject.userId),
     pending_recommendations: mapJobPacketPendingRecommendations(
       (recommendationRows as PacketRecommendationRow[] | null) ?? []

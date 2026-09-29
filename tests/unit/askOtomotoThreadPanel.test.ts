@@ -186,6 +186,7 @@ describe("AskOtomotoThreadPanel", () => {
             wo_status: "in_progress",
             wo_status_label: "In progress",
             motorcycle_label: "2026 Honda CB500F",
+            is_foreign_location: false,
             jobs: [],
             pending_recommendations: [],
             notes: [],
