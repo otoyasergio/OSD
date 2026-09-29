@@ -168,9 +168,14 @@ and provider-configured booleans. Global setup compares that fingerprint with
 means the app must be rebuilt with the isolated values.
 
 For `PLAYWRIGHT_SKIP_WEBSERVER=1`, the disposable remote QA deployment must use
-the same guard secret as the runner, a dedicated migrated non-production
-Supabase project, and disabled OpenAI/Twilio/Resend credentials. The same
-fingerprint preflight runs before any remote QA mutation.
+`E2E_ALLOW_MUTATION=1` on the server, the same nonempty
+`E2E_ENV_GUARD_SECRET` on runner and server, a dedicated migrated
+non-production Supabase project, and disabled OpenAI/Twilio/Resend credentials.
+The runner must use an HTTPS `PLAYWRIGHT_BASE_URL` whose exact hostname is
+listed in `E2E_ALLOWED_PREVIEW_HOSTS`. Never allow-list or target production;
+the production Toronto Moto host is rejected, and the guarded route always
+returns 404 when `VERCEL_ENV=production`. The same fingerprint preflight runs
+before any remote QA mutation.
 
 Then run:
 

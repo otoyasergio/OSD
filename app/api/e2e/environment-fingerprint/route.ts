@@ -23,7 +23,11 @@ function configured(...values: Array<string | undefined>): boolean {
 
 export async function GET(request: Request): Promise<Response> {
   const guardSecret = process.env.E2E_ENV_GUARD_SECRET?.trim() ?? "";
-  if (process.env.E2E_ALLOW_MUTATION !== "1" || !guardSecret) {
+  if (
+    process.env.VERCEL_ENV === "production" ||
+    process.env.E2E_ALLOW_MUTATION !== "1" ||
+    !guardSecret
+  ) {
     return new Response(null, { status: 404 });
   }
   if (!secretMatches(request.headers.get(E2E_ENV_GUARD_HEADER), guardSecret)) {

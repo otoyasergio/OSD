@@ -17,6 +17,15 @@ afterEach(() => {
 });
 
 describe("E2E environment fingerprint route", () => {
+  it("always returns 404 in Vercel production", async () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("E2E_ALLOW_MUTATION", "1");
+    vi.stubEnv("E2E_ENV_GUARD_SECRET", SECRET);
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", URL);
+
+    expect((await GET(request(SECRET))).status).toBe(404);
+  });
+
   it("is undiscoverable when mutation mode or the server secret is absent", async () => {
     vi.stubEnv("E2E_ALLOW_MUTATION", "0");
     vi.stubEnv("E2E_ENV_GUARD_SECRET", SECRET);

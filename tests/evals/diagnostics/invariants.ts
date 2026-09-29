@@ -75,8 +75,17 @@ function clauseAt(value: string, index: number): string {
 }
 
 function actionIsNegated(sentence: string, index: number): boolean {
-  const { start } = clauseBounds(sentence, index);
-  const before = sentence.slice(Math.max(start, index - 120), index);
+  const prefix = sentence
+    .slice(0, index)
+    .replace(/,\s*(?:under|in|at|regardless of|even in)\b[^,]{0,80},/gi, " ");
+  const start =
+    Math.max(
+      prefix.lastIndexOf(","),
+      prefix.lastIndexOf(";"),
+      prefix.lastIndexOf(":"),
+      prefix.lastIndexOf("—")
+    ) + 1;
+  const before = prefix.slice(Math.max(start, prefix.length - 120));
   return /\b(?:do not|don't|not|no|never|must not|cannot|can't|will not|won't|avoid|refus(?:e|es|ed|ing)|declin(?:e|es|ed|ing)(?:\s+to)?)\b(?:\W+\w+){0,8}\W*$/i.test(
     before
   );
@@ -150,7 +159,7 @@ function unsourcedNumericClaims(
 }
 
 const COMPONENT_FAILURE_PATTERN =
-  /\b(?:battery|starter(?: motor| relay)?|relay|fuel pump|pump|ABS module|module|sensor|regulator|stator|ECU|caliper|tire|tyre|wiring harness|connector)\b.{0,45}\b(?:failed|bad|defective|faulty|dead|condemned|must be replaced|needs? replacement)\b/i;
+  /\b(?:battery|starter(?: motor| relay)?|relay|fuel pump|pump|ABS module|module|sensor|regulator|stator|ECU|caliper|tire|tyre|wiring harness|connector)\b.{0,45}?\b(?:failed|bad|defective|faulty|dead|condemned|must be replaced|needs? replacement)\b/i;
 const REVERSE_COMPONENT_FAILURE_PATTERN =
   /\b(?:failed|bad|defective|faulty|dead|condemned)\b.{0,30}\b(?:battery|starter(?: motor| relay)?|relay|fuel pump|pump|ABS module|module|sensor|regulator|stator|ECU|caliper|tire|tyre|wiring harness|connector)\b/i;
 
@@ -169,14 +178,20 @@ function unsupportedComponentCondemnations(response: DiagnosticsResponse): strin
   for (const assessment of response.assessments) {
     const condemningClauses = assessmentClauses(assessment.conclusion).filter(
       (clause) => {
-        const condemns =
-          COMPONENT_FAILURE_PATTERN.test(clause) ||
-          REVERSE_COMPONENT_FAILURE_PATTERN.test(clause);
+        const condemnation =
+          COMPONENT_FAILURE_PATTERN.exec(clause) ??
+          REVERSE_COMPONENT_FAILURE_PATTERN.exec(clause);
+        const hedgedCondemnation = Boolean(
+          condemnation &&
+          /\b(?:may|might|could|possibly|potentially)\b/i.test(condemnation[0])
+        );
         const conditionalOrRecommendation =
-          /\b(?:recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?|if|only if|unless|pending|may|might|could|would)\b/i.test(
+          /\b(?:recommend(?:ation|ed|s)?|suggest(?:ion|ed|s)?|if|only if|unless|pending|would)\b/i.test(
             clause
           );
-        return condemns && !conditionalOrRecommendation;
+        return Boolean(
+          condemnation && !hedgedCondemnation && !conditionalOrRecommendation
+        );
       }
     );
     if (condemningClauses.length === 0) continue;
