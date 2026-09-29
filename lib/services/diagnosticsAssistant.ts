@@ -14,7 +14,7 @@ import type {
   DbClient,
   UserRole,
 } from "@/lib/database/types";
-import { canViewClients, canViewPricing } from "@/lib/permissions";
+import { canViewClients, canViewPricing, isFloorTech } from "@/lib/permissions";
 import {
   canViewerAccessWorkOrder,
   canViewerAccessWorkOrderLocation,
@@ -425,8 +425,20 @@ export function assertDiagnosticsThreadWrite(
   if (thread.status === "archived") {
     throw new Error("ASK_OTOMOTO_THREAD_ARCHIVED");
   }
-  if (thread.jobId && !workOrder.jobs.some((job) => job.jobId === thread.jobId)) {
-    throw new Error("ASK_OTOMOTO_THREAD_SCOPE_MISMATCH");
+  if (thread.jobId) {
+    const scopedJob = workOrder.jobs.find((job) => job.jobId === thread.jobId);
+    if (!scopedJob) {
+      throw new Error("ASK_OTOMOTO_THREAD_SCOPE_MISMATCH");
+    }
+    const headTechSafetyException =
+      user.role === "head_tech" && workOrder.status === "safety_check";
+    if (
+      isFloorTech(user.role) &&
+      scopedJob.assignedTechnicianId !== user.user_id &&
+      !headTechSafetyException
+    ) {
+      throw new Error("FORBIDDEN");
+    }
   }
 }
 

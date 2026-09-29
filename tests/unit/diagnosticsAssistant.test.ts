@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AppUser } from "@/lib/auth/session";
 import {
   assertDiagnosticsAccess,
+  assertDiagnosticsThreadWrite,
   createOrReuseDiagnosticsTriggerThreadInternal,
   createDiagnosticsAssistantService,
   deriveDiagnosticsAudience,
@@ -118,6 +119,73 @@ describe("Ask OTOMOTO authorization", () => {
     expect(() =>
       assertDiagnosticsAccess(advisor, foreignScope, "advisor", "write")
     ).toThrow("FOREIGN_LOCATION");
+  });
+
+  it.each(["technician", "head_tech"] as const)(
+    "rejects a %s writing a colleague's job-scoped thread",
+    (role) => {
+      const user = actor(role);
+      const ownJobId = "51111111-1111-4111-8111-111111111111";
+      const colleagueJobId = "52222222-2222-4222-8222-222222222222";
+      const workOrder = scope({
+        primaryTechnicianId: null,
+        jobs: [
+          { jobId: ownJobId, assignedTechnicianId: user.user_id },
+          {
+            jobId: colleagueJobId,
+            assignedTechnicianId: "91111111-1111-4111-8111-111111111111",
+          },
+        ],
+      });
+
+      expect(() =>
+        assertDiagnosticsThreadWrite(user, workOrder, {
+          threadId: "71111111-1111-4111-8111-111111111111",
+          workOrderId: workOrder.workOrderId,
+          jobId: colleagueJobId,
+          locationId: workOrder.locationId,
+          mode: "shop",
+          audience: "technical",
+          status: "ready",
+          diagnosticPhase: null,
+          triggerType: null,
+          createdAt: "2026-09-29T00:00:00.000Z",
+          updatedAt: "2026-09-29T00:00:00.000Z",
+        })
+      ).toThrow("FORBIDDEN");
+    }
+  );
+
+  it("keeps the documented head-tech safety-stage work-order exception", () => {
+    const user = actor("head_tech");
+    const colleagueJobId = "52222222-2222-4222-8222-222222222222";
+    const workOrder = scope({
+      status: "safety_check",
+      primaryTechnicianId: null,
+      qualityCheckAssignedTo: null,
+      jobs: [
+        {
+          jobId: colleagueJobId,
+          assignedTechnicianId: "91111111-1111-4111-8111-111111111111",
+        },
+      ],
+    });
+
+    expect(() =>
+      assertDiagnosticsThreadWrite(user, workOrder, {
+        threadId: "71111111-1111-4111-8111-111111111111",
+        workOrderId: workOrder.workOrderId,
+        jobId: colleagueJobId,
+        locationId: workOrder.locationId,
+        mode: "shop",
+        audience: "technical",
+        status: "ready",
+        diagnosticPhase: null,
+        triggerType: null,
+        createdAt: "2026-09-29T00:00:00.000Z",
+        updatedAt: "2026-09-29T00:00:00.000Z",
+      })
+    ).not.toThrow();
   });
 });
 

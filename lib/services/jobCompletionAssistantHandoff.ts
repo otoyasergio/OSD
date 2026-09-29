@@ -2,6 +2,7 @@ import "server-only";
 
 import { after } from "next/server";
 import { requireUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   createOrReuseDiagnosticsTriggerThreadInternal,
   diagnosticsSafeFailureCode,
@@ -19,6 +20,14 @@ export type JobCompletionAssistantHandoff = {
  */
 export async function prepareJobCompletionAssistantHandoff(): Promise<JobCompletionAssistantHandoff> {
   const actor = await requireUser();
+  try {
+    const preview = await getRolePreviewContext();
+    if (!preview || preview.isPreviewing) {
+      return { async afterSuccessfulCompletion() {} };
+    }
+  } catch {
+    return { async afterSuccessfulCompletion() {} };
+  }
 
   return {
     async afterSuccessfulCompletion(input) {

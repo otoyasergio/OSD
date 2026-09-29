@@ -7,6 +7,7 @@ const {
   generateTriggerResponse,
   recordUxFailure,
   requireUser,
+  getRolePreviewContext,
   revalidatePath,
   redirect,
   events,
@@ -26,6 +27,7 @@ const {
     generateTriggerResponse: vi.fn(),
     recordUxFailure: vi.fn(),
     requireUser: vi.fn(),
+    getRolePreviewContext: vi.fn(),
     revalidatePath: vi.fn(),
     redirect: vi.fn((destination: string) => {
       events.push(`redirect:${destination}`);
@@ -38,6 +40,7 @@ vi.mock("next/server", () => ({ after }));
 vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect }));
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
+vi.mock("@/lib/auth/role-preview", () => ({ getRolePreviewContext }));
 vi.mock("@/lib/services/inspections", () => ({
   completeInspection,
   saveInspectionResult: vi.fn(),
@@ -75,6 +78,7 @@ describe("completeInspectionAction automatic handoff", () => {
     vi.clearAllMocks();
     events.length = 0;
     scheduled.length = 0;
+    getRolePreviewContext.mockResolvedValue({ isPreviewing: false });
     requireUser.mockResolvedValue({
       user_id: USER,
       auth_user_id: "21111111-1111-4111-8111-111111111111",
@@ -223,5 +227,23 @@ describe("completeInspectionAction automatic handoff", () => {
     });
     expect(JSON.stringify(log.mock.calls)).not.toContain("raw database detail");
     log.mockRestore();
+  });
+
+  it("skips the assistant handoff in owner role preview without undoing inspection completion", async () => {
+    requireUser.mockResolvedValueOnce({
+      ...(await requireUser()),
+      role: "owner",
+    });
+    getRolePreviewContext.mockResolvedValueOnce({ isPreviewing: true });
+
+    await expect(completeInspectionAction(WO, { error: null }, form())).resolves.toEqual({
+      error: null,
+    });
+
+    expect(completeInspection).toHaveBeenCalledOnce();
+    expect(createThread).not.toHaveBeenCalled();
+    expect(after).not.toHaveBeenCalled();
+    expect(generateTriggerResponse).not.toHaveBeenCalled();
+    expect(revalidatePath).toHaveBeenCalled();
   });
 });

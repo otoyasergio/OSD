@@ -1,25 +1,34 @@
 import { readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { after, createThread, generateTriggerResponse, requireUser, scheduled, events } =
-  vi.hoisted(() => {
-    const scheduled: Array<() => Promise<void> | void> = [];
-    const events: string[] = [];
-    return {
-      scheduled,
-      events,
-      after: vi.fn((callback: () => Promise<void> | void) => {
-        events.push("after");
-        scheduled.push(callback);
-      }),
-      createThread: vi.fn(),
-      generateTriggerResponse: vi.fn(),
-      requireUser: vi.fn(),
-    };
-  });
+const {
+  after,
+  createThread,
+  generateTriggerResponse,
+  requireUser,
+  getRolePreviewContext,
+  scheduled,
+  events,
+} = vi.hoisted(() => {
+  const scheduled: Array<() => Promise<void> | void> = [];
+  const events: string[] = [];
+  return {
+    scheduled,
+    events,
+    after: vi.fn((callback: () => Promise<void> | void) => {
+      events.push("after");
+      scheduled.push(callback);
+    }),
+    createThread: vi.fn(),
+    generateTriggerResponse: vi.fn(),
+    requireUser: vi.fn(),
+    getRolePreviewContext: vi.fn(),
+  };
+});
 
 vi.mock("next/server", () => ({ after }));
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
+vi.mock("@/lib/auth/role-preview", () => ({ getRolePreviewContext }));
 vi.mock("@/lib/services/diagnosticsAssistant", () => ({
   createOrReuseDiagnosticsTriggerThreadInternal: createThread,
   generateDiagnosticsTriggerResponseInternal: generateTriggerResponse,
@@ -43,6 +52,7 @@ describe("job-completion assistant handoff", () => {
     vi.clearAllMocks();
     scheduled.length = 0;
     events.length = 0;
+    getRolePreviewContext.mockResolvedValue({ isPreviewing: false });
     requireUser.mockImplementation(async () => {
       events.push("authenticate");
       return {
@@ -154,5 +164,25 @@ describe("job-completion assistant handoff", () => {
     expect(source).not.toMatch(
       /services\/(?:jobs|jobChecklist|peerQc|parts|inspections)|recalculateWorkOrderStatus|updateJobStatus|completeJob|toggleJobChecklist|passPeerQualityCheck|passSafetyCheck/
     );
+  });
+
+  it("returns a no-op handoff during owner role preview while domain completion proceeds", async () => {
+    requireUser.mockResolvedValueOnce({
+      ...(await requireUser()),
+      role: "owner",
+    });
+    getRolePreviewContext.mockResolvedValueOnce({ isPreviewing: true });
+
+    const handoff = await prepareJobCompletionAssistantHandoff();
+    events.push("domain-complete");
+    await handoff.afterSuccessfulCompletion({
+      workOrderId: WORK_ORDER,
+      jobId: JOB,
+    });
+
+    expect(events).toContain("domain-complete");
+    expect(createThread).not.toHaveBeenCalled();
+    expect(after).not.toHaveBeenCalled();
+    expect(generateTriggerResponse).not.toHaveBeenCalled();
   });
 });

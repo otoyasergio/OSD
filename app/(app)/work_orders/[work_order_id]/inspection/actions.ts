@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { requireUser, type AppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   completeInspection,
   saveInspectionResult,
@@ -79,22 +80,31 @@ export async function completeInspectionAction(
   const jobId = floorReturnJobIdForWorkOrder(workOrderId, floorReturn);
   let threadId: string | null = null;
   let threadLocationId: string | null = null;
+  let assistantHandoffAllowed = false;
   try {
-    const thread = await createOrReuseDiagnosticsTriggerThreadInternal(actor, {
-      workOrderId,
-      jobId,
-      mode: "shop",
-      trigger: "inspection_completion",
-      triggerEntityId: completion.inspectionId,
-    });
-    threadId = thread.threadId;
-    threadLocationId = thread.locationId;
-  } catch (error) {
-    console.error("Inspection assistant handoff unavailable", {
-      work_order_id: workOrderId,
-      inspection_id: completion.inspectionId,
-      safe_error_code: diagnosticsSafeFailureCode(error),
-    });
+    const preview = await getRolePreviewContext();
+    assistantHandoffAllowed = Boolean(preview && !preview.isPreviewing);
+  } catch {
+    assistantHandoffAllowed = false;
+  }
+  if (assistantHandoffAllowed) {
+    try {
+      const thread = await createOrReuseDiagnosticsTriggerThreadInternal(actor, {
+        workOrderId,
+        jobId,
+        mode: "shop",
+        trigger: "inspection_completion",
+        triggerEntityId: completion.inspectionId,
+      });
+      threadId = thread.threadId;
+      threadLocationId = thread.locationId;
+    } catch (error) {
+      console.error("Inspection assistant handoff unavailable", {
+        work_order_id: workOrderId,
+        inspection_id: completion.inspectionId,
+        safe_error_code: diagnosticsSafeFailureCode(error),
+      });
+    }
   }
 
   if (threadId) {
