@@ -22,7 +22,7 @@ const DEEP_GLOBAL_NODE_BUDGET = 24;
 const DEEP_TEXT_CHARS = 80;
 const SECTION_BUDGETS = {
   customerRequestJobs: 1_500,
-  inspectionResults: 18_000,
+  inspectionResults: 19_000,
   technicianNotes: 3_000,
   recommendations: 3_000,
   qualityChecks: 1_500,
@@ -355,6 +355,7 @@ type ShapedInspectionSourceRow = {
 type ShapedInspectionCategory =
   DiagnosticsModelContext["inspection"]["categories"][number] & {
     sourceOrder: number;
+    priority: number;
   };
 
 function shapeInspectionRows(
@@ -394,9 +395,16 @@ function shapeInspectionRows(
           item.measurement === null &&
           item.notes === null
       );
+      const hasNonOk = items.some((item) => item.status.toLowerCase() !== "ok");
+      const priority = hasNonOk
+        ? 0
+        : items.some((item) => item.measurement !== null || item.notes !== null)
+          ? 1
+          : 2;
       return allOk
         ? {
             sourceOrder: items[0]!.sourceOrder,
+            priority,
             category,
             count: items.length,
             status: "ok" as const,
@@ -404,6 +412,7 @@ function shapeInspectionRows(
           }
         : {
             sourceOrder: items[0]!.sourceOrder,
+            priority,
             category,
             count: items.length,
             status: "mixed_or_evidenced" as const,
@@ -420,11 +429,9 @@ function shapeInspectionRows(
   const selected: ShapedInspectionCategory[] = [];
   let used = 2;
   for (const category of [...categories].sort(
-    (a, b) =>
-      Number(a.status === "ok") - Number(b.status === "ok") ||
-      a.sourceOrder - b.sourceOrder
+    (a, b) => a.priority - b.priority || a.sourceOrder - b.sourceOrder
   )) {
-    const { sourceOrder: _sourceOrder, ...modelCategory } = category;
+    const { sourceOrder: _sourceOrder, priority: _priority, ...modelCategory } = category;
     const size = JSON.stringify(modelCategory).length + (selected.length > 0 ? 1 : 0);
     if (used + size > SECTION_BUDGETS.inspectionResults) continue;
     selected.push(category);
@@ -444,7 +451,9 @@ function shapeInspectionRows(
   );
 
   return {
-    categories: selected.map(({ sourceOrder: _sourceOrder, ...category }) => category),
+    categories: selected.map(
+      ({ sourceOrder: _sourceOrder, priority: _priority, ...category }) => category
+    ),
     statusCounts,
     truncation: {
       total,

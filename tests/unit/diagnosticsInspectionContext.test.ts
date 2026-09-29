@@ -236,4 +236,129 @@ describe("diagnostics inspection context", () => {
     });
     expect(parsed.truncation.inspectionResults.omitted).toBeGreaterThan(0);
   });
+
+  it("prioritizes late non-OK categories, then measured categories, near the 48k limit", () => {
+    const rows = Array.from({ length: 90 }, (_, index) => ({
+      category:
+        index < 30
+          ? `All OK category ${index}`
+          : index < 60
+            ? `Measured category ${index}`
+            : `Non-OK category ${index}`,
+      itemName: `Inspection item ${index} ${"x".repeat(430)}`,
+      displayOrder: index,
+    }));
+    const input = source(rows);
+    input.workOrder.complaint = "Customer complaint ".padEnd(500, "c");
+    input.workOrder.internalNotes = "Internal diagnostic note ".padEnd(500, "i");
+    input.motorcycle.notes = "Motorcycle record note ".padEnd(500, "m");
+    input.serviceInformation = {
+      oilFilter: "filter ".padEnd(500, "f"),
+      oilType: "oil ".padEnd(500, "o"),
+      oilCapacity: "capacity ".padEnd(500, "c"),
+      airFilter: "air ".padEnd(500, "a"),
+      sparkPlugs: "plug ".padEnd(500, "p"),
+      frontBrakePads: "front ".padEnd(500, "f"),
+      rearBrakePads: "rear ".padEnd(500, "r"),
+      frontTireSize: "front tire ".padEnd(500, "t"),
+      rearTireSize: "rear tire ".padEnd(500, "t"),
+      chain: "chain ".padEnd(500, "h"),
+      battery: "battery ".padEnd(500, "b"),
+      notes: "catalogue note ".padEnd(500, "n"),
+    };
+    input.jobs = Array.from({ length: 100 }, (_, index) => ({
+      jobId: `job-${index}`,
+      workOrderId: "wo-1",
+      origin: "customer_request",
+      serviceName: `Customer request ${index} ${"j".repeat(450)}`,
+      status: "in_progress",
+      notes: `Job note ${index} ${"j".repeat(450)}`,
+    }));
+    input.technicianNotes = Array.from({ length: 100 }, (_, index) => ({
+      technicianNoteId: `note-${index}`,
+      workOrderId: "wo-1",
+      jobId: null,
+      noteType: "diagnostic",
+      note: `Technician note ${index} ${"t".repeat(470)}`,
+      createdAt: `2026-09-29T08:${String(index % 60).padStart(2, "0")}:00.000Z`,
+    }));
+    input.recommendations = Array.from({ length: 100 }, (_, index) => ({
+      recommendationId: `recommendation-${index}`,
+      workOrderId: "wo-1",
+      description: `Recommendation ${index} ${"r".repeat(460)}`,
+      severity: index % 2 === 0 ? "safety_critical" : "immediate_attention",
+      status: "pending",
+      notes: `Recommendation note ${index} ${"n".repeat(450)}`,
+    }));
+    input.checks = {
+      quality: Array.from({ length: 20 }, (_, index) => ({
+        attemptId: `quality-${index}`,
+        workOrderId: "wo-1",
+        outcome: "recorded",
+        checklist: { step: `Quality step ${index} ${"q".repeat(70)}` },
+        notes: `Quality note ${index} ${"q".repeat(470)}`,
+        performedAt: `2026-09-29T09:${String(index).padStart(2, "0")}:00.000Z`,
+      })),
+      safety: Array.from({ length: 20 }, (_, index) => ({
+        attemptId: `safety-${index}`,
+        workOrderId: "wo-1",
+        outcome: "recorded",
+        checklist: { step: `Safety step ${index} ${"s".repeat(70)}` },
+        notes: `Safety note ${index} ${"s".repeat(470)}`,
+        performedAt: `2026-09-29T10:${String(index).padStart(2, "0")}:00.000Z`,
+      })),
+    };
+    input.references = {
+      exactModelOem: { text: "OEM reference ".padEnd(500, "o") },
+      currentRecallLookup: { text: "Recall reference ".padEnd(500, "r") },
+      currentOntarioInspection: {
+        text: "Ontario inspection reference ".padEnd(500, "i"),
+      },
+      officialInspectionTemplate: {
+        text: "Inspection template ".padEnd(500, "t"),
+      },
+      universalDiagnosticTree: {
+        text: "Diagnostic tree ".padEnd(500, "d"),
+      },
+    };
+    input.inspection!.results = input.inspection!.results.map((result, index) => ({
+      ...result,
+      status:
+        index < 60
+          ? "ok"
+          : index % 3 === 0
+            ? "immediate_attention"
+            : index % 3 === 1
+              ? "future_attention"
+              : null,
+      measurement: index >= 30 && index < 60 ? `${index} psi recorded` : null,
+      notes: index >= 60 ? `Flagged evidence ${index}` : null,
+    }));
+
+    const { shaped, parsed } = parsedContext(input);
+    const suppliedCategories = parsed.inspection.categories.map(
+      (category) => category.category
+    );
+    const suppliedNonOk = suppliedCategories.filter((category) =>
+      category.startsWith("Non-OK category")
+    );
+    const suppliedMeasured = suppliedCategories.filter((category) =>
+      category.startsWith("Measured category")
+    );
+    const suppliedAllOk = suppliedCategories.filter((category) =>
+      category.startsWith("All OK category")
+    );
+
+    expect(shaped.contextBlock.length).toBeGreaterThan(
+      DIAGNOSTICS_MAX_CONTEXT_BLOCK_CHARS * 0.8
+    );
+    expect(shaped.contextBlock.length).toBeLessThanOrEqual(
+      DIAGNOSTICS_MAX_CONTEXT_BLOCK_CHARS
+    );
+    expect(suppliedNonOk).toEqual(
+      Array.from({ length: 30 }, (_, index) => `Non-OK category ${index + 60}`)
+    );
+    expect(suppliedMeasured.length).toBeGreaterThan(0);
+    expect(suppliedAllOk).toHaveLength(0);
+  });
 });

@@ -13,9 +13,12 @@ import {
   type DiagnosticsWorkOrderScope,
 } from "@/lib/services/diagnosticsAssistant";
 import type { DiagnosticsContextSource } from "@/lib/diagnostics/context";
-import type {
-  DiagnosticsGenerationRequest,
-  DiagnosticsGenerationResult,
+import {
+  DIAGNOSTICS_MAX_HISTORY_CHARS,
+  DIAGNOSTICS_MAX_HISTORY_MESSAGES,
+  DIAGNOSTICS_MAX_MESSAGE_CHARS,
+  type DiagnosticsGenerationRequest,
+  type DiagnosticsGenerationResult,
 } from "@/lib/diagnostics/openai";
 
 const actor = (role: AppUser["role"], overrides: Partial<AppUser> = {}): AppUser => ({
@@ -1095,6 +1098,75 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       "b1111111-1111-4111-8111-111111111111",
       "a1111111-1111-4111-8111-111111111111"
     );
+  });
+
+  it("re-budgets complete newest history turns after redaction markers expand", async () => {
+    const { repo, thread, generated } = generationRepository();
+    const history = Array.from({ length: 8 }, (_, index) => [
+      {
+        role: "user" as const,
+        content: `turn-${index}-request ${"Ann ".repeat(1_500)}`,
+      },
+      {
+        role: "assistant" as const,
+        content: `turn-${index}-answer ${"Ann ".repeat(1_500)}`,
+      },
+    ]).flat();
+    vi.mocked(repo.loadGenerationInput).mockResolvedValue({
+      userMessageId: "b1111111-1111-4111-8111-111111111111",
+      assistantMessageId: generated.messageId,
+      userMessage: "Review the latest measurements.",
+      photos: [],
+      history,
+    });
+    vi.mocked(repo.loadContextSource).mockResolvedValue({
+      source: contextSource(),
+      redactTerms: { customerName: "Ann" },
+    });
+    const generateDraft = vi.fn().mockResolvedValue(generationResult());
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft,
+      prepareImages: async () => ({ images: [], photoMetadata: [] }),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await service.submitTurn({
+      workOrderId: scope().workOrderId,
+      threadId: thread.threadId,
+      jobId: thread.jobId,
+      mode: "shop",
+      text: "Review the latest measurements.",
+      photos: [],
+    });
+
+    const providerHistory = generateDraft.mock.calls[0]![0].history;
+    expect(providerHistory).toHaveLength(8);
+    expect(providerHistory.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(providerHistory[0]!.content).toContain("turn-4-request");
+    expect(providerHistory.at(-1)!.content).toContain("turn-7-answer");
+    expect(providerHistory.every((message) => !message.content.includes("Ann"))).toBe(
+      true
+    );
+    expect(
+      providerHistory.every(
+        (message) => message.content.length <= DIAGNOSTICS_MAX_MESSAGE_CHARS
+      )
+    ).toBe(true);
+    expect(providerHistory.length).toBeLessThanOrEqual(DIAGNOSTICS_MAX_HISTORY_MESSAGES);
+    expect(
+      providerHistory.reduce((sum, message) => sum + message.content.length, 0)
+    ).toBeLessThanOrEqual(DIAGNOSTICS_MAX_HISTORY_CHARS);
   });
 
   it("persists a safe failed state for provider and missing-config errors", async () => {

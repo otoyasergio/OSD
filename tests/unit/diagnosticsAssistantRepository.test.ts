@@ -490,6 +490,34 @@ describe("Supabase diagnostics repository boundaries", () => {
       );
     });
 
+    it("stops at the first newer turn that cannot fit instead of leaving a history gap", async () => {
+      const turn = (label: string, chars: number) => [
+        messageRow(`${label}-user`, "user", `${label}-request-`.padEnd(chars, "u")),
+        messageRow(
+          `${label}-assistant`,
+          "assistant",
+          `${label}-answer-`.padEnd(chars, "a"),
+          {
+            parentUserMessageId: `${label}-user`,
+          }
+        ),
+      ];
+      const prior = [
+        ...turn("oldest-small", 1_000),
+        ...turn("middle-blocker", 4_000),
+        ...Array.from({ length: 5 }, (_, index) => turn(`newer-${index}`, 6_000)).flat(),
+      ];
+
+      const result = await load(prior);
+      const content = result.history.map((message) => message.content).join("\n");
+
+      expect(result.history).toHaveLength(10);
+      expect(content).toContain("newer-0-request-");
+      expect(content).toContain("newer-4-answer-");
+      expect(content).not.toContain("middle-blocker");
+      expect(content).not.toContain("oldest-small");
+    });
+
     it("excludes orphaned or cross-parent answers instead of attributing them to a staff turn", async () => {
       const result = await load([
         messageRow("user-1", "user", "Matched staff request"),

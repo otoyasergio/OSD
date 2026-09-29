@@ -652,7 +652,7 @@ function boundedReadyHistory(
       selected.length * 2 + 2 > DIAGNOSTICS_MAX_HISTORY_MESSAGES ||
       aggregateChars + turnChars > DIAGNOSTICS_MAX_HISTORY_CHARS
     ) {
-      continue;
+      break;
     }
     selected.push(turn);
     aggregateChars += turnChars;
@@ -661,6 +661,48 @@ function boundedReadyHistory(
   return selected
     .sort((a, b) => a.order - b.order)
     .flatMap((turn) => [turn.user, turn.assistant]);
+}
+
+function redactAndBoundProviderHistory(
+  messages: readonly DiagnosticsHistoryMessage[],
+  terms: DiagnosticsRedactTerms
+): DiagnosticsHistoryMessage[] {
+  const safe = messages.map((message) => ({
+    ...message,
+    content: clipStoredHistoryText(
+      redactDiagnosticsText(message.content, terms),
+      DIAGNOSTICS_MAX_MESSAGE_CHARS
+    ),
+  }));
+  const turns: DiagnosticsHistoryMessage[][] = [];
+  for (let index = 0; index < safe.length; index += 1) {
+    const current = safe[index]!;
+    const next = safe[index + 1];
+    if (current.role === "user" && next?.role === "assistant") {
+      turns.push([current, next]);
+      index += 1;
+    } else {
+      turns.push([current]);
+    }
+  }
+
+  const selected: DiagnosticsHistoryMessage[][] = [];
+  let selectedCount = 0;
+  let aggregateChars = 0;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index]!;
+    const turnChars = turn.reduce((sum, message) => sum + message.content.length, 0);
+    if (
+      selectedCount + turn.length > DIAGNOSTICS_MAX_HISTORY_MESSAGES ||
+      aggregateChars + turnChars > DIAGNOSTICS_MAX_HISTORY_CHARS
+    ) {
+      break;
+    }
+    selected.push(turn);
+    selectedCount += turn.length;
+    aggregateChars += turnChars;
+  }
+  return selected.reverse().flat();
 }
 
 export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantRepository {
@@ -1847,10 +1889,10 @@ export function createDiagnosticsAssistantService(
         input.generation.userMessage,
         loaded.redactTerms
       );
-      const safeHistory = input.generation.history.map((message) => ({
-        ...message,
-        content: redactDiagnosticsText(message.content, loaded.redactTerms),
-      }));
+      const safeHistory = redactAndBoundProviderHistory(
+        input.generation.history,
+        loaded.redactTerms
+      );
       const safeSelections = input.generation.photos.map((photo) => ({
         ...photo,
         purpose: redactDiagnosticsText(photo.purpose, loaded.redactTerms),
