@@ -31,19 +31,19 @@ vi.mock("@/app/(app)/work_orders/note-actions", () => ({
 import { AskOtomotoThreadPanel } from "@/components/diagnostics/AskOtomotoThreadPanel";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
 import type { AssistantComposerFlags } from "@/lib/diagnostics/assistantPageState";
-import type { AskOtomotoPanelData } from "@/lib/diagnostics/askOtomotoView";
-import type { DiagnosticsPhotoSourceRow } from "@/lib/diagnostics/photoSelection";
 import type {
-  DiagnosticsMessageView,
-  DiagnosticsThreadWorkspace,
-} from "@/lib/services/diagnosticsAssistant";
+  AskOtomotoMessageView,
+  AskOtomotoPanelData,
+  AskOtomotoWorkspaceView,
+} from "@/lib/diagnostics/askOtomotoView";
+import type { DiagnosticsPhotoSourceRow } from "@/lib/diagnostics/photoSelection";
 
 const JOB = "51111111-1111-4111-8111-111111111111";
 const WORK_ORDER = "41111111-1111-4111-8111-111111111111";
 const THREAD = "71111111-1111-4111-8111-111111111111";
 
 function packetAssistant(
-  ws: DiagnosticsThreadWorkspace,
+  ws: AskOtomotoWorkspaceView,
   overrides: Partial<AskOtomotoPanelData> = {}
 ): AskOtomotoPanelData {
   return {
@@ -74,14 +74,13 @@ function submitButtons(): HTMLButtonElement[] {
 }
 
 function workspace(
-  overrides: Partial<DiagnosticsThreadWorkspace["thread"]> = {}
-): DiagnosticsThreadWorkspace {
+  overrides: Partial<AskOtomotoWorkspaceView["thread"]> = {}
+): AskOtomotoWorkspaceView {
   return {
     thread: {
       threadId: THREAD,
       workOrderId: WORK_ORDER,
       jobId: null,
-      locationId: "31111111-1111-4111-8111-111111111111",
       mode: "shop",
       audience: "technical",
       status: "ready",
@@ -94,18 +93,12 @@ function workspace(
     messages: [
       {
         messageId: "a1111111-1111-4111-8111-111111111111",
-        threadId: THREAD,
         role: "assistant",
         body: "Inspect the battery terminals next.",
         generationStatus: "ready",
         requestedInput: null,
         phase: "diagnosis",
-        safeErrorCode: null,
-        parentUserMessageId: "b1111111-1111-4111-8111-111111111111",
-        requestedProviderModel: "model",
-        providerModel: "model",
-        createdAt: "2026-09-29T00:00:00.000Z",
-        updatedAt: "2026-09-29T00:00:00.000Z",
+        promotedNoteId: null,
         photos: [],
       },
     ],
@@ -300,7 +293,7 @@ describe("AskOtomotoThreadPanel", () => {
     ];
 
     async function renderThread(
-      ws: DiagnosticsThreadWorkspace,
+      ws: AskOtomotoWorkspaceView,
       props: Record<string, unknown> = {}
     ) {
       await act(async () => {
@@ -333,9 +326,9 @@ describe("AskOtomotoThreadPanel", () => {
     }
 
     function jobWorkspace(
-      overrides: Partial<DiagnosticsThreadWorkspace["thread"]> = {},
-      messages?: DiagnosticsMessageView[]
-    ): DiagnosticsThreadWorkspace {
+      overrides: Partial<AskOtomotoWorkspaceView["thread"]> = {},
+      messages?: AskOtomotoMessageView[]
+    ): AskOtomotoWorkspaceView {
       const base = workspace({ jobId: JOB, triggerType: null, ...overrides });
       return messages ? { ...base, messages } : base;
     }
@@ -480,7 +473,9 @@ describe("AskOtomotoThreadPanel", () => {
     });
 
     it("focuses the photo picker for a photo request but leaves other inputs to the text box", async () => {
-      const assistant = (requestedInput: unknown): DiagnosticsMessageView => ({
+      const assistant = (
+        requestedInput: AskOtomotoMessageView["requestedInput"]
+      ): AskOtomotoMessageView => ({
         ...workspace().messages[0],
         requestedInput,
       });
@@ -524,7 +519,7 @@ describe("AskOtomotoThreadPanel", () => {
     });
 
     it("shows attached message photos as evidence chips without inference and never renders HTML", async () => {
-      const userMessage: DiagnosticsMessageView = {
+      const userMessage: AskOtomotoMessageView = {
         ...workspace().messages[0],
         messageId: "c1111111-1111-4111-8111-111111111111",
         role: "user",
@@ -533,10 +528,8 @@ describe("AskOtomotoThreadPanel", () => {
           {
             photoId: PHOTO,
             category: "job_work",
-            notes: "Customer Jane Doe",
             purpose: "Pad wear",
             sortOrder: 0,
-            createdAt: "2026-09-29T14:05:00.000Z",
           },
         ],
       };
@@ -556,7 +549,7 @@ describe("AskOtomotoThreadPanel", () => {
     const failedWs = () => workspace({ jobId: JOB, triggerType: null, status: "failed" });
 
     async function mount(
-      ws: DiagnosticsThreadWorkspace,
+      ws: AskOtomotoWorkspaceView,
       props: Record<string, unknown> = {}
     ) {
       await act(async () => {
@@ -608,13 +601,12 @@ describe("AskOtomotoThreadPanel", () => {
     });
 
     describe("failed response text", () => {
-      const failedMessage = (): DiagnosticsMessageView => ({
+      const failedMessage = (): AskOtomotoMessageView => ({
         ...workspace().messages[0],
         body: null,
         generationStatus: "failed",
-        safeErrorCode: "DIAGNOSTICS_AI_PROVIDER_FAILED",
       });
-      const failedWithMessage = (): DiagnosticsThreadWorkspace => ({
+      const failedWithMessage = (): AskOtomotoWorkspaceView => ({
         ...failedWs(),
         messages: [failedMessage()],
       });
@@ -734,7 +726,7 @@ describe("AskOtomotoThreadPanel", () => {
       const request = {
         ...workspace().messages[0],
         requestedInput: {
-          type: "photo",
+          type: "photo" as const,
           prompt: "Show the caliper",
           purpose: null,
           tool_placement: null,

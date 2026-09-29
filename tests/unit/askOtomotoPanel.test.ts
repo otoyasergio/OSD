@@ -41,13 +41,12 @@ import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
 import {
   ASSISTANT_POLL,
   nextAssistantPollDelay,
+  sanitizeRequestedInput,
+  type AskOtomotoMessageView,
   type AskOtomotoThreadListItem,
+  type AskOtomotoThreadView,
+  type AskOtomotoWorkspaceView,
 } from "@/lib/diagnostics/askOtomotoView";
-import type {
-  DiagnosticsMessageView,
-  DiagnosticsThreadSummary,
-  DiagnosticsThreadWorkspace,
-} from "@/lib/services/diagnosticsAssistant";
 
 type PanelProps = React.ComponentProps<typeof AskOtomotoPanel>;
 
@@ -85,14 +84,11 @@ function listItem(
   };
 }
 
-function thread(
-  overrides: Partial<DiagnosticsThreadSummary> = {}
-): DiagnosticsThreadSummary {
+function thread(overrides: Partial<AskOtomotoThreadView> = {}): AskOtomotoThreadView {
   return {
     threadId: THREAD,
     workOrderId: WO,
     jobId: JOB,
-    locationId: "31111111-1111-4111-8111-111111111111",
     mode: "shop",
     audience: "technical",
     status: "ready",
@@ -105,31 +101,25 @@ function thread(
 }
 
 function assistantMessage(
-  overrides: Partial<DiagnosticsMessageView> = {}
-): DiagnosticsMessageView {
+  overrides: Partial<AskOtomotoMessageView> = {}
+): AskOtomotoMessageView {
   return {
     messageId: ASSISTANT_MSG,
-    threadId: THREAD,
     role: "assistant",
     body: "**Assessments:** possible: weak battery\n\n**NEXT STEP:** Measure resting battery voltage.",
     generationStatus: "ready",
     requestedInput: null,
     phase: "diagnosis",
-    safeErrorCode: null,
-    parentUserMessageId: null,
-    requestedProviderModel: null,
-    providerModel: null,
-    createdAt: "2026-09-29T10:00:00.000Z",
-    updatedAt: "2026-09-29T10:00:00.000Z",
+    promotedNoteId: null,
     photos: [],
     ...overrides,
   };
 }
 
 function workspace(
-  threadOverrides: Partial<DiagnosticsThreadSummary> = {},
-  messages: DiagnosticsMessageView[] = [assistantMessage()]
-): DiagnosticsThreadWorkspace {
+  threadOverrides: Partial<AskOtomotoThreadView> = {},
+  messages: AskOtomotoMessageView[] = [assistantMessage()]
+): AskOtomotoWorkspaceView {
   return { thread: thread(threadOverrides), messages };
 }
 
@@ -153,7 +143,7 @@ function props(overrides: Partial<PanelProps> = {}): PanelProps {
 }
 
 function withThread(
-  ws: DiagnosticsThreadWorkspace,
+  ws: AskOtomotoWorkspaceView,
   overrides: Partial<PanelProps> = {}
 ): PanelProps {
   return props({
@@ -686,7 +676,9 @@ describe("AskOtomotoPanel", () => {
       await render(
         withThread(
           workspace({}, [
-            assistantMessage({ requestedInput: { type, prompt: "Provide it" } }),
+            assistantMessage({
+              requestedInput: sanitizeRequestedInput({ type, prompt: "Provide it" }),
+            }),
           ])
         )
       );
@@ -698,7 +690,11 @@ describe("AskOtomotoPanel", () => {
     it("omits the card for no requested input", async () => {
       await render(
         withThread(
-          workspace({}, [assistantMessage({ requestedInput: { type: "none" } })])
+          workspace({}, [
+            assistantMessage({
+              requestedInput: sanitizeRequestedInput({ type: "none", prompt: "Nothing" }),
+            }),
+          ])
         )
       );
       expect(
@@ -1046,6 +1042,23 @@ describe("AskOtomotoPanel", () => {
       );
       expect(reviewButton()).toBeUndefined();
       expect(buttonNamed(/copy ai draft/i)).toBeDefined();
+    });
+
+    it("shows a reloaded promoted draft as saved instead of offering review again", async () => {
+      const promoted = workspace({}, [
+        assistantMessage({ promotedNoteId: "c1111111-1111-4111-8111-111111111111" }),
+      ]);
+      await render(withThread(promoted));
+      expect(reviewButton()).toBeUndefined();
+      expect(container.textContent).toMatch(/saved as a technician note/i);
+      expect(buttonNamed(/copy ai draft/i)).toBeDefined();
+
+      await render(
+        withThread(promoted, {
+          capabilities: { ...FULL_CAPS, canMutate: false, canPromoteNotes: false },
+        })
+      );
+      expect(container.textContent).toMatch(/saved as a technician note/i);
     });
 
     it("is not offered on an archived thread or an unfinished draft", async () => {

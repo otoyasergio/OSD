@@ -2,9 +2,11 @@
 
 import { useRef, useState } from "react";
 import { AssistantNoteReview } from "@/components/diagnostics/AssistantNoteReview";
-import type { AskOtomotoRequestedInput } from "@/lib/diagnostics/askOtomotoView";
+import type {
+  AskOtomotoMessageView,
+  AskOtomotoRequestedInput,
+} from "@/lib/diagnostics/askOtomotoView";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
-import type { DiagnosticsMessageView } from "@/lib/services/diagnosticsAssistant";
 
 export const AI_DRAFT_LABEL = "AI draft — staff review required";
 
@@ -74,7 +76,7 @@ export function RequestedInputCard({ request }: { request: AskOtomotoRequestedIn
 }
 
 function unavailableText(
-  message: DiagnosticsMessageView,
+  message: AskOtomotoMessageView,
   retryAvailable: boolean,
   readOnlyView: boolean
 ): string {
@@ -97,7 +99,7 @@ export function AskOtomotoMessage({
   retryAvailable,
   readOnlyView,
 }: {
-  message: DiagnosticsMessageView;
+  message: AskOtomotoMessageView;
   workOrderId: string;
   jobId: string | null;
   jobLabel: string | null;
@@ -108,6 +110,7 @@ export function AskOtomotoMessage({
   const [review, setReview] = useState<"closed" | "open" | "saved">("closed");
   const reviewButtonRef = useRef<HTMLButtonElement>(null);
   const isAssistant = message.role === "assistant";
+  const saved = isAssistant && (review === "saved" || message.promotedNoteId !== null);
   const reviewId = `note-review-${message.messageId}`;
 
   function closeReview() {
@@ -149,7 +152,7 @@ export function AskOtomotoMessage({
       {isAssistant && message.body ? (
         <div className="mt-2 flex flex-wrap gap-2">
           <CopyDraftButton text={message.body} />
-          {canPromote && review !== "saved" ? (
+          {canPromote && !saved ? (
             <button
               ref={reviewButtonRef}
               type="button"
@@ -163,12 +166,12 @@ export function AskOtomotoMessage({
           ) : null}
         </div>
       ) : null}
-      {review === "saved" ? (
+      {saved ? (
         <p role="status" className="mt-2 text-sm font-medium text-emerald-800">
           Saved as a technician note. The AI draft is unchanged.
         </p>
       ) : null}
-      {canPromote && review === "open" && message.body ? (
+      {canPromote && !saved && review === "open" && message.body ? (
         <AssistantNoteReview
           id={reviewId}
           workOrderId={workOrderId}

@@ -162,6 +162,8 @@ export type DiagnosticsMessageView = {
   createdAt: string;
   updatedAt: string;
   photos: DiagnosticsMessagePhotoView[];
+  /** Reviewed note already created from this output; set only by public reads. */
+  promotedNoteId?: string | null;
 };
 
 export type DiagnosticsThreadWorkspace = {
@@ -253,6 +255,11 @@ export interface DiagnosticsAssistantRepository {
     workOrderId: string,
     threadId: string
   ): Promise<DiagnosticsThreadWorkspace | null>;
+  /** Source message id → technician note id, for this work order only. */
+  listPromotedNoteIds(
+    workOrderId: string,
+    messageIds: readonly string[]
+  ): Promise<Map<string, string>>;
   createThread(input: CreateThreadRecord): Promise<DiagnosticsThreadSummary>;
   findTriggerThread(
     workOrderId: string,
@@ -598,6 +605,26 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
         };
       }),
     };
+  }
+
+  async listPromotedNoteIds(
+    workOrderId: string,
+    messageIds: readonly string[]
+  ): Promise<Map<string, string>> {
+    if (messageIds.length === 0) return new Map();
+    const { data, error } = await this.session
+      .from("technician_note")
+      .select("technician_note_id, source_ai_message_id")
+      .eq("work_order_id", workOrderId)
+      .in("source_ai_message_id", [...messageIds]);
+    throwQuery(error);
+    const promoted = new Map<string, string>();
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      if (row.source_ai_message_id && row.technician_note_id) {
+        promoted.set(String(row.source_ai_message_id), String(row.technician_note_id));
+      }
+    }
+    return promoted;
   }
 
   async createThread(input: CreateThreadRecord): Promise<DiagnosticsThreadSummary> {
@@ -1710,7 +1737,23 @@ export function createDiagnosticsAssistantService(
         workspace.thread.mode,
         "read"
       );
-      return workspace;
+      const readyAssistantIds = workspace.messages
+        .filter(
+          (message) =>
+            message.role === "assistant" && message.generationStatus === "ready"
+        )
+        .map((message) => message.messageId);
+      const promoted =
+        readyAssistantIds.length > 0
+          ? await repository.listPromotedNoteIds(parsedWorkOrderId, readyAssistantIds)
+          : new Map<string, string>();
+      return {
+        thread: workspace.thread,
+        messages: workspace.messages.map((message) => ({
+          ...message,
+          promotedNoteId: promoted.get(message.messageId) ?? null,
+        })),
+      };
     },
 
     async authorizeThreadWrite(

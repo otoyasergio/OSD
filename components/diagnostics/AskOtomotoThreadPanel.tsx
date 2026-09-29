@@ -31,9 +31,9 @@ import {
   isAssistantThreadWorking,
   parseRequestedInput,
   type AskOtomotoLockReason,
+  type AskOtomotoWorkspaceView,
 } from "@/lib/diagnostics/askOtomotoView";
 import type { AskOtomotoConfigReason } from "@/lib/diagnostics/config";
-import type { DiagnosticsThreadWorkspace } from "@/lib/services/diagnosticsAssistant";
 
 const INITIAL_ACTION_STATE: AssistantActionState = {
   status: "idle",
@@ -73,7 +73,7 @@ function TurnComposer({
   retryPending,
   onBusyChange,
 }: {
-  workspace: DiagnosticsThreadWorkspace;
+  workspace: AskOtomotoWorkspaceView;
   photos: DiagnosticsPhotoSourceRow[];
   canMutate: boolean;
   preview: boolean;
@@ -242,7 +242,7 @@ export function AskOtomotoThreadPanel({
   canPromoteNotes = false,
   jobLabel = null,
 }: {
-  workspace: DiagnosticsThreadWorkspace;
+  workspace: AskOtomotoWorkspaceView;
   /** Authorized, already-filtered staff photos for this work order. */
   photos?: DiagnosticsPhotoSourceRow[];
   canMutate?: boolean;

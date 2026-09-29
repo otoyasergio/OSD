@@ -11,7 +11,9 @@ import {
   nextAssistantPollDelay,
   parseCreatedThread,
   parseRequestedInput,
+  sanitizeRequestedInput,
   toAskOtomotoThreadListItems,
+  toAskOtomotoWorkspaceView,
 } from "@/lib/diagnostics/askOtomotoView";
 import type {
   DiagnosticsMessageView,
@@ -237,6 +239,70 @@ describe("parseRequestedInput", () => {
   });
 });
 
+describe("sanitizeRequestedInput", () => {
+  it("keeps only the known schema fields, trimmed", () => {
+    expect(
+      sanitizeRequestedInput({
+        type: "measurement",
+        prompt: "  Measure battery voltage ",
+        purpose: "Confirm charging",
+        tool_placement: "Across terminals",
+        conditions: "Engine off",
+        units: "V",
+        internal_debug: "customer Jane Doe",
+      })
+    ).toEqual({
+      type: "measurement",
+      prompt: "Measure battery voltage",
+      purpose: "Confirm charging",
+      tool_placement: "Across terminals",
+      conditions: "Engine off",
+      units: "V",
+    });
+  });
+
+  it("bounds every string to the response schema limits", () => {
+    const sanitized = sanitizeRequestedInput({
+      type: "question",
+      prompt: "p".repeat(900),
+      purpose: "u".repeat(900),
+      tool_placement: "t".repeat(900),
+      conditions: "c".repeat(900),
+      units: "n".repeat(900),
+    });
+    expect(sanitized?.prompt).toHaveLength(750);
+    expect(sanitized?.purpose).toHaveLength(500);
+    expect(sanitized?.tool_placement).toHaveLength(750);
+    expect(sanitized?.conditions).toHaveLength(750);
+    expect(sanitized?.units).toHaveLength(120);
+  });
+
+  it.each([
+    null,
+    [],
+    "photo",
+    { type: "none", prompt: "Nothing" },
+    { type: "execute", prompt: "Run" },
+    { type: "photo", prompt: " " },
+    { type: "photo", prompt: 1 },
+  ])("drops unusable input %#", (value) => {
+    expect(sanitizeRequestedInput(value)).toBeNull();
+  });
+
+  it("nulls non-string or blank optional fields", () => {
+    expect(
+      sanitizeRequestedInput({ type: "photo", prompt: "Photo of the fuse", units: 5 })
+    ).toEqual({
+      type: "photo",
+      prompt: "Photo of the fuse",
+      purpose: null,
+      tool_placement: null,
+      conditions: null,
+      units: null,
+    });
+  });
+});
+
 describe("parseCreatedThread", () => {
   it("accepts a thread on this work order", () => {
     expect(
@@ -307,6 +373,16 @@ describe("canPromoteAssistantMessage", () => {
     ).toBe(false);
   });
 
+  it("refuses a draft that was already saved as a note", () => {
+    expect(
+      canPromoteAssistantMessage({
+        message: message({ promotedNoteId: "c1111111-1111-4111-8111-111111111111" }),
+        thread,
+        canPromoteNotes: true,
+      })
+    ).toBe(false);
+  });
+
   it("refuses without promotion capability", () => {
     expect(
       canPromoteAssistantMessage({ message: message(), thread, canPromoteNotes: false })
@@ -341,13 +417,8 @@ describe("polling helpers", () => {
   });
 
   it("treats automatic pending and generating threads as working", () => {
-    const ws = (
-      overrides: Partial<DiagnosticsThreadSummary>,
-      messages = [message()]
-    ) => ({
-      thread: summary(overrides),
-      messages,
-    });
+    const ws = (overrides: Partial<DiagnosticsThreadSummary>, messages = [message()]) =>
+      toAskOtomotoWorkspaceView({ thread: summary(overrides), messages });
     expect(isAssistantThreadWorking(ws({ status: "generating" }))).toBe(true);
     expect(
       isAssistantThreadWorking(

@@ -147,6 +147,7 @@ function repository(): DiagnosticsAssistantRepository {
       requestedModel: "model-alias",
       resolvedModel: "model-resolved-1",
     }),
+    listPromotedNoteIds: vi.fn().mockResolvedValue(new Map()),
   };
 }
 
@@ -177,6 +178,104 @@ describe("Ask OTOMOTO service boundaries", () => {
       scope().workOrderId,
       "71111111-1111-4111-8111-111111111111"
     );
+  });
+
+  it("marks ready assistant messages that were already promoted to a note", async () => {
+    const repo = repository();
+    const threadId = "71111111-1111-4111-8111-111111111111";
+    const message = (
+      messageId: string,
+      role: "user" | "assistant",
+      generationStatus: "ready" | "failed"
+    ) => ({
+      messageId,
+      threadId,
+      role,
+      body: "Body",
+      generationStatus,
+      requestedInput: null,
+      phase: null,
+      safeErrorCode: null,
+      parentUserMessageId: null,
+      requestedProviderModel: null,
+      providerModel: null,
+      createdAt: "2026-09-29T00:00:00.000Z",
+      updatedAt: "2026-09-29T00:00:00.000Z",
+      photos: [],
+    });
+    const promoted = "a1111111-1111-4111-8111-111111111111";
+    const fresh = "a2222222-2222-4222-8222-222222222222";
+    const failed = "a3333333-3333-4333-8333-333333333333";
+    const user = "b1111111-1111-4111-8111-111111111111";
+    vi.mocked(repo.loadThread).mockResolvedValue({
+      thread: {
+        threadId,
+        workOrderId: scope().workOrderId,
+        jobId: null,
+        locationId: scope().locationId,
+        mode: "shop",
+        audience: "technical",
+        status: "ready",
+        diagnosticPhase: null,
+        triggerType: null,
+        createdAt: "2026-09-29T00:00:00.000Z",
+        updatedAt: "2026-09-29T00:00:00.000Z",
+      },
+      messages: [
+        message(user, "user", "ready"),
+        message(promoted, "assistant", "ready"),
+        message(fresh, "assistant", "ready"),
+        message(failed, "assistant", "failed"),
+      ],
+    });
+    vi.mocked(repo.listPromotedNoteIds).mockResolvedValue(
+      new Map([[promoted, "c1111111-1111-4111-8111-111111111111"]])
+    );
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+    });
+
+    const workspace = await service.loadThread(scope().workOrderId, threadId);
+
+    expect(repo.listPromotedNoteIds).toHaveBeenCalledWith(scope().workOrderId, [
+      promoted,
+      fresh,
+    ]);
+    expect(
+      workspace.messages.map((item) => [item.messageId, item.promotedNoteId])
+    ).toEqual([
+      [user, null],
+      [promoted, "c1111111-1111-4111-8111-111111111111"],
+      [fresh, null],
+      [failed, null],
+    ]);
+  });
+
+  it("skips the promotion lookup when no assistant message is ready", async () => {
+    const repo = repository();
+    vi.mocked(repo.loadThread).mockResolvedValue({
+      thread: {
+        threadId: "71111111-1111-4111-8111-111111111111",
+        workOrderId: scope().workOrderId,
+        jobId: null,
+        locationId: scope().locationId,
+        mode: "shop",
+        audience: "technical",
+        status: "pending",
+        diagnosticPhase: null,
+        triggerType: null,
+        createdAt: "2026-09-29T00:00:00.000Z",
+        updatedAt: "2026-09-29T00:00:00.000Z",
+      },
+      messages: [],
+    });
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+    });
+    await service.loadThread(scope().workOrderId, "71111111-1111-4111-8111-111111111111");
+    expect(repo.listPromotedNoteIds).not.toHaveBeenCalled();
   });
 
   it("rejects a selected job outside the WO before creating a thread", async () => {

@@ -10,10 +10,12 @@ import {
 } from "@/lib/permissions";
 import {
   toAskOtomotoThreadListItems,
+  toAskOtomotoWorkspaceView,
   type AskOtomotoCapabilities,
   type AskOtomotoLockReason,
   type AskOtomotoSurface,
   type AskOtomotoThreadListItem,
+  type AskOtomotoWorkspaceView,
 } from "@/lib/diagnostics/askOtomotoView";
 import type {
   DiagnosticsThreadSummary,
@@ -108,35 +110,6 @@ export function askOtomotoCapabilities(input: {
   };
 }
 
-/** Drops photo notes and provider/actor metadata the panel never renders. */
-export function minimizeAssistantWorkspace(
-  workspace: DiagnosticsThreadWorkspace
-): DiagnosticsThreadWorkspace {
-  const { thread, messages } = workspace;
-  return {
-    thread: {
-      threadId: thread.threadId,
-      workOrderId: thread.workOrderId,
-      jobId: thread.jobId,
-      locationId: thread.locationId,
-      mode: thread.mode,
-      audience: thread.audience,
-      status: thread.status,
-      diagnosticPhase: thread.diagnosticPhase,
-      triggerType: thread.triggerType,
-      createdAt: thread.createdAt,
-      updatedAt: thread.updatedAt,
-    },
-    messages: messages.map((message) => ({
-      ...message,
-      safeErrorCode: null,
-      requestedProviderModel: null,
-      providerModel: null,
-      photos: message.photos.map((photo) => ({ ...photo, notes: null })),
-    })),
-  };
-}
-
 type AskOtomotoReadService = {
   listThreads(
     workOrderId: string,
@@ -151,7 +124,7 @@ type AskOtomotoReadService = {
 
 export type AskOtomotoLoadedData = {
   threads: AskOtomotoThreadListItem[];
-  workspace: DiagnosticsThreadWorkspace | null;
+  workspace: AskOtomotoWorkspaceView | null;
   historyUnavailable: boolean;
 };
 
@@ -184,7 +157,7 @@ export async function loadAskOtomotoPanelData(input: {
   ]);
   const visibleWorkspace =
     workspace && (input.surface === "office" || workspace.thread.audience === "technical")
-      ? minimizeAssistantWorkspace(workspace)
+      ? toAskOtomotoWorkspaceView(workspace)
       : null;
   return {
     threads: toAskOtomotoThreadListItems(threadsResult.threads, {

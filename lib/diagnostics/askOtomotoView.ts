@@ -1,5 +1,6 @@
 import type {
   AiAssistantAudience,
+  AiAssistantGenerationStatus,
   AiAssistantMode,
   AiAssistantPhase,
   AiAssistantThreadStatus,
@@ -38,7 +39,7 @@ export type AskOtomotoPanelData = {
   threads: AskOtomotoThreadListItem[];
   /** Requested thread id from the URL, validated as a UUID. */
   selectedThreadId: string | null;
-  workspace: DiagnosticsThreadWorkspace | null;
+  workspace: AskOtomotoWorkspaceView | null;
   jobs: AskOtomotoJobOption[];
   defaultJobId: string | null;
   photos: DiagnosticsPhotoSourceRow[];
@@ -191,31 +192,138 @@ export type AskOtomotoRequestedInput = {
   units: string | null;
 };
 
-function optionalText(value: unknown): string | null {
+/** Client copy of `requested_input`: known keys only, bounded like the response schema. */
+export type AskOtomotoRequestedInputView = {
+  type: AskOtomotoRequestedInputType;
+  prompt: string;
+  purpose: string | null;
+  tool_placement: string | null;
+  conditions: string | null;
+  units: string | null;
+};
+
+const REQUESTED_INPUT_MAX = {
+  prompt: 750,
+  purpose: 500,
+  tool_placement: 750,
+  conditions: 750,
+  units: 120,
+} as const;
+
+function optionalText(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;
-  const trimmed = value.trim();
+  const trimmed = value.trim().slice(0, max).trim();
   return trimmed ? trimmed : null;
 }
 
-/** Display-only view of `requested_input`; unknown or `none` types render nothing. */
-export function parseRequestedInput(value: unknown): AskOtomotoRequestedInput | null {
+export function sanitizeRequestedInput(
+  value: unknown
+): AskOtomotoRequestedInputView | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const type = record.type;
   if (typeof type !== "string" || !Object.hasOwn(REQUESTED_INPUT_LABELS, type)) {
     return null;
   }
-  const prompt = optionalText(record.prompt);
+  const prompt = optionalText(record.prompt, REQUESTED_INPUT_MAX.prompt);
   if (!prompt) return null;
-  const typed = type as AskOtomotoRequestedInputType;
   return {
-    type: typed,
-    label: REQUESTED_INPUT_LABELS[typed],
+    type: type as AskOtomotoRequestedInputType,
     prompt,
-    purpose: optionalText(record.purpose),
-    toolPlacement: optionalText(record.tool_placement),
-    conditions: optionalText(record.conditions),
-    units: optionalText(record.units),
+    purpose: optionalText(record.purpose, REQUESTED_INPUT_MAX.purpose),
+    tool_placement: optionalText(
+      record.tool_placement,
+      REQUESTED_INPUT_MAX.tool_placement
+    ),
+    conditions: optionalText(record.conditions, REQUESTED_INPUT_MAX.conditions),
+    units: optionalText(record.units, REQUESTED_INPUT_MAX.units),
+  };
+}
+
+/** Display-only view of `requested_input`; unknown or `none` types render nothing. */
+export function parseRequestedInput(value: unknown): AskOtomotoRequestedInput | null {
+  const sanitized = sanitizeRequestedInput(value);
+  if (!sanitized) return null;
+  return {
+    type: sanitized.type,
+    label: REQUESTED_INPUT_LABELS[sanitized.type],
+    prompt: sanitized.prompt,
+    purpose: sanitized.purpose,
+    toolPlacement: sanitized.tool_placement,
+    conditions: sanitized.conditions,
+    units: sanitized.units,
+  };
+}
+
+export type AskOtomotoThreadView = {
+  threadId: string;
+  workOrderId: string;
+  jobId: string | null;
+  mode: AiAssistantMode;
+  audience: AiAssistantAudience;
+  status: AiAssistantThreadStatus;
+  diagnosticPhase: AiAssistantPhase | null;
+  triggerType: AiAssistantTriggerType | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AskOtomotoMessagePhotoView = {
+  photoId: string;
+  category: string;
+  purpose: string;
+  sortOrder: number;
+};
+
+export type AskOtomotoMessageView = {
+  messageId: string;
+  role: DiagnosticsMessageView["role"];
+  body: string | null;
+  generationStatus: AiAssistantGenerationStatus;
+  requestedInput: AskOtomotoRequestedInputView | null;
+  phase: AiAssistantPhase | null;
+  promotedNoteId: string | null;
+  photos: AskOtomotoMessagePhotoView[];
+};
+
+/** The only workspace shape serialized to the client; built field by field. */
+export type AskOtomotoWorkspaceView = {
+  thread: AskOtomotoThreadView;
+  messages: AskOtomotoMessageView[];
+};
+
+export function toAskOtomotoWorkspaceView(
+  workspace: DiagnosticsThreadWorkspace
+): AskOtomotoWorkspaceView {
+  const { thread, messages } = workspace;
+  return {
+    thread: {
+      threadId: thread.threadId,
+      workOrderId: thread.workOrderId,
+      jobId: thread.jobId,
+      mode: thread.mode,
+      audience: thread.audience,
+      status: thread.status,
+      diagnosticPhase: thread.diagnosticPhase,
+      triggerType: thread.triggerType,
+      createdAt: thread.createdAt,
+      updatedAt: thread.updatedAt,
+    },
+    messages: messages.map((message) => ({
+      messageId: message.messageId,
+      role: message.role,
+      body: message.body,
+      generationStatus: message.generationStatus,
+      requestedInput: sanitizeRequestedInput(message.requestedInput),
+      phase: message.phase,
+      promotedNoteId: message.promotedNoteId ?? null,
+      photos: message.photos.map((photo) => ({
+        photoId: photo.photoId,
+        category: photo.category,
+        purpose: photo.purpose,
+        sortOrder: photo.sortOrder,
+      })),
+    })),
   };
 }
 
@@ -248,12 +356,15 @@ export function assistantDraftPlainText(body: string): string {
 }
 
 export function canPromoteAssistantMessage(input: {
-  message: Pick<DiagnosticsMessageView, "role" | "generationStatus" | "body">;
-  thread: Pick<DiagnosticsThreadSummary, "mode" | "audience" | "status">;
+  message: Pick<AskOtomotoMessageView, "role" | "generationStatus" | "body"> & {
+    promotedNoteId?: string | null;
+  };
+  thread: Pick<AskOtomotoThreadView, "mode" | "audience" | "status">;
   canPromoteNotes: boolean;
 }): boolean {
   return (
     input.canPromoteNotes &&
+    !input.message.promotedNoteId &&
     input.message.role === "assistant" &&
     input.message.generationStatus === "ready" &&
     Boolean(input.message.body?.trim()) &&
@@ -291,7 +402,7 @@ export function nextAssistantPollDelay(attempt: number): number {
   );
 }
 
-export function isAssistantThreadWorking(workspace: DiagnosticsThreadWorkspace): boolean {
+export function isAssistantThreadWorking(workspace: AskOtomotoWorkspaceView): boolean {
   const { thread, messages } = workspace;
   if (thread.status === "generating") return true;
   if (thread.status === "pending" && thread.triggerType !== null) return true;

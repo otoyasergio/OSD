@@ -256,6 +256,102 @@ describe("loadAskOtomotoPanelData", () => {
     expect(data.workspace?.messages[0].photos[0].purpose).toBe("Pad wear");
   });
 
+  it("serializes only allow-listed fields, including future server fields", async () => {
+    loadThread.mockResolvedValue({
+      thread: { ...thread(), futureSecret: "thread-secret" },
+      messages: [
+        {
+          messageId: "a2222222-2222-4222-8222-222222222222",
+          threadId: THREAD,
+          role: "assistant",
+          body: "Check the fuse",
+          generationStatus: "ready",
+          requestedInput: {
+            type: "photo",
+            prompt: "Photo of the fuse box",
+            purpose: null,
+            tool_placement: null,
+            conditions: null,
+            units: null,
+            rawProviderPayload: "provider-secret",
+          },
+          phase: "diagnosis",
+          safeErrorCode: "OPENAI_TIMEOUT",
+          parentUserMessageId: "a1111111-1111-4111-8111-111111111111",
+          requestedProviderModel: "gpt-6-astra",
+          providerModel: "gpt-6-astra-2026",
+          createdAt: "2026-09-29T10:00:00.000Z",
+          updatedAt: "2026-09-29T10:00:00.000Z",
+          promotedNoteId: "c1111111-1111-4111-8111-111111111111",
+          futureSecret: "message-secret",
+          photos: [
+            {
+              photoId: "b1111111-1111-4111-8111-111111111111",
+              category: "job_work",
+              notes: "Customer Jane Doe",
+              purpose: "Fuse box",
+              sortOrder: 0,
+              createdAt: "2026-09-29T10:00:00.000Z",
+              storagePath: "private/path.jpg",
+            },
+          ],
+        },
+      ],
+    });
+
+    const data = await loadAskOtomotoPanelData({
+      service,
+      surface: "floor",
+      workOrderId: WO,
+      threadId: THREAD,
+      jobLabels: {},
+    });
+
+    expect(data.workspace).toEqual({
+      thread: {
+        threadId: THREAD,
+        workOrderId: WO,
+        jobId: JOB,
+        mode: "shop",
+        audience: "technical",
+        status: "ready",
+        diagnosticPhase: null,
+        triggerType: null,
+        createdAt: "2026-09-29T10:00:00.000Z",
+        updatedAt: "2026-09-29T10:00:00.000Z",
+      },
+      messages: [
+        {
+          messageId: "a2222222-2222-4222-8222-222222222222",
+          role: "assistant",
+          body: "Check the fuse",
+          generationStatus: "ready",
+          requestedInput: {
+            type: "photo",
+            prompt: "Photo of the fuse box",
+            purpose: null,
+            tool_placement: null,
+            conditions: null,
+            units: null,
+          },
+          phase: "diagnosis",
+          promotedNoteId: "c1111111-1111-4111-8111-111111111111",
+          photos: [
+            {
+              photoId: "b1111111-1111-4111-8111-111111111111",
+              category: "job_work",
+              purpose: "Fuse box",
+              sortOrder: 0,
+            },
+          ],
+        },
+      ],
+    });
+    expect(JSON.stringify(data)).not.toMatch(
+      /secret|OPENAI_TIMEOUT|locationId|31111111|Jane|private\/path/
+    );
+  });
+
   it("keeps the page alive when the list or the selected thread fails", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     listThreads.mockRejectedValue(new Error("row for Jane Doe failed"));

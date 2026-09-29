@@ -211,6 +211,39 @@ describe("Supabase diagnostics repository boundaries", () => {
     expect(selects.join("\n")).toContain("requested_provider_model");
   });
 
+  it("reads promoted note provenance through the session client for this work order", async () => {
+    const selects: string[] = [];
+    const filters: string[] = [];
+    const sessionCalls: string[] = [];
+    const createAdmin = vi.fn();
+    const repository = new SupabaseDiagnosticsRepository(
+      fakeClient(
+        {
+          technician_note: [
+            { technician_note_id: "note-1", source_ai_message_id: "assistant-1" },
+            { technician_note_id: "note-x", source_ai_message_id: null },
+          ],
+        },
+        sessionCalls,
+        selects,
+        filters
+      ),
+      createAdmin
+    );
+
+    const promoted = await repository.listPromotedNoteIds("wo-1", ["assistant-1"]);
+
+    expect([...promoted]).toEqual([["assistant-1", "note-1"]]);
+    expect(sessionCalls).toEqual(["technician_note"]);
+    expect(filters).toContain("technician_note:work_order_id=wo-1");
+    expect(selects.join("\n")).toBe(
+      "technician_note:technician_note_id, source_ai_message_id"
+    );
+    expect(createAdmin).not.toHaveBeenCalled();
+    await expect(repository.listPromotedNoteIds("wo-1", [])).resolves.toEqual(new Map());
+    expect(sessionCalls).toEqual(["technician_note"]);
+  });
+
   it("loads a claimed turn by explicit parent IDs without relying on adjacency", async () => {
     const session = fakeClient(
       {
