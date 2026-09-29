@@ -1,7 +1,7 @@
 -- pgTAP: Ask OTOMOTO storage, integrity, grants, and read visibility.
 -- Run via `supabase test db` against the isolated local stack.
 begin;
-select plan(67);
+select plan(69);
 
 select has_table('public', 'ai_assistant_thread', 'assistant thread table exists');
 select has_table('public', 'ai_assistant_message', 'assistant message table exists');
@@ -11,6 +11,22 @@ select has_column(
   'technician_note',
   'source_ai_message_id',
   'technician notes can trace a reviewed assistant message'
+);
+select ok(
+  (
+    select pg_get_constraintdef(oid)
+    from pg_constraint
+    where conname = 'ai_assistant_thread_diagnostic_phase_check'
+  ) like '%closure_report%',
+  'thread phase constraint permits closure reports'
+);
+select ok(
+  (
+    select pg_get_constraintdef(oid)
+    from pg_constraint
+    where conname = 'ai_assistant_message_phase_check'
+  ) like '%closure_report%',
+  'message phase constraint permits closure reports'
 );
 
 select ok(

@@ -93,9 +93,7 @@ describe("diagnostics structured response", () => {
         { mode: "shop" }
       )
     ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ code: "WORK_NOT_RECORDED" }),
-      ])
+      expect.arrayContaining([expect.objectContaining({ code: "WORK_NOT_RECORDED" })])
     );
   });
 
@@ -109,10 +107,71 @@ describe("diagnostics structured response", () => {
         }
       )
     ).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "VERIFICATION_CLAIM" })])
+    );
+  });
+
+  it("permits a closure report only with completed work and a compact Shop Log", () => {
+    const closure = validResponse({
+      phase: "closure_report",
+      answer: "The recorded repair is complete; verification remains pending.",
+      shop_log_entry: {
+        date_time: "2026-09-29T00:30:00.000Z",
+        bike_or_ro: "WO-100",
+        complaint: "Recorded concern",
+        tests_and_conditions: "No comparable retest recorded",
+        results_and_units: "Not verified",
+        conclusions_and_confidence: "Repair recorded; verification pending",
+        repairs_performed: "Repair performed",
+        verification: "Pending retest",
+        authorization: "Not supplied",
+        open_items: "Perform one comparable verification",
+      },
+    });
+
+    expect(
+      inspectDiagnosticsOutput(closure, {
+        mode: "shop",
+        claims: { hasRecordedCompletedWork: true },
+      })
+    ).toEqual([]);
+    expect(
+      inspectDiagnosticsOutput(
+        { ...closure, shop_log_entry: null },
+        { mode: "shop", claims: { hasRecordedCompletedWork: true } }
+      )
+    ).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: "VERIFICATION_CLAIM" }),
+        expect.objectContaining({ code: "CLOSURE_SHOP_LOG_MISSING" }),
       ])
     );
+    expect(
+      inspectDiagnosticsOutput(closure, {
+        mode: "shop",
+        claims: { hasRecordedCompletedWork: false },
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "CLOSURE_WORK_NOT_RECORDED" }),
+      ])
+    );
+    for (const answer of [
+      "QC passed.",
+      "The quality check failed.",
+      "The job passed.",
+      "The motorcycle was released.",
+    ]) {
+      expect(
+        inspectDiagnosticsOutput(
+          { ...closure, answer },
+          { mode: "shop", claims: { hasRecordedCompletedWork: true } }
+        )
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: "CLOSURE_WORKFLOW_CLAIM" }),
+        ])
+      );
+    }
   });
 
   it("permits a supported claim only when the service supplies its provenance", () => {

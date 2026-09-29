@@ -152,7 +152,7 @@ describe("OpenAI diagnostics provider", () => {
       responseId: "resp_test",
       requestedModel: "gpt-6-astra",
       resolvedModel: "gpt-6-astra-2026-09-01",
-      promptVersion: "otomoto-moto-diagnostics-v1.2.0",
+      promptVersion: "otomoto-moto-diagnostics-v1.3.0",
       contextHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       usage: { inputTokens: 1_000, outputTokens: 200, totalTokens: 1_200 },
     });

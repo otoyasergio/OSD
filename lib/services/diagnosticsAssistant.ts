@@ -642,12 +642,17 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
   ): Promise<boolean> {
     const table = triggerType === "inspection_completed" ? "inspection" : "job";
     const idColumn = triggerType === "inspection_completed" ? "inspection_id" : "job_id";
-    const { data, error } = await this.session
+    let query = this.session
       .from(table)
       .select(idColumn)
       .eq("work_order_id", workOrderId)
-      .eq(idColumn, triggerEntityId)
-      .maybeSingle();
+      .eq(idColumn, triggerEntityId);
+    if (triggerType === "job_completed") {
+      query = query.eq("status", "completed");
+    } else {
+      query = query.not("completed_at", "is", null);
+    }
+    const { data, error } = await query.maybeSingle();
     throwQuery(error);
     return Boolean(data);
   }
@@ -1918,7 +1923,8 @@ export async function createOrReuseDiagnosticsTriggerThreadInternal(
       !jobMatches ||
       thread.mode !== input.mode ||
       thread.audience !== deriveDiagnosticsAudience(input.mode) ||
-      thread.triggerType !== triggerType
+      thread.triggerType !== triggerType ||
+      thread.triggerEntityId !== input.triggerEntityId
     ) {
       throw new Error("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
     }
@@ -1973,6 +1979,17 @@ export const INSPECTION_COMPLETION_SEED_REQUEST = [
   "Return exactly one NEXT STEP using the response schema.",
 ].join(" ");
 
+export const JOB_COMPLETION_SEED_REQUEST = [
+  "Review only recorded job/work-order facts after explicit job completion.",
+  "Distinguish reported repair or work from actual verification evidence.",
+  "If no comparable retest is stored, use the exact wording",
+  '"repair performed; verification pending".',
+  "Ask for the single immediate verification/review input.",
+  "Draft a compact Shop Log entry and use the closure_report phase.",
+  "Make no pass/fail, QC, release, or roadworthiness claim.",
+  "Do not automatically attach photos; recorded photo metadata or counts are context only.",
+].join(" ");
+
 export type DiagnosticsTriggerActorSnapshot = {
   userId: string;
   locationId: string;
@@ -1990,23 +2007,46 @@ type DiagnosticsInternalGenerationDependencies = Pick<
  */
 export async function generateDiagnosticsTriggerResponseInternal(
   actor: DiagnosticsTriggerActorSnapshot,
-  raw: {
-    workOrderId: string;
-    threadId: string;
-    trigger: "inspection_completion";
-    triggerEntityId: string;
-  },
+  raw:
+    | {
+        workOrderId: string;
+        threadId: string;
+        trigger: "inspection_completion";
+        triggerEntityId: string;
+      }
+    | {
+        workOrderId: string;
+        threadId: string;
+        jobId: string;
+        trigger: "job_completion";
+        triggerEntityId: string;
+      },
   dependencies: DiagnosticsInternalGenerationDependencies = {}
 ): Promise<DiagnosticsMessageView | null> {
   const input = z
-    .object({
-      workOrderId: uuidSchema,
-      threadId: uuidSchema,
-      trigger: z.literal("inspection_completion"),
-      triggerEntityId: uuidSchema,
-    })
-    .strict()
+    .discriminatedUnion("trigger", [
+      z
+        .object({
+          workOrderId: uuidSchema,
+          threadId: uuidSchema,
+          trigger: z.literal("inspection_completion"),
+          triggerEntityId: uuidSchema,
+        })
+        .strict(),
+      z
+        .object({
+          workOrderId: uuidSchema,
+          threadId: uuidSchema,
+          jobId: uuidSchema,
+          trigger: z.literal("job_completion"),
+          triggerEntityId: uuidSchema,
+        })
+        .strict(),
+    ])
     .parse(raw);
+  if (input.trigger === "job_completion" && input.jobId !== input.triggerEntityId) {
+    throw new Error("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+  }
   const trustedActor = z
     .object({ userId: uuidSchema, locationId: uuidSchema })
     .strict()
@@ -2021,6 +2061,16 @@ export async function generateDiagnosticsTriggerResponseInternal(
     candidate: DiagnosticsThreadWorkspace
   ): DiagnosticsThreadSummary => {
     const candidateThread = candidate.thread;
+    const triggerType: AiAssistantTriggerType =
+      input.trigger === "inspection_completion"
+        ? "inspection_completed"
+        : "job_completed";
+    const jobMatches =
+      input.trigger === "job_completion"
+        ? candidateThread.jobId === input.jobId &&
+          scope.jobs.some((job) => job.jobId === input.jobId)
+        : candidateThread.jobId === null ||
+          scope.jobs.some((job) => job.jobId === candidateThread.jobId);
     if (
       candidateThread.threadId !== input.threadId ||
       candidateThread.workOrderId !== input.workOrderId ||
@@ -2028,12 +2078,11 @@ export async function generateDiagnosticsTriggerResponseInternal(
       candidateThread.locationId !== trustedActor.locationId ||
       candidateThread.mode !== "shop" ||
       candidateThread.audience !== "technical" ||
-      candidateThread.triggerType !== "inspection_completed" ||
+      candidateThread.triggerType !== triggerType ||
       candidateThread.triggerEntityId !== input.triggerEntityId ||
       candidateThread.createdByUserId !== trustedActor.userId ||
       scope.locationStatus !== "active" ||
-      (candidateThread.jobId !== null &&
-        !scope.jobs.some((job) => job.jobId === candidateThread.jobId))
+      !jobMatches
     ) {
       throw new Error("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
     }
@@ -2046,7 +2095,9 @@ export async function generateDiagnosticsTriggerResponseInternal(
   if (
     !(await repository.triggerEntityBelongsToWorkOrder(
       input.workOrderId,
-      "inspection_completed",
+      input.trigger === "inspection_completion"
+        ? "inspection_completed"
+        : "job_completed",
       input.triggerEntityId
     ))
   ) {
@@ -2066,14 +2117,21 @@ export async function generateDiagnosticsTriggerResponseInternal(
 
   let turn: TurnRecord;
   if (thread.status === "pending") {
+    const triggerType: AiAssistantTriggerType =
+      input.trigger === "inspection_completion"
+        ? "inspection_completed"
+        : "job_completed";
     try {
       turn = await repository.beginSeedTurn({
         workOrderId: input.workOrderId,
         threadId: input.threadId,
-        triggerType: "inspection_completed",
+        triggerType,
         triggerEntityId: input.triggerEntityId,
         userId: trustedActor.userId,
-        text: INSPECTION_COMPLETION_SEED_REQUEST,
+        text:
+          input.trigger === "inspection_completion"
+            ? INSPECTION_COMPLETION_SEED_REQUEST
+            : JOB_COMPLETION_SEED_REQUEST,
       });
     } catch (error) {
       const stable = stablePublicError(error);

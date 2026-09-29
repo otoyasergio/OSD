@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DiagnosticsMode } from "@/lib/diagnostics/responseSchema";
 
-export const DIAGNOSTICS_PROMPT_VERSION = "otomoto-moto-diagnostics-v1.2.0";
+export const DIAGNOSTICS_PROMPT_VERSION = "otomoto-moto-diagnostics-v1.3.0";
 
 export type DiagnosticsAudience = "technical" | "front_office";
 
@@ -125,6 +125,9 @@ boundary or null fields when none is warranted. Always set review_status to
 Reports require a compact shop_log_entry. When completed work is absent, set
 repairs_performed: Not recorded. When verification evidence is absent, set
 verification: Not verified. Never expose hidden reasoning.
+A closure_report phase requires recorded completed work and a compact
+shop_log_entry. It records closure review only; it never implies pass/fail, QC,
+release, roadworthiness, or successful verification without a comparable retest.
 `.trim();
 
 const MODE_INSTRUCTIONS: Record<DiagnosticsMode, string> = {

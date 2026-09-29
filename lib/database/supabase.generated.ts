@@ -75,6 +75,7 @@ export type Database = {
             | "repair_in_progress"
             | "verification"
             | "ready_for_technician_verification"
+            | "closure_report"
             | null;
           trigger_type: "inspection_completed" | "job_completed" | null;
           trigger_entity_id: string | null;
@@ -97,6 +98,7 @@ export type Database = {
             | "repair_in_progress"
             | "verification"
             | "ready_for_technician_verification"
+            | "closure_report"
             | null;
           trigger_type?: "inspection_completed" | "job_completed" | null;
           trigger_entity_id?: string | null;
@@ -122,6 +124,7 @@ export type Database = {
             | "repair_in_progress"
             | "verification"
             | "ready_for_technician_verification"
+            | "closure_report"
             | null;
           created_by_user_id: string | null;
           parent_user_message_id: string | null;
@@ -153,6 +156,7 @@ export type Database = {
             | "repair_in_progress"
             | "verification"
             | "ready_for_technician_verification"
+            | "closure_report"
             | null;
           created_by_user_id?: string | null;
           parent_user_message_id?: string | null;

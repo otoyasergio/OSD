@@ -16,6 +16,7 @@ import { addTechnicianNote } from "@/lib/services/notes";
 import { updatePartStatus } from "@/lib/services/parts";
 import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { prepareJobCompletionAssistantHandoff } from "@/lib/services/jobCompletionAssistantHandoff";
 import type { AdminFlagReason, FloorParkReason } from "@/lib/database/types";
 import { chooseNextFloorItem } from "@/lib/technician/nextFloorItem";
 import {
@@ -235,10 +236,13 @@ export async function completeJobFloorAction(
     const jobId = String(formData.get("job_id") ?? "");
     const workOrderId = String(formData.get("work_order_id") ?? "");
     const qcAssigneeId = String(formData.get("qc_assignee_id") ?? "").trim();
+    const assistantHandoff = await prepareJobCompletionAssistantHandoff();
     if (v2WritesEnabled(readWorkflowV2Flags())) {
       await completeJobViaWorkflowV2(jobId, workOrderId, qcAssigneeId || null);
+      await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });
     } else {
       await updateJobStatus(jobId, "completed");
+      await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });
       await clearParkOnComplete(jobId);
       if (qcAssigneeId) {
         const { assignPeerQcByTechnician } = await import("@/lib/services/peerQc");

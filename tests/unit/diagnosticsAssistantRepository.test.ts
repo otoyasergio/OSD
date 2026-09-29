@@ -8,7 +8,8 @@ class FakeQuery implements PromiseLike<Result> {
   constructor(
     private readonly result: Result,
     private readonly selects: string[],
-    private readonly table: string
+    private readonly table: string,
+    private readonly filters: string[]
   ) {}
 
   select(columns: string) {
@@ -21,7 +22,8 @@ class FakeQuery implements PromiseLike<Result> {
   update() {
     return this;
   }
-  eq() {
+  eq(column: string, value: unknown) {
+    this.filters.push(`${this.table}:${column}=${String(value)}`);
     return this;
   }
   neq() {
@@ -56,12 +58,18 @@ class FakeQuery implements PromiseLike<Result> {
 function fakeClient(
   results: Record<string, unknown>,
   calls: string[],
-  selects: string[] = []
+  selects: string[] = [],
+  filters: string[] = []
 ): DbClient {
   return {
     from(table: string) {
       calls.push(table);
-      return new FakeQuery({ data: results[table] ?? null, error: null }, selects, table);
+      return new FakeQuery(
+        { data: results[table] ?? null, error: null },
+        selects,
+        table,
+        filters
+      );
     },
     rpc: vi.fn(),
     storage: {
@@ -71,6 +79,19 @@ function fakeClient(
 }
 
 describe("Supabase diagnostics repository boundaries", () => {
+  it("accepts a job-completion trigger entity only when the job is completed", async () => {
+    const filters: string[] = [];
+    const repository = new SupabaseDiagnosticsRepository(
+      fakeClient({ job: { job_id: "job-1" } }, [], [], filters),
+      vi.fn()
+    );
+
+    await expect(
+      repository.triggerEntityBelongsToWorkOrder("wo-1", "job_completed", "job-1")
+    ).resolves.toBe(true);
+    expect(filters).toContain("job:status=completed");
+  });
+
   it("uses session/RLS reads without constructing an admin client", async () => {
     const sessionCalls: string[] = [];
     const session = fakeClient(

@@ -9,6 +9,7 @@ export const diagnosticsPhases = [
   "repair_in_progress",
   "verification",
   "ready_for_technician_verification",
+  "closure_report",
 ] as const;
 
 export const diagnosticsConfidenceLevels = ["confirmed", "probable", "possible"] as const;

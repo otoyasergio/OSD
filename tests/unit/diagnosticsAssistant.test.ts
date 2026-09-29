@@ -7,6 +7,7 @@ import {
   deriveDiagnosticsAudience,
   generateDiagnosticsTriggerResponseInternal,
   INSPECTION_COMPLETION_SEED_REQUEST,
+  JOB_COMPLETION_SEED_REQUEST,
   type DiagnosticsAssistantRepository,
   type DiagnosticsWorkOrderScope,
 } from "@/lib/services/diagnosticsAssistant";
@@ -1049,6 +1050,39 @@ describe("Ask OTOMOTO internal trigger primitive", () => {
     ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
   });
 
+  it("rejects reuse when the repository returns a different trigger entity", async () => {
+    const repo = repository();
+    vi.mocked(repo.findTriggerThread).mockResolvedValue({
+      threadId: "71111111-1111-4111-8111-111111111111",
+      workOrderId: scope().workOrderId,
+      jobId: "51111111-1111-4111-8111-111111111111",
+      locationId: scope().locationId,
+      mode: "shop",
+      audience: "technical",
+      status: "pending",
+      diagnosticPhase: null,
+      triggerType: "job_completed",
+      triggerEntityId: "81111111-1111-4111-8111-111111111111",
+      createdByUserId: actor("technician").user_id,
+      createdAt: "2026-09-29T00:00:00.000Z",
+      updatedAt: "2026-09-29T00:00:00.000Z",
+    });
+
+    await expect(
+      createOrReuseDiagnosticsTriggerThreadInternal(
+        actor("technician"),
+        {
+          workOrderId: scope().workOrderId,
+          jobId: "51111111-1111-4111-8111-111111111111",
+          mode: "shop",
+          trigger: "job_completion",
+          triggerEntityId: "51111111-1111-4111-8111-111111111111",
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+  });
+
   it("reuses an inspection trigger's stored job when re-entry carries another job", async () => {
     const repo = repository();
     const existing = {
@@ -1512,5 +1546,206 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
       attemptId: "attempt-1",
       safeErrorCode,
     });
+  });
+});
+
+describe("Ask OTOMOTO internal job-completion generation", () => {
+  const jobId = "51111111-1111-4111-8111-111111111111";
+  const triggerEntityId = jobId;
+  const thread = {
+    threadId: "71111111-1111-4111-8111-111111111111",
+    workOrderId: scope().workOrderId,
+    jobId,
+    locationId: scope().locationId,
+    mode: "shop" as const,
+    audience: "technical" as const,
+    status: "pending" as const,
+    diagnosticPhase: null,
+    triggerType: "job_completed" as const,
+    triggerEntityId,
+    createdByUserId: actor("technician").user_id,
+    createdAt: "2026-09-29T00:00:00.000Z",
+    updatedAt: "2026-09-29T00:00:00.000Z",
+  };
+
+  function jobTriggerRepository() {
+    const repo = repository();
+    const generated = {
+      messageId: "a1111111-1111-4111-8111-111111111111",
+      threadId: thread.threadId,
+      role: "assistant" as const,
+      body: "Generated job-completion closure review",
+      generationStatus: "ready" as const,
+      requestedInput: generationResult().response.requested_input,
+      phase: "closure_report" as const,
+      safeErrorCode: null,
+      parentUserMessageId: "b1111111-1111-4111-8111-111111111111",
+      requestedProviderModel: "model-alias",
+      providerModel: "model-resolved-2",
+      createdAt: "2026-09-29T01:00:00.000Z",
+      updatedAt: "2026-09-29T01:00:00.000Z",
+      photos: [],
+    };
+    vi.mocked(repo.loadThread)
+      .mockResolvedValueOnce({ thread, messages: [] })
+      .mockResolvedValueOnce({
+        thread: { ...thread, status: "ready", diagnosticPhase: "closure_report" },
+        messages: [generated],
+      });
+    vi.mocked(repo.beginSeedTurn).mockResolvedValue({
+      userMessageId: generated.parentUserMessageId!,
+      assistantMessageId: generated.messageId,
+      attemptId: "attempt-1",
+    });
+    vi.mocked(repo.loadGenerationInput).mockResolvedValue({
+      userMessageId: generated.parentUserMessageId!,
+      assistantMessageId: generated.messageId,
+      userMessage: JOB_COMPLETION_SEED_REQUEST,
+      photos: [],
+      selectedPhotoMetadata: [],
+      history: [],
+    });
+    const source = contextSource();
+    source.jobs[0] = {
+      ...source.jobs[0]!,
+      status: "completed",
+      workState: "completed",
+      completedAt: "2026-09-29T00:30:00.000Z",
+      verification: [],
+    };
+    vi.mocked(repo.loadContextSource).mockResolvedValue({
+      source,
+      redactTerms: {},
+    });
+    return { repo, generated };
+  }
+
+  it("atomically seeds one photo-free closure review with completed-work context", async () => {
+    const { repo } = jobTriggerRepository();
+    const generateDraft = vi
+      .fn()
+      .mockImplementation(
+        async (
+          request: DiagnosticsGenerationRequest
+        ): Promise<DiagnosticsGenerationResult> => ({
+          ...generationResult(),
+          response: {
+            ...generationResult().response,
+            phase: "closure_report",
+          },
+        })
+      );
+    const prepareImages = vi.fn().mockResolvedValue({
+      images: [],
+      photoMetadata: [],
+    });
+
+    await generateDiagnosticsTriggerResponseInternal(
+      {
+        userId: actor("technician").user_id,
+        locationId: scope().locationId,
+      },
+      {
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+        jobId,
+        trigger: "job_completion",
+        triggerEntityId,
+      },
+      { repository: repo, generateDraft, prepareImages }
+    );
+
+    expect(JOB_COMPLETION_SEED_REQUEST).toMatch(/recorded job\/work-order facts/i);
+    expect(JOB_COMPLETION_SEED_REQUEST).toMatch(/reported repair.*actual verification/i);
+    expect(JOB_COMPLETION_SEED_REQUEST).toContain(
+      "repair performed; verification pending"
+    );
+    expect(JOB_COMPLETION_SEED_REQUEST).toMatch(
+      /single immediate verification\/review input/i
+    );
+    expect(JOB_COMPLETION_SEED_REQUEST).toMatch(/compact Shop Log/i);
+    expect(JOB_COMPLETION_SEED_REQUEST).toMatch(
+      /no pass\/fail, QC, release, or roadworthiness claim/i
+    );
+    expect(JOB_COMPLETION_SEED_REQUEST).toMatch(/do not automatically attach photos/i);
+    expect(repo.beginSeedTurn).toHaveBeenCalledWith({
+      workOrderId: scope().workOrderId,
+      threadId: thread.threadId,
+      triggerType: "job_completed",
+      triggerEntityId,
+      userId: actor("technician").user_id,
+      text: JOB_COMPLETION_SEED_REQUEST,
+    });
+    expect(prepareImages).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId, selections: [] }),
+      repo
+    );
+    const request = generateDraft.mock.calls[0]![0] as DiagnosticsGenerationRequest;
+    expect(request.images).toEqual([]);
+    expect(request.workOrderContext.selectedJob).toMatchObject({
+      jobId,
+      status: "completed",
+      completedAt: "2026-09-29T00:30:00.000Z",
+      verification: [],
+      verificationStatus: "pending",
+    });
+  });
+
+  it.each([
+    ["wrong job", { jobId: "81111111-1111-4111-8111-111111111111" }],
+    ["missing job", { jobId: null }],
+    ["wrong trigger", { triggerType: "inspection_completed" as const }],
+    ["wrong trigger entity", { triggerEntityId: "81111111-1111-4111-8111-111111111111" }],
+    ["wrong creator", { createdByUserId: "81111111-1111-4111-8111-111111111111" }],
+    ["wrong location", { locationId: "81111111-1111-4111-8111-111111111111" }],
+  ])("rejects a job-completion thread with %s", async (_label, override) => {
+    const { repo } = jobTriggerRepository();
+    vi.mocked(repo.loadThread)
+      .mockReset()
+      .mockResolvedValue({
+        thread: { ...thread, ...override },
+        messages: [],
+      });
+
+    await expect(
+      generateDiagnosticsTriggerResponseInternal(
+        {
+          userId: actor("technician").user_id,
+          locationId: scope().locationId,
+        },
+        {
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          jobId,
+          trigger: "job_completion",
+          triggerEntityId,
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow("ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH");
+    expect(repo.beginSeedTurn).not.toHaveBeenCalled();
+  });
+
+  it("rejects mismatched requested job and trigger entity before claiming a seed", async () => {
+    const { repo } = jobTriggerRepository();
+
+    await expect(
+      generateDiagnosticsTriggerResponseInternal(
+        {
+          userId: actor("technician").user_id,
+          locationId: scope().locationId,
+        },
+        {
+          workOrderId: scope().workOrderId,
+          threadId: thread.threadId,
+          jobId,
+          trigger: "job_completion",
+          triggerEntityId: "81111111-1111-4111-8111-111111111111",
+        },
+        { repository: repo }
+      )
+    ).rejects.toThrow();
+    expect(repo.loadThread).not.toHaveBeenCalled();
+    expect(repo.beginSeedTurn).not.toHaveBeenCalled();
   });
 });

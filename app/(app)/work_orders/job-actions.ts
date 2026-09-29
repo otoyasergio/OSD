@@ -9,6 +9,7 @@ import {
   updateJobStatus,
 } from "@/lib/services/jobs";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { prepareJobCompletionAssistantHandoff } from "@/lib/services/jobCompletionAssistantHandoff";
 import type { JobStatus } from "@/lib/database/types";
 
 export type JobFormState = { error: string | null };
@@ -62,9 +63,15 @@ export async function updateJobStatusAction(
   formData: FormData
 ): Promise<JobFormState> {
   try {
-    await updateJobStatus(jobId, String(formData.get("status") ?? "") as JobStatus, {
+    const status = String(formData.get("status") ?? "") as JobStatus;
+    const assistantHandoff =
+      status === "completed" ? await prepareJobCompletionAssistantHandoff() : null;
+    await updateJobStatus(jobId, status, {
       note: String(formData.get("note") ?? ""),
     });
+    if (assistantHandoff) {
+      await assistantHandoff.afterSuccessfulCompletion({ workOrderId, jobId });
+    }
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

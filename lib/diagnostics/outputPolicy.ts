@@ -505,6 +505,30 @@ export function inspectDiagnosticsOutput(
       message: "Reports require a compact Shop Log Entry.",
     });
   }
+  if (output.phase === "closure_report" && output.shop_log_entry === null) {
+    violations.push({
+      code: "CLOSURE_SHOP_LOG_MISSING",
+      message: "Closure reports require a compact Shop Log Entry.",
+    });
+  }
+  if (output.phase === "closure_report" && !claims.hasRecordedCompletedWork) {
+    violations.push({
+      code: "CLOSURE_WORK_NOT_RECORDED",
+      message: "A closure report requires a supplied completed-work record.",
+    });
+  }
+  if (
+    output.phase === "closure_report" &&
+    hasPositiveClaim(
+      fields,
+      /\b(?:(?:qc|quality check)\s+(?:passed|failed|complete(?:d)?)|(?:job|repair|work)\s+(?:passed|failed)|(?:motorcycle|bike|vehicle|job|work order)\s+(?:is|was|has been)\s+released)\b/i
+    )
+  ) {
+    violations.push({
+      code: "CLOSURE_WORKFLOW_CLAIM",
+      message: "A closure draft cannot claim QC, pass/fail, or release status.",
+    });
+  }
 
   if (
     output.phase === "ready_for_technician_verification" &&

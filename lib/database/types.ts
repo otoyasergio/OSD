@@ -193,7 +193,8 @@ export type AiAssistantPhase =
   | "repair_planning"
   | "repair_in_progress"
   | "verification"
-  | "ready_for_technician_verification";
+  | "ready_for_technician_verification"
+  | "closure_report";
 
 export type AiAssistantThreadStatus =
   "pending" | "generating" | "ready" | "failed" | "archived";
