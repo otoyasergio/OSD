@@ -419,6 +419,21 @@ describe("AskOtomotoThreadPanel", () => {
       ).toBe(true);
     });
 
+    it("explains when a colleague's job assignment makes the thread read-only", async () => {
+      await renderThread(jobWorkspace(), {
+        canMutate: false,
+        lockReason: "job_assignment",
+      });
+
+      expect(textarea().disabled).toBe(true);
+      expect(container.textContent).toContain(
+        "This job is assigned to another technician, so this conversation is read-only."
+      );
+      expect(container.textContent).not.toContain(
+        "You can't send messages on this thread."
+      );
+    });
+
     it("keeps the composer available and Retry visible on a failed thread", async () => {
       await renderThread(jobWorkspace({ status: "failed" }));
       expect(textarea().disabled).toBe(false);

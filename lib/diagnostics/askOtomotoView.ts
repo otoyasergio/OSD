@@ -20,7 +20,8 @@ import { TECHNICIAN_NOTE_TYPE_LABELS } from "@/lib/status/labels";
 
 export type AskOtomotoSurface = "office" | "floor";
 
-export type AskOtomotoLockReason = "preview" | "foreign" | "locked" | "role";
+export type AskOtomotoLockReason =
+  "preview" | "foreign" | "locked" | "role" | "job_assignment";
 
 export type AskOtomotoCapabilities = {
   canMutate: boolean;

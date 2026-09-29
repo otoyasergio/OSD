@@ -102,9 +102,11 @@ export function askOtomotoCapabilities(input: {
       ? "foreign"
       : flags.readOnly
         ? "locked"
-        : !hasWriteRole
-          ? "role"
-          : null;
+        : peerJobLocked
+          ? "job_assignment"
+          : !hasWriteRole
+            ? "role"
+            : null;
   const canAddNotes =
     canCompleteJob(role) || canEditWorkOrder(role) || canCreateWorkOrder(role);
   return {

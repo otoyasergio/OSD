@@ -98,6 +98,9 @@ function readOnlyReason(lockReason: AskOtomotoLockReason | null | undefined): st
   if (lockReason === "locked") {
     return "This work order is completed or cancelled, so this conversation is read-only.";
   }
+  if (lockReason === "job_assignment") {
+    return "This job is assigned to another technician, so this conversation is read-only.";
+  }
   return "This work order is read-only.";
 }
 
@@ -173,7 +176,9 @@ function TurnComposer({
     : readOnly
       ? readOnlyReason(lockReason)
       : !canMutate
-        ? "You can't send messages on this thread."
+        ? lockReason === "job_assignment"
+          ? readOnlyReason(lockReason)
+          : "You can't send messages on this thread."
         : archived
           ? "This conversation is archived."
           : !configured

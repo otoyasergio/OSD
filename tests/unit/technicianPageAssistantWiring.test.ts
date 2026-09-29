@@ -246,7 +246,7 @@ describe("technician page Ask OTOMOTO wiring", () => {
       canMutate: false,
       canPromoteNotes: false,
       readOnly: false,
-      lockReason: "role",
+      lockReason: "job_assignment",
     });
   });
 
