@@ -3,7 +3,7 @@
 
 CREATE SCHEMA IF NOT EXISTS private;
 REVOKE ALL ON SCHEMA private FROM PUBLIC, anon;
-GRANT USAGE ON SCHEMA private TO authenticated, service_role;
+GRANT USAGE ON SCHEMA private TO authenticated;
 
 -- Composite keys let the database enforce denormalized work-order/location and
 -- job/work-order relationships without relying on application checks.
@@ -357,7 +357,7 @@ $$;
 REVOKE ALL ON FUNCTION private.can_view_ai_assistant_thread(uuid)
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION private.can_view_ai_assistant_thread(uuid)
-  TO authenticated, service_role;
+  TO authenticated;
 
 ALTER TABLE public.ai_assistant_thread ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_assistant_message ENABLE ROW LEVEL SECURITY;

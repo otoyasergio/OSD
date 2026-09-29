@@ -1,7 +1,7 @@
 -- pgTAP: Ask OTOMOTO storage, integrity, grants, and read visibility.
 -- Run via `supabase test db` against the isolated local stack.
 begin;
-select plan(25);
+select plan(27);
 
 select has_table('public', 'ai_assistant_thread', 'assistant thread table exists');
 select has_table('public', 'ai_assistant_message', 'assistant message table exists');
@@ -76,6 +76,37 @@ select is(
   ),
   0,
   'new tables expose no authenticated write policies'
+);
+select ok(
+  has_table_privilege('service_role', 'public.ai_assistant_thread', 'SELECT')
+    and has_table_privilege('service_role', 'public.ai_assistant_thread', 'INSERT')
+    and has_table_privilege('service_role', 'public.ai_assistant_thread', 'UPDATE')
+    and has_table_privilege('service_role', 'public.ai_assistant_thread', 'DELETE')
+    and has_table_privilege('service_role', 'public.ai_assistant_message', 'SELECT')
+    and has_table_privilege('service_role', 'public.ai_assistant_message', 'INSERT')
+    and has_table_privilege('service_role', 'public.ai_assistant_message', 'UPDATE')
+    and has_table_privilege('service_role', 'public.ai_assistant_message', 'DELETE')
+    and has_table_privilege(
+      'service_role',
+      'public.ai_assistant_message_photo',
+      'SELECT'
+    )
+    and has_table_privilege(
+      'service_role',
+      'public.ai_assistant_message_photo',
+      'INSERT'
+    )
+    and has_table_privilege(
+      'service_role',
+      'public.ai_assistant_message_photo',
+      'UPDATE'
+    )
+    and has_table_privilege(
+      'service_role',
+      'public.ai_assistant_message_photo',
+      'DELETE'
+    ),
+  'service role has full data access'
 );
 
 insert into public.location (location_id, name, code)
@@ -407,6 +438,15 @@ select is(
   ),
   1,
   'head tech can read unassigned safety-check technical thread'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.ai_assistant_thread
+    where audience = 'front_office'
+  ),
+  0,
+  'head tech cannot read front-office threads'
 );
 reset role;
 
