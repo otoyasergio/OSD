@@ -10,7 +10,9 @@ import {
 } from "@/components/diagnostics/AskOtomotoThreadPanel";
 import {
   askOtomotoThreadHref,
+  type AskOtomotoHeadingLevel,
   type AskOtomotoPanelData,
+  type AskOtomotoSubheadingLevel,
 } from "@/lib/diagnostics/askOtomotoView";
 
 /**
@@ -28,8 +30,11 @@ export function AskOtomotoPanel({
   config,
   capabilities,
   historyUnavailable = false,
-}: AskOtomotoPanelData) {
+  headingLevel = 2,
+}: AskOtomotoPanelData & { headingLevel?: AskOtomotoHeadingLevel }) {
   const headingId = useId();
+  const Heading = headingLevel === 3 ? "h3" : "h2";
+  const subheadingLevel: AskOtomotoSubheadingLevel = headingLevel === 3 ? 4 : 3;
   const selectedUnavailable = selectedThreadId !== null && workspace === null;
   const workspaceJobId = workspace?.thread.jobId ?? null;
   const workspaceJobLabel = workspaceJobId
@@ -41,9 +46,9 @@ export function AskOtomotoPanel({
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-4">
       <header className="flex flex-col gap-2">
-        <h2 id={headingId} className="text-lg font-semibold">
+        <Heading id={headingId} className="text-lg font-semibold">
           Ask OTOMOTO
-        </h2>
+        </Heading>
         <p className="text-sm text-[var(--status-neutral)]">
           AI drafts for staff review. Nothing here changes the work order unless you save
           a reviewed note.
@@ -81,11 +86,13 @@ export function AskOtomotoPanel({
         </p>
       ) : null}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(15rem,20rem)_minmax(0,1fr)]">
         <AskOtomotoThreadList
           route={route}
           threads={threads}
           selectedThreadId={selectedThreadId}
+          historyUnavailable={historyUnavailable}
+          headingLevel={subheadingLevel}
         />
         <div className="flex min-w-0 flex-col gap-3">
           {workspace ? (
@@ -107,6 +114,7 @@ export function AskOtomotoPanel({
                 configured={config.configured}
                 canPromoteNotes={capabilities.canPromoteNotes}
                 jobLabel={workspaceJobLabel}
+                headingLevel={subheadingLevel}
               />
             </>
           ) : (
@@ -117,6 +125,7 @@ export function AskOtomotoPanel({
               defaultJobId={defaultJobId}
               capabilities={capabilities}
               configured={config.configured}
+              headingLevel={subheadingLevel}
             />
           )}
         </div>

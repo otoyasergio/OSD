@@ -320,6 +320,7 @@ describe("AskOtomotoPanel", () => {
     it("reports history that could not load without blocking a new conversation", async () => {
       await render(props({ historyUnavailable: true }));
       expect(alerts().join(" ")).toMatch(/history could not be loaded/i);
+      expect(container.textContent).not.toMatch(/no conversations yet/i);
       expect(createForm()).not.toBeNull();
     });
 
@@ -663,6 +664,7 @@ describe("AskOtomotoPanel", () => {
       expect(text).toContain("Engine off for 30 minutes");
       expect(text).toContain("V");
       expect(text).not.toMatch(/NEXT STEP/);
+      expect(text).toMatch(/answer in the message box below/i);
       expect((container.textContent ?? "").match(/NEXT STEP/g)).toHaveLength(1);
       expect(card.querySelector("button")).toBeNull();
     });
@@ -685,6 +687,57 @@ describe("AskOtomotoPanel", () => {
       const card = container.querySelector('[aria-label="Next evidence requested"]');
       expect(card?.textContent).toContain(label);
       expect(card?.textContent).toContain("Provide it");
+    });
+
+    it.each([
+      [
+        "preview",
+        { ...FULL_CAPS, canMutate: false, preview: true, lockReason: "preview" },
+      ],
+      [
+        "foreign",
+        { ...FULL_CAPS, canMutate: false, readOnly: true, lockReason: "foreign" },
+      ],
+      ["role", { ...FULL_CAPS, canMutate: false, lockReason: "role" }],
+    ] as const)(
+      "does not point to the message box when the composer is locked (%s)",
+      async (_name, capabilities) => {
+        await render(
+          withThread(
+            workspace({}, [
+              assistantMessage({
+                requestedInput: sanitizeRequestedInput({
+                  type: "measurement",
+                  prompt: "Measure battery voltage",
+                }),
+              }),
+            ]),
+            { capabilities: capabilities as PanelProps["capabilities"] }
+          )
+        );
+        const card = container.querySelector('[aria-label="Next evidence requested"]')!;
+        expect(card.textContent).toContain("Measure battery voltage");
+        expect(card.textContent).not.toMatch(/message box below/i);
+        expect(card.textContent).toMatch(/never runs a test/i);
+      }
+    );
+
+    it("does not point to the message box when sending is unconfigured", async () => {
+      await render(
+        withThread(
+          workspace({}, [
+            assistantMessage({
+              requestedInput: sanitizeRequestedInput({
+                type: "question",
+                prompt: "Noise?",
+              }),
+            }),
+          ]),
+          { config: { configured: false, modelLabel: null, reason: "not_configured" } }
+        )
+      );
+      const card = container.querySelector('[aria-label="Next evidence requested"]')!;
+      expect(card.textContent).not.toMatch(/message box below/i);
     });
 
     it("omits the card for no requested input", async () => {
@@ -776,7 +829,7 @@ describe("AskOtomotoPanel", () => {
         vi.advanceTimersByTime(ASSISTANT_POLL.maxMs * 10);
       });
       expect(refresh).toHaveBeenCalledTimes(calls);
-      expect(statuses().join(" ")).toMatch(/still working/i);
+      expect(statuses().join(" ")).toMatch(/still working\. use refresh to check again/i);
       expect(buttonNamed(/^refresh$/i)).toBeDefined();
     });
 
@@ -796,6 +849,95 @@ describe("AskOtomotoPanel", () => {
         vi.advanceTimersByTime(ASSISTANT_POLL.maxMs * 3);
       });
       expect(refresh).not.toHaveBeenCalled();
+    });
+
+    function setVisibility(state: "visible" | "hidden") {
+      Object.defineProperty(document, "visibilityState", {
+        value: state,
+        configurable: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }
+
+    it("counts only visible time toward the timeout and resumes when visible", async () => {
+      vi.useFakeTimers();
+      try {
+        await render(withThread(workspace({ status: "generating" }, [])));
+        await act(async () => {
+          vi.advanceTimersByTime(ASSISTANT_POLL.initialMs);
+        });
+        expect(refresh).toHaveBeenCalledTimes(1);
+
+        await act(async () => setVisibility("hidden"));
+        await act(async () => {
+          vi.advanceTimersByTime(ASSISTANT_POLL.timeoutMs * 2);
+        });
+        expect(refresh).toHaveBeenCalledTimes(1);
+        expect(statuses().join(" ")).not.toMatch(/use refresh to check again/i);
+
+        await act(async () => setVisibility("visible"));
+        await act(async () => {
+          vi.advanceTimersByTime(nextAssistantPollDelay(1));
+        });
+        expect(refresh).toHaveBeenCalledTimes(2);
+        expect(statuses().join(" ")).not.toMatch(/use refresh to check again/i);
+
+        await act(async () => {
+          vi.advanceTimersByTime(ASSISTANT_POLL.timeoutMs);
+        });
+        expect(statuses().join(" ")).toMatch(/use refresh to check again/i);
+      } finally {
+        setVisibility("visible");
+      }
+    });
+
+    it("keeps the elapsed time of a partly visible interval across a hide", async () => {
+      vi.useFakeTimers();
+      try {
+        await render(withThread(workspace({ status: "generating" }, [])));
+        await act(async () => {
+          vi.advanceTimersByTime(ASSISTANT_POLL.initialMs - 1000);
+        });
+        await act(async () => setVisibility("hidden"));
+        await act(async () => {
+          vi.advanceTimersByTime(60_000);
+        });
+        await act(async () => setVisibility("visible"));
+        await act(async () => {
+          vi.advanceTimersByTime(999);
+        });
+        expect(refresh).not.toHaveBeenCalled();
+        await act(async () => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(refresh).toHaveBeenCalledTimes(1);
+      } finally {
+        setVisibility("visible");
+      }
+    });
+
+    it("starts paused when hidden and leaves no timers or listeners after unmount", async () => {
+      vi.useFakeTimers();
+      try {
+        setVisibility("hidden");
+        await render(withThread(workspace({ status: "generating" }, [])));
+        await act(async () => {
+          vi.advanceTimersByTime(ASSISTANT_POLL.maxMs * 3);
+        });
+        expect(refresh).not.toHaveBeenCalled();
+
+        await act(async () => root.unmount());
+        root = createRoot(container);
+        expect(vi.getTimerCount()).toBe(0);
+        await act(async () => setVisibility("visible"));
+        expect(vi.getTimerCount()).toBe(0);
+        await act(async () => {
+          vi.advanceTimersByTime(ASSISTANT_POLL.maxMs * 3);
+        });
+        expect(refresh).not.toHaveBeenCalled();
+      } finally {
+        setVisibility("visible");
+      }
     });
 
     it("does not poll a ready or manual pending thread", async () => {
@@ -821,8 +963,28 @@ describe("AskOtomotoPanel", () => {
       mockClipboard(writeText);
       await render(withThread(workspace()));
       await click(buttonNamed(/copy ai draft/i));
-      expect(writeText).toHaveBeenCalledWith(assistantMessage().body);
+      expect(writeText).toHaveBeenCalledWith(
+        "Assessments: possible: weak battery\n\nNEXT STEP: Measure resting battery voltage."
+      );
       expect(statuses().join(" ")).toMatch(/copied/i);
+    });
+
+    it("copies an advisor draft without markdown markers but with its line breaks", async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      mockClipboard(writeText);
+      await render(
+        withThread(
+          workspace({ mode: "advisor", audience: "front_office" }, [
+            assistantMessage({
+              body: "## Summary\n**Your brakes** need pads.\n\n\n\n- Front pads worn  \n- Rotors OK",
+            }),
+          ])
+        )
+      );
+      await click(buttonNamed(/copy ai draft/i));
+      expect(writeText).toHaveBeenCalledWith(
+        "Summary\nYour brakes need pads.\n\n- Front pads worn\n- Rotors OK"
+      );
     });
 
     it.each([
@@ -962,6 +1124,85 @@ describe("AskOtomotoPanel", () => {
       expect(saveButton().disabled).toBe(true);
       await act(async () => reviewForm().requestSubmit());
       expect(promoteAssistantNoteAction).not.toHaveBeenCalled();
+    });
+
+    const reviewButtons = () => Array.from(reviewForm().querySelectorAll("button"));
+    const cancelButton = () =>
+      reviewButtons().find((b) => /^cancel$/i.test(b.textContent ?? ""));
+    const discardButton = () => buttonNamed(/^discard changes$/i);
+    const keepEditingButton = () => buttonNamed(/^keep editing$/i);
+    const pressEscape = async (init: KeyboardEventInit = {}) =>
+      act(async () => {
+        noteText().dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, ...init })
+        );
+      });
+
+    it("ignores Escape while an IME composition is active", async () => {
+      await render(withThread(workspace()));
+      await click(reviewButton());
+      await pressEscape({ isComposing: true });
+      expect(reviewForm()).not.toBeNull();
+      await pressEscape({ keyCode: 229 });
+      expect(reviewForm()).not.toBeNull();
+    });
+
+    it("asks before discarding edited text on Cancel and can keep editing", async () => {
+      await render(withThread(workspace()));
+      await click(reviewButton());
+      await setValue(noteText(), "Edited finding");
+      await click(cancelButton());
+      expect(reviewForm()).not.toBeNull();
+      expect(container.textContent).toMatch(/discard your changes/i);
+      expect(document.activeElement).toBe(keepEditingButton());
+
+      await click(keepEditingButton());
+      expect(discardButton()).toBeUndefined();
+      expect(noteText().value).toBe("Edited finding");
+      expect(document.activeElement).toBe(noteText());
+    });
+
+    it("asks before discarding on Escape and discards only when explicit", async () => {
+      await render(withThread(workspace()));
+      await click(reviewButton());
+      await click(confirm());
+      await pressEscape();
+      expect(reviewForm()).not.toBeNull();
+      expect(discardButton()).toBeDefined();
+
+      await click(discardButton());
+      expect(
+        container.querySelector('form[aria-label="Review AI draft as note"]')
+      ).toBeNull();
+      expect(document.activeElement).toBe(reviewButton());
+
+      await click(reviewButton());
+      expect(noteText().value).toBe(
+        "Assessments: possible: weak battery\n\nNEXT STEP: Measure resting battery voltage."
+      );
+    });
+
+    it("moves focus to a stable saved status after saving, surviving the refresh", async () => {
+      promoteAssistantNoteAction.mockResolvedValue({ status: "success", error: null });
+      await render(withThread(workspace()));
+      await click(reviewButton());
+      await click(confirm());
+      await act(async () => reviewForm().requestSubmit());
+
+      const active = document.activeElement as HTMLElement;
+      expect(active).not.toBe(document.body);
+      expect(active.textContent).toMatch(/saved as a technician note/i);
+      expect(active.getAttribute("tabindex")).toBe("-1");
+
+      await render(
+        withThread(
+          workspace({}, [
+            assistantMessage({ promotedNoteId: "c1111111-1111-4111-8111-111111111111" }),
+          ])
+        )
+      );
+      expect(document.activeElement).toBe(active);
+      expect(active.isConnected).toBe(true);
     });
 
     it("closes with Cancel or Escape and returns focus to the review button", async () => {
@@ -1119,6 +1360,34 @@ describe("AskOtomotoPanel", () => {
       expect(createButton()?.getAttribute("type")).toBe("submit");
     });
 
+    const headings = (root: ParentNode) =>
+      Array.from(root.querySelectorAll("h1, h2, h3, h4, h5, h6")).map(
+        (node) => `${node.tagName}:${node.textContent?.trim()}`
+      );
+
+    it("nests office subheadings under the h2 panel heading", async () => {
+      await render(props({ threads: [listItem()] }));
+      expect(headings(container)).toEqual([
+        "H2:Ask OTOMOTO",
+        "H3:Conversations",
+        "H3:Start a new conversation",
+      ]);
+      await render(withThread(workspace()));
+      expect(headings(container)).toEqual([
+        "H2:Ask OTOMOTO",
+        "H3:Conversations",
+        "H3:Ask OTOMOTO · Technician (/shop)",
+        "H4:Photos for AI analysis",
+      ]);
+    });
+
+    it("stays single-column until extra-wide screens", async () => {
+      await render(withThread(workspace()));
+      const layout = nav()!.parentElement!;
+      expect(layout.className).toMatch(/\bxl:grid-cols-/);
+      expect(layout.className).not.toMatch(/\b(sm|md|lg):grid-cols-/);
+    });
+
     it("moves between modes with the keyboard as a native radio group", async () => {
       await render(props());
       const radios = modeRadios();
@@ -1181,6 +1450,17 @@ describe("AskOtomotoPanel", () => {
         assistantThread: THREAD,
       });
       expect(container.textContent).toContain("Measure resting battery voltage.");
+      const panel = container.querySelector<HTMLElement>('[role="tabpanel"]')!;
+      expect(
+        Array.from(panel.querySelectorAll("h1, h2, h3, h4, h5, h6")).map(
+          (node) => `${node.tagName}:${node.textContent?.trim()}`
+        )
+      ).toEqual([
+        "H3:Ask OTOMOTO",
+        "H4:Conversations",
+        "H4:Ask OTOMOTO · Technician (/shop)",
+        "H5:Photos for AI analysis",
+      ]);
     });
 
     it("shows the new-conversation state in the packet when no thread is selected", async () => {
@@ -1201,6 +1481,10 @@ describe("AskOtomotoPanel", () => {
       });
       expect(createForm()).not.toBeNull();
       expect(container.textContent).not.toMatch(/unavailable/i);
+      expect(createForm()!.querySelector("h4")?.textContent).toBe(
+        "Start a new conversation"
+      );
+      expect(container.querySelector('[role="tabpanel"] h2')).toBeNull();
     });
   });
 });

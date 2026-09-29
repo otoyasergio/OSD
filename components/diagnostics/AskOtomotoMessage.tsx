@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AssistantNoteReview } from "@/components/diagnostics/AssistantNoteReview";
-import type {
-  AskOtomotoMessageView,
-  AskOtomotoRequestedInput,
+import {
+  assistantCopyText,
+  type AskOtomotoMessageView,
+  type AskOtomotoRequestedInput,
 } from "@/lib/diagnostics/askOtomotoView";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 
@@ -40,7 +41,14 @@ function CopyDraftButton({ text }: { text: string }) {
   );
 }
 
-export function RequestedInputCard({ request }: { request: AskOtomotoRequestedInput }) {
+export function RequestedInputCard({
+  request,
+  canAnswer,
+}: {
+  request: AskOtomotoRequestedInput;
+  /** The composer below accepts a reply right now. */
+  canAnswer: boolean;
+}) {
   const rows: Array<[string, string | null]> = [
     ["Purpose", request.purpose],
     ["Placement", request.toolPlacement],
@@ -68,8 +76,8 @@ export function RequestedInputCard({ request }: { request: AskOtomotoRequestedIn
           ))}
       </dl>
       <p className="mt-2 text-xs">
-        Answer in the message box below. Ask OTOMOTO never runs a test or changes the work
-        order.
+        {canAnswer ? "Answer in the message box below. " : ""}
+        Ask OTOMOTO never runs a test or changes the work order.
       </p>
     </div>
   );
@@ -109,9 +117,14 @@ export function AskOtomotoMessage({
 }) {
   const [review, setReview] = useState<"closed" | "open" | "saved">("closed");
   const reviewButtonRef = useRef<HTMLButtonElement>(null);
+  const savedRef = useRef<HTMLParagraphElement>(null);
   const isAssistant = message.role === "assistant";
   const saved = isAssistant && (review === "saved" || message.promotedNoteId !== null);
   const reviewId = `note-review-${message.messageId}`;
+
+  useEffect(() => {
+    if (review === "saved") savedRef.current?.focus();
+  }, [review]);
 
   function closeReview() {
     setReview("closed");
@@ -151,7 +164,7 @@ export function AskOtomotoMessage({
 
       {isAssistant && message.body ? (
         <div className="mt-2 flex flex-wrap gap-2">
-          <CopyDraftButton text={message.body} />
+          <CopyDraftButton text={assistantCopyText(message.body)} />
           {canPromote && !saved ? (
             <button
               ref={reviewButtonRef}
@@ -167,7 +180,12 @@ export function AskOtomotoMessage({
         </div>
       ) : null}
       {saved ? (
-        <p role="status" className="mt-2 text-sm font-medium text-emerald-800">
+        <p
+          ref={savedRef}
+          role="status"
+          tabIndex={-1}
+          className="mt-2 text-sm font-medium text-emerald-800"
+        >
           Saved as a technician note. The AI draft is unchanged.
         </p>
       ) : null}

@@ -339,7 +339,7 @@ export function JobPacketPanel({
 
           {activeTab === "assistant" ? (
             assistant ? (
-              <AskOtomotoPanel {...assistant} />
+              <AskOtomotoPanel {...assistant} headingLevel={3} />
             ) : (
               <div className="floor-packet-summary">
                 <h3 className="floor-section-title">Ask OTOMOTO</h3>

@@ -72,6 +72,7 @@ export function DiagnosticsPhotoPicker({
   readOnly,
   disabled = false,
   onBusyChange,
+  headingLevel = 4,
 }: {
   thread: { threadId: string; workOrderId: string; jobId: string | null };
   photos: DiagnosticsPhotoSourceRow[];
@@ -85,7 +86,10 @@ export function DiagnosticsPhotoPicker({
   readOnly: boolean;
   disabled?: boolean;
   onBusyChange?: (busy: boolean) => void;
+  /** One level below the conversation heading it sits under. */
+  headingLevel?: 4 | 5;
 }) {
+  const Heading = headingLevel === 5 ? "h5" : "h4";
   const headingId = useId();
   const noteId = useId();
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -314,9 +318,9 @@ export function DiagnosticsPhotoPicker({
       tabIndex={-1}
       className="flex flex-col gap-2 rounded border border-[var(--border)] p-3"
     >
-      <h3 id={headingId} className="text-sm font-semibold">
+      <Heading id={headingId} className="text-sm font-semibold">
         Photos for AI analysis
-      </h3>
+      </Heading>
       <p className="text-xs text-[var(--status-neutral)]">
         Only the photos you select here are sent for AI analysis (up to{" "}
         {DIAGNOSTICS_PHOTO_MAX_SELECTED}). Image findings describe visible evidence only

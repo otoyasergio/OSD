@@ -7,6 +7,7 @@ import {
   ASSISTANT_TRIGGER_LABELS,
   askOtomotoThreadHref,
   type AskOtomotoRoute,
+  type AskOtomotoSubheadingLevel,
   type AskOtomotoThreadListItem,
 } from "@/lib/diagnostics/askOtomotoView";
 
@@ -14,16 +15,24 @@ export function AskOtomotoThreadList({
   route,
   threads,
   selectedThreadId,
+  historyUnavailable = false,
+  headingLevel = 3,
 }: {
   route: AskOtomotoRoute;
   threads: AskOtomotoThreadListItem[];
   selectedThreadId: string | null;
+  /** The panel already announces the load error; don't also claim "none". */
+  historyUnavailable?: boolean;
+  headingLevel?: AskOtomotoSubheadingLevel;
 }) {
+  const Heading = headingLevel === 4 ? "h4" : "h3";
   return (
     <nav aria-label="Ask OTOMOTO conversations" className="flex flex-col gap-2">
-      <h3 className="text-sm font-semibold">Conversations</h3>
+      <Heading className="text-sm font-semibold">Conversations</Heading>
       {threads.length === 0 ? (
-        <p className="text-sm text-[var(--status-neutral)]">No conversations yet.</p>
+        historyUnavailable ? null : (
+          <p className="text-sm text-[var(--status-neutral)]">No conversations yet.</p>
+        )
       ) : (
         <ul className="flex flex-col gap-2">
           {threads.map((item) => {

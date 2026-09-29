@@ -47,9 +47,12 @@ export function AssistantNoteReview({
   const router = useRouter();
   const fieldId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [text, setText] = useState(() => assistantDraftPlainText(body));
+  const [initialText] = useState(() => assistantDraftPlainText(body));
+  const [text, setText] = useState(initialText);
   const [noteType, setNoteType] = useState<string>(PROMOTABLE_NOTE_TYPES[0].value);
   const [confirmed, setConfirmed] = useState(false);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
   const inFlight = useRef(false);
   const [state, dispatch, pending] = useActionState(
     async (previous: AssistantActionState, formData: FormData) => {
@@ -71,6 +74,24 @@ export function AssistantNoteReview({
     textareaRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    if (confirmingDiscard) keepEditingRef.current?.focus();
+  }, [confirmingDiscard]);
+
+  const dirty =
+    text !== initialText || noteType !== PROMOTABLE_NOTE_TYPES[0].value || confirmed;
+
+  function requestCancel() {
+    if (pending) return;
+    if (dirty) setConfirmingDiscard(true);
+    else onCancel();
+  }
+
+  function keepEditing() {
+    setConfirmingDiscard(false);
+    textareaRef.current?.focus();
+  }
+
   const trimmed = text.trim();
   const canSave =
     confirmed &&
@@ -91,10 +112,12 @@ export function AssistantNoteReview({
         startTransition(() => dispatch(formData));
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && !pending) {
-          event.preventDefault();
-          onCancel();
-        }
+        if (event.key !== "Escape") return;
+        // Escape also dismisses an IME candidate list; that must not close the review.
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+        event.preventDefault();
+        if (confirmingDiscard) keepEditing();
+        else requestCancel();
       }}
       className="mt-3 flex flex-col gap-3 rounded border border-[var(--border-strong)] bg-white p-3"
     >
@@ -176,11 +199,33 @@ export function AssistantNoteReview({
           type="button"
           className="btn btn-secondary"
           disabled={pending}
-          onClick={onCancel}
+          onClick={requestCancel}
         >
           Cancel
         </button>
       </div>
+
+      {confirmingDiscard ? (
+        <div className="flex flex-col gap-2 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+          <p id={`note-discard-${fieldId}`}>
+            Discard your changes to this note? Nothing has been saved.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              ref={keepEditingRef}
+              type="button"
+              className="btn btn-primary"
+              aria-describedby={`note-discard-${fieldId}`}
+              onClick={keepEditing}
+            >
+              Keep editing
+            </button>
+            <button type="button" className="btn btn-secondary" onClick={onCancel}>
+              Discard changes
+            </button>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }

@@ -31,6 +31,7 @@ import {
   isAssistantThreadWorking,
   parseRequestedInput,
   type AskOtomotoLockReason,
+  type AskOtomotoSubheadingLevel,
   type AskOtomotoWorkspaceView,
 } from "@/lib/diagnostics/askOtomotoView";
 import type { AskOtomotoConfigReason } from "@/lib/diagnostics/config";
@@ -72,6 +73,7 @@ function TurnComposer({
   configured,
   retryPending,
   onBusyChange,
+  photoHeadingLevel,
 }: {
   workspace: AskOtomotoWorkspaceView;
   photos: DiagnosticsPhotoSourceRow[];
@@ -82,6 +84,7 @@ function TurnComposer({
   configured: boolean;
   retryPending: boolean;
   onBusyChange: (busy: boolean) => void;
+  photoHeadingLevel: 4 | 5;
 }) {
   const router = useRouter();
   const { thread, messages } = workspace;
@@ -204,6 +207,7 @@ function TurnComposer({
         readOnly={readOnly}
         disabled={locked || pending}
         onBusyChange={setUploading}
+        headingLevel={photoHeadingLevel}
       />
 
       {blockedReason ? (
@@ -241,6 +245,7 @@ export function AskOtomotoThreadPanel({
   configured = true,
   canPromoteNotes = false,
   jobLabel = null,
+  headingLevel = 3,
 }: {
   workspace: AskOtomotoWorkspaceView;
   /** Authorized, already-filtered staff photos for this work order. */
@@ -253,8 +258,10 @@ export function AskOtomotoThreadPanel({
   configured?: boolean;
   canPromoteNotes?: boolean;
   jobLabel?: string | null;
+  headingLevel?: AskOtomotoSubheadingLevel;
 }) {
   const router = useRouter();
+  const Heading = headingLevel === 4 ? "h4" : "h3";
   const { thread, messages } = workspace;
   const [sendBusy, setSendBusy] = useState(false);
   const [retryState, retryAction, retryPending] = useActionState(
@@ -297,9 +304,9 @@ export function AskOtomotoThreadPanel({
     >
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold">
+          <Heading className="text-base font-semibold">
             Ask OTOMOTO · {ASSISTANT_MODE_LABELS[thread.mode]}
-          </h3>
+          </Heading>
           <p className="text-sm text-[var(--status-neutral)]">
             Mode: {ASSISTANT_MODE_LABELS[thread.mode]} · fixed for this conversation
           </p>
@@ -374,7 +381,12 @@ export function AskOtomotoThreadPanel({
         ))}
       </div>
 
-      {requested ? <RequestedInputCard request={requested} /> : null}
+      {requested ? (
+        <RequestedInputCard
+          request={requested}
+          canAnswer={mutationAllowed && configured && thread.status !== "archived"}
+        />
+      ) : null}
 
       <TurnComposer
         key={thread.threadId}
@@ -387,6 +399,7 @@ export function AskOtomotoThreadPanel({
         configured={configured}
         retryPending={retryPending}
         onBusyChange={setSendBusy}
+        photoHeadingLevel={headingLevel === 4 ? 5 : 4}
       />
 
       <div className="flex flex-wrap gap-2">

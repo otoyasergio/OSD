@@ -4,6 +4,7 @@ import {
   ASSISTANT_POLL,
   PROMOTABLE_NOTE_TYPES,
   askOtomotoThreadHref,
+  assistantCopyText,
   assistantDraftPlainText,
   assistantModeOptions,
   canPromoteAssistantMessage,
@@ -326,6 +327,25 @@ describe("parseCreatedThread", () => {
     { threadId: THREAD, workOrderId: WO, jobId: null, mode: "admin" },
   ])("rejects unsafe payload %#", (value) => {
     expect(parseCreatedThread(value, WO)).toBeNull();
+  });
+});
+
+describe("assistantCopyText", () => {
+  it("drops bold markers and heading hashes but keeps readable line breaks", () => {
+    expect(
+      assistantCopyText(
+        "**SAFETY — Caution:** Hot exhaust\n\n### **NEXT STEP:**  \n__Check__ the fuse\n\n\n\n- one\n- two  "
+      )
+    ).toBe("SAFETY — Caution: Hot exhaust\n\nNEXT STEP:\nCheck the fuse\n\n- one\n- two");
+  });
+
+  it("normalizes Windows line endings and leaves plain text unchanged", () => {
+    expect(assistantCopyText("Line one\r\nLine two")).toBe("Line one\nLine two");
+    expect(assistantCopyText("Torque to 25 N·m")).toBe("Torque to 25 N·m");
+  });
+
+  it("keeps a lone # that is not a heading marker", () => {
+    expect(assistantCopyText("#5 spark plug\nPart #12")).toBe("#5 spark plug\nPart #12");
   });
 });
 

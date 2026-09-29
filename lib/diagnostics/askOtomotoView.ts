@@ -33,6 +33,10 @@ export type AskOtomotoCapabilities = {
 
 export type AskOtomotoJobOption = { jobId: string; label: string };
 
+/** Panel heading level for its embedding: office tab h2, floor packet h3. */
+export type AskOtomotoHeadingLevel = 2 | 3;
+export type AskOtomotoSubheadingLevel = 3 | 4;
+
 /** Everything the shared panel needs; server-built and serializable. */
 export type AskOtomotoPanelData = {
   route: AskOtomotoRoute;
@@ -350,9 +354,25 @@ export function parseCreatedThread(
 
 export const ASSISTANT_NOTE_TEXT_MAX = 8_000;
 
-/** Plain-text starting point for a reviewed note; markdown emphasis is dropped. */
+/** Clipboard text: markdown bold/heading markers removed, line structure kept. */
+export function assistantCopyText(body: string): string {
+  return body
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^\s{0,3}#{1,6}\s+/, "")
+        .replace(/\*\*|__/g, "")
+        .trimEnd()
+    )
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Plain-text starting point for a reviewed note. */
 export function assistantDraftPlainText(body: string): string {
-  return body.replace(/\*\*/g, "").slice(0, ASSISTANT_NOTE_TEXT_MAX);
+  return assistantCopyText(body).slice(0, ASSISTANT_NOTE_TEXT_MAX);
 }
 
 export function canPromoteAssistantMessage(input: {

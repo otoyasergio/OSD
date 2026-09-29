@@ -15,6 +15,7 @@ import {
   type AskOtomotoCapabilities,
   type AskOtomotoJobOption,
   type AskOtomotoRoute,
+  type AskOtomotoSubheadingLevel,
 } from "@/lib/diagnostics/askOtomotoView";
 import type { AiAssistantMode } from "@/lib/database/types";
 
@@ -48,14 +49,17 @@ export function AskOtomotoNewConversation({
   defaultJobId,
   capabilities,
   configured,
+  headingLevel = 3,
 }: {
   route: AskOtomotoRoute;
   jobs: AskOtomotoJobOption[];
   defaultJobId: string | null;
   capabilities: AskOtomotoCapabilities;
   configured: boolean;
+  headingLevel?: AskOtomotoSubheadingLevel;
 }) {
   const router = useRouter();
+  const Heading = headingLevel === 4 ? "h4" : "h3";
   const idBase = useId();
   const modes = assistantModeOptions({
     surface: route.surface,
@@ -112,7 +116,7 @@ export function AskOtomotoNewConversation({
       }}
       className="flex flex-col gap-3 rounded-lg border border-[var(--border)] bg-white p-4"
     >
-      <h3 className="text-base font-semibold">Start a new conversation</h3>
+      <Heading className="text-base font-semibold">Start a new conversation</Heading>
 
       <fieldset className="flex flex-col gap-2" disabled={pending}>
         <legend className="mb-1 text-sm font-medium">
