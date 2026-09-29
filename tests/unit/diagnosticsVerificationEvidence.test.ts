@@ -134,6 +134,23 @@ describe("recorded verification-note classification", () => {
     ["Complaint to be resolved.", "pending"],
     ["Road test must be successful.", "pending"],
     ["Road test passed.\nThe concern remains.", "failed"],
+    ["Road test passed, noise not resolved.", "pending"],
+    ["Road test passed; issue not resolved.", "pending"],
+    ["Test ride passed but issue isn't resolved.", "pending"],
+    ["Problem not fixed.", "pending"],
+    ["Problem not repaired.", "pending"],
+    ["Problem not cured.", "pending"],
+    ["Problem not corrected.", "pending"],
+    ["Leak not fixed.", "pending"],
+    ["Noise not gone.", "pending"],
+    ["Did not fix noise.", "pending"],
+    ["No improvement.", "pending"],
+    ["Noise returned after 30 km.", "failed"],
+    ["Noise unchanged.", "failed"],
+    ["Clunk came back.", "failed"],
+    ["Noise comes back under load.", "failed"],
+    ["Handling worsened.", "failed"],
+    ["Still noisy.", "failed"],
   ] as const)("never promotes a negated outcome: %s", (note, expected) => {
     expect(classifyVerificationNote(note)).toBe(expected);
     expect(classifyVerificationNote(note)).not.toBe("passed");
@@ -164,8 +181,19 @@ describe("recorded verification-note classification", () => {
     "Concern reproduced before repair.",
     "Comparable retest to follow.",
     "Road test will be completed after repair.",
+    "Road test still to follow.",
   ])("keeps unknown or qualified wording recorded-only: %s", (note) => {
     expect(classifyVerificationNote(note)).toBe("recorded");
+  });
+
+  it.each([
+    "Verification still pending.",
+    "Retest still required.",
+    "Repair still needed.",
+    "Verification still awaiting road test.",
+    "Verification still waiting for parts.",
+  ])("does not treat an excluded still-state as residual failure: %s", (note) => {
+    expect(classifyVerificationNote(note)).toBe("pending");
   });
 
   it.each([
@@ -215,6 +243,11 @@ describe("recorded verification-note classification", () => {
     ["diagnostic confirmation", "Verified leak present.", false],
     ["future work", "Complaint to be resolved.", false],
     ["bare no-recurrence", "Symptom has not recurred.", false],
+    [
+      "unresolved clause after a passing test",
+      "Road test passed; issue not resolved.",
+      false,
+    ],
     ["explicit post-repair outcome", "Road test passed.", true],
   ] as const)(
     "carries %s classification through context claims and output policy",

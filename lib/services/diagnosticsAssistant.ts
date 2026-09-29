@@ -35,10 +35,10 @@ import {
 } from "@/lib/diagnostics/config";
 import {
   prepareDiagnosticsImages,
+  redactAndBoundDiagnosticsPhotoPurpose,
   type DiagnosticsImagePreparationResult,
   type DiagnosticsPhotoRow,
 } from "@/lib/diagnostics/images";
-import { DIAGNOSTICS_PHOTO_PURPOSE_MAX } from "@/lib/diagnostics/photoSelection";
 import {
   generateDiagnosticsDraft,
   DIAGNOSTICS_MAX_HISTORY_CHARS,
@@ -121,6 +121,16 @@ function hasVerificationNegator(clause: string): boolean {
   return tokens.some((token) => token.endsWith("n't") || negators.has(token));
 }
 
+function hasImmediatelyNegatedVerificationOutcome(clause: string): boolean {
+  const outcome = String.raw`(?:resolv(?:e|ed|ing)|fix(?:ed|ing)?|repair(?:ed|ing)?|gone|cur(?:e|ed|ing)|correct(?:ed|ing|ion)?|improv(?:e|ed|ing|ement)|pass(?:ed|ing)?|success(?:ful|fully)?|verif(?:y|ied|ication))`;
+  const bridge = String.raw`(?:(?:be|been|being|yet|fully|completely)\s+){0,3}`;
+
+  return (
+    new RegExp(String.raw`\b(?:not|no|never)\s+${bridge}${outcome}\b`).test(clause) ||
+    new RegExp(String.raw`\b[a-z]+n't\s+${bridge}${outcome}\b`).test(clause)
+  );
+}
+
 function classifyVerificationClause(
   clause: string,
   previousClause: string | undefined
@@ -134,6 +144,11 @@ function classifyVerificationClause(
   if (
     /\b(?:failed|failure|unsuccessful|recurred)\b/.test(failureText) ||
     /\b(?:still\s+present|persists?|remains?)\b/.test(failureText) ||
+    /\b(?:returned|unchanged|worsened)\b/.test(failureText) ||
+    /\b(?:came|comes)\s+back\b/.test(failureText) ||
+    /\bstill\s+(?!(?:pending|required|needed|to|awaiting|waiting)\b)[a-z0-9]+/.test(
+      failureText
+    ) ||
     /\b(?:partially|partly|mostly)\s+(?:successful|resolved|verified|complete|completed|fixed|repaired|pass(?:ed)?)\b/.test(
       failureText
     ) ||
@@ -157,7 +172,9 @@ function classifyVerificationClause(
   }
 
   if (
-    /\b(?:pending|incomplete|retest required|requires? (?:a )?retest)\b/.test(clause) ||
+    /\b(?:pending|incomplete|required|awaiting|waiting|retest required|requires? (?:a )?retest)\b/.test(
+      clause
+    ) ||
     /\bverification\s+(?:is\s+)?(?:not|still)\b/.test(clause) ||
     /\bneeded\b/.test(clause) ||
     /\bmust\b/.test(clause) ||
@@ -186,6 +203,10 @@ function classifyVerificationClause(
     ) {
       return "failed";
     }
+    return "pending";
+  }
+
+  if (hasImmediatelyNegatedVerificationOutcome(clause)) {
     return "pending";
   }
 
@@ -691,8 +712,6 @@ function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
 const HISTORY_CLIPPED_MARKER = "\n[CLIPPED FROM STORED HISTORY]";
 const CURRENT_MESSAGE_CLIPPED_MARKER =
   "\n[CLIPPED AFTER REDACTION TO PROVIDER MESSAGE LIMIT]";
-const PHOTO_PURPOSE_CLIPPED_MARKER =
-  "\n[CLIPPED AFTER REDACTION TO PROVIDER PHOTO PURPOSE LIMIT]";
 
 function clipStoredHistoryText(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
@@ -705,14 +724,6 @@ function clipCurrentProviderMessage(value: string): string {
     0,
     DIAGNOSTICS_MAX_MESSAGE_CHARS - CURRENT_MESSAGE_CLIPPED_MARKER.length
   )}${CURRENT_MESSAGE_CLIPPED_MARKER}`;
-}
-
-function clipProviderPhotoPurpose(value: string): string {
-  if (value.length <= DIAGNOSTICS_PHOTO_PURPOSE_MAX) return value;
-  return `${value.slice(
-    0,
-    DIAGNOSTICS_PHOTO_PURPOSE_MAX - PHOTO_PURPOSE_CLIPPED_MARKER.length
-  )}${PHOTO_PURPOSE_CLIPPED_MARKER}`;
 }
 
 function compactAssistantHistory(message: DiagnosticsMessageView): string {
@@ -2094,9 +2105,7 @@ export function createDiagnosticsAssistantService(
       );
       const safeSelections = input.generation.photos.map((photo) => ({
         ...photo,
-        purpose: clipProviderPhotoPurpose(
-          redactDiagnosticsText(photo.purpose, loaded.redactTerms)
-        ),
+        purpose: redactAndBoundDiagnosticsPhotoPurpose(photo.purpose, loaded.redactTerms),
       }));
       const prepared = await prepare(
         {

@@ -4,15 +4,18 @@ import {
   redactDiagnosticsText,
   type DiagnosticsRedactTerms,
 } from "@/lib/diagnostics/redaction";
+import { DIAGNOSTICS_PHOTO_PURPOSE_MAX } from "@/lib/diagnostics/photoSelection";
 
 export const DIAGNOSTICS_MAX_SELECTED_IMAGES = 3;
 export const DIAGNOSTICS_IMAGE_MAX_EDGE = 2_048;
 export const DIAGNOSTICS_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const DIAGNOSTICS_MAX_NORMALIZED_IMAGE_BYTES = 5 * 1024 * 1024;
 export const DIAGNOSTICS_MAX_INPUT_PIXELS = 50_000_000;
-export const DIAGNOSTICS_MAX_IMAGE_PURPOSE_CHARS = 500;
+export const DIAGNOSTICS_MAX_IMAGE_PURPOSE_CHARS = DIAGNOSTICS_PHOTO_PURPOSE_MAX;
 export const DIAGNOSTICS_HEIF_FALLBACK_LIMITATION =
   "Original HEIC/HEIF could not be decoded; lower-resolution JPEG thumbnail used.";
+export const DIAGNOSTICS_PHOTO_PURPOSE_CLIPPED_MARKER =
+  "\n[CLIPPED AFTER REDACTION TO PROVIDER PHOTO PURPOSE LIMIT]";
 
 const ALLOWED_CATEGORIES = new Set([
   "inspection_tires",
@@ -168,14 +171,29 @@ async function assertSupportedInput(
   return { format: magic, width: metadata.width, height: metadata.height };
 }
 
-function normalizePurpose(
+export function redactAndBoundDiagnosticsPhotoPurpose(
   value: string,
   redactTerms: DiagnosticsRedactTerms = {}
 ): string {
-  const purpose = redactDiagnosticsText(value.trim(), redactTerms);
+  let purpose = value.trim();
   if (!purpose || purpose.length > DIAGNOSTICS_MAX_IMAGE_PURPOSE_CHARS) {
     throw new Error("DIAGNOSTICS_IMAGE_PURPOSE_INVALID");
   }
+
+  for (let pass = 0; pass < 3; pass += 1) {
+    const redacted = redactDiagnosticsText(purpose, redactTerms);
+    const bounded =
+      redacted.length <= DIAGNOSTICS_MAX_IMAGE_PURPOSE_CHARS
+        ? redacted
+        : `${redacted.slice(
+            0,
+            DIAGNOSTICS_MAX_IMAGE_PURPOSE_CHARS -
+              DIAGNOSTICS_PHOTO_PURPOSE_CLIPPED_MARKER.length
+          )}${DIAGNOSTICS_PHOTO_PURPOSE_CLIPPED_MARKER}`;
+    if (bounded === purpose) return bounded;
+    purpose = bounded;
+  }
+
   return purpose;
 }
 
@@ -196,7 +214,7 @@ function assertSelections(request: DiagnosticsImagePreparationRequest): void {
       throw new Error("DIAGNOSTICS_IMAGE_DUPLICATE");
     }
     ids.add(selection.photoId);
-    normalizePurpose(selection.purpose, request.redactTerms);
+    redactAndBoundDiagnosticsPhotoPurpose(selection.purpose, request.redactTerms);
   }
 }
 
@@ -389,7 +407,10 @@ export async function prepareDiagnosticsImages(
       throw new Error("DIAGNOSTICS_IMAGE_NORMALIZED_TOO_LARGE");
     }
     await assertNormalizedJpeg(normalized);
-    const purpose = normalizePurpose(item.selection.purpose, request.redactTerms);
+    const purpose = redactAndBoundDiagnosticsPhotoPurpose(
+      item.selection.purpose,
+      request.redactTerms
+    );
 
     images.push({
       photoId: item.row.photoId,

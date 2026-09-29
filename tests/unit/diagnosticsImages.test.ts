@@ -1,8 +1,10 @@
 import sharp from "sharp";
 import { describe, expect, it, vi } from "vitest";
 import {
+  DIAGNOSTICS_MAX_IMAGE_PURPOSE_CHARS,
   DIAGNOSTICS_MAX_IMAGE_BYTES,
   prepareDiagnosticsImages,
+  redactAndBoundDiagnosticsPhotoPurpose,
   type DiagnosticsPhotoRow,
 } from "@/lib/diagnostics/images";
 
@@ -415,6 +417,36 @@ describe("diagnostics selected image preparation", () => {
     expect(result.photoMetadata[0]?.purpose).toBe(
       "Before [REDACTED_URL] after for [REDACTED_EMAIL] at [REDACTED_PHONE]"
     );
+  });
+
+  it("redacts and bounds an adversarial near-limit customer purpose idempotently", async () => {
+    const rawPurpose = "Minh Tran ".repeat(50).trim();
+    expect(rawPurpose).toHaveLength(DIAGNOSTICS_MAX_IMAGE_PURPOSE_CHARS - 1);
+    const redactTerms = { customerName: "Minh Tran" };
+    const firstProviderCopy = redactAndBoundDiagnosticsPhotoPurpose(
+      rawPurpose,
+      redactTerms
+    );
+
+    const result = await prepareDiagnosticsImages(
+      {
+        workOrderId: "wo-1",
+        selections: [{ photoId: "photo-1", purpose: firstProviderCopy }],
+        redactTerms,
+      },
+      dependencies([row()])
+    );
+
+    const providerPurpose = result.images[0]!.purpose;
+    expect(providerPurpose.length).toBeLessThanOrEqual(
+      DIAGNOSTICS_MAX_IMAGE_PURPOSE_CHARS
+    );
+    expect(providerPurpose).not.toMatch(/Minh|Tran/i);
+    expect(providerPurpose).toContain(
+      "[CLIPPED AFTER REDACTION TO PROVIDER PHOTO PURPOSE LIMIT]"
+    );
+    expect(providerPurpose).toBe(firstProviderCopy);
+    expect(result.photoMetadata[0]!.purpose).toBe(providerPurpose);
   });
 
   it("uses a separate normalized-size failure code", async () => {
