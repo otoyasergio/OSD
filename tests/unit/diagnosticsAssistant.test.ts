@@ -1353,6 +1353,60 @@ describe("Ask OTOMOTO generation lifecycle", () => {
     );
   });
 
+  it("retries a near-limit request after redaction expansion by explicitly clipping it", async () => {
+    const { repo, thread, generated } = generationRepository();
+    const latestRequest = `Latest staff request: ${"Ann ".repeat(1_900)}`.slice(
+      0,
+      DIAGNOSTICS_MAX_MESSAGE_CHARS
+    );
+    vi.mocked(repo.claimLatestRetry).mockResolvedValue({
+      userMessageId: "b1111111-1111-4111-8111-111111111111",
+      assistantMessageId: generated.messageId,
+      attemptId: "attempt-redaction-retry",
+    });
+    vi.mocked(repo.loadGenerationInput).mockResolvedValue({
+      userMessageId: "b1111111-1111-4111-8111-111111111111",
+      assistantMessageId: generated.messageId,
+      userMessage: latestRequest,
+      photos: [],
+      history: [],
+    });
+    vi.mocked(repo.loadContextSource).mockResolvedValue({
+      source: contextSource(),
+      redactTerms: { customerName: "Ann" },
+    });
+    const generateDraft = vi
+      .fn<
+        (request: DiagnosticsGenerationRequest) => Promise<DiagnosticsGenerationResult>
+      >()
+      .mockResolvedValue(generationResult());
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft,
+      prepareImages: async () => ({ images: [], photoMetadata: [] }),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+
+    await expect(
+      service.retryLatestFailed({
+        workOrderId: scope().workOrderId,
+        threadId: thread.threadId,
+      })
+    ).resolves.toBeDefined();
+
+    const providerMessage = generateDraft.mock.calls[0]![0].userMessage;
+    expect(providerMessage).toHaveLength(DIAGNOSTICS_MAX_MESSAGE_CHARS);
+    expect(providerMessage).toMatch(/^Latest staff request:/);
+    expect(providerMessage).not.toContain("Ann");
+    expect(providerMessage).toContain(
+      "[CLIPPED AFTER REDACTION TO PROVIDER MESSAGE LIMIT]"
+    );
+    expect(repo.completeGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({ attemptId: "attempt-redaction-retry" })
+    );
+  });
+
   it("allows a normal retest follow-up in a job-completion thread to enter verification", async () => {
     const { repo, thread, generated } = generationRepository();
     const triggerThread = {

@@ -610,10 +610,20 @@ function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
 }
 
 const HISTORY_CLIPPED_MARKER = "\n[CLIPPED FROM STORED HISTORY]";
+const CURRENT_MESSAGE_CLIPPED_MARKER =
+  "\n[CLIPPED AFTER REDACTION TO PROVIDER MESSAGE LIMIT]";
 
 function clipStoredHistoryText(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
   return `${value.slice(0, maxChars - HISTORY_CLIPPED_MARKER.length)}${HISTORY_CLIPPED_MARKER}`;
+}
+
+function clipCurrentProviderMessage(value: string): string {
+  if (value.length <= DIAGNOSTICS_MAX_MESSAGE_CHARS) return value;
+  return `${value.slice(
+    0,
+    DIAGNOSTICS_MAX_MESSAGE_CHARS - CURRENT_MESSAGE_CLIPPED_MARKER.length
+  )}${CURRENT_MESSAGE_CLIPPED_MARKER}`;
 }
 
 function compactAssistantHistory(message: DiagnosticsMessageView): string {
@@ -1986,9 +1996,8 @@ export function createDiagnosticsAssistantService(
         serverNowIso: contextAsOf,
         redactTerms: loaded.redactTerms,
       });
-      const safeUserMessage = redactDiagnosticsText(
-        input.generation.userMessage,
-        loaded.redactTerms
+      const safeUserMessage = clipCurrentProviderMessage(
+        redactDiagnosticsText(input.generation.userMessage, loaded.redactTerms)
       );
       const safeHistory = redactAndBoundProviderHistory(
         input.generation.history,
