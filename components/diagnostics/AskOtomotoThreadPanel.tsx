@@ -54,28 +54,21 @@ function TurnComposer({
   const [selections, setSelections] = useState<DiagnosticsPhotoSelection[]>([]);
   const [uploading, setUploading] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const sendInFlight = useRef(false);
   const wasPending = useRef(false);
 
   const [state, formAction, pending] = useActionState(
     async (previous: AssistantActionState, formData: FormData) => {
-      if (sendInFlight.current) return previous;
-      sendInFlight.current = true;
-      try {
-        const result = await submitAssistantTurnAction(
-          thread.workOrderId,
-          previous,
-          formData
-        );
-        if (result.status === "success") {
-          setText("");
-          setSelections([]);
-          router.refresh();
-        }
-        return result;
-      } finally {
-        sendInFlight.current = false;
+      const result = await submitAssistantTurnAction(
+        thread.workOrderId,
+        previous,
+        formData
+      );
+      if (result.status === "success") {
+        setText("");
+        setSelections([]);
+        router.refresh();
       }
+      return result;
     },
     INITIAL_ACTION_STATE
   );
@@ -218,22 +211,15 @@ export function AskOtomotoThreadPanel({
   const router = useRouter();
   const { thread, messages } = workspace;
   const [sendBusy, setSendBusy] = useState(false);
-  const retryInFlight = useRef(false);
   const [retryState, retryAction, retryPending] = useActionState(
     async (previous: AssistantActionState, formData: FormData) => {
-      if (retryInFlight.current) return previous;
-      retryInFlight.current = true;
-      try {
-        const result = await retryAssistantTurnAction(
-          thread.workOrderId,
-          previous,
-          formData
-        );
-        if (result.status === "success") router.refresh();
-        return result;
-      } finally {
-        retryInFlight.current = false;
-      }
+      const result = await retryAssistantTurnAction(
+        thread.workOrderId,
+        previous,
+        formData
+      );
+      if (result.status === "success") router.refresh();
+      return result;
     },
     INITIAL_ACTION_STATE
   );
@@ -294,7 +280,11 @@ export function AskOtomotoThreadPanel({
             <div className="whitespace-pre-wrap text-sm">
               {message.body ??
                 (message.generationStatus === "failed"
-                  ? "Response unavailable — use Retry."
+                  ? mutationAllowed
+                    ? "Response unavailable — use Retry."
+                    : preview || readOnly
+                      ? "Response unavailable (read-only view)."
+                      : "Response unavailable."
                   : "Response pending.")}
             </div>
             {message.photos.length > 0 ? (

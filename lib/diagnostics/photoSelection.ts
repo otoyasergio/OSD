@@ -72,10 +72,15 @@ export function toDiagnosticsPhotoSourceRows(
     }));
 }
 
+/** Collapse every whitespace run (newlines, tabs, NBSP…) to one space and trim. */
+export function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 export function defaultPhotoPurpose(prompt: string | null | undefined): string {
-  const trimmed = prompt?.trim();
-  if (!trimmed) return DIAGNOSTICS_PHOTO_FALLBACK_PURPOSE;
-  return trimmed.slice(0, DIAGNOSTICS_PHOTO_PURPOSE_MAX);
+  const collapsed = collapseWhitespace(prompt ?? "");
+  if (!collapsed) return DIAGNOSTICS_PHOTO_FALLBACK_PURPOSE;
+  return collapsed.slice(0, DIAGNOSTICS_PHOTO_PURPOSE_MAX).trim();
 }
 
 export type AddPhotoSelectionResult = {
@@ -154,9 +159,12 @@ export function photoRequestFromMessages(
   if (!input || typeof input !== "object") return null;
   const { type, prompt } = input as { type?: unknown; prompt?: unknown };
   if (type !== "photo" || typeof prompt !== "string") return null;
-  const trimmed = prompt.trim();
-  if (!trimmed) return null;
-  return { key: latest.messageId ?? `index-${messages.length - 1}`, prompt: trimmed };
+  const normalized = collapseWhitespace(prompt);
+  if (!normalized) return null;
+  return {
+    key: latest.messageId ?? `index-${messages.length - 1}`,
+    prompt: normalized,
+  };
 }
 
 export function photoPromptFromMessages(

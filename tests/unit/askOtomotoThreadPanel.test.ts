@@ -572,6 +572,36 @@ describe("AskOtomotoThreadPanel", () => {
       expect(container.textContent).toContain("Generation failed");
     });
 
+    describe("failed response text", () => {
+      const failedMessage = (): DiagnosticsMessageView => ({
+        ...workspace().messages[0],
+        body: null,
+        generationStatus: "failed",
+        safeErrorCode: "DIAGNOSTICS_AI_PROVIDER_FAILED",
+      });
+      const failedWithMessage = (): DiagnosticsThreadWorkspace => ({
+        ...failedWs(),
+        messages: [failedMessage()],
+      });
+
+      it("tells staff to use Retry only when Retry is available", async () => {
+        await mount(failedWithMessage());
+        expect(container.textContent).toContain("use Retry");
+        expect(retry()).toBeDefined();
+      });
+
+      it.each([
+        ["readOnly", { readOnly: true }, /read-only/i],
+        ["preview", { preview: true }, /read-only/i],
+        ["canMutate=false", { canMutate: false }, /unavailable/i],
+      ])("does not point at a hidden Retry when %s", async (_name, props, wording) => {
+        await mount(failedWithMessage(), props);
+        expect(retry()).toBeUndefined();
+        expect(container.textContent).not.toMatch(/retry/i);
+        expect(container.textContent).toMatch(wording);
+      });
+    });
+
     it("shows Retry on a failed thread when mutation is allowed", async () => {
       await mount(failedWs());
       expect(retry()?.disabled).toBe(false);
@@ -600,6 +630,31 @@ describe("AskOtomotoThreadPanel", () => {
 
       await act(async () => gate.resolve({ status: "success", error: null }));
       expect(retry()?.disabled).toBe(false);
+    });
+
+    it("runs a send once even when submitted twice in the same tick", async () => {
+      const gate = deferred<unknown>();
+      submitAssistantTurnAction.mockReturnValue(gate.promise);
+      await mount(failedWs());
+      await typeText("Check the battery");
+      await act(async () => {
+        forms()[0].requestSubmit();
+        forms()[0].requestSubmit();
+      });
+      expect(submitAssistantTurnAction).toHaveBeenCalledTimes(1);
+      await act(async () => gate.resolve({ status: "success", error: null }));
+    });
+
+    it("runs a retry once even when submitted twice in the same tick", async () => {
+      const gate = deferred<unknown>();
+      retryAssistantTurnAction.mockReturnValue(gate.promise);
+      await mount(failedWs());
+      await act(async () => {
+        forms()[1].requestSubmit();
+        forms()[1].requestSubmit();
+      });
+      expect(retryAssistantTurnAction).toHaveBeenCalledTimes(1);
+      await act(async () => gate.resolve({ status: "success", error: null }));
     });
 
     it("blocks Send while a Retry is in flight and ignores duplicate Retry submits", async () => {

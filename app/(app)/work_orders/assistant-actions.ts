@@ -14,7 +14,10 @@ import { uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { diagnosticsErrorMessageForCode } from "@/lib/diagnostics/errors";
 import { redactDiagnosticsText } from "@/lib/diagnostics/redaction";
-import { DIAGNOSTICS_PHOTO_PURPOSE_MAX } from "@/lib/diagnostics/photoSelection";
+import {
+  DIAGNOSTICS_PHOTO_PURPOSE_MAX,
+  collapseWhitespace,
+} from "@/lib/diagnostics/photoSelection";
 
 export type AssistantActionState = {
   status: "idle" | "success" | "error";
@@ -40,9 +43,13 @@ const promoteSchema = z
   })
   .strict();
 
-/** Photo purpose stored as notes: required, bounded, no control chars, PII-redacted. */
+/**
+ * Photo purpose stored as notes: whitespace-normalized first (assistant prompts
+ * can contain newlines/tabs), then required, bounded, control-char free, and
+ * PII-redacted.
+ */
 function parseUploadPurpose(value: FormDataEntryValue | null): string {
-  const purpose = typeof value === "string" ? value.trim() : "";
+  const purpose = typeof value === "string" ? collapseWhitespace(value) : "";
   if (
     !purpose ||
     purpose.length > DIAGNOSTICS_PHOTO_PURPOSE_MAX ||

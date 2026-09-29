@@ -21,6 +21,7 @@ import {
   DIAGNOSTICS_PHOTO_MAX_SELECTED,
   DIAGNOSTICS_PHOTO_PURPOSE_MAX,
   addPhotoSelection,
+  collapseWhitespace,
   createObjectUrlRegistry,
   defaultPhotoPurpose,
   isDiagnosticsPhotoEligible,
@@ -324,7 +325,7 @@ export function DiagnosticsPhotoPicker({
 
       {requestedPrompt ? (
         <p className="rounded bg-amber-50 p-2 text-sm text-amber-900">
-          Photo requested: {requestedPrompt}
+          Photo requested: {collapseWhitespace(requestedPrompt)}
         </p>
       ) : null}
 

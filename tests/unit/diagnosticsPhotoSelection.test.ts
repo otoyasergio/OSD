@@ -414,3 +414,33 @@ describe("parseUploadedAssistantPhoto", () => {
     ).toBeNull();
   });
 });
+
+describe("whitespace normalization of photo prompts", () => {
+  const messy = "  Show the\n left\tcaliper\r\n   piston  ";
+
+  it("collapses all whitespace in the default purpose", () => {
+    expect(defaultPhotoPurpose(messy)).toBe("Show the left caliper piston");
+    expect(defaultPhotoPurpose("\n\t ")).toBe("Work photo for analysis");
+  });
+
+  it("bounds the purpose after collapsing whitespace", () => {
+    expect(defaultPhotoPurpose(`a${" \n".repeat(600)}b`)).toBe("a b");
+    const long = defaultPhotoPurpose("word\n".repeat(200));
+    expect(long.length).toBeLessThanOrEqual(DIAGNOSTICS_PHOTO_PURPOSE_MAX);
+    expect(long).toBe(long.trim());
+    expect(long).not.toMatch(/\s{2}|\n/);
+  });
+
+  it("collapses whitespace in the displayed photo request prompt", () => {
+    expect(
+      photoRequestFromMessages([
+        {
+          messageId: "m1",
+          role: "assistant",
+          generationStatus: "ready",
+          requestedInput: { type: "photo", prompt: messy },
+        },
+      ])
+    ).toEqual({ key: "m1", prompt: "Show the left caliper piston" });
+  });
+});

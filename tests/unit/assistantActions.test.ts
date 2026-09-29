@@ -257,6 +257,50 @@ describe("Ask OTOMOTO server actions", () => {
       expect(uploadIntakePhoto).not.toHaveBeenCalled();
     });
 
+    it("normalizes newline/tab whitespace instead of dead-ending the upload", async () => {
+      uploadIntakePhoto.mockResolvedValue({
+        photo_id: MESSAGE,
+        work_order_id: WO,
+        job_id: JOB,
+        category: "job_work",
+        notes: "x",
+        created_at: "2026-09-29T00:00:00.000Z",
+      });
+      const result = await uploadAssistantPhotoAction(
+        WO,
+        { status: "idle", error: null },
+        uploadForm("  Show the\n left\tcaliper\r\n   piston  ")
+      );
+
+      expect(result.status).toBe("success");
+      expect(uploadIntakePhoto).toHaveBeenLastCalledWith(
+        WO,
+        expect.objectContaining({ notes: "Show the left caliper piston" })
+      );
+    });
+
+    it("bounds the purpose after whitespace normalization", async () => {
+      uploadIntakePhoto.mockResolvedValue({
+        photo_id: MESSAGE,
+        work_order_id: WO,
+        job_id: JOB,
+        category: "job_work",
+        notes: "x",
+        created_at: "2026-09-29T00:00:00.000Z",
+      });
+      const padded = `ok${" \n\t".repeat(400)}fine`;
+      const result = await uploadAssistantPhotoAction(
+        WO,
+        { status: "idle", error: null },
+        uploadForm(padded)
+      );
+      expect(result.status).toBe("success");
+      expect(uploadIntakePhoto).toHaveBeenLastCalledWith(
+        WO,
+        expect.objectContaining({ notes: "ok fine" })
+      );
+    });
+
     it("stores a trimmed, redacted purpose as the photo notes at the 500 limit", async () => {
       uploadIntakePhoto.mockResolvedValue({
         photo_id: MESSAGE,

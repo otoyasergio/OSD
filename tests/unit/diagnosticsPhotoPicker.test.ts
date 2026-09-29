@@ -664,4 +664,24 @@ describe("DiagnosticsPhotoPicker", () => {
     ).not.toBeNull();
     expect(container.querySelector('img[src^="blob:"]')).toBeNull();
   });
+
+  it("collapses newline/tab whitespace in the displayed prompt and the default purpose", async () => {
+    const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
+    readPickedPhotoFiles.mockResolvedValue([file]);
+    uploadAssistantPhotoAction.mockResolvedValue(uploaded(9));
+    await render({
+      photos: [photo(1)],
+      requestedPrompt: "  Show the\n left\tcaliper \r\n piston ",
+    });
+    expect(container.textContent).toContain(
+      "Photo requested: Show the left caliper piston"
+    );
+
+    await click(thumbButtons()[0]);
+    expect(purposeInputs()[0].value).toBe("Show the left caliper piston");
+
+    await pick(cameraInput()!, [file]);
+    const form = uploadAssistantPhotoAction.mock.calls[0][2] as FormData;
+    expect(form.get("purpose")).toBe("Show the left caliper piston");
+  });
 });
