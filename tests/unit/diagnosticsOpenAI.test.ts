@@ -141,6 +141,42 @@ function request() {
   };
 }
 
+function closureRequest() {
+  const base = request();
+  const emptyTruncation = () => ({
+    total: 0,
+    included: 0,
+    omitted: 0,
+    clipped: false,
+  });
+  return {
+    ...base,
+    requiredPhase: "closure_report" as const,
+    workOrderContext: {
+      ...base.workOrderContext,
+      selectedJob: {
+        jobId: "job-1",
+        origin: "customer_request",
+        serviceName: "Recorded repair",
+        status: "completed",
+        workState: "completed",
+        notes: null,
+        completedAt: "2026-09-29T00:30:00.000Z",
+        parts: [],
+        checklist: [],
+        proof: null,
+        verification: [],
+        verificationEvidenceRecorded: false,
+        truncation: {
+          parts: emptyTruncation(),
+          checklist: emptyTruncation(),
+          verification: emptyTruncation(),
+        },
+      },
+    },
+  };
+}
+
 describe("OpenAI diagnostics provider", () => {
   it("uses structured Responses without provider-side state or tools", async () => {
     const parse = vi.fn().mockResolvedValue(providerResult());
@@ -208,22 +244,7 @@ describe("OpenAI diagnostics provider", () => {
     } as unknown as OpenAI;
 
     await expect(
-      generateDiagnosticsDraft(
-        {
-          ...request(),
-          requiredPhase: "closure_report",
-          workOrderContext: {
-            ...request().workOrderContext,
-            selectedJob: {
-              jobId: "job-1",
-              status: "completed",
-              completedAt: "2026-09-29T00:30:00.000Z",
-              verification: [],
-            },
-          } as ShapedDiagnosticsModelContext,
-        },
-        { client: nonClosureClient, config }
-      )
+      generateDiagnosticsDraft(closureRequest(), { client: nonClosureClient, config })
     ).rejects.toThrow("DIAGNOSTICS_AI_OUTPUT_WITHHELD");
 
     const noLogParse = vi.fn().mockResolvedValue(
@@ -236,22 +257,7 @@ describe("OpenAI diagnostics provider", () => {
     );
     const noLogClient = { responses: { parse: noLogParse } } as unknown as OpenAI;
     await expect(
-      generateDiagnosticsDraft(
-        {
-          ...request(),
-          requiredPhase: "closure_report",
-          workOrderContext: {
-            ...request().workOrderContext,
-            selectedJob: {
-              jobId: "job-1",
-              status: "completed",
-              completedAt: "2026-09-29T00:30:00.000Z",
-              verification: [],
-            },
-          } as ShapedDiagnosticsModelContext,
-        },
-        { client: noLogClient, config }
-      )
+      generateDiagnosticsDraft(closureRequest(), { client: noLogClient, config })
     ).rejects.toThrow("DIAGNOSTICS_AI_OUTPUT_WITHHELD");
   });
 
