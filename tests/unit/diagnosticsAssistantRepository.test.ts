@@ -17,14 +17,16 @@ class FakeQuery implements PromiseLike<Result> {
     private readonly result: Result,
     private readonly selects: string[],
     private readonly table: string,
-    private readonly filters: string[]
+    private readonly filters: string[],
+    private readonly inserts: Array<{ table: string; value: unknown }>
   ) {}
 
   select(columns: string) {
     this.selects.push(`${this.table}:${columns}`);
     return this;
   }
-  insert() {
+  insert(value: unknown) {
+    this.inserts.push({ table: this.table, value });
     return this;
   }
   update() {
@@ -67,7 +69,8 @@ function fakeClient(
   results: Record<string, unknown>,
   calls: string[],
   selects: string[] = [],
-  filters: string[] = []
+  filters: string[] = [],
+  inserts: Array<{ table: string; value: unknown }> = []
 ): DbClient {
   return {
     from(table: string) {
@@ -76,7 +79,8 @@ function fakeClient(
         { data: results[table] ?? null, error: null },
         selects,
         table,
-        filters
+        filters,
+        inserts
       );
     },
     rpc: vi.fn(),
@@ -860,6 +864,40 @@ describe("Supabase diagnostics repository boundaries", () => {
           scenario_count: 18,
         },
       })
+    );
+  });
+
+  it("records automatic recovery as metadata only with the clicking actor", async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    const admin = {
+      from: vi.fn(() => ({ insert })),
+    } as unknown as DbClient;
+    const repository = new SupabaseDiagnosticsRepository(fakeClient({}, []), () => admin);
+
+    await repository.recordAutomaticRecoveryAudit({
+      actorUserId: "clicking-user",
+      locationId: "location-1",
+      threadId: "thread-1",
+      triggerType: "inspection_completed",
+      triggerEntityId: "inspection-1",
+    });
+
+    expect(insert).toHaveBeenCalledWith({
+      actor_user_id: "clicking-user",
+      location_id: "location-1",
+      action: "ask_otomoto_automatic_recovery_requested",
+      entity_type: "ai_assistant_thread",
+      entity_id: "thread-1",
+      description: "Ask OTOMOTO automatic review recovery requested",
+      old_value: null,
+      new_value: {
+        thread_id: "thread-1",
+        trigger_type: "inspection_completed",
+        trigger_entity_id: "inspection-1",
+      },
+    });
+    expect(JSON.stringify(insert.mock.calls)).not.toMatch(
+      /content|body|prompt|response/i
     );
   });
 

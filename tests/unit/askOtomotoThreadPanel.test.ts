@@ -796,7 +796,11 @@ describe("AskOtomotoThreadPanel", () => {
         await act(async () => button.closest("form")!.requestSubmit());
 
         expect(runAutomaticAssistantReviewAction).toHaveBeenCalledOnce();
-        expect(refresh).toHaveBeenCalled();
+        expect(refresh).toHaveBeenCalledTimes(1);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2_500);
+        });
+        expect(refresh).toHaveBeenCalledTimes(2);
       });
 
       it("shows a failed recovery without refreshing", async () => {

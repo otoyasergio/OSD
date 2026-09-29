@@ -218,6 +218,7 @@ function repository(): DiagnosticsAssistantRepository {
       requestedModel: "model-alias",
       resolvedModel: "model-resolved-1",
     }),
+    recordAutomaticRecoveryAudit: vi.fn(),
     listPromotedNoteIds: vi.fn().mockResolvedValue(new Map()),
   };
 }
@@ -631,6 +632,9 @@ describe("Ask OTOMOTO service boundaries", () => {
   it("re-authorizes an aged empty automatic thread and returns the exact internal seed", async () => {
     const repo = repository();
     const assertConfigured = vi.fn();
+    const triggerCreatorId = "12222222-2222-4222-8222-222222222222";
+    const recordAutomaticRecoveryAudit = vi.fn();
+    Object.assign(repo, { recordAutomaticRecoveryAudit });
     vi.mocked(repo.loadThread).mockResolvedValue({
       thread: {
         threadId: "71111111-1111-4111-8111-111111111111",
@@ -643,7 +647,7 @@ describe("Ask OTOMOTO service boundaries", () => {
         diagnosticPhase: null,
         triggerType: "job_completed",
         triggerEntityId: "51111111-1111-4111-8111-111111111111",
-        createdByUserId: actor("technician").user_id,
+        createdByUserId: triggerCreatorId,
         createdAt: "2026-09-29T00:00:00.000Z",
         updatedAt: "2026-09-29T00:00:00.000Z",
       },
@@ -663,7 +667,7 @@ describe("Ask OTOMOTO service boundaries", () => {
       })
     ).resolves.toEqual({
       actor: {
-        userId: actor("technician").user_id,
+        userId: triggerCreatorId,
         locationId: scope().locationId,
       },
       trigger: {
@@ -679,6 +683,16 @@ describe("Ask OTOMOTO service boundaries", () => {
       scope().workOrderId,
       "job_completed",
       "51111111-1111-4111-8111-111111111111"
+    );
+    expect(recordAutomaticRecoveryAudit).toHaveBeenCalledWith({
+      actorUserId: actor("technician").user_id,
+      locationId: scope().locationId,
+      threadId: "71111111-1111-4111-8111-111111111111",
+      triggerType: "job_completed",
+      triggerEntityId: "51111111-1111-4111-8111-111111111111",
+    });
+    expect(JSON.stringify(recordAutomaticRecoveryAudit.mock.calls)).not.toMatch(
+      /content|body|request|response/i
     );
     expect(repo.beginSeedTurn).not.toHaveBeenCalled();
   });

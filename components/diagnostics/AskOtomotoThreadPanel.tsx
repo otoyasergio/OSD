@@ -292,6 +292,7 @@ export function AskOtomotoThreadPanel({
   const Heading = headingLevel === 4 ? "h4" : "h3";
   const { thread, messages } = workspace;
   const [sendBusy, setSendBusy] = useState(false);
+  const [recoveryScheduled, setRecoveryScheduled] = useState(false);
   const [retryState, retryAction, retryPending] = useActionState(
     async (previous: AssistantActionState, formData: FormData) => {
       const result = await retryAssistantTurnAction(
@@ -311,7 +312,10 @@ export function AskOtomotoThreadPanel({
         previous,
         formData
       );
-      if (result.status === "success") router.refresh();
+      if (result.status === "success") {
+        setRecoveryScheduled(true);
+        router.refresh();
+      }
       return result;
     },
     INITIAL_ACTION_STATE
@@ -339,25 +343,34 @@ export function AskOtomotoThreadPanel({
     (thread.status === "failed" || generatingRetryDue) &&
     !nonRecoverableHistoryFailure;
   const canRetry = retryAvailable && !retryPending && !sendBusy;
-  const automaticRecoveryAvailable =
-    mutationAllowed &&
-    configured &&
-    automaticRecoveryDue &&
-    !recoveryPending &&
-    !sendBusy;
   const automaticLabel = thread.triggerType
     ? ASSISTANT_TRIGGER_LABELS[thread.triggerType]
     : null;
   const frontOffice = thread.audience === "front_office";
   const promotable = mutationAllowed && canPromoteNotes;
 
+  const recoveryPolling =
+    recoveryScheduled &&
+    thread.status === "pending" &&
+    thread.triggerType !== null &&
+    messages.length === 0;
   const working =
-    isAssistantThreadWorking(workspace) && !generatingRetryDue && !automaticRecoveryDue;
+    (isAssistantThreadWorking(workspace) &&
+      !generatingRetryDue &&
+      !automaticRecoveryDue) ||
+    recoveryPolling;
   const latest = messages[messages.length - 1];
   const pollKey = `${thread.threadId}:${thread.status}:${latest?.messageId ?? ""}:${
     latest?.generationStatus ?? ""
   }`;
   const { timedOut } = useAssistantPolling(working, pollKey, () => router.refresh());
+  const automaticRecoveryAvailable =
+    mutationAllowed &&
+    configured &&
+    automaticRecoveryDue &&
+    (!recoveryPolling || timedOut) &&
+    !recoveryPending &&
+    !sendBusy;
 
   const requested =
     latest?.role === "assistant" && latest.generationStatus === "ready"

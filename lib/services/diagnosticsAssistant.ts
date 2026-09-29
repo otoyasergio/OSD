@@ -369,6 +369,13 @@ export interface DiagnosticsAssistantRepository {
     acceptanceRerunRequired: true;
     scenarioCount: number;
   }): Promise<void>;
+  recordAutomaticRecoveryAudit(input: {
+    actorUserId: string;
+    locationId: string;
+    threadId: string;
+    triggerType: AiAssistantTriggerType;
+    triggerEntityId: string;
+  }): Promise<void>;
 }
 
 export type DiagnosticsAssistantDependencies = {
@@ -1655,6 +1662,28 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
       },
     });
   }
+
+  async recordAutomaticRecoveryAudit(input: {
+    actorUserId: string;
+    locationId: string;
+    threadId: string;
+    triggerType: AiAssistantTriggerType;
+    triggerEntityId: string;
+  }): Promise<void> {
+    await addAuditLog(this.admin, {
+      actor_user_id: input.actorUserId,
+      location_id: input.locationId,
+      action: "ask_otomoto_automatic_recovery_requested",
+      entity_type: "ai_assistant_thread",
+      entity_id: input.threadId,
+      description: "Ask OTOMOTO automatic review recovery requested",
+      new_value: {
+        thread_id: input.threadId,
+        trigger_type: input.triggerType,
+        trigger_entity_id: input.triggerEntityId,
+      },
+    });
+  }
 }
 
 async function defaultRepository(): Promise<DiagnosticsAssistantRepository> {
@@ -2172,6 +2201,13 @@ export function createDiagnosticsAssistantService(
         throw new Error("ASK_OTOMOTO_TRIGGER_CREATOR_INACTIVE");
       }
       assertConfigured();
+      await repository.recordAutomaticRecoveryAudit({
+        actorUserId: user.user_id,
+        locationId: workOrder.locationId,
+        threadId: thread.threadId,
+        triggerType: thread.triggerType,
+        triggerEntityId: thread.triggerEntityId,
+      });
       const actor = {
         userId: thread.createdByUserId,
         locationId: workOrder.locationId,
