@@ -2,25 +2,11 @@
 -- Keep privileged helpers server-only, make webhook-event denial explicit,
 -- and add only indexes backed by live application query paths.
 
-CREATE SCHEMA IF NOT EXISTS extensions;
-
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1
-    FROM pg_extension extension
-    JOIN pg_namespace namespace ON namespace.oid = extension.extnamespace
-    WHERE extension.extname = 'pg_trgm'
-      AND namespace.nspname = 'public'
-  ) THEN
-    EXECUTE 'ALTER EXTENSION pg_trgm SET SCHEMA extensions';
-  END IF;
-END
-$$;
-
 -- Square events are written and read only by signature-verified server code
 -- using the service role. RLS already denied browser access because no policy
 -- existed; keep the denial explicit so future grants cannot expose payloads.
+REVOKE ALL ON TABLE public.square_webhook_event FROM anon, authenticated;
+
 DROP POLICY IF EXISTS square_webhook_event_no_client_access
   ON public.square_webhook_event;
 CREATE POLICY square_webhook_event_no_client_access
@@ -47,6 +33,40 @@ REVOKE EXECUTE ON FUNCTION public.mint_work_order_number(uuid)
 REVOKE EXECUTE ON FUNCTION public.mint_work_order_number(uuid)
   FROM authenticated;
 
+-- Wix booking ingestion is the only caller and uses the service-role client.
+-- The previous auth.uid()-based guard always rejected service-role requests,
+-- despite its EXECUTE grant.
+CREATE OR REPLACE FUNCTION public.mint_work_order_number(p_location_id uuid)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  next_value integer;
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.location
+    WHERE location_id = p_location_id
+      AND status = 'active'
+  ) THEN
+    RAISE EXCEPTION 'LOCATION_NOT_FOUND';
+  END IF;
+
+  INSERT INTO public.work_order_sequence (location_id, next_number)
+  VALUES (p_location_id, 1001)
+  ON CONFLICT (location_id) DO NOTHING;
+
+  UPDATE public.work_order_sequence
+  SET next_number = next_number + 1
+  WHERE location_id = p_location_id
+  RETURNING next_number - 1 INTO next_value;
+
+  RETURN 'WO-' || next_value::text;
+END;
+$$;
+
 GRANT EXECUTE ON FUNCTION public.workflow_v2_job_authorization(uuid)
   TO service_role;
 GRANT EXECUTE ON FUNCTION public.workflow_v2_job_is_authorized(uuid)
@@ -68,3 +88,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_call_conversation_id
 CREATE INDEX IF NOT EXISTS idx_recommendation_inspection_result_id
   ON public.recommendation (inspection_result_id)
   WHERE inspection_result_id IS NOT NULL;
+
+-- Production already uses FULL identity for filtered notification changes.
+-- Keep local, QA, and fresh projects aligned with that state.
+ALTER TABLE public.staff_notification REPLICA IDENTITY FULL;

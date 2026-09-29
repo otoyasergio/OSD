@@ -6,6 +6,7 @@ import { isTwilioConfigured } from "@/lib/twilio/config";
 import { isTwilioVoiceConfigured } from "@/lib/twilio/voiceConfig";
 import { isWixContactsConfigured } from "@/lib/wix/config";
 import { askOtomotoHealthStatus } from "@/lib/diagnostics/health";
+import { summarizeIntegrationHealth } from "@/lib/services/healthStatus";
 
 export const runtime = "nodejs";
 
@@ -39,16 +40,18 @@ export async function GET() {
     integrations.supabase = "error";
   }
 
-  const ok =
-    integrations.supabase === "ok" &&
-    integrations.cron === "ok" &&
-    integrations.wix === "ok" &&
-    integrations.partsCanada === "ok" &&
-    integrations.askOtomoto === "ok";
+  const { ok, degraded } = summarizeIntegrationHealth({
+    supabase: integrations.supabase,
+    wix: integrations.wix,
+    partsCanada: integrations.partsCanada,
+    cron: integrations.cron,
+    askOtomoto: integrations.askOtomoto,
+  });
 
   return NextResponse.json(
     {
       ok,
+      degraded,
       timestamp: new Date().toISOString(),
       region: process.env.VERCEL_REGION ?? null,
       integrations,

@@ -81,6 +81,12 @@ npm run test:integration
 Run those against an isolated or explicitly selected project. Review the
 Supabase Security and Performance Advisors after every DDL change.
 
+Production migration history contains timestamps from prior dashboard/MCP
+applies that do not match every repository filename. Do not run
+`supabase db push` blindly against production. Apply each reviewed new
+migration once, in repository filename order, and record the remote migration
+version returned by the approved production procedure.
+
 ## Release order
 
 1. Apply and verify migrations on an isolated database.
@@ -104,7 +110,8 @@ These cannot be changed safely from repository code:
 - Grant the deployment operator access to the Vercel `otoya` project scope.
 - Confirm that the Vercel project is Pro or higher for the four-minute and
   four-hour cron schedules.
-- Enable Supabase Auth leaked-password protection.
+- Enable Supabase Auth leaked-password protection when available on the
+  project's plan.
 - Change Supabase Auth database connections from a fixed count to percentage
   allocation before increasing the database instance size.
 - Confirm backups/PITR and owner recovery before production migrations.
@@ -118,3 +125,5 @@ These cannot be changed safely from repository code:
   depend on them. They return only caller-scoped booleans/identifiers.
 - Missing-FK and unused-index advisor entries are reviewed against real query
   paths; indexes are not added or removed solely to silence an advisor.
+- The `pg_trgm` extension remains in `public` until relocation is verified on
+  a Supabase-hosted non-production branch owned by the same platform roles.

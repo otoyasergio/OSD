@@ -81,7 +81,9 @@ rolls the live site back to whatever that branch last contained.
 Repo (`vercel.json`) — these ship with the app:
 
 - **Fluid compute** is on (`fluid: true`) so function instances are reused and concurrent shop requests share CPU instead of cold-starting a new lambda per click.
-- Functions are pinned to **`iad1`** (Washington, D.C.). Live traffic already executes there (`x-vercel-id: …::iad1::…`). A single region keeps SSR next to typical US-East Supabase.
+- Functions are pinned to **`pdx1`** (Portland / AWS `us-west-2`) to
+  co-locate database-backed SSR and actions with the production Supabase
+  project. Static assets remain globally served by Vercel's CDN.
 
 Dashboard (cannot be set in `vercel.json` when Fluid is on):
 
@@ -93,7 +95,8 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 
 ## 5. Pre-cutover checklist
 
-- [ ] Migrations through `034` applied on the production project
+- [ ] Every repository migration required by the release is applied and
+      recorded on the production project
 - [ ] Storage buckets present and private
 - [ ] Owner `app_user` linked + assigned to a location
 - [ ] Webhook signature keys configured; Wix secret set if bookings used
