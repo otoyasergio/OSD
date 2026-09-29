@@ -1198,7 +1198,7 @@ describe("Ask OTOMOTO generation lifecycle", () => {
       photos: [],
     });
 
-    const providerHistory = generateDraft.mock.calls[0]![0].history;
+    const providerHistory = generateDraft.mock.calls[0]![0].history!;
     expect(providerHistory).toHaveLength(8);
     expect(providerHistory.map((message) => message.role)).toEqual([
       "user",
