@@ -9,7 +9,9 @@ import { classifyVerificationNote } from "@/lib/services/diagnosticsAssistant";
 
 const recordedAt = "2026-09-29T09:00:00.000Z";
 
-function source(notes: string[]): DiagnosticsContextSource {
+function source(
+  notes: Array<string | { note: string; recordedAt: string }>
+): DiagnosticsContextSource {
   return {
     workOrder: {
       workOrderId: "wo-1",
@@ -28,11 +30,13 @@ function source(notes: string[]): DiagnosticsContextSource {
         origin: "customer_request",
         serviceName: "Charging repair",
         status: "completed",
-        verification: notes.map((note, index) => ({
+        verification: notes.map((entry, index) => ({
           verificationId: `verification-${index}`,
-          result: classifyVerificationNote(note),
-          notes: note,
-          recordedAt,
+          result: classifyVerificationNote(
+            typeof entry === "string" ? entry : entry.note
+          ),
+          notes: typeof entry === "string" ? entry : entry.note,
+          recordedAt: typeof entry === "string" ? recordedAt : entry.recordedAt,
         })),
       },
     ],
@@ -66,8 +70,16 @@ describe("recorded verification-note classification", () => {
   it.each([
     "Comparable road test passed under the original conditions.",
     "Comparable retest was successful.",
+    "Test ride passed.",
+    "QC passed.",
+    "Quality check was successful.",
     "Repair was verified under the recorded load.",
+    "Fix verified.",
     "The original concern was resolved after the comparable retest.",
+    "The customer complaint is resolved.",
+    "The symptom is no longer present.",
+    "The symptom has not recurred after a 25 km road test.",
+    "No failure codes; road test passed.",
   ])("accepts only an unambiguous positive outcome: %s", (note) => {
     expect(classifyVerificationNote(note)).toBe("passed");
   });
@@ -88,6 +100,18 @@ describe("recorded verification-note classification", () => {
     ["Road test failed.", "failed"],
     ["The original symptom recurred.", "failed"],
     ["The original symptom remains.", "failed"],
+    ["The concern is still present after the repair.", "failed"],
+    ["The noise persists after the road test.", "failed"],
+    ["The leak remains visible.", "failed"],
+    ["The repair is partially successful.", "failed"],
+    ["The concern is partly resolved.", "failed"],
+    ["The symptom is mostly resolved.", "failed"],
+    ["The concern is not completely resolved.", "failed"],
+    ["The road test hasn't passed.", "failed"],
+    ["The quality check haven't passed.", "failed"],
+    ["The test ride wasn't successful.", "pending"],
+    ["The repair couldn't be verified.", "pending"],
+    ["The repair was not fully verified after the road test.", "pending"],
   ] as const)("never promotes a negated outcome: %s", (note, expected) => {
     expect(classifyVerificationNote(note)).toBe(expected);
     expect(classifyVerificationNote(note)).not.toBe("passed");
@@ -98,16 +122,23 @@ describe("recorded verification-note classification", () => {
     "Technician recorded a quality-check note.",
     "The repair may have passed the retest.",
     "The connector appears resolved but no comparable retest is recorded.",
+    "Verified the concern is present.",
+    "Verified the noise is present.",
+    "Verified the leak is present.",
+    "Verified the fault is present.",
+    "Verified the code is present.",
+    "Verified battery voltage at the terminals.",
+    "The diagnosis was successful.",
   ])("keeps unknown or qualified wording recorded-only: %s", (note) => {
     expect(classifyVerificationNote(note)).toBe("recorded");
   });
 
-  it("keeps the verification claim gate closed from context through output policy", () => {
+  it("keeps partial and negated verification gates closed through output policy", () => {
     const shaped = shapeDiagnosticsContext(
       source([
-        "The concern is not resolved.",
-        "The road test never passed.",
-        "The repair can't be verified.",
+        "The concern is partly resolved.",
+        "The symptom is mostly resolved and remains present.",
+        "The repair was not completely verified after the road test.",
       ]),
       {
         mode: "shop",
@@ -118,9 +149,9 @@ describe("recorded verification-note classification", () => {
     );
 
     expect(shaped.context.selectedJob?.verification.map((item) => item.result)).toEqual([
-      "pending",
       "failed",
-      "pending",
+      "failed",
+      "failed",
     ]);
     expect(shaped.claims.hasVerificationEvidence).toBe(false);
     expect(
@@ -131,5 +162,59 @@ describe("recorded verification-note classification", () => {
     ).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "VERIFICATION_CLAIM" })])
     );
+  });
+
+  it("lets a newer failed note close the gate after an older pass", () => {
+    const shaped = shapeDiagnosticsContext(
+      source([
+        {
+          note: "Road test passed.",
+          recordedAt: "2026-09-29T08:00:00.000Z",
+        },
+        {
+          note: "The symptom remains present.",
+          recordedAt: "2026-09-29T09:00:00.000Z",
+        },
+      ]),
+      {
+        mode: "shop",
+        workOrderId: "wo-1",
+        jobId: "job-1",
+        serverNowIso: recordedAt,
+      }
+    );
+
+    expect(shaped.context.selectedJob?.verification.map((item) => item.result)).toEqual([
+      "failed",
+      "passed",
+    ]);
+    expect(shaped.claims.hasVerificationEvidence).toBe(false);
+  });
+
+  it("lets a newer explicit pass open the gate after an older failure", () => {
+    const shaped = shapeDiagnosticsContext(
+      source([
+        {
+          note: "Road test failed.",
+          recordedAt: "2026-09-29T08:00:00.000Z",
+        },
+        {
+          note: "Comparable road test passed.",
+          recordedAt: "2026-09-29T09:00:00.000Z",
+        },
+      ]),
+      {
+        mode: "shop",
+        workOrderId: "wo-1",
+        jobId: "job-1",
+        serverNowIso: recordedAt,
+      }
+    );
+
+    expect(shaped.context.selectedJob?.verification.map((item) => item.result)).toEqual([
+      "passed",
+      "failed",
+    ]);
+    expect(shaped.claims.hasVerificationEvidence).toBe(true);
   });
 });

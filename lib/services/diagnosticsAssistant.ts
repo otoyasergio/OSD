@@ -74,39 +74,103 @@ const VERIFICATION_NOTE_TYPES = new Set(["road_test", "quality_check"]);
 export function classifyVerificationNote(
   note: string
 ): "failed" | "pending" | "passed" | "recorded" {
-  const normalized = note.replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim();
+  const normalized = note.replace(/[’‘]/g, "'").replace(/\s+/g, " ").trim().toLowerCase();
+  const noRecurrencePattern =
+    /\b(?:the\s+)?(?:original\s+)?symptom\s+has not recurred\s+after\s+(?:a\s+)?(?:\d+(?:\.\d+)?\s*(?:km|kilomet(?:er|re)s?|mi|miles?)\s+)?(?:road[- ]test|test ride|retest)\b/;
+  const explicitNoRecurrence = noRecurrencePattern.test(normalized);
+  const failureText = normalized
+    .replace(/\bno failure codes?\b/g, "")
+    .replace(explicitNoRecurrence ? noRecurrencePattern : /$^/, "");
 
   if (
-    /\b(?:failed|failure|unsuccessful|recurred)\b/i.test(normalized) ||
-    /\b(?:never|did not|didn't|has not|hasn't|have not|haven't)\s+(?:(?:yet|ever|been)\s+){0,2}pass(?:ed)?\b/i.test(
+    /\b(?:failed|failure|unsuccessful|recurred)\b/.test(failureText) ||
+    /\b(?:still\s+present|persists?|remains?|partially|partly|mostly|not completely)\b/.test(
       normalized
-    ) ||
-    /\b(?:symptom|concern|issue|fault|problem)\s+(?:still\s+)?remains?\b/i.test(
-      normalized
-    ) ||
-    /\bremains?\s+(?:present|unresolved)\b/i.test(normalized)
+    )
   ) {
     return "failed";
   }
+
+  const negationText = explicitNoRecurrence
+    ? normalized.replace(noRecurrencePattern, "")
+    : normalized;
+  const tokens = negationText.match(/[a-z0-9]+(?:'[a-z]+)?/g) ?? [];
+  const negators = new Set([
+    "not",
+    "never",
+    "cannot",
+    "can't",
+    "couldn't",
+    "wasn't",
+    "hasn't",
+    "haven't",
+    "didn't",
+    "unable",
+  ]);
+  const negatedOutcomes = new Set([
+    "pass",
+    "passed",
+    "successful",
+    "successfully",
+    "verified",
+    "resolved",
+    "complete",
+    "completed",
+    "recurred",
+    "present",
+  ]);
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!negators.has(tokens[index]!)) continue;
+    const outcome = tokens
+      .slice(index + 1, index + 9)
+      .find((token) => negatedOutcomes.has(token));
+    if (outcome) {
+      return outcome === "pass" || outcome === "passed" ? "failed" : "pending";
+    }
+  }
+
   if (
-    /\b(?:pending|incomplete|retest required|requires? (?:a )?retest)\b/i.test(
+    /\b(?:pending|incomplete|retest required|requires? (?:a )?retest)\b/.test(
       normalized
     ) ||
-    /\b(?:not|never|cannot|can't|could not|couldn't|has not|hasn't|have not|haven't|was not|wasn't|is not|isn't|did not|didn't)\s+(?:(?:yet|ever|been|be|fully)\s+){0,3}(?:resolved|successful|verified|complete|passed)\b/i.test(
-      normalized
-    ) ||
-    /\bverification\s+(?:is\s+)?(?:not|still)\b/i.test(normalized)
+    /\bverification\s+(?:is\s+)?(?:not|still)\b/.test(normalized)
   ) {
     return "pending";
   }
   if (
-    /\b(?:may|might|could|possibly|perhaps|appears?|seems?|reportedly|likely|probably|potentially)\b/i.test(
+    /\bverified\b[^.!?]{0,60}\b(?:concern|complaint|noise|leak|fault|code|symptom|issue|problem)\b[^.!?]{0,40}\b(?:present|active|reproduced|confirmed)\b/.test(
       normalized
     )
   ) {
     return "recorded";
   }
-  if (/\b(?:passed|successful|verified|resolved)\b/i.test(normalized)) {
+  if (
+    /\b(?:may|might|could|possibly|perhaps|appears?|seems?|reportedly|likely|probably|potentially)\b/.test(
+      normalized
+    )
+  ) {
+    return "recorded";
+  }
+  const explicitTestOutcome =
+    /\b(?:road[- ]test|retest|test ride|quality check|qc)\b(?=[^.!?]{0,80}\b(?:passed|successful|successfully)\b)/.test(
+      normalized
+    ) ||
+    /\b(?:passed|successful)\s+(?:road[- ]test|retest|test ride|quality check|qc)\b/.test(
+      normalized
+    );
+  const explicitRepairVerification =
+    /\b(?:repair|fix)\b(?=[^.!?]{0,60}\bverified\b)/.test(normalized) ||
+    /\bverified\b[^.!?]{0,40}\b(?:repair|fix)\b/.test(normalized);
+  const explicitResolvedConcern =
+    /\b(?:concern|complaint|symptom)\b(?=[^.!?]{0,60}\b(?:resolved|no longer present)\b)/.test(
+      normalized
+    );
+  if (
+    explicitNoRecurrence ||
+    explicitTestOutcome ||
+    explicitRepairVerification ||
+    explicitResolvedConcern
+  ) {
     return "passed";
   }
   return "recorded";

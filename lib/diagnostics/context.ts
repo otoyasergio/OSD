@@ -839,8 +839,9 @@ export function deriveDiagnosticsClaimContext(
         selected.workState === "completed")
     ),
     hasVerificationEvidence: Boolean(
-      selected?.verification.some((item) =>
-        /^(?:pass(?:ed)?|success(?:ful)?|resolved|verified)$/i.test(item.result)
+      selected?.verification[0] &&
+      /^(?:pass(?:ed)?|success(?:ful)?|resolved|verified)$/i.test(
+        selected.verification[0].result
       )
     ),
     hasExactModelSource: Boolean(exactModelReference),
