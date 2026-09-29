@@ -38,6 +38,21 @@ export function statefulE2EWebServerEnvironment(
       (entry): entry is [string, string] => entry[1] !== undefined
     )
   );
+  const testSupabaseMappings = [
+    ["NEXT_PUBLIC_SUPABASE_URL", env.TEST_SUPABASE_URL],
+    [
+      "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+      env.TEST_SUPABASE_PUBLISHABLE_KEY ?? env.TEST_SUPABASE_ANON_KEY,
+    ],
+    [
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      env.TEST_SUPABASE_ANON_KEY ?? env.TEST_SUPABASE_PUBLISHABLE_KEY,
+    ],
+    ["SUPABASE_SERVICE_ROLE_KEY", env.TEST_SUPABASE_SERVICE_ROLE_KEY],
+  ] as const;
+  for (const [appKey, testValue] of testSupabaseMappings) {
+    if (testValue?.trim()) child[appKey] = testValue;
+  }
   for (const key of STATEFUL_E2E_OUTBOUND_KEYS) child[key] = "";
   return child;
 }

@@ -291,6 +291,26 @@ describe("synthetic seed credentials", () => {
 });
 
 describe("stateful E2E web server environment", () => {
+  it("pins local app Supabase variables to explicit TEST_SUPABASE values", () => {
+    const env = statefulE2EWebServerEnvironment({
+      NEXT_PUBLIC_SUPABASE_URL: "https://production.invalid",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "production-publishable",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "production-anon",
+      SUPABASE_SERVICE_ROLE_KEY: "production-service",
+      TEST_SUPABASE_URL: "http://127.0.0.1:54321",
+      TEST_SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      TEST_SUPABASE_ANON_KEY: "test-anon",
+      TEST_SUPABASE_SERVICE_ROLE_KEY: "test-service",
+    });
+
+    expect(env).toMatchObject({
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "test-publishable",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "test-anon",
+      SUPABASE_SERVICE_ROLE_KEY: "test-service",
+    });
+  });
+
   it("explicitly clears AI and outbound messaging credentials", () => {
     const env = statefulE2EWebServerEnvironment({
       OPENAI_API_KEY: "provider-key",

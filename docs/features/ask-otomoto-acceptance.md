@@ -17,6 +17,14 @@ per-scenario outcome. Automated results are heuristic screening, not technician
 or advisor approval. Running an alias requires reviewing the **resolved** model.
 This document does not claim that the suite has been run.
 
+The eval wraps the real client and allow-lists artifact fields from the raw
+`responses.parse` result. When generation, schema, refusal, incomplete-response,
+or output-policy checks fail, any available response ID, resolved model, usage,
+and parsed synthetic output remain in the artifact alongside the requested
+model, prompt version, and exact local context-block hash. Output-policy failures
+also include violation codes and messages. Request headers, API keys, and other
+secrets are never artifact fields.
+
 ## Automated scenarios
 
 | #   | Scenario                                       | Required invariant review                                                                   | Automated | Technician | Advisor |

@@ -133,11 +133,19 @@ First verify them against an isolated local/QA database. Against a linked
 **non-production** Supabase project, regenerate types with `npm run db:types` and
 review the diff; do not generate against production as the first check.
 
-Configure and validate a Vercel Preview separately with server-only keys. Stateful
-Playwright must not target that keyed Preview: it runs only against a local or
-disposable QA app that reports Ask OTOMOTO as unconfigured. The suite clears AI
-and outbound messaging credentials on its local web server and performs an
-authenticated configuration preflight before starting specs.
+Configure and validate a Vercel Preview separately with server-only keys and its
+own migrated **non-production** Supabase project. The keyed Preview must not use
+the production database.
+
+Stateful Playwright must not target that keyed Preview: it runs only against a
+local or disposable remote QA app that reports Ask OTOMOTO as unconfigured. For
+the local mutation web server, explicit `TEST_SUPABASE_*` values are pinned into
+the matching app Supabase variables, while AI, SMS, and email credentials are
+cleared. A remote QA target requires a dedicated migrated non-production
+Supabase project with outbound AI, SMS, and email disabled in its deployment
+configuration. The authenticated preflight proves only that Ask OTOMOTO reports
+AI as unconfigured; it cannot inspect or prove that remote messaging/email keys
+are absent.
 
 Then run:
 
@@ -155,10 +163,11 @@ The integration job in `.github/workflows/ci.yml` currently has
 `continue-on-error: true`. Until it becomes required, successful pgTAP and
 integration runs remain a mandatory, manually confirmed release gate.
 
-Any blocking failure stops release. Only after those gates pass, apply the
-verified migration files to the production database in the order above. Confirm
-that migration step succeeded before the separate production code deployment
-from `main`:
+Any blocking failure stops release. Production database migrations are not part
+of Preview or verification. During a separately approved production rollout,
+apply the verified migration files to the production database in the order
+above. Confirm that migration step succeeded before the separate production code
+deployment from `main`:
 
 ```bash
 git checkout main

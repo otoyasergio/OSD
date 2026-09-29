@@ -115,6 +115,24 @@ test.describe("Ask OTOMOTO assigned-technician verification", () => {
   });
 });
 
+test.describe("Ask OTOMOTO other-work-order assignee verification", () => {
+  test.use({ storageState: storageStatePath("techB") });
+
+  test("assigned techB can open the same isolated technical thread", async ({ page }) => {
+    await page.goto(
+      floorAssistantUrl(
+        ASSISTANT_FIXTURES.isolated.threadId,
+        ISOLATION_WORK_ORDER.id,
+        ISOLATION_JOB.id
+      )
+    );
+
+    await expect(page.getByRole("tabpanel")).toContainText(
+      "This draft belongs only to WO-QA-0002."
+    );
+  });
+});
+
 test.describe("Ask OTOMOTO role preview", () => {
   test.use({ storageState: storageStatePath("owner") });
 
