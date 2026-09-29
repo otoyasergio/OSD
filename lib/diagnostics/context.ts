@@ -21,15 +21,15 @@ const DEEP_MAX_ITEMS = 40;
 const DEEP_GLOBAL_NODE_BUDGET = 24;
 const DEEP_TEXT_CHARS = 80;
 const SECTION_BUDGETS = {
-  customerRequestJobs: 2_000,
-  inspectionResults: 8_000,
-  technicianNotes: 4_000,
-  recommendations: 4_000,
-  qualityChecks: 2_000,
-  safetyChecks: 2_000,
-  selectedJobParts: 2_500,
-  selectedJobChecklist: 1_500,
-  selectedJobVerification: 1_500,
+  customerRequestJobs: 1_500,
+  inspectionResults: 18_000,
+  technicianNotes: 3_000,
+  recommendations: 3_000,
+  qualityChecks: 1_500,
+  safetyChecks: 1_500,
+  selectedJobParts: 2_000,
+  selectedJobChecklist: 1_000,
+  selectedJobVerification: 1_000,
 } as const;
 
 type NullableText = string | null | undefined;
@@ -283,15 +283,32 @@ export type DiagnosticsModelContext = {
     available: boolean;
     completed: boolean;
     completedAt: string | null;
-    results: Array<{
-      inspectionResultId: string;
-      category: string;
-      itemName: string;
-      displayOrder: number;
-      status: string;
-      measurement: string | null;
-      notes: string | null;
-    }>;
+    recordedResultCount: number;
+    suppliedResultCount: number;
+    supplyStatus: "complete" | "recorded_rows_omitted";
+    omittedMeaning: string | null;
+    recordedStatusCounts: Record<string, number>;
+    categories: Array<
+      | {
+          category: string;
+          count: number;
+          status: "ok";
+          itemNames: string[];
+        }
+      | {
+          category: string;
+          count: number;
+          status: "mixed_or_evidenced";
+          items: Array<
+            [
+              itemName: string,
+              status: string,
+              measurement: string | null,
+              notes: string | null,
+            ]
+          >;
+        }
+    >;
   };
   technicianNotes: Array<{
     technicianNoteId: string;
@@ -324,6 +341,118 @@ export type DiagnosticsModelContext = {
     safetyChecks: DiagnosticsTruncation;
   };
 };
+
+type ShapedInspectionSourceRow = {
+  sourceOrder: number;
+  category: string;
+  itemName: string;
+  status: string;
+  measurement: string | null;
+  notes: string | null;
+};
+
+type ShapedInspectionCategory =
+  DiagnosticsModelContext["inspection"]["categories"][number] & {
+    sourceOrder: number;
+  };
+
+function shapeInspectionRows(
+  rows: NonNullable<DiagnosticsContextSource["inspection"]>["results"]
+): {
+  categories: DiagnosticsModelContext["inspection"]["categories"];
+  statusCounts: Record<string, number>;
+  truncation: DiagnosticsTruncation;
+} {
+  const shapedRows: ShapedInspectionSourceRow[] = [...rows]
+    .sort(
+      (a, b) =>
+        a.displayOrder - b.displayOrder ||
+        a.inspectionResultId.localeCompare(b.inspectionResultId)
+    )
+    .slice(0, DIAGNOSTICS_MAX_COLLECTION_ITEMS)
+    .map((result, sourceOrder) => ({
+      sourceOrder,
+      category: boundedRequiredText(result.category),
+      itemName: boundedRequiredText(result.itemName),
+      status: boundedText(result.status) ?? "uninspected",
+      measurement: boundedText(result.measurement),
+      notes: boundedText(result.notes),
+    }));
+
+  const grouped = new Map<string, ShapedInspectionSourceRow[]>();
+  for (const row of shapedRows) {
+    const group = grouped.get(row.category) ?? [];
+    group.push(row);
+    grouped.set(row.category, group);
+  }
+  const categories: ShapedInspectionCategory[] = [...grouped.entries()].map(
+    ([category, items]) => {
+      const allOk = items.every(
+        (item) =>
+          item.status.toLowerCase() === "ok" &&
+          item.measurement === null &&
+          item.notes === null
+      );
+      return allOk
+        ? {
+            sourceOrder: items[0]!.sourceOrder,
+            category,
+            count: items.length,
+            status: "ok" as const,
+            itemNames: items.map((item) => item.itemName),
+          }
+        : {
+            sourceOrder: items[0]!.sourceOrder,
+            category,
+            count: items.length,
+            status: "mixed_or_evidenced" as const,
+            items: items.map((item): [string, string, string | null, string | null] => [
+              item.itemName,
+              item.status,
+              item.measurement,
+              item.notes,
+            ]),
+          };
+    }
+  );
+
+  const selected: ShapedInspectionCategory[] = [];
+  let used = 2;
+  for (const category of [...categories].sort(
+    (a, b) =>
+      Number(a.status === "ok") - Number(b.status === "ok") ||
+      a.sourceOrder - b.sourceOrder
+  )) {
+    const { sourceOrder: _sourceOrder, ...modelCategory } = category;
+    const size = JSON.stringify(modelCategory).length + (selected.length > 0 ? 1 : 0);
+    if (used + size > SECTION_BUDGETS.inspectionResults) continue;
+    selected.push(category);
+    used += size;
+  }
+  selected.sort((a, b) => a.sourceOrder - b.sourceOrder);
+  const included = selected.reduce((sum, category) => sum + category.count, 0);
+  const total = rows.length;
+  const allStatuses = rows.map((row) => boundedText(row.status) ?? "uninspected");
+  const statusCounts = Object.fromEntries(
+    [...new Set(allStatuses)]
+      .sort()
+      .map((status) => [
+        status,
+        allStatuses.filter((candidate) => candidate === status).length,
+      ])
+  );
+
+  return {
+    categories: selected.map(({ sourceOrder: _sourceOrder, ...category }) => category),
+    statusCounts,
+    truncation: {
+      total,
+      included,
+      omitted: total - included,
+      clipped: included < total,
+    },
+  };
+}
 
 declare const shapedDiagnosticsContextBrand: unique symbol;
 export type ShapedDiagnosticsModelContext = DiagnosticsModelContext & {
@@ -669,7 +798,9 @@ export function deriveDiagnosticsClaimContext(
     selected?.notes,
     ...context.customerRequestJobs.map((item) => item.notes),
     ...context.recommendations.map((item) => item.notes),
-    ...context.inspection.results.map((item) => item.measurement),
+    ...context.inspection.categories.flatMap((category) =>
+      category.status === "ok" ? [] : category.items.map((item) => item[2])
+    ),
     ...(selected?.verification.flatMap((item) => [item.result, item.notes]) ?? []),
     ...context.technicianNotes.map((item) => item.note),
     ...context.checks.quality.map((item) => item.notes),
@@ -755,27 +886,7 @@ export function shapeDiagnosticsContext(
   }
 
   const frontOffice = isFrontOffice(options.mode);
-  const allInspectionResults = source.inspection
-    ? [...source.inspection.results]
-        .sort(
-          (a, b) =>
-            a.displayOrder - b.displayOrder ||
-            a.inspectionResultId.localeCompare(b.inspectionResultId)
-        )
-        .map((result) => ({
-          inspectionResultId: boundedRequiredText(result.inspectionResultId),
-          category: boundedRequiredText(result.category),
-          itemName: boundedRequiredText(result.itemName),
-          displayOrder: result.displayOrder,
-          status: boundedText(result.status) ?? "uninspected",
-          measurement: boundedText(result.measurement),
-          notes: boundedText(result.notes),
-        }))
-    : [];
-  const inspectionResults = budgetItems(
-    allInspectionResults,
-    SECTION_BUDGETS.inspectionResults
-  );
+  const inspectionResults = shapeInspectionRows(source.inspection?.results ?? []);
 
   const serviceValues: Record<string, string | null> = {};
   if (source.serviceInformation) {
@@ -917,7 +1028,16 @@ export function shapeDiagnosticsContext(
       available: Boolean(source.inspection),
       completed: Boolean(source.inspection?.completedAt),
       completedAt: source.inspection?.completedAt ?? null,
-      results: inspectionResults.items,
+      recordedResultCount: inspectionResults.truncation.total,
+      suppliedResultCount: inspectionResults.truncation.included,
+      supplyStatus: inspectionResults.truncation.clipped
+        ? "recorded_rows_omitted"
+        : "complete",
+      omittedMeaning: inspectionResults.truncation.clipped
+        ? "Omitted rows were recorded but not supplied in this context; omission NEVER means not inspected."
+        : null,
+      recordedStatusCounts: inspectionResults.statusCounts,
+      categories: inspectionResults.categories,
     },
     technicianNotes: technicianNotes.items,
     recommendations: recommendations.items,

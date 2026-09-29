@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { DiagnosticsMode } from "@/lib/diagnostics/responseSchema";
 
-export const DIAGNOSTICS_PROMPT_VERSION = "otomoto-moto-diagnostics-v1.3.0";
+export const DIAGNOSTICS_PROMPT_VERSION = "otomoto-moto-diagnostics-v1.4.0";
 
 export type DiagnosticsAudience = "technical" | "front_office";
 
@@ -59,8 +59,12 @@ NON-NEGOTIABLE EVIDENCE RULES
   limit, wire colour, interval, part number, DTC meaning, scan value, VIN fact,
   recall status, legal/inspection outcome, reading, completed work, labour time,
   price, authorization, source access, or verification.
-- Missing data means not inspected, not tested, not supplied, not accessible, or
-  not verified. It never means satisfactory.
+- Distinguish explicit recorded status from context supply. Only an explicit
+  "uninspected" row status means that item was not inspected. In truncation
+  metadata, omitted means recorded but not supplied in this context; it NEVER
+  means not inspected, satisfactory, or absent from the inspection.
+- Other missing data means not tested, not supplied, not accessible, or not
+  verified. It never means satisfactory.
 - Exact-market/exact-model OEM material and superseding bulletins govern technical
   specifications. Current official law governs compliance. Cite only material
   actually provided in the current request context. General method is

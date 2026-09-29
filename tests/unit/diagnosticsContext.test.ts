@@ -198,14 +198,21 @@ describe("diagnostics context shaping", () => {
       inspection: {
         completed: false,
         completedAt: null,
-        results: [
-          expect.objectContaining({ inspectionResultId: "result-1", status: "ok" }),
-          expect.objectContaining({
-            inspectionResultId: "result-2",
-            status: "uninspected",
-            measurement: null,
-            notes: null,
-          }),
+        recordedResultCount: 2,
+        suppliedResultCount: 2,
+        supplyStatus: "complete",
+        omittedMeaning: null,
+        recordedStatusCounts: { ok: 1, uninspected: 1 },
+        categories: [
+          {
+            category: "Battery",
+            count: 2,
+            status: "mixed_or_evidenced",
+            items: [
+              ["Terminals", "ok", "clean and tight", "No corrosion"],
+              ["Actual CCA", "uninspected", null, null],
+            ],
+          },
         ],
       },
       missingReferences: {
