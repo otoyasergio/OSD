@@ -12,11 +12,12 @@ import {
 } from "@/components/forms/IntakePhotoSlots";
 import {
   intakeContractHref,
+  intakePhotoFailureMessage,
   uploadOptionalIntakePhotos,
   uploadSelectedIntakePhoto,
+  type IntakePhotoUploadResult,
 } from "@/components/forms/intakePhotoUploadClient";
 import { toFormErrorMessage } from "@/lib/services/errors";
-import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 
 export function IntakePhotoRecoveryForm({
   workOrderId,
@@ -47,6 +48,7 @@ export function IntakePhotoRecoveryForm({
     setClientError(null);
     setSubmitting(true);
     const failed: PhotoCategory[] = [];
+    const results: IntakePhotoUploadResult[] = [];
 
     try {
       for (const category of remaining) {
@@ -56,16 +58,14 @@ export function IntakePhotoRecoveryForm({
           continue;
         }
 
-        const uploaded = await uploadSelectedIntakePhoto(workOrderId, original, category);
-        if (!uploaded) failed.push(category);
+        const result = await uploadSelectedIntakePhoto(workOrderId, original, category);
+        results.push(result);
+        if (!result.uploaded) failed.push(category);
       }
 
       if (failed.length > 0) {
         setRemaining(failed);
-        const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
-        setClientError(
-          `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`
-        );
+        setClientError(intakePhotoFailureMessage(failed, results));
         setIntakePhotos({});
         return;
       }

@@ -9,9 +9,14 @@ import {
 } from "@/app/(app)/work_orders/photo-actions";
 import { FormError } from "@/components/forms/Field";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  describePhotoUploadFailure,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { withPhotoUploadRetries } from "@/lib/forms/retryPhotoUpload";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 
 type LocalShot = {
   id: string;
@@ -125,32 +130,34 @@ export function InspectionPhotoSlot({
         const shot = shots[index];
         if (!file || !shot) continue;
         let result: PhotoFormState;
-        try {
-          result = await withPhotoUploadRetries(
-            async () => {
-              try {
-                const formData = new FormData();
-                formData.set("category", category);
-                if (inspectionResultId) {
-                  formData.set("inspection_result_id", inspectionResultId);
+        if (exceedsServerActionUploadLimit(file)) {
+          // Vercel would refuse this request before the app runs; say so here
+          // instead of letting the crash reach the error boundary.
+          result = { error: photoTooLargeMessage(file) };
+        } else {
+          try {
+            result = await withPhotoUploadRetries(
+              async () => {
+                try {
+                  const formData = new FormData();
+                  formData.set("category", category);
+                  if (inspectionResultId) {
+                    formData.set("inspection_result_id", inspectionResultId);
+                  }
+                  formData.set("file", file);
+                  return await uploadIntakePhotoAction(workOrderId, IDLE, formData);
+                } catch (error) {
+                  return { error: describePhotoUploadFailure(error) };
                 }
-                formData.set("file", file);
-                return await uploadIntakePhotoAction(workOrderId, IDLE, formData);
-              } catch (error) {
-                const message =
-                  error instanceof Error && error.message
-                    ? error.message
-                    : "Could not upload the photo. Try again.";
-                return { error: message };
+              },
+              {
+                isSuccess: (value) => !value.error,
+                getFailureMessage: (value) => value.error,
               }
-            },
-            {
-              isSuccess: (value) => !value.error,
-              getFailureMessage: (value) => value.error,
-            }
-          );
-        } catch {
-          result = { error: "Could not upload the photo. Try again." };
+            );
+          } catch (error) {
+            result = { error: describePhotoUploadFailure(error) };
+          }
         }
         if (result.error) {
           failed += 1;

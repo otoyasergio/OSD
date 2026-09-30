@@ -66,5 +66,53 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
     );
     expect(source).toMatch(/preparePhotoFileForUpload/);
     expect(source).toMatch(/withPhotoUploadRetries/);
+    expect(source).toMatch(/exceedsServerActionUploadLimit/);
+    expect(source).toMatch(/describePhotoUploadFailure/);
+  });
+
+  it("intake forms surface the specific upload failure, not just the category list", () => {
+    for (const relativePath of [
+      "components/forms/CreateWorkOrderForm.tsx",
+      "components/forms/IntakePhotoRecoveryForm.tsx",
+    ]) {
+      const source = readFileSync(join(process.cwd(), relativePath), "utf8");
+      expect(source).toMatch(/intakePhotoFailureMessage/);
+    }
+  });
+});
+
+describe("multi-photo forms never put more than one photo in a Server Action body", () => {
+  // Vercel refuses request bodies over 4.5 MB before the action runs, so any
+  // form that submits several camera photos at once fails deterministically.
+  it("technician floor after-photos upload one request per photo", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/technician/TechnicianFloorShell.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/uploadPhotosIndividually/);
+    expect(source).not.toMatch(/useActionState\(\s*uploadJobProofAction/);
+  });
+
+  it("motorcycle documents upload one request per document", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/motorcycles/MotorcycleDocuments.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/uploadPhotosIndividually/);
+    expect(source).not.toMatch(/formData\.append\("file"/);
+  });
+
+  it("single-photo surfaces refuse oversize files before sending", () => {
+    for (const relativePath of [
+      "components/inspections/InspectionPhotoSlot.tsx",
+      "components/photos/PhotosTab.tsx",
+      "components/messages/Composer.tsx",
+      "components/diagnostics/DiagnosticsPhotoPicker.tsx",
+      "components/contracts/PaperAgreementCopyUpload.tsx",
+      "components/forms/ProfilePhotoForm.tsx",
+    ]) {
+      const source = readFileSync(join(process.cwd(), relativePath), "utf8");
+      expect(source, relativePath).toMatch(/exceedsServerActionUploadLimit/);
+    }
   });
 });

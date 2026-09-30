@@ -15,8 +15,13 @@ import {
 } from "@/app/(app)/work_orders/assistant-actions";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { photoFileInputProps, CAMERA_ROLL_HINT } from "@/lib/forms/photoSourceInputs";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  describePhotoUploadFailure,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { withPhotoUploadRetries } from "@/lib/forms/retryPhotoUpload";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 import {
   DIAGNOSTICS_PHOTO_MAX_SELECTED,
   DIAGNOSTICS_PHOTO_PURPOSE_MAX,
@@ -256,13 +261,21 @@ export function DiagnosticsPhotoPicker({
           }
           break;
         }
+        if (exceedsServerActionUploadLimit(file)) {
+          if (mountedRef.current) setError(photoTooLargeMessage(file));
+          break;
+        }
         const result = await withPhotoUploadRetries(
-          () => {
-            const form = new FormData();
-            form.set("thread_id", thread.threadId);
-            form.set("purpose", defaultPurpose);
-            form.set("file", file);
-            return uploadAssistantPhotoAction(thread.workOrderId, IDLE, form);
+          async (): Promise<AssistantActionState> => {
+            try {
+              const form = new FormData();
+              form.set("thread_id", thread.threadId);
+              form.set("purpose", defaultPurpose);
+              form.set("file", file);
+              return await uploadAssistantPhotoAction(thread.workOrderId, IDLE, form);
+            } catch (error) {
+              return { status: "error", error: describePhotoUploadFailure(error) };
+            }
           },
           {
             isSuccess: (value) => value.status === "success",

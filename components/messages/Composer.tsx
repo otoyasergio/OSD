@@ -6,8 +6,13 @@ import {
   uploadChatImageAction,
   uploadVoiceNoteAction,
 } from "@/app/(app)/messages/actions";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  describePhotoUploadFailure,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 
 type Props = {
   conversationId: string;
@@ -53,11 +58,19 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
       const files = await readPickedPhotoFiles(input);
       const file = files[0];
       if (!file) return;
+      if (exceedsServerActionUploadLimit(file)) {
+        setError(photoTooLargeMessage(file));
+        return;
+      }
       const formData = new FormData();
       formData.set("file", file);
       startTransition(async () => {
-        const result = await uploadChatImageAction(conversationId, formData);
-        if (result.error) setError(result.error);
+        try {
+          const result = await uploadChatImageAction(conversationId, formData);
+          if (result.error) setError(result.error);
+        } catch (error) {
+          setError(describePhotoUploadFailure(error));
+        }
       });
     } catch {
       setError(UNREADABLE_PHOTO_MESSAGE);
