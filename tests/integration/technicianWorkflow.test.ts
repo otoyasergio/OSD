@@ -58,6 +58,7 @@ describeIntegration("workflow_v2 floor commands (isolated db)", () => {
     await admin.from("work_order").upsert({
       work_order_id: ids.workOrder,
       motorcycle_id: ids.motorcycle,
+      customer_id: ids.customer,
       location_id: ids.location,
       work_order_number: `WO-FL-${ids.workOrder.slice(0, 8)}`,
       status: "ready_for_technician",
