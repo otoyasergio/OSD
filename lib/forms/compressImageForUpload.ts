@@ -1,17 +1,27 @@
 export type CompressImageOptions = {
-  /** Soft target; compression stops once under this size when possible. */
+  /**
+   * Ceiling on the encoded output. Quality drops to `minQuality` first; if the
+   * photo is still too large the longest edge is scaled down until it fits.
+   */
   maxBytes?: number;
   /** Longest edge after resize. */
   maxDimension?: number;
   /** Starting JPEG quality (0–1). */
   quality?: number;
-  /** Floor JPEG quality — never go below this while retrying for size. */
+  /** Floor JPEG quality — dimensions shrink before quality goes below this. */
   minQuality?: number;
 };
 
-/** Inspection-grade bike photos. Boards use a separate stored thumbnail. */
+/**
+ * Inspection-grade bike photos. Boards use a separate stored thumbnail.
+ *
+ * `maxBytes` must stay under `SERVER_ACTION_UPLOAD_MAX_BYTES` (see
+ * `lib/forms/uploadLimits.ts`): every upload in the app is one Server Action
+ * call, and Vercel drops bodies over 4.5 MB before the app runs. A unit test
+ * pins the relationship.
+ */
 export const BIKE_PHOTO_COMPRESS: Required<CompressImageOptions> = {
-  maxBytes: 4_500_000,
+  maxBytes: 3_500_000,
   maxDimension: 4096,
   quality: 0.9,
   minQuality: 0.82,
@@ -25,9 +35,84 @@ export const DOCUMENT_IMAGE_COMPRESS: Required<CompressImageOptions> = {
   minQuality: 0.45,
 };
 
+const QUALITY_STEP = 0.08;
+/** Never shrink the longest edge below this while chasing `maxBytes`. */
+const MIN_DIMENSION = 640;
+const MAX_ENCODE_ATTEMPTS = 10;
+
+export type ImageSize = { width: number; height: number };
+
+export type EncodeImage = (
+  width: number,
+  height: number,
+  quality: number
+) => Promise<Blob | null>;
+
+export type FittedImage = {
+  blob: Blob;
+  width: number;
+  height: number;
+  quality: number;
+};
+
+/** Scale `source` so its longest edge is at most `maxDimension` (never upscales). */
+export function fitDimensions(source: ImageSize, maxDimension: number): ImageSize {
+  const scale = Math.min(1, maxDimension / Math.max(source.width, source.height));
+  return {
+    width: Math.max(1, Math.round(source.width * scale)),
+    height: Math.max(1, Math.round(source.height * scale)),
+  };
+}
+
 /**
- * Downscale/re-encode camera photos so sequential uploads stay under
- * serverless body limits. Falls back to the original file on failure.
+ * Re-encode until the output is at most `maxBytes`.
+ *
+ * Order: start at `quality`, step down to `minQuality`, then scale the
+ * dimensions. JPEG size tracks pixel count, so each dimension step estimates
+ * the scale needed from the last encode instead of shrinking blindly. The
+ * smallest encode seen is returned when the ladder runs out.
+ */
+export async function fitEncodedImage(
+  encode: EncodeImage,
+  source: ImageSize,
+  options: Required<CompressImageOptions>
+): Promise<FittedImage | null> {
+  let { width, height } = fitDimensions(source, options.maxDimension);
+  let quality = options.quality;
+  let best: FittedImage | null = null;
+
+  for (let attempt = 0; attempt < MAX_ENCODE_ATTEMPTS; attempt += 1) {
+    const blob = await encode(width, height, quality);
+    if (!blob || blob.size === 0) break;
+
+    const candidate = { blob, width, height, quality };
+    if (!best || blob.size < best.blob.size) best = candidate;
+    if (blob.size <= options.maxBytes) return candidate;
+
+    if (quality - options.minQuality > 1e-6) {
+      quality = Math.max(
+        options.minQuality,
+        Math.round((quality - QUALITY_STEP) * 100) / 100
+      );
+      continue;
+    }
+
+    const longest = Math.max(width, height);
+    if (longest <= MIN_DIMENSION) break;
+    const estimate = Math.sqrt(options.maxBytes / blob.size) * 0.95;
+    const factor = Math.min(0.9, Math.max(0.5, estimate));
+    const nextLongest = Math.max(MIN_DIMENSION, Math.round(longest * factor));
+    if (nextLongest >= longest) break;
+    ({ width, height } = fitDimensions({ width, height }, nextLongest));
+  }
+
+  return best;
+}
+
+/**
+ * Downscale/re-encode camera photos so each upload fits in one Server Action
+ * request. Falls back to the original file when the browser cannot decode it;
+ * callers check the size before sending.
  *
  * Defaults keep bike photos large enough to inspect VIN, scratches, and
  * fasteners when opened full-screen.
@@ -36,52 +121,59 @@ export async function compressImageForUpload(
   file: File,
   options: CompressImageOptions = {}
 ): Promise<File> {
-  const maxBytes = options.maxBytes ?? BIKE_PHOTO_COMPRESS.maxBytes;
-  const maxDimension = options.maxDimension ?? BIKE_PHOTO_COMPRESS.maxDimension;
-  const minQuality = options.minQuality ?? BIKE_PHOTO_COMPRESS.minQuality;
-  let quality = options.quality ?? BIKE_PHOTO_COMPRESS.quality;
+  const resolved: Required<CompressImageOptions> = {
+    maxBytes: options.maxBytes ?? BIKE_PHOTO_COMPRESS.maxBytes,
+    maxDimension: options.maxDimension ?? BIKE_PHOTO_COMPRESS.maxDimension,
+    quality: options.quality ?? BIKE_PHOTO_COMPRESS.quality,
+    minQuality: options.minQuality ?? BIKE_PHOTO_COMPRESS.minQuality,
+  };
 
   if (!(file instanceof File) || file.size === 0) return file;
-  if (file.size <= maxBytes && file.type === "image/jpeg") return file;
+  if (file.size <= resolved.maxBytes && file.type === "image/jpeg") return file;
 
   if (typeof document === "undefined") return file;
 
+  let bitmap: ImageBitmap | null = null;
   try {
-    const bitmap = await decodeImageBitmap(file, maxDimension);
-    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
-    const width = Math.max(1, Math.round(bitmap.width * scale));
-    const height = Math.max(1, Math.round(bitmap.height * scale));
+    bitmap = await decodeImageBitmap(file, resolved.maxDimension);
+    const source = bitmap;
 
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
     const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      bitmap.close();
-      return file;
-    }
-    ctx.drawImage(bitmap, 0, 0, width, height);
-    bitmap.close();
+    if (!ctx) return file;
 
-    let blob: Blob | null = null;
-    for (let attempt = 0; attempt < 4; attempt += 1) {
-      blob = await new Promise<Blob | null>((resolve) => {
+    // Redraw from the decoded bitmap whenever the size changes so repeated
+    // dimension steps do not stack resampling blur; quality-only retries
+    // re-encode the pixels already on the canvas.
+    let drawn: ImageSize | null = null;
+    const encode: EncodeImage = async (width, height, quality) => {
+      if (!drawn || drawn.width !== width || drawn.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(source, 0, 0, width, height);
+        drawn = { width, height };
+      }
+      return new Promise<Blob | null>((resolve) => {
         canvas.toBlob((result) => resolve(result), "image/jpeg", quality);
       });
-      if (!blob) break;
-      if (blob.size <= maxBytes) break;
-      quality = Math.max(minQuality, quality - 0.08);
-    }
+    };
 
-    if (!blob || blob.size === 0) return file;
+    const fitted = await fitEncodedImage(
+      encode,
+      { width: source.width, height: source.height },
+      resolved
+    );
+    if (!fitted) return file;
 
     const baseName = file.name.replace(/\.[^.]+$/, "") || "intake";
-    return new File([blob], `${baseName}.jpg`, {
+    return new File([fitted.blob], `${baseName}.jpg`, {
       type: "image/jpeg",
       lastModified: file.lastModified,
     });
   } catch {
     return file;
+  } finally {
+    bitmap?.close();
   }
 }
 
