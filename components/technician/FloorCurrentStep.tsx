@@ -357,7 +357,7 @@ export function FloorCurrentStep({
               hint="Camera or photo library — add as many as you need"
             />
             <button type="submit" className="pit-current-action" disabled={proofPending}>
-              Upload photos
+              {proofPending ? "Uploading…" : "Upload photos"}
             </button>
           </form>
           {surface.proof_count < 1 && !surface.has_proof_exception ? (
