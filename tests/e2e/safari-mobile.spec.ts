@@ -27,9 +27,19 @@ const ZOOMING_INPUT_TYPES = [
   "week",
 ];
 
+/**
+ * WebKit in CI often never fires the full `load` event under parallel project
+ * load. Layout gates only need the document; wait for DOMContentLoaded.
+ */
+async function openLogin(page: import("@playwright/test").Page) {
+  await page.goto("/login", { waitUntil: "domcontentloaded", timeout: 60_000 });
+}
+
 test.describe("Safari layout gates", () => {
+  test.describe.configure({ timeout: 60_000 });
+
   test("viewport opts into the safe-area insets", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
     const content = await page.locator('meta[name="viewport"]').getAttribute("content");
     // Without viewport-fit=cover every env(safe-area-inset-*) resolves to 0px
     // and fixed chrome slides under the notch and the home indicator.
@@ -41,7 +51,7 @@ test.describe("Safari layout gates", () => {
   });
 
   test("iOS home-screen and status bar metadata is present", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
       "content",
       "#0b1220"
@@ -53,7 +63,7 @@ test.describe("Safari layout gates", () => {
   });
 
   test("sign-in page has no horizontal overflow", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
     await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
     const overflow = await page.evaluate(() => {
       const doc = document.documentElement;
@@ -63,14 +73,14 @@ test.describe("Safari layout gates", () => {
   });
 
   test("primary action meets the 44px touch target", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
     const submit = page.getByRole("button", { name: /sign in/i });
     const box = await submit.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   });
 
   test("text controls never compute below 16px on touch devices", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
 
     const coarse = await page.evaluate(
       () => window.matchMedia("(pointer: coarse)").matches
@@ -125,7 +135,7 @@ test.describe("Safari layout gates", () => {
   test("selects drop the native iOS chrome so they line up with inputs", async ({
     page,
   }) => {
-    await page.goto("/login");
+    await openLogin(page);
 
     const result = await page.evaluate(() => {
       const host = document.createElement("div");
