@@ -62,7 +62,8 @@ CREATE TABLE public.ai_assistant_thread (
       'repair_planning',
       'repair_in_progress',
       'verification',
-      'ready_for_technician_verification'
+      'ready_for_technician_verification',
+      'closure_report'
     )
   ),
   CONSTRAINT ai_assistant_thread_work_order_location_fk
@@ -138,7 +139,8 @@ CREATE TABLE public.ai_assistant_message (
       'repair_planning',
       'repair_in_progress',
       'verification',
-      'ready_for_technician_verification'
+      'ready_for_technician_verification',
+      'closure_report'
     )
   ),
   CONSTRAINT ai_assistant_message_generation_payload_check CHECK (
