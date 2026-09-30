@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 /**
  * Safari / iOS layout gates. These run on the public sign-in page only — no
@@ -31,7 +31,7 @@ const ZOOMING_INPUT_TYPES = [
  * WebKit in CI often never fires the full `load` event under parallel project
  * load. Layout gates only need the document; wait for DOMContentLoaded.
  */
-async function openLogin(page: import("@playwright/test").Page) {
+async function openLogin(page: Page) {
   await page.goto("/login", { waitUntil: "domcontentloaded", timeout: 60_000 });
 }
 

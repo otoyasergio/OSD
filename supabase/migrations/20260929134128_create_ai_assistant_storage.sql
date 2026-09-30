@@ -198,6 +198,12 @@ CREATE INDEX idx_technician_note_source_ai_message
   ON public.technician_note (source_ai_message_id)
   WHERE source_ai_message_id IS NOT NULL;
 
+-- One reviewed assistant response may produce at most one append-only
+-- technician note (closes concurrent promotion races).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_technician_note_ai_source
+  ON public.technician_note (source_ai_message_id)
+  WHERE source_ai_message_id IS NOT NULL;
+
 -- A promoted note remains a human-owned record, but any optional provenance
 -- must point to a ready technical assistant output in the same scope. This is
 -- deliberately SECURITY INVOKER: authenticated callers can cite only messages
