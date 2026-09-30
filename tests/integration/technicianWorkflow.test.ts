@@ -169,18 +169,6 @@ describeIntegration("workflow_v2 floor commands (isolated db)", () => {
       .update({ checked_at: new Date().toISOString(), checked_by_user_id: ids.techA })
       .eq("job_id", ids.jobB);
 
-    // QC candidate who worked the visit is rejected.
-    const { error: badQcError } = await admin.rpc(
-      "workflow_v2_complete_job_and_assign_qc",
-      {
-        p_job_id: ids.jobB,
-        p_actor_user_id: ids.techA,
-        p_qc_candidate_id: ids.techA,
-        p_proof_exception: true,
-      }
-    );
-    expect(badQcError?.message ?? "").toContain("QC_CANDIDATE_WORKED_ON_VISIT");
-
     // Job A still open, so completing B assigns no visit QC yet.
     const { data: completeB, error: completeBError } = await admin.rpc(
       "workflow_v2_complete_job_and_assign_qc",
@@ -193,12 +181,24 @@ describeIntegration("workflow_v2 floor commands (isolated db)", () => {
     expect(completeBError).toBeNull();
     expect((completeB as { visit_work_remaining: number }).visit_work_remaining).toBe(1);
 
-    // Finish job A with techB as the QC peer.
+    // Finish job A; QC candidate who worked the visit is rejected only once
+    // visit work is drained (assignment happens at that point).
     const { error: pullA } = await admin.rpc("workflow_v2_pull_job_onto_bench", {
       p_job_id: ids.jobA,
       p_actor_user_id: ids.techA,
     });
     expect(pullA).toBeNull();
+    const { error: badQcError } = await admin.rpc(
+      "workflow_v2_complete_job_and_assign_qc",
+      {
+        p_job_id: ids.jobA,
+        p_actor_user_id: ids.techA,
+        p_qc_candidate_id: ids.techA,
+        p_proof_exception: true,
+      }
+    );
+    expect(badQcError?.message ?? "").toContain("QC_CANDIDATE_WORKED_ON_VISIT");
+
     const { data: completeA, error: completeAError } = await admin.rpc(
       "workflow_v2_complete_job_and_assign_qc",
       {
