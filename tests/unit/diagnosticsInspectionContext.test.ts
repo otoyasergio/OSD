@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DIAGNOSTICS_MAX_CONTEXT_BLOCK_CHARS,
@@ -12,11 +13,21 @@ type TemplateRow = {
   displayOrder: number;
 };
 
-function migration014Rows(): TemplateRow[] {
-  const sql = readFileSync(
-    "supabase/migrations/014_visual_motorcycle_inspection_template.sql",
-    "utf8"
+function visualMotorcycleInspectionTemplatePath(): string {
+  const migrationsDir = "supabase/migrations";
+  const match = readdirSync(migrationsDir).find((name) =>
+    name.endsWith("_visual_motorcycle_inspection_template.sql")
   );
+  if (!match) {
+    throw new Error(
+      `Missing *_visual_motorcycle_inspection_template.sql under ${migrationsDir}`
+    );
+  }
+  return join(migrationsDir, match);
+}
+
+function migration014Rows(): TemplateRow[] {
+  const sql = readFileSync(visualMotorcycleInspectionTemplatePath(), "utf8");
   return [...sql.matchAll(/\('((?:[^']|'')*)',\s*'((?:[^']|'')*)',\s*(\d+),/g)].map(
     (match) => ({
       category: match[1]!.replaceAll("''", "'"),
