@@ -1,0 +1,54 @@
+# Supabase CLI config for the ISOLATED local test stack (never production).
+# Used by `supabase start` in CI (and locally when Docker is available) to run
+# migrations + integration/E2E tests against a throwaway database.
+# Reference: https://supabase.com/docs/guides/local-development/cli/config
+project_id = "otomoto-service-app"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# Must match the remote database major version.
+major_version = 17
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+# Synthetic QA data is seeded by tests/e2e/fixtures/seedSyntheticShop.ts,
+# not by SQL seed files.
+enabled = false
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+additional_redirect_urls = ["http://127.0.0.1:3000"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = false
+# Fixture users are created pre-confirmed; no confirmation emails locally.
+enable_confirmations = false
+
+[analytics]
+# Keep the local stack lean; Logflare analytics is not needed for tests.
+enabled = false

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canManageInspectionTemplate } from "@/lib/permissions";
 import { listInspectionTemplateItems } from "@/lib/services/inspectionTemplate";
 import {
@@ -17,9 +17,9 @@ import {
 export const dynamic = "force-dynamic";
 
 export default async function InspectionTemplatePage() {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canManageInspectionTemplate(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  if (!canManageInspectionTemplate(preview.role)) redirect("/dashboard");
 
   const items = await listInspectionTemplateItems({ includeInactive: true });
   const nextDisplayOrder =

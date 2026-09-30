@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isWithinShopCronWindow } from "@/lib/datetime/format";
 import { syncPartsCanadaCatalog } from "@/lib/services/partsCanadaCatalog";
 import { logger, newRequestId } from "@/lib/security/logger";
 import { captureException } from "@/lib/security/sentry";
@@ -7,7 +8,8 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
- * Daily Parts Canada inventory sync.
+ * Parts Canada inventory sync every 4 hours (Vercel cron),
+ * active 10:00–23:00 America/Toronto only. Overnight invocations no-op.
  * Protect with CRON_SECRET via Authorization: Bearer <secret> only.
  */
 export async function GET(request: Request) {
@@ -23,8 +25,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!isWithinShopCronWindow()) {
+    logger.info("Parts Canada cron skipped outside shop window", { requestId });
+    return NextResponse.json({ ok: true, skipped: "outside_window" });
+  }
+
   try {
     const result = await syncPartsCanadaCatalog({ triggeredBy: "cron" });
+    if (result.skipped_reason === "already_running") {
+      logger.info("Parts Canada cron skipped prior run still active", { requestId });
+      return NextResponse.json({ ok: true, skipped: "already_running" });
+    }
     logger.info("Parts Canada cron sync complete", {
       requestId,
       row_count: result.row_count,

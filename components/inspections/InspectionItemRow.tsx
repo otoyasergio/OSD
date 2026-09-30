@@ -2,10 +2,15 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import type { InspectionResultRow } from "@/lib/services/inspections";
+import { Check, Clock, AlertTriangle, Minus } from "lucide-react";
 import type { InspectionResultStatus } from "@/lib/database/types";
 import { saveInspectionResultAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import { BRAKE_INSPECTION_SKIP_ITEM } from "@/lib/services/inspectionGate";
+import {
+  shouldApplyServerInspectionText,
+  textSaveStillMatchesLocal,
+} from "@/lib/inspections/inspectionItemTextSync";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -14,30 +19,35 @@ const STATUS_OPTIONS: Array<{
   short: string;
   long: string;
   className: string;
+  Icon: typeof Check;
 }> = [
   {
     value: "ok",
     short: "OK",
     long: "Checked and OK",
     className: "inspection-status-ok",
+    Icon: Check,
   },
   {
     value: "future_attention",
     short: "Future",
     long: "May need future attention",
     className: "inspection-status-future",
+    Icon: Clock,
   },
   {
     value: "immediate_attention",
     short: "Now",
     long: "Requires immediate attention",
     className: "inspection-status-immediate",
+    Icon: AlertTriangle,
   },
   {
     value: "not_applicable",
     short: "N/A",
     long: "Not applicable",
     className: "inspection-status-na",
+    Icon: Minus,
   },
 ];
 
@@ -62,17 +72,23 @@ export function InspectionItemRow({
   workOrderId,
   result,
   readOnly,
-  photoUrl,
+  photoUrls,
   photoRequired,
+  onExpandPhoto,
   onRecommend,
+  onBusyChange,
+  onLocalStatusChange,
   compact,
 }: {
   workOrderId: string;
   result: InspectionResultRow;
   readOnly: boolean;
-  photoUrl?: string | null;
+  photoUrls?: string[];
   photoRequired?: boolean;
+  onExpandPhoto?: (src: string) => void;
   onRecommend?: (result: InspectionResultRow) => void;
+  onBusyChange?: (resultId: string, busy: boolean) => void;
+  onLocalStatusChange?: (resultId: string, status: InspectionResultStatus | null) => void;
   compact?: boolean;
 }) {
   const [status, setStatus] = useState<InspectionResultStatus | null>(result.status);
@@ -80,13 +96,19 @@ export function InspectionItemRow({
   const [notes, setNotes] = useState(result.notes ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [textDirty, setTextDirty] = useState(false);
+  const [textFocused, setTextFocused] = useState(false);
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measurementRef = useRef(measurement);
   const notesRef = useRef(notes);
+  const statusBeforeSaveRef = useRef<InspectionResultStatus | null>(result.status);
+  const saveSeqRef = useRef(0);
 
   // Re-sync local edits when the server row changes (adjust-state-during-render
   // pattern, https://react.dev/learn/you-might-not-need-an-effect).
+  // Never overwrite note/measurement drafts while the tech is still typing —
+  // autosave revalidatePath can return props older than the local draft.
   const [prevResult, setPrevResult] = useState(result);
   if (
     prevResult.status !== result.status ||
@@ -96,8 +118,15 @@ export function InspectionItemRow({
   ) {
     setPrevResult(result);
     setStatus(result.status);
-    setMeasurement(result.measurement ?? "");
-    setNotes(result.notes ?? "");
+    if (
+      shouldApplyServerInspectionText({
+        focused: textFocused,
+        dirty: textDirty,
+      })
+    ) {
+      setMeasurement(result.measurement ?? "");
+      setNotes(result.notes ?? "");
+    }
   }
 
   useEffect(() => {
@@ -116,28 +145,62 @@ export function InspectionItemRow({
     measurement?: string | null;
     notes?: string | null;
   }) {
+    const resultId = result.inspection_result_id;
+    const seq = ++saveSeqRef.current;
     setSaveState("saving");
+    onBusyChange?.(resultId, true);
     setError(null);
     startTransition(async () => {
-      const response = await saveInspectionResultAction(
-        workOrderId,
-        result.inspection_result_id,
-        input
-      );
-      if (!response.ok) {
-        setSaveState("error");
-        setError(response.error);
+      const response = await saveInspectionResultAction(workOrderId, resultId, input);
+      if (seq !== saveSeqRef.current) {
+        // A newer save superseded this one; leave UI to the latest request.
         return;
       }
+      if (!response.ok) {
+        if ("status" in input) {
+          const reverted = statusBeforeSaveRef.current;
+          setStatus(reverted);
+          onLocalStatusChange?.(resultId, reverted);
+        }
+        setSaveState("error");
+        setError(response.error);
+        onBusyChange?.(resultId, false);
+        return;
+      }
+      if ("status" in input) {
+        statusBeforeSaveRef.current = input.status ?? null;
+      }
+      if (
+        ("notes" in input || "measurement" in input) &&
+        textSaveStillMatchesLocal({
+          localNotes: notesRef.current,
+          localMeasurement: measurementRef.current,
+          savedNotes: input.notes,
+          savedMeasurement: input.measurement,
+        })
+      ) {
+        setTextDirty(false);
+      }
       setSaveState("saved");
-      window.setTimeout(() => setSaveState("idle"), 1200);
+      onBusyChange?.(resultId, false);
+      window.setTimeout(() => {
+        if (seq === saveSeqRef.current) setSaveState("idle");
+      }, 1200);
     });
   }
 
   function saveStatus(next: InspectionResultStatus | null) {
     const value = status === next ? null : next;
+    statusBeforeSaveRef.current = status;
     setStatus(value);
-    persist({ status: value });
+    onLocalStatusChange?.(result.inspection_result_id, value);
+    // Include current text so a status-only save + revalidate cannot wipe an
+    // unsaved note/measurement draft from the database snapshot.
+    persist({
+      status: value,
+      measurement: measurementRef.current.trim() || null,
+      notes: notesRef.current.trim() || null,
+    });
   }
 
   function scheduleTextSave() {
@@ -147,7 +210,7 @@ export function InspectionItemRow({
         measurement: measurementRef.current.trim() || null,
         notes: notesRef.current.trim() || null,
       });
-    }, 400);
+    }, 700);
   }
 
   function flushTextSave() {
@@ -156,6 +219,15 @@ export function InspectionItemRow({
       measurement: measurementRef.current.trim() || null,
       notes: notesRef.current.trim() || null,
     });
+  }
+
+  function onTextFocus() {
+    setTextFocused(true);
+  }
+
+  function onTextBlur() {
+    setTextFocused(false);
+    flushTextSave();
   }
 
   const needsAttention =
@@ -231,6 +303,7 @@ export function InspectionItemRow({
           <div className="inspection-status-group" role="group" aria-label="Status">
             {STATUS_OPTIONS.map((option) => {
               const selected = status === option.value;
+              const Icon = option.Icon;
               return (
                 <button
                   key={option.value}
@@ -243,6 +316,7 @@ export function InspectionItemRow({
                   aria-label={option.long}
                   title={option.long}
                 >
+                  <Icon className="inspection-status-swatch-icon" aria-hidden size={18} />
                   <span className="inspection-status-swatch-label" aria-hidden>
                     {option.short}
                   </span>
@@ -283,10 +357,12 @@ export function InspectionItemRow({
                 inputMode="decimal"
                 placeholder={unit ?? ""}
                 onChange={(e) => {
+                  setTextDirty(true);
                   setMeasurement(e.target.value);
                   scheduleTextSave();
                 }}
-                onBlur={flushTextSave}
+                onFocus={onTextFocus}
+                onBlur={onTextBlur}
               />
             </label>
           ) : null}
@@ -306,10 +382,12 @@ export function InspectionItemRow({
                       : "Notes"
                 }
                 onChange={(e) => {
+                  setTextDirty(true);
                   setNotes(e.target.value);
                   scheduleTextSave();
                 }}
-                onBlur={flushTextSave}
+                onFocus={onTextFocus}
+                onBlur={onTextBlur}
               />
             </label>
           ) : null}
@@ -322,7 +400,7 @@ export function InspectionItemRow({
         </p>
       ) : null}
 
-      {needsAttention && (!readOnly || photoUrl) ? (
+      {needsAttention && (!readOnly || (photoUrls && photoUrls.length > 0)) ? (
         <div className="inspection-item-photo">
           <InspectionPhotoSlot
             workOrderId={workOrderId}
@@ -330,8 +408,9 @@ export function InspectionItemRow({
             inspectionResultId={result.inspection_result_id}
             label={`Photo for ${displayName(result.item_name_snapshot)}`}
             required={photoRequired !== false}
-            existingUrl={photoUrl}
+            existingUrls={photoUrls}
             readOnly={readOnly}
+            onExpand={onExpandPhoto}
           />
           {!readOnly && onRecommend ? (
             <button

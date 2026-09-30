@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canViewClients } from "@/lib/permissions";
 import { getCustomerById, searchCustomers } from "@/lib/services/customers";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
@@ -20,7 +21,8 @@ export default async function NewMotorcyclePage({
   }>;
 }) {
   const user = await requireUser();
-  if (!canViewClients(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  if (!canViewClients(preview?.role ?? user.role)) redirect("/dashboard");
 
   const {
     customer_id,
@@ -30,7 +32,7 @@ export default async function NewMotorcyclePage({
     model = "",
     return_to = "",
   } = await searchParams;
-  const customers = await searchCustomers("");
+  const customers = await searchCustomers("", { preferShopCustomers: true });
   const vin = vinRaw ? normalizeVin(vinRaw).slice(0, 17) : "";
 
   // searchCustomers caps at 50; always include the preselected customer from garage/deep links.

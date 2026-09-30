@@ -10,7 +10,12 @@ import { FormError, SELECT_CLASS } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { StageChip } from "@/components/ui/StageChip";
 import { formatLabourComparison } from "@/lib/services/labour";
-import { JOB_STATUS_LABELS } from "@/lib/status/labels";
+import {
+  JOB_ORIGIN_LABELS,
+  jobAuthorizationLabel,
+  jobWorkLabel,
+  normalizeJobOrigin,
+} from "@/lib/work-orders/visitWorkList";
 
 function jobStageTone(status: JobStatus): "teal" | "orange" | "muted" | "danger" {
   if (status === "in_progress") return "orange";
@@ -123,6 +128,9 @@ export function JobCard({
     job.started_at,
     job.completed_at
   );
+  const origin = normalizeJobOrigin(job.origin);
+  const authLabel = jobAuthorizationLabel(job.status);
+  const workLabel = jobWorkLabel(job.status);
 
   return (
     <article className="card card-body">
@@ -132,16 +140,33 @@ export function JobCard({
             {job.service_name_snapshot}
           </h3>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <StageChip
-              label={JOB_STATUS_LABELS[job.status] ?? job.status}
-              tone={jobStageTone(job.status)}
-            />
+            <StageChip label={JOB_ORIGIN_LABELS[origin]} tone="muted" />
+            {authLabel ? (
+              <StageChip
+                label={authLabel}
+                tone={
+                  authLabel === "Approved"
+                    ? "teal"
+                    : authLabel === "Declined"
+                      ? "danger"
+                      : "orange"
+                }
+              />
+            ) : null}
+            {workLabel !== "—" ? (
+              <StageChip label={workLabel} tone={jobStageTone(job.status)} />
+            ) : null}
             <span className="text-sm text-[var(--status-neutral)]">
               {job.assigned_technician
                 ? `${job.assigned_technician.first_name} ${job.assigned_technician.last_name}`
                 : "Unassigned"}
             </span>
           </div>
+          {job.notes?.trim() ? (
+            <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+              {job.notes.trim()}
+            </p>
+          ) : null}
           <p className="mt-1 text-sm text-[var(--status-neutral)]">
             {canViewPricing
               ? job.standard_price_snapshot != null

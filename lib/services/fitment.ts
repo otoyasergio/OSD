@@ -6,10 +6,11 @@ import {
   extractPartNumbers,
   skuLookupVariants,
 } from "@/lib/fitment/partMatch";
-import { rowCoversYear } from "@/lib/fitment/fitmentRange";
+import { rowCoversYear, yearsFromBounds } from "@/lib/fitment/fitmentRange";
 import { fitmentFieldLabel, FITMENT_SPEC_FIELDS } from "@/lib/fitment/fieldLabels";
 import { canOrderPart } from "@/lib/permissions";
 import type { PartsCanadaSearchHit } from "@/lib/services/partsCanadaCatalog";
+import { syncAllMotorcycleServiceInfoFromFitment } from "@/lib/services/syncServiceInfoFromFitment";
 
 export type FitmentVehicle = {
   vehicle_id: string;
@@ -32,6 +33,23 @@ export type FitmentPartMatch = {
 const SPEC_KEYS = FITMENT_SPEC_FIELDS;
 const BATCH = 500;
 
+function rpcTextList(data: unknown): string[] {
+  if (!Array.isArray(data)) return [];
+  const values = data.map((row) => {
+    if (typeof row === "string") return row;
+    if (row && typeof row === "object") {
+      const first = Object.values(row as Record<string, unknown>).find(
+        (value) => typeof value === "string"
+      );
+      return typeof first === "string" ? first : "";
+    }
+    return "";
+  });
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b)
+  );
+}
+
 export async function getFitmentImportStatus(): Promise<{
   vehicle_count: number;
   last_run: {
@@ -45,7 +63,7 @@ export async function getFitmentImportStatus(): Promise<{
   const [{ count }, { data: lastRun }] = await Promise.all([
     supabase
       .from("fitment_vehicle")
-      .select("vehicle_id", { count: "exact", head: true }),
+      .select("vehicle_id", { count: "estimated", head: true }),
     supabase
       .from("fitment_import_run")
       .select("status, started_at, row_count")
@@ -69,87 +87,33 @@ export async function getFitmentImportStatus(): Promise<{
 export async function listFitmentYears(): Promise<number[]> {
   await requireUser();
   const supabase = await createClient();
-  const currentYear = new Date().getFullYear();
-
-  const [{ data: minRow, error: minError }, { data: maxRow, error: maxError }] =
-    await Promise.all([
-      supabase
-        .from("fitment_vehicle")
-        .select("year_start")
-        .order("year_start", { ascending: true })
-        .limit(1)
-        .maybeSingle(),
-      supabase
-        .from("fitment_vehicle")
-        .select("year_end")
-        .order("year_end", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-
-  if (minError) throw minError;
-  if (maxError) throw maxError;
-  if (!minRow || !maxRow) return [];
-
-  const start = minRow.year_start;
-  const end = Math.min(maxRow.year_end, currentYear + 1);
-  const years: number[] = [];
-  for (let y = end; y >= start; y--) years.push(y);
-  return years;
+  const { data, error } = await supabase.rpc("fitment_year_bounds");
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || row.min_year == null || row.max_year == null) return [];
+  return yearsFromBounds(Number(row.min_year), Number(row.max_year));
 }
 
 export async function listFitmentMakes(year: number): Promise<string[]> {
   await requireUser();
+  if (!Number.isFinite(year)) return [];
   const supabase = await createClient();
-  const makes = new Set<string>();
-  const pageSize = 1000;
-
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("fitment_vehicle")
-      .select("make")
-      .lte("year_start", year)
-      .gte("year_end", year)
-      .range(from, from + pageSize - 1);
-
-    if (error) throw error;
-    if (!data?.length) break;
-    for (const row of data) {
-      if (row.make?.trim()) makes.add(row.make);
-    }
-    if (data.length < pageSize) break;
-  }
-
-  return [...makes].sort((a, b) => a.localeCompare(b));
+  const { data, error } = await supabase.rpc("fitment_makes_for_year", { p_year: year });
+  if (error) throw error;
+  return rpcTextList(data);
 }
 
-export async function listFitmentModels(
-  year: number,
-  make: string
-): Promise<string[]> {
+export async function listFitmentModels(year: number, make: string): Promise<string[]> {
   await requireUser();
+  const trimmed = make.trim();
+  if (!Number.isFinite(year) || !trimmed) return [];
   const supabase = await createClient();
-  const models = new Set<string>();
-  const pageSize = 1000;
-
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("fitment_vehicle")
-      .select("model")
-      .ilike("make", make)
-      .lte("year_start", year)
-      .gte("year_end", year)
-      .range(from, from + pageSize - 1);
-
-    if (error) throw error;
-    if (!data?.length) break;
-    for (const row of data) {
-      if (row.model?.trim()) models.add(row.model);
-    }
-    if (data.length < pageSize) break;
-  }
-
-  return [...models].sort((a, b) => a.localeCompare(b));
+  const { data, error } = await supabase.rpc("fitment_models_for_year_make", {
+    p_year: year,
+    p_make: trimmed,
+  });
+  if (error) throw error;
+  return rpcTextList(data);
 }
 
 export async function getFitmentVehicle(
@@ -163,7 +127,9 @@ export async function getFitmentVehicle(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("fitment_vehicle")
-    .select("vehicle_id, make, model, year_start, year_end, category, spec_data, part_data")
+    .select(
+      "vehicle_id, make, model, year_start, year_end, category, spec_data, part_data"
+    )
     .ilike("make", make)
     .ilike("model", model);
 
@@ -228,9 +194,7 @@ export async function getFitmentPartsWithCatalog(
   if (skus.length > 0) {
     const { data: catalogRows, error } = await supabase
       .from("parts_canada_catalog")
-      .select(
-        "part_number, brand, description_en, msrp, dealer_price, qty_cal, qty_lon"
-      )
+      .select("part_number, brand, description_en, msrp, dealer_price, qty_cal, qty_lon")
       .in("part_number", skus.slice(0, 100));
 
     if (error) throw error;
@@ -367,7 +331,10 @@ export async function importFitmentRows(
 
     const vehicleRows = Array.from(deduped.values());
 
-    await admin.from("fitment_vehicle").delete().neq("vehicle_id", "00000000-0000-0000-0000-000000000000");
+    await admin
+      .from("fitment_vehicle")
+      .delete()
+      .neq("vehicle_id", "00000000-0000-0000-0000-000000000000");
 
     for (let i = 0; i < vehicleRows.length; i += BATCH) {
       const slice = vehicleRows.slice(i, i + BATCH);
@@ -383,6 +350,9 @@ export async function importFitmentRows(
         row_count: vehicleRows.length,
       })
       .eq("import_run_id", run.import_run_id);
+
+    // Keep every bike's service card in sync with the new catalogue.
+    await syncAllMotorcycleServiceInfoFromFitment(admin);
 
     return { row_count: vehicleRows.length };
   } catch (error) {

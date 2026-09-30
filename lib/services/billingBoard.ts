@@ -5,6 +5,11 @@ import type { BillingStage } from "@/lib/billing/stages";
 import { type BillingBucket, classifyBillingBucket } from "@/lib/billing/buckets";
 import { estimateTotalsWithHst } from "@/lib/pricing/hst";
 
+export type BillingBoardPayment = {
+  amount_cents: number;
+  received_at: string;
+};
+
 export type BillingBoardItem = {
   work_order_id: string;
   work_order_number: string;
@@ -20,6 +25,8 @@ export type BillingBoardItem = {
   bucket: BillingBucket;
   estimate_sent_at: string | null;
   invoice_published_at: string | null;
+  /** Succeeded V2 ledger payments (real received timestamps) when available. */
+  payments?: BillingBoardPayment[];
   customer_label: string;
   customer_phone: string | null;
   customer_email: string | null;
@@ -104,6 +111,31 @@ export async function listBillingBoardForLocation(
     }
   }
 
+  // Real payment timestamps from the V2 ledger (best effort — the table may
+  // not be migrated yet, and legacy fields remain the fallback).
+  const paymentsByWo = new Map<string, BillingBoardPayment[]>();
+  {
+    const woIds = (rows ?? []).map((row) => row.work_order_id as string);
+    if (woIds.length > 0) {
+      const { data: paymentRows, error: paymentsError } = await supabase
+        .from("payment")
+        .select("work_order_id, amount_cents, received_at, status")
+        .in("work_order_id", woIds)
+        .eq("status", "succeeded");
+      if (!paymentsError) {
+        for (const payment of paymentRows ?? []) {
+          const woId = payment.work_order_id as string;
+          const list = paymentsByWo.get(woId) ?? [];
+          list.push({
+            amount_cents: Number(payment.amount_cents ?? 0),
+            received_at: payment.received_at as string,
+          });
+          paymentsByWo.set(woId, list);
+        }
+      }
+    }
+  }
+
   const items: BillingBoardItem[] = [];
 
   for (const row of rows ?? []) {
@@ -177,6 +209,7 @@ export async function listBillingBoardForLocation(
       bucket,
       estimate_sent_at: row.estimate_sent_at,
       invoice_published_at: row.invoice_published_at,
+      payments: paymentsByWo.get(row.work_order_id),
       customer_label: customer
         ? `${customer.first_name} ${customer.last_name}`.trim()
         : "Customer",
@@ -220,7 +253,16 @@ export function buildBillingDeskStats(
       unpaid_total_cents += item.remaining_cents;
     }
 
-    if (item.billing_collected_cents > 0 && item.invoice_published_at) {
+    if (item.payments && item.payments.length > 0) {
+      // Real received timestamps from the payment ledger.
+      for (const payment of item.payments) {
+        const when = new Date(payment.received_at);
+        if (Number.isNaN(when.getTime()) || payment.amount_cents <= 0) continue;
+        if (when >= startOfWeek) collected_week_cents += payment.amount_cents;
+        if (when >= startOfDay) collected_today_cents += payment.amount_cents;
+      }
+    } else if (item.billing_collected_cents > 0 && item.invoice_published_at) {
+      // Legacy fallback: publish time approximates when money arrived.
       const when = new Date(item.invoice_published_at);
       if (!Number.isNaN(when.getTime())) {
         if (when >= startOfWeek) {

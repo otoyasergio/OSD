@@ -8,6 +8,12 @@ import {
   buildTimesheetCsv,
   buildShiftMonthCalendar,
   shiftHoursLabel,
+  paidPunchDurationMs,
+  splitRegularAndOtMs,
+  shouldNudgeMealBreak,
+  shouldWarnSupervisorWeeklyHours,
+  ONTARIO_OT_THRESHOLD_MS,
+  WEEKLY_HOURS_SUPERVISOR_WARNING_MS,
 } from "@/lib/services/timeClockShared";
 import {
   shopDateKey,
@@ -146,16 +152,97 @@ describe("summarizeWeek", () => {
     expect(ada.open_entry_ids).toEqual(["e2"]);
     // 4h closed + 1h open (19:00–20:00 UTC)
     expect(ada.total_ms).toBe(5 * 60 * 60 * 1000);
+    expect(ada.regular_ms).toBe(5 * 60 * 60 * 1000);
+    expect(ada.ot_ms).toBe(0);
     expect(formatHoursDecimal(ada.total_ms)).toBe("5.00");
 
     const bob = summaries.find((s) => s.user_id === "u2")!;
     expect(bob.total_ms).toBe(8 * 60 * 60 * 1000);
     expect(bob.open_entry_ids).toEqual([]);
   });
+
+  it("deducts unpaid breaks and splits OT after 44h", () => {
+    const range = getShopWeekRange("2026-07-12T18:00:00.000Z");
+    const summaries = summarizeWeek(
+      [
+        {
+          entry_id: "long",
+          user_id: "u1",
+          first_name: "Ada",
+          last_name: "Tech",
+          // Mon Jul 6 08:00–Fri Jul 10 18:00 Toronto would be complex; use one long UTC punch
+          clock_in_at: "2026-07-06T12:00:00.000Z",
+          clock_out_at: "2026-07-08T14:00:00.000Z", // 50h gross
+          breaks: [
+            {
+              entry_id: "long",
+              break_type: "meal",
+              break_start_at: "2026-07-06T16:00:00.000Z",
+              break_end_at: "2026-07-06T16:30:00.000Z",
+            },
+          ],
+        },
+      ],
+      range
+    );
+    const ada = summaries[0]!;
+    // 50h - 0.5h break = 49.5h paid
+    expect(ada.total_ms).toBe(49.5 * 60 * 60 * 1000);
+    expect(ada.regular_ms).toBe(44 * 60 * 60 * 1000);
+    expect(ada.ot_ms).toBe(5.5 * 60 * 60 * 1000);
+    expect(ada.unpaid_break_ms).toBe(30 * 60 * 1000);
+  });
+});
+
+describe("paid hours helpers", () => {
+  it("computes paid duration minus breaks", () => {
+    const breaks = [
+      {
+        entry_id: "e1",
+        break_start_at: "2026-07-12T16:00:00.000Z",
+        break_end_at: "2026-07-12T16:30:00.000Z",
+        break_type: "meal",
+      },
+    ];
+    const paid = paidPunchDurationMs(
+      "2026-07-12T14:00:00.000Z",
+      "2026-07-12T20:00:00.000Z",
+      breaks,
+      "e1"
+    );
+    expect(paid).toBe(5.5 * 60 * 60 * 1000);
+    expect(splitRegularAndOtMs(ONTARIO_OT_THRESHOLD_MS + 2 * 3600_000)).toEqual({
+      regular_ms: ONTARIO_OT_THRESHOLD_MS,
+      ot_ms: 2 * 3600_000,
+    });
+    expect(
+      shouldNudgeMealBreak(
+        "2026-07-12T10:00:00.000Z",
+        [],
+        "e1",
+        new Date("2026-07-12T15:30:00.000Z").getTime()
+      )
+    ).toBe(true);
+    expect(
+      shouldNudgeMealBreak(
+        "2026-07-12T10:00:00.000Z",
+        [
+          {
+            entry_id: "e1",
+            break_type: "meal",
+            break_start_at: "2026-07-12T12:00:00.000Z",
+            break_end_at: "2026-07-12T12:30:00.000Z",
+          },
+        ],
+        "e1",
+        new Date("2026-07-12T16:00:00.000Z").getTime()
+      )
+    ).toBe(false);
+  });
 });
 
 describe("buildTimesheetCsv", () => {
-  it("exports payroll-friendly CSV rows", () => {
+  it("exports payroll-friendly CSV rows with paid hours and approval", () => {
     const csv = buildTimesheetCsv(
       [
         {
@@ -166,16 +253,28 @@ describe("buildTimesheetCsv", () => {
           clock_in_at: "2026-07-12T14:00:00.000Z",
           clock_out_at: "2026-07-12T18:30:00.000Z",
           notes: 'Shift "A"',
+          week_approval: "submitted",
+          breaks: [
+            {
+              entry_id: "e1",
+              break_start_at: "2026-07-12T16:00:00.000Z",
+              break_end_at: "2026-07-12T16:30:00.000Z",
+            },
+          ],
         },
       ],
       new Date("2026-07-12T20:00:00.000Z").getTime()
     );
 
     const lines = csv.trim().split("\n");
-    expect(lines[0]).toBe("employee,user_id,date,clock_in,clock_out,hours,notes,status");
+    expect(lines[0]).toBe(
+      "employee,user_id,date,clock_in,clock_out,gross_hours,unpaid_break_minutes,paid_hours,notes,status,week_approval"
+    );
     expect(lines[1]).toContain("Ada Tech");
     expect(lines[1]).toContain("4.50");
+    expect(lines[1]).toContain("4.00");
     expect(lines[1]).toContain("closed");
+    expect(lines[1]).toContain("submitted");
     expect(lines[1]).toContain('"Shift ""A"""');
   });
 });
@@ -285,5 +384,17 @@ describe("buildShiftMonthCalendar", () => {
     expect(aug1.ms).toBe(60 * 60 * 1000);
     expect(aug1.entryCount).toBe(1);
     expect(calendar.total_ms).toBe(60 * 60 * 1000);
+  });
+});
+
+describe("shouldWarnSupervisorWeeklyHours", () => {
+  it("warns at 37.5h and below OT threshold", () => {
+    expect(shouldWarnSupervisorWeeklyHours(WEEKLY_HOURS_SUPERVISOR_WARNING_MS)).toBe(
+      true
+    );
+    expect(shouldWarnSupervisorWeeklyHours(WEEKLY_HOURS_SUPERVISOR_WARNING_MS - 1)).toBe(
+      false
+    );
+    expect(shouldWarnSupervisorWeeklyHours(ONTARIO_OT_THRESHOLD_MS)).toBe(false);
   });
 });

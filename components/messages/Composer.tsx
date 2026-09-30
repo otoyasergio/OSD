@@ -6,6 +6,8 @@ import {
   uploadChatImageAction,
   uploadVoiceNoteAction,
 } from "@/app/(app)/messages/actions";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 type Props = {
   conversationId: string;
@@ -44,17 +46,22 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
     });
   }
 
-  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.currentTarget;
     setError(null);
-    const formData = new FormData();
-    formData.set("file", file);
-    startTransition(async () => {
-      const result = await uploadChatImageAction(conversationId, formData);
-      if (result.error) setError(result.error);
-    });
+    try {
+      const files = await readPickedPhotoFiles(input);
+      const file = files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.set("file", file);
+      startTransition(async () => {
+        const result = await uploadChatImageAction(conversationId, formData);
+        if (result.error) setError(result.error);
+      });
+    } catch {
+      setError(UNREADABLE_PHOTO_MESSAGE);
+    }
   }
 
   async function startRecording() {

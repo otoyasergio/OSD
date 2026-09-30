@@ -5,7 +5,7 @@ import { canUseMessenger } from "@/lib/permissions";
 import { listDirectory, splitDirectorySections } from "@/lib/services/directory";
 import { GroupComposer } from "@/components/messages/GroupComposer";
 import { DirectoryList } from "@/components/messages/DirectoryList";
-import { CallOverlay } from "@/components/messages/CallOverlay";
+import { listOnlineStaffIds } from "@/lib/services/shopPhone";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +19,7 @@ export default async function NewMessagePage() {
     staff,
     user.active_location_id
   );
+  const onlineUserIds = await listOnlineStaffIds();
 
   return (
     <div className="page-stack mx-auto max-w-2xl">
@@ -38,7 +39,11 @@ export default async function NewMessagePage() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
           Direct message
         </h2>
-        <DirectoryList atLocation={atLocation} allCompany={allCompany} />
+        <DirectoryList
+          atLocation={atLocation}
+          allCompany={allCompany}
+          onlineUserIds={onlineUserIds}
+        />
       </section>
 
       <section className="border-t border-[var(--border)] pt-6">
@@ -47,8 +52,6 @@ export default async function NewMessagePage() {
         </h2>
         <GroupComposer atLocation={atLocation} allCompany={allCompany} />
       </section>
-
-      <CallOverlay currentUserId={user.user_id} />
     </div>
   );
 }

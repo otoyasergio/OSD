@@ -5,6 +5,7 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canClearAdminFlag, canCreateAdminFlag, isFloorTech } from "@/lib/permissions";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 
 export type AdminFlag = {
@@ -71,9 +72,7 @@ export async function createAdminFlag(input: {
     .maybeSingle();
   if (woError) throw woError;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
@@ -113,6 +112,9 @@ export async function createAdminFlag(input: {
         })
         .eq("job_id", input.jobId);
       if (jobError) throw jobError;
+
+      const { endOpenJobTime } = await import("@/lib/services/jobTimeClock");
+      await endOpenJobTime({ jobId: input.jobId }).catch(() => null);
 
       await addTimelineEvent(supabase, {
         work_order_id: input.workOrderId,
@@ -173,9 +175,7 @@ export async function clearAdminFlag(adminFlagId: string): Promise<void> {
     .maybeSingle();
   if (woError) throw woError;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
 
   const now = new Date().toISOString();
   const { error } = await supabase

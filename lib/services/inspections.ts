@@ -1,4 +1,5 @@
 import { requireUser, type AppUser } from "@/lib/auth/session";
+import { resolveReadSubject, type ReadView } from "@/lib/auth/role-preview-shared";
 import { createClient } from "@/lib/database/supabase-server";
 import type { DbClient, InspectionResultStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
@@ -9,7 +10,11 @@ import {
   canOverrideWorkOrderStatus,
   canViewClients,
 } from "@/lib/permissions";
-import { assertViewerCanAccessWorkOrder } from "@/lib/workOrders/assignmentVisibility";
+import {
+  assertViewerCanAccessWorkOrder,
+  assertViewerCanAccessWorkOrderLocation,
+  canViewerAccessWorkOrderLocation,
+} from "@/lib/workOrders/assignmentVisibility";
 import { saveInspectionResultSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import {
@@ -19,6 +24,7 @@ import {
   type InspectionPhotoRequirement,
 } from "@/lib/services/inspectionGate";
 import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
+import { signStoragePaths } from "@/lib/photos/signedUrls";
 
 export type InspectionResultRow = {
   inspection_result_id: string;
@@ -51,6 +57,9 @@ export type InspectionDetail = {
   started_at: string | null;
   completed_at: string | null;
   completed_by_user_id: string | null;
+  completed_by_name: string | null;
+  signature_storage_path: string | null;
+  signature_signed_url: string | null;
   location_id: string;
   work_order_number: string;
   work_order_status: string;
@@ -64,6 +73,7 @@ export type InspectionDetail = {
     category: string;
     inspection_result_id: string | null;
     signed_url: string | null;
+    thumb_url: string | null;
     notes: string | null;
   }>;
 };
@@ -107,9 +117,7 @@ async function requireMutableInspectionAccess(
 
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
@@ -191,9 +199,14 @@ async function ensureInspectionSeeded(
 }
 
 export async function getInspectionForWorkOrder(
-  workOrderId: string
+  workOrderId: string,
+  options?: {
+    /** Trusted presentation principal (owner "view as") — read shaping only. */
+    view?: ReadView;
+  }
 ): Promise<InspectionDetail | null> {
   const user = await requireUser();
+  const subject = resolveReadSubject(user, options?.view);
   const supabase = await createClient();
 
   const { data: workOrder, error: woError } = await supabase
@@ -237,8 +250,8 @@ export async function getInspectionForWorkOrder(
       jobs:
         (workOrder.job as Array<{ assigned_technician_id: string | null }> | null) ?? [],
     },
-    user.role,
-    user.user_id
+    subject.role,
+    subject.userId
   );
 
   const firstLoad = await supabase
@@ -250,6 +263,7 @@ export async function getInspectionForWorkOrder(
       started_at,
       completed_at,
       completed_by_user_id,
+      signature_storage_path,
       inspection_result (
         ${RESULT_COLUMNS}
       )
@@ -273,6 +287,7 @@ export async function getInspectionForWorkOrder(
       started_at,
       completed_at,
       completed_by_user_id,
+      signature_storage_path,
       inspection_result (
         ${RESULT_COLUMNS}
       )
@@ -310,7 +325,9 @@ export async function getInspectionForWorkOrder(
 
   const { data: photoRows, error: photoError } = await supabase
     .from("intake_photo")
-    .select("photo_id, category, inspection_result_id, notes, storage_path, photo_url")
+    .select(
+      "photo_id, category, inspection_result_id, notes, storage_path, thumb_storage_path, photo_url"
+    )
     .eq("work_order_id", workOrderId)
     .in("category", [
       "inspection_tires",
@@ -327,31 +344,57 @@ export async function getInspectionForWorkOrder(
     inspection_result_id: string | null;
     notes: string | null;
     storage_path: string;
+    thumb_storage_path: string | null;
     photo_url: string | null;
   }>;
 
-  const signedByPath = new Map<string, string | null>();
-  if (rawPhotos.length > 0) {
-    const { data: signed } = await supabase.storage
-      .from("intake-photos")
-      .createSignedUrls(
-        rawPhotos.map((p) => p.storage_path),
-        60 * 60
-      );
-    for (const row of signed ?? []) {
-      if (row.path) {
-        signedByPath.set(row.path, row.signedUrl ?? null);
-      }
+  const signedByPath =
+    rawPhotos.length === 0
+      ? new Map<string, string | null>()
+      : await signStoragePaths(
+          supabase,
+          rawPhotos.flatMap((p) =>
+            p.thumb_storage_path
+              ? [p.storage_path, p.thumb_storage_path]
+              : [p.storage_path]
+          )
+        );
+
+  const photos = rawPhotos.map((p) => {
+    const signed_url = signedByPath.get(p.storage_path) ?? p.photo_url;
+    return {
+      photo_id: p.photo_id,
+      category: p.category,
+      inspection_result_id: p.inspection_result_id,
+      notes: p.notes,
+      signed_url,
+      thumb_url:
+        (p.thumb_storage_path ? signedByPath.get(p.thumb_storage_path) : null) ??
+        signed_url,
+    };
+  });
+
+  const signaturePath =
+    (inspection as { signature_storage_path?: string | null }).signature_storage_path ??
+    null;
+  const { createInspectionSignatureSignedUrl } =
+    await import("@/lib/services/inspectionSignatures");
+  const signatureSignedUrl = await createInspectionSignatureSignedUrl(
+    supabase,
+    signaturePath
+  );
+
+  let completedByName: string | null = null;
+  if (inspection.completed_by_user_id) {
+    const { data: completer } = await supabase
+      .from("app_user")
+      .select("first_name, last_name")
+      .eq("user_id", inspection.completed_by_user_id)
+      .maybeSingle();
+    if (completer) {
+      completedByName = `${completer.first_name} ${completer.last_name}`;
     }
   }
-
-  const photos = rawPhotos.map((p) => ({
-    photo_id: p.photo_id,
-    category: p.category,
-    inspection_result_id: p.inspection_result_id,
-    notes: p.notes,
-    signed_url: signedByPath.get(p.storage_path) ?? p.photo_url,
-  }));
 
   return {
     inspection_id: inspection.inspection_id,
@@ -359,13 +402,21 @@ export async function getInspectionForWorkOrder(
     started_at: inspection.started_at,
     completed_at: inspection.completed_at,
     completed_by_user_id: inspection.completed_by_user_id,
+    completed_by_name: completedByName,
+    signature_storage_path: signaturePath,
+    signature_signed_url: signatureSignedUrl,
     location_id: workOrder.location_id,
     work_order_number: workOrder.work_order_number,
     work_order_status: workOrder.status,
-    is_foreign_location: workOrder.location_id !== user.active_location_id,
+    is_foreign_location: !canViewerAccessWorkOrderLocation({
+      role: user.role,
+      workOrderLocationId: workOrder.location_id,
+      activeLocationId: user.active_location_id,
+      membershipLocationIds: user.location_ids,
+    }),
     header: {
       customer_name:
-        canViewClients(user.role) && customer
+        canViewClients(subject.role) && customer
           ? `${customer.first_name} ${customer.last_name}`
           : null,
       motorcycle_label: motorcycle
@@ -427,9 +478,7 @@ export async function saveInspectionResult(
   const inspection = row.inspection;
   const workOrder = inspection.work_order;
 
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
@@ -513,6 +562,21 @@ export async function saveInspectionResult(
       row.status === "future_attention" ||
       row.status === "immediate_attention");
 
+  // Tech flags a finding → client recommendation appears immediately (and is
+  // withdrawn again if the flag is cleared before anyone acts on it).
+  if (significant) {
+    const { syncRecommendationForInspectionResult } =
+      await import("@/lib/services/recommendations");
+    await syncRecommendationForInspectionResult({
+      work_order_id: workOrder.work_order_id,
+      inspection_result_id: inspectionResultId,
+      status: result.status,
+      item_name_snapshot: result.item_name_snapshot,
+      category_snapshot: result.category_snapshot,
+      notes: result.notes,
+    });
+  }
+
   if (significant || statusChanged) {
     await addTimelineEvent(supabase, {
       work_order_id: workOrder.work_order_id,
@@ -548,10 +612,16 @@ export async function saveInspectionResult(
   return result;
 }
 
+export type CompletedInspection = {
+  inspectionId: string;
+  completedAt: string;
+  completedByUserId: string;
+};
+
 export async function completeInspection(
   workOrderId: string,
-  options: { force?: boolean } = {}
-): Promise<void> {
+  options: { force?: boolean; signatureDataUrl?: string | null } = {}
+): Promise<CompletedInspection> {
   const user = await requireUser();
   if (!canCompleteInspection(user.role)) throw new Error("FORBIDDEN");
 
@@ -571,7 +641,8 @@ export async function completeInspection(
         inspection_result_id,
         status,
         category_snapshot,
-        item_name_snapshot
+        item_name_snapshot,
+        notes
       )
     `
     )
@@ -588,6 +659,7 @@ export async function completeInspection(
       status: string | null;
       category_snapshot: string;
       item_name_snapshot: string;
+      notes: string | null;
     }> | null) ?? [];
   const incompleteCount = countIncompleteInspectionResults(results);
 
@@ -617,18 +689,31 @@ export async function completeInspection(
     }>
   );
 
+  const { uploadInspectionSignature, removeInspectionSignature } =
+    await import("@/lib/services/inspectionSignatures");
+  const signaturePath = await uploadInspectionSignature(supabase, {
+    locationId,
+    workOrderId,
+    kind: "arrival",
+    signatureDataUrl: options.signatureDataUrl ?? "",
+  });
+
   const now = new Date().toISOString();
   const { error: updateError } = await supabase
     .from("inspection")
     .update({
       completed_at: now,
       completed_by_user_id: user.user_id,
+      signature_storage_path: signaturePath,
       updated_at: now,
       ...(inspection.started_at ? {} : { started_at: now }),
     })
     .eq("inspection_id", inspection.inspection_id);
 
-  if (updateError) throw updateError;
+  if (updateError) {
+    await removeInspectionSignature(supabase, signaturePath);
+    throw updateError;
+  }
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,
@@ -638,11 +723,12 @@ export async function completeInspection(
     entity_id: inspection.inspection_id,
     description:
       incompleteCount > 0
-        ? `Inspection completed with ${incompleteCount} incomplete item(s)`
-        : "Inspection completed",
+        ? `Arrival inspection completed with ${incompleteCount} incomplete item(s)`
+        : "Arrival inspection completed",
     new_value: {
       incomplete_count: incompleteCount,
       forced: Boolean(options.force && incompleteCount > 0),
+      signature_storage_path: signaturePath,
     },
   });
 
@@ -652,12 +738,38 @@ export async function completeInspection(
     action: "inspection_completed",
     entity_type: "inspection",
     entity_id: inspection.inspection_id,
-    description: `Inspection completed on ${workOrderNumber}`,
+    description: `Arrival inspection completed on ${workOrderNumber}`,
     new_value: {
       incomplete_count: incompleteCount,
       forced: Boolean(options.force && incompleteCount > 0),
+      signature_storage_path: signaturePath,
     },
   });
 
+  // Yellow / red findings become recommendations immediately on complete.
+  const { ensureRecommendationsForAttentionFindings } =
+    await import("@/lib/services/recommendations");
+  const recommendationCount = await ensureRecommendationsForAttentionFindings(
+    workOrderId,
+    results
+  );
+
+  if (recommendationCount > 0) {
+    await addTimelineEvent(supabase, {
+      work_order_id: workOrderId,
+      user_id: user.user_id,
+      event_type: TimelineEventType.RECOMMENDATION_CREATED,
+      entity_type: "inspection",
+      entity_id: inspection.inspection_id,
+      description: `${recommendationCount} recommendation(s) created from inspection findings`,
+      new_value: { recommendation_count: recommendationCount },
+    });
+  }
+
   await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+  return {
+    inspectionId: inspection.inspection_id,
+    completedAt: now,
+    completedByUserId: user.user_id,
+  };
 }

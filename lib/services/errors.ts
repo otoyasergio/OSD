@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import { diagnosticsErrorMessageForCode } from "@/lib/diagnostics/errors";
 
 const MESSAGES: Record<string, string> = {
   UNAUTHORIZED: "Your session expired. Sign in again.",
@@ -16,23 +17,63 @@ const MESSAGES: Record<string, string> = {
   TECHNICIAN_NOT_FOUND: "That technician is not available at this location.",
   WORK_ORDER_NOT_FOUND: "That work order no longer exists.",
   WORK_ORDER_NUMBER_FAILED: "Could not mint a work order number. Try again.",
+  WORK_ORDER_NUMBER_REQUIRED: "Enter the Wix work order number.",
+  WORK_ORDER_NUMBER_TAKEN:
+    "That Wix work order number is already used at this location. Check the number and try again.",
   JOB_NOT_FOUND: "That job no longer exists.",
   FOREIGN_LOCATION:
     "This work order belongs to another location. Switch location to make changes.",
   WORK_ORDER_LOCKED: "This work order is completed or cancelled and cannot be changed.",
   JOB_NOT_READY: "That job is not ready to pull yet.",
+  JOB_NOT_PULLABLE: "That job is not ready to pull yet.",
+  JOB_NOT_AUTHORIZED:
+    "Waiting on client approval — front desk will send it back to Perform work when approved.",
+  JOB_AWAITING_CUSTOMER_APPROVAL:
+    "Waiting on client approval — front desk will send it back to Perform work when approved.",
+  JOB_WAITING_FOR_PARTS:
+    "Parts are not here yet — this bike stays parked until parts arrive.",
+  JOB_ASSIGNED_TO_OTHER_TECH: "You can only start or complete jobs assigned to you.",
+  JOB_NOT_IN_PROGRESS: "Only a bike on the bench can be completed.",
+  WORK_ORDER_NOT_WORKABLE:
+    "This work order is on hold or closed and cannot take floor work right now.",
+  JOB_CHECKLIST_INCOMPLETE: "Check all checklist items before completing.",
+  JOB_PARTS_NOT_INSTALLED: "Install or clear all parts before completing.",
+  JOB_PROOF_REQUIRED: "Add an after photo or skip with a reason.",
+  QC_CANDIDATE_WORKED_ON_VISIT:
+    "That technician worked on this bike — pick someone who didn't touch it.",
+  QC_CANNOT_CHECK_OWN_WORK: "You cannot quality-check work you performed.",
+  SAFETY_REQUIRES_QC_PASS: "Pass the quality check before running the safety check.",
+  SAFETY_REQUIRED_BEFORE_PICKUP:
+    "Head tech final inspection is required before the bike can leave.",
+  INSPECTION_REQUIRED_BEFORE_PICKUP:
+    "Complete the arrival inspection report before the bike can leave.",
+  INVALID_PARK_REASON: "Choose a valid park reason.",
+  INVALID_WAIT_OWNER: "Choose a valid wait owner.",
+  INVALID_OUTCOME: "Choose pass or fail.",
+  ACTOR_NOT_FOUND: "Your staff account no longer exists. Sign in again.",
+  ACTOR_INACTIVE: "Your staff account is inactive. Ask an owner to reactivate it.",
+  NO_CONFIRMED_ESTIMATE: "Confirm the estimate before issuing an invoice.",
+  BILLING_NOT_PAID:
+    "Collect payment before completing, or have an owner/manager override with a reason.",
+  OVERRIDE_REASON_REQUIRED: "Enter a reason to override this gate.",
   JOB_NOT_ASSIGNED: "Assign a technician before completing this job.",
   JOB_NOT_ASSIGNED_TO_YOU: "You can only start or complete jobs assigned to you.",
   JOB_ALREADY_ASSIGNED: "That job is already assigned.",
-  OTHER_JOB_IN_PROGRESS: "Finish or flag your current job before starting another.",
+  OTHER_JOB_IN_PROGRESS: "Park or finish the bike on your bench before starting another.",
+  JOB_NOT_ON_BENCH: "Only a bike on the bench can be parked.",
+  SWAP_SAME_JOB: "Pick a different bike to swap onto.",
+  PROOF_SKIP_REASON_REQUIRED: "Choose a reason to skip the after photo.",
   INVALID_STATUS: "This work order is not in the right status for that action.",
   CHECKLIST_REQUIRED: "Complete the standard work checklist first.",
   CHECKLIST_INCOMPLETE: "Check all checklist items before completing.",
   PARTS_NOT_INSTALLED: "Install or clear all parts before completing.",
-  PROOF_REQUIRED: "Add an after photo or a proof exception note.",
+  PROOF_REQUIRED: "Add an after photo or skip with a reason.",
   QC_NOT_ASSIGNED_TO_YOU: "This quality check is assigned to another technician.",
   CANNOT_QC_OWN_WORK: "You cannot quality-check work you performed.",
   QC_FAIL_REASON_REQUIRED: "Enter a reason when failing quality check.",
+  QC_ASSIGNEE_REQUIRED: "Choose who should check your work.",
+  QC_ASSIGNEE_NOT_AVAILABLE:
+    "That technician is not clocked in or available for peer QC.",
   INVALID_FLAG_REASON: "Choose a valid flag reason.",
   ADMIN_FLAG_NOT_FOUND: "That admin flag no longer exists.",
   ADMIN_FLAG_ALREADY_CLEARED: "That admin flag was already cleared.",
@@ -51,6 +92,8 @@ const MESSAGES: Record<string, string> = {
   INSPECTION_PHOTOS_REQUIRED:
     "Add required inspection photos (tires, brakes, forks, and any items marked needing work) before completing the report.",
   RECOMMENDATION_NOT_FOUND: "That recommendation no longer exists.",
+  RECOMMENDATION_DECLINED:
+    "That recommendation was declined and can’t be sent to the floor.",
   RECOMMENDATION_ALREADY_CONVERTED:
     "That recommendation has already been converted to a job.",
   PART_NOT_FOUND: "That part no longer exists.",
@@ -81,8 +124,9 @@ const MESSAGES: Record<string, string> = {
     "The work order was created, but some intake photos failed to upload. Finish the missing photos below.",
   NOTE_REQUIRED: "Enter a note before saving.",
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
+  NO_JOBS_TO_ASSIGN: "This work order has no active jobs to assign. Add a job first.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
-  QC_REQUIRED: "Complete the quality check before marking ready for pickup.",
+  QC_REQUIRED: "Complete the quality check before the bike can leave.",
   SAFETY_FAIL_RECOMMENDATIONS_REQUIRED:
     "Add at least one recommendation when failing safety.",
   NOT_READY_FOR_PICKUP:
@@ -109,6 +153,7 @@ const MESSAGES: Record<string, string> = {
   SIGNATURE_INVALID: "Could not read the signature image.",
   SIGNATURE_TOO_LARGE: "Signature image is too large.",
   SIGNATURE_UPLOAD_FAILED: "Could not save the signature. Try again.",
+  SIGNATURE_REQUIRED: "Draw your signature before submitting.",
   DOCUMENT_TITLE_REQUIRED: "Enter a title for this document.",
   DOCUMENT_REQUIRED: "Choose a file to upload.",
   DOCUMENT_TOO_LARGE: "Documents must be 10 MB or smaller.",
@@ -151,12 +196,90 @@ const MESSAGES: Record<string, string> = {
   FITMENT_IMPORT_FAILED: "Fitment import failed.",
   ALREADY_CLOCKED_IN: "That person already has an open punch. Clock them out first.",
   NOT_CLOCKED_IN: "Not clocked in.",
+  ALREADY_ON_BREAK: "You are already on a break.",
+  NOT_ON_BREAK: "You are not on a break.",
+  TIMESHEET_WEEK_LOCKED:
+    "That timesheet week is approved. Reopen it before editing punches.",
+  INVALID_WEEK: "Choose a valid week.",
+  NOT_CLOCKED_IN_FOR_JOB: "Clock in for your shift before starting job time.",
+  JOB_TIME_ALREADY_OPEN: "Pause or finish your current job timer first.",
+  JOB_TIME_NOT_OPEN: "No open job timer to pause.",
+  JOB_TIME_WRONG_JOB: "That job timer is not yours or already closed.",
+  OPENED_AT_UNAVAILABLE:
+    "Open timer is not available until the database migration is applied.",
   INVALID_CLOCK_IN: "Enter a valid clock-in date and time.",
   INVALID_CLOCK_OUT: "Enter a valid clock-out date and time.",
   CLOCK_OUT_BEFORE_IN: "Clock-out must be after clock-in.",
   CORRECTION_REQUIRES_CLOCK_OUT: "Missed punches need both clock-in and clock-out times.",
   TIME_CLOCK_ENTRY_NOT_FOUND: "That time clock entry no longer exists.",
+  INVALID_BREAK_START: "Enter a valid break start date and time.",
+  INVALID_BREAK_END: "Enter a valid break end date and time.",
+  BREAK_END_BEFORE_START: "Break end must be after break start.",
+  BREAK_OUTSIDE_PUNCH: "Break must fall within the punch clock-in and clock-out.",
+  BREAK_NOT_FOUND: "That break slot no longer exists.",
   RATE_LIMITED: "Too many requests. Please wait a moment and try again.",
+  ROLE_PREVIEW_MUTATION_BLOCKED:
+    "Changes are disabled while role preview is active. Exit preview and try again.",
+  ASK_OTOMOTO_THREAD_NOT_FOUND: "That Ask OTOMOTO conversation is no longer available.",
+  ASK_OTOMOTO_THREAD_SCOPE_MISMATCH:
+    "That Ask OTOMOTO conversation does not match this work order, job, or mode.",
+  ASK_OTOMOTO_TRIGGER_SCOPE_MISMATCH:
+    "The existing automatic Ask OTOMOTO conversation does not match this work.",
+  ASK_OTOMOTO_THREAD_ARCHIVED:
+    "That Ask OTOMOTO conversation is archived and cannot be changed.",
+  ASK_OTOMOTO_THREAD_BUSY:
+    "Ask OTOMOTO is already generating a response for this conversation.",
+  ASK_OTOMOTO_LIFECYCLE_FAILED:
+    "Ask OTOMOTO could not complete this request safely. Try again.",
+  ASK_OTOMOTO_REQUEST_FAILED:
+    "Ask OTOMOTO could not complete this request safely. Try again.",
+  ASK_OTOMOTO_DIAGNOSTICS_MISCONFIGURED:
+    "Ask OTOMOTO storage is not configured on this server.",
+  ASK_OTOMOTO_TRIGGER_NOT_FOUND:
+    "That completed inspection or job does not belong to this work order.",
+  ASK_OTOMOTO_TURN_NOT_FOUND: "That Ask OTOMOTO turn is no longer available.",
+  ASK_OTOMOTO_RETRY_NOT_FOUND: "There is no failed Ask OTOMOTO response to retry.",
+  ASK_OTOMOTO_RECOVERY_NOT_FOUND:
+    "That automatic Ask OTOMOTO review is no longer available. Refresh and try again.",
+  ASK_OTOMOTO_RECOVERY_NOT_READY:
+    "That automatic Ask OTOMOTO review is not ready yet. Refresh and try again.",
+  ASK_OTOMOTO_TRIGGER_CREATOR_INACTIVE:
+    "The staff member who triggered this Ask OTOMOTO review is no longer active at this location.",
+  ASK_OTOMOTO_NOTE_SOURCE_NOT_FOUND: "That Ask OTOMOTO response is no longer available.",
+  ASK_OTOMOTO_NOTE_SOURCE_NOT_ASSISTANT:
+    "Only an assistant response can be promoted to a technician note.",
+  ASK_OTOMOTO_NOTE_SOURCE_NOT_READY:
+    "Only a completed Ask OTOMOTO response can be promoted.",
+  ASK_OTOMOTO_NOTE_SOURCE_NOT_TECHNICAL:
+    "Advisor and intake drafts cannot be promoted as technician evidence.",
+  ASK_OTOMOTO_NOTE_JOB_MISMATCH:
+    "The reviewed note must stay with the assistant response's job.",
+  ASK_OTOMOTO_NOTE_ALREADY_PROMOTED:
+    "That Ask OTOMOTO response was already promoted to a technician note.",
+  ASK_OTOMOTO_PARENT_REQUIRES_ASSISTANT:
+    "Ask OTOMOTO could not attach this response to its request.",
+  ASK_OTOMOTO_PARENT_USER_INVALID: "The parent Ask OTOMOTO request is no longer valid.",
+  ASK_OTOMOTO_PARENT_USER_IMMUTABLE:
+    "An Ask OTOMOTO response cannot be moved to another request.",
+  ASK_OTOMOTO_NOTE_TYPE_NOT_ALLOWED:
+    "Choose a non-gating technician note type for this Ask OTOMOTO finding.",
+  ASK_OTOMOTO_THREAD_NOT_WRITABLE:
+    "That Ask OTOMOTO conversation cannot accept a request right now.",
+  ASK_OTOMOTO_COMPLETE_CONFLICT:
+    "This Ask OTOMOTO request was already completed or retried.",
+  ASK_OTOMOTO_SAFE_ERROR_INVALID:
+    "Ask OTOMOTO could not record the request failure safely.",
+  ASK_OTOMOTO_FAIL_CONFLICT:
+    "This Ask OTOMOTO request changed before the failure could be recorded.",
+  DIAGNOSTICS_IMAGE_SELECTION_INVALID:
+    "The selected Ask OTOMOTO photos could not be read. Select them again.",
+  INVALID_PIN: "Enter a valid 4-digit PIN.",
+  PIN_LOCKED: "Too many incorrect PIN attempts. Wait 60 seconds and try again.",
+  PIN_NOT_SET: "This person does not have a time clock PIN yet.",
+  PIN_ALREADY_IN_USE: "That PIN is already assigned to another active staff member.",
+  STAFF_NOT_FOUND: "That staff member is not available for the time clock.",
+  DOCUMENT_CATEGORY_INVALID: "Choose a valid document category.",
+  NOTE_NOT_FOUND: "That note no longer exists.",
   INVALID_INITIALS: "Could not read initials. Refresh and try again.",
   CONVERSATION_NOT_FOUND: "That conversation no longer exists.",
   NOT_A_PARTICIPANT: "You're not part of this conversation.",
@@ -170,6 +293,14 @@ const MESSAGES: Record<string, string> = {
   ATTACHMENT_UPLOAD_FAILED: "Could not upload the attachment. Try again.",
   TWILIO_VIDEO_NOT_CONFIGURED:
     "Video calling is not configured. Add TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET.",
+  TWILIO_VOICE_NOT_CONFIGURED:
+    "Shop phone is not configured. Add TWILIO_TWIML_APP_SID plus the Twilio API key pair.",
+  USE_SHOP_VOICE: "Staff audio uses the shop phone, not a video room.",
+  SHOP_PHONE_NUMBER_MISSING:
+    "This location does not have a shop phone number yet. Set it in Location settings.",
+  INVALID_VOICE_E164:
+    "Shop phone number must be a valid E.164 number (e.g. +14165551212).",
+  PHONE_CALL_NOT_FOUND: "That call no longer exists.",
   CALL_NOT_FOUND: "That call no longer exists.",
   CALL_ALREADY_ENDED: "That call has already ended.",
   PROFILE_PHOTO_REQUIRED: "Choose a profile photo to upload.",
@@ -192,8 +323,28 @@ export function toFormErrorMessage(error: unknown): string {
   }
 
   if (error instanceof Error) {
-    return MESSAGES[error.message] ?? error.message;
+    return (
+      diagnosticsErrorMessageForCode(error.message) ??
+      MESSAGES[error.message] ??
+      error.message
+    );
   }
 
   return "Something went wrong. Please try again.";
+}
+
+/**
+ * Workflow V2 SECURITY DEFINER commands signal domain errors with
+ * `RAISE EXCEPTION 'CODE_LIKE_THIS'`. PostgREST surfaces that text as the
+ * error message (sometimes with extra context around it) — extract the code
+ * so it maps through MESSAGES exactly like legacy service errors.
+ */
+export function toRpcErrorCode(
+  error: { message?: string | null } | null | undefined
+): string {
+  const raw = (error?.message ?? "").trim();
+  if (!raw) return "RPC_FAILED";
+  if (/^[A-Z][A-Z0-9_]*$/.test(raw)) return raw;
+  const match = raw.match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/);
+  return match ? match[0] : raw;
 }

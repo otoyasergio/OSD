@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { createAdminClient } from "@/lib/database/supabase-admin";
@@ -5,6 +6,11 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canRecordCustomerApproval } from "@/lib/permissions";
+import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
+import {
+  isUndefinedColumnError,
+  isUndefinedTableError,
+} from "@/lib/database/schemaCompat";
 import {
   type BillingAmountMode,
   type BillingStage,
@@ -26,6 +32,11 @@ import {
   squareInvoiceDisplayNumber,
   upsertSquareCustomer,
 } from "@/lib/square/client";
+import {
+  buildLegacyPaymentStatusUpdates,
+  squareInvoiceTransactionId,
+  v2PaymentStatusForMapped,
+} from "@/lib/square/webhookDecisions";
 import { createPortalToken } from "@/lib/services/portal";
 import { sendWorkOrderMessage } from "@/lib/services/communications";
 
@@ -74,6 +85,53 @@ function toSquareMoney(amountDollars: number) {
     amount: BigInt(dollarsToCents(amountDollars)),
     currency: "CAD",
   };
+}
+
+/** Short stable content hash so retries of identical documents share a Square idempotency key. */
+function billingContentHash(content: unknown): string {
+  return createHash("sha256")
+    .update(JSON.stringify(content), "utf8")
+    .digest("hex")
+    .slice(0, 16);
+}
+
+type ExternalBillingDocumentKind = "draft_invoice" | "invoice" | "deposit_invoice";
+
+/**
+ * Record every Square document we create in external_billing_document so a
+ * replaced draft/invoice still has a durable trail. Additive: never breaks
+ * billing when the V2 table has not been migrated yet.
+ */
+async function recordExternalBillingDocument(input: {
+  workOrderId: string;
+  kind: ExternalBillingDocumentKind;
+  externalId: string | null | undefined;
+  externalStatus?: string | null;
+  externalVersion?: number | null;
+  publicUrl?: string | null;
+}): Promise<void> {
+  if (!input.externalId) return;
+  try {
+    const admin = createAdminClient();
+    const { error } = await admin.from("external_billing_document").upsert(
+      {
+        provider: "square",
+        document_kind: input.kind,
+        work_order_id: input.workOrderId,
+        external_id: input.externalId,
+        external_status: input.externalStatus ?? null,
+        external_version: input.externalVersion ?? null,
+        public_url: input.publicUrl ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "provider,external_id" }
+    );
+    if (error && !isUndefinedTableError(error) && !isUndefinedColumnError(error)) {
+      console.error("external_billing_document upsert failed", error);
+    }
+  } catch (error) {
+    console.error("external_billing_document upsert failed", error);
+  }
 }
 
 export async function listCustomerCredits(customerId: string): Promise<CustomerCredit[]> {
@@ -315,11 +373,31 @@ export async function syncWorkOrderSquareDraft(
   const billableLines = await buildLines(workOrderId, "draft");
   if (billableLines.length === 0) throw new Error("SQUARE_NO_BILLABLE_LINES");
 
+  // Stable across retries of the same content — Square replays the draft
+  // instead of minting a duplicate document. The previous invoice id is part
+  // of the hash so an intentional re-sync (which cancels that document)
+  // mints a fresh draft rather than replaying the cancelled one.
+  const draftKey = `wo:${workOrderId}:draft:${billingContentHash({
+    customer: squareCustomer.id,
+    lines: billableLines,
+    supersedes: detail.square_invoice_id ?? "none",
+  })}`;
+
   const invoice = await createSquareInvoiceDraft({
     customerId: squareCustomer.id,
     title: `Estimate ${detail.work_order_number}`,
     description: `Service estimate for ${detail.work_order_number}`,
     lineItems: linesToSquareItems(billableLines, 0),
+    idempotencyKey: draftKey,
+  });
+
+  await recordExternalBillingDocument({
+    workOrderId,
+    kind: "draft_invoice",
+    externalId: invoice.id,
+    externalStatus: invoice.status ?? "DRAFT",
+    externalVersion: invoice.version ?? null,
+    publicUrl: invoice.public_url ?? null,
   });
 
   const nextStage: BillingStage =
@@ -508,6 +586,17 @@ export async function publishWorkOrderSquareInvoice(
       ]
     : linesToSquareItems(publishLines, creditApplied);
 
+  // Stable per (work order, mode, amount, content, superseded document): a
+  // retried publish of the same charge replays on Square instead of creating
+  // a second invoice, while cancel-and-recreate flows mint a fresh key.
+  const publishKey = `wo:${workOrderId}:publish:${input.mode}:${chargeCents}:${billingContentHash(
+    {
+      customer: squareCustomer.id,
+      lines: lineItems.map((l) => ({ n: l.name, a: String(l.basePriceMoney.amount) })),
+      supersedes: detail.square_invoice_id ?? "none",
+    }
+  )}`;
+
   const draft = await createSquareInvoiceDraft({
     customerId: squareCustomer.id,
     title: isDeposit
@@ -515,11 +604,25 @@ export async function publishWorkOrderSquareInvoice(
       : `Invoice ${detail.work_order_number}`,
     description: `Service ${isDeposit ? "deposit" : "invoice"} for ${detail.work_order_number}`,
     lineItems,
+    idempotencyKey: publishKey,
   });
 
-  const invoice = await publishSquareInvoice(draft.id, draft.version ?? 0);
+  const invoice = await publishSquareInvoice(
+    draft.id,
+    draft.version ?? 0,
+    `wo:${workOrderId}:pubop:${draft.id}`
+  );
   const displayNumber =
     squareInvoiceDisplayNumber(invoice) ?? squareInvoiceDisplayNumber(draft);
+
+  await recordExternalBillingDocument({
+    workOrderId,
+    kind: isDeposit ? "deposit_invoice" : "invoice",
+    externalId: invoice.id ?? draft.id,
+    externalStatus: invoice.status ?? "UNPAID",
+    externalVersion: invoice.version ?? draft.version ?? null,
+    publicUrl: invoice.public_url ?? null,
+  });
 
   await supabase
     .from("work_order")
@@ -692,6 +795,52 @@ export async function recomputeWorkOrderBillingStage(workOrderId: string): Promi
   }
 }
 
+/**
+ * Mirror a payment event into the V2 ledger (payment / payment_allocation /
+ * invoice balance) via workflow_v2_apply_payment_event. Idempotent by the
+ * deterministic provider transaction id, and additive: any failure (missing
+ * tables/functions on legacy DBs, no V2 invoice yet) is swallowed.
+ */
+async function applyV2PaymentEvent(input: {
+  admin: ReturnType<typeof createAdminClient>;
+  workOrderId: string;
+  squareInvoiceId: string;
+  mapped: string;
+  amountCents: number;
+}): Promise<void> {
+  const v2Status = v2PaymentStatusForMapped(input.mapped);
+  if (!v2Status) return;
+  try {
+    const { data: v2Invoice, error } = await input.admin
+      .from("invoice")
+      .select("invoice_id")
+      .eq("work_order_id", input.workOrderId)
+      .neq("status", "void")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !v2Invoice) return;
+
+    const { error: rpcError } = await input.admin.rpc("workflow_v2_apply_payment_event", {
+      p_provider: "square",
+      p_provider_transaction_id: squareInvoiceTransactionId(
+        input.squareInvoiceId,
+        input.mapped
+      ),
+      p_work_order_id: input.workOrderId,
+      p_invoice_id: v2Invoice.invoice_id,
+      p_amount_cents: Math.max(0, Math.round(input.amountCents)),
+      p_status: v2Status,
+      p_received_at: new Date().toISOString(),
+    });
+    if (rpcError) {
+      console.error("workflow_v2_apply_payment_event failed", rpcError);
+    }
+  } catch (error) {
+    console.error("workflow_v2_apply_payment_event failed", error);
+  }
+}
+
 export async function processSquareWebhookEvent(payload: {
   type: string;
   event_id: string;
@@ -711,21 +860,18 @@ export async function processSquareWebhookEvent(payload: {
 }): Promise<void> {
   const admin = createAdminClient();
 
-  const { error: dedupeError } = await admin.from("square_webhook_event").insert({
-    square_event_id: payload.event_id,
-    event_type: payload.type,
-    payload,
-  });
-
-  if (dedupeError) {
-    if (dedupeError.code === "23505") return;
-    throw dedupeError;
-  }
+  // Dedupe: a square_webhook_event row now means the event was PROCESSED
+  // successfully (the insert happens after processing), so replays no-op.
+  const { data: alreadyProcessed, error: dedupeReadError } = await admin
+    .from("square_webhook_event")
+    .select("square_event_id")
+    .eq("square_event_id", payload.event_id)
+    .maybeSingle();
+  if (!dedupeReadError && alreadyProcessed) return;
 
   const invoice = payload.data?.object?.invoice;
   const invoiceId = invoice?.id;
   const invoiceStatus = invoice?.status;
-  if (!invoiceId) return;
 
   const statusMap: Record<string, string> = {
     PAID: "paid",
@@ -734,42 +880,49 @@ export async function processSquareWebhookEvent(payload: {
     CANCELED: "cancelled",
     REFUNDED: "refunded",
   };
-
   const mapped = invoiceStatus ? statusMap[invoiceStatus] : null;
-  if (!mapped) return;
 
-  const paidAmount =
-    invoice?.payment_requests?.[0]?.total_completed_amount_money?.amount ?? null;
+  if (invoiceId && mapped) {
+    const paidAmount =
+      invoice?.payment_requests?.[0]?.total_completed_amount_money?.amount ?? null;
 
-  const { data: workOrders, error } = await admin
-    .from("work_order")
-    .select(
-      "work_order_id, work_order_number, location_id, customer_id, billing_collected_cents, billing_amount_cents, billing_amount_mode"
-    )
-    .eq("square_invoice_id", invoiceId);
+    const { data: workOrders, error } = await admin
+      .from("work_order")
+      .select(
+        "work_order_id, work_order_number, location_id, customer_id, billing_collected_cents, billing_amount_cents, billing_amount_mode, square_payment_status"
+      )
+      .eq("square_invoice_id", invoiceId);
 
-  if (error) throw error;
+    if (error) throw error;
 
-  for (const wo of workOrders ?? []) {
-    const displayNumber = squareInvoiceDisplayNumber({
-      invoice_number: invoice?.invoice_number,
-      id: invoiceId,
-    });
-    const updates: Record<string, unknown> = {
-      square_payment_status: mapped,
-      ...(displayNumber ? { external_invoice_number: displayNumber } : {}),
-    };
-    const mode = wo.billing_amount_mode as string | null;
-    const isDeposit = mode === "deposit_percent" || mode === "custom";
+    for (const wo of workOrders ?? []) {
+      const displayNumber = squareInvoiceDisplayNumber({
+        invoice_number: invoice?.invoice_number,
+        id: invoiceId,
+      });
+      const mode = wo.billing_amount_mode as string | null;
+      const isDeposit = mode === "deposit_percent" || mode === "custom";
 
-    if (mapped === "paid") {
-      const add = paidAmount ?? Number(wo.billing_amount_cents ?? 0);
-      const collected = Number(wo.billing_collected_cents ?? 0) + (add > 0 ? add : 0);
-      updates.billing_collected_cents = collected;
-      // Deposit paid → ready for balance invoice; full/balance paid → paid
-      updates.billing_stage = isDeposit ? "ready_to_invoice" : "paid";
+      const { updates: statusUpdates, duplicate } = buildLegacyPaymentStatusUpdates({
+        mapped,
+        previousStatus: (wo.square_payment_status as string | null) ?? null,
+        previousCollectedCents: Number(wo.billing_collected_cents ?? 0),
+        paidAmountCents: paidAmount,
+        billingAmountCents:
+          wo.billing_amount_cents == null ? null : Number(wo.billing_amount_cents),
+        isDeposit,
+      });
 
-      if (!isDeposit) {
+      // Repeated paid events for an already-paid invoice must never add to
+      // collections again (webhook replays / duplicate notifications).
+      if (duplicate) continue;
+
+      const updates: Record<string, unknown> = {
+        ...statusUpdates,
+        ...(displayNumber ? { external_invoice_number: displayNumber } : {}),
+      };
+
+      if (mapped === "paid" && !isDeposit) {
         const credits = await admin
           .from("customer_credit")
           .select("credit_id, remaining_amount")
@@ -783,28 +936,53 @@ export async function processSquareWebhookEvent(payload: {
             .eq("credit_id", credit.credit_id);
         }
       }
-    } else if (mapped === "partially_paid") {
-      updates.billing_stage = "invoiced";
-      if (paidAmount != null) {
-        updates.billing_collected_cents = Math.max(
-          Number(wo.billing_collected_cents ?? 0),
-          paidAmount
-        );
+
+      await admin
+        .from("work_order")
+        .update(updates)
+        .eq("work_order_id", wo.work_order_id);
+
+      // Keep the external document trail current (best effort).
+      try {
+        await admin
+          .from("external_billing_document")
+          .update({ external_status: mapped, updated_at: new Date().toISOString() })
+          .eq("provider", "square")
+          .eq("external_id", invoiceId);
+      } catch {
+        // table may not exist yet
       }
-    } else if (mapped === "cancelled") {
-      updates.billing_stage = "none";
+
+      if (v2WritesEnabled(readWorkflowV2Flags())) {
+        await applyV2PaymentEvent({
+          admin,
+          workOrderId: wo.work_order_id as string,
+          squareInvoiceId: invoiceId,
+          mapped,
+          amountCents:
+            paidAmount ??
+            (wo.billing_amount_cents == null ? 0 : Number(wo.billing_amount_cents)),
+        });
+      }
+
+      await addTimelineEvent(admin, {
+        work_order_id: wo.work_order_id,
+        user_id: null,
+        event_type: TimelineEventType.SQUARE_PAYMENT_UPDATED,
+        entity_type: "work_order",
+        entity_id: wo.work_order_id,
+        description: `Square payment status: ${mapped}`,
+        new_value: { square_payment_status: mapped },
+      });
     }
-
-    await admin.from("work_order").update(updates).eq("work_order_id", wo.work_order_id);
-
-    await addTimelineEvent(admin, {
-      work_order_id: wo.work_order_id,
-      user_id: null,
-      event_type: TimelineEventType.SQUARE_PAYMENT_UPDATED,
-      entity_type: "work_order",
-      entity_id: wo.work_order_id,
-      description: `Square payment status: ${mapped}`,
-      new_value: { square_payment_status: mapped },
-    });
   }
+
+  // Mark processed only after the work above succeeded, so a failed attempt
+  // stays retryable. A unique-violation here means a concurrent worker won.
+  const { error: markError } = await admin.from("square_webhook_event").insert({
+    square_event_id: payload.event_id,
+    event_type: payload.type,
+    payload,
+  });
+  if (markError && markError.code !== "23505") throw markError;
 }

@@ -20,11 +20,14 @@ export function canProceedFromMotorcycleStep(motorcycleId: string): boolean {
 }
 
 export function canProceedFromVisitStep(data: {
+  workOrderNumber: string;
   mileage: string;
   estimatedCompletion: string;
   selectedServiceIds: string[];
   servicePricingComplete: boolean;
 }): boolean {
+  if (!data.workOrderNumber.trim()) return false;
+
   const trimmed = data.mileage.trim();
   if (!trimmed) return false;
   // Reject decimals / scientific notation — server schema requires a nonnegative int.
@@ -57,6 +60,7 @@ export function canNavigateToWizardStep(
 type StepCompleteInput = {
   customerId?: string;
   motorcycleId?: string;
+  workOrderNumber?: string;
   mileage?: string;
   estimatedCompletion?: string;
   selectedServiceIds?: string[];
@@ -75,6 +79,7 @@ export function isWizardStepComplete(
       return canProceedFromMotorcycleStep(data.motorcycleId ?? "");
     case "visit":
       return canProceedFromVisitStep({
+        workOrderNumber: data.workOrderNumber ?? "",
         mileage: data.mileage ?? "",
         estimatedCompletion: data.estimatedCompletion ?? "",
         selectedServiceIds: data.selectedServiceIds ?? [],
@@ -94,6 +99,7 @@ export function canSubmitCreateWorkOrderWizard(data: {
   stepId: CreateWorkOrderWizardStepId;
   customerId: string;
   motorcycleId: string;
+  workOrderNumber: string;
   mileage: string;
   estimatedCompletion: string;
   selectedServiceIds: string[];
@@ -105,6 +111,7 @@ export function canSubmitCreateWorkOrderWizard(data: {
     canProceedFromCustomerStep(data.customerId) &&
     canProceedFromMotorcycleStep(data.motorcycleId) &&
     canProceedFromVisitStep({
+      workOrderNumber: data.workOrderNumber,
       mileage: data.mileage,
       estimatedCompletion: data.estimatedCompletion,
       selectedServiceIds: data.selectedServiceIds,

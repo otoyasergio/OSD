@@ -1,12 +1,20 @@
 import { cache } from "react";
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
+import { createAdminClient } from "@/lib/database/supabase-admin";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { canManageServiceCatalogue } from "@/lib/permissions";
 import { serviceSchema } from "@/lib/validation/schemas";
-import type { Service } from "@/lib/services/serviceCatalogueShared";
+import {
+  buildServiceVersionSnapshot,
+  nextServiceVersionNo,
+  shouldWriteServiceVersion,
+  type Service,
+  type ServicePricingMode,
+  type ServiceVersionFields,
+} from "@/lib/services/serviceCatalogueShared";
 
-export type { Service } from "@/lib/services/serviceCatalogueShared";
+export type { Service, ServicePricingMode } from "@/lib/services/serviceCatalogueShared";
 export {
   groupIntakeServicesByCategory,
   groupServicesByCategory,
@@ -19,6 +27,8 @@ export type ServiceInput = {
   standard_price?: number | null;
   estimated_labour?: number | null;
   active?: boolean;
+  /** V2 catalogue pricing mode; snapshotted onto service_version only. */
+  pricing_mode?: ServicePricingMode | null;
 };
 
 const SERVICE_COLUMNS =
@@ -49,6 +59,109 @@ async function requireCatalogueManager() {
   return user;
 }
 
+export type ActiveServiceVersion = {
+  service_id: string;
+  version_no: number;
+  pricing_mode: ServicePricingMode;
+  fixed_package_price_cents: number | null;
+  default_labor_minutes: number | null;
+};
+
+/**
+ * Active catalogue version per service (V2). Returns an empty map when the
+ * service_version migration has not been applied yet.
+ */
+export async function listActiveServiceVersions(): Promise<
+  Map<string, ActiveServiceVersion>
+> {
+  await requireUser();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("service_version")
+    .select(
+      "service_id, version_no, pricing_mode, fixed_package_price_cents, default_labor_minutes"
+    )
+    .eq("active", true);
+  if (error) {
+    console.warn("service_version read skipped (migration pending?)", error.message);
+    return new Map();
+  }
+  return new Map(
+    ((data ?? []) as ActiveServiceVersion[]).map((row) => [row.service_id, row])
+  );
+}
+
+/**
+ * Append a catalogue version snapshot (V2 dual-write). V2 tables deny client
+ * writes, so this uses the service-role client. Failures are swallowed with a
+ * warning so catalogue editing keeps working before the migration is applied.
+ */
+async function writeServiceVersionSnapshot(
+  serviceId: string,
+  next: ServiceVersionFields,
+  actorUserId: string
+): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { data: latest, error: latestError } = await admin
+      .from("service_version")
+      .select(
+        "version_no, name_snapshot, category_snapshot, pricing_mode, fixed_package_price_cents, default_labor_minutes"
+      )
+      .eq("service_id", serviceId)
+      .order("version_no", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestError) throw latestError;
+
+    const nextSnapshot = buildServiceVersionSnapshot(next);
+    // Re-saving the same pricing mode keeps the stored one when the caller
+    // did not choose one explicitly (legacy forms without the selector).
+    if (next.pricing_mode == null && latest?.pricing_mode) {
+      nextSnapshot.pricing_mode = latest.pricing_mode as ServicePricingMode;
+    }
+    const previousSnapshot = latest
+      ? {
+          name_snapshot: latest.name_snapshot as string,
+          category_snapshot: latest.category_snapshot as string | null,
+          pricing_mode: latest.pricing_mode as ServicePricingMode,
+          fixed_package_price_cents: latest.fixed_package_price_cents as number | null,
+          default_labor_minutes: latest.default_labor_minutes as number | null,
+        }
+      : null;
+    if (!shouldWriteServiceVersion(previousSnapshot, nextSnapshot)) return;
+
+    const versionNo = nextServiceVersionNo(
+      (latest?.version_no as number | undefined) ?? null
+    );
+    const now = new Date().toISOString();
+
+    const { error: deactivateError } = await admin
+      .from("service_version")
+      .update({ active: false, effective_to: now })
+      .eq("service_id", serviceId)
+      .eq("active", true);
+    if (deactivateError) throw deactivateError;
+
+    const { error: insertError } = await admin.from("service_version").insert({
+      service_id: serviceId,
+      version_no: versionNo,
+      ...nextSnapshot,
+      active: true,
+      effective_from: now,
+      created_by_user_id: actorUserId,
+    });
+    if (insertError) throw insertError;
+  } catch (error) {
+    // Rolling-deploy safety: catalogue editing must survive a missing
+    // service_version table / policy while the V2 migration rolls out.
+    console.warn(
+      "service_version snapshot skipped",
+      error instanceof Error ? error.message : error
+    );
+  }
+}
+
 export async function createService(input: ServiceInput): Promise<Service> {
   const user = await requireCatalogueManager();
   const parsed = serviceSchema.parse(input);
@@ -70,6 +183,18 @@ export async function createService(input: ServiceInput): Promise<Service> {
 
   if (error) throw error;
   const service = data as Service;
+
+  await writeServiceVersionSnapshot(
+    service.service_id,
+    {
+      name: service.name,
+      category: service.category,
+      standard_price: service.standard_price,
+      estimated_labour: service.estimated_labour,
+      pricing_mode: parsed.pricing_mode ?? null,
+    },
+    user.user_id
+  );
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,
@@ -117,6 +242,18 @@ export async function updateService(
 
   if (error) throw error;
   const service = data as Service;
+
+  await writeServiceVersionSnapshot(
+    serviceId,
+    {
+      name: service.name,
+      category: service.category,
+      standard_price: service.standard_price,
+      estimated_labour: service.estimated_labour,
+      pricing_mode: parsed.pricing_mode ?? null,
+    },
+    user.user_id
+  );
 
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,

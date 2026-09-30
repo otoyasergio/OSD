@@ -1,0 +1,570 @@
+"use client";
+
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  retryAssistantTurnAction,
+  runAutomaticAssistantReviewAction,
+  submitAssistantTurnAction,
+  type AssistantActionState,
+} from "@/app/(app)/work_orders/assistant-actions";
+import { DiagnosticsPhotoPicker } from "@/components/diagnostics/DiagnosticsPhotoPicker";
+import {
+  AskOtomotoMessage,
+  RequestedInputCard,
+} from "@/components/diagnostics/AskOtomotoMessage";
+import { useAssistantPolling } from "@/components/diagnostics/useAssistantPolling";
+import {
+  buildPhotosPayload,
+  photoRequestFromMessages,
+  validatePhotoSelections,
+  type DiagnosticsPhotoSelection,
+  type DiagnosticsPhotoSourceRow,
+} from "@/lib/diagnostics/photoSelection";
+import { DIAGNOSTICS_TURN_TEXT_MAX } from "@/lib/diagnostics/turnLimits";
+import {
+  ASSISTANT_MODE_DESCRIPTIONS,
+  ASSISTANT_MODE_LABELS,
+  ASSISTANT_PHASE_LABELS,
+  ASSISTANT_STATUS_LABELS,
+  ASSISTANT_TRIGGER_LABELS,
+  canPromoteAssistantMessage,
+  isAssistantThreadWorking,
+  parseRequestedInput,
+  type AskOtomotoLockReason,
+  type AskOtomotoSubheadingLevel,
+  type AskOtomotoWorkspaceView,
+} from "@/lib/diagnostics/askOtomotoView";
+import type { AskOtomotoConfigReason } from "@/lib/diagnostics/config";
+
+const INITIAL_ACTION_STATE: AssistantActionState = {
+  status: "idle",
+  error: null,
+};
+
+export const ASSISTANT_NOT_CONFIGURED_COPY =
+  "Ask OTOMOTO is not configured on this server, so new drafts can't be generated. An owner or manager needs to add the OpenAI API key to the server environment settings. Existing conversations stay readable and copyable.";
+
+export const ASSISTANT_SETTINGS_INVALID_COPY =
+  "Ask OTOMOTO settings on this server are invalid, so new drafts can't be generated. An owner or manager needs to correct the Ask OTOMOTO model, timeout, or output-limit setting. Existing conversations stay readable and copyable.";
+
+export function assistantUnavailableCopy(reason: AskOtomotoConfigReason | null): string {
+  return reason === null || reason === "not_configured"
+    ? ASSISTANT_NOT_CONFIGURED_COPY
+    : ASSISTANT_SETTINGS_INVALID_COPY;
+}
+
+export function useDeadlineReached(
+  deadline: string | null | undefined,
+  enabled: boolean
+): boolean | null {
+  const [evaluation, setEvaluation] = useState<{
+    deadline: string;
+    reached: boolean;
+  } | null>(null);
+  useEffect(() => {
+    if (!enabled || !deadline) return;
+    const deadlineTimestamp = Date.parse(deadline);
+    const remaining = deadlineTimestamp - Date.now();
+    const evaluationTimer = setTimeout(
+      () =>
+        setEvaluation({
+          deadline,
+          reached: Number.isFinite(deadlineTimestamp) && remaining <= 0,
+        }),
+      0
+    );
+    const deadlineTimer =
+      Number.isFinite(deadlineTimestamp) && remaining > 0
+        ? setTimeout(
+            () => setEvaluation({ deadline, reached: true }),
+            Math.min(remaining, 2_147_483_647)
+          )
+        : undefined;
+    return () => {
+      clearTimeout(evaluationTimer);
+      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+    };
+  }, [deadline, enabled]);
+  if (!enabled || !deadline) return false;
+  return evaluation?.deadline === deadline ? evaluation.reached : null;
+}
+
+function readOnlyReason(lockReason: AskOtomotoLockReason | null | undefined): string {
+  if (lockReason === "foreign") {
+    return "This work order belongs to another location. Switch location to make changes.";
+  }
+  if (lockReason === "locked") {
+    return "This work order is completed or cancelled, so this conversation is read-only.";
+  }
+  if (lockReason === "job_assignment") {
+    return "This job is assigned to another technician, so this conversation is read-only.";
+  }
+  return "This work order is read-only.";
+}
+
+function TurnComposer({
+  workspace,
+  photos,
+  canMutate,
+  preview,
+  readOnly,
+  lockReason,
+  configured,
+  retryPending,
+  onBusyChange,
+  photoHeadingLevel,
+}: {
+  workspace: AskOtomotoWorkspaceView;
+  photos: DiagnosticsPhotoSourceRow[];
+  canMutate: boolean;
+  preview: boolean;
+  readOnly: boolean;
+  lockReason: AskOtomotoLockReason | null;
+  configured: boolean;
+  retryPending: boolean;
+  onBusyChange: (busy: boolean) => void;
+  photoHeadingLevel: 4 | 5;
+}) {
+  const router = useRouter();
+  const { thread, messages } = workspace;
+  const [text, setText] = useState("");
+  const [selections, setSelections] = useState<DiagnosticsPhotoSelection[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const wasPending = useRef(false);
+
+  const [state, formAction, pending] = useActionState(
+    async (previous: AssistantActionState, formData: FormData) => {
+      const result = await submitAssistantTurnAction(
+        thread.workOrderId,
+        previous,
+        formData
+      );
+      if (result.status === "success") {
+        setText("");
+        setSelections([]);
+        router.refresh();
+      }
+      return result;
+    },
+    INITIAL_ACTION_STATE
+  );
+
+  const busy = pending || uploading;
+  useEffect(() => {
+    onBusyChange(busy);
+  }, [busy, onBusyChange]);
+
+  useEffect(() => {
+    if (wasPending.current && !pending && state.status === "error") {
+      textareaRef.current?.focus();
+    }
+    wasPending.current = pending;
+  }, [pending, state]);
+
+  // A brand-new manual thread starts "pending" with no messages and must accept
+  // its first message; automatic triggers stay locked until generation finishes.
+  const firstManualTurn =
+    thread.status === "pending" && thread.triggerType === null && messages.length === 0;
+  const threadBusy =
+    thread.status === "generating" || (thread.status === "pending" && !firstManualTurn);
+  const archived = thread.status === "archived";
+  const blockedReason = preview
+    ? "Role preview is read-only. Exit preview to send a message."
+    : readOnly
+      ? readOnlyReason(lockReason)
+      : !canMutate
+        ? lockReason === "job_assignment"
+          ? readOnlyReason(lockReason)
+          : "You can't send messages on this thread."
+        : archived
+          ? "This conversation is archived."
+          : !configured
+            ? "Sending is disabled until Ask OTOMOTO is configured."
+            : threadBusy
+              ? "Ask OTOMOTO is still working on the previous message."
+              : retryPending
+                ? "Retrying the failed response…"
+                : null;
+  const locked = blockedReason !== null;
+  const validation = useMemo(() => validatePhotoSelections(selections), [selections]);
+  const photosJson = useMemo(
+    () => JSON.stringify(buildPhotosPayload(selections)),
+    [selections]
+  );
+  const trimmed = text.trim();
+  const canSend =
+    !locked &&
+    !pending &&
+    !uploading &&
+    trimmed.length > 0 &&
+    trimmed.length <= DIAGNOSTICS_TURN_TEXT_MAX &&
+    validation.ok;
+  const request = useMemo(() => photoRequestFromMessages(messages), [messages]);
+
+  return (
+    <form
+      action={formAction}
+      onSubmit={(event) => {
+        if (!canSend) event.preventDefault();
+      }}
+      className="flex flex-col gap-3"
+    >
+      <input type="hidden" name="thread_id" value={thread.threadId} />
+      <input type="hidden" name="job_id" value={thread.jobId ?? ""} />
+      <input type="hidden" name="mode" value={thread.mode} />
+      <input type="hidden" name="photos" value={photosJson} />
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor={`turn-text-${thread.threadId}`} className="text-sm font-medium">
+          Message to Ask OTOMOTO
+        </label>
+        <textarea
+          ref={textareaRef}
+          id={`turn-text-${thread.threadId}`}
+          name="text"
+          className="input min-h-24"
+          rows={4}
+          maxLength={DIAGNOSTICS_TURN_TEXT_MAX}
+          value={text}
+          disabled={locked || pending}
+          onChange={(event) => setText(event.target.value)}
+        />
+      </div>
+
+      <DiagnosticsPhotoPicker
+        thread={{
+          threadId: thread.threadId,
+          workOrderId: thread.workOrderId,
+          jobId: thread.jobId,
+        }}
+        photos={photos}
+        selections={selections}
+        onSelectionsChange={setSelections}
+        requestedPrompt={request?.prompt ?? null}
+        requestKey={request?.key ?? null}
+        canMutate={canMutate}
+        preview={preview}
+        readOnly={readOnly}
+        disabled={archived || threadBusy || retryPending || pending}
+        uploadAllowed={configured}
+        onBusyChange={setUploading}
+        headingLevel={photoHeadingLevel}
+      />
+
+      {blockedReason ? (
+        <p role="status" className="text-sm text-[var(--status-neutral)]">
+          {blockedReason}
+        </p>
+      ) : null}
+      {!validation.ok ? (
+        <p role="alert" className="text-sm text-red-700">
+          {validation.errors[0]}
+        </p>
+      ) : null}
+      {state.error ? (
+        <p role="alert" className="text-sm text-red-700">
+          {state.error}
+        </p>
+      ) : null}
+
+      <div>
+        <button type="submit" className="btn btn-primary" disabled={!canSend}>
+          {pending ? "Sending…" : "Send to Ask OTOMOTO"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function AskOtomotoThreadPanel({
+  workspace,
+  photos = [],
+  canMutate = false,
+  preview = false,
+  readOnly = false,
+  lockReason = null,
+  configured = true,
+  canPromoteNotes = false,
+  jobLabel = null,
+  newConversationHref = null,
+  headingLevel = 3,
+}: {
+  workspace: AskOtomotoWorkspaceView;
+  /** Authorized, already-filtered staff photos for this work order. */
+  photos?: DiagnosticsPhotoSourceRow[];
+  canMutate?: boolean;
+  preview?: boolean;
+  readOnly?: boolean;
+  lockReason?: AskOtomotoLockReason | null;
+  /** Server AI configuration present; history stays usable without it. */
+  configured?: boolean;
+  canPromoteNotes?: boolean;
+  jobLabel?: string | null;
+  newConversationHref?: string | null;
+  headingLevel?: AskOtomotoSubheadingLevel;
+}) {
+  const router = useRouter();
+  const Heading = headingLevel === 4 ? "h4" : "h3";
+  const { thread, messages } = workspace;
+  const [sendBusy, setSendBusy] = useState(false);
+  const [recoveryScheduled, setRecoveryScheduled] = useState(false);
+  const [retryState, retryAction, retryPending] = useActionState(
+    async (previous: AssistantActionState, formData: FormData) => {
+      const result = await retryAssistantTurnAction(
+        thread.workOrderId,
+        previous,
+        formData
+      );
+      if (result.status === "success") router.refresh();
+      return result;
+    },
+    INITIAL_ACTION_STATE
+  );
+  const [recoveryState, recoveryAction, recoveryPending] = useActionState(
+    async (previous: AssistantActionState, formData: FormData) => {
+      const result = await runAutomaticAssistantReviewAction(
+        thread.workOrderId,
+        previous,
+        formData
+      );
+      if (result.status === "success") {
+        setRecoveryScheduled(true);
+        router.refresh();
+      }
+      return result;
+    },
+    INITIAL_ACTION_STATE
+  );
+  const mutationAllowed = canMutate && !readOnly && !preview;
+  const latestFailedAssistant = [...messages]
+    .reverse()
+    .find(
+      (message) => message.role === "assistant" && message.generationStatus === "failed"
+    );
+  const nonRecoverableHistoryFailure =
+    latestFailedAssistant?.safeErrorCode === "DIAGNOSTICS_AI_HISTORY_INVALID" ||
+    latestFailedAssistant?.safeErrorCode === "DIAGNOSTICS_AI_HISTORY_TOO_LARGE";
+  const generatingRetryDue = useDeadlineReached(
+    thread.retryableAt,
+    thread.status === "generating"
+  );
+  const automaticRecoveryDue = useDeadlineReached(
+    thread.automaticRecoveryAt,
+    thread.status === "pending" && thread.triggerType !== null && messages.length === 0
+  );
+  const retryAvailable =
+    mutationAllowed &&
+    configured &&
+    (thread.status === "failed" || generatingRetryDue === true) &&
+    !nonRecoverableHistoryFailure;
+  const canRetry = retryAvailable && !retryPending && !sendBusy;
+  const automaticLabel = thread.triggerType
+    ? ASSISTANT_TRIGGER_LABELS[thread.triggerType]
+    : null;
+  const frontOffice = thread.audience === "front_office";
+  const promotable = mutationAllowed && canPromoteNotes;
+
+  const recoveryPolling =
+    recoveryScheduled &&
+    thread.status === "pending" &&
+    thread.triggerType !== null &&
+    messages.length === 0;
+  const working =
+    generatingRetryDue !== null &&
+    automaticRecoveryDue !== null &&
+    ((isAssistantThreadWorking(workspace) &&
+      !generatingRetryDue &&
+      !automaticRecoveryDue) ||
+      recoveryPolling);
+  const latest = messages[messages.length - 1];
+  const pollKey = `${thread.threadId}:${thread.status}:${latest?.messageId ?? ""}:${
+    latest?.generationStatus ?? ""
+  }`;
+  const { timedOut } = useAssistantPolling(working, pollKey, () => router.refresh());
+  const automaticRecoveryAvailable =
+    mutationAllowed &&
+    configured &&
+    automaticRecoveryDue === true &&
+    (!recoveryPolling || timedOut) &&
+    !recoveryPending &&
+    !sendBusy;
+
+  const requested =
+    latest?.role === "assistant" && latest.generationStatus === "ready"
+      ? parseRequestedInput(latest.requestedInput)
+      : null;
+
+  return (
+    <section
+      aria-label="Selected conversation"
+      className="flex flex-col gap-3 rounded-lg border border-[var(--border)] bg-white p-4"
+    >
+      <header className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <Heading className="text-base font-semibold">
+            Ask OTOMOTO · {ASSISTANT_MODE_LABELS[thread.mode]}
+          </Heading>
+          <p className="text-sm text-[var(--status-neutral)]">
+            Mode: {ASSISTANT_MODE_LABELS[thread.mode]} · fixed for this conversation
+          </p>
+          <p className="text-sm text-[var(--status-neutral)]">
+            {ASSISTANT_STATUS_LABELS[thread.status]}
+            {thread.diagnosticPhase
+              ? ` · ${ASSISTANT_PHASE_LABELS[thread.diagnosticPhase]}`
+              : ""}
+            {" · "}
+            {thread.jobId ? `Job: ${jobLabel ?? "Selected job"}` : "Whole work order"}
+          </p>
+        </div>
+        <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">
+          Staff review required
+        </span>
+      </header>
+
+      {automaticLabel ? (
+        <p className="text-xs font-medium text-[var(--status-neutral)]">
+          {automaticLabel}
+        </p>
+      ) : null}
+      {thread.mode === "report" ? (
+        <p className="text-xs text-[var(--status-neutral)]">
+          {ASSISTANT_MODE_DESCRIPTIONS.report}
+        </p>
+      ) : null}
+      {frontOffice ? (
+        <p className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm">
+          Copy only. Nothing is sent to the customer from here — review the draft and
+          contact the customer yourself if appropriate.
+        </p>
+      ) : null}
+
+      {thread.status === "generating" ? (
+        <p role="status" className="text-sm">
+          {thread.triggerType === "inspection_completed"
+            ? "Reviewing submitted inspection…"
+            : thread.triggerType === "job_completed"
+              ? "Reviewing completed job…"
+              : "Generating response."}
+        </p>
+      ) : null}
+      {thread.status === "pending" && thread.triggerType ? (
+        <p role="status" className="text-sm">
+          Pending automatic review.
+        </p>
+      ) : null}
+      {timedOut ? (
+        <p role="status" className="text-sm">
+          Still working. Use Refresh to check again.
+        </p>
+      ) : null}
+      {generatingRetryDue ? (
+        <p role="status" className="text-sm">
+          The response took too long. Retry is now available.
+        </p>
+      ) : null}
+      {thread.status === "failed" ? (
+        <p role="status" className="text-sm text-red-700">
+          Generation failed. Work-order records were not changed.
+        </p>
+      ) : null}
+
+      <div className="flex flex-col gap-2">
+        {messages.map((message) => (
+          <AskOtomotoMessage
+            key={message.messageId}
+            message={message}
+            workOrderId={thread.workOrderId}
+            jobId={thread.jobId}
+            jobLabel={jobLabel}
+            canPromote={canPromoteAssistantMessage({
+              message,
+              thread,
+              canPromoteNotes: promotable,
+            })}
+            retryAvailable={retryAvailable}
+            readOnlyView={preview || readOnly}
+          />
+        ))}
+      </div>
+
+      {requested ? (
+        <RequestedInputCard
+          request={requested}
+          canAnswer={mutationAllowed && configured && thread.status !== "archived"}
+        />
+      ) : null}
+
+      <TurnComposer
+        key={thread.threadId}
+        workspace={workspace}
+        photos={photos}
+        canMutate={canMutate}
+        preview={preview}
+        readOnly={readOnly}
+        lockReason={lockReason}
+        configured={configured}
+        retryPending={retryPending}
+        onBusyChange={setSendBusy}
+        photoHeadingLevel={headingLevel === 4 ? 5 : 4}
+      />
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => router.refresh()}
+        >
+          Refresh
+        </button>
+        {nonRecoverableHistoryFailure && mutationAllowed && newConversationHref ? (
+          <Link href={newConversationHref} className="btn btn-primary">
+            Start a new conversation
+          </Link>
+        ) : null}
+        {automaticRecoveryAvailable ? (
+          <form
+            action={recoveryAction}
+            onSubmit={(event) => {
+              if (!automaticRecoveryAvailable) event.preventDefault();
+            }}
+          >
+            <input type="hidden" name="thread_id" value={thread.threadId} />
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={!automaticRecoveryAvailable}
+            >
+              {recoveryPending ? "Starting review…" : "Run automatic review"}
+            </button>
+          </form>
+        ) : null}
+        {retryAvailable ? (
+          <form
+            action={retryAction}
+            onSubmit={(event) => {
+              if (!canRetry) event.preventDefault();
+            }}
+          >
+            <input type="hidden" name="thread_id" value={thread.threadId} />
+            <button type="submit" className="btn btn-primary" disabled={!canRetry}>
+              {retryPending ? "Retrying…" : "Retry"}
+            </button>
+          </form>
+        ) : null}
+      </div>
+      {retryState.error ? (
+        <p role="alert" className="text-sm text-red-700">
+          {retryState.error}
+        </p>
+      ) : null}
+      {recoveryState.error ? (
+        <p role="alert" className="text-sm text-red-700">
+          {recoveryState.error}
+        </p>
+      ) : null}
+    </section>
+  );
+}

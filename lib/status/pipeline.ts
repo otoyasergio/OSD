@@ -10,7 +10,7 @@ export const VISIT_PIPELINE_STAGES = [
   },
   {
     id: "inspection",
-    label: "Inspection",
+    label: "Arrival inspection",
     shortLabel: "Inspect",
     statuses: ["inspection_in_progress"] as WorkOrderStatus[],
   },
@@ -40,8 +40,8 @@ export const VISIT_PIPELINE_STAGES = [
   },
   {
     id: "safety",
-    label: "Safety",
-    shortLabel: "Safety",
+    label: "Final inspection",
+    shortLabel: "Final",
     statuses: ["safety_check"] as WorkOrderStatus[],
   },
   {
@@ -63,7 +63,7 @@ export const SHOP_BOARD_COLUMNS = [
   },
   {
     id: "inspection",
-    label: "Inspection",
+    label: "Arrival inspection",
     statuses: ["inspection_in_progress"] as WorkOrderStatus[],
   },
   {
@@ -93,7 +93,7 @@ export const SHOP_BOARD_COLUMNS = [
   },
   {
     id: "safety",
-    label: "Safety",
+    label: "Final inspection",
     statuses: ["safety_check"] as WorkOrderStatus[],
   },
   {
@@ -137,7 +137,7 @@ export const GALLERY_BOARD_COLUMNS = [
   },
   {
     id: "gallery_safety",
-    label: "Safety",
+    label: "Final",
     statuses: ["safety_check"] as WorkOrderStatus[],
   },
   {

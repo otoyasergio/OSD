@@ -38,6 +38,7 @@ export type AuditLogFilters = {
   actor_user_id?: string | null;
   location_id?: string | null;
   entity_type?: string | null;
+  action?: string | null;
   limit?: number;
 };
 
@@ -88,9 +89,7 @@ export async function listAuditLogs(
   }
   if (filters.to) {
     // Inclusive end-of-day when only a date is provided
-    const toValue = filters.to.includes("T")
-      ? filters.to
-      : `${filters.to}T23:59:59.999Z`;
+    const toValue = filters.to.includes("T") ? filters.to : `${filters.to}T23:59:59.999Z`;
     query = query.lte("created_at", toValue);
   }
   if (filters.actor_user_id) {
@@ -101,6 +100,9 @@ export async function listAuditLogs(
   }
   if (filters.entity_type) {
     query = query.eq("entity_type", filters.entity_type);
+  }
+  if (filters.action?.trim()) {
+    query = query.ilike("action", `%${filters.action.trim()}%`);
   }
 
   const { data, error } = await query;

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canOrderPart,
   canSyncPartsCanadaCatalog,
@@ -24,21 +24,23 @@ export default async function PartsWaitingPage({
 }: {
   searchParams: Promise<{ technician_id?: string }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canViewPartsBoard(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  const { actor: user, role: viewRole } = preview;
+  if (!canViewPartsBoard(viewRole)) redirect("/dashboard");
   if (!user.active_location_id) redirect("/dashboard");
 
   const params = await searchParams;
   const technicianId = params.technician_id?.trim() || "";
-  const canSync = canSyncPartsCanadaCatalog(user.role);
+  const canSync = canSyncPartsCanadaCatalog(viewRole);
 
   const [items, technicians, syncStatus, fitmentStatus] = await Promise.all([
     listPartsWaitingForLocation(user.active_location_id, {
       technicianId: technicianId || undefined,
+      view: { role: viewRole, subjectUserId: preview.subjectUserId },
     }),
     listTechniciansForActiveLocation(),
-    canOrderPart(user.role)
+    canOrderPart(viewRole)
       ? getPartsCanadaSyncStatus().catch(() => null)
       : Promise.resolve(null),
     getFitmentImportStatus().catch(() => ({ vehicle_count: 0, last_run: null })),
@@ -117,7 +119,7 @@ export default async function PartsWaitingPage({
         </div>
       </form>
 
-      <PartsWaitingBoard items={items} canViewPricing={canViewPricing(user.role)} />
+      <PartsWaitingBoard items={items} canViewPricing={canViewPricing(viewRole)} />
     </div>
   );
 }

@@ -37,11 +37,188 @@ const FIELD_SOURCES: Record<keyof ServiceInfoFitmentFields, string[]> = {
   battery: ["battery", "lithiumBattery"],
 };
 
+const SERVICE_INFO_FIELDS = Object.keys(FIELD_SOURCES) as Array<
+  keyof ServiceInfoFitmentFields
+>;
+
+/** Strip common family prefixes so "YZF-R3" aligns with staff model "R3". */
+const FITMENT_MODEL_PREFIX_SOURCE =
+  "YZFR|YZF|YZ|MT|FZ|XSR|XVS|XV|WR|XT|TW|SR|TMAX|NMAX|CBR|CB|CRF|CR|XR|DRZ|DR|GSXRS|GSXR|GSX|SV|DL|RC";
+const FITMENT_MODEL_PREFIX = new RegExp(`^(?:${FITMENT_MODEL_PREFIX_SOURCE})`);
+
+/**
+ * Staff short codes → catalogue family words.
+ * e.g. Ducati "M750" ↔ "750 Monster (all)", "900M" ↔ "900 Monster".
+ * Single-letter codes require a family word (not the letter alone) to avoid
+ * false hits like "M" inside unrelated tokens.
+ */
+const MODEL_CODE_FAMILIES: Record<string, string[]> = {
+  M: ["MONSTER"],
+  SS: ["SUPERSPORT", "SS"],
+  ST: ["ST"],
+};
+
 export function normalizeFitmentModelKey(value: string): string {
   return value
     .trim()
     .toUpperCase()
     .replace(/[\s\-_/]+/g, "");
+}
+
+/** VIN/staff makes often include "MOTORCYCLE" or hyphens the catalogue omits. */
+export function normalizeFitmentMakeKey(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/\s+MOTOR\s+COMPANY\s*$/g, "")
+    .replace(/\s+MOTORCYCLES?\s*$/g, "")
+    .replace(/[\s\-_/]+/g, "");
+}
+
+/** Exact ILIKE variants so we can load catalogue rows without scanning every make. */
+export function fitmentMakeSearchVariants(make: string): string[] {
+  const trimmed = make.trim();
+  if (!trimmed) return [];
+  const variants = new Set<string>([trimmed]);
+  variants.add(trimmed.replace(/-/g, " ").replace(/\s+/g, " ").trim());
+  variants.add(trimmed.replace(/\s+/g, "-"));
+  const withoutMc = trimmed.replace(/\s+MOTORCYCLES?$/i, "").trim();
+  if (withoutMc) variants.add(withoutMc);
+  const withoutCo = trimmed.replace(/\s+MOTOR\s+COMPANY$/i, "").trim();
+  if (withoutCo) variants.add(withoutCo);
+  return [...variants].filter(Boolean);
+}
+
+/** Drop parenthetical notes like "(all)" / "(Japan Only)" from catalogue names. */
+export function stripFitmentModelNotes(value: string): string {
+  return value.replace(/\s*\([^)]*\)\s*/g, " ").trim();
+}
+
+function stripFitmentModelPrefix(key: string): string {
+  return key.replace(FITMENT_MODEL_PREFIX, "");
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesPrefixedModel(catalogue: string, modelKey: string): boolean {
+  if (!modelKey) return false;
+  // "YZF-R3" / "YZFR3 R-3" → YZFR3 / YZFR3R3 against staff model "R3"
+  const pattern = new RegExp(
+    `^(?:${FITMENT_MODEL_PREFIX_SOURCE})*${escapeRegex(modelKey)}(?:${escapeRegex(modelKey)})?$`
+  );
+  return pattern.test(catalogue);
+}
+
+function affinityAgainstNormalized(bike: string, catalogue: string): number {
+  if (!bike || !catalogue) return 0;
+  if (bike === catalogue) return 100;
+
+  const bikeCore = stripFitmentModelPrefix(bike) || bike;
+  const catalogueCore = stripFitmentModelPrefix(catalogue) || catalogue;
+  if (bikeCore && catalogueCore && bikeCore === catalogueCore) return 90;
+  if (bike === catalogueCore || bikeCore === catalogue) return 90;
+
+  if (
+    matchesPrefixedModel(catalogue, bike) ||
+    matchesPrefixedModel(catalogue, bikeCore)
+  ) {
+    return 85;
+  }
+
+  // Longer model keys can use safer substring checks.
+  if (bike.length >= 4 && catalogue.endsWith(bike)) return 80;
+  if (catalogue.length >= 4 && bike.endsWith(catalogue)) return 70;
+  if (bike.length >= 4 && catalogue.includes(bike)) return 60;
+  if (catalogue.length >= 4 && bike.includes(catalogue)) return 50;
+
+  return 0;
+}
+
+/**
+ * How closely a catalogue model matches the bike model.
+ * 0 = unrelated (must not use). Higher is a tighter match.
+ */
+/** "V-Strom 1000" ↔ "DL1000 V-Strom": every meaningful token appears in catalogue key. */
+function tokenCoverageAffinity(bikeModel: string, fitmentModel: string): number {
+  const catalogue = normalizeFitmentModelKey(stripFitmentModelNotes(fitmentModel));
+  const words = bikeModel
+    .replace(/\([^)]*\)/g, " ")
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 3 && !["ABS", "ABSSE", "THE", "AND"].includes(w));
+  if (words.length < 2) return 0;
+  if (words.every((word) => catalogue.includes(word))) return 55;
+  return 0;
+}
+
+/**
+ * "M750" / "900M" ↔ catalogue "750 Monster (all)" / "900 Monster".
+ * Requires the same displacement plus a known family alias (or compact code).
+ */
+function modelCodeFamilyAffinity(bikeModel: string, fitmentModel: string): number {
+  const bikeKey = normalizeFitmentModelKey(stripFitmentModelNotes(bikeModel));
+  const catalogue = normalizeFitmentModelKey(stripFitmentModelNotes(fitmentModel));
+  if (!bikeKey || !catalogue) return 0;
+
+  let prefix = "";
+  let displacement = "";
+
+  const leading = bikeKey.match(/^([A-Z]{1,4})(\d{3,4})([A-Z]{0,4})$/);
+  if (leading) {
+    prefix = leading[1];
+    displacement = leading[2];
+  } else {
+    const trailing = bikeKey.match(/^(\d{3,4})([A-Z]{1,4})$/);
+    if (!trailing) return 0;
+    displacement = trailing[1];
+    prefix = trailing[2];
+  }
+
+  if (!catalogue.includes(displacement)) return 0;
+
+  const families = MODEL_CODE_FAMILIES[prefix] ?? [];
+  if (families.some((family) => catalogue.includes(family))) return 75;
+
+  // Compact catalogue forms: "900M…", "SS750…"
+  if (
+    catalogue.includes(`${prefix}${displacement}`) ||
+    catalogue.includes(`${displacement}${prefix}`)
+  ) {
+    return 70;
+  }
+
+  // Multi-letter codes without a family map still match when the code appears.
+  if (prefix.length >= 2 && catalogue.includes(prefix)) return 65;
+
+  return 0;
+}
+
+export function fitmentModelAffinity(bikeModel: string, fitmentModel: string): number {
+  const catalogue = normalizeFitmentModelKey(stripFitmentModelNotes(fitmentModel));
+  const parenContents = [...bikeModel.matchAll(/\(([^)]+)\)/g)].map((m) => m[1].trim());
+  const variants = [
+    bikeModel,
+    // "NPS50 (Ruckus)" / "VT750 (Shadow Spirit 750)"
+    stripFitmentModelNotes(bikeModel),
+    // Nickname inside parens ("Ruckus")
+    ...parenContents,
+    // "Ninja 500 SE" → drop trim-level suffixes
+    bikeModel.replace(/\b(SE|ABS|ABSSE)\b/gi, " ").trim(),
+  ].filter(Boolean);
+
+  let best = 0;
+  for (const variant of variants) {
+    best = Math.max(
+      best,
+      affinityAgainstNormalized(normalizeFitmentModelKey(variant), catalogue),
+      tokenCoverageAffinity(variant, fitmentModel),
+      modelCodeFamilyAffinity(variant, fitmentModel)
+    );
+  }
+  return best;
 }
 
 function pickValues(
@@ -72,35 +249,75 @@ export function mapFitmentToServiceInfo(
   return out;
 }
 
+/** Merge several mapped payloads field-by-field (unique values joined). */
+export function mergeMappedServiceInfo(
+  maps: ServiceInfoFitmentFields[]
+): ServiceInfoFitmentFields {
+  const out = {} as ServiceInfoFitmentFields;
+  for (const field of SERVICE_INFO_FIELDS) {
+    const values: string[] = [];
+    for (const map of maps) {
+      const raw = map[field]?.trim();
+      if (!raw) continue;
+      for (const part of raw.split(" / ")) {
+        const value = part.trim();
+        if (value && !values.includes(value)) values.push(value);
+      }
+    }
+    out[field] = values.length > 0 ? values.join(" / ") : null;
+  }
+  return out;
+}
+
 export function isServiceInfoEmpty(
   info: Partial<ServiceInfoFitmentFields> | null | undefined
 ): boolean {
   if (!info) return true;
-  return (Object.keys(FIELD_SOURCES) as Array<keyof ServiceInfoFitmentFields>).every(
-    (field) => !info[field]?.trim()
-  );
+  return SERVICE_INFO_FIELDS.every((field) => !info[field]?.trim());
+}
+
+function tokenizeFieldValue(value: string): string[] {
+  return value
+    .split(" / ")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/** True when current looks like a prior fitment fill (not a custom staff value). */
+export function isFitmentOwnedValue(current: string, fill: string): boolean {
+  const currentParts = tokenizeFieldValue(current);
+  const fillParts = tokenizeFieldValue(fill);
+  if (currentParts.length === 0 || fillParts.length === 0) return false;
+  return currentParts.every((part) => fillParts.includes(part));
 }
 
 export function mergeServiceInfoFill(
   existing: Partial<ServiceInfoFitmentFields>,
-  fill: ServiceInfoFitmentFields
+  fill: ServiceInfoFitmentFields,
+  options: { refreshFitmentValues?: boolean } = {}
 ): { next: ServiceInfoFitmentFields; filledCount: number } {
+  const refresh = options.refreshFitmentValues === true;
   const next = { ...fill };
   let filledCount = 0;
-  for (const field of Object.keys(FIELD_SOURCES) as Array<
-    keyof ServiceInfoFitmentFields
-  >) {
+  for (const field of SERVICE_INFO_FIELDS) {
     const current = existing[field]?.trim() || null;
-    if (current) {
-      next[field] = current;
+    const incoming = fill[field]?.trim() || null;
+    if (!current) {
+      next[field] = incoming;
+      if (incoming) filledCount += 1;
       continue;
     }
-    if (fill[field]) {
-      next[field] = fill[field];
+    if (
+      refresh &&
+      incoming &&
+      isFitmentOwnedValue(current, incoming) &&
+      current !== incoming
+    ) {
+      next[field] = incoming;
       filledCount += 1;
-    } else {
-      next[field] = null;
+      continue;
     }
+    next[field] = current;
   }
   return { next, filledCount };
 }
@@ -114,6 +331,89 @@ export function scoreFitmentPayload(
   );
 }
 
+export function scoreServiceInfoPayload(
+  vehicle: Pick<FitmentPayload, "spec_data" | "part_data">
+): number {
+  return Object.values(mapFitmentToServiceInfo(vehicle)).filter((v) => v?.trim()).length;
+}
+
+function uniqueFitmentRows<T extends FitmentPayload>(rows: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of rows) {
+    const key = `${row.make}|${row.model}|${row.year_start}|${row.year_end}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
+/**
+ * When the bike year is newer than the catalogue (or the current-year row has
+ * no service parts), reuse last-known rows for the same strong model match.
+ */
+function carryForwardFitmentCandidates<T extends FitmentPayload>(
+  related: T[],
+  year: number,
+  model: string
+): T[] {
+  const prior = related.filter((row) => row.year_start <= year && row.year_end > 0);
+  if (prior.length === 0) return [];
+  const best = Math.max(...prior.map((row) => fitmentModelAffinity(model, row.model)));
+  const threshold = Math.max(best - 10, 85);
+  return prior.filter((row) => fitmentModelAffinity(model, row.model) >= threshold);
+}
+
+/** Related catalogue rows for this YMM (exact + alias), year-covered. */
+export function listFitmentCandidatesForServiceInfo<T extends FitmentPayload>(
+  rows: T[],
+  year: number,
+  make: string,
+  model: string
+): T[] {
+  const makeKey = normalizeFitmentMakeKey(make);
+  if (!makeKey || !normalizeFitmentModelKey(model)) return [];
+
+  const related = rows.filter((row) => {
+    if (normalizeFitmentMakeKey(row.make) !== makeKey) return false;
+    return fitmentModelAffinity(model, row.model) > 0;
+  });
+
+  const covered = related.filter((row) =>
+    rowCoversYear(row.year_start, row.year_end, year)
+  );
+  const coveredWithServiceInfo = covered.filter(
+    (row) => scoreServiceInfoPayload(row) > 0
+  );
+  const pool =
+    coveredWithServiceInfo.length > 0
+      ? covered
+      : uniqueFitmentRows([
+          ...covered,
+          ...carryForwardFitmentCandidates(related, year, model),
+        ]);
+
+  return pool.sort((a, b) => {
+    const affinityDelta =
+      fitmentModelAffinity(model, b.model) - fitmentModelAffinity(model, a.model);
+    if (affinityDelta !== 0) return affinityDelta;
+    return scoreServiceInfoPayload(b) - scoreServiceInfoPayload(a);
+  });
+}
+
+/** Build merged service-info fill from all related fitment rows. */
+export function buildServiceInfoFromFitmentRows(
+  rows: FitmentPayload[],
+  year: number,
+  make: string,
+  model: string
+): ServiceInfoFitmentFields | null {
+  const candidates = listFitmentCandidatesForServiceInfo(rows, year, make, model);
+  if (candidates.length === 0) return null;
+  return mergeMappedServiceInfo(candidates.map((row) => mapFitmentToServiceInfo(row)));
+}
+
 /** Prefer normalized model match covering the year; richest payload wins. */
 export function pickBestFitmentVehicle<T extends FitmentPayload>(
   rows: T[],
@@ -121,16 +421,18 @@ export function pickBestFitmentVehicle<T extends FitmentPayload>(
   make: string,
   model: string
 ): T | null {
-  const makeKey = normalizeFitmentModelKey(make);
-  const modelKey = normalizeFitmentModelKey(model);
-  if (!makeKey || !modelKey) return null;
+  const candidates = listFitmentCandidatesForServiceInfo(rows, year, make, model);
+  if (candidates.length === 0) return null;
 
-  const matches = rows.filter((row) => {
-    if (normalizeFitmentModelKey(row.make) !== makeKey) return false;
-    if (!rowCoversYear(row.year_start, row.year_end, year)) return false;
-    return normalizeFitmentModelKey(row.model) === modelKey;
-  });
-  if (matches.length === 0) return null;
-
-  return [...matches].sort((a, b) => scoreFitmentPayload(b) - scoreFitmentPayload(a))[0];
+  // Prefer a row that actually has service-info data; else richest overall.
+  const withServiceInfo = candidates.filter((row) => scoreServiceInfoPayload(row) > 0);
+  const pool = withServiceInfo.length > 0 ? withServiceInfo : candidates;
+  return [...pool].sort((a, b) => {
+    const serviceDelta = scoreServiceInfoPayload(b) - scoreServiceInfoPayload(a);
+    if (serviceDelta !== 0) return serviceDelta;
+    const affinityDelta =
+      fitmentModelAffinity(model, b.model) - fitmentModelAffinity(model, a.model);
+    if (affinityDelta !== 0) return affinityDelta;
+    return scoreFitmentPayload(b) - scoreFitmentPayload(a);
+  })[0];
 }

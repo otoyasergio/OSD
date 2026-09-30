@@ -11,19 +11,29 @@ import {
   isFloorTech,
 } from "@/lib/permissions";
 import { intakePhotoSchema } from "@/lib/validation/schemas";
+import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
+import { intakeThumbStoragePath, makeIntakeThumb } from "@/lib/photos/makeIntakeThumb";
+import { INTAKE_PHOTO_BUCKET, signStoragePaths } from "@/lib/photos/signedUrls";
+import { PHOTO_UPLOAD_RETRY_ATTEMPTS } from "@/lib/forms/photoUploadErrors";
+import { classifyStorageUploadError } from "@/lib/forms/storageUploadRetry";
 
 export type IntakePhoto = {
   photo_id: string;
   work_order_id: string;
   uploaded_by_user_id: string | null;
   storage_path: string;
+  thumb_storage_path: string | null;
   photo_url: string | null;
   category: PhotoCategory;
   notes: string | null;
   inspection_result_id: string | null;
+  job_id: string | null;
   created_at: string;
+  /** Full-size signed URL — lightbox and inspection zoom. */
   signed_url?: string | null;
+  /** Compressed preview for boards, grids, and strips. */
+  thumb_url?: string | null;
   uploaded_by?: {
     user_id: string;
     first_name: string;
@@ -32,9 +42,11 @@ export type IntakePhoto = {
 };
 
 const COLUMNS =
-  "photo_id, work_order_id, uploaded_by_user_id, storage_path, photo_url, category, notes, inspection_result_id, created_at";
+  "photo_id, work_order_id, uploaded_by_user_id, storage_path, thumb_storage_path, photo_url, category, notes, inspection_result_id, job_id, created_at";
 
-const BUCKET = "intake-photos";
+const BUCKET = INTAKE_PHOTO_BUCKET;
+
+export { signStoragePaths };
 const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
@@ -65,9 +77,7 @@ async function requireMutableWorkOrder(
 
   if (error) throw error;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
   if (workOrder.status === "completed" || workOrder.status === "cancelled") {
     throw new Error("WORK_ORDER_LOCKED");
   }
@@ -86,13 +96,45 @@ function extensionForType(type: string): string {
   return "jpg";
 }
 
+async function uploadIntakeBytes(
+  supabase: DbClient,
+  storagePath: string,
+  bytes: Uint8Array,
+  contentType: string
+) {
+  let lastError: { message?: string } | null = null;
+  for (let attempt = 0; attempt < PHOTO_UPLOAD_RETRY_ATTEMPTS; attempt += 1) {
+    const { error } = await supabase.storage.from(BUCKET).upload(storagePath, bytes, {
+      contentType,
+      upsert: false,
+    });
+    const kind = classifyStorageUploadError(error);
+    if (kind === "ok" || kind === "exists") return;
+    lastError = error;
+    if (kind === "fail" || attempt === PHOTO_UPLOAD_RETRY_ATTEMPTS - 1) break;
+    await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+  }
+  if (lastError) {
+    console.error("intake photo upload failed", lastError);
+  }
+  throw new Error("PHOTO_UPLOAD_FAILED");
+}
+
 export type IntakePhotoRef = {
   photo_id: string;
   storage_path: string;
+  thumb_storage_path?: string | null;
   photo_url?: string | null;
   category?: PhotoCategory | string | null;
   created_at?: string | null;
 };
+
+function previewPath(photo: {
+  storage_path: string;
+  thumb_storage_path?: string | null;
+}): string {
+  return photo.thumb_storage_path || photo.storage_path;
+}
 
 const PRIMARY_PHOTO_CATEGORY_RANK: Record<string, number> = {
   front: 0,
@@ -117,30 +159,6 @@ export function pickPrimaryIntakePhoto<T extends IntakePhotoRef>(photos: T[]): T
   })[0];
 }
 
-export async function signStoragePaths(
-  supabase: DbClient,
-  paths: string[],
-  expiresInSeconds = 60 * 60
-): Promise<Map<string, string | null>> {
-  const unique = [...new Set(paths.filter(Boolean))];
-  const byPath = new Map<string, string | null>();
-  if (unique.length === 0) return byPath;
-
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrls(unique, expiresInSeconds);
-
-  if (error || !data) {
-    for (const path of unique) byPath.set(path, null);
-    return byPath;
-  }
-
-  for (const row of data) {
-    if (row.path) byPath.set(row.path, row.signedUrl ?? null);
-  }
-  return byPath;
-}
-
 /** Sign one display URL per work order (front preferred). */
 export async function resolvePrimaryPhotoUrls(
   supabase: DbClient,
@@ -153,7 +171,7 @@ export async function resolvePrimaryPhotoUrls(
     const primary = pickPrimaryIntakePhoto(photos);
     if (!primary) continue;
     primaryByWo.set(workOrderId, primary);
-    paths.push(primary.storage_path);
+    paths.push(previewPath(primary));
   }
 
   const signed = await signStoragePaths(supabase, paths);
@@ -162,10 +180,61 @@ export async function resolvePrimaryPhotoUrls(
   for (const [workOrderId, primary] of primaryByWo) {
     result.set(
       workOrderId,
-      signed.get(primary.storage_path) ?? primary.photo_url ?? null
+      signed.get(previewPath(primary)) ?? primary.photo_url ?? null
     );
   }
   return result;
+}
+
+type BoardPrimaryPhotoRow = {
+  work_order_id: string;
+  storage_path: string;
+  thumb_storage_path: string | null;
+  photo_url: string | null;
+  category: string | null;
+  photo_count: number | string;
+};
+
+/**
+ * Lean board helper: one preferred photo path + count per WO via Postgres RPC
+ * (avoids nesting every intake_photo on dashboard / control-center queries).
+ */
+export async function resolveBoardPrimaryPhotos(
+  supabase: DbClient,
+  workOrderIds: string[]
+): Promise<{
+  urls: Map<string, string | null>;
+  counts: Map<string, number>;
+}> {
+  const urls = new Map<string, string | null>();
+  const counts = new Map<string, number>();
+  const uniqueIds = [...new Set(workOrderIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return { urls, counts };
+
+  const { data, error } = await supabase.rpc("board_primary_intake_photos", {
+    p_work_order_ids: uniqueIds,
+  });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as BoardPrimaryPhotoRow[];
+  const paths: string[] = [];
+  for (const row of rows) {
+    counts.set(row.work_order_id, Number(row.photo_count) || 0);
+    const path = previewPath(row);
+    if (path) paths.push(path);
+  }
+
+  const signed = await signStoragePaths(supabase, paths);
+  for (const row of rows) {
+    urls.set(row.work_order_id, signed.get(previewPath(row)) ?? row.photo_url ?? null);
+  }
+
+  for (const id of uniqueIds) {
+    if (!counts.has(id)) counts.set(id, 0);
+  }
+
+  return { urls, counts };
 }
 
 async function signPaths(
@@ -176,13 +245,20 @@ async function signPaths(
 
   const byPath = await signStoragePaths(
     supabase,
-    photos.map((p) => p.storage_path)
+    photos.flatMap((p) =>
+      p.thumb_storage_path ? [p.storage_path, p.thumb_storage_path] : [p.storage_path]
+    )
   );
 
-  return photos.map((p) => ({
-    ...p,
-    signed_url: byPath.get(p.storage_path) ?? p.photo_url,
-  }));
+  return photos.map((p) => {
+    const signed_url = byPath.get(p.storage_path) ?? p.photo_url;
+    return {
+      ...p,
+      signed_url,
+      thumb_url:
+        (p.thumb_storage_path ? byPath.get(p.thumb_storage_path) : null) ?? signed_url,
+    };
+  });
 }
 
 export async function listIntakePhotos(
@@ -254,7 +330,13 @@ export async function uploadIntakePhoto(
     throw new Error("INSPECTION_RESULT_NOT_FOUND");
   }
 
-  if (parsed.category === "job_proof" && !parsed.job_id) {
+  // job_proof is the after photo that satisfies the completion gate;
+  // job_work is the in-progress work journal and never counts as proof.
+  // Both must be pinned to a job.
+  if (
+    (parsed.category === "job_proof" || parsed.category === "job_work") &&
+    !parsed.job_id
+  ) {
     throw new Error("JOB_NOT_FOUND");
   }
 
@@ -309,16 +391,30 @@ export async function uploadIntakePhoto(
   const ext = extensionForType(file.type || "image/jpeg");
   const photoId = crypto.randomUUID();
   const storagePath = `${workOrderId}/${parsed.category}/${photoId}.${ext}`;
+  const thumbPath = intakeThumbStoragePath(storagePath);
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET)
-    .upload(storagePath, bytes, {
-      contentType: file.type || "image/jpeg",
-      upsert: false,
-    });
+  if (bytes.byteLength === 0) throw new Error("PHOTO_REQUIRED");
+  // Build the preview while the original is in flight so the slot is not
+  // stuck on "Uploading" for a second full image encode after storage.
+  const thumbPromise = makeIntakeThumb(bytes);
+  await uploadIntakeBytes(supabase, storagePath, bytes, file.type || "image/jpeg");
 
-  if (uploadError) throw new Error("PHOTO_UPLOAD_FAILED");
+  let thumbStoragePath: string | null = null;
+  const thumbBytes = await thumbPromise;
+  if (thumbBytes && thumbBytes.byteLength > 0) {
+    const { error: thumbError } = await supabase.storage
+      .from(BUCKET)
+      .upload(thumbPath, thumbBytes, {
+        contentType: "image/jpeg",
+        upsert: false,
+      });
+    if (thumbError) {
+      console.error("intake photo thumb upload failed", thumbError);
+    } else {
+      thumbStoragePath = thumbPath;
+    }
+  }
 
   const { data, error } = await supabase
     .from("intake_photo")
@@ -327,6 +423,7 @@ export async function uploadIntakePhoto(
       work_order_id: workOrderId,
       uploaded_by_user_id: user.user_id,
       storage_path: storagePath,
+      thumb_storage_path: thumbStoragePath,
       photo_url: null,
       category: parsed.category,
       notes: parsed.notes ?? null,
@@ -337,7 +434,8 @@ export async function uploadIntakePhoto(
     .single();
 
   if (error) {
-    await supabase.storage.from(BUCKET).remove([storagePath]);
+    const toRemove = thumbStoragePath ? [storagePath, thumbStoragePath] : [storagePath];
+    await supabase.storage.from(BUCKET).remove(toRemove);
     throw error;
   }
 
@@ -391,9 +489,7 @@ export async function deleteIntakePhoto(
 
   if (woError) throw woError;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) {
-    throw new Error("FOREIGN_LOCATION");
-  }
+  assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
 
   const { data: photo, error: photoError } = await supabase
     .from("intake_photo")
@@ -414,9 +510,11 @@ export async function deleteIntakePhoto(
 
   if (deleteError) throw new Error("PHOTO_DELETE_FAILED");
 
+  const storagePaths = [row.storage_path];
+  if (row.thumb_storage_path) storagePaths.push(row.thumb_storage_path);
   const { error: storageError } = await supabase.storage
     .from(BUCKET)
-    .remove([row.storage_path]);
+    .remove(storagePaths);
   if (storageError) {
     // Row is gone; storage orphan is preferable to failing the user action.
     console.error("intake photo storage remove failed", storageError);

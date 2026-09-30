@@ -1,6 +1,9 @@
 # OTOMOTO Workshop Management App
 
-Workshop management for OTOMOTO service operations—customers, bikes, location-scoped work orders, inspections, recommendations, parts, QC, pickup, Square billing, customer portal, and shop reports.
+Workshop management for **OTOMOTO TORONTO MOTO INC.** service
+operations—customers, bikes, location-scoped work orders, inspections,
+recommendations, parts, QC, pickup, Square billing, customer portal, and shop
+reports.
 
 See [`SECURITY.md`](./SECURITY.md) for webhook auth and secrets, and [`docs/superpowers/acceptance/production-checklist.md`](./docs/superpowers/acceptance/production-checklist.md) for go-live.
 
@@ -28,6 +31,11 @@ cp .env.local.example .env.local
 
 Fill in `.env.local` from [`.env.local.example`](./.env.local.example) (Supabase, Square, Twilio, Wix, cron, Sentry, Parts Canada).
 
+Ask OTOMOTO additionally needs the server-only `OPENAI_API_KEY`; the rolling model
+alias can be overridden with `OTOMOTO_DIAGNOSTICS_MODEL`. Apply its migrations
+before deploying code. Setup, boundaries, and rollout order are documented in
+[`docs/features/ask-otomoto.md`](./docs/features/ask-otomoto.md).
+
 Supabase Auth uses cookie-backed SSR sessions. `proxy.ts` verifies/refreshes the
 session and protects every app page except `/login`, customer portal links under
 `/c/*`, and API handlers. The `(app)` layout then requires an active `app_user`
@@ -35,14 +43,13 @@ record and assigned location before rendering staff tools.
 
 ### 3. Apply migrations
 
-Migrations live in `supabase/migrations/` (`001`–`034`, with 010/011 reserved). Apply **in numeric order**:
+Migrations live in `supabase/migrations/` and include both numbered and
+timestamped filenames. Apply **all files in filename order**:
 
 ```bash
 npx supabase link
 npx supabase db push
 ```
-
-Or paste each file in the Supabase SQL Editor in order.
 
 **Authorization note:** Role checks in `lib/permissions` (server actions) are the source of truth. RLS is defense in depth (location-scoped for WO tables as of `034`). Full matrix: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md).
 
@@ -94,11 +101,17 @@ Dashboard board load uses one nested `work_order` query (jobs, recommendations, 
 npm test                 # unit (Vitest)
 npm run test:coverage    # coverage thresholds on core libs
 npm run test:e2e         # Playwright smoke (login, middleware, webhooks)
+npm run test:integration # isolated TEST_SUPABASE_* database only
 npm run typecheck
 npm run lint
 ```
 
 Watch mode: `npm run test:watch`
+
+Ask OTOMOTO’s live-provider acceptance suite is opt-in, synthetic-only, and
+excluded from normal tests/CI. See the
+[`acceptance worksheet`](./docs/features/ask-otomoto-acceptance.md) before running
+`npm run test:diagnostics:eval`.
 
 ## Build
 
@@ -113,9 +126,13 @@ See the production runbook: [`docs/superpowers/acceptance/production-checklist.m
 ## Documentation
 
 - Security: [`SECURITY.md`](./SECURITY.md)
+- Ask OTOMOTO: [`docs/features/ask-otomoto.md`](./docs/features/ask-otomoto.md)
+- Ask OTOMOTO acceptance: [`docs/features/ask-otomoto-acceptance.md`](./docs/features/ask-otomoto-acceptance.md)
 - Changelog: [`CHANGELOG.md`](./CHANGELOG.md)
 - Design: [`docs/superpowers/specs/`](./docs/superpowers/specs/)
 - Implementation plan: [`docs/superpowers/plans/`](./docs/superpowers/plans/)
 - V1 acceptance checklist: [`docs/superpowers/acceptance/v1-checklist.md`](./docs/superpowers/acceptance/v1-checklist.md)
 - RLS audit: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md)
 - Production checklist: [`docs/superpowers/acceptance/production-checklist.md`](./docs/superpowers/acceptance/production-checklist.md)
+- Supabase/Vercel health: [`docs/ops/platform-health.md`](./docs/ops/platform-health.md)
+- Ask OTOMOTO setup: [`docs/features/ask-otomoto.md`](./docs/features/ask-otomoto.md)

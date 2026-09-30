@@ -97,6 +97,10 @@ export function deriveWorkOrderStatus(
   const allActiveCompleted =
     activeJobs.length > 0 && activeJobs.every((job) => job.status === "completed");
 
+  // Pending recommendations are parallel: approve → new docket job (unfinished
+  // again), decline → no job (finished path preserved). They must not block
+  // original-job complete or peer QC. Only jobs waiting_for_approval freeze WO.
+
   if (allActiveCompleted && !qualityCheckComplete) {
     return "quality_check";
   }
@@ -108,9 +112,12 @@ export function deriveWorkOrderStatus(
     return "ready_for_pickup";
   }
 
+  // Ignore already-completed jobs — approved recommendation work after finish
+  // must land back on ready_for_technician, not fall through to "open".
+  const unfinishedJobs = activeJobs.filter((job) => job.status !== "completed");
   const allReadyForTechnician =
-    activeJobs.length > 0 &&
-    activeJobs.every(
+    unfinishedJobs.length > 0 &&
+    unfinishedJobs.every(
       (job) => job.status === "approved" || job.status === "ready_to_start"
     );
 

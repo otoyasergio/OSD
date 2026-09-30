@@ -16,12 +16,13 @@ import {
 } from "@/app/(app)/messages/actions";
 import { useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { useShopVoiceOptional } from "@/components/comms/ShopVoiceProvider";
+import { VIDEO_CALL_EVENT } from "@/components/messages/CallOverlay";
 
 type Props = {
   conversation: Conversation;
   initialMessages: ChatMessage[];
   currentUserId: string;
-  onStartCall?: (callId: string, kind: "audio" | "video") => void;
 };
 
 function dayKey(iso: string) {
@@ -38,12 +39,7 @@ function dayLabel(iso: string) {
   });
 }
 
-export function ChatThread({
-  conversation,
-  initialMessages,
-  currentUserId,
-  onStartCall,
-}: Props) {
+export function ChatThread({ conversation, initialMessages, currentUserId }: Props) {
   const router = useRouter();
   const [messages, setMessages] = useState(initialMessages);
   const [replyTo, setReplyTo] = useState<{
@@ -56,6 +52,7 @@ export function ChatThread({
   const bottomRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voice = useShopVoiceOptional();
   const self = conversation.participants.find((p) => p.user_id === currentUserId);
   const pinned = Boolean(self?.pinned_at);
   const muted = Boolean(self?.muted_at);
@@ -166,13 +163,25 @@ export function ChatThread({
 
   function placeCall(kind: "audio" | "video") {
     setCallError(null);
+    if (kind === "audio") {
+      if (!voice) {
+        setCallError("Shop phone is not available on this page.");
+        return;
+      }
+      startTransition(async () => {
+        await voice.placeStaffCall(conversation.conversation_id);
+      });
+      return;
+    }
     startTransition(async () => {
-      const result = await startCallAction(conversation.conversation_id, kind);
+      const result = await startCallAction(conversation.conversation_id, "video");
       if (result.error || !result.callId) {
         setCallError(result.error ?? "Could not start call.");
         return;
       }
-      onStartCall?.(result.callId, kind);
+      window.dispatchEvent(
+        new CustomEvent(VIDEO_CALL_EVENT, { detail: { callId: result.callId } })
+      );
     });
   }
 

@@ -5,6 +5,12 @@ import {
   verifyTwilioWebhookSignature,
 } from "@/lib/security/webhooks";
 import { rateLimit } from "@/lib/security/rateLimit";
+import {
+  buildLegacyPaymentStatusUpdates,
+  shouldSkipIntegrationEvent,
+  squareInvoiceTransactionId,
+  v2PaymentStatusForMapped,
+} from "@/lib/square/webhookDecisions";
 
 describe("verifySquareWebhookSignature", () => {
   it("accepts a valid HMAC signature", () => {
@@ -84,5 +90,111 @@ describe("rateLimit", () => {
     expect(rateLimit({ key, limit: 2, windowMs: 60_000 }).success).toBe(true);
     expect(rateLimit({ key, limit: 2, windowMs: 60_000 }).success).toBe(true);
     expect(rateLimit({ key, limit: 2, windowMs: 60_000 }).success).toBe(false);
+  });
+});
+
+describe("integration event dedupe", () => {
+  it("replays of processed events return early", () => {
+    expect(shouldSkipIntegrationEvent("processed")).toBe(true);
+    expect(shouldSkipIntegrationEvent("ignored")).toBe(true);
+  });
+
+  it("failed and in-flight events stay retryable", () => {
+    expect(shouldSkipIntegrationEvent("failed")).toBe(false);
+    expect(shouldSkipIntegrationEvent("processing")).toBe(false);
+    expect(shouldSkipIntegrationEvent("received")).toBe(false);
+    expect(shouldSkipIntegrationEvent(null)).toBe(false);
+    expect(shouldSkipIntegrationEvent(undefined)).toBe(false);
+  });
+});
+
+describe("buildLegacyPaymentStatusUpdates", () => {
+  it("collects once on the first paid event", () => {
+    const result = buildLegacyPaymentStatusUpdates({
+      mapped: "paid",
+      previousStatus: "unpaid",
+      previousCollectedCents: 0,
+      paidAmountCents: 12_500,
+      billingAmountCents: 12_500,
+      isDeposit: false,
+    });
+    expect(result.duplicate).toBe(false);
+    expect(result.updates).toMatchObject({
+      square_payment_status: "paid",
+      billing_collected_cents: 12_500,
+      billing_stage: "paid",
+    });
+  });
+
+  it("duplicate paid events never collect twice", () => {
+    const replay = buildLegacyPaymentStatusUpdates({
+      mapped: "paid",
+      previousStatus: "paid",
+      previousCollectedCents: 12_500,
+      paidAmountCents: 12_500,
+      billingAmountCents: 12_500,
+      isDeposit: false,
+    });
+    expect(replay.duplicate).toBe(true);
+    expect(replay.updates).toEqual({});
+  });
+
+  it("a paid deposit accumulates on prior collections and readies the balance", () => {
+    const result = buildLegacyPaymentStatusUpdates({
+      mapped: "paid",
+      previousStatus: "unpaid",
+      previousCollectedCents: 5_000,
+      paidAmountCents: null,
+      billingAmountCents: 7_500,
+      isDeposit: true,
+    });
+    expect(result.updates).toMatchObject({
+      billing_collected_cents: 12_500,
+      billing_stage: "ready_to_invoice",
+    });
+  });
+
+  it("refunds mark the status but never increase collections", () => {
+    const result = buildLegacyPaymentStatusUpdates({
+      mapped: "refunded",
+      previousStatus: "paid",
+      previousCollectedCents: 12_500,
+      paidAmountCents: 12_500,
+      billingAmountCents: 12_500,
+      isDeposit: false,
+    });
+    expect(result.duplicate).toBe(false);
+    expect(result.updates).toEqual({ square_payment_status: "refunded" });
+    expect("billing_collected_cents" in result.updates).toBe(false);
+  });
+
+  it("partial payments track Square's completed total without stacking", () => {
+    const result = buildLegacyPaymentStatusUpdates({
+      mapped: "partially_paid",
+      previousStatus: "partially_paid",
+      previousCollectedCents: 4_000,
+      paidAmountCents: 6_000,
+      billingAmountCents: 10_000,
+      isDeposit: false,
+    });
+    expect(result.updates).toMatchObject({
+      billing_collected_cents: 6_000,
+      billing_stage: "invoiced",
+    });
+  });
+});
+
+describe("v2 payment event mapping", () => {
+  it("ledgers terminal paid and refunded events with deterministic ids", () => {
+    expect(v2PaymentStatusForMapped("paid")).toBe("succeeded");
+    expect(v2PaymentStatusForMapped("refunded")).toBe("refunded");
+    expect(v2PaymentStatusForMapped("partially_paid")).toBeNull();
+    expect(v2PaymentStatusForMapped("cancelled")).toBeNull();
+    expect(squareInvoiceTransactionId("inv-1", "paid")).toBe(
+      squareInvoiceTransactionId("inv-1", "paid")
+    );
+    expect(squareInvoiceTransactionId("inv-1", "paid")).not.toBe(
+      squareInvoiceTransactionId("inv-1", "refunded")
+    );
   });
 });

@@ -3,8 +3,8 @@ import Link from "next/link";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import { canUseMessenger } from "@/lib/permissions";
 import { listDirectory, splitDirectorySections } from "@/lib/services/directory";
+import { listOnlineStaffIds } from "@/lib/services/shopPhone";
 import { DirectoryList } from "@/components/messages/DirectoryList";
-import { CallOverlay } from "@/components/messages/CallOverlay";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,7 @@ export default async function DirectoryPage({ searchParams }: Props) {
     staff,
     user.active_location_id
   );
+  const onlineUserIds = await listOnlineStaffIds();
 
   return (
     <div className="page-stack mx-auto max-w-2xl">
@@ -48,8 +49,11 @@ export default async function DirectoryPage({ searchParams }: Props) {
           Search
         </button>
       </form>
-      <DirectoryList atLocation={atLocation} allCompany={allCompany} />
-      <CallOverlay currentUserId={user.user_id} />
+      <DirectoryList
+        atLocation={atLocation}
+        allCompany={allCompany}
+        onlineUserIds={onlineUserIds}
+      />
     </div>
   );
 }

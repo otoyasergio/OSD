@@ -4,6 +4,7 @@ import {
   extractWixContactFields,
   findMatchingCustomer,
   firstNonEmpty,
+  isCustomerInSyncWithWix,
   normalizeOptional,
 } from "@/lib/wix/contactNormalize";
 import type { WixContact } from "@/lib/wix/types";
@@ -80,18 +81,24 @@ describe("contactNormalize", () => {
     const rows = [
       {
         customer_id: "c1",
+        first_name: "Ada",
+        last_name: "Lovelace",
         email: "old@example.com",
         phone: "111",
         wix_contact_id: "wix-a",
       },
       {
         customer_id: "c2",
+        first_name: "Ada",
+        last_name: "Lovelace",
         email: "Ada@Example.com",
         phone: "222",
         wix_contact_id: null,
       },
       {
         customer_id: "c3",
+        first_name: "No",
+        last_name: "Email",
         email: null,
         phone: "333",
         wix_contact_id: null,
@@ -129,5 +136,109 @@ describe("contactNormalize", () => {
         phone: "999",
       })
     ).toBeNull();
+  });
+
+  it("isCustomerInSyncWithWix skips no-op updates", () => {
+    const existing = {
+      customer_id: "c1",
+      first_name: "Ada",
+      last_name: "Lovelace",
+      email: "ada@example.com",
+      phone: "555-0100",
+      wix_contact_id: "wix-1",
+    };
+    const fields = {
+      wixContactId: "wix-1",
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+      phone: "555-0100",
+    };
+
+    expect(isCustomerInSyncWithWix(existing, fields)).toBe(true);
+    expect(isCustomerInSyncWithWix(existing, { ...fields, firstName: "Augusta" })).toBe(
+      false
+    );
+    expect(isCustomerInSyncWithWix({ ...existing, wix_contact_id: null }, fields)).toBe(
+      false
+    );
+  });
+
+  it("customersNeedingWixPush selects local rows that were never linked", async () => {
+    const { customersNeedingWixPush } = await import("@/lib/wix/contactNormalize");
+    const linked = {
+      customer_id: "c1",
+      first_name: "Ada",
+      last_name: "Lovelace",
+      email: "ada@example.com",
+      phone: "555-0100",
+      wix_contact_id: "wix-1",
+    };
+    const unlinked = { ...linked, customer_id: "c2", wix_contact_id: null };
+    expect(customersNeedingWixPush([linked, unlinked])).toEqual([unlinked]);
+  });
+
+  it("sanitizeWixPushProfile trims names and drops non-phone values", async () => {
+    const { sanitizeWixPushProfile } = await import("@/lib/wix/contactNormalize");
+    expect(
+      sanitizeWixPushProfile({
+        customer_id: "c1",
+        first_name: "Mazhar ",
+        last_name: "Ahmad",
+        email: "mazhar@example.com",
+        phone: "(437) 974-4783",
+        wix_contact_id: null,
+      })
+    ).toEqual({
+      firstName: "Mazhar",
+      lastName: "Ahmad",
+      email: "mazhar@example.com",
+      phone: "(437) 974-4783",
+    });
+    expect(
+      sanitizeWixPushProfile({
+        customer_id: "c2",
+        first_name: "Mark",
+        last_name: "Pozarlik",
+        email: "mark@example.com",
+        phone: "Pozarlik",
+        wix_contact_id: null,
+      }).phone
+    ).toBeNull();
+  });
+
+  it("wixContactAlreadyLinkedToOtherCustomer detects duplicate local rows", async () => {
+    const { wixContactAlreadyLinkedToOtherCustomer } =
+      await import("@/lib/wix/contactNormalize");
+    const rows = [
+      {
+        customer_id: "original",
+        first_name: "Mazhar",
+        last_name: "Ahmad",
+        email: "a@example.com",
+        phone: "4379744783",
+        wix_contact_id: "wix-1",
+      },
+      {
+        customer_id: "duplicate",
+        first_name: "Mazhar ",
+        last_name: "Ahmad",
+        email: "a@example.com",
+        phone: "4379744783",
+        wix_contact_id: null,
+      },
+    ];
+    expect(
+      wixContactAlreadyLinkedToOtherCustomer(rows, {
+        customerId: "duplicate",
+        wixContactId: "wix-1",
+      })
+    ).toBe(true);
+    expect(
+      wixContactAlreadyLinkedToOtherCustomer(rows, {
+        customerId: "original",
+        wixContactId: "wix-1",
+      })
+    ).toBe(false);
   });
 });

@@ -1,8 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { toFormErrorMessage } from "@/lib/services/errors";
 import { moveWorkOrderOnBoard } from "@/lib/services/workOrderTransitions";
+import { recordUxFailure } from "@/lib/services/uxEvents";
 
 export type BoardMoveResult = { error: string | null };
 
@@ -13,7 +13,12 @@ export async function moveWorkOrderOnBoardAction(
   try {
     await moveWorkOrderOnBoard(workOrderId, targetColumnId);
   } catch (error) {
-    return { error: toFormErrorMessage(error) };
+    return {
+      error: await recordUxFailure(error, {
+        source: "board.move",
+        context: { work_order_id: workOrderId, target_column_id: targetColumnId },
+      }),
+    };
   }
 
   revalidatePath("/dashboard");

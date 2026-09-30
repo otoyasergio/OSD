@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getCurrentAppUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canViewFiledArchive, staffHomePath } from "@/lib/permissions";
 import { listCompletedWorkOrdersForActiveLocation } from "@/lib/services/filedWorkOrders";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -20,9 +20,10 @@ export default async function CompleteAndFiledPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const user = await getCurrentAppUser();
-  if (!user) redirect("/login");
-  if (!canViewFiledArchive(user.role)) redirect(staffHomePath(user.role));
+  const preview = await getRolePreviewContext();
+  if (!preview) redirect("/login");
+  const { role: viewRole } = preview;
+  if (!canViewFiledArchive(viewRole)) redirect(staffHomePath(viewRole));
 
   const { q = "" } = await searchParams;
   const workOrders = await listCompletedWorkOrdersForActiveLocation(q);

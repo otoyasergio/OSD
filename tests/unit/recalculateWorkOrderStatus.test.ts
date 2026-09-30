@@ -50,6 +50,55 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("waiting_for_customer_approval");
   });
 
+  it("does not freeze WO on pending recommendations — completed jobs still reach QC", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("quality_check");
+  });
+
+  it("keeps in_progress when original job is still wrenching despite pending recs", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "waiting_for_customer_approval",
+        jobs: [{ status: "in_progress" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("in_progress");
+  });
+
+  it("approve after finish → unfinished: completed + new approved job → ready_for_technician", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_pickup",
+        jobs: [{ status: "completed" }, { status: "approved" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        hasSignedAgreement: true,
+      })
+    ).toBe("ready_for_technician");
+  });
+
+  it("decline keeps finished path when all jobs completed and QC done", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_pickup",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+      })
+    ).toBe("ready_for_pickup");
+  });
+
   it("sets waiting_for_parts when approved job has needed/ordered parts", () => {
     expect(
       deriveWorkOrderStatus({

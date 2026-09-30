@@ -22,6 +22,7 @@ import {
   acceptCall,
   declineCall,
   endCall,
+  getVideoCallRingInfo,
   startCall,
 } from "@/lib/services/messengerCalls";
 
@@ -271,4 +272,15 @@ export async function endCallAction(callId: string): Promise<{ error: string | n
     return { error: toFormErrorMessage(error) };
   }
   return { error: null };
+}
+
+export async function getVideoCallRingInfoAction(callId: string): Promise<{
+  callId: string;
+  callerName: string;
+} | null> {
+  try {
+    return await getVideoCallRingInfo(callId);
+  } catch {
+    return null;
+  }
 }

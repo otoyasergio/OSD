@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
+import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canViewClients } from "@/lib/permissions";
 import {
   countCustomers,
@@ -24,7 +25,9 @@ export default async function CustomersPage({
   searchParams: Promise<{ q?: string; tag?: string }>;
 }) {
   const user = await requireUser();
-  if (!canViewClients(user.role)) redirect("/dashboard");
+  const preview = await getRolePreviewContext();
+  const viewRole = preview?.role ?? user.role;
+  if (!canViewClients(viewRole)) redirect("/dashboard");
 
   const { q = "", tag = "" } = await searchParams;
   const accountType = ACCOUNT_FILTERS.includes(tag as CustomerAccountType | "")
