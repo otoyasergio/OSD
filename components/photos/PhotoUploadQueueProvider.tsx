@@ -349,6 +349,7 @@ export function PhotoUploadQueueProvider({
           store.list(scope),
           store.listConfirmations(scope),
         ]);
+        if (closedRef.current) throw new PhotoUploadQueueClosedError();
         const receiptById = new Map(
           receipts.map((receipt) => [receipt.queueId, receipt] as const)
         );
@@ -385,9 +386,14 @@ export function PhotoUploadQueueProvider({
       };
 
       const immediate = await inspect();
+      if (closedRef.current) throw new PhotoUploadQueueClosedError();
       if (immediate !== "wait") return immediate;
 
       return new Promise((resolve, reject) => {
+        if (closedRef.current) {
+          reject(new PhotoUploadQueueClosedError());
+          return;
+        }
         const waiter: ConfirmationWaiter = {
           refresh: () => {
             void inspect().then(

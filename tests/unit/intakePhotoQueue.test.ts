@@ -59,7 +59,7 @@ describe("intake photo queue helpers", () => {
     const failed = { queueId: "vin", category: "vin", status: "failed" };
     const queue = {
       attachDraftToWorkOrder: vi.fn(async () =>
-        REQUIRED.map((category) => ({ queueId: category }))
+        REQUIRED.map((category) => ({ queueId: category, category }))
       ),
       waitForConfirmations: vi.fn(async () => ({
         ok: false as const,

@@ -130,8 +130,29 @@ describe("photo upload queue status and sign-out", () => {
     expect(enqueue).toBeTruthy();
   });
 
-  it("shows Waiting to upload for online queued items and Retry only after failure", async () => {
-    await renderStatus(true);
+  it("shows Waiting to upload for online queued items and hides Retry until failed", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "user-a",
+            locationId: "location-a",
+            store,
+            isOnline: () => true,
+            uploadIntakePhoto: async () => ({
+              error: "Use a JPEG, PNG, WebP, or HEIC image.",
+            }),
+          },
+          createElement(PhotoUploadQueueStatus),
+          createElement(EnqueueOnce, {
+            category: "front",
+            fileName: "front.jpg",
+          })
+        )
+      );
+    });
     const enqueueButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.includes("enqueue")
     )!;
@@ -139,20 +160,16 @@ describe("photo upload queue status and sign-out", () => {
       enqueueButton.click();
     });
     await vi.waitFor(() => {
-      expect(container.textContent).toMatch(/Waiting to upload|failed/i);
+      expect(container.textContent).toMatch(/1 photo waiting/i);
     });
     const toggle = container.querySelector(
       '[aria-haspopup="true"], button[aria-expanded]'
-    ) as HTMLButtonElement | null;
-    if (toggle && toggle.getAttribute("aria-expanded") !== "true") {
-      await act(async () => {
-        toggle.click();
-      });
-    }
-    await vi.waitFor(() => {
-      expect(container.querySelector("button[aria-label^='Retry']")).toBeTruthy();
+    ) as HTMLButtonElement;
+    await act(async () => {
+      toggle.click();
     });
-    expect(container.textContent).toMatch(/Failed/);
+    expect(container.textContent).toMatch(/Waiting to upload/);
+    expect(container.querySelector("button[aria-label^='Retry']")).toBeNull();
   });
 
   it("warns before sign-out when scoped queue items remain", async () => {

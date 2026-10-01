@@ -359,6 +359,11 @@ describe("PhotoUploadQueueProvider", () => {
     let firstApi!: PhotoUploadQueueApi;
     await renderProvider({
       store: new MemoryPhotoUploadQueueStore(database),
+      uploadIntakePhoto: async (_id, _prev, form) => ({
+        error: null,
+        photoId: PHOTO_ID,
+        clientUploadId: String(form.get("client_upload_id")),
+      }),
       onReady: (next) => {
         firstApi = next;
       },
@@ -382,6 +387,11 @@ describe("PhotoUploadQueueProvider", () => {
     let remounted!: PhotoUploadQueueApi;
     await renderProvider({
       store: new MemoryPhotoUploadQueueStore(database),
+      uploadIntakePhoto: async (_id, _prev, form) => ({
+        error: null,
+        photoId: PHOTO_ID,
+        clientUploadId: String(form.get("client_upload_id")),
+      }),
       onReady: (next) => {
         remounted = next;
       },

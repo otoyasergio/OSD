@@ -104,11 +104,19 @@ export function PhotosTab({
       const files = await readPickedPhotoFiles(input);
       const file = files[0] ?? null;
       if (!file) return;
+      const form = input.form;
+      const formData = form ? new FormData(form) : null;
+      const category = String(
+        formData?.get("category") || categoryRef.current || "front"
+      );
+      const notes = String(formData?.get("notes") ?? notesRef.current).trim();
+      categoryRef.current = category as PhotoCategory;
+      notesRef.current = notes;
       await queue.enqueue({
         file,
-        category: categoryRef.current,
+        category,
         workOrderId,
-        notes: notesRef.current || undefined,
+        notes: notes || undefined,
       });
     } catch (error) {
       if (error instanceof PhotoQueuePersistenceError) {
