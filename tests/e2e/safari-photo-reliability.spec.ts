@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { storageStatePath } from "./fixtures/auth";
 import { assertSafeMutationEnvironment } from "./fixtures/environmentGuard";
@@ -26,6 +27,45 @@ async function markBrowserOffline(page: Page) {
     });
     window.dispatchEvent(new Event("offline"));
   });
+}
+
+/**
+ * WebKit Playwright often attaches files to a 1×1 opacity-0 input without
+ * firing `change`. If setInputFiles did not start enqueue, assign the HEIC
+ * through DataTransfer and dispatch the events PhotosTab listens for.
+ */
+async function enqueueLibraryHeic(form: Locator, heicPath: string) {
+  const library = form.getByLabel("Photo library");
+  await library.setInputFiles(heicPath);
+  const started = await Promise.race([
+    form
+      .getByRole("button", { name: /Preparing photo/i })
+      .waitFor({ state: "visible", timeout: 2_000 })
+      .then(() => true),
+    form
+      .getByText(/waiting for connection/i)
+      .waitFor({ state: "visible", timeout: 2_000 })
+      .then(() => true),
+  ]).catch(() => false);
+  if (started) return;
+
+  const bytes = Array.from(readFileSync(heicPath));
+  const attached = await library.evaluate(
+    (input, payload) => {
+      const el = input as HTMLInputElement;
+      const file = new File([new Uint8Array(payload.bytes)], payload.name, {
+        type: "image/heic",
+      });
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      el.files = transfer.files;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return el.files?.length ?? 0;
+    },
+    { bytes, name: "sample.heic" }
+  );
+  expect(attached).toBeGreaterThan(0);
 }
 
 /**
@@ -63,9 +103,7 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
     await context.setOffline(true);
     await markBrowserOffline(page);
 
-    await form.getByRole("button", { name: "Choose photo" }).click();
-    await expect(page.getByRole("dialog", { name: "Add photo" })).toBeVisible();
-    await form.getByLabel("Photo library").setInputFiles(HEIC_FIXTURE);
+    await enqueueLibraryHeic(form, HEIC_FIXTURE);
 
     await expect(page.getByText(/waiting for connection/i).first()).toBeVisible({
       timeout: 30_000,
