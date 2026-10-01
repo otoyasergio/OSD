@@ -20,6 +20,10 @@
   text-align: left;
   cursor: grab;
   font: inherit;
+  /* Long-press starts a drag; keep iOS from showing the image callout instead. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .cardButton:active {
@@ -79,8 +83,10 @@
   cursor: pointer;
 }
 
-.scrollBtn:hover {
-  background: var(--surface-muted);
+@media (hover: hover) {
+  .scrollBtn:hover {
+    background: var(--surface-muted);
+  }
 }
 
 .carousel {
@@ -118,9 +124,11 @@
     box-shadow 0.15s ease;
 }
 
-.card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+@media (hover: hover) {
+  .card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
 }
 
 .cardWarn {
