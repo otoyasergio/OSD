@@ -1,4 +1,5 @@
-export type PhotoQueuePersistenceErrorCode = "quota_exceeded" | "persistence_failed";
+export type PhotoQueuePersistenceErrorCode =
+  "quota_exceeded" | "persistence_failed" | "upgrade_blocked";
 
 export class PhotoUploadQueueClosedError extends Error {
   readonly name = "PhotoUploadQueueClosedError";

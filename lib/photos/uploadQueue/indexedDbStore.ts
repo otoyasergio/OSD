@@ -128,14 +128,64 @@ function ensurePhotoUploadObjectStores(
   }
 }
 
-const openIndexedDatabase: PhotoUploadQueueDatabaseOpener = async (name, version) => {
-  const database = await openDB<PhotoUploadQueueSchema>(name, version, {
-    upgrade(upgradeDatabase) {
-      ensurePhotoUploadObjectStores(upgradeDatabase);
-    },
-  });
-  return wrapDatabase(database);
-};
+export type PhotoUploadQueueIdbOpen = (
+  name: string,
+  version: number,
+  options: {
+    upgrade(database: IDBPDatabase<PhotoUploadQueueSchema>): void;
+    blocked?(): void;
+    blocking?(): void;
+  }
+) => Promise<IDBPDatabase<PhotoUploadQueueSchema>>;
+
+export function createIndexedDatabaseOpener(
+  open: PhotoUploadQueueIdbOpen = openDB as PhotoUploadQueueIdbOpen
+): PhotoUploadQueueDatabaseOpener {
+  return async (name, version) => {
+    let opened: IDBPDatabase<PhotoUploadQueueSchema> | null = null;
+    let settled = false;
+    const blockedError = new PhotoQueuePersistenceError(
+      "upgrade_blocked",
+      "The photo upload queue is blocked by another tab upgrading this database."
+    );
+    return new Promise<PhotoUploadQueueDatabase>((resolve, reject) => {
+      const settleReject = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        reject(
+          error instanceof PhotoQueuePersistenceError ? error : persistenceError(error)
+        );
+      };
+      const pending = open(name, version, {
+        upgrade(upgradeDatabase) {
+          ensurePhotoUploadObjectStores(upgradeDatabase);
+        },
+        blocked() {
+          settleReject(blockedError);
+        },
+        blocking() {
+          opened?.close();
+        },
+      });
+      pending.then(
+        (database) => {
+          opened = database;
+          if (settled) {
+            database.close();
+            return;
+          }
+          settled = true;
+          resolve(wrapDatabase(database));
+        },
+        (error: unknown) => {
+          settleReject(error);
+        }
+      );
+    });
+  };
+}
+
+const openIndexedDatabase = createIndexedDatabaseOpener();
 
 function belongsToScope(item: QueuedPhotoUpload, scope: PhotoUploadScope): boolean {
   return item.userId === scope.userId && item.locationId === scope.locationId;
@@ -216,13 +266,27 @@ export type IndexedDbPhotoUploadQueueStoreOptions = {
 };
 
 export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
-  private readonly database: Promise<PhotoUploadQueueDatabase>;
+  private readonly openDatabaseFn: PhotoUploadQueueDatabaseOpener;
+  private readonly databaseName: string;
+  private databasePromise: Promise<PhotoUploadQueueDatabase> | null = null;
 
   constructor(options: IndexedDbPhotoUploadQueueStoreOptions = {}) {
-    this.database = (options.openDatabase ?? openIndexedDatabase)(
-      options.databaseName ?? PHOTO_UPLOAD_QUEUE_DB_NAME,
-      PHOTO_UPLOAD_QUEUE_DB_VERSION
-    );
+    this.openDatabaseFn = options.openDatabase ?? openIndexedDatabase;
+    this.databaseName = options.databaseName ?? PHOTO_UPLOAD_QUEUE_DB_NAME;
+    this.databasePromise = this.beginOpen();
+  }
+
+  private beginOpen(): Promise<PhotoUploadQueueDatabase> {
+    const pending = this.openDatabaseFn(this.databaseName, PHOTO_UPLOAD_QUEUE_DB_VERSION);
+    void pending.catch(() => {
+      if (this.databasePromise === pending) this.databasePromise = null;
+    });
+    return pending;
+  }
+
+  private getDatabase(): Promise<PhotoUploadQueueDatabase> {
+    if (!this.databasePromise) this.databasePromise = this.beginOpen();
+    return this.databasePromise;
   }
 
   async put(scope: PhotoUploadScope, item: QueuedPhotoUpload): Promise<void> {
@@ -230,7 +294,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
       throw new PhotoUploadQueueScopeError();
     }
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       await runTransaction(transaction, async () => {
         const existing = await transaction.get(item.queueId);
         if (existing && !belongsToScope(existing, scope)) {
@@ -246,7 +310,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
 
   async get(queueId: string, scope: PhotoUploadScope): Promise<QueuedPhotoUpload | null> {
     try {
-      const transaction = (await this.database).transaction("readonly");
+      const transaction = (await this.getDatabase()).transaction("readonly");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         return item && belongsToScope(item, scope) ? item : null;
@@ -258,7 +322,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
 
   async list(scope: PhotoUploadScope): Promise<QueuedPhotoUpload[]> {
     try {
-      const transaction = (await this.database).transaction("readonly");
+      const transaction = (await this.getDatabase()).transaction("readonly");
       return await runTransaction(transaction, async () => {
         const items = await transaction.listByScope(scope);
         return items
@@ -280,7 +344,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     patch: PhotoUploadQueuePatch
   ): Promise<QueuedPhotoUpload | null> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (!item || !belongsToScope(item, scope)) return null;
@@ -301,7 +365,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
 
   async remove(queueId: string, scope: PhotoUploadScope): Promise<void> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (item && belongsToScope(item, scope)) {
@@ -319,7 +383,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     maxAttempts = DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS
   ): Promise<number> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const items = await transaction.listByScope(scope);
         let recovered = 0;
@@ -384,7 +448,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     maxAttempts: number
   ): Promise<AcquiredPhotoUploadClaim | null> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         const scopeItems = await transaction.listByScope(scope);
@@ -461,7 +525,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     ttlMs: number
   ): Promise<PhotoUploadClaim | null> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (
@@ -492,7 +556,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     claim: AcquiredPhotoUploadClaim
   ): Promise<boolean> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (
@@ -538,7 +602,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     releaseClaim = false
   ): Promise<QueuedPhotoUpload | null> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (
@@ -581,7 +645,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     policy: PhotoUploadRetryPolicy
   ): Promise<QueuedPhotoUpload | null> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (
@@ -624,7 +688,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     confirmation: PhotoUploadConfirmationInput
   ): Promise<boolean> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (
@@ -653,7 +717,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     scope: PhotoUploadScope
   ): Promise<PhotoUploadConfirmationReceipt[]> {
     try {
-      const transaction = (await this.database).transaction("readonly");
+      const transaction = (await this.getDatabase()).transaction("readonly");
       return await runTransaction(transaction, async () => {
         const receipts = await transaction.listConfirmationsByScope(scope);
         return receipts
@@ -677,7 +741,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     scope: PhotoUploadScope
   ): Promise<PhotoUploadConfirmationReceipt | null> {
     try {
-      const transaction = (await this.database).transaction("readonly");
+      const transaction = (await this.getDatabase()).transaction("readonly");
       return await runTransaction(transaction, async () => {
         const receipt = await transaction.getConfirmation(queueId);
         if (
@@ -694,21 +758,30 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     }
   }
 
-  async pruneConfirmations(scope: PhotoUploadScope, olderThan: number): Promise<number> {
+  async pruneConfirmations(
+    scope: PhotoUploadScope,
+    olderThan: number,
+    keepQueueIds?: Iterable<string>
+  ): Promise<number> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const keep = new Set(keepQueueIds);
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const receipts = await transaction.listConfirmationsByScope(scope);
         let removed = 0;
         for (const receipt of receipts) {
           if (
-            receipt.userId === scope.userId &&
-            receipt.locationId === scope.locationId &&
-            receipt.confirmedAt < olderThan
+            receipt.userId !== scope.userId ||
+            receipt.locationId !== scope.locationId ||
+            receipt.confirmedAt >= olderThan ||
+            keep.has(receipt.queueId)
           ) {
-            await transaction.deleteConfirmation(receipt.queueId);
-            removed += 1;
+            continue;
           }
+          const extant = await transaction.get(receipt.queueId);
+          if (extant) continue;
+          await transaction.deleteConfirmation(receipt.queueId);
+          removed += 1;
         }
         return removed;
       });
@@ -725,7 +798,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     maxAttempts = DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS
   ): Promise<boolean> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (!item || !belongsToScope(item, scope)) return false;
@@ -759,7 +832,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     now: number
   ): Promise<QueuedPhotoUpload[]> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const items = await transaction.listByScope(scope);
         const attached: QueuedPhotoUpload[] = [];
@@ -785,7 +858,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     now: number
   ): Promise<QueuedPhotoUpload | null> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (!item || !belongsToScope(item, scope) || item.status !== "failed") {
@@ -807,7 +880,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     now: number
   ): Promise<boolean> {
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const item = await transaction.get(queueId);
         if (
@@ -836,7 +909,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
       throw new PhotoUploadQueueScopeError();
     }
     try {
-      const transaction = (await this.database).transaction("readwrite");
+      const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const existingItems = await transaction.listByScope(scope);
         for (const existing of existingItems) {
@@ -866,6 +939,13 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
   }
 
   async close(): Promise<void> {
-    (await this.database).close?.();
+    const pending = this.databasePromise;
+    this.databasePromise = null;
+    if (!pending) return;
+    try {
+      (await pending).close?.();
+    } catch {
+      // Open may have been rejected; nothing to close.
+    }
   }
 }

@@ -23,10 +23,11 @@ import { PhotoUploadQueueRunner } from "@/lib/photos/uploadQueue/runner";
 import { PhotoUploadQueueClosedError } from "@/lib/photos/uploadQueue/errors";
 import { IndexedDbPhotoUploadQueueStore } from "@/lib/photos/uploadQueue/indexedDbStore";
 import type { PhotoUploadQueueStore } from "@/lib/photos/uploadQueue/store";
-import type {
-  PhotoUploadConfirmationReceipt,
-  PhotoUploadScope,
-  QueuedPhotoUpload,
+import {
+  PHOTO_CONFIRMATION_TTL_MS,
+  type PhotoUploadConfirmationReceipt,
+  type PhotoUploadScope,
+  type QueuedPhotoUpload,
 } from "@/lib/photos/uploadQueue/types";
 import {
   uploadQueuedPhoto,
@@ -133,6 +134,7 @@ export function PhotoUploadQueueProvider({
   const runnerRef = useRef<PhotoUploadQueueRunner | null>(null);
   const previewUrlsRef = useRef<Record<string, string>>({});
   const closedRef = useRef(false);
+  const pruneScheduledRef = useRef(false);
   const storeEvents = useMemo(() => new EventTarget(), []);
 
   const readNow = useCallback(() => {
@@ -177,10 +179,12 @@ export function PhotoUploadQueueProvider({
   }, []);
 
   const refreshItems = useCallback(async () => {
+    if (closedRef.current) return;
     const [next, receipts] = await Promise.all([
       store.list(scope),
       store.listConfirmations(scope),
     ]);
+    if (closedRef.current) return;
     setItems(next);
     setConfirmations(receipts);
     setPreviewUrls((current) => {
@@ -190,7 +194,18 @@ export function PhotoUploadQueueProvider({
     });
     emitNewReceipts(receipts);
     for (const waiter of waitersRef.current) waiter.refresh();
-  }, [emitNewReceipts, store, scope]);
+    if (pruneScheduledRef.current) return;
+    pruneScheduledRef.current = true;
+    const keep = new Set<string>([
+      ...next.map((item) => item.queueId),
+      ...[...waitersRef.current].flatMap((waiter) => waiter.queueIds),
+    ]);
+    void store
+      .pruneConfirmations(scope, readNow() - PHOTO_CONFIRMATION_TTL_MS, keep)
+      .catch(() => {
+        pruneScheduledRef.current = false;
+      });
+  }, [emitNewReceipts, readNow, store, scope]);
 
   useEffect(() => {
     nowFnRef.current = now;
@@ -207,6 +222,7 @@ export function PhotoUploadQueueProvider({
 
   useEffect(() => {
     closedRef.current = false;
+    pruneScheduledRef.current = false;
     seenReceiptIdsRef.current = new Set();
     const ownerId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -394,26 +410,34 @@ export function PhotoUploadQueueProvider({
           reject(new PhotoUploadQueueClosedError());
           return;
         }
+        let settled = false;
         const waiter: ConfirmationWaiter = {
+          queueIds: expected,
           refresh: () => {
             void inspect().then(
               (result) => {
-                if (result === "wait") return;
+                if (result === "wait" || settled) return;
+                settled = true;
                 waitersRef.current.delete(waiter);
                 resolve(result);
               },
               (error: unknown) => {
+                if (settled) return;
+                settled = true;
                 waitersRef.current.delete(waiter);
                 reject(error);
               }
             );
           },
           reject: (error) => {
+            if (settled) return;
+            settled = true;
             waitersRef.current.delete(waiter);
             reject(error);
           },
         };
         waitersRef.current.add(waiter);
+        waiter.refresh();
       });
     },
     [scope, store]
@@ -472,6 +496,7 @@ export function PhotoUploadQueueProvider({
 }
 
 type ConfirmationWaiter = {
+  queueIds: string[];
   refresh(): void;
   reject(error: Error): void;
 };

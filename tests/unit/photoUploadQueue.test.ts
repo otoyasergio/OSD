@@ -23,7 +23,11 @@ import {
   type PhotoUploadRetryPolicy,
   PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
 } from "@/lib/photos/uploadQueue/store";
-import type { PhotoUploadScope, QueuedPhotoUpload } from "@/lib/photos/uploadQueue/types";
+import {
+  PHOTO_CONFIRMATION_TTL_MS,
+  type PhotoUploadScope,
+  type QueuedPhotoUpload,
+} from "@/lib/photos/uploadQueue/types";
 import {
   createMemoryPhotoUploadQueueDatabase,
   MemoryPhotoUploadQueueStore,
@@ -971,6 +975,76 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
     await expect(
       remounted.listConfirmations({ userId: "user-b", locationId: SCOPE.locationId })
     ).resolves.toEqual([]);
+  });
+
+  it("prunes old scoped confirmation receipts while keeping needed and in-scope fresh ones", async () => {
+    const database = createMemoryPhotoUploadQueueDatabase();
+    const store = new MemoryPhotoUploadQueueStore(database);
+    const now = 2_000_000_000_000;
+    const oldAt = now - PHOTO_CONFIRMATION_TTL_MS - 1;
+    await store.put(SCOPE, queuedPhoto({ queueId: "live-item" }));
+    database.confirmations.set("old", {
+      queueId: "old",
+      clientUploadId: "c-old",
+      photoId: "p-old",
+      userId: SCOPE.userId,
+      locationId: SCOPE.locationId,
+      confirmedAt: oldAt,
+      category: "front",
+    });
+    database.confirmations.set("fresh", {
+      queueId: "fresh",
+      clientUploadId: "c-fresh",
+      photoId: "p-fresh",
+      userId: SCOPE.userId,
+      locationId: SCOPE.locationId,
+      confirmedAt: now - 10,
+      category: "rear",
+    });
+    database.confirmations.set("kept-wait", {
+      queueId: "kept-wait",
+      clientUploadId: "c-wait",
+      photoId: "p-wait",
+      userId: SCOPE.userId,
+      locationId: SCOPE.locationId,
+      confirmedAt: oldAt,
+      category: "vin",
+    });
+    database.confirmations.set("live-item", {
+      queueId: "live-item",
+      clientUploadId: "c-live",
+      photoId: "p-live",
+      userId: SCOPE.userId,
+      locationId: SCOPE.locationId,
+      confirmedAt: oldAt,
+      category: "damage",
+    });
+    database.confirmations.set("other-scope", {
+      queueId: "other-scope",
+      clientUploadId: "c-b",
+      photoId: "p-b",
+      userId: "user-b",
+      locationId: SCOPE.locationId,
+      confirmedAt: oldAt,
+      category: "front",
+    });
+
+    await expect(
+      store.pruneConfirmations(
+        SCOPE,
+        now - PHOTO_CONFIRMATION_TTL_MS,
+        new Set(["kept-wait"])
+      )
+    ).resolves.toBe(1);
+    const remaining = await store.listConfirmations(SCOPE);
+    expect(remaining.map((receipt) => receipt.queueId).sort()).toEqual([
+      "fresh",
+      "kept-wait",
+      "live-item",
+    ]);
+    await expect(
+      store.listConfirmations({ userId: "user-b", locationId: SCOPE.locationId })
+    ).resolves.toEqual([expect.objectContaining({ queueId: "other-scope" })]);
   });
 });
 

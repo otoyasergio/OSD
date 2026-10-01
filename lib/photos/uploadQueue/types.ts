@@ -81,3 +81,10 @@ export type PhotoUploadConfirmationInput = {
   photoId: string;
   clientUploadId: string;
 };
+
+/**
+ * Conservative metadata-only TTL for confirmation receipts.
+ * Receipts older than this may be pruned at scoped provider startup
+ * unless an extant queue item or waiter still needs them.
+ */
+export const PHOTO_CONFIRMATION_TTL_MS = 7 * 24 * 60 * 60 * 1000;

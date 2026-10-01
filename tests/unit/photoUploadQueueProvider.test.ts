@@ -77,6 +77,7 @@ describe("PhotoUploadQueueProvider", () => {
       clientUploadId?: string;
     }>;
     isOnline?: () => boolean;
+    now?: () => number;
     onReady: (api: PhotoUploadQueueApi) => void;
   }) {
     const store =
@@ -98,6 +99,7 @@ describe("PhotoUploadQueueProvider", () => {
                 clientUploadId: CLIENT_ID,
               })),
             isOnline: options.isOnline,
+            now: options.now,
           },
           createElement(Probe, { onReady: options.onReady })
         )
@@ -555,6 +557,223 @@ describe("PhotoUploadQueueProvider", () => {
     act(() => root.unmount());
     expect(revokeObjectURL.mock.calls.length).toBeGreaterThanOrEqual(3);
     root = createRoot(container);
+  });
+
+  it("resolves a waiter when the final receipt commits between inspect and registration", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    let api!: PhotoUploadQueueApi;
+    await renderProvider({
+      store,
+      isOnline: () => false,
+      onReady: (next) => {
+        api = next;
+      },
+    });
+
+    let queueId = "";
+    await act(async () => {
+      const item = await api.enqueue({
+        file: photoFile(),
+        category: "front",
+        workOrderId: "work-order-1",
+      });
+      queueId = item.queueId;
+    });
+    const queued = (await store.list(USER_A)).find((item) => item.queueId === queueId)!;
+    await store.put(USER_A, {
+      ...queued,
+      status: "uploading",
+      leaseOwner: "runner-a",
+      leaseExpiresAt: 9_999,
+      uploadSlotOwner: "runner-a",
+      uploadSlotExpiresAt: 9_999,
+    });
+
+    let releaseFirstInspect!: () => void;
+    const firstInspectHold = new Promise<void>((resolve) => {
+      releaseFirstInspect = resolve;
+    });
+    let confirmationReads = 0;
+    const originalListConfirmations = store.listConfirmations.bind(store);
+    const originalList = store.list.bind(store);
+    const snapshot = {
+      ...queued,
+      status: "uploading" as const,
+      leaseOwner: "runner-a",
+      leaseExpiresAt: 9_999,
+      uploadSlotOwner: "runner-a",
+      uploadSlotExpiresAt: 9_999,
+    };
+    store.listConfirmations = async (scope) => {
+      confirmationReads += 1;
+      if (confirmationReads === 1) {
+        await firstInspectHold;
+        return [];
+      }
+      return originalListConfirmations(scope);
+    };
+    store.list = async (scope) => {
+      if (confirmationReads < 1) {
+        await firstInspectHold;
+        return [snapshot];
+      }
+      if (confirmationReads === 1) return [snapshot];
+      return originalList(scope);
+    };
+
+    const pending = api.waitForConfirmations([queueId]);
+    await vi.waitFor(() => expect(confirmationReads).toBe(1));
+    await expect(
+      store.completeClaimedUpload(queueId, USER_A, "runner-a", 2_100, {
+        photoId: PHOTO_ID,
+        clientUploadId: queued.clientUploadId,
+      })
+    ).resolves.toBe(true);
+    releaseFirstInspect();
+    await expect(pending).resolves.toMatchObject({
+      ok: true,
+      confirmations: [expect.objectContaining({ queueId, photoId: PHOTO_ID })],
+    });
+  });
+
+  it("bails from refreshItems when the provider unmounts before a delayed list completes", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    let api!: PhotoUploadQueueApi;
+    await renderProvider({
+      store,
+      isOnline: () => false,
+      onReady: (next) => {
+        api = next;
+      },
+    });
+    const listener = vi.fn();
+    api.subscribeConfirmation(listener);
+    await act(async () => {
+      await api.enqueue({
+        file: photoFile(),
+        category: "front",
+        workOrderId: "work-order-1",
+      });
+    });
+
+    let releaseList!: () => void;
+    const listHold = new Promise<void>((resolve) => {
+      releaseList = resolve;
+    });
+    let delayedCalls = 0;
+    const originalList = store.list.bind(store);
+    store.list = async (scope) => {
+      delayedCalls += 1;
+      await listHold;
+      return originalList(scope);
+    };
+    void api.enqueue({
+      file: photoFile("rear.jpg"),
+      category: "rear",
+      workOrderId: "work-order-1",
+    });
+    await vi.waitFor(() => expect(delayedCalls).toBeGreaterThan(0));
+    act(() => root.unmount());
+    root = createRoot(container);
+    releaseList();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("prunes confirmation receipts older than seven days once after hydrate", async () => {
+    const database = createMemoryPhotoUploadQueueDatabase();
+    const store = new MemoryPhotoUploadQueueStore(database);
+    const now = 1_700_000_000_000;
+    const ttl = 7 * 24 * 60 * 60 * 1000;
+    database.confirmations.set("old-other", {
+      queueId: "old-other",
+      clientUploadId: "c-old",
+      photoId: "p-old",
+      userId: USER_A.userId,
+      locationId: USER_A.locationId,
+      confirmedAt: now - ttl - 1,
+      category: "front",
+      workOrderId: "wo-old",
+    });
+    database.confirmations.set("fresh", {
+      queueId: "fresh",
+      clientUploadId: "c-fresh",
+      photoId: "p-fresh",
+      userId: USER_A.userId,
+      locationId: USER_A.locationId,
+      confirmedAt: now - 1_000,
+      category: "rear",
+      workOrderId: "wo-fresh",
+    });
+    database.confirmations.set("needed-old", {
+      queueId: "needed-old",
+      clientUploadId: "c-need",
+      photoId: "p-need",
+      userId: USER_A.userId,
+      locationId: USER_A.locationId,
+      confirmedAt: now - ttl - 5,
+      category: "vin",
+      workOrderId: "wo-need",
+    });
+    database.confirmations.set("other-scope", {
+      queueId: "other-scope",
+      clientUploadId: "c-b",
+      photoId: "p-b",
+      userId: USER_B.userId,
+      locationId: USER_B.locationId,
+      confirmedAt: now - ttl - 1,
+      category: "front",
+      workOrderId: "wo-b",
+    });
+    await store.put(USER_A, {
+      queueId: "needed-old",
+      clientUploadId: "c-need",
+      userId: USER_A.userId,
+      locationId: USER_A.locationId,
+      workOrderId: "wo-need",
+      category: "vin",
+      blob: new Blob(["x"], { type: "image/jpeg" }),
+      fileName: "vin.jpg",
+      mimeType: "image/jpeg",
+      lastModified: 1,
+      byteCount: 1,
+      status: "queued",
+      attemptCount: 0,
+      retryAt: null,
+      lastError: null,
+      createdAt: now,
+      updatedAt: now,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      uploadSlotOwner: null,
+      uploadSlotExpiresAt: null,
+    });
+
+    let api!: PhotoUploadQueueApi;
+    await renderProvider({
+      store,
+      now: () => now,
+      onReady: (next) => {
+        api = next;
+      },
+    });
+    await vi.waitFor(async () => {
+      const receipts = await store.listConfirmations(USER_A);
+      expect(receipts.map((receipt) => receipt.queueId).sort()).toEqual([
+        "fresh",
+        "needed-old",
+      ]);
+    });
+    expect(await store.listConfirmations(USER_B)).toEqual([
+      expect.objectContaining({ queueId: "other-scope" }),
+    ]);
+    expect(api.confirmations.map((receipt) => receipt.queueId).sort()).toEqual([
+      "fresh",
+      "needed-old",
+    ]);
   });
 
   it("does not render another user or location queue after the scope changes", async () => {

@@ -408,17 +408,22 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     return { ...receipt };
   }
 
-  async pruneConfirmations(scope: PhotoUploadScope, olderThan: number): Promise<number> {
+  async pruneConfirmations(
+    scope: PhotoUploadScope,
+    olderThan: number,
+    keepQueueIds?: Iterable<string>
+  ): Promise<number> {
+    const keep = new Set(keepQueueIds);
     let removed = 0;
     for (const [queueId, receipt] of [...this.database.confirmations]) {
-      if (
-        receipt.userId === scope.userId &&
-        receipt.locationId === scope.locationId &&
-        receipt.confirmedAt < olderThan
-      ) {
-        this.database.confirmations.delete(queueId);
-        removed += 1;
+      if (receipt.userId !== scope.userId || receipt.locationId !== scope.locationId) {
+        continue;
       }
+      if (receipt.confirmedAt >= olderThan) continue;
+      if (keep.has(queueId)) continue;
+      if (this.database.items.has(queueId)) continue;
+      this.database.confirmations.delete(queueId);
+      removed += 1;
     }
     return removed;
   }

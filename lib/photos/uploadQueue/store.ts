@@ -215,7 +215,11 @@ export interface PhotoUploadQueueStore {
     queueId: string,
     scope: PhotoUploadScope
   ): Promise<PhotoUploadConfirmationReceipt | null>;
-  pruneConfirmations(scope: PhotoUploadScope, olderThan: number): Promise<number>;
+  pruneConfirmations(
+    scope: PhotoUploadScope,
+    olderThan: number,
+    keepQueueIds?: Iterable<string>
+  ): Promise<number>;
   releaseUploadClaim(
     queueId: string,
     scope: PhotoUploadScope,
