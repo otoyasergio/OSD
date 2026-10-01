@@ -18,6 +18,7 @@ import {
 } from "@/lib/photos/uploadQueue/runner";
 import {
   type AcquiredPhotoUploadClaim,
+  type PhotoUploadFailureSettlement,
   type PhotoUploadClaim,
   PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
 } from "@/lib/photos/uploadQueue/store";
@@ -670,6 +671,79 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
     });
   });
 
+  it("restores prior eligibility when releasing an unstarted attempt", async () => {
+    const database = createTransactionalPhotoUploadQueueDatabase();
+    const store = new IndexedDbPhotoUploadQueueStore({
+      openDatabase: database.openDatabase,
+    });
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        status: "retry_wait",
+        attemptCount: 1,
+        retryAt: 2_000,
+        lastError: "Previous network failure",
+      })
+    );
+    const claim = await store.tryAcquireUploadClaim(
+      "queue-1",
+      SCOPE,
+      "runner-a",
+      2_000,
+      1_000,
+      2,
+      2
+    );
+    expect(claim).toMatchObject({
+      item: { status: "uploading", attemptCount: 2 },
+    });
+
+    await expect(
+      store.releaseUnstartedUploadClaim("queue-1", SCOPE, "runner-b", 2_100, claim!)
+    ).resolves.toBe(false);
+    await expect(
+      store.releaseUnstartedUploadClaim("queue-1", SCOPE, "runner-a", 2_100, claim!)
+    ).resolves.toBe(true);
+    await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+      status: "retry_wait",
+      attemptCount: 1,
+      retryAt: 2_000,
+      lastError: "Previous network failure",
+      updatedAt: 2_100,
+      leaseOwner: null,
+      uploadSlotOwner: null,
+    });
+  });
+
+  it("owner-fences fallback settlement and releases its claim", async () => {
+    const database = createTransactionalPhotoUploadQueueDatabase();
+    const store = new IndexedDbPhotoUploadQueueStore({
+      openDatabase: database.openDatabase,
+    });
+    await store.put(SCOPE, queuedPhoto());
+    await store.tryAcquireUploadClaim("queue-1", SCOPE, "runner-a", 2_000, 1_000, 2, 5);
+    const settlement = {
+      status: "retry_wait" as const,
+      retryAt: 3_000,
+      lastError: "Network unavailable",
+      updatedAt: 2_000,
+    };
+
+    await expect(
+      store.settleClaimedFailure("queue-1", SCOPE, "runner-b", 2_100, settlement)
+    ).resolves.toBeNull();
+    await expect(
+      store.settleClaimedFailure("queue-1", SCOPE, "runner-a", 2_100, settlement)
+    ).resolves.toMatchObject({
+      status: "retry_wait",
+      attemptCount: 1,
+      retryAt: 3_000,
+      lastError: "Network unavailable",
+      leaseOwner: null,
+      uploadSlotOwner: null,
+    });
+  });
+
   it("fences claimed mutation and completion by persisted owner", async () => {
     const database = createTransactionalPhotoUploadQueueDatabase();
     const store = new IndexedDbPhotoUploadQueueStore({
@@ -843,6 +917,189 @@ describe("PhotoUploadQueueRunner", () => {
       leaseOwner: null,
     });
     runner.stop();
+  });
+
+  it.each([
+    {
+      label: "permanent",
+      outcome: {
+        ok: false as const,
+        retryable: false,
+        message: "This photo type is not supported.",
+      },
+      expectedStatus: "failed" as const,
+      expectedRetryAt: null,
+    },
+    {
+      label: "retryable",
+      outcome: {
+        ok: false as const,
+        retryable: true,
+        message: "Network unavailable",
+      },
+      expectedStatus: "retry_wait" as const,
+      expectedRetryAt: 3_000,
+    },
+  ])(
+    "fallback settlement persists a known $label outcome after the primary write fails",
+    async ({ outcome, expectedStatus, expectedRetryAt }) => {
+      const primaryError = new PhotoQueuePersistenceError(
+        "persistence_failed",
+        "The primary settlement write failed."
+      );
+      class PrimaryFailureStore extends MemoryPhotoUploadQueueStore {
+        primaryCalls = 0;
+        fallbackCalls = 0;
+
+        override async updateClaimed(
+          queueId: string,
+          scope: PhotoUploadScope,
+          owner: string,
+          now: number,
+          patch: Parameters<MemoryPhotoUploadQueueStore["updateClaimed"]>[4],
+          releaseClaim = false
+        ): Promise<QueuedPhotoUpload | null> {
+          if (releaseClaim) {
+            this.primaryCalls += 1;
+            throw primaryError;
+          }
+          return super.updateClaimed(queueId, scope, owner, now, patch, releaseClaim);
+        }
+
+        override async settleClaimedFailure(
+          queueId: string,
+          scope: PhotoUploadScope,
+          owner: string,
+          now: number,
+          settlement: PhotoUploadFailureSettlement
+        ): Promise<QueuedPhotoUpload | null> {
+          this.fallbackCalls += 1;
+          return super.settleClaimedFailure(queueId, scope, owner, now, settlement);
+        }
+      }
+      const store = new PrimaryFailureStore(createMemoryPhotoUploadQueueDatabase());
+      await store.put(SCOPE, queuedPhoto());
+      const timer = new ManualClockTimer();
+      const uploader = vi.fn().mockResolvedValue(outcome);
+      const onError = vi.fn();
+      const runner = new PhotoUploadQueueRunner({
+        scope: SCOPE,
+        store,
+        uploader,
+        now: () => timer.now,
+        timer,
+        isOnline: () => true,
+        isVisible: () => true,
+        eventTarget: new EventTarget(),
+        ownerId: "runner-a",
+        baseRetryDelayMs: 1_000,
+        onError,
+      });
+
+      await runner.start();
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-1", SCOPE)).toMatchObject({
+          status: expectedStatus,
+          attemptCount: 1,
+          retryAt: expectedRetryAt,
+          lastError: outcome.message,
+          leaseOwner: null,
+          uploadSlotOwner: null,
+        });
+      });
+      expect(store.primaryCalls).toBe(1);
+      expect(store.fallbackCalls).toBe(1);
+      expect(onError).not.toHaveBeenCalled();
+      expect(uploader).toHaveBeenCalledTimes(1);
+      if (expectedStatus === "retry_wait") {
+        await vi.waitFor(() => expect(timer.nextDelay).toBe(1_000));
+        await Promise.resolve();
+        expect(uploader).toHaveBeenCalledTimes(1);
+      } else {
+        await vi.waitFor(() => expect(timer.nextDelay).toBeNull());
+      }
+      await runner.stop();
+    }
+  );
+
+  it("surfaces fallback settlement failure and schedules bounded recovery", async () => {
+    const primaryError = new PhotoQueuePersistenceError(
+      "persistence_failed",
+      "The primary settlement write failed."
+    );
+    const fallbackError = new PhotoQueuePersistenceError(
+      "persistence_failed",
+      "The fallback settlement write failed."
+    );
+    class FailingSettlementStore extends MemoryPhotoUploadQueueStore {
+      override async updateClaimed(): Promise<QueuedPhotoUpload | null> {
+        throw primaryError;
+      }
+
+      override async settleClaimedFailure(): Promise<QueuedPhotoUpload | null> {
+        throw fallbackError;
+      }
+    }
+    const store = new FailingSettlementStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const timer = new ManualClockTimer();
+    const uploader = vi.fn().mockResolvedValue({
+      ok: false,
+      retryable: false,
+      message: "This photo type is not supported.",
+    });
+    const onError = vi.fn();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      leaseTtlMs: 1_000,
+      maxAttempts: 1,
+      onError,
+    });
+
+    try {
+      await runner.start();
+      await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+      expect(onError.mock.calls[0]?.[0]).toMatchObject({
+        name: "PhotoUploadQueueRunnerError",
+        source: "upload_settlement",
+        cause: fallbackError,
+      });
+      expect(unhandled).toEqual([]);
+      expect(uploader).toHaveBeenCalledTimes(1);
+      await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+        status: "uploading",
+        attemptCount: 1,
+      });
+      expect(timer.nextDelay).toBe(1_000);
+
+      timer.advanceBy(1_000);
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-1", SCOPE)).toMatchObject({
+          status: "failed",
+          lastError: PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
+          leaseOwner: null,
+        });
+      });
+      expect(uploader).toHaveBeenCalledTimes(1);
+      await flushUnhandledRejections();
+      expect(unhandled).toEqual([]);
+    } finally {
+      await runner.stop();
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   it("stops retrying after the bounded attempt limit", async () => {
@@ -1097,6 +1354,102 @@ describe("PhotoUploadQueueRunner", () => {
     } finally {
       await runner.stop();
       process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("rolls back unstarted attempts across repeated availability races", async () => {
+    const gates = [
+      { started: deferred(), release: deferred() },
+      { started: deferred(), release: deferred() },
+    ];
+    class GatedClaimStore extends MemoryPhotoUploadQueueStore {
+      claimCalls = 0;
+
+      override async tryAcquireUploadClaim(
+        queueId: string,
+        scope: PhotoUploadScope,
+        owner: string,
+        now: number,
+        ttlMs: number,
+        maxScopeSlots: number,
+        maxAttempts: number
+      ): Promise<AcquiredPhotoUploadClaim | null> {
+        const claim = await super.tryAcquireUploadClaim(
+          queueId,
+          scope,
+          owner,
+          now,
+          ttlMs,
+          maxScopeSlots,
+          maxAttempts
+        );
+        const gate = gates[this.claimCalls];
+        this.claimCalls += 1;
+        if (gate && claim) {
+          gate.started.resolve();
+          await gate.release.promise;
+        }
+        return claim;
+      }
+    }
+    const store = new GatedClaimStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        attemptCount: 1,
+        lastError: "Previous network failure",
+      })
+    );
+    let visible = true;
+    const uploader = vi.fn().mockResolvedValue({
+      ok: true,
+      photoId: "photo-1",
+    });
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => 2_000,
+      timer: { setTimeout: () => 1, clearTimeout: () => undefined },
+      isOnline: () => true,
+      isVisible: () => visible,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      maxAttempts: 2,
+    });
+
+    try {
+      for (const [index, gate] of gates.entries()) {
+        visible = true;
+        const scheduling = index === 0 ? runner.start() : runner.wake();
+        await gate.started.promise;
+        visible = false;
+        gate.release.resolve();
+        await scheduling;
+
+        await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+          status: "queued",
+          attemptCount: 1,
+          lastError: "Previous network failure",
+          leaseOwner: null,
+          uploadSlotOwner: null,
+        });
+        expect(uploader).not.toHaveBeenCalled();
+      }
+
+      visible = true;
+      await runner.wake();
+      await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(1));
+      expect(uploader.mock.calls[0]?.[0]).toMatchObject({
+        status: "uploading",
+        attemptCount: 2,
+      });
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-1", SCOPE)).toBeNull();
+      });
+    } finally {
+      for (const gate of gates) gate.release.resolve();
+      await runner.stop();
     }
   });
 

@@ -2,6 +2,7 @@ import {
   type AcquiredPhotoUploadClaim,
   DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
   type PhotoUploadClaim,
+  type PhotoUploadFailureSettlement,
   PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
@@ -189,6 +190,12 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     ).length;
     if (!alreadyOwnsLiveSlot && activeScopeSlots >= slotLimit) return null;
 
+    const priorEligibility = {
+      status: item.status,
+      attemptCount: item.attemptCount,
+      retryAt: item.retryAt,
+      lastError: item.lastError,
+    };
     const expiresAt = now + ttlMs;
     const claimedItem: QueuedPhotoUpload = {
       ...item,
@@ -203,7 +210,11 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
       uploadSlotExpiresAt: expiresAt,
     };
     this.database.items.set(queueId, claimedItem);
-    return { expiresAt, item: structuredClone(claimedItem) };
+    return {
+      expiresAt,
+      item: structuredClone(claimedItem),
+      priorEligibility,
+    };
   }
 
   async renewUploadClaim(
@@ -224,6 +235,45 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
       uploadSlotExpiresAt: expiresAt,
     });
     return { expiresAt };
+  }
+
+  async releaseUnstartedUploadClaim(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    claim: AcquiredPhotoUploadClaim
+  ): Promise<boolean> {
+    const item = this.database.items.get(queueId);
+    if (
+      !item ||
+      !belongsToScope(item, scope) ||
+      item.status !== "uploading" ||
+      item.leaseOwner !== owner ||
+      item.leaseExpiresAt !== claim.expiresAt ||
+      item.uploadSlotOwner !== owner ||
+      item.uploadSlotExpiresAt !== claim.expiresAt ||
+      item.attemptCount !== claim.item.attemptCount ||
+      claim.item.queueId !== queueId ||
+      !belongsToScope(claim.item, scope) ||
+      claim.item.leaseOwner !== owner ||
+      claim.item.leaseExpiresAt !== claim.expiresAt ||
+      claim.item.uploadSlotOwner !== owner ||
+      claim.item.uploadSlotExpiresAt !== claim.expiresAt ||
+      claim.item.attemptCount !== claim.priorEligibility.attemptCount + 1
+    ) {
+      return false;
+    }
+    this.database.items.set(queueId, {
+      ...item,
+      ...claim.priorEligibility,
+      updatedAt: now,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      uploadSlotOwner: null,
+      uploadSlotExpiresAt: null,
+    });
+    return true;
   }
 
   async updateClaimed(
@@ -252,6 +302,35 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
             uploadSlotExpiresAt: null,
           }
         : {}),
+    };
+    this.database.items.set(queueId, updated);
+    return structuredClone(updated);
+  }
+
+  async settleClaimedFailure(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    settlement: PhotoUploadFailureSettlement
+  ): Promise<QueuedPhotoUpload | null> {
+    const item = this.database.items.get(queueId);
+    if (
+      !item ||
+      !belongsToScope(item, scope) ||
+      item.status !== "uploading" ||
+      !ownsLiveUploadClaim(item, owner, now)
+    ) {
+      return null;
+    }
+    assertPhotoUploadTransition(item.status, settlement.status);
+    const updated: QueuedPhotoUpload = {
+      ...item,
+      ...settlement,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      uploadSlotOwner: null,
+      uploadSlotExpiresAt: null,
     };
     this.database.items.set(queueId, updated);
     return structuredClone(updated);

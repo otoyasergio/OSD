@@ -11,6 +11,7 @@ import {
   type AcquiredPhotoUploadClaim,
   DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
   type PhotoUploadClaim,
+  type PhotoUploadFailureSettlement,
   PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
@@ -378,6 +379,12 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
         ) {
           return null;
         }
+        const priorEligibility = {
+          status: item.status,
+          attemptCount: item.attemptCount,
+          retryAt: item.retryAt,
+          lastError: item.lastError,
+        };
         const expiresAt = now + ttlMs;
         const claimedItem: QueuedPhotoUpload = {
           ...item,
@@ -392,7 +399,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
           uploadSlotExpiresAt: expiresAt,
         };
         await transaction.put(claimedItem);
-        return { expiresAt, item: claimedItem };
+        return { expiresAt, item: claimedItem, priorEligibility };
       });
     } catch (error) {
       throw persistenceError(error);
@@ -424,6 +431,52 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
           uploadSlotExpiresAt: expiresAt,
         });
         return { expiresAt };
+      });
+    } catch (error) {
+      throw persistenceError(error);
+    }
+  }
+
+  async releaseUnstartedUploadClaim(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    claim: AcquiredPhotoUploadClaim
+  ): Promise<boolean> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      return await runTransaction(transaction, async () => {
+        const item = await transaction.get(queueId);
+        if (
+          !item ||
+          !belongsToScope(item, scope) ||
+          item.status !== "uploading" ||
+          item.leaseOwner !== owner ||
+          item.leaseExpiresAt !== claim.expiresAt ||
+          item.uploadSlotOwner !== owner ||
+          item.uploadSlotExpiresAt !== claim.expiresAt ||
+          item.attemptCount !== claim.item.attemptCount ||
+          claim.item.queueId !== queueId ||
+          !belongsToScope(claim.item, scope) ||
+          claim.item.leaseOwner !== owner ||
+          claim.item.leaseExpiresAt !== claim.expiresAt ||
+          claim.item.uploadSlotOwner !== owner ||
+          claim.item.uploadSlotExpiresAt !== claim.expiresAt ||
+          claim.item.attemptCount !== claim.priorEligibility.attemptCount + 1
+        ) {
+          return false;
+        }
+        await transaction.put({
+          ...item,
+          ...claim.priorEligibility,
+          updatedAt: now,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          uploadSlotOwner: null,
+          uploadSlotExpiresAt: null,
+        });
+        return true;
       });
     } catch (error) {
       throw persistenceError(error);
@@ -463,6 +516,43 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
                 uploadSlotExpiresAt: null,
               }
             : {}),
+        };
+        await transaction.put(updated);
+        return updated;
+      });
+    } catch (error) {
+      if (error instanceof InvalidPhotoUploadTransitionError) throw error;
+      throw persistenceError(error);
+    }
+  }
+
+  async settleClaimedFailure(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    settlement: PhotoUploadFailureSettlement
+  ): Promise<QueuedPhotoUpload | null> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      return await runTransaction(transaction, async () => {
+        const item = await transaction.get(queueId);
+        if (
+          !item ||
+          !belongsToScope(item, scope) ||
+          item.status !== "uploading" ||
+          !ownsLiveUploadClaim(item, owner, now)
+        ) {
+          return null;
+        }
+        assertPhotoUploadTransition(item.status, settlement.status);
+        const updated: QueuedPhotoUpload = {
+          ...item,
+          ...settlement,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          uploadSlotOwner: null,
+          uploadSlotExpiresAt: null,
         };
         await transaction.put(updated);
         return updated;

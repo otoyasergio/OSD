@@ -16,8 +16,21 @@ export type PhotoUploadClaim = {
   expiresAt: number;
 };
 
+export type PhotoUploadEligibilitySnapshot = Pick<
+  QueuedPhotoUpload,
+  "status" | "attemptCount" | "retryAt" | "lastError"
+>;
+
 export type AcquiredPhotoUploadClaim = PhotoUploadClaim & {
   item: QueuedPhotoUpload;
+  priorEligibility: PhotoUploadEligibilitySnapshot;
+};
+
+export type PhotoUploadFailureSettlement = {
+  status: "retry_wait" | "failed";
+  retryAt: number | null;
+  lastError: string;
+  updatedAt: number;
 };
 
 export interface PhotoUploadQueueStore {
@@ -58,6 +71,13 @@ export interface PhotoUploadQueueStore {
     now: number,
     ttlMs: number
   ): Promise<PhotoUploadClaim | null>;
+  releaseUnstartedUploadClaim(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    claim: AcquiredPhotoUploadClaim
+  ): Promise<boolean>;
   updateClaimed(
     queueId: string,
     scope: PhotoUploadScope,
@@ -65,6 +85,13 @@ export interface PhotoUploadQueueStore {
     now: number,
     patch: PhotoUploadQueuePatch,
     releaseClaim?: boolean
+  ): Promise<QueuedPhotoUpload | null>;
+  settleClaimedFailure(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    settlement: PhotoUploadFailureSettlement
   ): Promise<QueuedPhotoUpload | null>;
   completeClaimedUpload(
     queueId: string,
