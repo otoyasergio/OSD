@@ -54,6 +54,7 @@ function harness() {
   const removeObjects = vi.fn(async () => undefined);
   const insertPhoto = vi.fn(async (insert: IntakePhotoInsert) => rowFromInsert(insert));
   const logThumbnailFailure = vi.fn();
+  const logCleanupFailure = vi.fn();
 
   const dependencies: IntakePhotoUploadDependencies = {
     createPhotoId: () => PHOTO_ID,
@@ -64,6 +65,7 @@ function harness() {
     removeObjects,
     insertPhoto,
     logThumbnailFailure,
+    logCleanupFailure,
   };
 
   return {
@@ -75,6 +77,7 @@ function harness() {
     removeObjects,
     insertPhoto,
     logThumbnailFailure,
+    logCleanupFailure,
   };
 }
 
@@ -368,7 +371,7 @@ describe("orchestrateIntakePhotoUpload", () => {
     expect(h.removeObjects).not.toHaveBeenCalled();
   });
 
-  it("does not return a concurrent winner when loser cleanup fails", async () => {
+  it("returns a confirmed winner when loser cleanup fails so the technician does not retry forever", async () => {
     const h = harness();
     const winner = rowFromInsert({
       photo_id: "72222222-2222-4222-8222-222222222222",
@@ -391,8 +394,35 @@ describe("orchestrateIntakePhotoUpload", () => {
     h.insertPhoto.mockRejectedValue({ code: "23505", message: "duplicate key" });
     h.removeObjects.mockRejectedValue(new Error("PHOTO_UPLOAD_FAILED"));
 
-    await expect(orchestrateIntakePhotoUpload(input(), h.dependencies)).rejects.toThrow(
-      "PHOTO_UPLOAD_FAILED"
+    const result = await orchestrateIntakePhotoUpload(input(), h.dependencies);
+
+    expect(result).toEqual(winner);
+    expect(h.removeObjects).toHaveBeenCalledWith([
+      `${WORK_ORDER_ID}/front/${PHOTO_ID}.jpg`,
+      `${WORK_ORDER_ID}/front/${PHOTO_ID}.thumb.jpg`,
+    ]);
+    expect(h.logCleanupFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: "winner_cleanup",
+        pathCount: 2,
+      })
     );
+    expect(JSON.stringify(h.logCleanupFailure.mock.calls)).not.toContain(
+      "signed.example"
+    );
+  });
+
+  it("attempts cleanup after an ordinary insert failure and still surfaces the insert error", async () => {
+    const h = harness();
+    h.insertPhoto.mockRejectedValue(new Error("insert failed"));
+    h.removeObjects.mockRejectedValue(new Error("PHOTO_UPLOAD_FAILED"));
+
+    await expect(
+      orchestrateIntakePhotoUpload(input({ clientUploadId: null }), h.dependencies)
+    ).rejects.toThrow("insert failed");
+    expect(h.removeObjects).toHaveBeenCalledWith([
+      `${WORK_ORDER_ID}/front/${PHOTO_ID}.jpg`,
+      `${WORK_ORDER_ID}/front/${PHOTO_ID}.thumb.jpg`,
+    ]);
   });
 });

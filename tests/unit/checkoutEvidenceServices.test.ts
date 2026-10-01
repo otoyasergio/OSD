@@ -358,6 +358,9 @@ describe("recordCheckoutEvidenceOverride", () => {
     await expect(recordCheckoutEvidenceOverride(WO, "   ")).rejects.toThrow(
       "OVERRIDE_REASON_REQUIRED"
     );
+    await expect(recordCheckoutEvidenceOverride(WO, "x".repeat(501))).rejects.toThrow(
+      "OVERRIDE_REASON_TOO_LONG"
+    );
   });
 
   it("persists reason only and writes timeline/audit with missing categories", async () => {
@@ -430,6 +433,19 @@ describe("recordCheckoutEvidenceOverrideAction", () => {
       formData
     );
     expect(result.error).toBe("Enter a reason to override this gate.");
+  });
+
+  it("maps OVERRIDE_REASON_TOO_LONG to staff copy", async () => {
+    requireUser.mockResolvedValue(owner);
+    createClient.mockResolvedValue(makeClient({}));
+    const formData = new FormData();
+    formData.set("reason", "x".repeat(501));
+    const result = await recordCheckoutEvidenceOverrideAction(
+      WO,
+      { error: null },
+      formData
+    );
+    expect(result.error).toBe("Keep the override reason to 500 characters or fewer.");
   });
 });
 

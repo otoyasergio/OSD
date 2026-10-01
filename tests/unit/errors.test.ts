@@ -23,6 +23,18 @@ describe("toFormErrorMessage", () => {
     );
   });
 
+  it("maps checkout capture timing and oversized override reasons", () => {
+    expect(toFormErrorMessage(new Error("CHECKOUT_EVIDENCE_NOT_READY"))).toMatch(
+      /jobs|quality check|checkout/i
+    );
+    expect(toFormErrorMessage(new Error("CHECKOUT_EVIDENCE_NOT_READY"))).not.toBe(
+      "CHECKOUT_EVIDENCE_NOT_READY"
+    );
+    expect(toFormErrorMessage(new Error("OVERRIDE_REASON_TOO_LONG"))).toBe(
+      "Keep the override reason to 500 characters or fewer."
+    );
+  });
+
   it("maps signature required", () => {
     expect(toFormErrorMessage(new Error("SIGNATURE_REQUIRED"))).toBe(
       "Draw your signature before submitting."

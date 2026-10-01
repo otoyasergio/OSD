@@ -136,8 +136,11 @@ const MESSAGES: Record<string, string> = {
   QC_REQUIRED: "Complete the quality check before the bike can leave.",
   CHECKOUT_EVIDENCE_REQUIRED:
     "Add the five checkout photos, or have an owner or manager record an emergency override, before the bike can leave.",
+  CHECKOUT_EVIDENCE_NOT_READY:
+    "Finish every active job and complete the quality check before taking checkout photos.",
   CHECKOUT_EVIDENCE_OVERRIDE_FORBIDDEN:
     "You do not have permission to perform this action.",
+  OVERRIDE_REASON_TOO_LONG: "Keep the override reason to 500 characters or fewer.",
   SAFETY_FAIL_RECOMMENDATIONS_REQUIRED:
     "Add at least one recommendation when failing safety.",
   NOT_READY_FOR_PICKUP:

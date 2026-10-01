@@ -63,6 +63,10 @@ export type IntakePhotoUploadDependencies = {
     stage: "generate" | "upload";
     statusCode?: string;
   }): void;
+  logCleanupFailure?(details: {
+    stage: "winner_cleanup" | "insert_cleanup";
+    pathCount: number;
+  }): void;
 };
 
 function matchesUploadLinkage(
@@ -183,17 +187,29 @@ export async function orchestrateIntakePhotoUpload(
         if (committedThisCandidate) {
           return existingPhotoForInput(found, input);
         }
-        await dependencies.removeObjects(storedPaths);
+        await cleanupCandidateObjects(dependencies, storedPaths, "winner_cleanup");
         return existingPhotoForInput(found, input);
       }
       // Ambiguous non-unique errors may have committed. If lookup also failed,
       // leave objects for replay instead of deleting a possibly-live row.
       if (!lookupFailed || isUniqueViolation(error)) {
-        await dependencies.removeObjects(storedPaths);
+        await cleanupCandidateObjects(dependencies, storedPaths, "insert_cleanup");
       }
       throw new Error("PHOTO_UPLOAD_FAILED");
     }
-    await dependencies.removeObjects(storedPaths);
+    await cleanupCandidateObjects(dependencies, storedPaths, "insert_cleanup");
     throw error;
+  }
+}
+
+async function cleanupCandidateObjects(
+  dependencies: IntakePhotoUploadDependencies,
+  paths: string[],
+  stage: "winner_cleanup" | "insert_cleanup"
+): Promise<void> {
+  try {
+    await dependencies.removeObjects(paths);
+  } catch {
+    dependencies.logCleanupFailure?.({ stage, pathCount: paths.length });
   }
 }

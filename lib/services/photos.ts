@@ -23,8 +23,9 @@ import {
   type IntakePhotoUploadRow,
 } from "@/lib/photos/intakePhotoUploadOrchestrator";
 import { INTAKE_PHOTO_BUCKET, signStoragePaths } from "@/lib/photos/signedUrls";
-import { removeIntakePhotoObjects } from "@/lib/photos/removeIntakePhotoObjects";
+import { cleanupUnreferencedIntakePhotoObjectsAsAdmin } from "@/lib/photos/cleanupUnreferencedIntakePhotoObjects";
 import { parseIntakePhotoCorrectionReason } from "@/lib/photos/intakePhotoCorrectionReason";
+import { isCheckoutPhotoCategory } from "@/lib/status/checkoutEvidence";
 import { PHOTO_UPLOAD_RETRY_ATTEMPTS } from "@/lib/forms/photoUploadErrors";
 import { classifyStorageUploadError } from "@/lib/forms/storageUploadRetry";
 import { logIntakeThumbnailFailure } from "@/lib/photos/intakeThumbnailTelemetry";
@@ -83,11 +84,15 @@ async function requireMutableWorkOrder(
   supabase: DbClient;
   locationId: string;
   workOrderNumber: string;
+  qualityCheckedAt: string | null;
+  qualityCheckedByUserId: string | null;
 }> {
   const supabase = await createClient();
   const { data: workOrder, error } = await supabase
     .from("work_order")
-    .select("work_order_id, location_id, work_order_number, status")
+    .select(
+      "work_order_id, location_id, work_order_number, status, quality_checked_at, quality_checked_by_user_id"
+    )
     .eq("work_order_id", workOrderId)
     .maybeSingle();
 
@@ -102,7 +107,34 @@ async function requireMutableWorkOrder(
     supabase,
     locationId: workOrder.location_id,
     workOrderNumber: workOrder.work_order_number,
+    qualityCheckedAt: workOrder.quality_checked_at as string | null,
+    qualityCheckedByUserId: workOrder.quality_checked_by_user_id as string | null,
   };
+}
+
+function isActiveJobStatus(status: string): boolean {
+  return status !== "cancelled" && status !== "declined";
+}
+
+async function assertCheckoutPhotoCaptureReady(
+  supabase: DbClient,
+  workOrderId: string,
+  workOrder: { qualityCheckedAt: string | null; qualityCheckedByUserId: string | null }
+): Promise<void> {
+  if (!workOrder.qualityCheckedAt || !workOrder.qualityCheckedByUserId) {
+    throw new Error("CHECKOUT_EVIDENCE_NOT_READY");
+  }
+  const { data: jobs, error } = await supabase
+    .from("job")
+    .select("job_id, status")
+    .eq("work_order_id", workOrderId);
+  if (error) throw error;
+  const active = (jobs ?? []).filter((job: { status: string }) =>
+    isActiveJobStatus(job.status)
+  );
+  if (active.length === 0 || active.some((job) => job.status !== "completed")) {
+    throw new Error("CHECKOUT_EVIDENCE_NOT_READY");
+  }
 }
 
 async function uploadIntakeBytes(
@@ -365,7 +397,15 @@ export async function uploadIntakePhoto(
     throw new Error("PHOTO_TYPE_INVALID");
   }
 
-  const { supabase } = await requireMutableWorkOrder(user, workOrderId);
+  const { supabase, qualityCheckedAt, qualityCheckedByUserId } =
+    await requireMutableWorkOrder(user, workOrderId);
+
+  if (isCheckoutPhotoCategory(parsed.category)) {
+    await assertCheckoutPhotoCaptureReady(supabase, workOrderId, {
+      qualityCheckedAt,
+      qualityCheckedByUserId,
+    });
+  }
 
   if (parsed.job_id) {
     const { data: jobRow, error: jobError } = await supabase
@@ -434,13 +474,8 @@ export async function uploadIntakePhoto(
         await uploadIntakeBytes(supabase, upload.path, upload.bytes, upload.contentType);
       },
       removeObjects: async (paths) => {
-        await removeIntakePhotoObjects({
-          remove: (candidatePaths) =>
-            supabase.storage.from(BUCKET).remove(candidatePaths),
-          paths,
-          logFailure: (details) => {
-            console.error("intake photo storage remove failed", details);
-          },
+        await cleanupUnreferencedIntakePhotoObjectsAsAdmin(paths, (details) => {
+          console.error("intake photo storage cleanup failed", details);
         });
       },
       insertPhoto: async (insert) => {
@@ -465,6 +500,9 @@ export async function uploadIntakePhoto(
         return row as IntakePhotoUploadRow;
       },
       logThumbnailFailure: logIntakeThumbnailFailure,
+      logCleanupFailure: (details) => {
+        console.error("intake photo leftover cleanup failed", details);
+      },
     }
   );
 

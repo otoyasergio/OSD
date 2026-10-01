@@ -33,8 +33,10 @@ const ids = {
   workOrder: randomUUID(),
   checkoutWorkOrder: randomUUID(),
   overrideWorkOrder: randomUUID(),
+  notReadyWorkOrder: randomUUID(),
   service: randomUUID(),
   job: randomUUID(),
+  checkoutJob: randomUUID(),
   photoTech: randomUUID(),
   photoAdvisor: randomUUID(),
   photoOwner: randomUUID(),
@@ -94,12 +96,17 @@ async function ensureAuthUser(userId: string, email: string): Promise<void> {
 async function cleanupFixtures(): Promise<void> {
   const service = requireAdmin();
   const photoIds = [ids.photoTech, ids.photoAdvisor, ids.photoOwner, ids.replayPhoto];
-  const workOrders = [ids.workOrder, ids.checkoutWorkOrder, ids.overrideWorkOrder];
+  const workOrders = [
+    ids.workOrder,
+    ids.checkoutWorkOrder,
+    ids.overrideWorkOrder,
+    ids.notReadyWorkOrder,
+  ];
   await service.storage.from("intake-photos").remove(Object.values(objectPaths));
   await service.from("intake_photo").delete().in("photo_id", photoIds);
   await service.from("intake_photo").delete().in("work_order_id", workOrders);
   await service.from("audit_log").delete().in("entity_id", photoIds);
-  await service.from("job").delete().eq("job_id", ids.job);
+  await service.from("job").delete().in("job_id", [ids.job, ids.checkoutJob]);
   await service.from("work_order").delete().in("work_order_id", workOrders);
   await service.from("motorcycle").delete().eq("motorcycle_id", ids.motorcycle);
   await service.from("customer").delete().eq("customer_id", ids.customer);
@@ -211,12 +218,39 @@ describePhotoPolicies("intake photo policies (isolated db)", () => {
       status: "open",
       checkout_evidence_required: true,
     });
+    await admin.from("work_order").upsert({
+      work_order_id: ids.notReadyWorkOrder,
+      motorcycle_id: ids.motorcycle,
+      customer_id: ids.customer,
+      location_id: ids.locationA,
+      work_order_number: `WO-NR-${ids.notReadyWorkOrder.slice(0, 8)}`,
+      status: "open",
+      checkout_evidence_required: true,
+    });
     await admin.from("service").upsert({
       service_id: ids.service,
       name: `Photo IT Service ${ids.service.slice(0, 8)}`,
       standard_price: 1,
       estimated_labour: 1,
     });
+    const checkoutJob = await admin.from("job").upsert({
+      job_id: ids.checkoutJob,
+      work_order_id: ids.checkoutWorkOrder,
+      service_id: ids.service,
+      service_name_snapshot: "Checkout ready job",
+      standard_price_snapshot: 1,
+      estimated_labour_snapshot: 1,
+      status: "completed",
+    });
+    if (checkoutJob.error) throw new Error(checkoutJob.error.message);
+    const qc = await admin
+      .from("work_order")
+      .update({
+        quality_checked_at: new Date().toISOString(),
+        quality_checked_by_user_id: ids.owner,
+      })
+      .eq("work_order_id", ids.checkoutWorkOrder);
+    if (qc.error) throw new Error(qc.error.message);
   });
 
   afterAll(async () => {
@@ -649,6 +683,30 @@ describePhotoPolicies("intake photo policies (isolated db)", () => {
     } finally {
       await advisor.auth.signOut();
     }
+  });
+
+  it("rejects raw checkout-category INSERT before jobs and QC are ready", async () => {
+    const admin = requireAdmin();
+    const photoId = randomUUID();
+    const { error } = await admin.from("intake_photo").insert({
+      photo_id: photoId,
+      work_order_id: ids.notReadyWorkOrder,
+      storage_path: `${ids.notReadyWorkOrder}/checkout_front/${photoId}.jpg`,
+      category: "checkout_front",
+    });
+    expect(errorText(error)).toMatch(/CHECKOUT_EVIDENCE_NOT_READY/);
+  });
+
+  it("allows checkout-category INSERT after active jobs are completed and QC is stamped", async () => {
+    const admin = requireAdmin();
+    const photoId = randomUUID();
+    const { error } = await admin.from("intake_photo").insert({
+      photo_id: photoId,
+      work_order_id: ids.checkoutWorkOrder,
+      storage_path: `${ids.checkoutWorkOrder}/checkout_front/${photoId}.jpg`,
+      category: "checkout_front",
+    });
+    expect(error).toBeNull();
   });
 });
 
