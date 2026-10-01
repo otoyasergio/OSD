@@ -23,6 +23,10 @@ describe("stateful Safari photo reliability wiring", () => {
     const spec = source("tests/e2e/safari-photo-reliability.spec.ts");
     expect(spec).toMatch(/storageStatePath\("owner"\)/);
     expect(spec).toMatch(/setOffline\(true\)/);
+    expect(spec).toMatch(/getByRole\(\s*"heading",\s*\{\s*name:\s*"Upload intake photo"/);
+    expect(spec).toMatch(/Choose photo/);
+    expect(spec).toMatch(/navigator,\s*"onLine"/);
+    expect(spec).toMatch(/dispatchEvent\(\s*new Event\(\s*"offline"/);
     expect(spec).toMatch(/setInputFiles/);
     expect(spec).toMatch(/sample\.heic/);
     expect(spec).toMatch(/Photo library/i);

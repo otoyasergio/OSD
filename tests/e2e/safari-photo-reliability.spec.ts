@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { join } from "node:path";
 import { storageStatePath } from "./fixtures/auth";
 import { assertSafeMutationEnvironment } from "./fixtures/environmentGuard";
@@ -11,6 +11,22 @@ import {
   removeIntakePhotoArtifacts,
 } from "./fixtures/safariPhotoIsolation";
 import { createServiceRoleClient } from "./fixtures/seedSyntheticShop";
+
+/**
+ * Playwright WebKit often leaves `navigator.onLine === true` after
+ * `context.setOffline(true)`. The queue and HEIC clone-now path both key off
+ * that flag, so the spec must flip it (and fire `offline`) or enqueue waits
+ * on a worker chunk that cannot load.
+ */
+async function markBrowserOffline(page: Page) {
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      get: () => false,
+    });
+    window.dispatchEvent(new Event("offline"));
+  });
+}
 
 /**
  * Stateful WebKit photo reliability. Uses Playwright setInputFiles — that is
@@ -37,14 +53,19 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
 
   try {
     await page.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
-    await expect(page.getByText("Upload intake photo")).toBeVisible();
+    const heading = page.getByRole("heading", { name: "Upload intake photo" });
+    await expect(heading).toBeVisible();
+    const form = page.locator("form").filter({ has: heading });
 
-    await page.locator('select[name="category"]').selectOption("other");
-    await page.locator('input[name="notes"]').fill(note);
+    await form.locator('select[name="category"]').selectOption("other");
+    await form.locator('input[name="notes"]').fill(note);
 
     await context.setOffline(true);
-    const library = page.getByLabel("Photo library");
-    await library.setInputFiles(HEIC_FIXTURE);
+    await markBrowserOffline(page);
+
+    await form.getByRole("button", { name: "Choose photo" }).click();
+    await expect(page.getByRole("dialog", { name: "Add photo" })).toBeVisible();
+    await form.getByLabel("Photo library").setInputFiles(HEIC_FIXTURE);
 
     await expect(page.getByText(/waiting for connection/i).first()).toBeVisible({
       timeout: 30_000,
