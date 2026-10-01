@@ -105,6 +105,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       profilePhotoUrl={profilePhotoUrl}
       initialNotifications={initialNotifications}
       durablePhotoUploadQueue={photoUploadQueueEnabled()}
+      e2ePhotoQueueHook={process.env.E2E_ALLOW_MUTATION === "1"}
     >
       {children}
     </AppShell>

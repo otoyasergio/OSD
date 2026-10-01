@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { isBrowserOnline } from "@/lib/forms/browserOnline";
+import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import { uploadAssistantPhotoAction } from "@/app/(app)/work_orders/assistant-actions";
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { enqueuePhotoUpload } from "@/lib/photos/uploadQueue/enqueue";
@@ -111,6 +112,19 @@ type ProviderProps = {
   uploadAssistantPhoto?: QueuedPhotoUploadActions["uploadAssistantPhoto"];
   isOnline?: () => boolean;
   now?: () => number;
+  /** Isolated mutation E2E only — never enabled in production. */
+  e2ePhotoQueueHook?: boolean;
+};
+
+export type E2ePhotoQueueHook = {
+  enqueueIntakeHeic(payload: {
+    bytes: number[];
+    name: string;
+    category: string;
+    workOrderId: string;
+    notes?: string;
+  }): Promise<QueuedPhotoUpload>;
+  isOnline(): boolean;
 };
 
 export function PhotoUploadQueueProvider({
@@ -123,6 +137,7 @@ export function PhotoUploadQueueProvider({
   uploadAssistantPhoto = uploadAssistantPhotoAction,
   isOnline,
   now,
+  e2ePhotoQueueHook = false,
 }: ProviderProps) {
   const scope = useMemo<PhotoUploadScope>(
     () => ({ userId, locationId }),
@@ -510,6 +525,44 @@ export function PhotoUploadQueueProvider({
     [previewUrls]
   );
 
+  const [onlineTick, setOnlineTick] = useState(0);
+  useEffect(() => {
+    isBrowserOnline();
+    const bump = () => setOnlineTick((value) => value + 1);
+    window.addEventListener("offline", bump);
+    window.addEventListener("online", bump);
+    return () => {
+      window.removeEventListener("offline", bump);
+      window.removeEventListener("online", bump);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!e2ePhotoQueueHook) return;
+    const hook: E2ePhotoQueueHook = {
+      async enqueueIntakeHeic(payload) {
+        const file = new File([new Uint8Array(payload.bytes)], payload.name, {
+          type: "image/heic",
+        });
+        const prepared = await preparePhotoFileForUpload(file);
+        return enqueue({
+          file: prepared,
+          category: payload.category,
+          workOrderId: payload.workOrderId,
+          notes: payload.notes,
+          surface: "photos_tab",
+        });
+      },
+      isOnline: isOnlineFn,
+    };
+    (window as Window & { __otomotoPhotoQueue?: E2ePhotoQueueHook }).__otomotoPhotoQueue =
+      hook;
+    return () => {
+      delete (window as Window & { __otomotoPhotoQueue?: E2ePhotoQueueHook })
+        .__otomotoPhotoQueue;
+    };
+  }, [e2ePhotoQueueHook, enqueue, isOnlineFn, onlineTick]);
+
   const api = useMemo<PhotoUploadQueueApi>(
     () => ({
       items,
@@ -537,6 +590,7 @@ export function PhotoUploadQueueProvider({
       retry,
       subscribeConfirmation,
       waitForConfirmations,
+      onlineTick,
     ]
   );
 

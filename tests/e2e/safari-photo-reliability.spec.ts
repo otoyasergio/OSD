@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { storageStatePath } from "./fixtures/auth";
@@ -12,6 +12,13 @@ import {
   removeIntakePhotoArtifacts,
 } from "./fixtures/safariPhotoIsolation";
 import { createServiceRoleClient } from "./fixtures/seedSyntheticShop";
+import type { E2ePhotoQueueHook } from "@/components/photos/PhotoUploadQueueProvider";
+
+declare global {
+  interface Window {
+    __otomotoPhotoQueue?: E2ePhotoQueueHook;
+  }
+}
 
 /**
  * Playwright WebKit often leaves `navigator.onLine === true` after
@@ -31,46 +38,31 @@ async function markBrowserOffline(page: Page) {
   expect(online).toBe(false);
 }
 
-/**
- * WebKit Playwright often attaches files to a 1×1 opacity-0 input without
- * firing `change`. If setInputFiles did not start enqueue, assign the HEIC
- * through DataTransfer and dispatch the events PhotosTab listens for.
- */
-async function enqueueLibraryHeic(form: Locator, heicPath: string) {
-  const library = form.getByLabel("Photo library");
-  await library.setInputFiles(heicPath);
-  const queued = await form
-    .getByText(/waiting for connection/i)
-    .waitFor({ state: "visible", timeout: 2_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (queued) return;
-
-  const bytes = Array.from(readFileSync(heicPath));
-  const attached = await library.evaluate(
-    (input, payload) => {
-      const el = input as HTMLInputElement;
-      const file = new File([new Uint8Array(payload.bytes)], payload.name, {
-        type: "image/heic",
-      });
-      const transfer = new DataTransfer();
-      transfer.items.add(file);
-      el.files = transfer.files;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      return el.files?.length ?? 0;
+async function enqueueOfflineHeic(page: Page, note: string) {
+  const bytes = Array.from(readFileSync(HEIC_FIXTURE));
+  await page.evaluate(
+    async (payload) => {
+      const hook = window.__otomotoPhotoQueue;
+      if (!hook) throw new Error("E2E photo queue hook missing");
+      await hook.enqueueIntakeHeic(payload);
     },
-    { bytes, name: "sample.heic" }
+    {
+      bytes,
+      name: "sample.heic",
+      category: "other",
+      workOrderId: FIXTURE_WORK_ORDER.id,
+      notes: note,
+    }
   );
-  expect(attached).toBeGreaterThan(0);
 }
 
 /**
- * Stateful WebKit photo reliability. Uses Playwright setInputFiles — that is
- * not claimed to reproduce iOS Photos picker bugs. Real-device acceptance
- * covers camera/library pickers. Requires E2E_ALLOW_MUTATION=1 against an
- * isolated TEST_SUPABASE and PHOTO_UPLOAD_QUEUE_ENABLED=1 so close/reopen
- * can resume the durable queue.
+ * Stateful WebKit photo reliability. Drives prepare+enqueue through the
+ * mutation-only queue hook — Playwright WebKit file inputs are not claimed
+ * to reproduce iOS Photos picker bugs. Real-device acceptance covers
+ * camera/library pickers. Requires E2E_ALLOW_MUTATION=1 against an isolated
+ * TEST_SUPABASE and PHOTO_UPLOAD_QUEUE_ENABLED=1 so close/reopen can resume
+ * the durable queue.
  */
 
 test.use({ storageState: storageStatePath("owner") });
@@ -90,17 +82,13 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
 
   try {
     await page.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
-    const heading = page.getByRole("heading", { name: "Upload intake photo" });
-    await expect(heading).toBeVisible();
-    const form = page.locator("form").filter({ has: heading });
-
-    await form.locator('select[name="category"]').selectOption("other");
-    await form.locator('input[name="notes"]').fill(note);
+    await expect(
+      page.getByRole("heading", { name: "Upload intake photo" })
+    ).toBeVisible();
 
     await context.setOffline(true);
     await markBrowserOffline(page);
-
-    await enqueueLibraryHeic(form, HEIC_FIXTURE);
+    await enqueueOfflineHeic(page, note);
 
     await expect(page.getByText(/waiting for connection/i).first()).toBeVisible({
       timeout: 30_000,
