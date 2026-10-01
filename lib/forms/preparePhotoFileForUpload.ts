@@ -1,7 +1,7 @@
 import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
 import type { CompressImageOptions } from "@/lib/forms/compressImageForUpload";
 import { sniffImageMime, usablePhotoName } from "@/lib/forms/imageMime";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import { PickedFileError, UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 
 export { UNREADABLE_PHOTO_MESSAGE };
 
@@ -27,7 +27,7 @@ export async function preparePhotoFileForUpload(
   options?: CompressImageOptions
 ): Promise<File> {
   if (!isReadablePhoto(file)) {
-    throw new Error(UNREADABLE_PHOTO_MESSAGE);
+    throw new PickedFileError("unreadable");
   }
 
   const cloned = await cloneFileForUpload(file);
@@ -39,7 +39,7 @@ export async function cloneFileForUpload(file: File): Promise<File> {
   try {
     const bytes = await file.arrayBuffer();
     if (bytes.byteLength === 0) {
-      throw new Error(UNREADABLE_PHOTO_MESSAGE);
+      throw new PickedFileError("empty");
     }
     const type = sniffImageMime(bytes) || file.type || "image/jpeg";
     return new File([bytes], usablePhotoName(file.name, type), {
@@ -47,9 +47,7 @@ export async function cloneFileForUpload(file: File): Promise<File> {
       lastModified: file.lastModified || Date.now(),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === UNREADABLE_PHOTO_MESSAGE) {
-      throw error;
-    }
-    throw new Error(UNREADABLE_PHOTO_MESSAGE);
+    if (error instanceof PickedFileError) throw error;
+    throw new PickedFileError("unreadable");
   }
 }

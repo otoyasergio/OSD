@@ -7,15 +7,10 @@ import {
   isStaffDocumentCategory,
   type StaffDocumentCategory,
 } from "@/lib/services/staffDocumentRetention";
+import { canonicalizeUploadedFile } from "@/lib/photos/canonicalizeUploadedFile";
 
 const DOC_BUCKET = "staff-documents";
 const MAX_BYTES = 10 * 1024 * 1024;
-const ALLOWED_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
 
 export type StaffEmploymentRecord = {
   user_id: string;
@@ -83,11 +78,12 @@ async function requireStaffManager() {
   return user;
 }
 
-function extensionForType(type: string): string {
-  if (type === "application/pdf") return "pdf";
-  if (type === "image/png") return "png";
-  if (type === "image/webp") return "webp";
-  return "jpg";
+function mapDocumentCanonicalError(error: unknown): never {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "REQUIRED") throw new Error("DOCUMENT_REQUIRED");
+  if (code === "TOO_LARGE") throw new Error("DOCUMENT_TOO_LARGE");
+  if (code === "TYPE_INVALID") throw new Error("DOCUMENT_TYPE_INVALID");
+  throw error instanceof Error ? error : new Error("DOCUMENT_TYPE_INVALID");
 }
 
 export async function getStaffProfileUser(userId: string): Promise<StaffProfileUser> {
@@ -318,12 +314,17 @@ export async function uploadStaffDocument(
   if (!isStaffDocumentCategory(input.category)) {
     throw new Error("DOCUMENT_CATEGORY_INVALID");
   }
-  if (!(input.file instanceof File) || input.file.size === 0) {
-    throw new Error("DOCUMENT_REQUIRED");
-  }
-  if (input.file.size > MAX_BYTES) throw new Error("DOCUMENT_TOO_LARGE");
-  if (!ALLOWED_TYPES.has(input.file.type)) {
-    throw new Error("DOCUMENT_TYPE_INVALID");
+  let prepared;
+  try {
+    if (!(input.file instanceof File)) throw new Error("REQUIRED");
+    prepared = await canonicalizeUploadedFile({
+      bytes: Buffer.from(await input.file.arrayBuffer()),
+      declaredType: input.file.type,
+      maxBytes: MAX_BYTES,
+      allowPdf: true,
+    });
+  } catch (error) {
+    mapDocumentCanonicalError(error);
   }
 
   const supabase = await createClient();
@@ -336,14 +337,12 @@ export async function uploadStaffDocument(
   });
 
   const documentId = crypto.randomUUID();
-  const ext = extensionForType(input.file.type);
-  const storagePath = `${userId}/${documentId}.${ext}`;
-  const bytes = Buffer.from(await input.file.arrayBuffer());
+  const storagePath = `${userId}/${documentId}.${prepared.extension}`;
 
   const { error: uploadError } = await supabase.storage
     .from(DOC_BUCKET)
-    .upload(storagePath, bytes, {
-      contentType: input.file.type,
+    .upload(storagePath, prepared.bytes, {
+      contentType: prepared.contentType,
       upsert: false,
     });
   if (uploadError) throw new Error("DOCUMENT_UPLOAD_FAILED");
@@ -357,8 +356,8 @@ export async function uploadStaffDocument(
       category: input.category,
       storage_bucket: DOC_BUCKET,
       storage_path: storagePath,
-      mime_type: input.file.type,
-      file_size: input.file.size,
+      mime_type: prepared.contentType,
+      file_size: prepared.byteSize,
       uploaded_by_user_id: actor.user_id,
       retention_until: retention.toISOString().slice(0, 10),
     })

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import type { CustomerDocument } from "@/lib/services/customerDocuments";
 import {
   deleteCustomerDocumentAction,
   uploadCustomerDocumentAction,
 } from "@/app/(app)/customers/document-actions";
 import { FormError } from "@/components/forms/Field";
+import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
 import { formatDate } from "@/lib/datetime/format";
 
 function sourceLabel(source: CustomerDocument["source"]) {
@@ -27,8 +28,8 @@ export function CustomerDocuments({
   canDelete: boolean;
 }) {
   const router = useRouter();
+  const fileInputId = useId();
   const [title, setTitle] = useState("");
-  const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -36,17 +37,16 @@ export function CustomerDocuments({
     router.refresh();
   }
 
-  function onUpload(event: React.FormEvent) {
+  function onUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    if (!file) {
+    const formData = new FormData(event.currentTarget);
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) {
       setError("Choose a file to upload.");
       return;
     }
-
-    const formData = new FormData();
     formData.set("title", title);
-    formData.set("file", file);
 
     startTransition(async () => {
       const result = await uploadCustomerDocumentAction(customerId, formData);
@@ -55,7 +55,6 @@ export function CustomerDocuments({
         return;
       }
       setTitle("");
-      setFile(null);
       refresh();
     });
   }
@@ -156,16 +155,19 @@ export function CustomerDocuments({
               placeholder="e.g. Insurance card"
             />
           </label>
-          <label className="block max-w-md">
-            <span className="field-label">File (PDF, JPEG, PNG, WebP)</span>
-            <input
-              type="file"
+          <div className="block max-w-md">
+            <label htmlFor={fileInputId} className="field-label">
+              File (PDF, JPEG, PNG, WebP, or iPhone photo)
+            </label>
+            <PreparedFileInput
+              id={fileInputId}
+              name="file"
               required
-              accept="application/pdf,image/jpeg,image/png,image/webp"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="mt-1 block w-full text-sm"
+              accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+              surface="customer_documents"
+              disabled={pending}
             />
-          </label>
+          </div>
           <button
             type="submit"
             disabled={pending}

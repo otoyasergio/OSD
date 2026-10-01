@@ -12,6 +12,7 @@ import {
   type StaffDocumentCategory,
 } from "@/lib/services/staffDocumentRetention";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
+import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 
 type Action = (state: StaffFormState, formData: FormData) => Promise<StaffFormState>;
@@ -253,16 +254,21 @@ export function StaffProfileForms({
               Retention guidance is applied automatically from the category.
             </span>
           </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-foreground">File</span>
-            <input
-              type="file"
+          <div className="block">
+            <label
+              htmlFor="staff-document-file"
+              className="mb-1.5 block text-sm font-medium text-foreground"
+            >
+              File
+            </label>
+            <PreparedFileInput
+              id="staff-document-file"
               name="file"
               required
-              accept="application/pdf,image/jpeg,image/png,image/webp"
-              className="block w-full text-sm"
+              accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+              surface="staff_documents"
             />
-          </label>
+          </div>
           <div>
             <SubmitButton label="Upload document" pendingLabel="Uploading…" />
           </div>

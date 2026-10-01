@@ -78,7 +78,9 @@ export function MotorcycleDocuments({
 
     setPreparing(true);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, {
+        surface: "motorcycle_documents",
+      });
       if (files.length === 0) return;
       const formData = new FormData(formRef.current);
       formData.delete("file");
@@ -229,7 +231,7 @@ export function MotorcycleDocuments({
             id={cameraInputId}
             type="file"
             name="file"
-            className="sr-only"
+            className="photo-file-input"
             multiple
             {...cameraProps}
             onChange={(e) => void uploadFromInput(e.currentTarget)}
@@ -237,7 +239,7 @@ export function MotorcycleDocuments({
           <input
             id={libraryInputId}
             type="file"
-            className="sr-only"
+            className="photo-file-input"
             multiple
             accept={`${libraryProps.accept},application/pdf`}
             onChange={(e) => void uploadFromInput(e.currentTarget)}

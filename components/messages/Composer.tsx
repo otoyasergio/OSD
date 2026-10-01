@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import {
   sendMessageAction,
   uploadChatImageAction,
@@ -23,7 +23,7 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputId = useId();
 
   useEffect(() => {
     return () => {
@@ -50,7 +50,7 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
     const input = e.currentTarget;
     setError(null);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, { surface: "composer" });
       const file = files[0];
       if (!file) return;
       const formData = new FormData();
@@ -121,21 +121,15 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
       ) : null}
       <div className="flex items-end gap-2">
         <input
-          ref={fileInputRef}
+          id={photoInputId}
           type="file"
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-          className="hidden"
+          className="photo-file-input"
           onChange={onFileChange}
         />
-        <button
-          type="button"
-          className="btn shrink-0"
-          disabled={pending}
-          onClick={() => fileInputRef.current?.click()}
-          aria-label="Attach photo"
-        >
+        <label htmlFor={photoInputId} className="btn shrink-0" aria-label="Attach photo">
           +
-        </button>
+        </label>
         <textarea
           className="input min-h-[2.75rem] flex-1 resize-none py-2"
           placeholder="Message"

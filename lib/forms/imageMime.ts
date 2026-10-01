@@ -40,6 +40,31 @@ export function sniffImageMime(bytes: ArrayBuffer | Uint8Array): string | null {
   return null;
 }
 
+/** Detect PDF from the `%PDF` signature. iOS File.type is often empty. */
+export function sniffPdf(bytes: ArrayBuffer | Uint8Array): boolean {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  return (
+    u8.length >= 4 && u8[0] === 0x25 && u8[1] === 0x50 && u8[2] === 0x44 && u8[3] === 0x46
+  );
+}
+
+/** Image or PDF MIME from magic bytes. Declared File.type is ignored. */
+export function sniffAllowedUploadMime(
+  bytes: ArrayBuffer | Uint8Array
+): "application/pdf" | "image/jpeg" | "image/png" | "image/webp" | "image/heic" | null {
+  if (sniffPdf(bytes)) return "application/pdf";
+  const image = sniffImageMime(bytes);
+  if (
+    image === "image/jpeg" ||
+    image === "image/png" ||
+    image === "image/webp" ||
+    image === "image/heic"
+  ) {
+    return image;
+  }
+  return null;
+}
+
 /** Fallback filename when iOS leaves File.name empty or "undefined". */
 export function usablePhotoName(name: string | undefined, type: string): string {
   const trimmed = (name ?? "").trim();

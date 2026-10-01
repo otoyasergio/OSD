@@ -2,6 +2,17 @@
 export const UNREADABLE_PHOTO_MESSAGE =
   "Could not read that photo. Try again, or use the camera instead.";
 
+export type PickedFileErrorCode = "empty" | "unreadable" | "invalid_type";
+
+/** Typed prepare failure. Message stays the safe user-facing copy. */
+export class PickedFileError extends Error {
+  readonly name = "PickedFileError";
+
+  constructor(readonly code: PickedFileErrorCode) {
+    super(UNREADABLE_PHOTO_MESSAGE);
+  }
+}
+
 export const PHOTO_UPLOAD_RETRY_ATTEMPTS = 3;
 export const PHOTO_UPLOAD_RETRY_BASE_MS = 400;
 

@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import type { ProfilePhotoFormState } from "@/app/account/actions";
 import { FormError } from "@/components/forms/Field";
+import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 
@@ -74,16 +75,15 @@ export function ProfilePhotoForm({
         <label htmlFor="profile-photo" className="field-label">
           Choose profile photo
         </label>
-        <input
+        <PreparedFileInput
           id="profile-photo"
           name="file"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           required
-          className="input h-auto py-2 file:mr-3 file:rounded file:border-0 file:bg-[var(--surface-muted)] file:px-3 file:py-2 file:font-medium"
+          surface="profile"
         />
         <p className="text-sm text-[var(--status-neutral)]">
-          JPEG, PNG, or WebP. Maximum 5 MB. Square photos work best.
+          JPEG, PNG, WebP, or iPhone photo. Maximum 5 MB. Square photos work best.
         </p>
         <div>
           <SubmitButton

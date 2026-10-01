@@ -6,11 +6,13 @@ import {
   isCameraPhotoInput,
   savePhotosToCameraRoll,
 } from "@/lib/forms/savePhotosToCameraRoll";
+import { emitPhotoTelemetry, type PhotoTelemetrySurface } from "@/lib/photos/telemetry";
 
 export type ReadPickedPhotoFilesOptions = CompressImageOptions & {
   /** Override camera detection — tests pass a spy here. */
   saveToCameraRoll?: boolean;
   savePhotos?: (files: File[]) => void | Promise<void>;
+  surface?: PhotoTelemetrySurface;
 };
 
 /**
@@ -66,6 +68,14 @@ export async function readPickedPhotoFiles(
     ).filter((file): file is File => file !== null);
 
     if (prepared.length === 0) {
+      const errorCode = originals.every((file) => file.size === 0)
+        ? "empty"
+        : "unreadable";
+      emitPhotoTelemetry({
+        name: "photo_prepare_failed",
+        surface: options?.surface ?? "unknown",
+        errorCode,
+      });
       throw new Error(UNREADABLE_PHOTO_MESSAGE);
     }
     return prepared;
