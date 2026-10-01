@@ -262,13 +262,12 @@ describe("profile/customer/staff uploads canonicalize HEIC and keep PDFs", () =>
     createClient
       .mockResolvedValueOnce(
         storageClient({
-          staff_employment_record: employment,
+          staff_document: { insert },
         })
       )
       .mockResolvedValueOnce(
         storageClient({
           staff_employment_record: employment,
-          staff_document: { insert },
         })
       );
 
@@ -318,10 +317,8 @@ describe("profile/customer/staff uploads canonicalize HEIC and keep PDFs", () =>
       voided_at: null,
     };
     createClient
-      .mockResolvedValueOnce(storageClient({ staff_employment_record: employment }))
       .mockResolvedValueOnce(
         storageClient({
-          staff_employment_record: employment,
           staff_document: {
             insert: () => ({
               select: () => ({
@@ -330,7 +327,8 @@ describe("profile/customer/staff uploads canonicalize HEIC and keep PDFs", () =>
             }),
           },
         })
-      );
+      )
+      .mockResolvedValueOnce(storageClient({ staff_employment_record: employment }));
 
     await uploadStaffDocument(USER_ID, {
       title: "Policy",
