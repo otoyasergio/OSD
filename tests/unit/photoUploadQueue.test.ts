@@ -764,8 +764,9 @@ describe("PhotoUploadQueueRunner", () => {
 
     confirmSaved("photo-1");
     await running;
-
-    await expect(store.get("queue-1", SCOPE)).resolves.toBeNull();
+    await vi.waitFor(async () => {
+      expect(await store.get("queue-1", SCOPE)).toBeNull();
+    });
     runner.stop();
   });
 
@@ -1149,7 +1150,9 @@ describe("PhotoUploadQueueRunner", () => {
     releases[1]();
     releases[2]();
     await running;
-    await expect(store.list(SCOPE)).resolves.toEqual([]);
+    await vi.waitFor(async () => {
+      expect(await store.list(SCOPE)).toEqual([]);
+    });
     runner.stop();
   });
 
@@ -1209,8 +1212,10 @@ describe("PhotoUploadQueueRunner", () => {
 
     for (const release of releases.splice(0)) release();
     await Promise.all(starts);
-    await expect(store.list(SCOPE)).resolves.toEqual([]);
-    for (const runner of runners) runner.stop();
+    await vi.waitFor(async () => {
+      expect(await store.list(SCOPE)).toEqual([]);
+    });
+    for (const runner of runners) await runner.stop();
   });
 
   it("atomically rejects a stale snapshot after another runner schedules backoff", async () => {
@@ -1445,12 +1450,17 @@ describe("PhotoUploadQueueRunner", () => {
 
     timer.advanceBy(500);
     await vi.waitFor(() => expect(uploadSignal?.aborted).toBe(true));
+    await vi.waitFor(async () => {
+      expect(await store.get("queue-1", SCOPE)).toMatchObject({
+        status: "queued",
+      });
+    });
 
     finishUpload();
     await runner.stop();
     await running;
     await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
-      status: "uploading",
+      status: "queued",
     });
   });
 
@@ -1749,7 +1759,9 @@ describe("PhotoUploadQueueRunner", () => {
 
       resumedUpload.resolve({ ok: true, photoId: "resumed-photo" });
       await running;
-      await expect(store.get("queue-1", SCOPE)).resolves.toBeNull();
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-1", SCOPE)).toBeNull();
+      });
       expect(uploader).toHaveBeenCalledTimes(2);
     } finally {
       staleUpload.resolve({ ok: true, photoId: "stale-photo" });
@@ -1757,6 +1769,407 @@ describe("PhotoUploadQueueRunner", () => {
       releaseRenewal.resolve();
       await runner.stop();
       await running;
+    }
+  });
+
+  it("concurrent scheduler: recovers an expired upload while another stays active", async () => {
+    const releaseExpiredRenewal = deferred();
+    const expiredRenewalStarted = deferred();
+    class SelectiveRenewalStore extends MemoryPhotoUploadQueueStore {
+      override async renewUploadClaim(
+        queueId: string,
+        scope: PhotoUploadScope,
+        owner: string,
+        now: number,
+        ttlMs: number
+      ): Promise<PhotoUploadClaim | null> {
+        if (queueId === "queue-a") {
+          expiredRenewalStarted.resolve();
+          await releaseExpiredRenewal.promise;
+          return null;
+        }
+        return super.renewUploadClaim(queueId, scope, owner, now, ttlMs);
+      }
+    }
+    const store = new SelectiveRenewalStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(
+      SCOPE,
+      queuedPhoto({ queueId: "queue-a", clientUploadId: "client-a" })
+    );
+    await store.put(
+      SCOPE,
+      queuedPhoto({ queueId: "queue-b", clientUploadId: "client-b" })
+    );
+    const timer = new ManualClockTimer();
+    const uploads = new Map<
+      string,
+      ReturnType<typeof deferred<{ ok: true; photoId: string }>>
+    >();
+    const signals = new Map<string, AbortSignal>();
+    const uploader = vi.fn((item: QueuedPhotoUpload, signal: AbortSignal) => {
+      signals.set(item.queueId, signal);
+      const upload = deferred<{ ok: true; photoId: string }>();
+      uploads.set(item.queueId, upload);
+      return upload.promise;
+    });
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      leaseTtlMs: 1_000,
+      maxAttempts: 1,
+    });
+
+    const starting = runner.start();
+    try {
+      await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(2));
+      timer.advanceBy(500);
+      await expiredRenewalStarted.promise;
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-b", SCOPE)).toMatchObject({
+          leaseExpiresAt: 3_500,
+        });
+      });
+
+      timer.advanceBy(500);
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-a", SCOPE)).toMatchObject({
+          status: "failed",
+          lastError: PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
+          leaseOwner: null,
+        });
+      });
+      expect(signals.get("queue-a")?.aborted).toBe(true);
+      expect(signals.get("queue-b")?.aborted).toBe(false);
+      const activeB = await store.get("queue-b", SCOPE);
+      expect(activeB).toMatchObject({
+        status: "uploading",
+        leaseOwner: "runner-a",
+      });
+      expect(activeB?.leaseExpiresAt).toBeGreaterThan(timer.now);
+
+      uploads.get("queue-a")?.resolve({ ok: true, photoId: "stale-photo-a" });
+      await Promise.resolve();
+      await expect(store.get("queue-a", SCOPE)).resolves.toMatchObject({
+        status: "failed",
+      });
+
+      uploads.get("queue-b")?.resolve({ ok: true, photoId: "photo-b" });
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-b", SCOPE)).toBeNull();
+      });
+    } finally {
+      uploads.get("queue-a")?.resolve({ ok: true, photoId: "stale-photo-a" });
+      uploads.get("queue-b")?.resolve({ ok: true, photoId: "photo-b" });
+      releaseExpiredRenewal.resolve();
+      await runner.stop();
+      await starting;
+    }
+  });
+
+  it("concurrent scheduler: starts a due retry while another upload remains active", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(
+      SCOPE,
+      queuedPhoto({ queueId: "queue-b", clientUploadId: "client-b" })
+    );
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        queueId: "queue-a",
+        clientUploadId: "client-a",
+        status: "retry_wait",
+        attemptCount: 1,
+        retryAt: 3_000,
+      })
+    );
+    const timer = new ManualClockTimer();
+    const uploads = new Map<
+      string,
+      ReturnType<typeof deferred<{ ok: true; photoId: string }>>
+    >();
+    const uploader = vi.fn((item: QueuedPhotoUpload) => {
+      const upload = deferred<{ ok: true; photoId: string }>();
+      uploads.set(item.queueId, upload);
+      return upload.promise;
+    });
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      leaseTtlMs: 10_000,
+    });
+
+    const starting = runner.start();
+    try {
+      await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(1));
+      expect(uploader.mock.calls[0]?.[0]).toMatchObject({
+        queueId: "queue-b",
+      });
+      expect(timer.nextDelay).toBe(1_000);
+
+      timer.advanceBy(1_000);
+      await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(2));
+      expect(uploader.mock.calls[1]?.[0]).toMatchObject({
+        queueId: "queue-a",
+      });
+      await expect(store.get("queue-b", SCOPE)).resolves.toMatchObject({
+        status: "uploading",
+      });
+
+      uploads.get("queue-a")?.resolve({ ok: true, photoId: "photo-a" });
+      uploads.get("queue-b")?.resolve({ ok: true, photoId: "photo-b" });
+      await vi.waitFor(async () => {
+        expect(await store.list(SCOPE)).toEqual([]);
+      });
+    } finally {
+      uploads.get("queue-a")?.resolve({ ok: true, photoId: "photo-a" });
+      uploads.get("queue-b")?.resolve({ ok: true, photoId: "photo-b" });
+      await runner.stop();
+      await starting;
+    }
+  });
+
+  it("concurrent scheduler: recovers settlement after expiry before a delayed watchdog", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const timer = new ManualClockTimer();
+    const upload = deferred<{ ok: true; photoId: string }>();
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader: () => upload.promise,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      leaseTtlMs: 1_000,
+      maxAttempts: 1,
+    });
+
+    const starting = runner.start();
+    try {
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-1", SCOPE)).toMatchObject({
+          status: "uploading",
+          leaseExpiresAt: 3_000,
+        });
+      });
+      timer.now = 3_001;
+      upload.resolve({ ok: true, photoId: "late-photo" });
+
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-1", SCOPE)).toMatchObject({
+          status: "failed",
+          lastError: PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
+          leaseOwner: null,
+        });
+      });
+    } finally {
+      upload.resolve({ ok: true, photoId: "late-photo" });
+      await runner.stop();
+      await starting;
+    }
+  });
+
+  it("concurrent scheduler: retains earlier uploads when availability changes during a later claim", async () => {
+    const secondClaimed = deferred();
+    const releaseSecondClaim = deferred();
+    const settlementError = new PhotoQueuePersistenceError(
+      "persistence_failed",
+      "IndexedDB settlement failed."
+    );
+    class BlockingSecondClaimStore extends MemoryPhotoUploadQueueStore {
+      claimCalls = 0;
+
+      override async tryAcquireUploadClaim(
+        queueId: string,
+        scope: PhotoUploadScope,
+        owner: string,
+        now: number,
+        ttlMs: number,
+        maxScopeSlots: number,
+        maxAttempts: number
+      ): Promise<AcquiredPhotoUploadClaim | null> {
+        this.claimCalls += 1;
+        const claim = await super.tryAcquireUploadClaim(
+          queueId,
+          scope,
+          owner,
+          now,
+          ttlMs,
+          maxScopeSlots,
+          maxAttempts
+        );
+        if (this.claimCalls === 2) {
+          secondClaimed.resolve();
+          await releaseSecondClaim.promise;
+        }
+        return claim;
+      }
+
+      override async completeClaimedUpload(
+        queueId: string,
+        scope: PhotoUploadScope,
+        owner: string,
+        now: number
+      ): Promise<boolean> {
+        if (queueId === "queue-1") throw settlementError;
+        return super.completeClaimedUpload(queueId, scope, owner, now);
+      }
+    }
+    const store = new BlockingSecondClaimStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        queueId: "queue-2",
+        clientUploadId: "client-upload-2",
+      })
+    );
+    const firstUpload = deferred<{ ok: true; photoId: string }>();
+    const uploader = vi.fn(() => firstUpload.promise);
+    const onError = vi.fn();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    let visible = true;
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => 2_000,
+      timer: { setTimeout: () => 1, clearTimeout: () => undefined },
+      isOnline: () => true,
+      isVisible: () => visible,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      onError,
+    });
+
+    const starting = runner.start();
+    try {
+      await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(1));
+      await secondClaimed.promise;
+      visible = false;
+      releaseSecondClaim.resolve();
+      await starting;
+
+      firstUpload.resolve({ ok: true, photoId: "photo-1" });
+      await flushUnhandledRejections();
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onError.mock.calls[0]?.[0]).toMatchObject({
+        name: "PhotoUploadQueueRunnerError",
+        source: "upload_settlement",
+        cause: settlementError,
+      });
+      expect(unhandled).toEqual([]);
+      expect(uploader).toHaveBeenCalledTimes(1);
+      await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+        status: "queued",
+        leaseOwner: null,
+      });
+      await expect(store.get("queue-2", SCOPE)).resolves.toMatchObject({
+        status: "queued",
+        leaseOwner: null,
+      });
+    } finally {
+      visible = false;
+      releaseSecondClaim.resolve();
+      firstUpload.resolve({ ok: true, photoId: "photo-1" });
+      await runner.stop();
+      await starting.catch(() => undefined);
+      await flushUnhandledRejections();
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("concurrent scheduler: start and wake schedule work while stop consumes tracked promises", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const rejectUploads: Array<(reason: unknown) => void> = [];
+    const signals: AbortSignal[] = [];
+    const uploader = vi.fn(
+      (_item: QueuedPhotoUpload, signal: AbortSignal) =>
+        new Promise<never>((_resolve, reject) => {
+          signals.push(signal);
+          rejectUploads.push(reject);
+        })
+    );
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => 2_000,
+      timer: { setTimeout: () => 1, clearTimeout: () => undefined },
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+    });
+
+    const starting = runner.start();
+    try {
+      await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(1));
+      let startSettled = false;
+      void starting.then(() => {
+        startSettled = true;
+      });
+      await vi.waitFor(() => expect(startSettled).toBe(true));
+
+      await store.put(
+        SCOPE,
+        queuedPhoto({
+          queueId: "queue-2",
+          clientUploadId: "client-upload-2",
+        })
+      );
+      await runner.wake();
+      expect(uploader).toHaveBeenCalledTimes(2);
+      expect(signals.every((signal) => !signal.aborted)).toBe(true);
+
+      await runner.stop();
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+      for (const reject of rejectUploads) {
+        reject(new Error("late uploader rejection"));
+      }
+      await flushUnhandledRejections();
+
+      expect(unhandled).toEqual([]);
+      await expect(store.list(SCOPE)).resolves.toMatchObject([
+        { status: "queued", leaseOwner: null },
+        { status: "queued", leaseOwner: null },
+      ]);
+    } finally {
+      await runner.stop();
+      for (const reject of rejectUploads) {
+        reject(new Error("cleanup rejection"));
+      }
+      await starting.catch(() => undefined);
+      await flushUnhandledRejections();
+      process.off("unhandledRejection", onUnhandled);
     }
   });
 

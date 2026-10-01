@@ -7,7 +7,12 @@ export type PhotoUploadQueueTimer = {
 };
 
 export type PhotoUploadQueueWakeSource =
-  "online" | "pageshow" | "visibilitychange" | "retry_timer" | "claim_expiry";
+  | "online"
+  | "pageshow"
+  | "visibilitychange"
+  | "retry_timer"
+  | "claim_expiry"
+  | "upload_settlement";
 
 export class PhotoUploadQueueRunnerError extends Error {
   readonly name = "PhotoUploadQueueRunnerError";
@@ -48,6 +53,11 @@ type ActiveUploadClaim = {
   expiryTimer: unknown;
 };
 
+type ActiveUpload = {
+  claim: ActiveUploadClaim;
+  promise: Promise<void>;
+};
+
 export class PhotoUploadQueueRunner {
   private retryTimer: unknown = null;
   private pumpPromise: Promise<void> | null = null;
@@ -55,11 +65,7 @@ export class PhotoUploadQueueRunner {
   private listening = false;
   private stopped = false;
   private generation = 1;
-  private readonly activeClaims = new Map<string, ActiveUploadClaim>();
-  private resolveStopped: () => void = () => {};
-  private readonly stoppedPromise = new Promise<void>((resolve) => {
-    this.resolveStopped = resolve;
-  });
+  private readonly activeUploads = new Map<string, ActiveUpload>();
   private readonly handleOnline = (): void => {
     this.requestWake("online");
   };
@@ -76,6 +82,10 @@ export class PhotoUploadQueueRunner {
     return this.options.maxAttempts ?? DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS;
   }
 
+  /**
+   * Resolves after the initial scheduler pass. Uploads started by that pass
+   * remain owned and tracked by the runner until they settle or stop() aborts them.
+   */
   async start(): Promise<void> {
     if (this.stopped) return;
     if (!this.listening) {
@@ -87,41 +97,52 @@ export class PhotoUploadQueueRunner {
       );
       this.listening = true;
     }
-    await this.options.store.recoverInterrupted(
-      this.options.scope,
-      this.options.now(),
-      this.maxAttempts
-    );
-    if (!this.isCurrent(this.generation)) return;
     await this.wake();
   }
 
+  /**
+   * Coalesces and awaits scheduler work; it does not await active upload bodies.
+   */
   wake(): Promise<void> {
     if (this.stopped) return Promise.resolve();
     this.pendingWake = true;
     if (this.pumpPromise) return this.pumpPromise;
     const generation = this.generation;
     const pumping = this.drainWakeRequests(generation);
-    this.pumpPromise = pumping.finally(() => {
-      this.pumpPromise = null;
-    });
-    return this.pumpPromise;
+    this.pumpPromise = pumping;
+    void pumping.then(
+      () => this.finishPump(pumping, generation),
+      () => this.finishPump(pumping, generation)
+    );
+    return pumping;
+  }
+
+  private finishPump(pumping: Promise<void>, generation: number): void {
+    if (this.pumpPromise !== pumping) return;
+    this.pumpPromise = null;
+    if (this.pendingWake && this.isCurrent(generation)) {
+      this.requestWake("upload_settlement");
+    }
   }
 
   private requestWake(source: PhotoUploadQueueWakeSource): void {
     void this.wake().catch((cause: unknown) => {
-      const report = this.options.onError;
-      if (!report) return;
-      try {
-        void Promise.resolve(
-          report(new PhotoUploadQueueRunnerError(source, cause))
-        ).catch(() => {
-          // Error observers cannot be allowed to create an unhandled rejection.
-        });
-      } catch {
-        // Error observers cannot be allowed to break native event callbacks.
-      }
+      this.reportError(source, cause);
     });
+  }
+
+  private reportError(source: PhotoUploadQueueWakeSource, cause: unknown): void {
+    const report = this.options.onError;
+    if (!report) return;
+    try {
+      void Promise.resolve(report(new PhotoUploadQueueRunnerError(source, cause))).catch(
+        () => {
+          // Error observers cannot be allowed to create an unhandled rejection.
+        }
+      );
+    } catch {
+      // Error observers cannot be allowed to break scheduler callbacks.
+    }
   }
 
   private async drainWakeRequests(generation: number): Promise<void> {
@@ -149,7 +170,7 @@ export class PhotoUploadQueueRunner {
 
   private async pump(generation: number): Promise<"released_expired_acquisition" | void> {
     this.clearRetryTimer();
-    if (!this.canProcess(generation)) return;
+    if (!this.isCurrent(generation)) return;
     await this.options.store.recoverInterrupted(
       this.options.scope,
       this.options.now(),
@@ -157,49 +178,38 @@ export class PhotoUploadQueueRunner {
     );
     if (!this.canProcess(generation)) return;
     const concurrency = Math.min(2, Math.max(1, this.options.maxConcurrency ?? 2));
-    const active = new Set<Promise<void>>();
-    const activeQueueIds = new Set<string>();
+    const items = await this.options.store.list(this.options.scope);
+    if (!this.canProcess(generation)) return;
+    const now = this.options.now();
+    const candidates = items.filter(
+      (candidate) =>
+        !this.activeUploads.has(candidate.queueId) &&
+        (candidate.status === "queued" ||
+          (candidate.status === "retry_wait" &&
+            candidate.retryAt !== null &&
+            candidate.retryAt <= now))
+    );
+    let releasedExpiredAcquisition = false;
 
-    while (this.canProcess(generation)) {
-      const items = await this.options.store.list(this.options.scope);
-      if (!this.canProcess(generation)) return;
-      const now = this.options.now();
-      const candidates = items.filter(
-        (candidate) =>
-          !activeQueueIds.has(candidate.queueId) &&
-          (candidate.status === "queued" ||
-            (candidate.status === "retry_wait" &&
-              candidate.retryAt !== null &&
-              candidate.retryAt <= now))
+    while (
+      this.activeUploads.size < concurrency &&
+      candidates.length > 0 &&
+      this.canProcess(generation)
+    ) {
+      const item = candidates.shift()!;
+      if (this.activeUploads.has(item.queueId)) continue;
+      const ttlMs = this.options.leaseTtlMs ?? 30_000;
+      const acquiredClaim = await this.options.store.tryAcquireUploadClaim(
+        item.queueId,
+        this.options.scope,
+        this.options.ownerId,
+        this.options.now(),
+        ttlMs,
+        2,
+        this.maxAttempts
       );
-
-      while (active.size < concurrency && candidates.length > 0) {
-        if (!this.canProcess(generation)) return;
-        const item = candidates.shift()!;
-        const ttlMs = this.options.leaseTtlMs ?? 30_000;
-        const acquiredClaim = await this.options.store.tryAcquireUploadClaim(
-          item.queueId,
-          this.options.scope,
-          this.options.ownerId,
-          this.options.now(),
-          ttlMs,
-          2,
-          this.maxAttempts
-        );
-        if (!this.canProcess(generation)) {
-          if (acquiredClaim) {
-            await this.options.store.releaseUploadClaim(
-              item.queueId,
-              this.options.scope,
-              this.options.ownerId,
-              this.options.now(),
-              this.maxAttempts
-            );
-          }
-          return;
-        }
-        if (!acquiredClaim) continue;
-        if (acquiredClaim.expiresAt <= this.options.now()) {
+      if (!this.canProcess(generation)) {
+        if (acquiredClaim) {
           await this.options.store.releaseUploadClaim(
             item.queueId,
             this.options.scope,
@@ -207,39 +217,63 @@ export class PhotoUploadQueueRunner {
             this.options.now(),
             this.maxAttempts
           );
-          return "released_expired_acquisition";
         }
-
-        const claim: ActiveUploadClaim = {
-          queueId: item.queueId,
-          generation,
-          abortController: new AbortController(),
-          ownsClaim: true,
-          expiresAt: acquiredClaim.expiresAt,
-          renewalTimer: null,
-          expiryTimer: null,
-        };
-        this.activeClaims.set(item.queueId, claim);
-        this.scheduleClaimExpiry(claim);
-        activeQueueIds.add(item.queueId);
-        const uploadPromise = this.uploadOne(acquiredClaim.item, claim).finally(() => {
-          active.delete(uploadPromise);
-          activeQueueIds.delete(item.queueId);
-          this.activeClaims.delete(item.queueId);
-        });
-        active.add(uploadPromise);
+        return releasedExpiredAcquisition ? "released_expired_acquisition" : undefined;
+      }
+      if (!acquiredClaim) continue;
+      if (acquiredClaim.expiresAt <= this.options.now()) {
+        await this.options.store.releaseUploadClaim(
+          item.queueId,
+          this.options.scope,
+          this.options.ownerId,
+          this.options.now(),
+          this.maxAttempts
+        );
+        releasedExpiredAcquisition = true;
+        continue;
       }
 
-      if (active.size === 0) {
-        const remaining = await this.options.store.list(this.options.scope);
-        if (!this.canProcess(generation)) return;
-        this.scheduleNextRetry(remaining, generation);
-        return;
-      }
-
-      await Promise.race([Promise.race(active), this.stoppedPromise]);
-      if (!this.isCurrent(generation)) return;
+      const claim: ActiveUploadClaim = {
+        queueId: item.queueId,
+        generation,
+        abortController: new AbortController(),
+        ownsClaim: true,
+        expiresAt: acquiredClaim.expiresAt,
+        renewalTimer: null,
+        expiryTimer: null,
+      };
+      this.startTrackedUpload(acquiredClaim.item, claim);
     }
+
+    const remaining = await this.options.store.list(this.options.scope);
+    if (this.canProcess(generation)) {
+      this.scheduleNextRetry(remaining, generation);
+    }
+    return releasedExpiredAcquisition ? "released_expired_acquisition" : undefined;
+  }
+
+  private startTrackedUpload(
+    uploading: QueuedPhotoUpload,
+    claim: ActiveUploadClaim
+  ): void {
+    const active: ActiveUpload = {
+      claim,
+      promise: Promise.resolve(),
+    };
+    this.activeUploads.set(uploading.queueId, active);
+    this.scheduleClaimExpiry(claim);
+    const promise = this.uploadOne(uploading, claim)
+      .catch(async (cause: unknown) => {
+        this.reportError("upload_settlement", cause);
+        await this.releaseClaim(claim);
+      })
+      .finally(() => {
+        if (this.activeUploads.get(uploading.queueId)?.promise === promise) {
+          this.activeUploads.delete(uploading.queueId);
+        }
+        this.requestWake("upload_settlement");
+      });
+    active.promise = promise;
   }
 
   private async uploadOne(
@@ -283,6 +317,10 @@ export class PhotoUploadQueueRunner {
         };
       }
       if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
+      if (this.options.now() >= claim.expiresAt) {
+        this.expireClaim(claim);
+        return;
+      }
 
       if (!outcome.ok) {
         const failed = !outcome.retryable || uploading.attemptCount >= this.maxAttempts;
@@ -304,8 +342,11 @@ export class PhotoUploadQueueRunner {
           },
           true
         );
-        claim.ownsClaim = false;
-        if (!updated) claim.abortController.abort();
+        if (updated) {
+          claim.ownsClaim = false;
+        } else {
+          this.recoverLostClaim(claim);
+        }
         return;
       }
 
@@ -315,8 +356,11 @@ export class PhotoUploadQueueRunner {
         this.options.ownerId,
         this.options.now()
       );
-      claim.ownsClaim = false;
-      if (!completed) claim.abortController.abort();
+      if (completed) {
+        claim.ownsClaim = false;
+      } else {
+        this.recoverLostClaim(claim);
+      }
     } finally {
       this.clearClaimTimers(claim);
     }
@@ -424,6 +468,11 @@ export class PhotoUploadQueueRunner {
     this.requestWake("claim_expiry");
   }
 
+  private recoverLostClaim(claim: ActiveUploadClaim): void {
+    this.loseClaim(claim);
+    this.requestWake("upload_settlement");
+  }
+
   private loseClaim(claim: ActiveUploadClaim): void {
     claim.ownsClaim = false;
     this.clearClaimTimers(claim);
@@ -517,7 +566,6 @@ export class PhotoUploadQueueRunner {
     this.stopped = true;
     this.generation += 1;
     this.pendingWake = false;
-    this.resolveStopped();
     this.clearRetryTimer();
     if (this.listening) {
       this.options.eventTarget.removeEventListener("online", this.handleOnline);
@@ -528,7 +576,14 @@ export class PhotoUploadQueueRunner {
       );
       this.listening = false;
     }
-    const claims = [...this.activeClaims.values()];
-    await Promise.all(claims.map((claim) => this.releaseClaim(claim)));
+    const scheduler = this.pumpPromise;
+    const active = [...this.activeUploads.values()];
+    await Promise.all(active.map(({ claim }) => this.releaseClaim(claim)));
+    await Promise.allSettled(active.map(({ promise }) => promise));
+    if (scheduler) {
+      void scheduler.catch(() => {
+        // A stopped runner deliberately consumes unfinished scheduler failures.
+      });
+    }
   }
 }
