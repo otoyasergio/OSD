@@ -83,7 +83,9 @@ test.describe("Safari layout gates", () => {
     await expect(email).toHaveAttribute("spellcheck", "false");
   });
 
-  test("long-press draggable cards suppress the iOS callout", async ({ page }) => {
+  test("long-press draggable cards suppress selection and the iOS callout", async ({
+    page,
+  }) => {
     await openLogin(page);
     const result = await page.evaluate(() => {
       const host = document.createElement("div");
@@ -94,14 +96,21 @@ test.describe("Safari layout gates", () => {
         '<div class="cc-mini-bike" data-probe="mini">x</div>' +
         '<button class="cc-bike-card cc-bike-card--static" data-probe="static">x</button>';
       document.body.append(host);
+      // `-webkit-touch-callout` exists only in iOS WebKit; Playwright's Linux
+      // WebKit reports it as undefined, so only assert it where it exists.
+      const calloutSupported = CSS.supports("-webkit-touch-callout", "none");
       const read = (probe: string) => {
         const el = host.querySelector<HTMLElement>(`[data-probe="${probe}"]`)!;
-        const cs = getComputedStyle(el) as CSSStyleDeclaration & {
-          webkitTouchCallout?: string;
+        const cs = getComputedStyle(el);
+        return {
+          callout: cs.getPropertyValue("-webkit-touch-callout"),
+          userSelect:
+            cs.getPropertyValue("user-select") ||
+            cs.getPropertyValue("-webkit-user-select"),
         };
-        return { callout: cs.webkitTouchCallout, userSelect: cs.userSelect };
       };
       const out = {
+        calloutSupported,
         wo: read("wo"),
         pit: read("pit"),
         cc: read("cc"),
@@ -113,11 +122,12 @@ test.describe("Safari layout gates", () => {
     });
 
     for (const probe of [result.wo, result.pit, result.cc, result.mini]) {
-      expect(probe.callout).toBe("none");
       expect(probe.userSelect).toBe("none");
+      if (result.calloutSupported) expect(probe.callout).toBe("none");
     }
     // Static cards keep copy-and-select so staff can grab a WO number.
-    expect(result.staticCard.callout).not.toBe("none");
+    expect(result.staticCard.userSelect).not.toBe("none");
+    if (result.calloutSupported) expect(result.staticCard.callout).not.toBe("none");
   });
 
   test("sign-in page has no horizontal overflow", async ({ page }) => {
