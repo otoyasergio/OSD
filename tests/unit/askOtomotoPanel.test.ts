@@ -37,7 +37,12 @@ vi.mock("@/app/(app)/work_orders/note-actions", () => ({
 }));
 
 import { AskOtomotoPanel } from "@/components/diagnostics/AskOtomotoPanel";
+import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
+import {
+  createMemoryPhotoUploadQueueDatabase,
+  MemoryPhotoUploadQueueStore,
+} from "@/tests/helpers/memoryPhotoUploadQueueStore";
 import {
   ASSISTANT_POLL,
   nextAssistantPollDelay,
@@ -184,9 +189,22 @@ describe("AskOtomotoPanel", () => {
     vi.useRealTimers();
   });
 
+  function withPhotoQueue(node: React.ReactNode) {
+    return React.createElement(
+      PhotoUploadQueueProvider,
+      {
+        userId: "user-a",
+        locationId: "location-a",
+        store: new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase()),
+        isOnline: () => false,
+      },
+      node
+    );
+  }
+
   async function render(p: PanelProps) {
     await act(async () => {
-      root.render(React.createElement(AskOtomotoPanel, p));
+      root.render(withPhotoQueue(React.createElement(AskOtomotoPanel, p)));
     });
   }
 
@@ -1469,19 +1487,21 @@ describe("AskOtomotoPanel", () => {
       };
       await act(async () => {
         root.render(
-          React.createElement(JobPacketPanel, {
-            packet,
-            section: "assistant",
-            closeHref: `/technician?wo=${WO}`,
-            stage: "work",
-            selectedJobId: JOB,
-            assistant: withThread(workspace(), {
-              route: floorRoute,
-              jobs: [{ jobId: JOB, label: "Brake service" }],
-              defaultJobId: JOB,
-              capabilities: { ...FULL_CAPS, canUseFrontOfficeModes: false },
-            }),
-          })
+          withPhotoQueue(
+            React.createElement(JobPacketPanel, {
+              packet,
+              section: "assistant",
+              closeHref: `/technician?wo=${WO}`,
+              stage: "work",
+              selectedJobId: JOB,
+              assistant: withThread(workspace(), {
+                route: floorRoute,
+                jobs: [{ jobId: JOB, label: "Brake service" }],
+                defaultJobId: JOB,
+                capabilities: { ...FULL_CAPS, canUseFrontOfficeModes: false },
+              }),
+            })
+          )
         );
       });
 
@@ -1517,17 +1537,19 @@ describe("AskOtomotoPanel", () => {
     it("shows the new-conversation state in the packet when no thread is selected", async () => {
       await act(async () => {
         root.render(
-          React.createElement(JobPacketPanel, {
-            packet,
-            section: "assistant",
-            closeHref: `/technician?wo=${WO}`,
-            stage: "work",
-            assistant: props({
-              route: { surface: "floor", workOrderId: WO, jobId: null, stage: "work" },
-              jobs: [],
-              capabilities: { ...FULL_CAPS, canUseFrontOfficeModes: false },
-            }),
-          })
+          withPhotoQueue(
+            React.createElement(JobPacketPanel, {
+              packet,
+              section: "assistant",
+              closeHref: `/technician?wo=${WO}`,
+              stage: "work",
+              assistant: props({
+                route: { surface: "floor", workOrderId: WO, jobId: null, stage: "work" },
+                jobs: [],
+                capabilities: { ...FULL_CAPS, canUseFrontOfficeModes: false },
+              }),
+            })
+          )
         );
       });
       expect(createForm()).not.toBeNull();
