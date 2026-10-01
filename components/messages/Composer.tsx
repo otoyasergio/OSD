@@ -47,6 +47,7 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
   }
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (pending) return;
     const input = e.currentTarget;
     setError(null);
     try {
@@ -120,14 +121,22 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
         <p className="mb-2 text-sm text-[var(--status-danger-fg)]">{error}</p>
       ) : null}
       <div className="flex items-end gap-2">
-        <input
-          id={photoInputId}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-          className="photo-file-input"
-          onChange={onFileChange}
-        />
-        <label htmlFor={photoInputId} className="btn shrink-0" aria-label="Attach photo">
+        <div className="relative">
+          <input
+            id={photoInputId}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            className="photo-file-input"
+            disabled={pending}
+            onChange={onFileChange}
+          />
+        </div>
+        <label
+          htmlFor={pending ? undefined : photoInputId}
+          className={`btn shrink-0 ${pending ? "pointer-events-none" : ""}`}
+          aria-label="Attach photo"
+          aria-disabled={pending}
+        >
           +
         </label>
         <textarea

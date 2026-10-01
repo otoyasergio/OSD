@@ -32,6 +32,8 @@ export function CustomerDocuments({
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [preparing, setPreparing] = useState(false);
+  const [preparedFile, setPreparedFile] = useState<File | null>(null);
 
   function refresh() {
     router.refresh();
@@ -42,9 +44,13 @@ export function CustomerDocuments({
     setError(null);
     const formData = new FormData(event.currentTarget);
     const file = formData.get("file");
-    if (!(file instanceof File) || file.size === 0) {
+    const chosen = file instanceof File && file.size > 0 ? file : preparedFile;
+    if (!chosen || chosen.size === 0) {
       setError("Choose a file to upload.");
       return;
+    }
+    if (!(file instanceof File) || file.size === 0) {
+      formData.set("file", chosen);
     }
     formData.set("title", title);
 
@@ -166,11 +172,16 @@ export function CustomerDocuments({
               accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
               surface="customer_documents"
               disabled={pending}
+              onPreparingChange={(next) => {
+                setPreparing(next);
+                if (next) setPreparedFile(null);
+              }}
+              onPrepared={(files) => setPreparedFile(files[0] ?? null)}
             />
           </div>
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || preparing}
             className="btn btn-primary min-h-11 self-start"
           >
             {pending ? "Saving…" : "Upload"}

@@ -19,6 +19,7 @@ export type PreparedFileInputProps = {
   surface: PhotoTelemetrySurface;
   compress?: CompressImageOptions;
   onPrepared?: (files: File[]) => void;
+  onPreparingChange?: (preparing: boolean) => void;
 };
 
 export function PreparedFileInput({
@@ -32,18 +33,39 @@ export function PreparedFileInput({
   surface,
   compress,
   onPrepared,
+  onPreparingChange,
 }: PreparedFileInputProps) {
   const committedRef = useRef<HTMLInputElement>(null);
   const [preparing, setPreparing] = useState(false);
   const [filename, setFilename] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function onPickerChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const picker = event.currentTarget;
+  function beginPreparing(): void {
+    if (committedRef.current) {
+      assignInputFiles(committedRef.current, []);
+      committedRef.current.disabled = true;
+    }
     flushSync(() => {
       setPreparing(true);
+      setFilename(null);
       setError(null);
+      onPreparingChange?.(true);
     });
+  }
+
+  function finishPreparing(): void {
+    if (committedRef.current) {
+      committedRef.current.disabled = Boolean(disabled);
+    }
+    flushSync(() => {
+      setPreparing(false);
+      onPreparingChange?.(false);
+    });
+  }
+
+  async function onPickerChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const picker = event.currentTarget;
+    beginPreparing();
     try {
       const files = await readPickedUploadFiles(picker, {
         surface,
@@ -63,7 +85,7 @@ export function PreparedFileInput({
       setFilename(null);
       setError(UNREADABLE_PHOTO_MESSAGE);
     } finally {
-      setPreparing(false);
+      finishPreparing();
     }
   }
 
@@ -88,7 +110,7 @@ export function PreparedFileInput({
           type="file"
           name={name}
           required={required}
-          disabled={disabled}
+          disabled={disabled || preparing}
           className="photo-file-input"
           tabIndex={-1}
           aria-hidden

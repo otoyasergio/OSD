@@ -98,6 +98,33 @@ describe("photo telemetry wiring", () => {
     expect(JSON.stringify(sink.mock.calls)).not.toContain("note.txt");
   });
 
+  it("does not emit photo_queue_resumed when the runner starts with no pending work", async () => {
+    const sink = vi.fn();
+    setPhotoTelemetrySink(sink);
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader: vi.fn(),
+      now: () => 2_000,
+      timer: {
+        setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+        clearTimeout: (handle) => clearTimeout(handle as number),
+      },
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-empty",
+    });
+
+    await runner.start();
+    runner.stop();
+
+    expect(sink.mock.calls.map((call) => call[0].name)).not.toContain(
+      "photo_queue_resumed"
+    );
+  });
+
   it("emits photo_queue_quota_failed once when enqueue hits quota", async () => {
     const sink = vi.fn();
     setPhotoTelemetrySink(sink);

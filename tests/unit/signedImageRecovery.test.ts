@@ -112,6 +112,40 @@ describe("useSignedImageRecovery", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  it("coalesces multiple unique signed failures into one refresh burst", async () => {
+    const onError = vi.fn();
+    const second =
+      "https://abc.supabase.co/storage/v1/object/sign/intake-photos/wo/rear.jpg?token=rear";
+
+    function DualProbe() {
+      return createElement(
+        "div",
+        null,
+        createElement(HookProbe, { src: SIGNED, onError }),
+        createElement(HookProbe, { src: second, onError })
+      );
+    }
+
+    await act(async () => {
+      root.render(createElement(DualProbe));
+    });
+    const images = [...container.querySelectorAll("img")];
+    await act(async () => {
+      images[0]?.dispatchEvent(new Event("error"));
+      images[1]?.dispatchEvent(new Event("error"));
+    });
+
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      images[0]?.dispatchEvent(new Event("error"));
+      images[1]?.dispatchEvent(new Event("error"));
+    });
+    expect(onError).toHaveBeenCalledTimes(4);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it("does not loop after a remount of the same failed signed URL", async () => {
     function Remountable() {
       const [tick, setTick] = useState(0);

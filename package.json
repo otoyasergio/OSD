@@ -1,4 +1,5 @@
 {
+  "name": "OTOMOTO SERVICE APP",
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",

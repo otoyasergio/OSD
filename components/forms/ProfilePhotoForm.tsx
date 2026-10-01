@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { ProfilePhotoFormState } from "@/app/account/actions";
 import { FormError } from "@/components/forms/Field";
 import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
@@ -33,6 +33,7 @@ export function ProfilePhotoForm({
 }) {
   const [uploadState, uploadFormAction] = useActionState(uploadAction, INITIAL);
   const [removeState, removeFormAction] = useActionState(removeAction, INITIAL);
+  const [preparing, setPreparing] = useState(false);
 
   const success = uploadState.success ?? removeState.success;
 
@@ -81,6 +82,7 @@ export function ProfilePhotoForm({
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           required
           surface="profile"
+          onPreparingChange={setPreparing}
         />
         <p className="text-sm text-[var(--status-neutral)]">
           JPEG, PNG, WebP, or iPhone photo. Maximum 5 MB. Square photos work best.
@@ -89,6 +91,7 @@ export function ProfilePhotoForm({
           <SubmitButton
             label={photoUrl ? "Replace photo" : "Upload photo"}
             pendingLabel="Uploading…"
+            disabled={preparing}
           />
         </div>
       </form>

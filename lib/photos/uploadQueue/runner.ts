@@ -124,6 +124,7 @@ export class PhotoUploadQueueRunner {
     try {
       const items = await this.options.store.list(this.options.scope);
       const pending = items.filter((item) => item.status !== "saved");
+      if (pending.length === 0) return;
       const oldestCreatedAt = pending.reduce(
         (oldest, item) => Math.min(oldest, item.createdAt),
         Number.POSITIVE_INFINITY

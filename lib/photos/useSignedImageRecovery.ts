@@ -4,9 +4,25 @@ import { useCallback, type SyntheticEvent } from "react";
 import { useRouter } from "next/navigation";
 
 const recoveredSignedUrls = new Set<string>();
+let refreshBurstScheduled = false;
+let scheduledRefresh: (() => void) | null = null;
 
 export function resetSignedImageRecovery(): void {
   recoveredSignedUrls.clear();
+  refreshBurstScheduled = false;
+  scheduledRefresh = null;
+}
+
+function scheduleSignedImageRefresh(refresh: () => void): void {
+  scheduledRefresh = refresh;
+  if (refreshBurstScheduled) return;
+  refreshBurstScheduled = true;
+  queueMicrotask(() => {
+    const run = scheduledRefresh;
+    refreshBurstScheduled = false;
+    scheduledRefresh = null;
+    run?.();
+  });
 }
 
 export function isSupabaseSignedObjectUrl(url: string): boolean {
@@ -34,7 +50,7 @@ export function useSignedImageRecovery(
       if (!src || !isSupabaseSignedObjectUrl(src)) return;
       if (recoveredSignedUrls.has(src)) return;
       recoveredSignedUrls.add(src);
-      router.refresh();
+      scheduleSignedImageRefresh(() => router.refresh());
     },
     [onError, router, src]
   );

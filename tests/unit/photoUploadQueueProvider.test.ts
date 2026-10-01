@@ -8,7 +8,11 @@ import {
   usePhotoUploadQueue,
   type PhotoUploadQueueApi,
 } from "@/components/photos/PhotoUploadQueueProvider";
-import { PhotoUploadQueueClosedError } from "@/lib/photos/uploadQueue/errors";
+import {
+  PhotoQueuePersistenceError,
+  PhotoUploadQueueClosedError,
+} from "@/lib/photos/uploadQueue/errors";
+import { resetPhotoTelemetrySink, setPhotoTelemetrySink } from "@/lib/photos/telemetry";
 import type { QueuedPhotoUpload } from "@/lib/photos/uploadQueue/types";
 import {
   createMemoryPhotoUploadQueueDatabase,
@@ -175,6 +179,48 @@ describe("PhotoUploadQueueProvider", () => {
       status: "queued",
     });
     expect(items[0]).not.toHaveProperty("workOrderId");
+  });
+
+  it("emits quota telemetry when replaceExisting draft enqueue hits quota", async () => {
+    const sink = vi.fn();
+    setPhotoTelemetrySink(sink);
+    class QuotaReplaceStore extends MemoryPhotoUploadQueueStore {
+      override async replaceDraftCategory(): Promise<QueuedPhotoUpload> {
+        throw new PhotoQueuePersistenceError(
+          "quota_exceeded",
+          "This device does not have enough storage to queue the photo."
+        );
+      }
+    }
+    let api!: PhotoUploadQueueApi;
+    try {
+      await renderProvider({
+        store: new QuotaReplaceStore(createMemoryPhotoUploadQueueDatabase()),
+        onReady: (next) => {
+          api = next;
+        },
+      });
+
+      await expect(
+        act(async () => {
+          await api.enqueue({
+            file: photoFile(),
+            category: "front",
+            intakeDraftId: "draft-1",
+            replaceExisting: true,
+            surface: "intake",
+          });
+        })
+      ).rejects.toBeInstanceOf(PhotoQueuePersistenceError);
+
+      expect(sink).toHaveBeenCalledTimes(1);
+      expect(sink.mock.calls[0][0]).toEqual({
+        name: "photo_queue_quota_failed",
+        surface: "intake",
+      });
+    } finally {
+      resetPhotoTelemetrySink();
+    }
   });
 
   it("attaches a draft atomically and then uploads the required entries", async () => {

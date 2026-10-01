@@ -13,6 +13,7 @@ import {
 import { uploadAssistantPhotoAction } from "@/app/(app)/work_orders/assistant-actions";
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { enqueuePhotoUpload } from "@/lib/photos/uploadQueue/enqueue";
+import { emitPhotoTelemetry } from "@/lib/photos/telemetry";
 import { withPhotoUploadQueueNotifications } from "@/lib/photos/uploadQueue/notifyingStore";
 import {
   newestIncompleteIntakeDraft,
@@ -20,7 +21,10 @@ import {
   prepareQueuedPhoto,
 } from "@/lib/photos/uploadQueue/prepareQueuedPhoto";
 import { PhotoUploadQueueRunner } from "@/lib/photos/uploadQueue/runner";
-import { PhotoUploadQueueClosedError } from "@/lib/photos/uploadQueue/errors";
+import {
+  PhotoQueuePersistenceError,
+  PhotoUploadQueueClosedError,
+} from "@/lib/photos/uploadQueue/errors";
 import { IndexedDbPhotoUploadQueueStore } from "@/lib/photos/uploadQueue/indexedDbStore";
 import type { PhotoUploadQueueStore } from "@/lib/photos/uploadQueue/store";
 import {
@@ -318,22 +322,38 @@ export function PhotoUploadQueueProvider({
         Boolean(
           prepared.intakeDraftId && !prepared.workOrderId && prepared.category !== "other"
         );
-      const queued =
-        replaceExisting && prepared.intakeDraftId
-          ? await store.replaceDraftCategory(
-              scope,
-              prepared.intakeDraftId,
-              prepared.category,
-              { ...prepared, status: "queued" },
-              readNow()
-            )
-          : await enqueuePhotoUpload({
-              store,
-              scope,
-              item: prepared,
-              now: readNow(),
-              surface: input.surface,
-            });
+      let queued;
+      try {
+        queued =
+          replaceExisting && prepared.intakeDraftId
+            ? await store.replaceDraftCategory(
+                scope,
+                prepared.intakeDraftId,
+                prepared.category,
+                { ...prepared, status: "queued" },
+                readNow()
+              )
+            : await enqueuePhotoUpload({
+                store,
+                scope,
+                item: prepared,
+                now: readNow(),
+                surface: input.surface,
+              });
+      } catch (error) {
+        if (
+          replaceExisting &&
+          prepared.intakeDraftId &&
+          error instanceof PhotoQueuePersistenceError &&
+          error.code === "quota_exceeded"
+        ) {
+          emitPhotoTelemetry({
+            name: "photo_queue_quota_failed",
+            surface: input.surface ?? "unknown",
+          });
+        }
+        throw error;
+      }
       await refreshItems();
       if (queued.workOrderId) await runnerRef.current?.wake();
       return queued;

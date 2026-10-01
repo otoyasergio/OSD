@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { StaffFormState } from "@/app/(app)/settings/staff/[user_id]/actions";
 import type {
   StaffDocument,
@@ -68,6 +68,7 @@ export function StaffProfileForms({
   const [pinState, pinFormAction] = useActionState(setPinAction, { error: null });
   const [noteState, noteFormAction] = useActionState(addNoteAction, { error: null });
   const [docState, docFormAction] = useActionState(uploadDocumentAction, { error: null });
+  const [preparing, setPreparing] = useState(false);
 
   return (
     <div className="flex flex-col gap-8">
@@ -267,10 +268,15 @@ export function StaffProfileForms({
               required
               accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
               surface="staff_documents"
+              onPreparingChange={setPreparing}
             />
           </div>
           <div>
-            <SubmitButton label="Upload document" pendingLabel="Uploading…" />
+            <SubmitButton
+              label="Upload document"
+              pendingLabel="Uploading…"
+              disabled={preparing}
+            />
           </div>
         </form>
         <ul className="divide-y divide-[var(--border)]">

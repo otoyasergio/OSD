@@ -14,6 +14,9 @@ describe("secondary pickers use the shared iOS-safe prepared input", () => {
     expect(src).toMatch(/htmlFor=/);
     expect(src).toMatch(/photo-file-input/);
     expect(src).toMatch(/image\/heic/);
+    expect(src).toMatch(/className="relative"/);
+    expect(src).toMatch(/disabled=\{pending\}/);
+    expect(src).toMatch(/aria-disabled=\{pending\}/);
     expect(src).not.toMatch(/className="hidden"/);
     expect(src).not.toMatch(/fileInputRef\.current\?\.click\(/);
     expect(src).not.toMatch(/\.click\(\)/);
@@ -25,6 +28,8 @@ describe("secondary pickers use the shared iOS-safe prepared input", () => {
     expect(src).toMatch(/image\/heic/);
     expect(src).toMatch(/image\/heif/);
     expect(src).toMatch(/name="file"|name=\{"file"\}/);
+    expect(src).toMatch(/onPreparingChange/);
+    expect(src).toMatch(/disabled=\{preparing\}/);
     expect(src).not.toMatch(/\.click\(\)/);
     expect(src).not.toMatch(/display:\s*none|\.hidden\b|sr-only/);
   });
@@ -37,6 +42,9 @@ describe("secondary pickers use the shared iOS-safe prepared input", () => {
     expect(src).toMatch(/image\/heic/);
     expect(src).toMatch(/application\/pdf/);
     expect(src).toMatch(/photo-file-input|PreparedFileInput/);
+    expect(src).toMatch(/onPreparingChange/);
+    expect(src).toMatch(/setPreparedFile\(null\)|setFile\(null\)/);
+    expect(src).toMatch(/disabled=\{pending \|\| preparing\}/);
     expect(src).not.toMatch(/setFile\(e\.target\.files/);
     expect(src).not.toMatch(/\.click\(\)/);
   });
@@ -47,6 +55,8 @@ describe("secondary pickers use the shared iOS-safe prepared input", () => {
     expect(src).toMatch(/image\/heic/);
     expect(src).toMatch(/application\/pdf/);
     expect(src).toMatch(/name="file"|name=\{"file"\}/);
+    expect(src).toMatch(/onPreparingChange/);
+    expect(src).toMatch(/disabled=\{preparing\}/);
     expect(src).not.toMatch(/\.click\(\)/);
     expect(src).not.toMatch(/sr-only|className="hidden"/);
   });
