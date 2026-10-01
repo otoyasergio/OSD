@@ -105,10 +105,7 @@ import {
   updatePartPriceAction,
   updatePartStatusAction,
 } from "@/app/(app)/work_orders/part-actions";
-import {
-  deleteIntakePhotoAction,
-  uploadIntakePhotoAction,
-} from "@/app/(app)/work_orders/photo-actions";
+import { deleteIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { addTechnicianNoteAction } from "@/app/(app)/work_orders/note-actions";
 import {
   cancelWorkOrderAction,
@@ -615,7 +612,7 @@ export default async function WorkOrderDetailPage({
           readOnly={detail.is_foreign_location}
           canUpload={canUploadPhotos}
           canDelete={canDeletePhotos}
-          uploadAction={uploadIntakePhotoAction.bind(null, detail.work_order_id)}
+          workOrderId={detail.work_order_id}
           deleteAction={deleteIntakePhotoAction.bind(null, detail.work_order_id)}
         />
       ) : null}

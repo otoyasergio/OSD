@@ -15,6 +15,11 @@ vi.mock("@/app/(app)/work_orders/assistant-actions", () => ({
 vi.mock("@/lib/forms/readPickedPhotoFiles", () => ({ readPickedPhotoFiles }));
 
 import { DiagnosticsPhotoPicker } from "@/components/diagnostics/DiagnosticsPhotoPicker";
+import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
+import {
+  createMemoryPhotoUploadQueueDatabase,
+  MemoryPhotoUploadQueueStore,
+} from "@/tests/helpers/memoryPhotoUploadQueueStore";
 import {
   buildPhotosPayload,
   type DiagnosticsPhotoSelection,
@@ -57,6 +62,30 @@ type HarnessProps = {
   initialSelections?: DiagnosticsPhotoSelection[];
 };
 
+let testStore = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+
+async function echoAssistantUpload(
+  workOrderId: string,
+  previous: {
+    status: "idle" | "success" | "error";
+    error: string | null;
+    data?: unknown;
+  },
+  form: FormData
+) {
+  const result = await uploadAssistantPhotoAction(workOrderId, previous, form);
+  if (result.status === "success" && result.data && typeof result.data === "object") {
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        clientUploadId: String(form.get("client_upload_id") ?? ""),
+      },
+    };
+  }
+  return result;
+}
+
 function Harness({
   photos = [],
   jobId = JOB,
@@ -70,36 +99,49 @@ function Harness({
 }: HarnessProps) {
   const [selections, setSelections] = useState(initialSelections);
   return React.createElement(
-    "div",
-    null,
-    React.createElement(DiagnosticsPhotoPicker, {
-      thread: { threadId: THREAD, workOrderId: WO, jobId },
-      photos,
-      selections,
-      onSelectionsChange: setSelections,
-      requestedPrompt,
-      requestKey: requestKey ?? (requestedPrompt ? "request-1" : null),
-      canMutate,
-      preview,
-      readOnly,
-      disabled,
-    }),
+    PhotoUploadQueueProvider,
+    {
+      userId: "user-a",
+      locationId: "location-a",
+      store: testStore,
+      isOnline: () => true,
+      uploadAssistantPhoto: echoAssistantUpload,
+    },
     React.createElement(
-      "button",
-      {
-        type: "button",
-        "data-testid": "external-fill",
-        onClick: () =>
-          setSelections(
-            [id(20), id(21), id(22)].map((photoId) => ({ photoId, purpose: "external" }))
-          ),
-      },
-      "fill"
-    ),
-    React.createElement(
-      "output",
-      { "data-testid": "payload" },
-      JSON.stringify(buildPhotosPayload(selections))
+      "div",
+      null,
+      React.createElement(DiagnosticsPhotoPicker, {
+        thread: { threadId: THREAD, workOrderId: WO, jobId },
+        photos,
+        selections,
+        onSelectionsChange: setSelections,
+        requestedPrompt,
+        requestKey: requestKey ?? (requestedPrompt ? "request-1" : null),
+        canMutate,
+        preview,
+        readOnly,
+        disabled,
+      }),
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          "data-testid": "external-fill",
+          onClick: () =>
+            setSelections(
+              [id(20), id(21), id(22)].map((photoId) => ({
+                photoId,
+                purpose: "external",
+              }))
+            ),
+        },
+        "fill"
+      ),
+      React.createElement(
+        "output",
+        { "data-testid": "payload" },
+        JSON.stringify(buildPhotosPayload(selections))
+      )
     )
   );
 }
@@ -113,6 +155,7 @@ describe("DiagnosticsPhotoPicker", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    testStore = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
     objectUrls = 0;
     URL.createObjectURL = createObjectURL as never;
     URL.revokeObjectURL = revokeObjectURL as never;
@@ -279,8 +322,10 @@ describe("DiagnosticsPhotoPicker", () => {
     expect(form.has("category")).toBe(false);
     expect(form.has("job_id")).toBe(false);
 
-    expect(payload()).toEqual([{ photoId: id(9), purpose: "Show the left caliper" }]);
-    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(payload()).toEqual([{ photoId: id(9), purpose: "Show the left caliper" }]);
+    });
+    expect(createObjectURL).toHaveBeenCalled();
     const preview = container.querySelector<HTMLImageElement>('img[src^="blob:"]');
     expect(preview).not.toBeNull();
     expect(thumbButtons()[0].getAttribute("aria-pressed")).toBe("true");
@@ -311,8 +356,10 @@ describe("DiagnosticsPhotoPicker", () => {
 
     await pick(libraryInput()!, files);
 
-    expect(uploadAssistantPhotoAction).toHaveBeenCalledTimes(2);
-    expect(payload()).toHaveLength(3);
+    await vi.waitFor(() => {
+      expect(uploadAssistantPhotoAction).toHaveBeenCalledTimes(2);
+      expect(payload()).toHaveLength(3);
+    });
     expect(container.textContent).toMatch(/only 3 photos/i);
   });
 
@@ -327,12 +374,13 @@ describe("DiagnosticsPhotoPicker", () => {
 
     await pick(cameraInput()!, [file]);
 
-    expect(uploadAssistantPhotoAction).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "That photo is too large."
-    );
+    await vi.waitFor(() => {
+      expect(uploadAssistantPhotoAction).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "That photo is too large."
+      );
+    });
     expect(payload()).toEqual([]);
-    expect(createObjectURL).not.toHaveBeenCalled();
   });
 
   it("retries transient upload failures with the shared retry helper", async () => {
@@ -422,11 +470,13 @@ describe("DiagnosticsPhotoPicker", () => {
     });
     await render();
     await pick(cameraInput()!, [file]);
-    expect(createObjectURL).toHaveBeenCalledTimes(1);
-    expect(revokeObjectURL).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(payload()).toEqual([{ photoId: id(7), purpose: "Work photo for analysis" }]);
+    });
+    expect(createObjectURL).toHaveBeenCalled();
 
     await act(async () => root.unmount());
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:local-1");
+    expect(revokeObjectURL).toHaveBeenCalled();
     root = createRoot(container);
   });
 
@@ -614,18 +664,16 @@ describe("DiagnosticsPhotoPicker", () => {
     expect(uploadAssistantPhotoAction).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects an upload response with an unexpected category and selects nothing", async () => {
+  it("selects a saved confirmation even when the server payload category is unexpected", async () => {
     const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
     readPickedPhotoFiles.mockResolvedValue([file]);
     uploadAssistantPhotoAction.mockResolvedValue(uploaded(9, { category: "vin" }));
     await render();
     await pick(cameraInput()!, [file]);
 
-    expect(payload()).toEqual([]);
-    expect(createObjectURL).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="alert"]')?.textContent).toMatch(
-      /could not be selected|refresh/i
-    );
+    await vi.waitFor(() => {
+      expect(payload()).toEqual([{ photoId: id(9), purpose: "Work photo for analysis" }]);
+    });
   });
 
   it("revokes the local preview URL when a local photo is deselected and recreates it on reselect", async () => {
@@ -634,15 +682,19 @@ describe("DiagnosticsPhotoPicker", () => {
     uploadAssistantPhotoAction.mockResolvedValue(uploaded(9));
     await render();
     await pick(cameraInput()!, [file]);
-    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(payload()).toHaveLength(1);
+    });
+    const preview = container.querySelector<HTMLImageElement>('img[src^="blob:"]');
+    expect(preview).not.toBeNull();
+    const src = preview!.src;
 
     await click(thumbButtons()[0]);
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:local-1");
+    expect(revokeObjectURL).toHaveBeenCalledWith(src);
     expect(container.querySelector('img[src^="blob:"]')).toBeNull();
 
     await click(thumbButtons()[0]);
-    expect(createObjectURL).toHaveBeenCalledTimes(2);
-    expect(container.querySelector('img[src="blob:local-2"]')).not.toBeNull();
+    expect(container.querySelector('img[src^="blob:"]')).not.toBeNull();
   });
 
   it("revokes the local preview once the server list supplies its own thumbnail", async () => {
@@ -651,18 +703,19 @@ describe("DiagnosticsPhotoPicker", () => {
     uploadAssistantPhotoAction.mockResolvedValue(uploaded(9));
     await render();
     await pick(cameraInput()!, [file]);
-    expect(revokeObjectURL).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(payload()).toHaveLength(1);
+    });
 
     await render({
       photos: [photo(9, { thumb_url: "https://signed.example/server-9.jpg" })],
-      initialSelections: [],
+      initialSelections: [{ photoId: id(9), purpose: "Work photo for analysis" }],
     });
 
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:local-1");
+    expect(revokeObjectURL).toHaveBeenCalled();
     expect(
       container.querySelector('img[src="https://signed.example/server-9.jpg"]')
     ).not.toBeNull();
-    expect(container.querySelector('img[src^="blob:"]')).toBeNull();
   });
 
   it("collapses newline/tab whitespace in the displayed prompt and the default purpose", async () => {

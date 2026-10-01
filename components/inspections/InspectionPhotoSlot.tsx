@@ -3,23 +3,13 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { PhotoCategory } from "@/lib/database/types";
-import {
-  uploadIntakePhotoAction,
-  type PhotoFormState,
-} from "@/app/(app)/work_orders/photo-actions";
 import { FormError } from "@/components/forms/Field";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
+import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
-import { withPhotoUploadRetries } from "@/lib/forms/retryPhotoUpload";
-
-type LocalShot = {
-  id: string;
-  url: string;
-  status: "saving" | "failed";
-};
-
-const IDLE: PhotoFormState = { error: null };
 
 export function InspectionPhotoSlot({
   workOrderId,
@@ -41,53 +31,39 @@ export function InspectionPhotoSlot({
   onExpand?: (src: string) => void;
 }) {
   const router = useRouter();
+  const queue = usePhotoUploadQueue();
   const titleId = useId();
   const cameraInputId = useId();
   const libraryInputId = useId();
   const [chooserOpen, setChooserOpen] = useState(false);
   const [preparing, setPreparing] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
-  const [localShots, setLocalShots] = useState<LocalShot[]>([]);
-  const knownUrls = useRef<Set<string> | null>(null);
-  const localShotsRef = useRef<LocalShot[]>([]);
+  const ownedQueueIds = useRef(new Set<string>());
+  const refreshedIds = useRef(new Set<string>());
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
-  const busy = preparing || uploading;
-  const hasPhotos = existingUrls.length > 0 || localShots.length > 0;
+
+  const queued = queue.items.filter((item) => {
+    if (item.workOrderId !== workOrderId || item.category !== category) return false;
+    if (inspectionResultId) return item.inspectionResultId === inspectionResultId;
+    return true;
+  });
+  const busy = preparing || queued.some((item) => item.status === "uploading");
+  const hasPhotos = existingUrls.length > 0 || queued.length > 0;
+  const online = queue.isOnline();
 
   useEffect(() => {
-    localShotsRef.current = localShots;
-  }, [localShots]);
+    for (const item of queued) ownedQueueIds.current.add(item.queueId);
+  }, [queued]);
 
   useEffect(() => {
-    return () => {
-      for (const shot of localShotsRef.current) URL.revokeObjectURL(shot.url);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (knownUrls.current === null) {
-      knownUrls.current = new Set(existingUrls);
-      return;
-    }
-    const fresh = existingUrls.filter((url) => !knownUrls.current?.has(url));
-    knownUrls.current = new Set(existingUrls);
-    if (fresh.length === 0) return;
-    setLocalShots((current) => {
-      let remaining = fresh.length;
-      const next: LocalShot[] = [];
-      for (const shot of current) {
-        if (shot.status === "saving" && remaining > 0) {
-          remaining -= 1;
-          URL.revokeObjectURL(shot.url);
-          continue;
-        }
-        next.push(shot);
-      }
-      return next;
+    return queue.subscribeConfirmation((confirmation) => {
+      if (!ownedQueueIds.current.has(confirmation.queueId)) return;
+      if (refreshedIds.current.has(confirmation.queueId)) return;
+      refreshedIds.current.add(confirmation.queueId);
+      router.refresh();
     });
-  }, [existingUrls]);
+  }, [queue, router]);
 
   useEffect(() => {
     if (!chooserOpen) return;
@@ -98,98 +74,49 @@ export function InspectionPhotoSlot({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [chooserOpen]);
 
-  async function uploadFromInput(input: HTMLInputElement) {
+  async function enqueueFromInput(input: HTMLInputElement) {
     setChooserOpen(false);
     setClientError(null);
     setPreparing(true);
     try {
       const files = await readPickedPhotoFiles(input);
       if (files.length === 0) return;
-
-      const shots: LocalShot[] = files.map((file) => ({
-        id: crypto.randomUUID(),
-        url: URL.createObjectURL(file),
-        status: "saving",
-      }));
-      setLocalShots((current) => [
-        ...current.filter((shot) => shot.status !== "failed"),
-        ...shots,
-      ]);
-      setPreparing(false);
-      setUploading(true);
-
-      let failed = 0;
-      let saved = 0;
-      for (let index = 0; index < files.length; index += 1) {
-        const file = files[index];
-        const shot = shots[index];
-        if (!file || !shot) continue;
-        let result: PhotoFormState;
-        try {
-          result = await withPhotoUploadRetries(
-            async () => {
-              try {
-                const formData = new FormData();
-                formData.set("category", category);
-                if (inspectionResultId) {
-                  formData.set("inspection_result_id", inspectionResultId);
-                }
-                formData.set("file", file);
-                return await uploadIntakePhotoAction(workOrderId, IDLE, formData);
-              } catch (error) {
-                const message =
-                  error instanceof Error && error.message
-                    ? error.message
-                    : "Could not upload the photo. Try again.";
-                return { error: message };
-              }
-            },
-            {
-              isSuccess: (value) => !value.error,
-              getFailureMessage: (value) => value.error,
-            }
-          );
-        } catch {
-          result = { error: "Could not upload the photo. Try again." };
-        }
-        if (result.error) {
-          failed += 1;
-          setClientError(result.error);
-          setLocalShots((current) =>
-            current.map((item) =>
-              item.id === shot.id ? { ...item, status: "failed" } : item
-            )
-          );
-        } else {
-          saved += 1;
-        }
+      for (const file of files) {
+        const queuedItem = await queue.enqueue({
+          file,
+          category,
+          workOrderId,
+          inspectionResultId: inspectionResultId ?? undefined,
+        });
+        ownedQueueIds.current.add(queuedItem.queueId);
       }
-      if (saved > 0) router.refresh();
-      if (failed > 1) {
-        setClientError(
-          `${failed} photos could not be saved. The ones that succeeded are on this inspection and in Ask OTOMOTO.`
-        );
+    } catch (error) {
+      if (error instanceof PhotoQueuePersistenceError) {
+        setClientError(error.message);
+      } else {
+        setClientError(UNREADABLE_PHOTO_MESSAGE);
       }
-    } catch {
-      setClientError(UNREADABLE_PHOTO_MESSAGE);
     } finally {
       setPreparing(false);
-      setUploading(false);
     }
   }
 
   const previews = [
-    ...localShots.map((shot) => ({
-      key: shot.id,
-      src: shot.url,
-      pending: shot.status === "saving",
-      failed: shot.status === "failed",
+    ...queued.map((item) => ({
+      key: item.queueId,
+      src: queue.previewUrl(item.queueId),
+      pending: item.status !== "failed" && item.status !== "saved",
+      failed: item.status === "failed",
+      status: photoQueueStatusLabel(item, online),
+      queueId: item.queueId,
     })),
     ...existingUrls.map((src, index) => ({
       key: `saved-${src}-${index}`,
       src,
       pending: false,
       failed: false,
+      status: "Saved",
+      queueId: null as string | null,
     })),
   ];
 
@@ -202,12 +129,12 @@ export function InspectionPhotoSlot({
       <div className="inspection-photo-slot-preview">
         {hasPhotos ? (
           previews.map((preview, index) =>
-            onExpand && !preview.pending && !preview.failed ? (
+            onExpand && preview.src && !preview.pending && !preview.failed ? (
               <button
                 key={preview.key}
                 type="button"
                 className="inspection-photo-slot-expand"
-                onClick={() => onExpand(preview.src)}
+                onClick={() => onExpand(preview.src!)}
                 aria-label={`View ${label} photo ${index + 1} larger`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
@@ -218,7 +145,7 @@ export function InspectionPhotoSlot({
                   loading={preview.pending ? "eager" : "lazy"}
                 />
               </button>
-            ) : (
+            ) : preview.src ? (
               // eslint-disable-next-line @next/next/no-img-element -- signed or local preview
               <img
                 key={preview.key}
@@ -231,6 +158,10 @@ export function InspectionPhotoSlot({
                 decoding="async"
                 loading={preview.pending ? "eager" : "lazy"}
               />
+            ) : (
+              <span key={preview.key} className="inspection-photo-slot-placeholder">
+                {preview.status}
+              </span>
             )
           )
         ) : (
@@ -246,11 +177,18 @@ export function InspectionPhotoSlot({
             {previews.length} photo{previews.length === 1 ? "" : "s"}
           </p>
         ) : null}
-        {uploading ? (
-          <p className="inspection-photo-slot-count" role="status">
-            Saving to this inspection and Ask OTOMOTO…
+        {queued.map((item) => (
+          <p
+            key={`${item.queueId}-status`}
+            className="inspection-photo-slot-count"
+            role="status"
+          >
+            {photoQueueStatusLabel(item, online)}
+            {item.status === "queued" && !online
+              ? " — Saved on this device — waiting for connection."
+              : ""}
           </p>
-        ) : null}
+        ))}
         {!readOnly ? (
           <form
             className="inspection-photo-slot-form"
@@ -265,7 +203,7 @@ export function InspectionPhotoSlot({
               tabIndex={-1}
               aria-label={`${label} camera`}
               onChange={(event) => {
-                void uploadFromInput(event.currentTarget);
+                void enqueueFromInput(event.currentTarget);
               }}
             />
             <input
@@ -277,7 +215,7 @@ export function InspectionPhotoSlot({
               tabIndex={-1}
               aria-label={`${label} photo library`}
               onChange={(event) => {
-                void uploadFromInput(event.currentTarget);
+                void enqueueFromInput(event.currentTarget);
               }}
             />
             <button
@@ -288,12 +226,26 @@ export function InspectionPhotoSlot({
             >
               {preparing
                 ? "Preparing photo…"
-                : uploading
+                : busy
                   ? "Uploading…"
                   : hasPhotos
                     ? "Add another photo"
                     : "Add photo"}
             </button>
+            {queued
+              .filter((item) => item.status === "failed")
+              .map((item) => (
+                <button
+                  key={`${item.queueId}-retry`}
+                  type="button"
+                  className="btn btn-secondary min-h-11 w-full"
+                  onClick={() => {
+                    void queue.retry(item.queueId);
+                  }}
+                >
+                  Retry
+                </button>
+              ))}
             <FormError message={clientError} />
           </form>
         ) : null}

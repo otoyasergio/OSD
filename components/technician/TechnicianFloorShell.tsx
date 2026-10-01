@@ -235,10 +235,7 @@ export function TechnicianFloorShell({
     installPartFloorAction,
     null
   );
-  const [proofState, proofAction, proofPending] = useActionState(
-    uploadJobProofAction,
-    null
-  );
+  const [proofState, , proofPending] = useActionState(uploadJobProofAction, null);
   const [skipState, skipAction, skipPending] = useActionState(skipProofAction, null);
   const [workState, workAction, workPending] = useActionState(
     completePerformWorkAction,
@@ -890,9 +887,7 @@ export function TechnicianFloorShell({
                         startTransition(() => scheduleRefresh());
                       }}
                       onParkParts={() => setOverlay("park")}
-                      proofAction={proofAction}
                       skipAction={skipAction}
-                      proofPending={proofPending}
                       skipPending={skipPending}
                       workPending={workPending}
                     />

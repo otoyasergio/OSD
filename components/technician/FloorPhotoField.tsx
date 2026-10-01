@@ -1,74 +1,99 @@
 "use client";
 
-import { forwardRef, useId, useImperativeHandle, useRef, useState } from "react";
-import { mergeOptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
+import { useEffect, useId, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
+import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
-export type FloorPhotoFieldHandle = {
-  openCamera: () => void;
-  openLibrary: () => void;
-};
-
-function readyLabel(files: File[]): string | null {
-  if (files.length === 0) return null;
-  if (files.length === 1) return `Photo ready — ${files[0].name}`;
-  return `${files.length} photos ready`;
+function readyLabel(count: number): string | null {
+  if (count === 0) return null;
+  if (count === 1) return "Photo ready";
+  return `${count} photos ready`;
 }
 
-export const FloorPhotoField = forwardRef<
-  FloorPhotoFieldHandle,
-  {
-    hint: string;
-    variant?: "default" | "dock";
-    onPhotoReady?: (label: string | null) => void;
-  }
->(function FloorPhotoField({ hint, variant = "default", onPhotoReady }, ref) {
+export function FloorPhotoField({
+  hint,
+  variant = "default",
+  workOrderId,
+  jobId,
+  category,
+  onPhotoReady,
+}: {
+  hint: string;
+  variant?: "default" | "dock";
+  workOrderId: string;
+  jobId: string;
+  category: "job_proof" | "job_work";
+  onPhotoReady?: (label: string | null) => void;
+}) {
+  const router = useRouter();
+  const queue = usePhotoUploadQueue();
   const cameraInputId = useId();
   const libraryInputId = useId();
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const libraryInputRef = useRef<HTMLInputElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const ownedQueueIds = useRef(new Set<string>());
+  const refreshedIds = useRef(new Set<string>());
   const [photoLabel, setPhotoLabel] = useState<string | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
+  const dock = variant === "dock";
+  const online = queue.isOnline();
 
-  useImperativeHandle(ref, () => ({
-    openCamera: () => cameraInputRef.current?.click(),
-    openLibrary: () => libraryInputRef.current?.click(),
-  }));
+  const queued = queue.items.filter(
+    (item) =>
+      item.workOrderId === workOrderId &&
+      item.jobId === jobId &&
+      item.category === category
+  );
 
-  function notifyPhotoReady(files: File[]) {
-    const label = readyLabel(files);
+  useEffect(() => {
+    return queue.subscribeConfirmation((confirmation) => {
+      if (!ownedQueueIds.current.has(confirmation.queueId)) return;
+      if (refreshedIds.current.has(confirmation.queueId)) return;
+      refreshedIds.current.add(confirmation.queueId);
+      router.refresh();
+    });
+  }, [queue, router]);
+
+  function notifyPhotoReady(count: number) {
+    const label = readyLabel(count);
     setPhotoLabel(label);
     onPhotoReady?.(label);
   }
 
   async function applyPickedFiles(input: HTMLInputElement) {
-    const target = fileInputRef.current;
-    if (!target) {
-      input.value = "";
-      return;
-    }
-    const current = Array.from(target.files ?? []);
+    setPickError(null);
     try {
       const prepared = await readPickedPhotoFiles(input);
-      if (prepared.length === 0 && current.length === 0) {
-        target.value = "";
-        notifyPhotoReady([]);
+      if (prepared.length === 0) {
+        notifyPhotoReady(queued.length);
         return;
       }
-      const merged = mergeOptionalIntakePhotos(current, prepared);
-      const transfer = new DataTransfer();
-      for (const file of merged) transfer.items.add(file);
-      target.files = transfer.files;
-      notifyPhotoReady(merged);
-    } catch {
-      notifyPhotoReady(current);
+      let added = 0;
+      for (const file of prepared) {
+        const item = await queue.enqueue({
+          file,
+          category,
+          workOrderId,
+          jobId,
+        });
+        ownedQueueIds.current.add(item.queueId);
+        added += 1;
+      }
+      notifyPhotoReady(queued.length + added);
+    } catch (error) {
+      if (error instanceof PhotoQueuePersistenceError) {
+        setPickError(error.message);
+      } else {
+        setPickError(UNREADABLE_PHOTO_MESSAGE);
+      }
+      notifyPhotoReady(queued.length);
     }
   }
-
-  const dock = variant === "dock";
 
   return (
     <div
@@ -77,21 +102,7 @@ export const FloorPhotoField = forwardRef<
         .join(" ")}
     >
       <input
-        ref={fileInputRef}
-        type="file"
-        name="file"
-        accept={libraryProps.accept}
-        multiple
-        className="photo-file-input"
-        tabIndex={-1}
-        aria-label="Selected photos"
-        onChange={(event) => {
-          notifyPhotoReady(Array.from(event.currentTarget.files ?? []));
-        }}
-      />
-      <input
         id={cameraInputId}
-        ref={cameraInputRef}
         type="file"
         accept={cameraProps.accept}
         capture={cameraProps.capture}
@@ -102,7 +113,6 @@ export const FloorPhotoField = forwardRef<
       />
       <input
         id={libraryInputId}
-        ref={libraryInputRef}
         type="file"
         accept={libraryProps.accept}
         multiple
@@ -115,8 +125,8 @@ export const FloorPhotoField = forwardRef<
         <>
           <div className="pit-photo-actions">
             {/*
-              Native <label htmlFor> is more reliable than input.click()
-              on Safari iPad/Mac (user-gesture + no clipped programmatic target).
+              Native label htmlFor activation is more reliable than a
+              programmatic input open on Safari iPad/Mac.
             */}
             <label htmlFor={cameraInputId} className="pit-photo-add">
               Camera
@@ -125,7 +135,11 @@ export const FloorPhotoField = forwardRef<
               Library
             </label>
           </div>
-          {photoLabel ? (
+          {pickError ? (
+            <p className="pit-photo-error" role="alert">
+              {pickError}
+            </p>
+          ) : photoLabel ? (
             <p className="pit-photo-ready" role="status">
               {photoLabel}
             </p>
@@ -134,8 +148,13 @@ export const FloorPhotoField = forwardRef<
               {hint}. {CAMERA_ROLL_HINT}
             </p>
           )}
+          {queued.map((item) => (
+            <p key={item.queueId} className="pit-photo-hint" role="status">
+              {photoQueueStatusLabel(item, online)}
+            </p>
+          ))}
         </>
       )}
     </div>
   );
-});
+}

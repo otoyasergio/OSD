@@ -1,14 +1,17 @@
 "use client";
 
-import { useActionState, useId, useMemo, useRef, useState } from "react";
+import { useActionState, useId, useMemo, useState } from "react";
 import type { IntakePhoto } from "@/lib/services/photos";
 import type { PhotoCategory } from "@/lib/database/types";
 import type { PhotoFormState } from "@/app/(app)/work_orders/photo-actions";
 import { PHOTO_CATEGORY_LABELS, REQUIRED_PHOTO_CATEGORIES } from "@/lib/status/labels";
 import { FormError, TextField } from "@/components/forms/Field";
-import { SubmitButton } from "@/components/forms/SubmitButton";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { persistQueueErrorMessage } from "@/lib/photos/intakeQueue";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
+import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { formatDateTime } from "@/lib/datetime/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
@@ -26,32 +29,31 @@ export function PhotosTab({
   readOnly,
   canUpload,
   canDelete,
-  uploadAction,
+  workOrderId,
   deleteAction,
 }: {
   photos: IntakePhoto[];
   readOnly: boolean;
   canUpload: boolean;
   canDelete: boolean;
-  uploadAction: Action;
+  workOrderId: string;
   deleteAction: Action;
 }) {
+  const queue = usePhotoUploadQueue();
   const titleId = useId();
   const cameraInputId = useId();
   const libraryInputId = useId();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadState, uploadFormAction] = useActionState(uploadAction, {
-    error: null,
-  });
   const [deleteState, deleteFormAction, deletePending] = useActionState(deleteAction, {
     error: null,
   });
   const [filter, setFilter] = useState<PhotoCategory | "all">("all");
   const [chooserOpen, setChooserOpen] = useState(false);
-  const [pendingFileName, setPendingFileName] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
+  const [enqueueing, setEnqueueing] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
+  const pendingFileName = pendingFile?.name ?? null;
 
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
@@ -71,34 +73,51 @@ export function PhotosTab({
     : -1;
 
   async function applyPickedFile(input: HTMLInputElement) {
-    const target = fileInputRef.current;
     setChooserOpen(false);
     setPickError(null);
-    if (!target) {
-      input.value = "";
-      return;
-    }
     setPreparing(true);
     try {
       const files = await readPickedPhotoFiles(input);
       const file = files[0] ?? null;
-      if (!file) {
-        target.value = "";
-        setPendingFileName(null);
-        return;
-      }
-      const transfer = new DataTransfer();
-      transfer.items.add(file);
-      target.files = transfer.files;
-      setPendingFileName(file.name);
+      setPendingFile(file);
     } catch {
-      target.value = "";
-      setPendingFileName(null);
+      setPendingFile(null);
       setPickError(UNREADABLE_PHOTO_MESSAGE);
     } finally {
       setPreparing(false);
     }
   }
+
+  async function enqueueSelected(form: HTMLFormElement) {
+    if (!pendingFile) {
+      setChooserOpen(true);
+      return;
+    }
+    const formData = new FormData(form);
+    const category = String(formData.get("category") || "front");
+    const notes = String(formData.get("notes") ?? "").trim();
+    setEnqueueing(true);
+    setPickError(null);
+    try {
+      await queue.enqueue({
+        file: pendingFile,
+        category,
+        workOrderId,
+        notes: notes || undefined,
+      });
+      setPendingFile(null);
+    } catch (error) {
+      if (error instanceof PhotoQueuePersistenceError) {
+        setPickError(error.message);
+      } else {
+        setPickError(persistQueueErrorMessage(error));
+      }
+    } finally {
+      setEnqueueing(false);
+    }
+  }
+
+  const queuedHere = queue.items.filter((item) => item.workOrderId === workOrderId);
 
   return (
     <div className="flex flex-col gap-4">
@@ -120,18 +139,14 @@ export function PhotosTab({
 
       {!readOnly && canUpload ? (
         <form
-          action={uploadFormAction}
           className="relative flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
-          encType="multipart/form-data"
           onSubmit={(event) => {
-            if (!fileInputRef.current?.files?.length) {
-              event.preventDefault();
-              setChooserOpen(true);
-            }
+            event.preventDefault();
+            void enqueueSelected(event.currentTarget);
           }}
         >
           <h3 className="text-base font-semibold text-foreground">Upload intake photo</h3>
-          <FormError message={uploadState.error ?? pickError} />
+          <FormError message={pickError} />
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-foreground">
               Category <span className="text-red-600">*</span>
@@ -156,20 +171,6 @@ export function PhotosTab({
             <span className="mb-1.5 block text-sm font-medium text-foreground">
               Photo <span className="text-red-600">*</span>
             </span>
-            {/* Form-submitted file field; populated from Camera / Library pickers. */}
-            <input
-              ref={fileInputRef}
-              className="photo-file-input"
-              type="file"
-              name="file"
-              accept={libraryProps.accept}
-              tabIndex={-1}
-              aria-label="Selected photo"
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setPendingFileName(file?.name ?? null);
-              }}
-            />
             <input
               id={cameraInputId}
               className="photo-file-input"
@@ -216,12 +217,23 @@ export function PhotosTab({
             )}
           </div>
           <TextField label="Notes" name="notes" />
+          {queuedHere.map((item) => (
+            <p
+              key={item.queueId}
+              role="status"
+              className="text-sm text-[var(--status-neutral)]"
+            >
+              {photoQueueStatusLabel(item, queue.isOnline())}
+            </p>
+          ))}
           <div>
-            <SubmitButton
-              label={preparing ? "Preparing…" : "Upload photo"}
-              pendingLabel="Uploading…"
-              disabled={preparing}
-            />
+            <button
+              type="submit"
+              className="btn btn-primary min-h-11"
+              disabled={preparing || enqueueing}
+            >
+              {preparing ? "Preparing…" : enqueueing ? "Uploading…" : "Upload photo"}
+            </button>
           </div>
         </form>
       ) : null}

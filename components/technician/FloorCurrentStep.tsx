@@ -159,9 +159,7 @@ export function FloorCurrentStep({
   onToggleChecklist,
   onInstallPart,
   onParkParts,
-  proofAction,
   skipAction,
-  proofPending,
   skipPending,
   workPending,
 }: {
@@ -177,9 +175,7 @@ export function FloorCurrentStep({
   onToggleChecklist: (itemId: string, label: string) => void;
   onInstallPart: (partId: string, label: string) => void;
   onParkParts: () => void;
-  proofAction: (payload: FormData) => void;
   skipAction: (payload: FormData) => void;
-  proofPending: boolean;
   skipPending: boolean;
   workPending: boolean;
 }) {
@@ -289,6 +285,14 @@ export function FloorCurrentStep({
               Do the work, then tap Next. Photo optional — notes live under the note icon.
             </p>
           )}
+          {surface.job_id ? (
+            <FloorPhotoField
+              hint="Optional work photo — this never counts as proof"
+              workOrderId={surface.work_order_id}
+              jobId={surface.job_id}
+              category="job_work"
+            />
+          ) : null}
           <button
             type="button"
             className="pit-current-action"
@@ -349,17 +353,15 @@ export function FloorCurrentStep({
               ? `${surface.proof_count} on file — take as many as you want.`
               : "Take as many as you want, or skip with a reason."}
           </p>
-          <form action={proofAction} className="pit-sheet-form">
-            <input type="hidden" name="job_id" value={surface.job_id} />
-            <input type="hidden" name="work_order_id" value={surface.work_order_id} />
+          <div className="pit-sheet-form">
             <FloorPhotoField
               key={surface.proof_count}
               hint="Camera or photo library — add as many as you need"
+              workOrderId={surface.work_order_id}
+              jobId={surface.job_id}
+              category="job_proof"
             />
-            <button type="submit" className="pit-current-action" disabled={proofPending}>
-              Upload photos
-            </button>
-          </form>
+          </div>
           {surface.proof_count < 1 && !surface.has_proof_exception ? (
             <>
               <p className="pit-sheet-or">or skip</p>

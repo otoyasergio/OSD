@@ -7393,6 +7393,12 @@ button.pit-current-card {
   color: #71717a;
 }
 
+.pit-photo-error {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #991b1b;
+}
+
 .pit-sheet-close {
   display: flex;
   align-items: center;

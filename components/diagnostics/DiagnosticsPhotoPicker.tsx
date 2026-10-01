@@ -9,14 +9,11 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import {
-  uploadAssistantPhotoAction,
-  type AssistantActionState,
-} from "@/app/(app)/work_orders/assistant-actions";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { photoFileInputProps, CAMERA_ROLL_HINT } from "@/lib/forms/photoSourceInputs";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
-import { withPhotoUploadRetries } from "@/lib/forms/retryPhotoUpload";
+import { useOptionalPhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import {
   DIAGNOSTICS_PHOTO_MAX_SELECTED,
   DIAGNOSTICS_PHOTO_PURPOSE_MAX,
@@ -25,14 +22,11 @@ import {
   createObjectUrlRegistry,
   defaultPhotoPurpose,
   isDiagnosticsPhotoEligible,
-  parseUploadedAssistantPhoto,
   type DiagnosticsPhotoSelection,
   type DiagnosticsPhotoSourceRow,
 } from "@/lib/diagnostics/photoSelection";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import type { PhotoCategory } from "@/lib/database/types";
-
-const IDLE: AssistantActionState = { status: "idle", error: null };
 
 type GridPhoto = {
   photoId: string;
@@ -95,6 +89,7 @@ export function DiagnosticsPhotoPicker({
   const Heading = headingLevel === 5 ? "h5" : "h4";
   const headingId = useId();
   const noteId = useId();
+  const queue = useOptionalPhotoUploadQueue();
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const libraryInputRef = useRef<HTMLInputElement>(null);
   const regionRef = useRef<HTMLDivElement>(null);
@@ -102,6 +97,8 @@ export function DiagnosticsPhotoPicker({
   const selectionsRef = useRef(selections);
   const interactiveRef = useRef(false);
   const focusedRequests = useRef(new Set<string>());
+  const pendingByQueueId = useRef(new Map<string, { file: File; purpose: string }>());
+  const handledConfirmations = useRef(new Set<string>());
   const [registry] = useState(() => createObjectUrlRegistry());
   const [localPhotos, setLocalPhotos] = useState<LocalPhoto[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -114,7 +111,7 @@ export function DiagnosticsPhotoPicker({
   const jobScoped = Boolean(thread.jobId);
   const atLimit = selections.length >= DIAGNOSTICS_PHOTO_MAX_SELECTED;
   const uploadEnabled =
-    interactive && uploadAllowed && jobScoped && !atLimit && !uploading;
+    interactive && uploadAllowed && jobScoped && !atLimit && !uploading && Boolean(queue);
   const selectionEditable = interactive && !uploading;
 
   useEffect(() => {
@@ -234,6 +231,63 @@ export function DiagnosticsPhotoPicker({
     onBusyChange?.(busy);
   }
 
+  function applyConfirmation(queueId: string, photoId: string) {
+    if (handledConfirmations.current.has(queueId)) return;
+    handledConfirmations.current.add(queueId);
+    const pending = pendingByQueueId.current.get(queueId);
+    pendingByQueueId.current.delete(queueId);
+    if (!mountedRef.current) return;
+    const file = pending?.file;
+    const purpose = pending?.purpose ?? defaultPurpose;
+    if (file) {
+      const previewUrl = registry.create(file, photoId);
+      setLocalPhotos((previous) => [
+        ...previous.filter((photo) => photo.photoId !== photoId),
+        {
+          photoId,
+          category: "job_work",
+          createdAt: new Date().toISOString(),
+          previewUrl,
+          file,
+        },
+      ]);
+    }
+    const added = addPhotoSelection(selectionsRef.current, photoId, purpose);
+    if (added.added) {
+      selectionsRef.current = added.selections;
+      onSelectionsChange(added.selections);
+    } else {
+      setNotice(
+        added.reason === "limit"
+          ? `Photo saved, but not selected: ${DIAGNOSTICS_PHOTO_MAX_SELECTED} photos are already selected. Deselect one, then select the new photo.`
+          : "Photo saved, but it was already selected."
+      );
+    }
+    if (pendingByQueueId.current.size === 0) setBusy(false);
+  }
+
+  useEffect(() => {
+    if (!queue) return undefined;
+    return queue.subscribeConfirmation((confirmation) => {
+      if (!pendingByQueueId.current.has(confirmation.queueId)) return;
+      applyConfirmation(confirmation.queueId, confirmation.photoId);
+    });
+  }, [queue]);
+
+  useEffect(() => {
+    if (!queue) return;
+    for (const item of queue.items) {
+      if (!pendingByQueueId.current.has(item.queueId) || item.status !== "failed") {
+        continue;
+      }
+      pendingByQueueId.current.delete(item.queueId);
+      if (mountedRef.current) {
+        setError(item.lastError ?? "Could not upload that photo. Try again.");
+        if (pendingByQueueId.current.size === 0) setBusy(false);
+      }
+    }
+  }, [queue]);
+
   async function uploadFromInput(input: HTMLInputElement) {
     if (!uploadEnabled) {
       input.value = "";
@@ -242,9 +296,13 @@ export function DiagnosticsPhotoPicker({
     setError(null);
     setNotice(null);
     setBusy(true);
+    if (!queue) {
+      input.value = "";
+      setBusy(false);
+      return;
+    }
     try {
       const prepared = await readPickedPhotoFiles(input);
-      const scope = { workOrderId: thread.workOrderId, jobId: thread.jobId };
       for (const [index, file] of prepared.entries()) {
         if (selectionsRef.current.length >= DIAGNOSTICS_PHOTO_MAX_SELECTED) {
           if (mountedRef.current) {
@@ -256,61 +314,41 @@ export function DiagnosticsPhotoPicker({
           }
           break;
         }
-        const result = await withPhotoUploadRetries(
-          () => {
-            const form = new FormData();
-            form.set("thread_id", thread.threadId);
-            form.set("purpose", defaultPurpose);
-            form.set("file", file);
-            return uploadAssistantPhotoAction(thread.workOrderId, IDLE, form);
-          },
-          {
-            isSuccess: (value) => value.status === "success",
-            getFailureMessage: (value) => value.error,
-          }
-        );
-        if (result.status !== "success") {
+        const queuedItem = await queue.enqueue({
+          file,
+          category: "job_work",
+          workOrderId: thread.workOrderId,
+          jobId: thread.jobId ?? undefined,
+          assistantThreadId: thread.threadId,
+          notes: defaultPurpose,
+        });
+        pendingByQueueId.current.set(queuedItem.queueId, {
+          file,
+          purpose: defaultPurpose,
+        });
+        if (!queue.isOnline()) continue;
+        const waited = await queue.waitForConfirmations([queuedItem.queueId]);
+        if (!waited.ok) {
+          const failed = waited.failed[0];
+          pendingByQueueId.current.delete(queuedItem.queueId);
           if (mountedRef.current) {
-            setError(result.error ?? "Could not upload that photo. Try again.");
+            setError(failed?.lastError ?? "Could not upload that photo. Try again.");
           }
           break;
         }
-        const stored = parseUploadedAssistantPhoto(result.data, scope);
-        if (!stored) {
-          if (mountedRef.current) {
-            setError(
-              "The photo was uploaded, but it could not be selected. Refresh, then select it from the photo list."
-            );
-          }
-          break;
-        }
-        if (!mountedRef.current) break;
-        const previewUrl = registry.create(file, stored.photoId);
-        setLocalPhotos((previous) => [
-          ...previous.filter((photo) => photo.photoId !== stored.photoId),
-          { ...stored, previewUrl, file },
-        ]);
-        const added = addPhotoSelection(
-          selectionsRef.current,
-          stored.photoId,
-          defaultPurpose
-        );
-        if (added.added) {
-          selectionsRef.current = added.selections;
-          onSelectionsChange(added.selections);
-        } else {
-          setNotice(
-            added.reason === "limit"
-              ? `Photo saved, but not selected: ${DIAGNOSTICS_PHOTO_MAX_SELECTED} photos are already selected. Deselect one, then select the new photo.`
-              : "Photo saved, but it was already selected."
-          );
-          break;
-        }
+        const confirmation = waited.confirmations[0];
+        if (confirmation) applyConfirmation(confirmation.queueId, confirmation.photoId);
       }
-    } catch {
-      if (mountedRef.current) setError(UNREADABLE_PHOTO_MESSAGE);
+    } catch (caught) {
+      if (mountedRef.current) {
+        setError(
+          caught instanceof PhotoQueuePersistenceError
+            ? caught.message
+            : UNREADABLE_PHOTO_MESSAGE
+        );
+      }
     } finally {
-      setBusy(false);
+      if (pendingByQueueId.current.size === 0) setBusy(false);
     }
   }
 
