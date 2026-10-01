@@ -208,7 +208,7 @@ describe("photo compression runs off the main thread on Safari, iOS and Chrome",
     const mainThreadCall = source.indexOf("compressOnMainThread(file, resolved)");
     expect(workerCall).toBeGreaterThan(-1);
     expect(mainThreadCall).toBeGreaterThan(workerCall);
-    expect(source).toMatch(/isNavigatorOffline|navigator\.onLine === false/);
+    expect(source).toMatch(/isBrowserOffline/);
   });
 });
 

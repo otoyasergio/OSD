@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { isBrowserOnline } from "@/lib/forms/browserOnline";
 import { uploadAssistantPhotoAction } from "@/app/(app)/work_orders/assistant-actions";
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { enqueuePhotoUpload } from "@/lib/photos/uploadQueue/enqueue";
@@ -163,10 +164,7 @@ export function PhotoUploadQueueProvider({
     lastNowRef.current = value > lastNowRef.current ? value : lastNowRef.current + 1;
     return lastNowRef.current;
   }, []);
-  const isOnlineFn = useCallback(
-    () => (isOnlineFnRef.current ?? (() => navigator.onLine))(),
-    []
-  );
+  const isOnlineFn = useCallback(() => (isOnlineFnRef.current ?? isBrowserOnline)(), []);
 
   const innerStore = useMemo(
     () => storeOverride ?? createPhotoUploadQueueStore(durableQueueEnabled),

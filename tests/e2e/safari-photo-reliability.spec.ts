@@ -20,13 +20,15 @@ import { createServiceRoleClient } from "./fixtures/seedSyntheticShop";
  * on a worker chunk that cannot load.
  */
 async function markBrowserOffline(page: Page) {
-  await page.evaluate(() => {
-    Object.defineProperty(navigator, "onLine", {
+  const online = await page.evaluate(() => {
+    Object.defineProperty(Navigator.prototype, "onLine", {
       configurable: true,
       get: () => false,
     });
     window.dispatchEvent(new Event("offline"));
+    return navigator.onLine;
   });
+  expect(online).toBe(false);
 }
 
 /**
@@ -37,17 +39,12 @@ async function markBrowserOffline(page: Page) {
 async function enqueueLibraryHeic(form: Locator, heicPath: string) {
   const library = form.getByLabel("Photo library");
   await library.setInputFiles(heicPath);
-  const started = await Promise.race([
-    form
-      .getByRole("button", { name: /Preparing photo/i })
-      .waitFor({ state: "visible", timeout: 2_000 })
-      .then(() => true),
-    form
-      .getByText(/waiting for connection/i)
-      .waitFor({ state: "visible", timeout: 2_000 })
-      .then(() => true),
-  ]).catch(() => false);
-  if (started) return;
+  const queued = await form
+    .getByText(/waiting for connection/i)
+    .waitFor({ state: "visible", timeout: 2_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (queued) return;
 
   const bytes = Array.from(readFileSync(heicPath));
   const attached = await library.evaluate(

@@ -24,7 +24,7 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).toMatch(/storageStatePath\("owner"\)/);
     expect(spec).toMatch(/setOffline\(true\)/);
     expect(spec).toMatch(/getByRole\(\s*"heading",\s*\{\s*name:\s*"Upload intake photo"/);
-    expect(spec).toMatch(/navigator,\s*"onLine"/);
+    expect(spec).toMatch(/Navigator\.prototype/);
     expect(spec).toMatch(/dispatchEvent\(\s*new Event\(\s*"offline"/);
     expect(spec).toMatch(/setInputFiles/);
     expect(spec).toMatch(/DataTransfer/);
@@ -33,7 +33,7 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).toMatch(/Photo library/i);
     expect(spec).toMatch(/waiting for connection/i);
     const prepare = source("lib/forms/preparePhotoFileForUpload.ts");
-    expect(prepare).toMatch(/navigator\.onLine === false/);
+    expect(prepare).toMatch(/isBrowserOffline/);
     const uploader = source("lib/photos/uploadQueue/uploadQueuedPhoto.ts");
     expect(uploader).toMatch(/compressImageForUpload/);
     expect(spec).toMatch(/page\.close\(/);
