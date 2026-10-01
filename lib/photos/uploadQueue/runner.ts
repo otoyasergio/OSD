@@ -66,6 +66,9 @@ type ActiveUpload = {
   promise: Promise<void>;
 };
 
+type PhotoUploadQueuePumpResult =
+  "released_expired_acquisition" | "due_persisted_work" | void;
+
 export class PhotoUploadQueueRunner {
   private retryTimer: unknown = null;
   private pumpPromise: Promise<void> | null = null;
@@ -154,12 +157,15 @@ export class PhotoUploadQueueRunner {
   }
 
   private async drainWakeRequests(generation: number): Promise<void> {
-    let retriedExpiredAcquisition = false;
+    // A deadline can cross during awaited store work. One immediate pass closes
+    // that race; subsequent due results wait for a live blocker deadline or a
+    // normal wake so another tab's occupied slots cannot cause a busy loop.
+    let usedImmediateRepump = false;
     do {
       this.pendingWake = false;
       const pumpResult = await this.pump(generation);
-      if (pumpResult === "released_expired_acquisition" && !retriedExpiredAcquisition) {
-        retriedExpiredAcquisition = true;
+      if (pumpResult !== undefined && !usedImmediateRepump) {
+        usedImmediateRepump = true;
         this.pendingWake = true;
       }
       await Promise.resolve();
@@ -176,7 +182,7 @@ export class PhotoUploadQueueRunner {
     );
   }
 
-  private async pump(generation: number): Promise<"released_expired_acquisition" | void> {
+  private async pump(generation: number): Promise<PhotoUploadQueuePumpResult> {
     this.clearRetryTimer();
     if (!this.isCurrent(generation)) return;
     await this.options.store.recoverInterrupted(
@@ -248,7 +254,10 @@ export class PhotoUploadQueueRunner {
 
     const remaining = await this.options.store.list(this.options.scope);
     if (this.canProcess(generation)) {
-      this.scheduleNextRetry(remaining, generation);
+      const hasDuePersistedWork = this.scheduleNextRetry(remaining, generation);
+      if (hasDuePersistedWork && !releasedExpiredAcquisition) {
+        return "due_persisted_work";
+      }
     }
     return releasedExpiredAcquisition ? "released_expired_acquisition" : undefined;
   }
@@ -554,10 +563,14 @@ export class PhotoUploadQueueRunner {
     }
   }
 
-  private scheduleNextRetry(items: QueuedPhotoUpload[], generation: number): void {
-    if (!this.isCurrent(generation)) return;
+  private scheduleNextRetry(items: QueuedPhotoUpload[], generation: number): boolean {
+    if (!this.isCurrent(generation)) return false;
     const now = this.options.now();
+    let hasDuePersistedWork = false;
     const wakeAt = items.reduce<number | null>((earliest, item) => {
+      const hasSlotMetadata =
+        Object.prototype.hasOwnProperty.call(item, "uploadSlotOwner") ||
+        Object.prototype.hasOwnProperty.call(item, "uploadSlotExpiresAt");
       const liveSlotExpiresAt =
         item.uploadSlotOwner !== null &&
         item.uploadSlotExpiresAt !== null &&
@@ -570,6 +583,14 @@ export class PhotoUploadQueueRunner {
         item.leaseExpiresAt > now
           ? item.leaseExpiresAt
           : null;
+      const hasLivePersistedClaim =
+        liveLeaseExpiresAt !== null && (!hasSlotMetadata || liveSlotExpiresAt !== null);
+      if (item.status === "uploading" && !hasLivePersistedClaim) {
+        hasDuePersistedWork = true;
+      }
+      if (item.status === "retry_wait" && item.retryAt !== null && item.retryAt <= now) {
+        hasDuePersistedWork = true;
+      }
       const liveClaimExpiresAt =
         liveSlotExpiresAt === null
           ? liveLeaseExpiresAt
@@ -585,6 +606,7 @@ export class PhotoUploadQueueRunner {
       return earliest === null ? itemWakeAt : Math.min(earliest, itemWakeAt);
     }, null);
     if (wakeAt !== null) this.scheduleRetry(wakeAt, generation);
+    return hasDuePersistedWork;
   }
 
   private scheduleRetry(retryAt: number, generation: number): void {

@@ -1544,6 +1544,184 @@ describe("PhotoUploadQueueRunner", () => {
     }
   });
 
+  it("deadline crossing: immediately repumps when retryAt becomes due during final scheduling", async () => {
+    const timer = new ManualClockTimer();
+    class RetryDeadlineCrossingStore extends MemoryPhotoUploadQueueStore {
+      listCalls = 0;
+
+      override async list(scope: PhotoUploadScope): Promise<QueuedPhotoUpload[]> {
+        const items = await super.list(scope);
+        this.listCalls += 1;
+        if (this.listCalls === 2) timer.now = 3_001;
+        return items;
+      }
+    }
+    const store = new RetryDeadlineCrossingStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        status: "retry_wait",
+        attemptCount: 1,
+        retryAt: 3_000,
+      })
+    );
+    const uploader = vi.fn().mockResolvedValue({
+      ok: true,
+      photoId: "photo-1",
+    });
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+    });
+
+    await runner.start();
+    await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(1));
+    await vi.waitFor(async () => {
+      expect(await store.get("queue-1", SCOPE)).toBeNull();
+    });
+    expect(timer.now).toBe(3_001);
+    await runner.stop();
+  });
+
+  it("deadline crossing: immediately recovers a claim expiring after initial recovery", async () => {
+    const timer = new ManualClockTimer();
+    class ClaimDeadlineCrossingStore extends MemoryPhotoUploadQueueStore {
+      listCalls = 0;
+      recoveredItems = 0;
+
+      override async list(scope: PhotoUploadScope): Promise<QueuedPhotoUpload[]> {
+        const items = await super.list(scope);
+        this.listCalls += 1;
+        if (this.listCalls === 2) timer.now = 3_001;
+        return items;
+      }
+
+      override async recoverInterrupted(
+        scope: PhotoUploadScope,
+        now: number,
+        maxAttempts?: number
+      ): Promise<number> {
+        const recovered = await super.recoverInterrupted(scope, now, maxAttempts);
+        this.recoveredItems += recovered;
+        return recovered;
+      }
+    }
+    const store = new ClaimDeadlineCrossingStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        status: "uploading",
+        leaseOwner: "closed-tab",
+        leaseExpiresAt: 3_000,
+        uploadSlotOwner: "closed-tab",
+        uploadSlotExpiresAt: 3_000,
+      })
+    );
+    const uploader = vi.fn().mockResolvedValue({
+      ok: true,
+      photoId: "recovered-photo",
+    });
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+    });
+
+    await runner.start();
+    await vi.waitFor(() => expect(store.recoveredItems).toBe(1));
+    await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(1));
+    await vi.waitFor(async () => {
+      expect(await store.get("queue-1", SCOPE)).toBeNull();
+    });
+    await runner.stop();
+  });
+
+  it("deadline crossing: live scope claims allow only one immediate repump", async () => {
+    class CountingClaimStore extends MemoryPhotoUploadQueueStore {
+      claimCalls = 0;
+
+      override async tryAcquireUploadClaim(
+        queueId: string,
+        scope: PhotoUploadScope,
+        owner: string,
+        now: number,
+        ttlMs: number,
+        maxScopeSlots: number,
+        maxAttempts: number
+      ): Promise<AcquiredPhotoUploadClaim | null> {
+        this.claimCalls += 1;
+        return super.tryAcquireUploadClaim(
+          queueId,
+          scope,
+          owner,
+          now,
+          ttlMs,
+          maxScopeSlots,
+          maxAttempts
+        );
+      }
+    }
+    const store = new CountingClaimStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        queueId: "due-retry",
+        status: "retry_wait",
+        attemptCount: 1,
+        retryAt: 1_500,
+      })
+    );
+    for (const index of [1, 2]) {
+      await store.put(
+        SCOPE,
+        queuedPhoto({
+          queueId: `live-claim-${index}`,
+          clientUploadId: `live-client-${index}`,
+          status: "uploading",
+          leaseOwner: `other-tab-${index}`,
+          leaseExpiresAt: 5_000,
+          uploadSlotOwner: `other-tab-${index}`,
+          uploadSlotExpiresAt: 5_000,
+        })
+      );
+    }
+    const timer = new ManualClockTimer();
+    const uploader = vi.fn();
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+    });
+
+    await runner.start();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.claimCalls).toBe(2);
+    expect(uploader).not.toHaveBeenCalled();
+    expect(timer.nextDelay).toBe(3_000);
+    await runner.stop();
+  });
+
   it("rolls back unstarted attempts across repeated availability races", async () => {
     const gates = [
       { started: deferred(), release: deferred() },
