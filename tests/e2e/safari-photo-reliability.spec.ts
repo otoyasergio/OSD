@@ -61,7 +61,6 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
   await card.locator('textarea[name="reason"]').fill("Safari reliability cleanup");
   await card.getByRole("button", { name: /Permanently remove photo/i }).click();
   await expect(resumed.getByText(note)).toHaveCount(0, { timeout: 30_000 });
-  await expect(
-    resumed.getByText(/failed|waiting to upload|waiting for connection/i)
-  ).toHaveCount(0);
+  await expect(resumed.locator(".photo-queue-status")).toHaveCount(0);
+  await expect(resumed.getByText(/waiting for connection/i)).toHaveCount(0);
 });
