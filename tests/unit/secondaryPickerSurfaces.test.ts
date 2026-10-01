@@ -66,7 +66,26 @@ describe("secondary pickers use the shared iOS-safe prepared input", () => {
     expect(src).toMatch(/htmlFor=\{cameraInputId\}/);
     expect(src).toMatch(/htmlFor=\{libraryInputId\}/);
     expect(src).toMatch(/className="photo-file-input"/);
+    expect(src).toMatch(/DOCUMENT_FILE_ACCEPT/);
+    expect(src).toMatch(/accept=\{DOCUMENT_FILE_ACCEPT\}/);
     expect(src).not.toMatch(/className="sr-only"/);
     expect(src).not.toMatch(/\.click\(\)/);
+    expect(src).not.toMatch(/\$\{libraryProps\.accept\},application\/pdf/);
+  });
+
+  it("PaperAgreementCopyUpload reuses DOCUMENT_FILE_ACCEPT for PDF and image/*", () => {
+    const src = source("components/contracts/PaperAgreementCopyUpload.tsx");
+    expect(src).toMatch(/DOCUMENT_FILE_ACCEPT/);
+    expect(src).toMatch(/accept=\{DOCUMENT_FILE_ACCEPT\}/);
+    expect(src).not.toMatch(/const FILE_ACCEPT/);
+    expect(src).toMatch(/application\/pdf|DOCUMENT_FILE_ACCEPT/);
+  });
+
+  it("CustomerDocuments clears the prepared file and remounts the input after a successful upload", () => {
+    const src = source("components/customers/CustomerDocuments.tsx");
+    expect(src).toMatch(/setTitle\(""\)/);
+    expect(src).toMatch(/setPreparedFile\(null\)/);
+    expect(src).toMatch(/setFileInputKey|fileInputKey/);
+    expect(src).toMatch(/key=\{fileInputKey\}/);
   });
 });

@@ -74,6 +74,18 @@ export async function removeIntakePhotoArtifacts(
   }
 }
 
+export async function assertIntakePhotoObjectsAbsent(
+  admin: IsolatedPhotoAdmin,
+  paths: string[]
+): Promise<void> {
+  for (const path of paths) {
+    const object = await admin.storage.from("intake-photos").download(path);
+    if (object.data && !object.error) {
+      throw new Error(`object ${path} is still available`);
+    }
+  }
+}
+
 export async function assertIntakePhotoRemoved(
   admin: IsolatedPhotoAdmin,
   row: IsolatedIntakePhotoRow
@@ -88,10 +100,5 @@ export async function assertIntakePhotoRemoved(
   if (remaining.data) {
     throw new Error(`intake photo ${row.photo_id} is still present`);
   }
-  for (const path of objectPathsForPhoto(row)) {
-    const object = await admin.storage.from("intake-photos").download(path);
-    if (object.data && !object.error) {
-      throw new Error(`object ${path} is still available`);
-    }
-  }
+  await assertIntakePhotoObjectsAbsent(admin, objectPathsForPhoto(row));
 }

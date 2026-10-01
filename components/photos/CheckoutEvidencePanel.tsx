@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/forms/SubmitButton";
 import type { QualityFormState } from "@/app/(app)/work_orders/quality-actions";
 import type { PhotoCategory } from "@/lib/database/types";
 import {
+  CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH,
   CHECKOUT_PHOTO_CATEGORIES,
   checkoutCoverageFromPhotos,
 } from "@/lib/status/checkoutEvidence";
@@ -150,7 +151,13 @@ export function CheckoutEvidencePanel({
           <FormError message={overrideState.error} />
           {confirmOverride ? (
             <form action={overrideFormAction} className="mt-3 flex flex-col gap-3">
-              <TextAreaField label="Override reason" name="reason" rows={2} required />
+              <TextAreaField
+                label="Override reason"
+                name="reason"
+                rows={2}
+                required
+                maxLength={CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH}
+              />
               <div className="flex flex-wrap gap-2">
                 <SubmitButton label="Confirm emergency override" pendingLabel="Saving…" />
                 <button

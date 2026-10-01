@@ -19,6 +19,7 @@ import {
   checkoutPickupGateInput,
   loadCheckoutEvidenceState,
 } from "@/lib/services/checkoutEvidence";
+import { CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH } from "@/lib/status/checkoutEvidence";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -358,7 +359,9 @@ export async function recordCheckoutEvidenceOverride(
 
   const trimmed = reason.trim();
   if (!trimmed) throw new Error("OVERRIDE_REASON_REQUIRED");
-  if (trimmed.length > 500) throw new Error("OVERRIDE_REASON_TOO_LONG");
+  if (trimmed.length > CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH) {
+    throw new Error("OVERRIDE_REASON_TOO_LONG");
+  }
 
   const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
   const now = new Date().toISOString();

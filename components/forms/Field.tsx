@@ -94,6 +94,7 @@ type TextAreaFieldProps = {
   defaultValue?: string | null;
   rows?: number;
   required?: boolean;
+  maxLength?: number;
   error?: string | null;
 };
 
@@ -104,6 +105,7 @@ export function TextAreaField({
   defaultValue,
   rows = 3,
   required,
+  maxLength,
   error,
 }: TextAreaFieldProps) {
   const inputId = id ?? name;
@@ -121,6 +123,7 @@ export function TextAreaField({
         name={name}
         rows={rows}
         required={required}
+        maxLength={maxLength}
         defaultValue={defaultValue ?? undefined}
         aria-invalid={error ? true : undefined}
         aria-describedby={errorId}

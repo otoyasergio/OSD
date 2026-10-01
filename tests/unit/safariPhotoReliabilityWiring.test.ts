@@ -94,4 +94,15 @@ describe("stateful Safari photo reliability wiring", () => {
     );
     expect(spec).not.toMatch(/captured\.length\)\.toBeGreaterThan\(0\)/);
   });
+
+  it("verifies captured original and thumb objects are absent after finally cleanup", () => {
+    const spec = source("tests/e2e/safari-photo-reliability.spec.ts");
+    expect(spec).toMatch(/objectPathsForPhoto|assertIntakePhotoObjectsAbsent/);
+    expect(spec).toMatch(/finally\s*\{/);
+    expect(spec).toMatch(
+      /assertIntakePhotoObjectsAbsent|storage\.from\("intake-photos"\)\.download/
+    );
+    expect(spec).toMatch(/assertIntakePhotoRemoved/);
+    expect(spec).not.toMatch(/captured\.length\)\.toBeGreaterThan\(0\)/);
+  });
 });

@@ -115,6 +115,8 @@ function safetySurface(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface 
     pending_recommendations: [],
     peer_qc_candidates: [],
     checkout_evidence_required: true,
+    jobs_complete: true,
+    qc_complete: true,
     checkout_photos: [
       {
         photo_id: "p-front",
@@ -195,6 +197,29 @@ describe("floor OS checkout surface wiring", () => {
     expect(
       source.match(/loadCommittedCheckoutPhotos/g)?.length ?? 0
     ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("populates explicit jobs_complete and qc_complete from server data on both surfaces", () => {
+    const source = readFileSync(
+      join(process.cwd(), "lib", "services", "technicianFloor.ts"),
+      "utf8"
+    );
+    expect(source).toMatch(/quality_checked_at/);
+    expect(source).toMatch(/quality_checked_by_user_id/);
+    expect(source).toMatch(/checkoutCapturePreconditions/);
+    expect(source.match(/jobs_complete:/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    expect(source.match(/qc_complete:/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it("wires the floor checkout panel from surface fields instead of hardcoded true", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components", "technician", "TechnicianFloorShell.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/jobsComplete=\{surface\.jobs_complete\}/);
+    expect(source).toMatch(/qcComplete=\{surface\.qc_complete\}/);
+    expect(source).not.toMatch(/^\s+jobsComplete\s*$/m);
+    expect(source).not.toMatch(/^\s+qcComplete\s*$/m);
   });
 
   it("keeps ordinary technicians off unrelated work orders", () => {
@@ -311,5 +336,68 @@ describe("final-inspection checkout capture", () => {
     });
     expect(container.querySelectorAll(".inspection-photo-slot")).toHaveLength(0);
     expect(container.textContent).not.toMatch(/Record emergency override/i);
+  });
+
+  it("disables floor checkout capture unless surface jobs and QC flags are true", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "head-tech",
+            locationId: "location-a",
+            store,
+            isOnline: () => true,
+          },
+          createElement(TechnicianFloorShell, {
+            floor: {
+              priority: [],
+              readyToPull: [],
+              needsQc: [],
+              safeties: [],
+              flagged: [],
+              selected: safetySurface({ jobs_complete: false, qc_complete: false }),
+            },
+            stage: "done",
+            viewerUserId: "head-tech",
+            docketItems: [],
+            readyForPickup: [],
+          })
+        )
+      );
+    });
+    expect(container.querySelectorAll(".inspection-photo-slot").length).toBe(5);
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    expect(container.textContent).toMatch(/after jobs and quality check/i);
+
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "head-tech",
+            locationId: "location-a",
+            store,
+            isOnline: () => true,
+          },
+          createElement(TechnicianFloorShell, {
+            floor: {
+              priority: [],
+              readyToPull: [],
+              needsQc: [],
+              safeties: [],
+              flagged: [],
+              selected: safetySurface({ jobs_complete: true, qc_complete: true }),
+            },
+            stage: "done",
+            viewerUserId: "head-tech",
+            docketItems: [],
+            readyForPickup: [],
+          })
+        )
+      );
+    });
+    expect(container.querySelector('input[type="file"]')).toBeTruthy();
   });
 });

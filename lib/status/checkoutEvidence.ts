@@ -42,6 +42,22 @@ export function checkoutCoverageFromPhotos(
   };
 }
 
+export const CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH = 500;
+
+export function checkoutCapturePreconditions(input: {
+  jobs: Array<{ status: string }>;
+  qualityCheckedAt?: string | null;
+  qualityCheckedByUserId?: string | null;
+}): { jobsComplete: boolean; qcComplete: boolean } {
+  const active = input.jobs.filter(
+    (job) => job.status !== "cancelled" && job.status !== "declined"
+  );
+  return {
+    jobsComplete: active.length > 0 && active.every((job) => job.status === "completed"),
+    qcComplete: Boolean(input.qualityCheckedAt && input.qualityCheckedByUserId),
+  };
+}
+
 export function checkoutEvidenceOverridden(input: {
   checkout_evidence_override_at?: string | null;
   checkout_evidence_override_by_user_id?: string | null;

@@ -68,6 +68,24 @@ describe("Safari real-device acceptance runbook", () => {
     expect(health).toMatch(/guard-prod-deploy|main branch guard|after the main/i);
   });
 
+  it("lists isolated Safari/checkout migrations through 20261001121000 and 20261001121010 in filename order", () => {
+    const health = source("docs/ops/platform-health.md");
+    const tokens = [
+      "intake photo idempotency",
+      "checkout evidence gates",
+      "checkout review",
+      "intake photo storage",
+      "20261001121000",
+      "20261001121010",
+    ];
+    let last = -1;
+    for (const token of tokens) {
+      const index = health.toLowerCase().indexOf(token.toLowerCase());
+      expect(index, token).toBeGreaterThan(last);
+      last = index;
+    }
+  });
+
   it("documents that isolated integration and stateful Safari failures block CI", () => {
     const health = source("docs/ops/platform-health.md");
     expect(health).not.toMatch(/continue-on-error:\s*true/);

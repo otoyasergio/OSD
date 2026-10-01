@@ -4,8 +4,10 @@ import { storageStatePath } from "./fixtures/auth";
 import { assertSafeMutationEnvironment } from "./fixtures/environmentGuard";
 import { FIXTURE_WORK_ORDER } from "./fixtures/ids";
 import {
+  assertIntakePhotoObjectsAbsent,
   assertIntakePhotoRemoved,
   findIntakePhotosByNote,
+  objectPathsForPhoto,
   removeIntakePhotoArtifacts,
 } from "./fixtures/safariPhotoIsolation";
 import { createServiceRoleClient } from "./fixtures/seedSyntheticShop";
@@ -31,6 +33,7 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
   assertSafeMutationEnvironment();
   const admin = createServiceRoleClient();
   const note = `safari-photo-${testInfo.project.name}-${Date.now()}`;
+  const capturedObjectPaths: string[] = [];
 
   try {
     await page.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
@@ -69,6 +72,7 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
     expect(captured).toHaveLength(1);
     expect(captured[0]?.storage_path).toBeTruthy();
     expect(captured[0]).toHaveProperty("thumb_storage_path");
+    capturedObjectPaths.push(...captured.flatMap(objectPathsForPhoto));
 
     await card.getByRole("button", { name: /Remove Other photo/i }).click();
     await card.locator('textarea[name="reason"]').fill("Safari reliability cleanup");
@@ -86,8 +90,10 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
       }
     }
     const leftovers = await findIntakePhotosByNote(admin, FIXTURE_WORK_ORDER.id, note);
+    capturedObjectPaths.push(...leftovers.flatMap(objectPathsForPhoto));
     await removeIntakePhotoArtifacts(admin, leftovers); // intake-photos original + thumb
     const remaining = await findIntakePhotosByNote(admin, FIXTURE_WORK_ORDER.id, note);
     expect(remaining).toHaveLength(0);
+    await assertIntakePhotoObjectsAbsent(admin, capturedObjectPaths);
   }
 });

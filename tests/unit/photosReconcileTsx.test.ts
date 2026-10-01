@@ -12,7 +12,7 @@ describe("photos:reconcile uses a pinned local tsx", () => {
 
     expect(pkg.devDependencies.tsx).toMatch(/^\d+\.\d+\.\d+$|^[\^~]?\d+\./);
     expect(pkg.scripts["photos:reconcile"]).toMatch(
-      /^tsx --env-file-if-exists=\.env\.local scripts\/reconcile-intake-photos\.ts$/
+      /^tsx(?: --conditions=react-server)? --env-file-if-exists=\.env\.local scripts\/reconcile-intake-photos\.ts$/
     );
     expect(pkg.scripts["photos:reconcile"]).not.toMatch(/npx/);
     expect(lock).toMatch(/"tsx"/);

@@ -895,8 +895,8 @@ export function TechnicianFloorShell({
                         workOrderId={surface.work_order_id}
                         required
                         photos={surface.checkout_photos}
-                        jobsComplete
-                        qcComplete
+                        jobsComplete={surface.jobs_complete}
+                        qcComplete={surface.qc_complete}
                         canUpload={!previewMode}
                         locked={false}
                         canOverride={false}

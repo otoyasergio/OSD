@@ -88,6 +88,8 @@ function base(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface {
     pending_recommendations: [],
     peer_qc_candidates: [],
     checkout_evidence_required: false,
+    jobs_complete: false,
+    qc_complete: false,
     checkout_photos: [],
     ...overrides,
   };

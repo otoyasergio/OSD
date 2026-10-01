@@ -15,7 +15,7 @@
     "test:diagnostics:eval": "vitest run --config vitest.diagnostics-eval.config.ts",
     "analyze": "ANALYZE=true next build --webpack",
     "db:types": "supabase gen types typescript --linked > lib/database/supabase.generated.ts",
-    "photos:reconcile": "tsx --env-file-if-exists=.env.local scripts/reconcile-intake-photos.ts",
+    "photos:reconcile": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/reconcile-intake-photos.ts",
     "check:twilio": "node --env-file=.env.local scripts/check-twilio.mjs",
     "smoke:production": "node scripts/smoke-production.mjs",
     "deploy:production": "node scripts/guard-prod-deploy.mjs && node --env-file-if-exists=.env.local scripts/check-photo-schema.mjs && npx vercel --prod --yes",

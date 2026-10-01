@@ -9,16 +9,17 @@ import { DOCUMENT_IMAGE_COMPRESS } from "@/lib/forms/compressImageForUpload";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { cloneFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import { withIntakeFollowUp } from "@/lib/forms/intakeCompletion";
-import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import {
+  CAMERA_ROLL_HINT,
+  DOCUMENT_FILE_ACCEPT,
+  photoFileInputProps,
+} from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 type Props = {
   action: (formData: FormData) => Promise<{ error: string | null }>;
   continueHref?: string;
 };
-
-const FILE_ACCEPT =
-  "application/pdf,image/*,image/jpeg,image/png,image/webp,image/heic,image/heif";
 
 export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
   const router = useRouter();
@@ -168,7 +169,7 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
         id={fileInputId}
         className="photo-file-input"
         type="file"
-        accept={FILE_ACCEPT}
+        accept={DOCUMENT_FILE_ACCEPT}
         tabIndex={-1}
         disabled={pending}
         aria-label="Choose signed paper agreement file"

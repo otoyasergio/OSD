@@ -17,6 +17,7 @@ import { SignOffPad } from "@/components/inspections/SignOffPad";
 import { CheckoutEvidencePanel } from "@/components/photos/CheckoutEvidencePanel";
 import type { IntakePhoto } from "@/lib/services/photos";
 import {
+  checkoutCapturePreconditions,
   checkoutCoverageFromPhotos,
   checkoutEvidenceOverridden,
   type CheckoutCoverage,
@@ -151,7 +152,11 @@ export function OverviewTab({
   const assignedIds = new Set(detail.technicians.map((row) => row.technician_id));
 
   const locked = detail.status === "completed" || detail.status === "cancelled";
-  const qcDone = Boolean(detail.quality_checked_at || detail.quality_checked_by_user_id);
+  const { jobsComplete, qcComplete: qcDone } = checkoutCapturePreconditions({
+    jobs: detail.jobs,
+    qualityCheckedAt: detail.quality_checked_at,
+    qualityCheckedByUserId: detail.quality_checked_by_user_id,
+  });
   const safetyDone = Boolean(
     detail.safety_checked_at || detail.safety_checked_by_user_id
   );
@@ -173,11 +178,6 @@ export function OverviewTab({
     !detail.checkout_evidence_required ||
     resolvedCheckoutCoverage.complete ||
     resolvedCheckoutOverridden;
-  const activeJobs = detail.jobs.filter(
-    (job) => job.status !== "cancelled" && job.status !== "declined"
-  );
-  const jobsComplete =
-    activeJobs.length > 0 && activeJobs.every((job) => job.status === "completed");
   const showCompletion =
     !readOnly && !locked && (canRunQc || canMarkReady || canComplete || canHoldOrCancel);
 

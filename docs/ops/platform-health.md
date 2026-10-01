@@ -100,7 +100,9 @@ only from `main`.
 
 1. Apply and verify migrations on an isolated database (filename order:
    intake photo idempotency, checkout evidence gates, checkout review
-   fixes, then intake photo storage policies).
+   fixes, intake photo storage policies, 20261001121000 checkout photo
+   insert ready gate, then 20261001121010 intake photo RPC checkout
+   labels).
 2. Regenerate and review TypeScript types against non-production.
 3. Configure a Preview deployment with non-production Supabase and provider
    credentials. Leave `PHOTO_UPLOAD_QUEUE_ENABLED` and

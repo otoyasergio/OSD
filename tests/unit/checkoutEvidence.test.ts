@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { PhotoCategory } from "@/lib/database/types";
 import {
+  CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH,
   CHECKOUT_PHOTO_CATEGORIES,
+  checkoutCapturePreconditions,
   checkoutCoverageFromPhotos,
 } from "@/lib/status/checkoutEvidence";
 import {
@@ -75,6 +77,58 @@ describe("checkoutCoverageFromPhotos", () => {
       missing: [],
       complete: true,
     });
+  });
+});
+
+describe("checkoutCapturePreconditions", () => {
+  const completedJobs = [{ status: "completed" }, { status: "cancelled" }];
+
+  it("requires every active job completed and both QC columns", () => {
+    expect(
+      checkoutCapturePreconditions({
+        jobs: completedJobs,
+        qualityCheckedAt: "2026-10-01T12:00:00.000Z",
+        qualityCheckedByUserId: "user-1",
+      })
+    ).toEqual({ jobsComplete: true, qcComplete: true });
+  });
+
+  it("treats a lone QC timestamp or actor as incomplete, matching the capture gate", () => {
+    expect(
+      checkoutCapturePreconditions({
+        jobs: completedJobs,
+        qualityCheckedAt: "2026-10-01T12:00:00.000Z",
+        qualityCheckedByUserId: null,
+      })
+    ).toEqual({ jobsComplete: true, qcComplete: false });
+    expect(
+      checkoutCapturePreconditions({
+        jobs: completedJobs,
+        qualityCheckedAt: null,
+        qualityCheckedByUserId: "user-1",
+      })
+    ).toEqual({ jobsComplete: true, qcComplete: false });
+  });
+
+  it("treats in-progress or empty active jobs as incomplete", () => {
+    expect(
+      checkoutCapturePreconditions({
+        jobs: [{ status: "in_progress" }],
+        qualityCheckedAt: "2026-10-01T12:00:00.000Z",
+        qualityCheckedByUserId: "user-1",
+      }).jobsComplete
+    ).toBe(false);
+    expect(
+      checkoutCapturePreconditions({
+        jobs: [{ status: "cancelled" }],
+        qualityCheckedAt: "2026-10-01T12:00:00.000Z",
+        qualityCheckedByUserId: "user-1",
+      }).jobsComplete
+    ).toBe(false);
+  });
+
+  it("shares the 500-character override cap with UI and validation", () => {
+    expect(CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH).toBe(500);
   });
 });
 

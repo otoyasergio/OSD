@@ -35,6 +35,7 @@ export function CustomerDocuments({
   const [pending, startTransition] = useTransition();
   const [preparing, setPreparing] = useState(false);
   const [preparedFile, setPreparedFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
 
   function refresh() {
     router.refresh();
@@ -62,6 +63,8 @@ export function CustomerDocuments({
         return;
       }
       setTitle("");
+      setPreparedFile(null);
+      setFileInputKey((key) => key + 1);
       refresh();
     });
   }
@@ -167,6 +170,7 @@ export function CustomerDocuments({
               File (PDF, JPEG, PNG, WebP, or iPhone photo)
             </label>
             <PreparedFileInput
+              key={fileInputKey}
               id={fileInputId}
               name="file"
               required

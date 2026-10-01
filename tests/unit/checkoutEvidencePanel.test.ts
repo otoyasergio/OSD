@@ -299,6 +299,41 @@ describe("Overview completion checkout gate", () => {
     });
   }
 
+  it("keeps checkout capture closed unless both QC columns and jobs are complete", async () => {
+    await renderOverview({
+      quality_checked_at: "2026-10-01T12:00:00.000Z",
+      quality_checked_by_user_id: null,
+    });
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    expect(container.textContent).toMatch(/after jobs and quality check/i);
+
+    await renderOverview({
+      quality_checked_at: null,
+      quality_checked_by_user_id: "user-1",
+    });
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    expect(container.textContent).toMatch(/after jobs and quality check/i);
+
+    await renderOverview();
+    expect(container.querySelector('input[type="file"]')).toBeTruthy();
+  });
+
+  it("sets maxLength=500 on the override reason textarea", async () => {
+    await renderOverview();
+    const open = Array.from(container.querySelectorAll("button")).find((button) =>
+      /Record emergency override/i.test(button.textContent ?? "")
+    );
+    expect(open).toBeTruthy();
+    await act(async () => {
+      open!.click();
+    });
+    const textarea = container.querySelector(
+      'textarea[name="reason"]'
+    ) as HTMLTextAreaElement | null;
+    expect(textarea).toBeTruthy();
+    expect(textarea?.maxLength).toBe(500);
+  });
+
   it("hides Mark Ready until server-confirmed checkout photos or override exist", async () => {
     await renderOverview();
     expect(container.textContent).not.toMatch(/Mark ready for pickup/i);
@@ -408,5 +443,25 @@ describe("checkout UI wiring", () => {
     expect(source).not.toMatch(
       /checkoutOverridden\s*=\s*Boolean\(\s*detail\.checkout_evidence_override_at/
     );
+  });
+
+  it("derives Overview qcDone from both quality columns, matching the capture gate", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/work_orders/OverviewTab.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/checkoutCapturePreconditions/);
+    expect(source).not.toMatch(
+      /qcDone\s*=\s*Boolean\(\s*detail\.quality_checked_at\s*\|\|/
+    );
+  });
+
+  it("caps the checkout override textarea at the shared 500-character limit", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/photos/CheckoutEvidencePanel.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/maxLength=\{CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH\}/);
+    expect(source).toMatch(/TextAreaField/);
   });
 });

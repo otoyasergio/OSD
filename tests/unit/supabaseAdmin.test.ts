@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -18,6 +20,18 @@ afterEach(() => {
 });
 
 describe("server service-role Supabase clients", () => {
+  it("is marked server-only and stays aliased in unit tests", () => {
+    const admin = readFileSync(
+      join(process.cwd(), "lib", "database", "supabase-admin.ts"),
+      "utf8"
+    );
+    expect(admin).toMatch(/^import ["']server-only["'];/m);
+    const config = readFileSync(join(process.cwd(), "vitest.config.ts"), "utf8");
+    expect(config).toMatch(
+      /"server-only":\s*path\.resolve\(__dirname,\s*"node_modules\/server-only\/empty\.js"\)/
+    );
+  });
+
   it("preserves the existing admin-client configuration error", () => {
     expect(() => createAdminClient()).toThrow("PARTS_CANADA_SYNC_MISCONFIGURED");
   });

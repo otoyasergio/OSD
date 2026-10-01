@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  assertIntakePhotoObjectsAbsent,
   assertIntakePhotoRemoved,
   findIntakePhotosByNote,
   removeIntakePhotoArtifacts,
@@ -32,7 +33,10 @@ function createAdmin(options?: {
   const remove = vi.fn().mockResolvedValue({ error: null });
   const download = vi.fn().mockResolvedValue({
     data: options?.downloadError === null ? new Blob() : null,
-    error: options?.downloadError ?? { message: "Object not found" },
+    error:
+      options?.downloadError === undefined
+        ? { message: "Object not found" }
+        : options.downloadError,
   });
   const delIn = vi.fn().mockResolvedValue({ error: null });
   return {
@@ -88,6 +92,25 @@ describe("safari photo isolation cleanup", () => {
     expect(admin.maybeSingle).toHaveBeenCalled();
     expect(admin.download).toHaveBeenCalledWith("wo/other/photo-1.jpg");
     expect(admin.download).toHaveBeenCalledWith("wo/other/photo-1.thumb.jpg");
+  });
+
+  it("asserts leftover original and thumb object paths are gone after cleanup", async () => {
+    const admin = createAdmin({ remaining: null });
+    await expect(
+      assertIntakePhotoObjectsAbsent(admin as never, [
+        ROW.storage_path,
+        ROW.thumb_storage_path!,
+      ])
+    ).resolves.toBeUndefined();
+    expect(admin.download).toHaveBeenCalledWith("wo/other/photo-1.jpg");
+    expect(admin.download).toHaveBeenCalledWith("wo/other/photo-1.thumb.jpg");
+  });
+
+  it("fails object-absence when a captured original or thumb is still downloadable", async () => {
+    const admin = createAdmin({ downloadError: null });
+    await expect(
+      assertIntakePhotoObjectsAbsent(admin as never, [ROW.storage_path])
+    ).rejects.toThrow(/still available/i);
   });
 
   it("fails the assertion when the row is still present", async () => {

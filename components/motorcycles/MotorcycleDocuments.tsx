@@ -16,7 +16,11 @@ import {
 } from "@/app/(app)/motorcycles/document-actions";
 import { FormError } from "@/components/forms/Field";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
-import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import {
+  CAMERA_ROLL_HINT,
+  DOCUMENT_FILE_ACCEPT,
+  photoFileInputProps,
+} from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { formatDate } from "@/lib/datetime/format";
 import type { LightboxPhoto } from "@/lib/photos/lightbox";
@@ -120,7 +124,6 @@ export function MotorcycleDocuments({
   }
 
   const cameraProps = photoFileInputProps("camera");
-  const libraryProps = photoFileInputProps("library");
 
   return (
     <section aria-labelledby={titleId}>
@@ -241,7 +244,7 @@ export function MotorcycleDocuments({
             type="file"
             className="photo-file-input"
             multiple
-            accept={`${libraryProps.accept},application/pdf`}
+            accept={DOCUMENT_FILE_ACCEPT}
             onChange={(e) => void uploadFromInput(e.currentTarget)}
           />
           <div className="flex flex-wrap gap-2">
