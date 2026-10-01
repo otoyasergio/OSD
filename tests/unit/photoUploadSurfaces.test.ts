@@ -81,6 +81,40 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
   });
 });
 
+describe("photo compression runs off the main thread on Safari, iOS and Chrome", () => {
+  // Safari encodes canvas.toBlob synchronously on the main thread (~300 ms per
+  // 12 MP JPEG, several encodes per photo), freezing the form on iPad/iPhone.
+  it("spawns the worker with the literal shape webpack and Turbopack bundle", () => {
+    const source = readFileSync(
+      join(process.cwd(), "lib/forms/compressImageWorker.ts"),
+      "utf8"
+    );
+    expect(source).toMatch(
+      /new Worker\(\s*new URL\(\s*"\.\/compressImage\.worker\.ts",\s*import\.meta\.url\s*\)\s*\)/
+    );
+  });
+
+  it("keeps the worker entry free of DOM-only modules", () => {
+    const source = readFileSync(
+      join(process.cwd(), "lib/forms/compressImage.worker.ts"),
+      "utf8"
+    );
+    expect(source).not.toMatch(/compressImageForUpload|compressImageWorker"|document\./);
+    expect(source).toMatch(/compressWithOffscreenCanvas/);
+  });
+
+  it("tries the worker before the <canvas> element path", () => {
+    const source = readFileSync(
+      join(process.cwd(), "lib/forms/compressImageForUpload.ts"),
+      "utf8"
+    );
+    const workerCall = source.indexOf("compressInWorker(file, resolved)");
+    const mainThreadCall = source.indexOf("compressOnMainThread(file, resolved)");
+    expect(workerCall).toBeGreaterThan(-1);
+    expect(mainThreadCall).toBeGreaterThan(workerCall);
+  });
+});
+
 describe("multi-photo forms never put more than one photo in a Server Action body", () => {
   // Vercel refuses request bodies over 4.5 MB before the action runs, so any
   // form that submits several camera photos at once fails deterministically.

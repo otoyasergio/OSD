@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BIKE_PHOTO_COMPRESS,
   DOCUMENT_IMAGE_COMPRESS,
@@ -6,8 +6,11 @@ import {
   compressImageForUpload,
   fitDimensions,
   fitEncodedImage,
+  supportsWorkerCompression,
   type EncodeImage,
 } from "@/lib/forms/compressImageForUpload";
+import { terminateCompressionWorker } from "@/lib/forms/compressImageWorker";
+import type { CompressWorkerResponse } from "@/lib/forms/compressImage.worker";
 import { SERVER_ACTION_UPLOAD_MAX_BYTES } from "@/lib/forms/uploadLimits";
 
 /**
@@ -177,5 +180,121 @@ describe("compressImageForUpload", () => {
       maxDimension: 64,
     });
     expect(result.size).toBeGreaterThan(0);
+  });
+});
+
+describe("compressImageForUpload in a browser with Web Workers", () => {
+  /**
+   * Auto-replying stand-in for the bundled worker. `script` decides how each
+   * posted photo is answered; a `null` reply simulates a worker crash.
+   */
+  function installAutoWorker(
+    script: (request: { id: number; file: Blob }) => CompressWorkerResponse | null
+  ) {
+    const spawned: { url: string; posted: number }[] = [];
+    class AutoWorker {
+      onmessage: ((event: { data: CompressWorkerResponse }) => void) | null = null;
+      onerror: ((event: { message: string }) => void) | null = null;
+      onmessageerror: (() => void) | null = null;
+      private readonly record: { url: string; posted: number };
+      constructor(url: URL | string) {
+        this.record = { url: String(url), posted: 0 };
+        spawned.push(this.record);
+      }
+      postMessage(request: { id: number; file: Blob }) {
+        this.record.posted += 1;
+        queueMicrotask(() => {
+          const reply = script(request);
+          if (reply) this.onmessage?.({ data: reply });
+          else this.onerror?.({ message: "Script error." });
+        });
+      }
+      terminate() {}
+    }
+    vi.stubGlobal("Worker", AutoWorker);
+    vi.stubGlobal("OffscreenCanvas", class {});
+    vi.stubGlobal("createImageBitmap", async () => ({ width: 1, height: 1, close() {} }));
+    return spawned;
+  }
+
+  const heic = new File([new Uint8Array(5_000_000)], "IMG_0001.heic", {
+    type: "image/heic",
+    lastModified: 1_700_000_000_000,
+  });
+
+  afterEach(() => {
+    terminateCompressionWorker();
+    vi.unstubAllGlobals();
+  });
+
+  it("is off in node and on once Worker, OffscreenCanvas and createImageBitmap exist", () => {
+    expect(supportsWorkerCompression()).toBe(false);
+    installAutoWorker(() => null);
+    expect(supportsWorkerCompression()).toBe(true);
+  });
+
+  it("returns the worker's JPEG as a .jpg File without touching the DOM", async () => {
+    const encoded = new Blob([new Uint8Array(2_000_000)], { type: "image/jpeg" });
+    const spawned = installAutoWorker(({ id }) => ({
+      id,
+      ok: true,
+      blob: encoded,
+      width: 4032,
+      height: 3024,
+      quality: 0.82,
+    }));
+
+    const result = await compressImageForUpload(heic);
+    expect(result.name).toBe("IMG_0001.jpg");
+    expect(result.type).toBe("image/jpeg");
+    expect(result.size).toBe(encoded.size);
+    expect(result.lastModified).toBe(heic.lastModified);
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0].url).toMatch(/compressImage\.worker\.ts$/);
+    expect(typeof document).toBe("undefined");
+  });
+
+  it("skips the worker entirely for JPEGs that already fit", async () => {
+    const spawned = installAutoWorker(() => null);
+    const small = new File([new Uint8Array(1000)], "ok.jpg", { type: "image/jpeg" });
+    expect(await compressImageForUpload(small)).toBe(small);
+    expect(spawned).toHaveLength(0);
+  });
+
+  it("falls back to the original file when the worker crashes and there is no DOM", async () => {
+    installAutoWorker(() => null);
+    const result = await compressImageForUpload(heic);
+    expect(result).toBe(heic);
+  });
+
+  it("falls back when the worker reports it cannot encode in its realm", async () => {
+    installAutoWorker(({ id }) => ({
+      id,
+      ok: true,
+      blob: null,
+      width: 0,
+      height: 0,
+      quality: 0,
+    }));
+    const result = await compressImageForUpload(heic);
+    expect(result).toBe(heic);
+  });
+
+  it("reuses one worker for a batch of photos", async () => {
+    const spawned = installAutoWorker(({ id }) => ({
+      id,
+      ok: true,
+      blob: new Blob([new Uint8Array(10)], { type: "image/jpeg" }),
+      width: 1,
+      height: 1,
+      quality: 0.9,
+    }));
+    await Promise.all([
+      compressImageForUpload(heic),
+      compressImageForUpload(heic),
+      compressImageForUpload(heic),
+    ]);
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0].posted).toBe(3);
   });
 });
