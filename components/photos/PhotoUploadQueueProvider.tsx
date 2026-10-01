@@ -118,7 +118,7 @@ type ProviderProps = {
 
 export type E2ePhotoQueueHook = {
   enqueueIntakeHeic(payload: {
-    bytes: number[];
+    base64: string;
     name: string;
     category: string;
     workOrderId: string;
@@ -541,9 +541,19 @@ export function PhotoUploadQueueProvider({
     if (!e2ePhotoQueueHook) return;
     const hook: E2ePhotoQueueHook = {
       async enqueueIntakeHeic(payload) {
-        const file = new File([new Uint8Array(payload.bytes)], payload.name, {
-          type: "image/heic",
-        });
+        const binary = atob(payload.base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        if (bytes.byteLength === 0) {
+          throw new Error("E2E HEIC payload was empty");
+        }
+        const blob = new Blob([bytes], { type: "image/heic" });
+        const file = new File([blob], payload.name, { type: "image/heic" });
+        if (file.size === 0) {
+          throw new Error("E2E HEIC File was empty after decode");
+        }
         const prepared = await preparePhotoFileForUpload(file);
         return enqueue({
           file: prepared,

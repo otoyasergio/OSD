@@ -28,6 +28,7 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).toMatch(/dispatchEvent\(\s*new Event\(\s*"offline"/);
     expect(spec).toMatch(/__otomotoPhotoQueue/);
     expect(spec).toMatch(/enqueueIntakeHeic/);
+    expect(spec).toMatch(/toString\("base64"\)/);
     expect(spec).toMatch(/sample\.heic/);
     expect(spec).toMatch(/waiting for connection/i);
     const layout = source("app/(app)/layout.tsx");
@@ -38,6 +39,7 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(provider).toMatch(/e2ePhotoQueueHook/);
     expect(provider).toMatch(/__otomotoPhotoQueue/);
     expect(provider).toMatch(/preparePhotoFileForUpload/);
+    expect(provider).toMatch(/atob\(/);
     const prepare = source("lib/forms/preparePhotoFileForUpload.ts");
     expect(prepare).toMatch(/isBrowserOffline/);
     const uploader = source("lib/photos/uploadQueue/uploadQueuedPhoto.ts");

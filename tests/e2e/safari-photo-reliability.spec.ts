@@ -39,7 +39,7 @@ async function markBrowserOffline(page: Page) {
 }
 
 async function enqueueOfflineHeic(page: Page, note: string) {
-  const bytes = Array.from(readFileSync(HEIC_FIXTURE));
+  const base64 = readFileSync(HEIC_FIXTURE).toString("base64");
   await page.evaluate(
     async (payload) => {
       const hook = window.__otomotoPhotoQueue;
@@ -47,7 +47,7 @@ async function enqueueOfflineHeic(page: Page, note: string) {
       await hook.enqueueIntakeHeic(payload);
     },
     {
-      bytes,
+      base64,
       name: "sample.heic",
       category: "other",
       workOrderId: FIXTURE_WORK_ORDER.id,
