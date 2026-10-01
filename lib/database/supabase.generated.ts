@@ -645,6 +645,10 @@ export type Database = {
           generation_attempt_id: string;
         }[];
       };
+      reopen_work_order_for_recommendation_work: {
+        Args: { p_work_order_id: string };
+        Returns: boolean;
+      };
       create_intake_photo_with_event: {
         Args: {
           p_photo_id: string;
