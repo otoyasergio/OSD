@@ -24,6 +24,7 @@ import {
 } from "@/lib/photos/intakePhotoUploadOrchestrator";
 import { INTAKE_PHOTO_BUCKET, signStoragePaths } from "@/lib/photos/signedUrls";
 import { removeIntakePhotoObjects } from "@/lib/photos/removeIntakePhotoObjects";
+import { parseIntakePhotoCorrectionReason } from "@/lib/photos/intakePhotoCorrectionReason";
 import { PHOTO_UPLOAD_RETRY_ATTEMPTS } from "@/lib/forms/photoUploadErrors";
 import { classifyStorageUploadError } from "@/lib/forms/storageUploadRetry";
 
@@ -478,10 +479,12 @@ export async function uploadIntakePhoto(
  */
 export async function deleteIntakePhoto(
   workOrderId: string,
-  photoId: string
+  photoId: string,
+  reason: string
 ): Promise<void> {
   const user = await requireUser();
   if (!canDeleteIntakePhoto(user.role)) throw new Error("FORBIDDEN");
+  const correctionReason = parseIntakePhotoCorrectionReason(reason);
 
   const supabase = await createClient();
   const { data: workOrder, error: woError } = await supabase
@@ -520,10 +523,24 @@ export async function deleteIntakePhoto(
     .remove(storagePaths);
   if (storageError) {
     // Row is gone; storage orphan is preferable to failing the user action.
-    console.error("intake photo storage remove failed", storageError);
+    const statusCode =
+      storageError.statusCode == null ? undefined : String(storageError.statusCode);
+    console.error("intake photo storage remove failed", {
+      photoId,
+      pathCount: storagePaths.length,
+      ...(statusCode ? { statusCode } : {}),
+    });
   }
 
   const categoryLabel = PHOTO_CATEGORY_LABELS[row.category] ?? row.category;
+  const evidence = {
+    reason: correctionReason,
+    category: row.category,
+    storage_path: row.storage_path,
+    thumb_storage_path: row.thumb_storage_path,
+    uploaded_by_user_id: row.uploaded_by_user_id,
+    created_at: row.created_at,
+  };
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,
@@ -531,11 +548,8 @@ export async function deleteIntakePhoto(
     event_type: TimelineEventType.INTAKE_PHOTO_DELETED,
     entity_type: "intake_photo",
     entity_id: photoId,
-    description: `Intake photo removed (${categoryLabel})`,
-    old_value: {
-      category: row.category,
-      storage_path: row.storage_path,
-    },
+    description: `Intake photo removed (${categoryLabel}): ${correctionReason}`,
+    old_value: evidence,
   });
 
   await addAuditLog(supabase, {
@@ -544,10 +558,7 @@ export async function deleteIntakePhoto(
     action: "intake_photo_deleted",
     entity_type: "intake_photo",
     entity_id: photoId,
-    description: `Intake photo (${categoryLabel}) removed from ${workOrder.work_order_number}`,
-    old_value: {
-      category: row.category,
-      storage_path: row.storage_path,
-    },
+    description: `Intake photo (${categoryLabel}) removed from ${workOrder.work_order_number}: ${correctionReason}`,
+    old_value: evidence,
   });
 }

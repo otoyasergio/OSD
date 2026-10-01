@@ -1,17 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { revalidatePath, uploadIntakePhoto } = vi.hoisted(() => ({
+const { revalidatePath, uploadIntakePhoto, deleteIntakePhoto } = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   uploadIntakePhoto: vi.fn(),
+  deleteIntakePhoto: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("@/lib/services/photos", () => ({
-  deleteIntakePhoto: vi.fn(),
+  deleteIntakePhoto,
   uploadIntakePhoto,
 }));
 
-import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
+import {
+  deleteIntakePhotoAction,
+  uploadIntakePhotoAction,
+} from "@/app/(app)/work_orders/photo-actions";
 
 const WORK_ORDER_ID = "41111111-1111-4111-8111-111111111111";
 const PHOTO_ID = "71111111-1111-4111-8111-111111111111";
@@ -123,5 +127,40 @@ describe("uploadIntakePhotoAction", () => {
         client_upload_id: CLIENT_UPLOAD_ID,
       })
     );
+  });
+});
+
+describe("deleteIntakePhotoAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    deleteIntakePhoto.mockResolvedValue(undefined);
+  });
+
+  it("passes the correction reason through to the service", async () => {
+    const form = new FormData();
+    form.set("photo_id", PHOTO_ID);
+    form.set("reason", "  wrong bike  ");
+
+    const result = await deleteIntakePhotoAction(WORK_ORDER_ID, { error: null }, form);
+
+    expect(deleteIntakePhoto).toHaveBeenCalledWith(
+      WORK_ORDER_ID,
+      PHOTO_ID,
+      "  wrong bike  "
+    );
+    expect(result).toEqual({ error: null });
+    expect(revalidatePath).toHaveBeenCalled();
+  });
+
+  it("maps a blank reason to safe staff copy", async () => {
+    deleteIntakePhoto.mockRejectedValue(new Error("PHOTO_CORRECTION_REASON_REQUIRED"));
+    const form = new FormData();
+    form.set("photo_id", PHOTO_ID);
+    form.set("reason", "   ");
+
+    const result = await deleteIntakePhotoAction(WORK_ORDER_ID, { error: null }, form);
+
+    expect(result.error).toBe("Enter a reason for permanently removing this photo.");
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });

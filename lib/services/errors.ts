@@ -120,6 +120,11 @@ const MESSAGES: Record<string, string> = {
     "This photo upload was already used for a different work item.",
   PHOTO_DELETE_FAILED: "Could not remove the photo. Try again.",
   PHOTO_NOT_FOUND: "That photo no longer exists.",
+  PHOTO_CORRECTION_REASON_REQUIRED: "Enter a reason for permanently removing this photo.",
+  PHOTO_CORRECTION_REASON_TOO_LONG:
+    "Keep the correction reason to 500 characters or fewer.",
+  PHOTO_ADMIN_MISCONFIGURED:
+    "Photo reconciliation needs SUPABASE_SERVICE_ROLE_KEY and Supabase URL.",
   INTAKE_PHOTOS_REQUIRED:
     "Add all six required intake photos before creating the work order.",
   INTAKE_PHOTOS_PARTIAL:

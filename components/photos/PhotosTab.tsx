@@ -21,6 +21,7 @@ import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { formatDateTime } from "@/lib/datetime/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
+import { PHOTO_CORRECTION_REASON_MAX_LENGTH } from "@/lib/photos/intakePhotoCorrectionReason";
 
 type Action = (state: PhotoFormState, formData: FormData) => Promise<PhotoFormState>;
 
@@ -70,6 +71,7 @@ export function PhotosTab({
     error: null,
   });
   const [filter, setFilter] = useState<PhotoCategory | "all">("all");
+  const [confirmingPhotoId, setConfirmingPhotoId] = useState<string | null>(null);
   const [chooserOpen, setChooserOpen] = useState(false);
   const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
@@ -352,17 +354,47 @@ export function PhotosTab({
                 </p>
                 {photo.notes ? <p className="text-foreground">{photo.notes}</p> : null}
                 {!readOnly && canDelete ? (
-                  <form action={deleteFormAction}>
-                    <input type="hidden" name="photo_id" value={photo.photo_id} />
+                  confirmingPhotoId === photo.photo_id ? (
+                    <form action={deleteFormAction} className="space-y-2">
+                      <input type="hidden" name="photo_id" value={photo.photo_id} />
+                      <label className="block">
+                        <span className="mb-1.5 block text-sm font-medium text-foreground">
+                          Correction reason <span className="text-red-600">*</span>
+                        </span>
+                        <textarea
+                          className={SELECT_CLASS}
+                          name="reason"
+                          required
+                          rows={3}
+                          maxLength={PHOTO_CORRECTION_REASON_MAX_LENGTH}
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        className="btn btn-ghost min-h-10 w-full text-red-700 hover:bg-red-50"
+                        disabled={deletePending}
+                      >
+                        {deletePending ? "Removing…" : "Permanently remove photo"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost min-h-10 w-full"
+                        onClick={() => setConfirmingPhotoId(null)}
+                        disabled={deletePending}
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
                     <button
-                      type="submit"
+                      type="button"
                       className="btn btn-ghost min-h-10 w-full text-red-700 hover:bg-red-50"
-                      disabled={deletePending}
+                      onClick={() => setConfirmingPhotoId(photo.photo_id)}
                       aria-label={`Remove ${PHOTO_CATEGORY_LABELS[photo.category]} photo`}
                     >
-                      {deletePending ? "Removing…" : "Remove photo"}
+                      Remove photo
                     </button>
-                  </form>
+                  )
                 ) : null}
               </div>
             </li>

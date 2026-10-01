@@ -84,7 +84,8 @@ export async function deleteIntakePhotoAction(
     if (!photoId) {
       return { error: toFormErrorMessage(new Error("PHOTO_NOT_FOUND")) };
     }
-    await deleteIntakePhoto(workOrderId, photoId);
+    const reason = String(formData.get("reason") ?? "");
+    await deleteIntakePhoto(workOrderId, photoId, reason);
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

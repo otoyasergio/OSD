@@ -667,6 +667,10 @@ export type Database = {
         };
         Returns: Database["public"]["Tables"]["intake_photo"]["Row"][];
       };
+      intake_photo_object_in_user_locations: {
+        Args: { object_name: string };
+        Returns: boolean;
+      };
     };
     Enums: Record<string, never>;
   };
