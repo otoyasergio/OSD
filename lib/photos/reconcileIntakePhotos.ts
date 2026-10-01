@@ -1,5 +1,6 @@
 import { intakeThumbStoragePath, makeIntakeThumb } from "@/lib/photos/makeIntakeThumb";
 import { INTAKE_PHOTO_BUCKET } from "@/lib/photos/signedUrls";
+import { emitPhotoTelemetry } from "@/lib/photos/telemetry";
 
 export type PhotoReconcileRow = {
   photo_id: string;
@@ -244,7 +245,7 @@ export async function reconcileIntakePhotos(
     .filter((path) => !referenced.has(path))
     .map((path) => ({ path }));
 
-  return sortPhotoReconcileReport({
+  const report = sortPhotoReconcileReport({
     missingOriginals,
     missingThumbnails,
     nullThumbnails,
@@ -263,6 +264,11 @@ export async function reconcileIntakePhotos(
       failed,
     },
   });
+  emitPhotoTelemetry({
+    name: "photo_reconciliation_summary",
+    counts: report.counts,
+  });
+  return report;
 }
 
 export type PhotoReconcileClient = {

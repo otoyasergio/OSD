@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env tsx
 /**
  * Intake photo reconciliation (report-only by default).
  *

@@ -204,7 +204,7 @@ export function IntakePhotoSlots({
     setPickError(null);
     setPreparingCategory(category);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, { surface: "intake" });
       const file = files[0] ?? null;
       if (!file) return;
       if (workOrderId) {
@@ -214,6 +214,7 @@ export function IntakePhotoSlots({
           category,
           workOrderId,
           replaceExisting: false,
+          surface: "intake",
         });
       } else {
         if (!intakeDraftId) {
@@ -224,6 +225,7 @@ export function IntakePhotoSlots({
           file,
           category,
           intakeDraftId,
+          surface: "intake",
         });
       }
       const next = { ...valueRef.current, [category]: file };

@@ -111,7 +111,7 @@ export function OptionalIntakePhotos({
     setPickError(null);
     setPreparing(true);
     try {
-      const prepared = await readPickedPhotoFiles(input);
+      const prepared = await readPickedPhotoFiles(input, { surface: "intake" });
       const committed: File[] = [];
       for (const file of prepared) {
         await queue.enqueue({
@@ -120,6 +120,7 @@ export function OptionalIntakePhotos({
           intakeDraftId: workOrderId ? undefined : intakeDraftId,
           workOrderId,
           replaceExisting: false,
+          surface: "intake",
         });
         committed.push(file);
       }

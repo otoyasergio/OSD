@@ -10,6 +10,7 @@ import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 
 export function InspectionPhotoSlot({
   workOrderId,
@@ -102,7 +103,7 @@ export function InspectionPhotoSlot({
     setClientError(null);
     setPreparing(true);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, { surface: "inspection" });
       if (files.length === 0) return;
       for (const file of files) {
         const queuedItem = await queue.enqueue({
@@ -110,6 +111,7 @@ export function InspectionPhotoSlot({
           category,
           workOrderId,
           inspectionResultId: inspectionResultId ?? undefined,
+          surface: "inspection",
         });
         ownedQueueIds.current.add(queuedItem.queueId);
       }
@@ -160,27 +162,50 @@ export function InspectionPhotoSlot({
                 onClick={() => onExpand(preview.src!)}
                 aria-label={`View ${label} photo ${index + 1} larger`}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
+                {preview.queueId ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- local queue object URL
+                  <img
+                    src={preview.src}
+                    alt={`${label} ${index + 1}`}
+                    decoding="async"
+                    loading={preview.pending ? "eager" : "lazy"}
+                  />
+                ) : (
+                  <RecoverableSignedImage
+                    src={preview.src}
+                    alt={`${label} ${index + 1}`}
+                    decoding="async"
+                    loading={preview.pending ? "eager" : "lazy"}
+                  />
+                )}
+              </button>
+            ) : preview.src ? (
+              preview.queueId ? (
+                // eslint-disable-next-line @next/next/no-img-element -- local queue object URL
                 <img
+                  key={preview.key}
                   src={preview.src}
-                  alt={`${label} ${index + 1}`}
+                  alt={
+                    preview.failed
+                      ? `${label} ${index + 1} failed to save`
+                      : `${label} ${index + 1}`
+                  }
                   decoding="async"
                   loading={preview.pending ? "eager" : "lazy"}
                 />
-              </button>
-            ) : preview.src ? (
-              // eslint-disable-next-line @next/next/no-img-element -- signed or local preview
-              <img
-                key={preview.key}
-                src={preview.src}
-                alt={
-                  preview.failed
-                    ? `${label} ${index + 1} failed to save`
-                    : `${label} ${index + 1}`
-                }
-                decoding="async"
-                loading={preview.pending ? "eager" : "lazy"}
-              />
+              ) : (
+                <RecoverableSignedImage
+                  key={preview.key}
+                  src={preview.src}
+                  alt={
+                    preview.failed
+                      ? `${label} ${index + 1} failed to save`
+                      : `${label} ${index + 1}`
+                  }
+                  decoding="async"
+                  loading={preview.pending ? "eager" : "lazy"}
+                />
+              )
             ) : (
               <span key={preview.key} className="inspection-photo-slot-placeholder">
                 {preview.status}

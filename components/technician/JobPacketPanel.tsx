@@ -10,6 +10,7 @@ import type { FloorStage } from "@/lib/technician/floorStage";
 import type { IntakePhoto } from "@/lib/services/photos";
 import type { WorkOrderJob } from "@/lib/services/workOrders";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { formatDateTime } from "@/lib/datetime/format";
@@ -309,8 +310,7 @@ export function JobPacketPanel({
                               setLightboxIndex(lightboxAt >= 0 ? lightboxAt : 0)
                             }
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
-                            <img
+                            <RecoverableSignedImage
                               src={photo.thumb_url ?? photo.signed_url ?? ""}
                               alt={`${PHOTO_CATEGORY_LABELS[photo.category]} photo`}
                               className="floor-packet-photo-img"

@@ -89,7 +89,7 @@ export function FloorPhotoField({
   async function applyPickedFiles(input: HTMLInputElement) {
     setPickError(null);
     try {
-      const prepared = await readPickedPhotoFiles(input);
+      const prepared = await readPickedPhotoFiles(input, { surface: "floor" });
       if (prepared.length === 0) {
         notifyPhotoReady(queued.length);
         return;
@@ -101,6 +101,7 @@ export function FloorPhotoField({
           category,
           workOrderId,
           jobId,
+          surface: "floor",
         });
         added += 1;
       }

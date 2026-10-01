@@ -1,3 +1,4 @@
+import { emitPhotoTelemetry, type PhotoTelemetrySurface } from "@/lib/photos/telemetry";
 import type { PhotoUploadQueueStore } from "./store";
 import type { PhotoUploadScope, QueuedPhotoUpload } from "./types";
 import { assertPhotoUploadTransition } from "./stateTransitions";
@@ -10,6 +11,7 @@ export type EnqueuePhotoUploadOptions = {
   scope: PhotoUploadScope;
   item: QueuedPhotoUpload;
   now: number;
+  surface?: PhotoTelemetrySurface;
 };
 
 export async function enqueuePhotoUpload({
@@ -17,6 +19,7 @@ export async function enqueuePhotoUpload({
   scope,
   item,
   now,
+  surface,
 }: EnqueuePhotoUploadOptions): Promise<QueuedPhotoUpload> {
   assertPhotoUploadTransition(item.status, "queued");
   const queued: QueuedPhotoUpload = {
@@ -33,6 +36,12 @@ export async function enqueuePhotoUpload({
       error !== null &&
       "name" in error &&
       error.name === "QuotaExceededError";
+    if (isQuotaError) {
+      emitPhotoTelemetry({
+        name: "photo_queue_quota_failed",
+        surface: surface ?? "unknown",
+      });
+    }
     throw new PhotoQueuePersistenceError(
       isQuotaError ? "quota_exceeded" : "persistence_failed",
       isQuotaError

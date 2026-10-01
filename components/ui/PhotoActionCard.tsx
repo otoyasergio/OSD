@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Flag } from "lucide-react";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 import { StageChip, type StageChipTone } from "@/components/ui/StageChip";
 
 export function PhotoActionCard({
@@ -39,8 +40,7 @@ export function PhotoActionCard({
     >
       <div className="photo-action-card-media" aria-hidden={!photoUrl}>
         {photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-          <img
+          <RecoverableSignedImage
             src={photoUrl}
             alt=""
             className="photo-action-card-img"

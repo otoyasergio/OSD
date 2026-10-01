@@ -150,6 +150,8 @@ describe("photo reconcile CLI parsing and output", () => {
     };
     expect(pkg.scripts["photos:reconcile"]).toMatch(/reconcile-intake-photos/);
     expect(pkg.scripts["photos:reconcile"]).toMatch(/--env-file-if-exists=\.env\.local/);
+    expect(pkg.scripts["photos:reconcile"]).toMatch(/^tsx /);
+    expect(pkg.scripts["photos:reconcile"]).not.toMatch(/npx/);
     const runner = readFileSync(
       join(process.cwd(), "scripts", "reconcile-intake-photos.ts"),
       "utf8"

@@ -1,4 +1,9 @@
 import {
+  bucketPhotoAge,
+  bucketPhotoLatency,
+  emitPhotoTelemetry,
+} from "@/lib/photos/telemetry";
+import {
   type AcquiredPhotoUploadClaim,
   DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
   type PhotoUploadFailureOutcome,
@@ -76,6 +81,7 @@ export class PhotoUploadQueueRunner {
   private listening = false;
   private stopped = false;
   private generation = 1;
+  private resumeTelemetryEmitted = false;
   private readonly activeUploads = new Map<string, ActiveUpload>();
   private readonly handleOnline = (): void => {
     this.requestWake("online");
@@ -108,7 +114,30 @@ export class PhotoUploadQueueRunner {
       );
       this.listening = true;
     }
+    await this.emitResumeTelemetry();
     await this.wake();
+  }
+
+  private async emitResumeTelemetry(): Promise<void> {
+    if (this.resumeTelemetryEmitted) return;
+    this.resumeTelemetryEmitted = true;
+    try {
+      const items = await this.options.store.list(this.options.scope);
+      const pending = items.filter((item) => item.status !== "saved");
+      const oldestCreatedAt = pending.reduce(
+        (oldest, item) => Math.min(oldest, item.createdAt),
+        Number.POSITIVE_INFINITY
+      );
+      emitPhotoTelemetry({
+        name: "photo_queue_resumed",
+        pendingCount: pending.length,
+        oldestAgeBucket: bucketPhotoAge(
+          Number.isFinite(oldestCreatedAt) ? this.options.now() - oldestCreatedAt : 0
+        ),
+      });
+    } catch {
+      // Telemetry must never break the runner.
+    }
   }
 
   /**
@@ -358,6 +387,11 @@ export class PhotoUploadQueueRunner {
       );
       if (completed) {
         claim.ownsClaim = false;
+        emitPhotoTelemetry({
+          name: "photo_upload_confirmed",
+          latencyBucket: bucketPhotoLatency(this.options.now() - uploading.createdAt),
+          category: uploading.category,
+        });
       } else {
         this.recoverLostClaim(claim);
       }
@@ -525,6 +559,11 @@ export class PhotoUploadQueueRunner {
     }
     if (settled) {
       claim.ownsClaim = false;
+      emitPhotoTelemetry({
+        name: "photo_queue_retry",
+        settledFailureCount: 1,
+        retryable: outcome.retryable,
+      });
     } else {
       this.recoverLostClaim(claim);
     }

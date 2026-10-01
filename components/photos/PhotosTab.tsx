@@ -21,6 +21,7 @@ import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { formatDateTime } from "@/lib/datetime/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 import { PHOTO_CORRECTION_REASON_MAX_LENGTH } from "@/lib/photos/intakePhotoCorrectionReason";
 
 type Action = (state: PhotoFormState, formData: FormData) => Promise<PhotoFormState>;
@@ -128,7 +129,7 @@ export function PhotosTab({
     setPickError(null);
     setPreparing(true);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, { surface: "photos_tab" });
       const file = files[0] ?? null;
       if (!file) return;
       const form = input.form;
@@ -144,6 +145,7 @@ export function PhotosTab({
         category,
         workOrderId,
         notes: notes || undefined,
+        surface: "photos_tab",
       });
     } catch (error) {
       if (error instanceof PhotoQueuePersistenceError) {
@@ -330,8 +332,7 @@ export function PhotosTab({
                   aria-label={`View ${PHOTO_CATEGORY_LABELS[photo.category]} photo full size`}
                   onClick={() => setLightboxPhotoId(photo.photo_id)}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <RecoverableSignedImage
                     src={photo.thumb_url ?? photo.signed_url ?? ""}
                     alt={`${PHOTO_CATEGORY_LABELS[photo.category]} intake photo`}
                     className="aspect-[4/3] w-full object-cover bg-[var(--surface-muted)]"

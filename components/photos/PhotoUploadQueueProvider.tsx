@@ -33,6 +33,7 @@ import {
   uploadQueuedPhoto,
   type QueuedPhotoUploadActions,
 } from "@/lib/photos/uploadQueue/uploadQueuedPhoto";
+import type { PhotoTelemetrySurface } from "@/lib/photos/telemetry";
 
 export type PhotoUploadConfirmation = {
   queueId: string;
@@ -50,6 +51,7 @@ export type EnqueuePhotoInput = {
   assistantThreadId?: string;
   notes?: string;
   replaceExisting?: boolean;
+  surface?: PhotoTelemetrySurface;
 };
 
 export type PhotoUploadQueueWaitResult =
@@ -330,6 +332,7 @@ export function PhotoUploadQueueProvider({
               scope,
               item: prepared,
               now: readNow(),
+              surface: input.surface,
             });
       await refreshItems();
       if (queued.workOrderId) await runnerRef.current?.wake();

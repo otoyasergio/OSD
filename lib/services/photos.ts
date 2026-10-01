@@ -27,6 +27,7 @@ import { removeIntakePhotoObjects } from "@/lib/photos/removeIntakePhotoObjects"
 import { parseIntakePhotoCorrectionReason } from "@/lib/photos/intakePhotoCorrectionReason";
 import { PHOTO_UPLOAD_RETRY_ATTEMPTS } from "@/lib/forms/photoUploadErrors";
 import { classifyStorageUploadError } from "@/lib/forms/storageUploadRetry";
+import { logIntakeThumbnailFailure } from "@/lib/photos/intakeThumbnailTelemetry";
 
 export type IntakePhoto = {
   photo_id: string;
@@ -463,9 +464,7 @@ export async function uploadIntakePhoto(
         if (!row) throw new Error("PHOTO_UPLOAD_FAILED");
         return row as IntakePhotoUploadRow;
       },
-      logThumbnailFailure: (details) => {
-        console.error("intake photo thumbnail failed", details);
-      },
+      logThumbnailFailure: logIntakeThumbnailFailure,
     }
   );
 

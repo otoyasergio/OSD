@@ -328,7 +328,7 @@ export function DiagnosticsPhotoPicker({
     setNotice(null);
     setBusy(true);
     try {
-      const prepared = await readPickedPhotoFiles(input);
+      const prepared = await readPickedPhotoFiles(input, { surface: "diagnostics" });
       for (const [index, file] of prepared.entries()) {
         if (selectionsRef.current.length >= DIAGNOSTICS_PHOTO_MAX_SELECTED) {
           if (mountedRef.current) {
@@ -347,6 +347,7 @@ export function DiagnosticsPhotoPicker({
           jobId: thread.jobId ?? undefined,
           assistantThreadId: thread.threadId,
           notes: defaultPurpose,
+          surface: "diagnostics",
         });
         pendingByQueueId.current.set(queuedItem.queueId, {
           file,
