@@ -130,7 +130,7 @@ BEGIN
     RAISE EXCEPTION 'WORK_ORDER_NOT_FOUND';
   END IF;
 
-  IF NOT (v_location = ANY (public.user_location_ids())) THEN
+  IF NOT (v_location IN (SELECT public.user_location_ids())) THEN
     RAISE EXCEPTION 'FORBIDDEN';
   END IF;
 

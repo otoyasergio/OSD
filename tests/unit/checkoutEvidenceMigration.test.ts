@@ -108,6 +108,12 @@ describe("checkout evidence pickup-gate migration", () => {
     expect(sql).toMatch(/current_app_user_id\s*\(/i);
     expect(sql).toMatch(/current_app_user_role\s*\(/i);
     expect(sql).toMatch(/user_location_ids\s*\(/i);
+    expect(sql).toMatch(
+      /v_location\s+IN\s*\(\s*SELECT\s+public\.user_location_ids\s*\(\s*\)\s*\)/i
+    );
+    expect(sql).not.toMatch(
+      /v_location\s*=\s*ANY\s*\(\s*public\.user_location_ids\s*\(\s*\)\s*\)/i
+    );
     expect(sql).toMatch(/origin\s*=\s*'recommendation'/i);
     expect(sql).toMatch(/approved|ready_to_start/i);
     expect(sql).toMatch(/set_config\s*\(\s*'app\.checkout_reopen'\s*,\s*'1'/i);
