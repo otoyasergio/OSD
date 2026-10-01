@@ -5,6 +5,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 import {
+  SIGNED_IMAGE_RECOVERY_MAX,
   isSupabaseSignedObjectUrl,
   resetSignedImageRecovery,
   useSignedImageRecovery,
@@ -57,6 +58,31 @@ describe("isSupabaseSignedObjectUrl", () => {
         "https://abc.supabase.co/storage/v1/object/public/intake-photos/wo/front.jpg"
       )
     ).toBe(false);
+  });
+
+  it("accepts the exact configured Supabase host and rejects arbitrary hosts", () => {
+    const previous = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://db.torontomoto.internal";
+    try {
+      expect(
+        isSupabaseSignedObjectUrl(
+          "https://db.torontomoto.internal/storage/v1/object/sign/intake-photos/wo/front.jpg?token=tok"
+        )
+      ).toBe(true);
+      expect(
+        isSupabaseSignedObjectUrl(
+          "https://evil.example/storage/v1/object/sign/intake-photos/wo/front.jpg?token=tok"
+        )
+      ).toBe(false);
+      expect(
+        isSupabaseSignedObjectUrl(
+          "https://db.torontomoto.internal.evil.example/storage/v1/object/sign/x.jpg?token=tok"
+        )
+      ).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = previous;
+    }
   });
 });
 
@@ -144,6 +170,35 @@ describe("useSignedImageRecovery", () => {
     });
     expect(onError).toHaveBeenCalledTimes(4);
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds the recovered set with FIFO eviction", async () => {
+    expect(SIGNED_IMAGE_RECOVERY_MAX).toBeGreaterThan(0);
+    resetSignedImageRecovery({ max: 2 });
+    const first =
+      "https://abc.supabase.co/storage/v1/object/sign/intake-photos/wo/a.jpg?token=a";
+    const second =
+      "https://abc.supabase.co/storage/v1/object/sign/intake-photos/wo/b.jpg?token=b";
+    const third =
+      "https://abc.supabase.co/storage/v1/object/sign/intake-photos/wo/c.jpg?token=c";
+
+    for (const src of [first, second, third]) {
+      await act(async () => {
+        root.render(createElement(HookProbe, { src }));
+      });
+      await act(async () => {
+        container.querySelector("img")?.dispatchEvent(new Event("error"));
+      });
+    }
+    expect(refresh).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      root.render(createElement(HookProbe, { src: first }));
+    });
+    await act(async () => {
+      container.querySelector("img")?.dispatchEvent(new Event("error"));
+    });
+    expect(refresh).toHaveBeenCalledTimes(4);
   });
 
   it("does not loop after a remount of the same failed signed URL", async () => {

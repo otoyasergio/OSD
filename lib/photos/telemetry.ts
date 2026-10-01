@@ -120,8 +120,18 @@ const COUNT_KEYS = [
 
 let sink: PhotoTelemetrySink | null = defaultPhotoTelemetrySink;
 
+export function photoTelemetryUsesSentry(name: PhotoTelemetryEventName): boolean {
+  return (
+    name === "photo_prepare_failed" ||
+    name === "photo_queue_quota_failed" ||
+    name === "photo_queue_retry" ||
+    name === "photo_thumbnail_failed"
+  );
+}
+
 function defaultPhotoTelemetrySink(event: PhotoTelemetryEvent): void {
   logger.info(event.name, event);
+  if (!photoTelemetryUsesSentry(event.name)) return;
   void import("@sentry/nextjs")
     .then((Sentry) => {
       Sentry.captureMessage(event.name, { level: "info", extra: { ...event } });

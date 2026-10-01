@@ -66,7 +66,7 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
     await expect(dialog).toHaveCount(0);
 
     const captured = await findIntakePhotosByNote(admin, FIXTURE_WORK_ORDER.id, note);
-    expect(captured.length).toBeGreaterThan(0);
+    expect(captured).toHaveLength(1);
     expect(captured[0]?.storage_path).toBeTruthy();
     expect(captured[0]).toHaveProperty("thumb_storage_path");
 
@@ -87,5 +87,7 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
     }
     const leftovers = await findIntakePhotosByNote(admin, FIXTURE_WORK_ORDER.id, note);
     await removeIntakePhotoArtifacts(admin, leftovers); // intake-photos original + thumb
+    const remaining = await findIntakePhotosByNote(admin, FIXTURE_WORK_ORDER.id, note);
+    expect(remaining).toHaveLength(0);
   }
 });

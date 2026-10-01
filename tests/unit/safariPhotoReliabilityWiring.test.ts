@@ -77,8 +77,21 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(ci).toMatch(/TWILIO_AUTH_TOKEN:\s*["']?["']?/);
     expect(ci).toMatch(/RESEND_API_KEY:\s*["']?["']?/);
     expect(ci).toMatch(/playwright install --with-deps chromium webkit/);
-    expect(ci).toMatch(/continue-on-error:\s*true/);
+    expect(ci).toMatch(/TEST_SUPABASE_URL=\$API_URL/);
+    expect(ci).toMatch(/TEST_SUPABASE_SERVICE_ROLE_KEY=\$SERVICE_ROLE_KEY/);
+    expect(ci).not.toMatch(/continue-on-error:\s*true/);
     expect(ci).not.toMatch(/secrets|sample\.heic|photo bytes/i);
     expect(ci).not.toMatch(/actions\/upload-artifact/);
+  });
+
+  it("requires exactly one captured row and zero leftovers after finally cleanup", () => {
+    const spec = source("tests/e2e/safari-photo-reliability.spec.ts");
+    expect(spec).toMatch(/expect\(captured\)\.toHaveLength\(1\)/);
+    expect(spec).toMatch(/assertIntakePhotoRemoved/);
+    expect(spec).toMatch(/finally\s*\{/);
+    expect(spec).toMatch(
+      /findIntakePhotosByNote[\s\S]*removeIntakePhotoArtifacts[\s\S]*toHaveLength\(0\)/
+    );
+    expect(spec).not.toMatch(/captured\.length\)\.toBeGreaterThan\(0\)/);
   });
 });

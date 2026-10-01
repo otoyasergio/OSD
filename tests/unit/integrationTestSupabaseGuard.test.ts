@@ -52,6 +52,8 @@ describe("isolated Supabase integration guard", () => {
     expect(test).toMatch(/CHECKOUT_EVIDENCE_REQUIRED_IMMUTABLE/);
     expect(test).toMatch(/reopen_work_order_for_recommendation_work/);
     expect(test).toMatch(/CHECKOUT_EVIDENCE_OVERRIDE_FORBIDDEN/);
+    expect(test).toMatch(/CHECKOUT_EVIDENCE_NOT_READY/);
+    expect(test).toMatch(/quality_checked_at/);
   });
 
   it("uses a unique unused object path for cross-location storage INSERT", () => {

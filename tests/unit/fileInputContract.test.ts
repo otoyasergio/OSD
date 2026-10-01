@@ -4,12 +4,7 @@ import { join, relative } from "node:path";
 
 const ROOT = process.cwd();
 
-const NON_PHOTO_EXCEPTIONS = new Map<string, string>([
-  [
-    "components/forms/PreparedFileInput.tsx",
-    "shared prepared picker used by profile, customer, and staff documents",
-  ],
-]);
+const NON_PHOTO_EXCEPTIONS = new Map<string, string>();
 
 function walk(directory: string, files: string[] = []): string[] {
   for (const entry of readdirSync(directory)) {
@@ -43,7 +38,18 @@ describe("file input source contract", () => {
       offenders.push(rel);
     }
     expect(offenders).toEqual([]);
-    expect(NON_PHOTO_EXCEPTIONS.size).toBeGreaterThan(0);
+  });
+
+  it("inspects PreparedFileInput itself for in-flow photo-file-input and no click()", () => {
+    const src = readFileSync(
+      join(ROOT, "components/forms/PreparedFileInput.tsx"),
+      "utf8"
+    );
+    expect(src).toMatch(/type=["']file["']/);
+    expect(src).toMatch(/className="photo-file-input"/);
+    expect(src).toMatch(/readPickedUploadFiles/);
+    expect(src).not.toMatch(/\.click\(/);
+    expect(src).not.toMatch(/className="hidden"|sr-only/);
   });
 
   it("keeps evidence surfaces off legacy direct photo upload helpers", () => {

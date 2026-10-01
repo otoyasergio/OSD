@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PHOTO_TELEMETRY_EVENT_NAMES,
   bucketPhotoAge,
   bucketPhotoLatency,
   emitPhotoTelemetry,
+  photoTelemetryUsesSentry,
   resetPhotoTelemetrySink,
   setPhotoTelemetrySink,
   type PhotoTelemetryEvent,
@@ -144,6 +147,19 @@ describe("photo telemetry", () => {
       category: "other",
     });
     expect(leaked(sink.mock.calls)).toEqual([]);
+  });
+
+  it("sends only failure, retry, quota, and thumbnail events to Sentry", () => {
+    expect(photoTelemetryUsesSentry("photo_prepare_failed")).toBe(true);
+    expect(photoTelemetryUsesSentry("photo_queue_quota_failed")).toBe(true);
+    expect(photoTelemetryUsesSentry("photo_queue_retry")).toBe(true);
+    expect(photoTelemetryUsesSentry("photo_thumbnail_failed")).toBe(true);
+    expect(photoTelemetryUsesSentry("photo_upload_confirmed")).toBe(false);
+    expect(photoTelemetryUsesSentry("photo_queue_resumed")).toBe(false);
+    expect(photoTelemetryUsesSentry("photo_reconciliation_summary")).toBe(false);
+    const source = readFileSync(join(process.cwd(), "lib/photos/telemetry.ts"), "utf8");
+    expect(source).toMatch(/photoTelemetryUsesSentry/);
+    expect(source).toMatch(/Sentry\.captureMessage/);
   });
 
   it("swallows sink throw and rejection so callers keep working", async () => {

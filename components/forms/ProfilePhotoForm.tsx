@@ -5,6 +5,7 @@ import type { ProfilePhotoFormState } from "@/app/account/actions";
 import { FormError } from "@/components/forms/Field";
 import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { IMAGE_ACCEPT } from "@/lib/forms/photoSourceInputs";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 
 type Action = (
@@ -79,7 +80,7 @@ export function ProfilePhotoForm({
         <PreparedFileInput
           id="profile-photo"
           name="file"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+          accept={IMAGE_ACCEPT}
           required
           surface="profile"
           onPreparingChange={setPreparing}

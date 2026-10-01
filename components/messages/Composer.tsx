@@ -7,6 +7,7 @@ import {
   uploadVoiceNoteAction,
 } from "@/app/(app)/messages/actions";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import { IMAGE_ACCEPT } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 type Props = {
@@ -125,7 +126,7 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
           <input
             id={photoInputId}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            accept={IMAGE_ACCEPT}
             className="photo-file-input"
             disabled={pending}
             onChange={onFileChange}

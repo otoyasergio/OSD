@@ -58,7 +58,6 @@ jobs:
     name: Integration (isolated Supabase)
     runs-on: ubuntu-latest
     needs: quality
-    continue-on-error: true
     timeout-minutes: 45
 
     steps:

@@ -77,7 +77,12 @@ For Supabase:
 npx supabase migration list
 npx supabase test db
 npm run test:integration
+node scripts/check-photo-schema.mjs
 ```
+
+`check-photo-schema.mjs` is read-only: it uses the configured
+`NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to fetch PostgREST
+OpenAPI and confirm required photo columns/RPC exist. It never prints secrets.
 
 Run those against an isolated or explicitly selected project. Review the
 Supabase Security and Performance Advisors after every DDL change.
@@ -118,10 +123,19 @@ only from `main`.
    migrations first. Then set `PHOTO_UPLOAD_QUEUE_ENABLED=1` (durable queue
    first). Only after shop-device acceptance, set
    `CHECKOUT_EVIDENCE_ENABLED=1`.
-10. Deploy current `main` with `npm run deploy:production`. Never deploy
+10. Deploy current `main` with `npm run deploy:production`. That script runs
+    the `scripts/guard-prod-deploy.mjs` main-branch guard first, then the read-only `scripts/check-photo-schema.mjs`
+    gate (PostgREST OpenAPI for `intake_photo`, `work_order`, and
+    `/rpc/create_intake_photo_with_event`) before Vercel. Never deploy
     production from a feature branch.
 11. Re-run health, logs, advisors, smoke checks, and a read-only
     reconciliation report.
+
+Isolated CI (`npm run test:integration` plus stateful Safari) is required.
+Those jobs export `TEST_SUPABASE_*` from the disposable stack and **failures
+block** the pull request. Local developers may skip them when
+`TEST_SUPABASE_URL` is unset. Keep the isolated integration/Safari job
+required so a configured failure cannot merge.
 
 Do not apply production migrations or deploy production from a feature branch.
 

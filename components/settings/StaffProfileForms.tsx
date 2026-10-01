@@ -14,6 +14,7 @@ import {
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
 import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/forms/photoSourceInputs";
 
 type Action = (state: StaffFormState, formData: FormData) => Promise<StaffFormState>;
 
@@ -266,7 +267,7 @@ export function StaffProfileForms({
               id="staff-document-file"
               name="file"
               required
-              accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+              accept={DOCUMENT_FILE_ACCEPT}
               surface="staff_documents"
               onPreparingChange={setPreparing}
             />

@@ -7,6 +7,8 @@ const REQUIRED_MIGRATIONS = [
   "checkout_evidence_pickup_gates.sql",
   "checkout_evidence_review_fixes.sql",
   "intake_photo_evidence_storage_policies.sql",
+  "checkout_photo_insert_ready_gate.sql",
+  "intake_photo_rpc_checkout_labels.sql",
 ];
 
 describe("Safari photo schema and generated types", () => {

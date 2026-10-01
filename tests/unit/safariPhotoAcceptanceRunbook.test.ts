@@ -63,5 +63,16 @@ describe("Safari real-device acceptance runbook", () => {
     expect(health).toMatch(/migration/i);
     expect(health).toMatch(/reconcile|reconciliation/i);
     expect(health).toMatch(/deploy:production|main only/i);
+    expect(health).toMatch(/check-photo-schema/);
+    expect(health).toMatch(/OpenAPI|intake_photo|create_intake_photo_with_event/);
+    expect(health).toMatch(/guard-prod-deploy|main branch guard|after the main/i);
+  });
+
+  it("documents that isolated integration and stateful Safari failures block CI", () => {
+    const health = source("docs/ops/platform-health.md");
+    expect(health).not.toMatch(/continue-on-error:\s*true/);
+    expect(health).toMatch(/isolated.*(?:block|required|must pass)|failures? block/i);
+    const ci = source(".github/workflows/ci.yml");
+    expect(ci).not.toMatch(/continue-on-error:\s*true/);
   });
 });

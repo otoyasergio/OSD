@@ -13,7 +13,8 @@ describe("secondary pickers use the shared iOS-safe prepared input", () => {
     expect(src).toMatch(/UNREADABLE_PHOTO_MESSAGE/);
     expect(src).toMatch(/htmlFor=/);
     expect(src).toMatch(/photo-file-input/);
-    expect(src).toMatch(/image\/heic/);
+    expect(src).toMatch(/IMAGE_ACCEPT/);
+    expect(src).not.toMatch(/accept="image\/jpeg/);
     expect(src).toMatch(/className="relative"/);
     expect(src).toMatch(/disabled=\{pending\}/);
     expect(src).toMatch(/aria-disabled=\{pending\}/);
@@ -25,8 +26,8 @@ describe("secondary pickers use the shared iOS-safe prepared input", () => {
   it("ProfilePhotoForm accepts HEIC and prepares through PreparedFileInput before the form action", () => {
     const src = source("components/forms/ProfilePhotoForm.tsx");
     expect(src).toMatch(/PreparedFileInput/);
-    expect(src).toMatch(/image\/heic/);
-    expect(src).toMatch(/image\/heif/);
+    expect(src).toMatch(/IMAGE_ACCEPT/);
+    expect(src).not.toMatch(/accept="image\/jpeg/);
     expect(src).toMatch(/name="file"|name=\{"file"\}/);
     expect(src).toMatch(/onPreparingChange/);
     expect(src).toMatch(/disabled=\{preparing\}/);
@@ -39,8 +40,7 @@ describe("secondary pickers use the shared iOS-safe prepared input", () => {
     expect(src).toMatch(
       /PreparedFileInput|readPickedUploadFiles|preparePickedFileForUpload/
     );
-    expect(src).toMatch(/image\/heic/);
-    expect(src).toMatch(/application\/pdf/);
+    expect(src).toMatch(/DOCUMENT_FILE_ACCEPT|application\/pdf,\$\{IMAGE_ACCEPT\}/);
     expect(src).toMatch(/photo-file-input|PreparedFileInput/);
     expect(src).toMatch(/onPreparingChange/);
     expect(src).toMatch(/setPreparedFile\(null\)|setFile\(null\)/);
@@ -52,8 +52,7 @@ describe("secondary pickers use the shared iOS-safe prepared input", () => {
   it("StaffProfileForms uses the shared prepared picker for PDF and HEIC images", () => {
     const src = source("components/settings/StaffProfileForms.tsx");
     expect(src).toMatch(/PreparedFileInput/);
-    expect(src).toMatch(/image\/heic/);
-    expect(src).toMatch(/application\/pdf/);
+    expect(src).toMatch(/DOCUMENT_FILE_ACCEPT|application\/pdf,\$\{IMAGE_ACCEPT\}/);
     expect(src).toMatch(/name="file"|name=\{"file"\}/);
     expect(src).toMatch(/onPreparingChange/);
     expect(src).toMatch(/disabled=\{preparing\}/);

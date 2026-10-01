@@ -11,6 +11,7 @@ import {
 import { FormError } from "@/components/forms/Field";
 import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
 import { formatDate } from "@/lib/datetime/format";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/forms/photoSourceInputs";
 
 function sourceLabel(source: CustomerDocument["source"]) {
   return source === "drop_off_agreement" ? "Drop-off agreement" : "Upload";
@@ -169,7 +170,7 @@ export function CustomerDocuments({
               id={fileInputId}
               name="file"
               required
-              accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+              accept={DOCUMENT_FILE_ACCEPT}
               surface="customer_documents"
               disabled={pending}
               onPreparingChange={(next) => {
