@@ -38,7 +38,7 @@ describe("stateful Safari photo reliability wiring", () => {
     const provider = source("components/photos/PhotoUploadQueueProvider.tsx");
     expect(provider).toMatch(/e2ePhotoQueueHook/);
     expect(provider).toMatch(/__otomotoPhotoQueue/);
-    expect(provider).toMatch(/preparePhotoFileForUpload/);
+    expect(provider).toMatch(/prepareQueuedPhotoFromBytes/);
     expect(provider).toMatch(/atob\(/);
     const prepare = source("lib/forms/preparePhotoFileForUpload.ts");
     expect(prepare).toMatch(/isBrowserOffline/);

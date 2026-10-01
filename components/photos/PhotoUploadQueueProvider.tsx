@@ -11,7 +11,6 @@ import {
   type ReactNode,
 } from "react";
 import { isBrowserOnline } from "@/lib/forms/browserOnline";
-import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import { uploadAssistantPhotoAction } from "@/app/(app)/work_orders/assistant-actions";
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { enqueuePhotoUpload } from "@/lib/photos/uploadQueue/enqueue";
@@ -21,6 +20,7 @@ import {
   newestIncompleteIntakeDraft,
   photoUploadQueueCounts,
   prepareQueuedPhoto,
+  prepareQueuedPhotoFromBytes,
 } from "@/lib/photos/uploadQueue/prepareQueuedPhoto";
 import { PhotoUploadQueueRunner } from "@/lib/photos/uploadQueue/runner";
 import {
@@ -549,19 +549,27 @@ export function PhotoUploadQueueProvider({
         if (bytes.byteLength === 0) {
           throw new Error("E2E HEIC payload was empty");
         }
-        const blob = new Blob([bytes], { type: "image/heic" });
-        const file = new File([blob], payload.name, { type: "image/heic" });
-        if (file.size === 0) {
-          throw new Error("E2E HEIC File was empty after decode");
-        }
-        const prepared = await preparePhotoFileForUpload(file);
-        return enqueue({
-          file: prepared,
+        const prepared = prepareQueuedPhotoFromBytes({
+          bytes,
+          fileName: payload.name,
+          mimeType: "image/heic",
+          userId: scope.userId,
+          locationId: scope.locationId,
           category: payload.category,
           workOrderId: payload.workOrderId,
           notes: payload.notes,
+          now: readNow(),
+        });
+        const queued = await enqueuePhotoUpload({
+          store,
+          scope,
+          item: prepared,
+          now: readNow(),
           surface: "photos_tab",
         });
+        await refreshItems();
+        if (queued.workOrderId) await runnerRef.current?.wake();
+        return queued;
       },
       isOnline: isOnlineFn,
     };
@@ -571,7 +579,7 @@ export function PhotoUploadQueueProvider({
       delete (window as Window & { __otomotoPhotoQueue?: E2ePhotoQueueHook })
         .__otomotoPhotoQueue;
     };
-  }, [e2ePhotoQueueHook, enqueue, isOnlineFn, onlineTick]);
+  }, [e2ePhotoQueueHook, isOnlineFn, onlineTick, readNow, refreshItems, scope, store]);
 
   const api = useMemo<PhotoUploadQueueApi>(
     () => ({
