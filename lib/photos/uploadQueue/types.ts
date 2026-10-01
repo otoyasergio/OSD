@@ -33,6 +33,11 @@ type QueuedPhotoUploadFields = {
   pixelHeight?: number;
   byteCount: number;
   status: PhotoUploadStatus;
+  /**
+   * Number of uploader failures durably settled in IndexedDB. Claiming or
+   * starting an upload does not increment this count; interrupted work is
+   * replayed and therefore requires Task 2 server idempotency by clientUploadId.
+   */
   attemptCount: number;
   retryAt: number | null;
   lastError: string | null;

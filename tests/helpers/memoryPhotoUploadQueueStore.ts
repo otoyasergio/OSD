@@ -1,8 +1,10 @@
 import {
   type AcquiredPhotoUploadClaim,
+  createPhotoUploadFailureSettlement,
   DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
   type PhotoUploadClaim,
-  type PhotoUploadFailureSettlement,
+  type PhotoUploadFailureOutcome,
+  type PhotoUploadRetryPolicy,
   PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
@@ -192,7 +194,6 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
 
     const priorEligibility = {
       status: item.status,
-      attemptCount: item.attemptCount,
       retryAt: item.retryAt,
       lastError: item.lastError,
     };
@@ -200,7 +201,6 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     const claimedItem: QueuedPhotoUpload = {
       ...item,
       status: "uploading",
-      attemptCount: item.attemptCount + 1,
       retryAt: null,
       lastError: null,
       updatedAt: now,
@@ -259,8 +259,7 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
       claim.item.leaseOwner !== owner ||
       claim.item.leaseExpiresAt !== claim.expiresAt ||
       claim.item.uploadSlotOwner !== owner ||
-      claim.item.uploadSlotExpiresAt !== claim.expiresAt ||
-      claim.item.attemptCount !== claim.priorEligibility.attemptCount + 1
+      claim.item.uploadSlotExpiresAt !== claim.expiresAt
     ) {
       return false;
     }
@@ -312,7 +311,8 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     scope: PhotoUploadScope,
     owner: string,
     now: number,
-    settlement: PhotoUploadFailureSettlement
+    outcome: PhotoUploadFailureOutcome,
+    policy: PhotoUploadRetryPolicy
   ): Promise<QueuedPhotoUpload | null> {
     const item = this.database.items.get(queueId);
     if (
@@ -323,6 +323,12 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     ) {
       return null;
     }
+    const settlement = createPhotoUploadFailureSettlement(
+      item.attemptCount,
+      outcome,
+      now,
+      policy
+    );
     assertPhotoUploadTransition(item.status, settlement.status);
     const updated: QueuedPhotoUpload = {
       ...item,

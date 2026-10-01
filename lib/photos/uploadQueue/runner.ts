@@ -1,8 +1,9 @@
 import {
   type AcquiredPhotoUploadClaim,
   DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
-  type PhotoUploadFailureSettlement,
+  type PhotoUploadFailureOutcome,
   type PhotoUploadQueueStore,
+  type PhotoUploadRetryPolicy,
 } from "./store";
 import type { PhotoUploadOutcome, PhotoUploadScope, QueuedPhotoUpload } from "./types";
 
@@ -300,6 +301,9 @@ export class PhotoUploadQueueRunner {
 
       let outcome: PhotoUploadOutcome;
       try {
+        // A crash after this point may replay the upload. Only a durably
+        // settled failed outcome increments attemptCount; Task 2 must make
+        // clientUploadId idempotent on the server.
         claim.uploaderStarted = true;
         const uploaded = await this.invokeUploader(uploading, claim);
         if (uploaded === null) return;
@@ -328,20 +332,7 @@ export class PhotoUploadQueueRunner {
       }
 
       if (!outcome.ok) {
-        const failed = !outcome.retryable || uploading.attemptCount >= this.maxAttempts;
-        const retryDelay = Math.min(
-          (this.options.baseRetryDelayMs ?? 1_000) *
-            2 ** Math.max(0, uploading.attemptCount - 1),
-          this.options.maxRetryDelayMs ?? 60_000
-        );
-        const settlementNow = this.options.now();
-        const settlement: PhotoUploadFailureSettlement = {
-          status: failed ? "failed" : "retry_wait",
-          retryAt: failed ? null : settlementNow + retryDelay,
-          lastError: outcome.message,
-          updatedAt: settlementNow,
-        };
-        await this.persistFailedOutcome(uploading, claim, settlement);
+        await this.persistFailedOutcome(uploading, claim, outcome);
         return;
       }
 
@@ -490,42 +481,37 @@ export class PhotoUploadQueueRunner {
   private async persistFailedOutcome(
     uploading: QueuedPhotoUpload,
     claim: ActiveUploadClaim,
-    settlement: PhotoUploadFailureSettlement
+    outcome: PhotoUploadFailureOutcome
   ): Promise<void> {
-    try {
-      const updated = await this.options.store.updateClaimed(
+    const policy: PhotoUploadRetryPolicy = {
+      maxAttempts: this.maxAttempts,
+      baseRetryDelayMs: this.options.baseRetryDelayMs ?? 1_000,
+      maxRetryDelayMs: this.options.maxRetryDelayMs ?? 60_000,
+    };
+    const settle = (): Promise<QueuedPhotoUpload | null> =>
+      this.options.store.settleClaimedFailure(
         uploading.queueId,
         this.options.scope,
         this.options.ownerId,
         this.options.now(),
-        settlement,
-        true
+        outcome,
+        policy
       );
-      if (updated) {
-        claim.ownsClaim = false;
-      } else {
-        this.recoverLostClaim(claim);
-      }
-      return;
+    let settled: QueuedPhotoUpload | null;
+    try {
+      settled = await settle();
     } catch {
-      // Retry the known outcome through the dedicated atomic fallback below.
-    }
-
-    try {
-      const settled = await this.options.store.settleClaimedFailure(
-        uploading.queueId,
-        this.options.scope,
-        this.options.ownerId,
-        this.options.now(),
-        settlement
-      );
-      if (settled) {
-        claim.ownsClaim = false;
-      } else {
+      try {
+        settled = await settle();
+      } catch (cause) {
+        this.reportError("upload_settlement", cause);
         this.recoverLostClaim(claim);
+        return;
       }
-    } catch (cause) {
-      this.reportError("upload_settlement", cause);
+    }
+    if (settled) {
+      claim.ownsClaim = false;
+    } else {
       this.recoverLostClaim(claim);
     }
   }
