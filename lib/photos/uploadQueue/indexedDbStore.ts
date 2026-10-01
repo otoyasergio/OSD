@@ -94,15 +94,15 @@ function wrapDatabase(
           uploads
             .index(PHOTO_UPLOAD_SCOPE_INDEX)
             .getAll([scope.userId, scope.locationId]),
-        put: (item) => uploads.put(item),
-        delete: (queueId) => uploads.delete(queueId),
+        put: (item) => uploads.put!(item),
+        delete: (queueId) => uploads.delete!(queueId),
         getConfirmation: (queueId) => confirmations.get(queueId),
         listConfirmationsByScope: (scope) =>
           confirmations
             .index(PHOTO_UPLOAD_SCOPE_INDEX)
             .getAll([scope.userId, scope.locationId]),
-        putConfirmation: (receipt) => confirmations.put(receipt),
-        deleteConfirmation: (queueId) => confirmations.delete(queueId),
+        putConfirmation: (receipt) => confirmations.put!(receipt),
+        deleteConfirmation: (queueId) => confirmations.delete!(queueId),
         done: transaction.done,
       };
     },
