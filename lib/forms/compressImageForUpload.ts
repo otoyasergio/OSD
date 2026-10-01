@@ -55,6 +55,10 @@ export const DOCUMENT_IMAGE_COMPRESS: Required<CompressImageOptions> = {
  * Defaults keep bike photos large enough to inspect VIN, scratches, and
  * fasteners when opened full-screen.
  */
+function isNavigatorOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
 export async function compressImageForUpload(
   file: File,
   options: CompressImageOptions = {}
@@ -70,10 +74,14 @@ export async function compressImageForUpload(
   if (file.size <= resolved.maxBytes && file.type === "image/jpeg") return file;
 
   let fitted: FittedImage | null = null;
-  try {
-    fitted = await compressInWorker(file, resolved);
-  } catch {
-    fitted = null;
+  // Offline, `new Worker(url)` hangs waiting for a chunk that cannot load.
+  // Persist/queue the original (or main-thread JPEG) instead of waiting 45s.
+  if (!isNavigatorOffline()) {
+    try {
+      fitted = await compressInWorker(file, resolved);
+    } catch {
+      fitted = null;
+    }
   }
   if (!fitted) fitted = await compressOnMainThread(file, resolved);
   if (!fitted) return file;

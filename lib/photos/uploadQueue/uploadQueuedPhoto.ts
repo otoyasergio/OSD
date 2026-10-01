@@ -1,3 +1,4 @@
+import { compressImageForUpload } from "@/lib/forms/compressImageForUpload";
 import { isRetryablePhotoUploadFailure } from "@/lib/forms/photoUploadErrors";
 import type { PhotoUploadOutcome, QueuedPhotoUpload } from "./types";
 
@@ -63,7 +64,7 @@ export async function uploadQueuedPhoto(
     return failure("This photo is not attached to a work order yet.");
   }
 
-  const file = fileFromQueuedPhoto(item);
+  const file = await compressImageForUpload(fileFromQueuedPhoto(item));
   const form = new FormData();
   form.set("file", file);
   form.set("client_upload_id", item.clientUploadId);

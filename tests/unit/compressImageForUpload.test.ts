@@ -254,6 +254,23 @@ describe("compressImageForUpload in a browser with Web Workers", () => {
     expect(typeof document).toBe("undefined");
   });
 
+  it("does not spawn a worker while the browser is offline", async () => {
+    const spawned = installAutoWorker(({ id }) => ({
+      id,
+      ok: true,
+      blob: new Blob([new Uint8Array(10)], { type: "image/jpeg" }),
+      width: 1,
+      height: 1,
+      quality: 0.9,
+    }));
+    vi.stubGlobal("navigator", { onLine: false });
+
+    const result = await compressImageForUpload(heic);
+
+    expect(spawned).toHaveLength(0);
+    expect(result).toBe(heic);
+  });
+
   it("skips the worker entirely for JPEGs that already fit", async () => {
     const spawned = installAutoWorker(() => null);
     const small = new File([new Uint8Array(1000)], "ok.jpg", { type: "image/jpeg" });
