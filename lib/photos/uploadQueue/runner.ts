@@ -7,7 +7,7 @@ export type PhotoUploadQueueTimer = {
 };
 
 export type PhotoUploadQueueWakeSource =
-  "online" | "pageshow" | "visibilitychange" | "retry_timer";
+  "online" | "pageshow" | "visibilitychange" | "retry_timer" | "claim_expiry";
 
 export class PhotoUploadQueueRunnerError extends Error {
   readonly name = "PhotoUploadQueueRunnerError";
@@ -247,7 +247,7 @@ export class PhotoUploadQueueRunner {
     claim: ActiveUploadClaim
   ): Promise<void> {
     if (this.options.now() >= claim.expiresAt) {
-      this.loseClaim(claim);
+      this.expireClaim(claim);
       return;
     }
     this.scheduleClaimRenewal(
@@ -262,7 +262,9 @@ export class PhotoUploadQueueRunner {
 
       let outcome: PhotoUploadOutcome;
       try {
-        outcome = await this.options.uploader(uploading, claim.abortController.signal);
+        const uploaded = await this.invokeUploader(uploading, claim);
+        if (uploaded === null) return;
+        outcome = uploaded;
       } catch (error) {
         if (
           claim.abortController.signal.aborted ||
@@ -320,6 +322,24 @@ export class PhotoUploadQueueRunner {
     }
   }
 
+  private async invokeUploader(
+    uploading: QueuedPhotoUpload,
+    claim: ActiveUploadClaim
+  ): Promise<PhotoUploadOutcome | null> {
+    const signal = claim.abortController.signal;
+    let handleAbort = (): void => {};
+    const aborted = new Promise<null>((resolve) => {
+      handleAbort = () => resolve(null);
+      signal.addEventListener("abort", handleAbort, { once: true });
+      if (signal.aborted) handleAbort();
+    });
+    try {
+      return await Promise.race([this.options.uploader(uploading, signal), aborted]);
+    } finally {
+      signal.removeEventListener("abort", handleAbort);
+    }
+  }
+
   private scheduleClaimRenewal(claim: ActiveUploadClaim, delayMs: number): void {
     if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
     this.clearClaimRenewal(claim);
@@ -342,7 +362,7 @@ export class PhotoUploadQueueRunner {
         claim.expiryTimer = null;
         if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
         if (this.options.now() >= claim.expiresAt) {
-          this.loseClaim(claim);
+          this.expireClaim(claim);
         } else {
           this.scheduleClaimExpiry(claim);
         }
@@ -355,7 +375,7 @@ export class PhotoUploadQueueRunner {
     if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
     const now = this.options.now();
     if (now >= claim.expiresAt) {
-      this.loseClaim(claim);
+      this.expireClaim(claim);
       return;
     }
     const ttlMs = this.options.leaseTtlMs ?? 30_000;
@@ -374,7 +394,7 @@ export class PhotoUploadQueueRunner {
       }
       claim.expiresAt = renewedClaim.expiresAt;
       if (claim.expiresAt <= this.options.now()) {
-        this.loseClaim(claim);
+        this.expireClaim(claim);
         return;
       }
       this.scheduleClaimExpiry(claim);
@@ -386,7 +406,7 @@ export class PhotoUploadQueueRunner {
       if (!this.isCurrent(claim.generation) || !claim.ownsClaim) return;
       const remainingMs = claim.expiresAt - this.options.now();
       if (remainingMs <= 0) {
-        this.loseClaim(claim);
+        this.expireClaim(claim);
         return;
       }
       this.scheduleClaimRenewal(
@@ -397,6 +417,11 @@ export class PhotoUploadQueueRunner {
         )
       );
     }
+  }
+
+  private expireClaim(claim: ActiveUploadClaim): void {
+    this.loseClaim(claim);
+    this.requestWake("claim_expiry");
   }
 
   private loseClaim(claim: ActiveUploadClaim): void {

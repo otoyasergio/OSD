@@ -1589,6 +1589,177 @@ describe("PhotoUploadQueueRunner", () => {
     await runner.stop();
   });
 
+  it("recovers a final attempt after watchdog expiry without an external wake", async () => {
+    const renewalStarted = deferred();
+    const releaseRenewal = deferred();
+    class ObservedRecoveryStore extends MemoryPhotoUploadQueueStore {
+      recoveredItems = 0;
+
+      override async renewUploadClaim(): Promise<PhotoUploadClaim | null> {
+        renewalStarted.resolve();
+        await releaseRenewal.promise;
+        return null;
+      }
+
+      override async recoverInterrupted(
+        scope: PhotoUploadScope,
+        now: number,
+        maxAttempts?: number
+      ): Promise<number> {
+        const recovered = await super.recoverInterrupted(scope, now, maxAttempts);
+        this.recoveredItems += recovered;
+        return recovered;
+      }
+    }
+    const store = new ObservedRecoveryStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const timer = new ManualClockTimer();
+    const staleUpload = deferred<{ ok: true; photoId: string }>();
+    let staleSignal: AbortSignal | undefined;
+    const uploader = vi.fn((_item: QueuedPhotoUpload, signal: AbortSignal) => {
+      staleSignal = signal;
+      return staleUpload.promise;
+    });
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      leaseTtlMs: 1_000,
+      maxAttempts: 1,
+    });
+
+    const running = runner.start();
+    try {
+      await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(1));
+      timer.advanceBy(500);
+      await renewalStarted.promise;
+      timer.advanceBy(500);
+
+      await vi.waitFor(async () => {
+        expect(await store.get("queue-1", SCOPE)).toMatchObject({
+          status: "failed",
+          attemptCount: 1,
+          lastError: PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
+          leaseOwner: null,
+          uploadSlotOwner: null,
+        });
+      });
+      expect(staleSignal?.aborted).toBe(true);
+      expect(store.recoveredItems).toBe(1);
+      expect(uploader).toHaveBeenCalledTimes(1);
+      expect(timer.nextDelay).toBeNull();
+
+      staleUpload.resolve({ ok: true, photoId: "stale-photo" });
+      await Promise.resolve();
+      await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+        status: "failed",
+        lastError: PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
+      });
+    } finally {
+      staleUpload.resolve({ ok: true, photoId: "stale-photo" });
+      releaseRenewal.resolve();
+      await runner.stop();
+      await running;
+    }
+  });
+
+  it("requeues and resumes a non-final attempt after watchdog expiry", async () => {
+    const renewalStarted = deferred();
+    const releaseRenewal = deferred();
+    class ObservedRecoveryStore extends MemoryPhotoUploadQueueStore {
+      recoveredItems = 0;
+      recoveredStatuses: string[] = [];
+
+      override async renewUploadClaim(): Promise<PhotoUploadClaim | null> {
+        renewalStarted.resolve();
+        await releaseRenewal.promise;
+        return null;
+      }
+
+      override async recoverInterrupted(
+        scope: PhotoUploadScope,
+        now: number,
+        maxAttempts?: number
+      ): Promise<number> {
+        const recovered = await super.recoverInterrupted(scope, now, maxAttempts);
+        if (recovered > 0) {
+          this.recoveredItems += recovered;
+          const item = await this.get("queue-1", scope);
+          if (item) this.recoveredStatuses.push(item.status);
+        }
+        return recovered;
+      }
+    }
+    const store = new ObservedRecoveryStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const timer = new ManualClockTimer();
+    const staleUpload = deferred<{ ok: true; photoId: string }>();
+    const resumedUpload = deferred<{ ok: true; photoId: string }>();
+    let staleSignal: AbortSignal | undefined;
+    const uploader = vi
+      .fn()
+      .mockImplementationOnce((_item: QueuedPhotoUpload, signal: AbortSignal) => {
+        staleSignal = signal;
+        return staleUpload.promise;
+      })
+      .mockImplementationOnce(() => resumedUpload.promise);
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      leaseTtlMs: 1_000,
+      maxAttempts: 2,
+    });
+
+    const running = runner.start();
+    try {
+      await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(1));
+      timer.advanceBy(500);
+      await renewalStarted.promise;
+      timer.advanceBy(500);
+
+      await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(2));
+      expect(staleSignal?.aborted).toBe(true);
+      expect(store.recoveredItems).toBe(1);
+      expect(store.recoveredStatuses).toEqual(["queued"]);
+      await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+        status: "uploading",
+        attemptCount: 2,
+        leaseOwner: "runner-a",
+      });
+
+      staleUpload.resolve({ ok: true, photoId: "stale-photo" });
+      await Promise.resolve();
+      await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+        status: "uploading",
+        attemptCount: 2,
+      });
+
+      resumedUpload.resolve({ ok: true, photoId: "resumed-photo" });
+      await running;
+      await expect(store.get("queue-1", SCOPE)).resolves.toBeNull();
+      expect(uploader).toHaveBeenCalledTimes(2);
+    } finally {
+      staleUpload.resolve({ ok: true, photoId: "stale-photo" });
+      resumedUpload.resolve({ ok: true, photoId: "resumed-photo" });
+      releaseRenewal.resolve();
+      await runner.stop();
+      await running;
+    }
+  });
+
   it("retries a transient lease-renewal error before ownership expires", async () => {
     class FlakyRenewalStore extends MemoryPhotoUploadQueueStore {
       claimCalls = 0;
