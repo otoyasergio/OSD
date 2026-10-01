@@ -8,6 +8,8 @@ import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
+import { checkoutEvidenceOverridden } from "@/lib/status/checkoutEvidence";
+import { loadCommittedCheckoutCoverage } from "@/lib/services/checkoutEvidence";
 
 export type DeriveJobInput = {
   status: JobStatus | string;
@@ -31,6 +33,9 @@ export type DeriveWorkOrderStatusInput = {
   /** When true, visit must pass Head Tech safety after QC. */
   safetyRequired?: boolean;
   safetyCheckComplete?: boolean;
+  checkoutEvidenceRequired?: boolean;
+  checkoutEvidenceComplete?: boolean;
+  checkoutEvidenceOverridden?: boolean;
 };
 
 function isActiveJob(status: string) {
@@ -68,6 +73,9 @@ export function deriveWorkOrderStatus(
     hasSignedAgreement,
     safetyRequired = false,
     safetyCheckComplete = false,
+    checkoutEvidenceRequired = false,
+    checkoutEvidenceComplete = false,
+    checkoutEvidenceOverridden = false,
   } = input;
 
   if (
@@ -109,6 +117,13 @@ export function deriveWorkOrderStatus(
     if (safetyRequired && !safetyCheckComplete) {
       return "safety_check";
     }
+    if (
+      checkoutEvidenceRequired &&
+      !checkoutEvidenceComplete &&
+      !checkoutEvidenceOverridden
+    ) {
+      return safetyRequired ? "safety_check" : "quality_check";
+    }
     return "ready_for_pickup";
   }
 
@@ -147,7 +162,7 @@ export async function recalculateWorkOrderStatus(
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
     .select(
-      "work_order_id, status, location_id, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived"
+      "work_order_id, status, location_id, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived, checkout_evidence_required, checkout_evidence_override_at, checkout_evidence_override_by_user_id, checkout_evidence_override_reason"
     )
     .eq("work_order_id", workOrderId)
     .single();
@@ -197,6 +212,7 @@ export async function recalculateWorkOrderStatus(
     jobs: jobs ?? [],
   });
 
+  const checkoutCoverage = await loadCommittedCheckoutCoverage(supabase, workOrderId);
   const nextStatus = deriveWorkOrderStatus({
     currentStatus: workOrder.status,
     jobs: jobs ?? [],
@@ -210,6 +226,9 @@ export async function recalculateWorkOrderStatus(
     safetyCheckComplete: Boolean(
       workOrder.safety_checked_at || workOrder.safety_checked_by_user_id
     ),
+    checkoutEvidenceRequired: Boolean(workOrder.checkout_evidence_required),
+    checkoutEvidenceComplete: checkoutCoverage.complete,
+    checkoutEvidenceOverridden: checkoutEvidenceOverridden(workOrder),
   });
 
   if (nextStatus === workOrder.status) {

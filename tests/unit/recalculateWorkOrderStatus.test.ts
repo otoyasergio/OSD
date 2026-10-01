@@ -222,6 +222,66 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("ready_for_pickup");
   });
 
+  it("stays in the final pre-ready status when checkout evidence is required and incomplete", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "quality_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+        checkoutEvidenceOverridden: false,
+      })
+    ).toBe("quality_check");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: true,
+        safetyCheckComplete: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+        checkoutEvidenceOverridden: false,
+      })
+    ).toBe("safety_check");
+  });
+
+  it("derives ready_for_pickup when checkout evidence is complete or overridden", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "quality_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: true,
+        checkoutEvidenceOverridden: false,
+      })
+    ).toBe("ready_for_pickup");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: true,
+        safetyCheckComplete: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+        checkoutEvidenceOverridden: true,
+      })
+    ).toBe("ready_for_pickup");
+  });
+
   it("sets ready_for_technician when all jobs approved and contract signed", () => {
     expect(
       deriveWorkOrderStatus({

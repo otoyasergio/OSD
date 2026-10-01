@@ -55,6 +55,10 @@ export type Database = {
           created_at: string;
           completed_at: string | null;
           opened_at: string | null;
+          checkout_evidence_required: boolean;
+          checkout_evidence_override_at: string | null;
+          checkout_evidence_override_by_user_id: string | null;
+          checkout_evidence_override_reason: string | null;
         };
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;

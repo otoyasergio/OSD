@@ -7,6 +7,10 @@ import { TimelineEventType } from "@/lib/timeline/events";
 import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import {
+  checkoutPickupGateInput,
+  loadCheckoutEvidenceState,
+} from "@/lib/services/checkoutEvidence";
+import {
   canDropInColumn,
   getTargetStatusForColumn,
   isPickupBoardColumn,
@@ -23,6 +27,10 @@ type WorkOrderRow = {
   safety_checked_by_user_id: string | null;
   safety_required: boolean | null;
   safety_waived: boolean;
+  checkout_evidence_required: boolean;
+  checkout_evidence_override_at: string | null;
+  checkout_evidence_override_by_user_id: string | null;
+  checkout_evidence_override_reason: string | null;
 };
 
 async function loadWorkOrder(
@@ -32,7 +40,7 @@ async function loadWorkOrder(
   const { data, error } = await supabase
     .from("work_order")
     .select(
-      "work_order_id, location_id, status, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived"
+      "work_order_id, location_id, status, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived, checkout_evidence_required, checkout_evidence_override_at, checkout_evidence_override_by_user_id, checkout_evidence_override_reason"
     )
     .eq("work_order_id", workOrderId)
     .maybeSingle();
@@ -119,6 +127,7 @@ export async function moveWorkOrderOnBoard(
     ]);
     if (safetyJobsError) throw safetyJobsError;
     if (inspectionError) throw inspectionError;
+    const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
     const blocked = pickupLeaveBlockReason({
       inspectionComplete: Boolean(inspection?.completed_at),
       qualityChecked: Boolean(
@@ -132,6 +141,7 @@ export async function moveWorkOrderOnBoard(
       safetyChecked: Boolean(
         workOrder.safety_checked_at || workOrder.safety_checked_by_user_id
       ),
+      ...checkoutPickupGateInput(checkout),
     });
     if (blocked) throw new Error(blocked);
   }

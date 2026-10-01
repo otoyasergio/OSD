@@ -17,6 +17,12 @@ describe("toFormErrorMessage", () => {
     );
   });
 
+  it("maps checkout evidence leave gate", () => {
+    expect(toFormErrorMessage(new Error("CHECKOUT_EVIDENCE_REQUIRED"))).toBe(
+      "Add the five checkout photos, or have an owner or manager record an emergency override, before the bike can leave."
+    );
+  });
+
   it("maps signature required", () => {
     expect(toFormErrorMessage(new Error("SIGNATURE_REQUIRED"))).toBe(
       "Draw your signature before submitting."

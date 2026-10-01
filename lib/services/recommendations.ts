@@ -1207,6 +1207,9 @@ export async function clearFinishedStampsForNewRecommendationWork(
       safety_checked_by_user_id: null,
       safety_check_notes: null,
       ready_for_pickup_at: null,
+      checkout_evidence_override_at: null,
+      checkout_evidence_override_by_user_id: null,
+      checkout_evidence_override_reason: null,
       updated_at: new Date().toISOString(),
     })
     .eq("work_order_id", workOrderId);

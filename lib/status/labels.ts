@@ -84,6 +84,11 @@ export const PHOTO_CATEGORY_LABELS: Record<PhotoCategory, string> = {
   inspection_item: "Inspection — Needs work",
   job_proof: "Job proof",
   job_work: "Work photo",
+  checkout_front: "Checkout — Front",
+  checkout_rear: "Checkout — Rear",
+  checkout_left_side: "Checkout — Left Side",
+  checkout_right_side: "Checkout — Right Side",
+  checkout_odometer: "Checkout — Odometer",
 };
 
 /** Categories the generic work-order Photos tab can upload without job/inspection linkage. */
@@ -92,6 +97,7 @@ export const GENERAL_WORK_ORDER_PHOTO_CATEGORIES: PhotoCategory[] = (
 ).filter(
   (category) =>
     !category.startsWith("inspection_") &&
+    !category.startsWith("checkout_") &&
     category !== "job_proof" &&
     category !== "job_work"
 );

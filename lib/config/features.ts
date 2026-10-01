@@ -88,3 +88,13 @@ export function v2ReadEnabledForLocation(
 export function legacyWritesRequired(flags: WorkflowV2Flags): boolean {
   return flags.killSwitch || flags.writeMode !== "v2";
 }
+
+/**
+ * Opt new work orders into the five-photo checkout handoff gate.
+ * Unset or any value other than "1" leaves existing workflow unchanged.
+ */
+export function checkoutEvidenceEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return env.CHECKOUT_EVIDENCE_ENABLED === "1";
+}
