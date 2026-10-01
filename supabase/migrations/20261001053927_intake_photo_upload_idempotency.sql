@@ -178,4 +178,4 @@ REVOKE ALL ON FUNCTION public.create_intake_photo_with_event(
 
 GRANT EXECUTE ON FUNCTION public.create_intake_photo_with_event(
   uuid, uuid, text, text, text, text, uuid, uuid, uuid, text, bigint, integer, integer
-) TO authenticated;
+) TO authenticated, service_role;

@@ -76,12 +76,12 @@ describe("intake photo upload idempotency migration", () => {
     expect(sql).not.toMatch(/p_actor_user_id|p_location_id|p_uploaded_by_user_id/i);
   });
 
-  it("revokes PUBLIC and anon execute and grants authenticated", () => {
+  it("revokes PUBLIC and anon execute and grants authenticated and service_role", () => {
     expect(sql).toMatch(
       /revoke\s+all\s+on\s+function\s+public\.create_intake_photo_with_event\s*\([^)]+\)\s+from\s+public,\s*anon/i
     );
     expect(sql).toMatch(
-      /grant\s+execute\s+on\s+function\s+public\.create_intake_photo_with_event\s*\([^)]+\)\s+to\s+authenticated/i
+      /grant\s+execute\s+on\s+function\s+public\.create_intake_photo_with_event\s*\([^)]+\)\s+to\s+authenticated\s*,\s*service_role/i
     );
   });
 });

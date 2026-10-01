@@ -95,6 +95,15 @@ function storageStatusCode(error: unknown): string | undefined {
   return value == null ? undefined : String(value);
 }
 
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505"
+  );
+}
+
 export async function orchestrateIntakePhotoUpload(
   input: IntakePhotoUploadInput,
   dependencies: IntakePhotoUploadDependencies
@@ -162,10 +171,11 @@ export async function orchestrateIntakePhotoUpload(
   } catch (error) {
     if (input.clientUploadId) {
       let found: IntakePhotoUploadRow | null = null;
+      let lookupFailed = false;
       try {
         found = await dependencies.findPhotoByClientUploadId(input.clientUploadId);
       } catch {
-        found = null;
+        lookupFailed = true;
       }
       if (found) {
         const committedThisCandidate =
@@ -176,7 +186,11 @@ export async function orchestrateIntakePhotoUpload(
         await dependencies.removeObjects(storedPaths);
         return existingPhotoForInput(found, input);
       }
-      await dependencies.removeObjects(storedPaths);
+      // Ambiguous non-unique errors may have committed. If lookup also failed,
+      // leave objects for replay instead of deleting a possibly-live row.
+      if (!lookupFailed || isUniqueViolation(error)) {
+        await dependencies.removeObjects(storedPaths);
+      }
       throw new Error("PHOTO_UPLOAD_FAILED");
     }
     await dependencies.removeObjects(storedPaths);

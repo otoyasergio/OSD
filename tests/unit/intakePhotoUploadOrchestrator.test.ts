@@ -354,6 +354,20 @@ describe("orchestrateIntakePhotoUpload", () => {
     ]);
   });
 
+  it("does not remove candidate objects when reconciliation lookup throws after an ambiguous RPC error", async () => {
+    const h = harness();
+    h.findPhotoByClientUploadId
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error("statement timeout"));
+    h.insertPhoto.mockRejectedValue({ message: "connection reset" });
+
+    await expect(orchestrateIntakePhotoUpload(input(), h.dependencies)).rejects.toThrow(
+      "PHOTO_UPLOAD_FAILED"
+    );
+    expect(h.findPhotoByClientUploadId).toHaveBeenCalledTimes(2);
+    expect(h.removeObjects).not.toHaveBeenCalled();
+  });
+
   it("does not return a concurrent winner when loser cleanup fails", async () => {
     const h = harness();
     const winner = rowFromInsert({
