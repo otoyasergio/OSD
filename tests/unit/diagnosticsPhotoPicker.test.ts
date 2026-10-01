@@ -312,7 +312,9 @@ describe("DiagnosticsPhotoPicker", () => {
 
     await pick(input, [file]);
 
-    expect(readPickedPhotoFiles).toHaveBeenCalledWith(input);
+    expect(readPickedPhotoFiles).toHaveBeenCalledWith(input, {
+      surface: "diagnostics",
+    });
     expect(uploadAssistantPhotoAction).toHaveBeenCalledTimes(1);
     const [workOrderId, , form] = uploadAssistantPhotoAction.mock.calls[0] as [
       string,
