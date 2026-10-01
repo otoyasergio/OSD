@@ -14,14 +14,27 @@ import { createPhotoAdminClient } from "../lib/database/supabase-admin";
 import { reconcileIntakePhotosWithClient } from "../lib/photos/reconcileIntakePhotos";
 import { runPhotoReconcileCli } from "../lib/photos/reconcileIntakePhotosCli";
 
-const code = await runPhotoReconcileCli({
-  argv: process.argv.slice(2),
-  env: process.env,
-  write: (text) => {
-    process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
-  },
-  createClient: createPhotoAdminClient,
-  reconcile: reconcileIntakePhotosWithClient,
-});
+async function main(): Promise<number> {
+  try {
+    return await runPhotoReconcileCli({
+      argv: process.argv.slice(2),
+      env: process.env,
+      write: (text) => {
+        process.stdout.write(text.endsWith("\n") ? text : `${text}\n`);
+      },
+      createClient: createPhotoAdminClient,
+      reconcile: reconcileIntakePhotosWithClient,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : "PHOTO_ADMIN_MISCONFIGURED";
+    process.stderr.write(`${message}\n`);
+    return 1;
+  }
+}
 
-process.exit(code);
+void main().then((code) => {
+  process.exit(code);
+});

@@ -32,6 +32,25 @@ describe("server service-role Supabase clients", () => {
     expect(() => createPhotoAdminClient()).toThrow("PHOTO_ADMIN_MISCONFIGURED");
   });
 
+  it("trims photo admin URL and key and rejects whitespace-only config", () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "   ";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "  service-role-secret  ";
+    expect(() => createPhotoAdminClient()).toThrow("PHOTO_ADMIN_MISCONFIGURED");
+
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "  https://example.supabase.co  ";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "  service-role-secret  ";
+    expect(createPhotoAdminClient()).toEqual({
+      kind: "service-role-client",
+    });
+    expect(createClient).toHaveBeenCalledWith(
+      "https://example.supabase.co",
+      "service-role-secret",
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+      }
+    );
+  });
+
   it("creates a non-persisting photo service-role client", () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-secret";

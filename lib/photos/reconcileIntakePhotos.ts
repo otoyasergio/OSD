@@ -1,5 +1,4 @@
-import { makeCanonicalIntakeThumbnail } from "@/lib/photos/canonicalizeIntakePhoto";
-import { intakeThumbStoragePath } from "@/lib/photos/makeIntakeThumb";
+import { intakeThumbStoragePath, makeIntakeThumb } from "@/lib/photos/makeIntakeThumb";
 import { INTAKE_PHOTO_BUCKET } from "@/lib/photos/signedUrls";
 
 export type PhotoReconcileRow = {
@@ -356,7 +355,9 @@ export function createPhotoReconcileDependencies(
       if (error) throw new Error(error.message ?? "update");
     },
     async generateThumbnail(bytes) {
-      return makeCanonicalIntakeThumbnail(bytes);
+      const thumbnail = await makeIntakeThumb(bytes);
+      if (!thumbnail) throw new Error("generate");
+      return thumbnail;
     },
   };
 }

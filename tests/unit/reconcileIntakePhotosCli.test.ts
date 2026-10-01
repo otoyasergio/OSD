@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -93,6 +94,29 @@ describe("photo reconcile CLI parsing and output", () => {
     expect(text).not.toMatch(/customer|Ada|signed\.example/i);
   });
 
+  it("lists each failed photoId and a safe reason in human repair output", () => {
+    const leaky = {
+      ...sampleReport(),
+      failed: 2,
+      failures: [
+        { photoId: "photo-c", reason: "generate" },
+        {
+          photoId: "photo-e",
+          reason: `download ${SIGNED_URL} for Ada Customer token=abc`,
+        },
+      ],
+      counts: { ...sampleReport().counts, failed: 2 },
+    };
+    const text = formatPhotoReconcileOutput(leaky, { json: false });
+    expect(text).toMatch(/Failed:\s*2/i);
+    expect(text).toMatch(/photo-c\s+generate/);
+    expect(text).toMatch(/photo-e\s+/);
+    expect(text).not.toContain(SIGNED_URL);
+    expect(text).not.toContain("token=abc");
+    expect(text).not.toContain("Ada Customer");
+    expect(text).not.toMatch(/https?:\/\//i);
+  });
+
   it("runs report-only by default and never deletes", async () => {
     const writes: string[] = [];
     const reconcile = vi.fn(async () => sampleReport());
@@ -125,6 +149,7 @@ describe("photo reconcile CLI parsing and output", () => {
       scripts: Record<string, string>;
     };
     expect(pkg.scripts["photos:reconcile"]).toMatch(/reconcile-intake-photos/);
+    expect(pkg.scripts["photos:reconcile"]).toMatch(/--env-file-if-exists=\.env\.local/);
     const runner = readFileSync(
       join(process.cwd(), "scripts", "reconcile-intake-photos.ts"),
       "utf8"
@@ -132,5 +157,47 @@ describe("photo reconcile CLI parsing and output", () => {
     expect(runner).toMatch(/createPhotoAdminClient/);
     expect(runner).not.toMatch(/console\.log\(process\.env/);
     expect(runner).not.toMatch(/NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+    expect(runner).not.toMatch(/canonicalizeIntakePhoto|server-only/);
+    const service = readFileSync(
+      join(process.cwd(), "lib", "photos", "reconcileIntakePhotos.ts"),
+      "utf8"
+    );
+    expect(service).toMatch(/makeIntakeThumb/);
+    expect(service).not.toMatch(/canonicalizeIntakePhoto|makeCanonicalIntakeThumbnail/);
+    expect(service).not.toMatch(/server-only/);
   });
+
+  it("npm run photos:reconcile -- --json reaches PHOTO_ADMIN_MISCONFIGURED without server-only", async () => {
+    const output = await new Promise<string>((resolve, reject) => {
+      const child = spawn("npm", ["run", "photos:reconcile", "--", "--json"], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          NEXT_PUBLIC_SUPABASE_URL: "",
+          SUPABASE_SERVICE_ROLE_KEY: "",
+          TEST_SUPABASE_URL: "",
+          TEST_SUPABASE_SERVICE_ROLE_KEY: "",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      child.on("error", reject);
+      child.on("close", (code) => {
+        resolve(`code=${code}\n${stdout}\n${stderr}`);
+      });
+    });
+
+    expect(output).toMatch(/PHOTO_ADMIN_MISCONFIGURED/);
+    expect(output).not.toMatch(/server-only/i);
+    expect(output).not.toMatch(/This module cannot be imported from a Client Component/i);
+    expect(output).not.toContain(SERVICE_ROLE);
+    expect(output).not.toMatch(/https:\/\/signed\.example/);
+  }, 60000);
 });

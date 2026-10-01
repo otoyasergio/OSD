@@ -390,6 +390,7 @@ export function PhotosTab({
                       type="button"
                       className="btn btn-ghost min-h-10 w-full text-red-700 hover:bg-red-50"
                       onClick={() => setConfirmingPhotoId(photo.photo_id)}
+                      disabled={deletePending}
                       aria-label={`Remove ${PHOTO_CATEGORY_LABELS[photo.category]} photo`}
                     >
                       Remove photo

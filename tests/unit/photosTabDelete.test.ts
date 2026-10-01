@@ -23,7 +23,9 @@ vi.mock("next/navigation", () => ({
 const WORK_ORDER_ID = "41111111-1111-4111-8111-111111111111";
 const PHOTO_ID = "71111111-1111-4111-8111-111111111111";
 
-function samplePhoto(): IntakePhoto {
+const PHOTO_ID_B = "72111111-1111-4111-8111-111111111111";
+
+function samplePhoto(overrides: Partial<IntakePhoto> = {}): IntakePhoto {
   return {
     photo_id: PHOTO_ID,
     work_order_id: WORK_ORDER_ID,
@@ -44,6 +46,7 @@ function samplePhoto(): IntakePhoto {
     signed_url: "https://signed.example/front.jpg",
     thumb_url: "https://signed.example/front.thumb.jpg",
     uploaded_by: { user_id: "u1", first_name: "Ada", last_name: "Tech" },
+    ...overrides,
   };
 }
 
@@ -72,7 +75,8 @@ describe("PhotosTab corrective delete confirmation", () => {
       formData: FormData
     ) => Promise<{
       error: string | null;
-    }>
+    }>,
+    photos: IntakePhoto[] = [samplePhoto()]
   ) {
     const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
     await act(async () => {
@@ -86,7 +90,7 @@ describe("PhotosTab corrective delete confirmation", () => {
             isOnline: () => false,
           },
           createElement(PhotosTab, {
-            photos: [samplePhoto()],
+            photos,
             readOnly: false,
             canUpload: false,
             canDelete: true,
@@ -142,5 +146,54 @@ describe("PhotosTab corrective delete confirmation", () => {
     expect(
       container.querySelector('button[aria-label="Remove Front photo"]')
     ).toBeTruthy();
+  });
+
+  it("disables every Remove button while a delete is pending", async () => {
+    let release: ((value: { error: null }) => void) | undefined;
+    const deleteAction = vi.fn(
+      () =>
+        new Promise<{ error: null }>((resolve) => {
+          release = resolve;
+        })
+    );
+    await renderTab(deleteAction, [
+      samplePhoto(),
+      samplePhoto({
+        photo_id: PHOTO_ID_B,
+        category: "rear",
+        storage_path: `${WORK_ORDER_ID}/rear/${PHOTO_ID_B}.jpg`,
+        thumb_storage_path: `${WORK_ORDER_ID}/rear/${PHOTO_ID_B}.thumb.jpg`,
+      }),
+    ]);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Remove Front photo"]')!
+        .click();
+    });
+    await act(async () => {
+      container.querySelector<HTMLTextAreaElement>('textarea[name="reason"]')!.value =
+        "wrong angle";
+      container.querySelector<HTMLFormElement>("form")!.requestSubmit();
+    });
+
+    await vi.waitFor(() => {
+      expect(deleteAction).toHaveBeenCalled();
+    });
+
+    const rearRemove = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Remove Rear photo"]'
+    );
+    expect(rearRemove?.disabled).toBe(true);
+    expect(
+      Array.from(container.querySelectorAll("button")).every((button) => {
+        const label = button.getAttribute("aria-label") ?? button.textContent ?? "";
+        return !/remove/i.test(label) || button.disabled;
+      })
+    ).toBe(true);
+
+    await act(async () => {
+      release?.({ error: null });
+    });
   });
 });

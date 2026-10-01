@@ -31,6 +31,14 @@ function lineList(title: string, count: number, lines: string[]): string {
   return [`${title}: ${count}`, ...lines.map((line) => `  ${line}`)].join("\n");
 }
 
+const SAFE_FAILURE_REASONS = new Set(["generate", "update", "download", "upload"]);
+
+export function safePhotoReconcileFailureReason(reason: string): string {
+  const normalized = reason.trim().toLowerCase();
+  if (SAFE_FAILURE_REASONS.has(normalized)) return normalized;
+  return "failed";
+}
+
 export function formatPhotoReconcileOutput(
   report: PhotoReconcileReport,
   options: { json: boolean }
@@ -64,6 +72,13 @@ export function formatPhotoReconcileOutput(
       "Orphans",
       normalized.counts.orphans,
       normalized.orphans.map((item) => item.path)
+    ),
+    lineList(
+      "Failed",
+      normalized.counts.failed,
+      normalized.failures.map(
+        (item) => `${item.photoId}  ${safePhotoReconcileFailureReason(item.reason)}`
+      )
     ),
     `Repaired: ${normalized.counts.repaired}  Failed: ${normalized.counts.failed}`,
     "",
