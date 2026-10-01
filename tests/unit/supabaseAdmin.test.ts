@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   createAdminClient,
   createDiagnosticsAdminClient,
+  createPhotoAdminClient,
 } from "@/lib/database/supabase-admin";
 
 afterEach(() => {
@@ -24,6 +25,26 @@ describe("server service-role Supabase clients", () => {
   it("uses a diagnostics-specific configuration error", () => {
     expect(() => createDiagnosticsAdminClient()).toThrow(
       "ASK_OTOMOTO_DIAGNOSTICS_MISCONFIGURED"
+    );
+  });
+
+  it("uses a photo-specific configuration error for the reconciler client", () => {
+    expect(() => createPhotoAdminClient()).toThrow("PHOTO_ADMIN_MISCONFIGURED");
+  });
+
+  it("creates a non-persisting photo service-role client", () => {
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-secret";
+
+    expect(createPhotoAdminClient()).toEqual({
+      kind: "service-role-client",
+    });
+    expect(createClient).toHaveBeenCalledWith(
+      "https://example.supabase.co",
+      "service-role-secret",
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+      }
     );
   });
 

@@ -26,3 +26,11 @@ export function createAdminClient() {
 export function createDiagnosticsAdminClient() {
   return createServiceRoleClient("ASK_OTOMOTO_DIAGNOSTICS_MISCONFIGURED");
 }
+
+/**
+ * Server/script-only service-role client for intake photo reconciliation.
+ * Never import this into client components.
+ */
+export function createPhotoAdminClient() {
+  return createServiceRoleClient("PHOTO_ADMIN_MISCONFIGURED");
+}
