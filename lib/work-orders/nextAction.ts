@@ -19,6 +19,9 @@ type NextActionInput = {
   jobs: Array<{ status: string; service_name_snapshot: string }>;
   hasAssignedTech: boolean;
   inspectionCompleted: boolean;
+  checkoutEvidenceRequired?: boolean;
+  checkoutEvidenceComplete?: boolean;
+  checkoutEvidenceOverridden?: boolean;
 };
 
 /**
@@ -95,6 +98,18 @@ export function getWorkOrderNextAction(
     return {
       title: "Final inspection",
       detail: "Waiting on head-tech final inspection (signed) before ready for pickup.",
+    };
+  }
+
+  if (
+    input.checkoutEvidenceRequired &&
+    !input.checkoutEvidenceComplete &&
+    !input.checkoutEvidenceOverridden
+  ) {
+    return {
+      title: "Capture checkout evidence",
+      detail:
+        "Five committed checkout photos (or an owner/manager emergency override) are required before the bike can be marked ready.",
     };
   }
 

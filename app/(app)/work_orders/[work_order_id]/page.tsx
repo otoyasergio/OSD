@@ -47,6 +47,10 @@ import {
 import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
 import { listPartsForWorkOrder } from "@/lib/services/parts";
 import { listIntakePhotos } from "@/lib/services/photos";
+import {
+  checkoutCoverageFromPhotos,
+  checkoutEvidenceOverridden,
+} from "@/lib/status/checkoutEvidence";
 import { listTechnicianNotes } from "@/lib/services/notes";
 import { listTimelineEvents } from "@/lib/services/timeline";
 import { getServiceInformation } from "@/lib/services/motorcycles";
@@ -295,6 +299,8 @@ export default async function WorkOrderDetailPage({
     canCompleteWorkOrder(viewRole) || canOverrideWorkOrderStatus(viewRole);
   const canResumeHold = canOverrideWorkOrderStatus(viewRole);
   const canOverrideComplete = canOverrideWorkOrderStatus(viewRole);
+  const checkoutCoverage = checkoutCoverageFromPhotos(photos);
+  const checkoutOverridden = checkoutEvidenceOverridden(detail);
   const canEditServiceInfo =
     !detail.is_foreign_location && canUpdateServiceInformation(viewRole);
 
@@ -472,6 +478,8 @@ export default async function WorkOrderDetailPage({
             inspectionCompleted={Boolean(inspection?.completed_at)}
             readOnly={detail.is_foreign_location}
             photos={photos}
+            checkoutCoverage={checkoutCoverage}
+            checkoutOverridden={checkoutOverridden}
             canUploadPhotos={canUploadPhotos}
             assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
             setPrimaryAction={setPrimaryTechnicianAction.bind(null, detail.work_order_id)}

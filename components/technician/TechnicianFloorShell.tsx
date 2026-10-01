@@ -29,6 +29,7 @@ import { BenchDropZone } from "@/components/technician/BenchDropZone";
 import { ReadyForPickupCarousel } from "@/components/technician/ReadyForPickupCarousel";
 import { FloorStageSpine } from "@/components/technician/FloorStageSpine";
 import { FloorCurrentStep } from "@/components/technician/FloorCurrentStep";
+import { CheckoutEvidencePanel } from "@/components/photos/CheckoutEvidencePanel";
 import { FloorDock } from "@/components/technician/FloorDock";
 import { SignOffPad } from "@/components/inspections/SignOffPad";
 import {
@@ -888,6 +889,19 @@ export function TechnicianFloorShell({
                       skipPending={skipPending}
                       workPending={workPending}
                     />
+
+                    {surface.can_safety && surface.checkout_evidence_required ? (
+                      <CheckoutEvidencePanel
+                        workOrderId={surface.work_order_id}
+                        required
+                        photos={surface.checkout_photos}
+                        jobsComplete
+                        qcComplete
+                        canUpload={!previewMode}
+                        locked={false}
+                        canOverride={false}
+                      />
+                    ) : null}
 
                     {surface.can_safety && !previewMode ? (
                       <div className="pit-safety-actions">

@@ -329,6 +329,38 @@ describe("Overview completion checkout gate", () => {
     expect(container.textContent).not.toMatch(/Checkout evidence/i);
     expect(container.textContent).toMatch(/Mark ready for pickup/i);
   });
+
+  it("hides Complete until checkout is ready, even for canOverrideComplete", async () => {
+    await renderOverview();
+    expect(container.textContent).not.toMatch(/Complete work order/i);
+    expect(container.textContent).toMatch(/emergency/i);
+    expect(container.textContent).toMatch(/checkout evidence/i);
+
+    await renderOverview({
+      checkout_evidence_override_at: "2026-10-01T12:08:00.000Z",
+    });
+    expect(container.textContent).not.toMatch(/Complete work order/i);
+    expect(container.textContent).not.toMatch(/Mark ready for pickup/i);
+  });
+
+  it("shows Complete after committed photos or a persisted reasoned override", async () => {
+    await renderOverview(
+      {},
+      CHECKOUT_PHOTO_CATEGORIES.map((category, index) => ({
+        photo_id: `p-${index}`,
+        category,
+        signed_url: `https://signed.example/${category}.jpg`,
+      }))
+    );
+    expect(container.textContent).toMatch(/Complete work order/i);
+
+    await renderOverview({
+      checkout_evidence_override_at: "2026-10-01T12:08:00.000Z",
+      checkout_evidence_override_by_user_id: "user-1",
+      checkout_evidence_override_reason: "wet",
+    });
+    expect(container.textContent).toMatch(/Complete work order/i);
+  });
 });
 
 describe("checkout UI wiring", () => {
@@ -362,5 +394,19 @@ describe("checkout UI wiring", () => {
     expect(source).toMatch(/photos=\{photos\}/);
     expect(source).toMatch(/canUploadPhotos=\{canUploadPhotos\}/);
     expect(source).toMatch(/recordCheckoutEvidenceOverrideAction/);
+    expect(source).toMatch(/checkoutCoverageFromPhotos\(photos\)/);
+    expect(source).toMatch(/checkoutEvidenceOverridden/);
+    expect(source).toMatch(/checkoutCoverage=\{checkoutCoverage\}/);
+  });
+
+  it("uses the strict override helper in Overview instead of a lone timestamp", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/work_orders/OverviewTab.tsx"),
+      "utf8"
+    );
+    expect(source).toMatch(/checkoutEvidenceOverridden/);
+    expect(source).not.toMatch(
+      /checkoutOverridden\s*=\s*Boolean\(\s*detail\.checkout_evidence_override_at/
+    );
   });
 });

@@ -16,7 +16,11 @@ import { VisitWorkListSections } from "@/components/work_orders/VisitWorkListSec
 import { SignOffPad } from "@/components/inspections/SignOffPad";
 import { CheckoutEvidencePanel } from "@/components/photos/CheckoutEvidencePanel";
 import type { IntakePhoto } from "@/lib/services/photos";
-import { checkoutCoverageFromPhotos } from "@/lib/status/checkoutEvidence";
+import {
+  checkoutCoverageFromPhotos,
+  checkoutEvidenceOverridden,
+  type CheckoutCoverage,
+} from "@/lib/status/checkoutEvidence";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
@@ -70,6 +74,8 @@ export function OverviewTab({
   canUploadPhotos = false,
   canOverrideCheckout = false,
   checkoutOverrideAction,
+  checkoutCoverage,
+  checkoutOverridden,
 }: {
   detail: WorkOrderDetail;
   openRecommendations?: Array<{
@@ -105,6 +111,8 @@ export function OverviewTab({
   canUploadPhotos?: boolean;
   canOverrideCheckout?: boolean;
   checkoutOverrideAction?: QualityAction;
+  checkoutCoverage?: CheckoutCoverage;
+  checkoutOverridden?: boolean;
 }) {
   const [assignState, assignFormAction] = useActionState(assignAction, {
     error: null,
@@ -158,10 +166,13 @@ export function OverviewTab({
   const readyDone = Boolean(
     detail.ready_for_pickup_at || detail.status === "ready_for_pickup"
   );
-  const checkoutCoverage = checkoutCoverageFromPhotos(photos);
-  const checkoutOverridden = Boolean(detail.checkout_evidence_override_at);
+  const resolvedCheckoutCoverage = checkoutCoverage ?? checkoutCoverageFromPhotos(photos);
+  const resolvedCheckoutOverridden =
+    checkoutOverridden ?? checkoutEvidenceOverridden(detail);
   const checkoutReady =
-    !detail.checkout_evidence_required || checkoutCoverage.complete || checkoutOverridden;
+    !detail.checkout_evidence_required ||
+    resolvedCheckoutCoverage.complete ||
+    resolvedCheckoutOverridden;
   const activeJobs = detail.jobs.filter(
     (job) => job.status !== "cancelled" && job.status !== "declined"
   );
@@ -184,6 +195,9 @@ export function OverviewTab({
     })),
     hasAssignedTech: detail.technicians.length > 0,
     inspectionCompleted,
+    checkoutEvidenceRequired: Boolean(detail.checkout_evidence_required),
+    checkoutEvidenceComplete: resolvedCheckoutCoverage.complete,
+    checkoutEvidenceOverridden: resolvedCheckoutOverridden,
   });
 
   const visitWorkList = buildVisitWorkList({
@@ -520,7 +534,7 @@ export function OverviewTab({
                   locked={locked}
                   canOverride={canOverrideCheckout}
                   overrideAction={checkoutOverrideAction}
-                  overridden={checkoutOverridden}
+                  overridden={resolvedCheckoutOverridden}
                   overrideReason={detail.checkout_evidence_override_reason}
                 />
               </div>
@@ -537,7 +551,9 @@ export function OverviewTab({
               >
                 <h3 className="font-semibold text-foreground">Ready for pickup</h3>
                 <p className="text-sm text-[var(--status-neutral)]">
-                  Requires QC and all active jobs completed.
+                  {detail.checkout_evidence_required
+                    ? "Requires QC, the five committed checkout photos or a recorded emergency override, and all active jobs completed."
+                    : "Requires QC and all active jobs completed."}
                 </p>
                 <FormError message={readyState.error} />
                 <div>
@@ -546,7 +562,7 @@ export function OverviewTab({
               </form>
             ) : null}
 
-            {canComplete && (readyDone || canOverrideComplete) ? (
+            {canComplete && checkoutReady && (readyDone || canOverrideComplete) ? (
               <div className="flex flex-col gap-3 rounded border border-[var(--border)] p-4">
                 <h3 className="font-semibold text-foreground">Complete / release</h3>
                 {!readyDone && canOverrideComplete ? (

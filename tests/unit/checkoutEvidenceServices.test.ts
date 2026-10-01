@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CHECKOUT_PHOTO_CATEGORIES } from "@/lib/status/checkoutEvidence";
 import { checkoutCoverageFromPhotos } from "@/lib/status/checkoutEvidence";
@@ -49,7 +51,7 @@ const CUSTOMER = "61111111-1111-4111-8111-111111111111";
 
 type QueryLog = {
   table: string;
-  op: "select" | "update" | "insert";
+  op: "select" | "update" | "insert" | "rpc";
   payload?: unknown;
   filters: Array<{ method: string; args: unknown[] }>;
 };
@@ -244,7 +246,11 @@ function makeClient(options: {
       },
     };
   });
-  return { from, log, updates, inserts };
+  const rpc = vi.fn(async (name: string, args?: unknown) => {
+    log.push({ table: name, op: "rpc", payload: args, filters: [] });
+    return { data: true, error: null };
+  });
+  return { from, rpc, log, updates, inserts };
 }
 
 const owner = {
@@ -497,7 +503,7 @@ describe("recalculateWorkOrderStatus checkout auto-ready", () => {
 });
 
 describe("reopening recommendation work", () => {
-  it("clears checkout override stamps and leaves historical checkout photos in place", async () => {
+  it("uses the trusted reopen RPC instead of a direct override-clear update", async () => {
     const client = makeClient({
       workOrder: {
         status: "ready_for_pickup",
@@ -514,16 +520,14 @@ describe("reopening recommendation work", () => {
       WO
     );
     expect(cleared).toBe(true);
-    expect(client.updates[0]?.payload).toEqual(
-      expect.objectContaining({
-        quality_checked_at: null,
-        safety_checked_at: null,
-        ready_for_pickup_at: null,
-        checkout_evidence_override_at: null,
-        checkout_evidence_override_by_user_id: null,
-        checkout_evidence_override_reason: null,
-      })
-    );
+    expect(client.rpc).toHaveBeenCalledWith("reopen_work_order_for_recommendation_work", {
+      p_work_order_id: WO,
+    });
+    expect(
+      client.updates.some((row) =>
+        Object.prototype.hasOwnProperty.call(row.payload, "checkout_evidence_override_at")
+      )
+    ).toBe(false);
     expect(
       client.log.some((entry) => entry.table === "intake_photo" && entry.op === "update")
     ).toBe(false);
@@ -532,5 +536,19 @@ describe("reopening recommendation work", () => {
         CHECKOUT_PHOTO_CATEGORIES.map((category) => ({ category }))
       ).complete
     ).toBe(true);
+  });
+
+  it("does not let a technician client clear override fields with a direct work_order update", async () => {
+    const source = readFileSync(
+      join(process.cwd(), "lib", "services", "recommendations.ts"),
+      "utf8"
+    );
+    const fn = source.slice(
+      source.indexOf("export async function clearFinishedStampsForNewRecommendationWork")
+    );
+    const body = fn.slice(0, fn.indexOf("\nexport "));
+    expect(body).toMatch(/reopen_work_order_for_recommendation_work/);
+    expect(body).not.toMatch(/checkout_evidence_override_at:\s*null/);
+    expect(body).not.toMatch(/createAdminClient/);
   });
 });
