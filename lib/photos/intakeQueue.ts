@@ -7,10 +7,53 @@ import type { QueuedPhotoUpload } from "@/lib/photos/uploadQueue/types";
 
 export const INTAKE_PHOTOS_RESTORED = "Photos restored on this device.";
 export const INTAKE_PHOTO_NOT_SAVED = "This photo could not be saved on this device.";
+export const INTAKE_DRAFT_HYDRATING_COPY = "Restoring saved photos on this device…";
 
 export function persistQueueErrorMessage(error: unknown): string {
   if (error instanceof PhotoQueuePersistenceError) return error.message;
   return INTAKE_PHOTO_NOT_SAVED;
+}
+
+export function requiredQueueIdsForRemainingCategories({
+  remaining,
+  workOrderId,
+  items,
+  receipts,
+  preferredByCategory = {},
+}: {
+  remaining: readonly string[];
+  workOrderId: string;
+  items: Array<{ queueId: string; category: string; workOrderId?: string }>;
+  receipts: Array<{ queueId: string; category?: string; workOrderId?: string }>;
+  preferredByCategory?: Partial<Record<string, string>>;
+}): { queueIds: string[]; missingCategories: string[] } {
+  const queueIds: string[] = [];
+  const missingCategories: string[] = [];
+  for (const category of remaining) {
+    const preferred = preferredByCategory[category];
+    if (preferred) {
+      queueIds.push(preferred);
+      continue;
+    }
+    const item = items.find(
+      (candidate) =>
+        candidate.category === category && candidate.workOrderId === workOrderId
+    );
+    if (item) {
+      queueIds.push(item.queueId);
+      continue;
+    }
+    const receipt = receipts.find(
+      (candidate) =>
+        candidate.category === category && candidate.workOrderId === workOrderId
+    );
+    if (receipt) {
+      queueIds.push(receipt.queueId);
+      continue;
+    }
+    missingCategories.push(category);
+  }
+  return { queueIds, missingCategories };
 }
 
 export function requiredQueueIdsForIntake(

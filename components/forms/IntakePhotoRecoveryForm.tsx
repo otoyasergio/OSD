@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { PhotoCategory } from "@/lib/database/types";
@@ -11,7 +11,10 @@ import {
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
-import { intakeContractHref } from "@/lib/photos/intakeQueue";
+import {
+  intakeContractHref,
+  requiredQueueIdsForRemainingCategories,
+} from "@/lib/photos/intakeQueue";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 
@@ -32,6 +35,13 @@ export function IntakePhotoRecoveryForm({
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [clientError, setClientError] = useState<string | null>(initialError ?? null);
   const [remaining, setRemaining] = useState<PhotoCategory[]>(missingCategories);
+  const preferredIdsRef = useRef<Partial<Record<string, string>>>({});
+  useEffect(() => {
+    for (const item of queue.items) {
+      if (item.workOrderId !== workOrderId) continue;
+      preferredIdsRef.current[item.category] = item.queueId;
+    }
+  }, [queue.items, workOrderId]);
 
   const selectedCount = Object.values(intakePhotos).filter(
     (file) => file instanceof File && file.size > 0
@@ -44,18 +54,24 @@ export function IntakePhotoRecoveryForm({
     setSubmitting(true);
 
     try {
-      const requiredQueueIds = remaining.flatMap((category) => {
-        const item = queue.items.find(
-          (candidate) =>
-            candidate.category === category && candidate.workOrderId === workOrderId
-        );
-        return item ? [item.queueId] : [];
-      });
-      if (requiredQueueIds.length !== remaining.length) {
+      for (const item of queue.items) {
+        if (item.workOrderId !== workOrderId) continue;
+        preferredIdsRef.current[item.category] = item.queueId;
+      }
+      const { queueIds: requiredQueueIds, missingCategories: stillMissing } =
+        requiredQueueIdsForRemainingCategories({
+          remaining,
+          workOrderId,
+          items: queue.items,
+          receipts: queue.confirmations,
+          preferredByCategory: preferredIdsRef.current,
+        });
+      if (stillMissing.length > 0 || requiredQueueIds.length !== remaining.length) {
+        const labels = (stillMissing.length > 0 ? stillMissing : remaining)
+          .map((category) => PHOTO_CATEGORY_LABELS[category as PhotoCategory] ?? category)
+          .join(", ");
         setClientError(
-          `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${remaining
-            .map((category) => PHOTO_CATEGORY_LABELS[category] ?? category)
-            .join(", ")}.`
+          `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`
         );
         return;
       }

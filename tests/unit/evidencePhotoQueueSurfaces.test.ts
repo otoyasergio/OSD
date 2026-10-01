@@ -285,6 +285,7 @@ describe("evidence photo queue surfaces", () => {
             locationId: "location-a",
             store: new MemoryPhotoUploadQueueStore(database),
             isOnline: () => true,
+            now: () => 2_500,
           },
           createElement(FloorPhotoField, {
             hint: "Camera or photo library",
@@ -300,5 +301,77 @@ describe("evidence photo queue surfaces", () => {
       expect(container.textContent).toMatch(/Saved/);
     });
     expect(refresh).toHaveBeenCalled();
+  });
+
+  it("refreshes once when a durable receipt photo is missing from server props", async () => {
+    const database = createMemoryPhotoUploadQueueDatabase();
+    const store = new MemoryPhotoUploadQueueStore(database);
+    database.confirmations.set("receipt-1", {
+      queueId: "receipt-1",
+      clientUploadId: "client-1",
+      photoId: "photo-from-queue",
+      userId: "user-a",
+      locationId: "location-a",
+      confirmedAt: Date.now(),
+      category: "front",
+      workOrderId: "wo-1",
+    });
+
+    function renderTab(
+      photos: Array<{
+        photo_id: string;
+        work_order_id: string;
+        category: string;
+        notes: string | null;
+        created_at: string;
+        uploaded_by: null;
+        signed_url: string | null;
+        thumb_url: string | null;
+      }>
+    ) {
+      return act(async () => {
+        root.render(
+          createElement(
+            PhotoUploadQueueProvider,
+            {
+              userId: "user-a",
+              locationId: "location-a",
+              store,
+              isOnline: () => true,
+            },
+            createElement(PhotosTab, {
+              photos: photos as never,
+              readOnly: false,
+              canUpload: true,
+              canDelete: false,
+              workOrderId: "wo-1",
+              deleteAction: async () => ({ error: null }),
+            })
+          )
+        );
+      });
+    }
+
+    await renderTab([]);
+    await vi.waitFor(() => {
+      expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
+    await renderTab([
+      {
+        photo_id: "photo-from-queue",
+        work_order_id: "wo-1",
+        category: "front",
+        notes: null,
+        created_at: "2026-10-01T00:00:00.000Z",
+        uploaded_by: null,
+        signed_url: "/front.jpg",
+        thumb_url: "/front-thumb.jpg",
+      },
+    ]);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
   });
 });

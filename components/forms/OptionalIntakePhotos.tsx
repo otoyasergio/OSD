@@ -62,17 +62,33 @@ export function OptionalIntakePhotos({
 
   const previews = useMemo(
     () =>
-      value.map((file, index) => ({
-        file,
-        index,
-        url: URL.createObjectURL(file),
-      })),
-    [value]
+      value.map((file, index) => {
+        const match = queue.items.find(
+          (item) =>
+            item.category === "other" &&
+            item.fileName === file.name &&
+            item.byteCount === file.size &&
+            item.lastModified === file.lastModified &&
+            (workOrderId
+              ? item.workOrderId === workOrderId
+              : item.intakeDraftId === intakeDraftId)
+        );
+        const queuedUrl = match ? queue.previewUrl(match.queueId) : null;
+        return {
+          file,
+          index,
+          url: queuedUrl,
+          ownedUrl: queuedUrl ? null : URL.createObjectURL(file),
+        };
+      }),
+    [intakeDraftId, queue, value, workOrderId]
   );
 
   useEffect(() => {
     return () => {
-      for (const preview of previews) URL.revokeObjectURL(preview.url);
+      for (const preview of previews) {
+        if (preview.ownedUrl) URL.revokeObjectURL(preview.ownedUrl);
+      }
     };
   }, [previews]);
 
@@ -167,13 +183,15 @@ export function OptionalIntakePhotos({
       ) : null}
 
       <div className="optional-intake-photos-grid">
-        {previews.map(({ file, index, url }) => (
+        {previews.map(({ file, index, url, ownedUrl }) => (
           <div
             key={`${fileIdentity(file)}:${index}`}
             className="optional-intake-photo-card"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt={`Extra intake photo ${index + 1}`} />
+            {url || ownedUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={url ?? ownedUrl ?? ""} alt={`Extra intake photo ${index + 1}`} />
+            ) : null}
             <span className="optional-intake-photo-label">Extra {index + 1}</span>
             <button
               type="button"

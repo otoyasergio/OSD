@@ -96,6 +96,16 @@ export function PhotosTab({
     });
   }, [queue, router, workOrderId]);
 
+  useEffect(() => {
+    for (const receipt of queue.confirmations) {
+      if (receipt.workOrderId !== workOrderId || !receipt.photoId) continue;
+      if (photos.some((photo) => photo.photo_id === receipt.photoId)) continue;
+      if (refreshedIds.current.has(receipt.queueId)) continue;
+      refreshedIds.current.add(receipt.queueId);
+      router.refresh();
+    }
+  }, [photos, queue.confirmations, router, workOrderId]);
+
   async function applyPickedFile(input: HTMLInputElement) {
     setChooserOpen(false);
     setPickError(null);
