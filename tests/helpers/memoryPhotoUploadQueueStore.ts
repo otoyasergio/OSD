@@ -1,6 +1,8 @@
 import {
   type AcquiredPhotoUploadClaim,
+  DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
   type PhotoUploadClaim,
+  PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
 } from "@/lib/photos/uploadQueue/store";
@@ -98,15 +100,21 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     }
   }
 
-  async recoverInterrupted(scope: PhotoUploadScope, now: number): Promise<number> {
+  async recoverInterrupted(
+    scope: PhotoUploadScope,
+    now: number,
+    maxAttempts = DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS
+  ): Promise<number> {
     let recovered = 0;
     for (const [queueId, item] of this.database.items) {
       if (item.status !== "uploading" || !belongsToScope(item, scope)) continue;
       if (hasLivePersistedUploadClaim(item, now)) continue;
+      const attemptsExhausted = item.attemptCount >= maxAttempts;
       this.database.items.set(queueId, {
         ...item,
-        status: "queued",
+        status: attemptsExhausted ? "failed" : "queued",
         retryAt: null,
+        lastError: attemptsExhausted ? PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR : item.lastError,
         updatedAt: now,
         leaseOwner: null,
         leaseExpiresAt: null,
@@ -273,18 +281,21 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     queueId: string,
     scope: PhotoUploadScope,
     owner: string,
-    now: number
+    now: number,
+    maxAttempts = DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS
   ): Promise<boolean> {
     const item = this.database.items.get(queueId);
     if (!item || !belongsToScope(item, scope)) return false;
     const ownsLease = item.leaseOwner === owner;
     const ownsSlot = item.uploadSlotOwner === owner;
     if (!ownsLease && !ownsSlot) return false;
-    const recoverToQueued = item.status === "uploading" && ownsLease && ownsSlot;
+    const recoverUpload = item.status === "uploading" && ownsLease && ownsSlot;
+    const attemptsExhausted = recoverUpload && item.attemptCount >= maxAttempts;
     this.database.items.set(queueId, {
       ...item,
-      status: recoverToQueued ? "queued" : item.status,
-      retryAt: recoverToQueued ? null : item.retryAt,
+      status: recoverUpload ? (attemptsExhausted ? "failed" : "queued") : item.status,
+      retryAt: recoverUpload ? null : item.retryAt,
+      lastError: attemptsExhausted ? PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR : item.lastError,
       updatedAt: now,
       leaseOwner: ownsLease ? null : item.leaseOwner,
       leaseExpiresAt: ownsLease ? null : item.leaseExpiresAt,

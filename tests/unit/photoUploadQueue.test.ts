@@ -16,9 +16,10 @@ import {
   PhotoUploadQueueRunner,
   PhotoUploadQueueRunnerError,
 } from "@/lib/photos/uploadQueue/runner";
-import type {
-  AcquiredPhotoUploadClaim,
-  PhotoUploadClaim,
+import {
+  type AcquiredPhotoUploadClaim,
+  type PhotoUploadClaim,
+  PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
 } from "@/lib/photos/uploadQueue/store";
 import type { PhotoUploadScope, QueuedPhotoUpload } from "@/lib/photos/uploadQueue/types";
 import {
@@ -111,10 +112,11 @@ class ControllableRecoveryStore extends MemoryPhotoUploadQueueStore {
 
   override async recoverInterrupted(
     scope: PhotoUploadScope,
-    now: number
+    now: number,
+    maxAttempts?: number
   ): Promise<number> {
     if (this.recoveryFailure) throw this.recoveryFailure;
-    return super.recoverInterrupted(scope, now);
+    return super.recoverInterrupted(scope, now, maxAttempts);
   }
 }
 
@@ -216,12 +218,35 @@ describe("photo upload queue persistence", () => {
       })
     );
 
-    await expect(store.recoverInterrupted(SCOPE, 2_000)).resolves.toBe(1);
+    await expect(store.recoverInterrupted(SCOPE, 2_000, 2)).resolves.toBe(1);
     await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
       status: "queued",
       attemptCount: 1,
       retryAt: null,
       updatedAt: 2_000,
+    });
+  });
+
+  it("marks exhausted interrupted uploads failed", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        status: "uploading",
+        attemptCount: 2,
+        updatedAt: 1_100,
+      })
+    );
+
+    await expect(store.recoverInterrupted(SCOPE, 2_000, 2)).resolves.toBe(1);
+    await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+      status: "failed",
+      attemptCount: 2,
+      retryAt: null,
+      lastError: PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
+      updatedAt: 2_000,
+      leaseOwner: null,
+      uploadSlotOwner: null,
     });
   });
 
@@ -458,6 +483,80 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
     });
     await expect(store.get("slot-expired", SCOPE)).resolves.toMatchObject({
       status: "queued",
+      leaseOwner: null,
+      uploadSlotOwner: null,
+    });
+  });
+
+  it("marks exhausted expired claims failed and requeues eligible claims", async () => {
+    const database = createTransactionalPhotoUploadQueueDatabase();
+    const store = new IndexedDbPhotoUploadQueueStore({
+      openDatabase: database.openDatabase,
+    });
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        queueId: "exhausted-expired",
+        status: "uploading",
+        attemptCount: 2,
+        leaseOwner: "closed-tab",
+        leaseExpiresAt: 1_500,
+        uploadSlotOwner: "closed-tab",
+        uploadSlotExpiresAt: 1_500,
+      })
+    );
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        queueId: "eligible-expired",
+        clientUploadId: "eligible-expired-client",
+        status: "uploading",
+        attemptCount: 1,
+        leaseOwner: "closed-tab",
+        leaseExpiresAt: 1_500,
+        uploadSlotOwner: "closed-tab",
+        uploadSlotExpiresAt: 1_500,
+      })
+    );
+
+    await expect(store.recoverInterrupted(SCOPE, 2_000, 2)).resolves.toBe(2);
+    await expect(store.get("exhausted-expired", SCOPE)).resolves.toMatchObject({
+      status: "failed",
+      attemptCount: 2,
+      retryAt: null,
+      lastError: PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
+      leaseOwner: null,
+      uploadSlotOwner: null,
+    });
+    await expect(store.get("eligible-expired", SCOPE)).resolves.toMatchObject({
+      status: "queued",
+      attemptCount: 1,
+      retryAt: null,
+      leaseOwner: null,
+      uploadSlotOwner: null,
+    });
+  });
+
+  it("marks exhausted released claims failed", async () => {
+    const database = createTransactionalPhotoUploadQueueDatabase();
+    const store = new IndexedDbPhotoUploadQueueStore({
+      openDatabase: database.openDatabase,
+    });
+    await store.put(SCOPE, queuedPhoto());
+    await expect(
+      store.tryAcquireUploadClaim("queue-1", SCOPE, "runner-a", 2_000, 1_000, 2, 1)
+    ).resolves.toMatchObject({
+      item: { status: "uploading", attemptCount: 1 },
+    });
+
+    await expect(
+      store.releaseUploadClaim("queue-1", SCOPE, "runner-a", 2_100, 1)
+    ).resolves.toBe(true);
+    await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+      status: "failed",
+      attemptCount: 1,
+      retryAt: null,
+      lastError: PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
       leaseOwner: null,
       uploadSlotOwner: null,
     });
@@ -1958,5 +2057,46 @@ describe("PhotoUploadQueueRunner", () => {
       { status: "queued", leaseOwner: null },
       { status: "queued", leaseOwner: null },
     ]);
+  });
+
+  it("marks exhausted active uploads failed when stopped", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const uploader = vi.fn(
+      (_item: QueuedPhotoUpload, signal: AbortSignal) =>
+        new Promise<{ ok: true; photoId: string }>((resolve) => {
+          signal.addEventListener(
+            "abort",
+            () => resolve({ ok: true, photoId: "stale-photo" }),
+            { once: true }
+          );
+        })
+    );
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => 2_000,
+      timer: { setTimeout: () => 1, clearTimeout: () => undefined },
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      maxAttempts: 1,
+    });
+
+    const running = runner.start();
+    await vi.waitFor(() => expect(uploader).toHaveBeenCalledTimes(1));
+    await runner.stop();
+    await running;
+
+    await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+      status: "failed",
+      attemptCount: 1,
+      retryAt: null,
+      lastError: PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
+      leaseOwner: null,
+      uploadSlotOwner: null,
+    });
   });
 });

@@ -1,4 +1,4 @@
-import type { PhotoUploadQueueStore } from "./store";
+import { DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS, type PhotoUploadQueueStore } from "./store";
 import type { PhotoUploadOutcome, PhotoUploadScope, QueuedPhotoUpload } from "./types";
 
 export type PhotoUploadQueueTimer = {
@@ -72,6 +72,10 @@ export class PhotoUploadQueueRunner {
 
   constructor(private readonly options: PhotoUploadQueueRunnerOptions) {}
 
+  private get maxAttempts(): number {
+    return this.options.maxAttempts ?? DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS;
+  }
+
   async start(): Promise<void> {
     if (this.stopped) return;
     if (!this.listening) {
@@ -83,7 +87,11 @@ export class PhotoUploadQueueRunner {
       );
       this.listening = true;
     }
-    await this.options.store.recoverInterrupted(this.options.scope, this.options.now());
+    await this.options.store.recoverInterrupted(
+      this.options.scope,
+      this.options.now(),
+      this.maxAttempts
+    );
     if (!this.isCurrent(this.generation)) return;
     await this.wake();
   }
@@ -142,7 +150,11 @@ export class PhotoUploadQueueRunner {
   private async pump(generation: number): Promise<"released_expired_acquisition" | void> {
     this.clearRetryTimer();
     if (!this.canProcess(generation)) return;
-    await this.options.store.recoverInterrupted(this.options.scope, this.options.now());
+    await this.options.store.recoverInterrupted(
+      this.options.scope,
+      this.options.now(),
+      this.maxAttempts
+    );
     if (!this.canProcess(generation)) return;
     const concurrency = Math.min(2, Math.max(1, this.options.maxConcurrency ?? 2));
     const active = new Set<Promise<void>>();
@@ -172,7 +184,7 @@ export class PhotoUploadQueueRunner {
           this.options.now(),
           ttlMs,
           2,
-          this.options.maxAttempts ?? 5
+          this.maxAttempts
         );
         if (!this.canProcess(generation)) {
           if (acquiredClaim) {
@@ -180,7 +192,8 @@ export class PhotoUploadQueueRunner {
               item.queueId,
               this.options.scope,
               this.options.ownerId,
-              this.options.now()
+              this.options.now(),
+              this.maxAttempts
             );
           }
           return;
@@ -191,7 +204,8 @@ export class PhotoUploadQueueRunner {
             item.queueId,
             this.options.scope,
             this.options.ownerId,
-            this.options.now()
+            this.options.now(),
+            this.maxAttempts
           );
           return "released_expired_acquisition";
         }
@@ -269,8 +283,7 @@ export class PhotoUploadQueueRunner {
       if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
 
       if (!outcome.ok) {
-        const failed =
-          !outcome.retryable || uploading.attemptCount >= (this.options.maxAttempts ?? 5);
+        const failed = !outcome.retryable || uploading.attemptCount >= this.maxAttempts;
         const retryDelay = Math.min(
           (this.options.baseRetryDelayMs ?? 1_000) *
             2 ** Math.max(0, uploading.attemptCount - 1),
@@ -415,7 +428,8 @@ export class PhotoUploadQueueRunner {
         claim.queueId,
         this.options.scope,
         this.options.ownerId,
-        this.options.now()
+        this.options.now(),
+        this.maxAttempts
       );
     } catch {
       // The expiring persisted claim remains recoverable after storage returns.

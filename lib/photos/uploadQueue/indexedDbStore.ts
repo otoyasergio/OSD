@@ -9,7 +9,9 @@ import {
 } from "./stateTransitions";
 import {
   type AcquiredPhotoUploadClaim,
+  DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
   type PhotoUploadClaim,
+  PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
 } from "./store";
@@ -261,7 +263,11 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     }
   }
 
-  async recoverInterrupted(scope: PhotoUploadScope, now: number): Promise<number> {
+  async recoverInterrupted(
+    scope: PhotoUploadScope,
+    now: number,
+    maxAttempts = DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS
+  ): Promise<number> {
     try {
       const transaction = (await this.database).transaction("readwrite");
       return await runTransaction(transaction, async () => {
@@ -275,10 +281,14 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
           ) {
             continue;
           }
+          const attemptsExhausted = item.attemptCount >= maxAttempts;
           await transaction.put({
             ...item,
-            status: "queued",
+            status: attemptsExhausted ? "failed" : "queued",
             retryAt: null,
+            lastError: attemptsExhausted
+              ? PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR
+              : item.lastError,
             updatedAt: now,
             leaseOwner: null,
             leaseExpiresAt: null,
@@ -495,7 +505,8 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     queueId: string,
     scope: PhotoUploadScope,
     owner: string,
-    now: number
+    now: number,
+    maxAttempts = DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS
   ): Promise<boolean> {
     try {
       const transaction = (await this.database).transaction("readwrite");
@@ -505,11 +516,13 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
         const ownsLease = item.leaseOwner === owner;
         const ownsSlot = item.uploadSlotOwner === owner;
         if (!ownsLease && !ownsSlot) return false;
-        const recoverToQueued = item.status === "uploading" && ownsLease && ownsSlot;
+        const recoverUpload = item.status === "uploading" && ownsLease && ownsSlot;
+        const attemptsExhausted = recoverUpload && item.attemptCount >= maxAttempts;
         await transaction.put({
           ...item,
-          status: recoverToQueued ? "queued" : item.status,
-          retryAt: recoverToQueued ? null : item.retryAt,
+          status: recoverUpload ? (attemptsExhausted ? "failed" : "queued") : item.status,
+          retryAt: recoverUpload ? null : item.retryAt,
+          lastError: attemptsExhausted ? PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR : item.lastError,
           updatedAt: now,
           leaseOwner: ownsLease ? null : item.leaseOwner,
           leaseExpiresAt: ownsLease ? null : item.leaseExpiresAt,
