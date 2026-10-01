@@ -62,6 +62,64 @@ test.describe("Safari layout gates", () => {
     );
   });
 
+  test("Safari phone-number detection is turned off", async ({ page }) => {
+    await openLogin(page);
+    // Otherwise iOS rewrites work-order numbers, VINs, SKUs and prices into
+    // tel: links under React, and a tapped customer number dials from the
+    // staff member's own device instead of the shop line.
+    const content = await page
+      .locator('meta[name="format-detection"]')
+      .getAttribute("content");
+    expect(content).toContain("telephone=no");
+  });
+
+  test("sign-in email field opts out of autocorrect and capitalisation", async ({
+    page,
+  }) => {
+    await openLogin(page);
+    const email = page.locator("#email");
+    await expect(email).toHaveAttribute("autocapitalize", "none");
+    await expect(email).toHaveAttribute("autocorrect", "off");
+    await expect(email).toHaveAttribute("spellcheck", "false");
+  });
+
+  test("long-press draggable cards suppress the iOS callout", async ({ page }) => {
+    await openLogin(page);
+    const result = await page.evaluate(() => {
+      const host = document.createElement("div");
+      host.innerHTML =
+        '<div class="wo-card-drag-wrap wo-card-drag-wrap--draggable" data-probe="wo">x</div>' +
+        '<div class="pit-queue-drag-wrap" data-probe="pit">x</div>' +
+        '<button class="cc-bike-card" data-probe="cc">x</button>' +
+        '<div class="cc-mini-bike" data-probe="mini">x</div>' +
+        '<button class="cc-bike-card cc-bike-card--static" data-probe="static">x</button>';
+      document.body.append(host);
+      const read = (probe: string) => {
+        const el = host.querySelector<HTMLElement>(`[data-probe="${probe}"]`)!;
+        const cs = getComputedStyle(el) as CSSStyleDeclaration & {
+          webkitTouchCallout?: string;
+        };
+        return { callout: cs.webkitTouchCallout, userSelect: cs.userSelect };
+      };
+      const out = {
+        wo: read("wo"),
+        pit: read("pit"),
+        cc: read("cc"),
+        mini: read("mini"),
+        staticCard: read("static"),
+      };
+      host.remove();
+      return out;
+    });
+
+    for (const probe of [result.wo, result.pit, result.cc, result.mini]) {
+      expect(probe.callout).toBe("none");
+      expect(probe.userSelect).toBe("none");
+    }
+    // Static cards keep copy-and-select so staff can grab a WO number.
+    expect(result.staticCard.callout).not.toBe("none");
+  });
+
   test("sign-in page has no horizontal overflow", async ({ page }) => {
     await openLogin(page);
     await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
