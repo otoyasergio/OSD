@@ -4,7 +4,7 @@ Shop-device signoff for the Safari photo program. **Linux Playwright WebKit is n
 with `setInputFiles`; they do not reproduce iOS Photos picker bugs. A human
 must walk these flows on current shop hardware before production flags go on.
 
-Live app: <https://service.torontomoto.com>  
+Live app: <https://service.torontomoto.com>
 Legal entity: **OTOMOTO TORONTO MOTO INC.**
 
 Rollout order: migrations first, then `PHOTO_UPLOAD_QUEUE_ENABLED=1` (durable
