@@ -1,14 +1,25 @@
 import sharp from "sharp";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { addAuditLog, addTimelineEvent, createClient, requireUser, storageUpload } =
-  vi.hoisted(() => ({
-    addAuditLog: vi.fn(),
-    addTimelineEvent: vi.fn(),
-    createClient: vi.fn(),
-    requireUser: vi.fn(),
-    storageUpload: vi.fn(),
-  }));
+const {
+  addAuditLog,
+  addTimelineEvent,
+  createClient,
+  requireUser,
+  storageUpload,
+  storageRemove,
+  rpc,
+  intakePhotoSelect,
+} = vi.hoisted(() => ({
+  addAuditLog: vi.fn(),
+  addTimelineEvent: vi.fn(),
+  createClient: vi.fn(),
+  requireUser: vi.fn(),
+  storageUpload: vi.fn(),
+  storageRemove: vi.fn(),
+  rpc: vi.fn(),
+  intakePhotoSelect: vi.fn(),
+}));
 
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
 vi.mock("@/lib/database/supabase-server", () => ({ createClient }));
@@ -24,7 +35,7 @@ const USER_ID = "11111111-1111-4111-8111-111111111111";
 function client() {
   const storage = {
     upload: storageUpload,
-    remove: vi.fn(async () => ({ error: null })),
+    remove: storageRemove,
     createSignedUrls: vi.fn(async (paths: string[]) => ({
       data: paths.map((path) => ({
         path,
@@ -53,24 +64,21 @@ function client() {
     }
     if (table === "intake_photo") {
       return {
-        insert: (insert: Record<string, unknown>) => ({
-          select: () => ({
-            single: async () => ({
-              data: {
-                ...insert,
-                photo_url: null,
-                created_at: "2026-10-01T00:00:00.000Z",
-              },
-              error: null,
-            }),
+        select: () => ({
+          eq: () => ({
+            maybeSingle: intakePhotoSelect,
           }),
         }),
+        insert: () => {
+          throw new Error("direct intake_photo insert is not allowed");
+        },
       };
     }
     throw new Error(`Unexpected table ${table}`);
   });
   return {
     from,
+    rpc,
     storage: {
       from: () => storage,
     },
@@ -88,6 +96,9 @@ describe("uploadIntakePhoto canonical validation", () => {
       location_ids: [LOCATION_ID],
     });
     storageUpload.mockResolvedValue({ error: null });
+    storageRemove.mockResolvedValue({ error: null });
+    intakePhotoSelect.mockResolvedValue({ data: null, error: null });
+    rpc.mockResolvedValue({ data: [], error: null });
     createClient.mockResolvedValue(client());
   });
 
@@ -124,5 +135,65 @@ describe("uploadIntakePhoto canonical validation", () => {
 
     await expect(uploadIntakePhoto(WORK_ORDER_ID, input)).rejects.toThrow();
     expect(storageUpload).not.toHaveBeenCalled();
+  });
+
+  it("commits the photo through the atomic RPC and never writes event or audit separately", async () => {
+    const jpeg = await sharp({
+      create: {
+        width: 4,
+        height: 4,
+        channels: 3,
+        background: "#111111",
+      },
+    })
+      .jpeg()
+      .toBuffer();
+    const clientUploadId = "81111111-1111-4111-8111-111111111111";
+    rpc.mockImplementation(async (_name: string, args: Record<string, unknown>) => ({
+      data: [
+        {
+          photo_id: args.p_photo_id,
+          work_order_id: WORK_ORDER_ID,
+          uploaded_by_user_id: USER_ID,
+          storage_path: args.p_storage_path,
+          thumb_storage_path: args.p_thumb_storage_path,
+          photo_url: null,
+          category: args.p_category,
+          notes: args.p_notes,
+          inspection_result_id: args.p_inspection_result_id,
+          job_id: args.p_job_id,
+          client_upload_id: args.p_client_upload_id,
+          content_type: args.p_content_type,
+          byte_size: args.p_byte_size,
+          pixel_width: args.p_pixel_width,
+          pixel_height: args.p_pixel_height,
+          created_at: "2026-10-01T00:00:00.000Z",
+        },
+      ],
+      error: null,
+    }));
+
+    const photo = await uploadIntakePhoto(WORK_ORDER_ID, {
+      category: "front",
+      client_upload_id: clientUploadId,
+      file: new File([jpeg], "valid.jpg", { type: "image/jpeg" }),
+    });
+
+    expect(rpc).toHaveBeenCalledWith(
+      "create_intake_photo_with_event",
+      expect.objectContaining({
+        p_work_order_id: WORK_ORDER_ID,
+        p_category: "front",
+        p_client_upload_id: clientUploadId,
+        p_content_type: "image/jpeg",
+      })
+    );
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty("p_actor_user_id");
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty("p_location_id");
+    expect(rpc.mock.calls[0][1]).not.toHaveProperty("p_uploaded_by_user_id");
+    expect(addTimelineEvent).not.toHaveBeenCalled();
+    expect(addAuditLog).not.toHaveBeenCalled();
+    expect(photo.client_upload_id).toBe(clientUploadId);
+    expect(photo.signed_url).toMatch(/^https:\/\/signed\.example\//);
   });
 });

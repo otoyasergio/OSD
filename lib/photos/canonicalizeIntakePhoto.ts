@@ -1,6 +1,7 @@
 import "server-only";
 
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
+import { sniffImageMime } from "@/lib/forms/imageMime";
 import { INTAKE_THUMB_MAX_EDGE } from "@/lib/photos/makeIntakeThumb";
 
 export const INTAKE_PHOTO_MAX_EDGE = 4096;
@@ -31,6 +32,57 @@ export async function makeCanonicalIntakeThumbnail(
     .toBuffer();
 }
 
+async function decodeHeifFirstImage(source: Uint8Array): Promise<{
+  width: number;
+  height: number;
+  data: Buffer;
+}> {
+  const loaded = await import("heic-decode");
+  const decodeHeif =
+    typeof loaded.default === "function"
+      ? loaded.default
+      : (loaded as unknown as (input: { buffer: Buffer }) => Promise<{
+          width: number;
+          height: number;
+          data: ArrayLike<number>;
+        }>);
+  const image = await decodeHeif({ buffer: Buffer.from(source) });
+  if (
+    !image?.width ||
+    !image.height ||
+    !image.data ||
+    image.data.length < image.width * image.height * 4
+  ) {
+    throw new Error("PHOTO_TYPE_INVALID");
+  }
+  return {
+    width: image.width,
+    height: image.height,
+    data: Buffer.from(image.data as Uint8Array),
+  };
+}
+
+async function encodeCanonicalJpeg(
+  pipeline: Sharp
+): Promise<{ data: Buffer; info: { width: number; height: number; size: number } }> {
+  let encoded:
+    { data: Buffer; info: { width: number; height: number; size: number } } | undefined;
+  for (const quality of JPEG_QUALITIES) {
+    const next = await pipeline
+      .clone()
+      .resize(INTAKE_PHOTO_MAX_EDGE, INTAKE_PHOTO_MAX_EDGE, {
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality, mozjpeg: true })
+      .toBuffer({ resolveWithObject: true });
+    encoded = next;
+    if (next.data.byteLength <= INTAKE_PHOTO_SOFT_TARGET_BYTES) break;
+  }
+  if (!encoded) throw new Error("PHOTO_TYPE_INVALID");
+  return encoded;
+}
+
 export async function canonicalizeIntakePhoto(
   source: Uint8Array
 ): Promise<CanonicalIntakePhoto> {
@@ -39,7 +91,23 @@ export async function canonicalizeIntakePhoto(
   }
 
   try {
-    const image = sharp(source, { failOn: "error" });
+    if (sniffImageMime(source) === "image/heic") {
+      const raw = await decodeHeifFirstImage(source);
+      const encoded = await encodeCanonicalJpeg(
+        sharp(raw.data, {
+          raw: { width: raw.width, height: raw.height, channels: 4 },
+        })
+      );
+      return {
+        bytes: encoded.data,
+        width: encoded.info.width,
+        height: encoded.info.height,
+        contentType: INTAKE_PHOTO_CONTENT_TYPE,
+        byteSize: encoded.data.byteLength,
+      };
+    }
+
+    const image = sharp(source, { failOn: "warning" });
     const metadata = await image.metadata();
     if (
       !metadata.format ||
@@ -58,7 +126,7 @@ export async function canonicalizeIntakePhoto(
     if (canKeepPreparedJpeg) {
       // metadata() only reads the header; stats() forces a full decode so
       // truncated/corrupt JPEGs are never accepted as evidence objects.
-      await sharp(source, { failOn: "error" }).stats();
+      await sharp(source, { failOn: "warning" }).stats();
 
       const bytes = Buffer.from(source);
       return {
@@ -70,21 +138,9 @@ export async function canonicalizeIntakePhoto(
       };
     }
 
-    let encoded:
-      { data: Buffer; info: { width: number; height: number; size: number } } | undefined;
-    for (const quality of JPEG_QUALITIES) {
-      encoded = await sharp(source, { failOn: "error" })
-        .rotate()
-        .resize(INTAKE_PHOTO_MAX_EDGE, INTAKE_PHOTO_MAX_EDGE, {
-          fit: "inside",
-          withoutEnlargement: true,
-        })
-        .jpeg({ quality, mozjpeg: true })
-        .toBuffer({ resolveWithObject: true });
-      if (encoded.data.byteLength <= INTAKE_PHOTO_SOFT_TARGET_BYTES) break;
-    }
-
-    if (!encoded) throw new Error("PHOTO_TYPE_INVALID");
+    const encoded = await encodeCanonicalJpeg(
+      sharp(source, { failOn: "warning" }).rotate()
+    );
     return {
       bytes: encoded.data,
       width: encoded.info.width,

@@ -23,6 +23,7 @@ import {
   type IntakePhotoUploadRow,
 } from "@/lib/photos/intakePhotoUploadOrchestrator";
 import { INTAKE_PHOTO_BUCKET, signStoragePaths } from "@/lib/photos/signedUrls";
+import { removeIntakePhotoObjects } from "@/lib/photos/removeIntakePhotoObjects";
 import { PHOTO_UPLOAD_RETRY_ATTEMPTS } from "@/lib/forms/photoUploadErrors";
 import { classifyStorageUploadError } from "@/lib/forms/storageUploadRetry";
 
@@ -362,10 +363,7 @@ export async function uploadIntakePhoto(
     throw new Error("PHOTO_TYPE_INVALID");
   }
 
-  const { supabase, locationId, workOrderNumber } = await requireMutableWorkOrder(
-    user,
-    workOrderId
-  );
+  const { supabase } = await requireMutableWorkOrder(user, workOrderId);
 
   if (parsed.job_id) {
     const { data: jobRow, error: jobError } = await supabase
@@ -434,48 +432,35 @@ export async function uploadIntakePhoto(
         await uploadIntakeBytes(supabase, upload.path, upload.bytes, upload.contentType);
       },
       removeObjects: async (paths) => {
-        await supabase.storage.from(BUCKET).remove(paths);
+        await removeIntakePhotoObjects({
+          remove: (candidatePaths) =>
+            supabase.storage.from(BUCKET).remove(candidatePaths),
+          paths,
+          logFailure: (details) => {
+            console.error("intake photo storage remove failed", details);
+          },
+        });
       },
       insertPhoto: async (insert) => {
-        const { data, error } = await supabase
-          .from("intake_photo")
-          .insert(insert)
-          .select(COLUMNS)
-          .single();
+        const { data, error } = await supabase.rpc("create_intake_photo_with_event", {
+          p_photo_id: insert.photo_id,
+          p_work_order_id: insert.work_order_id,
+          p_storage_path: insert.storage_path,
+          p_thumb_storage_path: insert.thumb_storage_path,
+          p_category: insert.category,
+          p_notes: insert.notes,
+          p_inspection_result_id: insert.inspection_result_id,
+          p_job_id: insert.job_id,
+          p_client_upload_id: insert.client_upload_id,
+          p_content_type: insert.content_type,
+          p_byte_size: insert.byte_size,
+          p_pixel_width: insert.pixel_width,
+          p_pixel_height: insert.pixel_height,
+        });
         if (error) throw error;
-        return data as IntakePhotoUploadRow;
-      },
-      recordTimeline: async (savedPhoto) => {
-        const categoryLabel =
-          PHOTO_CATEGORY_LABELS[savedPhoto.category] ?? savedPhoto.category;
-        await addTimelineEvent(supabase, {
-          work_order_id: workOrderId,
-          user_id: user.user_id,
-          event_type: TimelineEventType.INTAKE_PHOTO_UPLOADED,
-          entity_type: "intake_photo",
-          entity_id: savedPhoto.photo_id,
-          description: `Intake photo uploaded (${categoryLabel})`,
-          new_value: {
-            category: savedPhoto.category,
-            storage_path: savedPhoto.storage_path,
-          },
-        });
-      },
-      recordAudit: async (savedPhoto) => {
-        const categoryLabel =
-          PHOTO_CATEGORY_LABELS[savedPhoto.category] ?? savedPhoto.category;
-        await addAuditLog(supabase, {
-          actor_user_id: user.user_id,
-          location_id: locationId,
-          action: "intake_photo_uploaded",
-          entity_type: "intake_photo",
-          entity_id: savedPhoto.photo_id,
-          description: `Intake photo (${categoryLabel}) uploaded on ${workOrderNumber}`,
-          new_value: {
-            category: savedPhoto.category,
-            storage_path: savedPhoto.storage_path,
-          },
-        });
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!row) throw new Error("PHOTO_UPLOAD_FAILED");
+        return row as IntakePhotoUploadRow;
       },
       logThumbnailFailure: (details) => {
         console.error("intake photo thumbnail failed", details);

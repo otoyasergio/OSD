@@ -53,8 +53,6 @@ function harness() {
   );
   const removeObjects = vi.fn(async () => undefined);
   const insertPhoto = vi.fn(async (insert: IntakePhotoInsert) => rowFromInsert(insert));
-  const recordTimeline = vi.fn(async () => undefined);
-  const recordAudit = vi.fn(async () => undefined);
   const logThumbnailFailure = vi.fn();
 
   const dependencies: IntakePhotoUploadDependencies = {
@@ -65,8 +63,6 @@ function harness() {
     uploadObject,
     removeObjects,
     insertPhoto,
-    recordTimeline,
-    recordAudit,
     logThumbnailFailure,
   };
 
@@ -78,8 +74,6 @@ function harness() {
     uploadObject,
     removeObjects,
     insertPhoto,
-    recordTimeline,
-    recordAudit,
     logThumbnailFailure,
   };
 }
@@ -108,6 +102,7 @@ describe("orchestrateIntakePhotoUpload", () => {
       contentType: "image/jpeg",
       upsert: false,
     });
+    expect(h.insertPhoto).toHaveBeenCalledTimes(1);
     expect(h.insertPhoto).toHaveBeenCalledWith(
       expect.objectContaining({
         photo_id: PHOTO_ID,
@@ -120,8 +115,6 @@ describe("orchestrateIntakePhotoUpload", () => {
         pixel_height: 900,
       })
     );
-    expect(h.recordTimeline).toHaveBeenCalledTimes(1);
-    expect(h.recordAudit).toHaveBeenCalledTimes(1);
     expect(result.photo_id).toBe(PHOTO_ID);
   });
 
@@ -152,8 +145,6 @@ describe("orchestrateIntakePhotoUpload", () => {
     expect(h.prepareCanonicalPhoto).not.toHaveBeenCalled();
     expect(h.uploadObject).not.toHaveBeenCalled();
     expect(h.insertPhoto).not.toHaveBeenCalled();
-    expect(h.recordTimeline).not.toHaveBeenCalled();
-    expect(h.recordAudit).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -219,8 +210,7 @@ describe("orchestrateIntakePhotoUpload", () => {
 
     expect(first.photo_id).toBe(PHOTO_ID);
     expect(second.photo_id).toBe(PHOTO_ID);
-    expect(h.recordTimeline).toHaveBeenCalledTimes(1);
-    expect(h.recordAudit).toHaveBeenCalledTimes(1);
+    expect(h.insertPhoto).toHaveBeenCalledTimes(2);
     expect(h.removeObjects).toHaveBeenCalledWith([
       `${WORK_ORDER_ID}/front/${LOSER_PHOTO_ID}.jpg`,
       `${WORK_ORDER_ID}/front/${LOSER_PHOTO_ID}.thumb.jpg`,
@@ -254,8 +244,7 @@ describe("orchestrateIntakePhotoUpload", () => {
       `${WORK_ORDER_ID}/front/${PHOTO_ID}.jpg`,
       `${WORK_ORDER_ID}/front/${PHOTO_ID}.thumb.jpg`,
     ]);
-    expect(h.recordTimeline).not.toHaveBeenCalled();
-    expect(h.recordAudit).not.toHaveBeenCalled();
+    expect(h.insertPhoto).toHaveBeenCalledTimes(1);
   });
 
   it("preserves the canonical row with no thumbnail after thumbnail upload failure", async () => {
@@ -276,8 +265,7 @@ describe("orchestrateIntakePhotoUpload", () => {
     expect(h.insertPhoto).toHaveBeenCalledWith(
       expect.objectContaining({ thumb_storage_path: null })
     );
-    expect(h.recordTimeline).toHaveBeenCalledTimes(1);
-    expect(h.recordAudit).toHaveBeenCalledTimes(1);
+    expect(h.insertPhoto).toHaveBeenCalledTimes(1);
     expect(h.removeObjects).not.toHaveBeenCalled();
     expect(h.logThumbnailFailure).toHaveBeenCalledWith({
       workOrderId: WORK_ORDER_ID,
@@ -287,6 +275,110 @@ describe("orchestrateIntakePhotoUpload", () => {
     });
     expect(JSON.stringify(h.logThumbnailFailure.mock.calls)).not.toContain(
       "signed.example"
+    );
+  });
+
+  it("preserves the candidate when a lost RPC response already committed this photo", async () => {
+    const h = harness();
+    const committedPath = `${WORK_ORDER_ID}/front/${PHOTO_ID}.jpg`;
+    const committed = rowFromInsert({
+      photo_id: PHOTO_ID,
+      work_order_id: WORK_ORDER_ID,
+      uploaded_by_user_id: USER_ID,
+      storage_path: committedPath,
+      thumb_storage_path: `${WORK_ORDER_ID}/front/${PHOTO_ID}.thumb.jpg`,
+      photo_url: null,
+      category: "front",
+      notes: null,
+      inspection_result_id: null,
+      job_id: null,
+      client_upload_id: CLIENT_UPLOAD_ID,
+      content_type: "image/jpeg",
+      byte_size: 4,
+      pixel_width: 1200,
+      pixel_height: 900,
+    });
+    h.findPhotoByClientUploadId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(committed);
+    h.insertPhoto.mockRejectedValue(new Error("fetch failed after commit"));
+
+    const result = await orchestrateIntakePhotoUpload(input(), h.dependencies);
+
+    expect(result).toEqual(committed);
+    expect(h.removeObjects).not.toHaveBeenCalled();
+  });
+
+  it("cleans loser objects then returns the concurrent winner after any RPC error", async () => {
+    const h = harness();
+    const winner = rowFromInsert({
+      photo_id: "72222222-2222-4222-8222-222222222222",
+      work_order_id: WORK_ORDER_ID,
+      uploaded_by_user_id: USER_ID,
+      storage_path: `${WORK_ORDER_ID}/front/winner.jpg`,
+      thumb_storage_path: `${WORK_ORDER_ID}/front/winner.thumb.jpg`,
+      photo_url: null,
+      category: "front",
+      notes: null,
+      inspection_result_id: null,
+      job_id: null,
+      client_upload_id: CLIENT_UPLOAD_ID,
+      content_type: "image/jpeg",
+      byte_size: 4,
+      pixel_width: 1200,
+      pixel_height: 900,
+    });
+    h.findPhotoByClientUploadId.mockResolvedValueOnce(null).mockResolvedValueOnce(winner);
+    h.insertPhoto.mockRejectedValue({ message: "statement timeout" });
+
+    const result = await orchestrateIntakePhotoUpload(input(), h.dependencies);
+
+    expect(result).toEqual(winner);
+    expect(h.removeObjects).toHaveBeenCalledWith([
+      `${WORK_ORDER_ID}/front/${PHOTO_ID}.jpg`,
+      `${WORK_ORDER_ID}/front/${PHOTO_ID}.thumb.jpg`,
+    ]);
+  });
+
+  it("cleans the candidate and surfaces a safe error when the RPC fails with no row", async () => {
+    const h = harness();
+    h.insertPhoto.mockRejectedValue({ message: "connection reset" });
+
+    await expect(orchestrateIntakePhotoUpload(input(), h.dependencies)).rejects.toThrow(
+      "PHOTO_UPLOAD_FAILED"
+    );
+    expect(h.findPhotoByClientUploadId).toHaveBeenCalledTimes(2);
+    expect(h.removeObjects).toHaveBeenCalledWith([
+      `${WORK_ORDER_ID}/front/${PHOTO_ID}.jpg`,
+      `${WORK_ORDER_ID}/front/${PHOTO_ID}.thumb.jpg`,
+    ]);
+  });
+
+  it("does not return a concurrent winner when loser cleanup fails", async () => {
+    const h = harness();
+    const winner = rowFromInsert({
+      photo_id: "72222222-2222-4222-8222-222222222222",
+      work_order_id: WORK_ORDER_ID,
+      uploaded_by_user_id: USER_ID,
+      storage_path: `${WORK_ORDER_ID}/front/winner.jpg`,
+      thumb_storage_path: null,
+      photo_url: null,
+      category: "front",
+      notes: null,
+      inspection_result_id: null,
+      job_id: null,
+      client_upload_id: CLIENT_UPLOAD_ID,
+      content_type: "image/jpeg",
+      byte_size: 4,
+      pixel_width: 1200,
+      pixel_height: 900,
+    });
+    h.findPhotoByClientUploadId.mockResolvedValueOnce(null).mockResolvedValueOnce(winner);
+    h.insertPhoto.mockRejectedValue({ code: "23505", message: "duplicate key" });
+    h.removeObjects.mockRejectedValue(new Error("PHOTO_UPLOAD_FAILED"));
+
+    await expect(orchestrateIntakePhotoUpload(input(), h.dependencies)).rejects.toThrow(
+      "PHOTO_UPLOAD_FAILED"
     );
   });
 });

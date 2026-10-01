@@ -641,6 +641,24 @@ export type Database = {
           generation_attempt_id: string;
         }[];
       };
+      create_intake_photo_with_event: {
+        Args: {
+          p_photo_id: string;
+          p_work_order_id: string;
+          p_storage_path: string;
+          p_thumb_storage_path: string | null;
+          p_category: string;
+          p_notes: string | null;
+          p_inspection_result_id: string | null;
+          p_job_id: string | null;
+          p_client_upload_id: string | null;
+          p_content_type: string;
+          p_byte_size: number;
+          p_pixel_width: number;
+          p_pixel_height: number;
+        };
+        Returns: Database["public"]["Tables"]["intake_photo"]["Row"][];
+      };
     };
     Enums: Record<string, never>;
   };

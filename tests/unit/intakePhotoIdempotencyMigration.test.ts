@@ -55,5 +55,33 @@ describe("intake photo upload idempotency migration", () => {
     ]) {
       expect(types).toMatch(new RegExp(`${field}: [^;]+ \\| null;`));
     }
+    expect(types).toMatch(/create_intake_photo_with_event:\s*\{/);
+  });
+
+  it("adds a SECURITY INVOKER RPC that inserts photo, timeline, and audit atomically", () => {
+    expect(sql).toMatch(
+      /create(?:\s+or\s+replace)?\s+function\s+public\.create_intake_photo_with_event\s*\(/i
+    );
+    expect(sql).toMatch(/security\s+invoker/i);
+    expect(sql).toMatch(/insert\s+into\s+public\.intake_photo/i);
+    expect(sql).toMatch(/insert\s+into\s+public\.timeline_event/i);
+    expect(sql).toMatch(/insert\s+into\s+public\.audit_log/i);
+    expect(sql).toMatch(/current_app_user_id\s*\(/i);
+    expect(sql).toMatch(
+      /from\s+public\.work_order[\s\S]*location_id[\s\S]*work_order_number/i
+    );
+    expect(sql).toMatch(/Intake photo uploaded \(/);
+    expect(sql).toMatch(/intake_photo_uploaded/);
+    expect(sql).toMatch(/jsonb_build_object\s*\(\s*'category'/i);
+    expect(sql).not.toMatch(/p_actor_user_id|p_location_id|p_uploaded_by_user_id/i);
+  });
+
+  it("revokes PUBLIC and anon execute and grants authenticated", () => {
+    expect(sql).toMatch(
+      /revoke\s+all\s+on\s+function\s+public\.create_intake_photo_with_event\s*\([^)]+\)\s+from\s+public,\s*anon/i
+    );
+    expect(sql).toMatch(
+      /grant\s+execute\s+on\s+function\s+public\.create_intake_photo_with_event\s*\([^)]+\)\s+to\s+authenticated/i
+    );
   });
 });

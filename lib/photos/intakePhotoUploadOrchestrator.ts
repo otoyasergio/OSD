@@ -57,8 +57,6 @@ export type IntakePhotoUploadDependencies = {
   uploadObject(upload: IntakePhotoStorageUpload): Promise<void>;
   removeObjects(paths: string[]): Promise<void>;
   insertPhoto(insert: IntakePhotoInsert): Promise<IntakePhotoUploadRow>;
-  recordTimeline(photo: IntakePhotoUploadRow): Promise<void>;
-  recordAudit(photo: IntakePhotoUploadRow): Promise<void>;
   logThumbnailFailure(details: {
     workOrderId: string;
     photoId: string;
@@ -87,15 +85,6 @@ function existingPhotoForInput(
     throw new Error("PHOTO_UPLOAD_ID_CONFLICT");
   }
   return photo;
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    String(error.code) === "23505"
-  );
 }
 
 function storageStatusCode(error: unknown): string | undefined {
@@ -150,41 +139,47 @@ export async function orchestrateIntakePhotoUpload(
     });
   }
 
-  let photo: IntakePhotoUploadRow;
+  const insert: IntakePhotoInsert = {
+    photo_id: photoId,
+    work_order_id: input.workOrderId,
+    uploaded_by_user_id: input.uploadedByUserId,
+    storage_path: storagePath,
+    thumb_storage_path: thumbStoragePath,
+    photo_url: null,
+    category: input.category,
+    notes: input.notes,
+    inspection_result_id: input.inspectionResultId,
+    job_id: input.jobId,
+    client_upload_id: input.clientUploadId,
+    content_type: canonical.contentType,
+    byte_size: canonical.byteSize,
+    pixel_width: canonical.width,
+    pixel_height: canonical.height,
+  };
+
   try {
-    photo = await dependencies.insertPhoto({
-      photo_id: photoId,
-      work_order_id: input.workOrderId,
-      uploaded_by_user_id: input.uploadedByUserId,
-      storage_path: storagePath,
-      thumb_storage_path: thumbStoragePath,
-      photo_url: null,
-      category: input.category,
-      notes: input.notes,
-      inspection_result_id: input.inspectionResultId,
-      job_id: input.jobId,
-      client_upload_id: input.clientUploadId,
-      content_type: canonical.contentType,
-      byte_size: canonical.byteSize,
-      pixel_width: canonical.width,
-      pixel_height: canonical.height,
-    });
+    return await dependencies.insertPhoto(insert);
   } catch (error) {
-    await dependencies.removeObjects(storedPaths);
-    if (input.clientUploadId && isUniqueViolation(error)) {
-      let winner: IntakePhotoUploadRow | null = null;
+    if (input.clientUploadId) {
+      let found: IntakePhotoUploadRow | null = null;
       try {
-        winner = await dependencies.findPhotoByClientUploadId(input.clientUploadId);
+        found = await dependencies.findPhotoByClientUploadId(input.clientUploadId);
       } catch {
-        throw new Error("PHOTO_UPLOAD_FAILED");
+        found = null;
       }
-      if (winner) return existingPhotoForInput(winner, input);
+      if (found) {
+        const committedThisCandidate =
+          found.photo_id === photoId || found.storage_path === storagePath;
+        if (committedThisCandidate) {
+          return existingPhotoForInput(found, input);
+        }
+        await dependencies.removeObjects(storedPaths);
+        return existingPhotoForInput(found, input);
+      }
+      await dependencies.removeObjects(storedPaths);
       throw new Error("PHOTO_UPLOAD_FAILED");
     }
+    await dependencies.removeObjects(storedPaths);
     throw error;
   }
-
-  await dependencies.recordTimeline(photo);
-  await dependencies.recordAudit(photo);
-  return photo;
 }
