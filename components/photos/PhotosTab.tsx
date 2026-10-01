@@ -7,9 +7,13 @@ import type { PhotoFormState } from "@/app/(app)/work_orders/photo-actions";
 import { PHOTO_CATEGORY_LABELS, REQUIRED_PHOTO_CATEGORIES } from "@/lib/status/labels";
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 import { formatDateTime } from "@/lib/datetime/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
@@ -85,6 +89,14 @@ export function PhotosTab({
       if (!file) {
         target.value = "";
         setPendingFileName(null);
+        return;
+      }
+      if (exceedsServerActionUploadLimit(file)) {
+        // This form posts straight to the action; a body over Vercel's cap is
+        // refused before the app runs, so stop it here with a reason.
+        target.value = "";
+        setPendingFileName(null);
+        setPickError(photoTooLargeMessage(file));
         return;
       }
       const transfer = new DataTransfer();

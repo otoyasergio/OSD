@@ -84,6 +84,12 @@ import {
   findDocketItemByDragId,
 } from "@/lib/technician/benchDrag";
 import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
+import { collectPhotoFiles } from "@/lib/forms/photoFiles";
+import {
+  describeUploadOutcome,
+  uploadPhotosIndividually,
+} from "@/lib/forms/uploadPhotosIndividually";
+import { toFormErrorMessage } from "@/lib/services/errors";
 
 const benchCollision: CollisionDetection = (args) => pointerWithin(args);
 
@@ -235,10 +241,42 @@ export function TechnicianFloorShell({
     installPartFloorAction,
     null
   );
-  const [proofState, proofAction, proofPending] = useActionState(
-    uploadJobProofAction,
-    null
-  );
+  // After-photos go up one Server Action call per photo. A single multi-file
+  // POST puts every photo in one body, and Vercel refuses bodies over 4.5 MB
+  // before the action runs — two bike photos were enough to hit that.
+  const [proofState, setProofState] = useState<FloorActionState>(null);
+  const [proofPending, setProofPending] = useState(false);
+  function proofAction(formData: FormData) {
+    if (proofPending) return;
+    const jobId = String(formData.get("job_id") ?? "");
+    const workOrderId = String(formData.get("work_order_id") ?? "");
+    const files = collectPhotoFiles(formData);
+    if (files.length === 0) {
+      setProofState({ error: toFormErrorMessage(new Error("PHOTO_REQUIRED")) });
+      return;
+    }
+    setProofState(null);
+    setProofPending(true);
+    void (async () => {
+      try {
+        const outcome = await uploadPhotosIndividually(files, (file) => {
+          const single = new FormData();
+          single.set("job_id", jobId);
+          single.set("work_order_id", workOrderId);
+          single.set("file", file);
+          return uploadJobProofAction(null, single);
+        });
+        const message = describeUploadOutcome(outcome, "proof photo");
+        if (outcome.uploaded > 0) {
+          setNote(message);
+          startTransition(() => scheduleRefresh());
+        }
+        setProofState(outcome.failed > 0 ? { error: message } : { success: message });
+      } finally {
+        setProofPending(false);
+      }
+    })();
+  }
   const [skipState, skipAction, skipPending] = useActionState(skipProofAction, null);
   const [workState, workAction, workPending] = useActionState(
     completePerformWorkAction,

@@ -17,7 +17,12 @@ import {
 import { FormError } from "@/components/forms/Field";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import {
+  describeUploadOutcome,
+  uploadPhotosIndividually,
+} from "@/lib/forms/uploadPhotosIndividually";
 import { formatDate } from "@/lib/datetime/format";
 import type { LightboxPhoto } from "@/lib/photos/lightbox";
 
@@ -80,23 +85,30 @@ export function MotorcycleDocuments({
     try {
       const files = await readPickedPhotoFiles(input);
       if (files.length === 0) return;
-      const formData = new FormData(formRef.current);
-      formData.delete("file");
-      for (const file of files) formData.append("file", file);
+      const shared = new FormData(formRef.current);
+      shared.delete("file");
       startTransition(() => {
         startPending(async () => {
-          const result = await uploadMotorcycleDocumentAction(motorcycleId, formData);
-          if (result.error) {
-            setError(result.error);
-            return;
+          // One request per document: several photos in one body would exceed
+          // Vercel's 4.5 MB request cap and fail before the action runs.
+          const outcome = await uploadPhotosIndividually(files, (file) => {
+            const formData = new FormData();
+            for (const [key, value] of shared.entries()) formData.append(key, value);
+            formData.set("file", file);
+            return uploadMotorcycleDocumentAction(motorcycleId, formData);
+          });
+          if (outcome.failed > 0) {
+            setError(describeUploadOutcome(outcome, "document"));
           }
-          setTitle("");
-          refresh();
+          if (outcome.uploaded > 0) {
+            setTitle("");
+            refresh();
+          }
         });
       });
     } catch {
       input.value = "";
-      setError("Could not read that photo. Try again, or use the camera instead.");
+      setError(UNREADABLE_PHOTO_MESSAGE);
     } finally {
       setPreparing(false);
     }

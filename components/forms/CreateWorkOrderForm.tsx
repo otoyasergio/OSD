@@ -29,6 +29,7 @@ import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryF
 import { OptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
 import {
   intakeContractHref,
+  intakePhotoFailureMessage,
   uploadOptionalIntakePhotos,
   uploadSelectedIntakePhoto,
 } from "@/components/forms/intakePhotoUploadClient";
@@ -38,7 +39,7 @@ import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
 import { FindMotorcycleByVin } from "@/components/forms/FindMotorcycleByVin";
 import { MileageUnitToggle } from "@/components/forms/MileageUnitToggle";
 
-import { CREATE_INTAKE_PHOTO_SLOTS, PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
+import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
 import {
   CREATE_WORK_ORDER_WIZARD_STEPS,
   canNavigateToWizardStep,
@@ -432,16 +433,17 @@ export function CreateWorkOrderForm({
         REQUIRED_PHOTO_UPLOAD_CONCURRENCY,
         async (category) => {
           const original = intakePhotos[category];
-          if (!(original instanceof File) || original.size === 0) return false;
+          if (!(original instanceof File) || original.size === 0) {
+            return { uploaded: false, error: null };
+          }
           return uploadSelectedIntakePhoto(created.workOrderId!, original, category);
         }
       );
-      const failed = ALL_REQUIRED.filter((_, index) => !uploadResults[index]);
+      const failed = ALL_REQUIRED.filter((_, index) => !uploadResults[index]?.uploaded);
 
       if (failed.length > 0) {
-        const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
         setRecovery({
-          error: `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`,
+          error: intakePhotoFailureMessage(failed, uploadResults),
           workOrderId: created.workOrderId,
           workOrderNumber: created.workOrderNumber,
           missingCategories: failed,
