@@ -38,6 +38,8 @@ export function CustomerForm({ action, customer, submitLabel, returnTo }: Props)
           name="first_name"
           required
           autoComplete="given-name"
+          autoCapitalize="words"
+          autoCorrect="off"
           autoFocus={!customer}
           defaultValue={customer?.first_name}
           error={fieldErrors.first_name}
@@ -47,6 +49,8 @@ export function CustomerForm({ action, customer, submitLabel, returnTo }: Props)
           name="last_name"
           required
           autoComplete="family-name"
+          autoCapitalize="words"
+          autoCorrect="off"
           defaultValue={customer?.last_name}
           error={fieldErrors.last_name}
         />

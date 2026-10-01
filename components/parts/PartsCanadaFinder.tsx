@@ -100,6 +100,9 @@ export function PartsCanadaFinder({
           type="search"
           value={query}
           autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           role="combobox"
           aria-expanded={open && results.length > 0}
           aria-controls={listboxId}

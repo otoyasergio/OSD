@@ -15,6 +15,9 @@ type TextFieldProps = {
   inputMode?:
     "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
   autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  /** Safari/iOS autocorrection. Turn off for names, codes, and identifiers. */
+  autoCorrect?: "on" | "off";
+  spellCheck?: boolean;
 };
 
 export function TextField({
@@ -33,6 +36,8 @@ export function TextField({
   maxLength,
   inputMode,
   autoCapitalize,
+  autoCorrect,
+  spellCheck,
 }: TextFieldProps) {
   const inputId = id ?? name;
   const errorId = error ? `${inputId}-error` : undefined;
@@ -59,6 +64,8 @@ export function TextField({
         maxLength={maxLength}
         inputMode={inputMode}
         autoCapitalize={autoCapitalize}
+        autoCorrect={autoCorrect}
+        spellCheck={spellCheck}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}
       />
