@@ -39,6 +39,28 @@ describe("describePhotoUploadFailure", () => {
     expect(isRetryablePhotoUploadFailure(message)).toBe(true);
   });
 
+  it("recognises Safari's wording for the same network failures", () => {
+    for (const text of [
+      "Load failed",
+      "The network connection was lost.",
+      "The Internet connection appears to be offline.",
+      "The request timed out.",
+      "The operation was aborted.",
+      "cancelled",
+    ]) {
+      expect(describePhotoUploadFailure(new TypeError(text)), text).toBe(
+        PHOTO_UPLOAD_CONNECTION_MESSAGE
+      );
+    }
+  });
+
+  it("classifies aborted fetches by DOMException name regardless of message", () => {
+    const aborted = new DOMException("Some future wording", "AbortError");
+    expect(describePhotoUploadFailure(aborted)).toBe(PHOTO_UPLOAD_CONNECTION_MESSAGE);
+    const timedOut = new DOMException("", "TimeoutError");
+    expect(describePhotoUploadFailure(timedOut)).toBe(PHOTO_UPLOAD_CONNECTION_MESSAGE);
+  });
+
   it("hides framework internals behind the generic retryable message", () => {
     const message = describePhotoUploadFailure(
       new Error("An unexpected response was received from the server.")

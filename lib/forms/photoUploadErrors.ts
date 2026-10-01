@@ -25,8 +25,14 @@ export const PHOTO_TOO_LARGE_TO_UPLOAD_MESSAGE = `That photo is too large to upl
 export const PHOTO_UPLOAD_RETRY_ATTEMPTS = 3;
 export const PHOTO_UPLOAD_RETRY_BASE_MS = 400;
 
+/**
+ * Chrome says "Failed to fetch"; Safari on iPhone/iPad says "Load failed",
+ * "The network connection was lost.", "The Internet connection appears to be
+ * offline.", "The request timed out." or "The operation was aborted." (the
+ * last two also when iOS suspends the tab mid-upload).
+ */
 const RETRYABLE_FAILURE =
-  /failed to fetch|networkerror|network request failed|load failed|lost connection|timed? ?out|aborterror|internal server error|\b502\b|\b503\b|\b504\b|could not upload the photo/i;
+  /failed to fetch|networkerror|network request failed|load failed|lost connection|network connection|connection was lost|offline|timed? ?out|aborterror|\baborted\b|\bcancell?ed\b|internal server error|\b502\b|\b503\b|\b504\b|could not upload the photo/i;
 
 /**
  * Vercel's 413 for bodies over 4.5 MB and Next's own `bodySizeLimit` guard.
@@ -84,6 +90,12 @@ export function describePhotoUploadFailure(error: unknown): string {
     error instanceof Error ? error.message : typeof error === "string" ? error : "";
   if (OWN_MESSAGES.has(message)) return message;
   if (isPayloadTooLargeFailure(message)) return PHOTO_TOO_LARGE_TO_UPLOAD_MESSAGE;
+  // WebKit's message for an aborted fetch varies by iOS version; the DOMException
+  // name does not.
+  const name = error instanceof Error ? error.name : "";
+  if (name === "AbortError" || name === "TimeoutError" || name === "NetworkError") {
+    return PHOTO_UPLOAD_CONNECTION_MESSAGE;
+  }
   if (isRetryablePhotoUploadFailure(message)) return PHOTO_UPLOAD_CONNECTION_MESSAGE;
   return PHOTO_UPLOAD_FAILED_MESSAGE;
 }
