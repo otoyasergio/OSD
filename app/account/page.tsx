@@ -13,6 +13,7 @@ import {
   removeProfilePhotoAction,
   uploadProfilePhotoAction,
 } from "@/app/account/actions";
+import { photoUploadQueueEnabled } from "@/lib/config/features";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,11 @@ export default async function AccountPage() {
   const photoUrl = await createProfilePhotoSignedUrl(supabase, user.profile_photo_path);
 
   return (
-    <AccountPhotoQueueScope userId={user.user_id} locationId={user.active_location_id}>
+    <AccountPhotoQueueScope
+      userId={user.user_id}
+      locationId={user.active_location_id}
+      durableQueueEnabled={photoUploadQueueEnabled()}
+    >
       <main className="min-h-full flex-1 bg-background">
         <header className="flex items-center justify-between gap-4 border-b border-chrome-border bg-chrome px-4 py-3 sm:px-6">
           <Link href={user.active_location_id ? "/" : "/account"}>

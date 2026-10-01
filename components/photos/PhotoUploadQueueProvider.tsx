@@ -25,6 +25,7 @@ import {
   PhotoQueuePersistenceError,
   PhotoUploadQueueClosedError,
 } from "@/lib/photos/uploadQueue/errors";
+import { createPhotoUploadQueueStore } from "@/lib/photos/uploadQueue/createStore";
 import { IndexedDbPhotoUploadQueueStore } from "@/lib/photos/uploadQueue/indexedDbStore";
 import type { PhotoUploadQueueStore } from "@/lib/photos/uploadQueue/store";
 import {
@@ -104,6 +105,7 @@ type ProviderProps = {
   locationId: string;
   children?: ReactNode;
   store?: PhotoUploadQueueStore;
+  durableQueueEnabled?: boolean;
   uploadIntakePhoto?: QueuedPhotoUploadActions["uploadIntakePhoto"];
   uploadAssistantPhoto?: QueuedPhotoUploadActions["uploadAssistantPhoto"];
   isOnline?: () => boolean;
@@ -115,6 +117,7 @@ export function PhotoUploadQueueProvider({
   locationId,
   children,
   store: storeOverride,
+  durableQueueEnabled = false,
   uploadIntakePhoto = uploadIntakePhotoAction,
   uploadAssistantPhoto = uploadAssistantPhotoAction,
   isOnline,
@@ -166,8 +169,8 @@ export function PhotoUploadQueueProvider({
   );
 
   const innerStore = useMemo(
-    () => storeOverride ?? new IndexedDbPhotoUploadQueueStore(),
-    [storeOverride]
+    () => storeOverride ?? createPhotoUploadQueueStore(durableQueueEnabled),
+    [durableQueueEnabled, storeOverride]
   );
   const store = useMemo(
     () =>

@@ -1104,4 +1104,55 @@ describe("PhotoUploadQueueProvider", () => {
     expect(api.items).toEqual([]);
     expect(api.counts).toEqual({ waiting: 0, uploading: 0, failed: 0 });
   });
+
+  it("uses a production volatile store when durable queue is off and completes wait in one session", async () => {
+    let api!: PhotoUploadQueueApi;
+    const uploadIntakePhoto = vi.fn(
+      async (_id: string, _prev: unknown, form: FormData) => ({
+        error: null,
+        photoId: PHOTO_ID,
+        clientUploadId: String(form.get("client_upload_id")),
+      })
+    );
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: USER_A.userId,
+            locationId: USER_A.locationId,
+            durableQueueEnabled: false,
+            uploadIntakePhoto,
+          },
+          createElement(Probe, {
+            onReady: (next) => {
+              api = next;
+            },
+          })
+        )
+      );
+    });
+
+    let queued!: QueuedPhotoUpload;
+    await act(async () => {
+      queued = await api.enqueue({
+        file: photoFile(),
+        category: "front",
+        workOrderId: "work-order-1",
+        notes: "volatile session",
+      });
+    });
+    const waited = await api.waitForConfirmations([queued.queueId]);
+    expect(waited).toEqual({
+      ok: true,
+      confirmations: [
+        expect.objectContaining({
+          queueId: queued.queueId,
+          photoId: PHOTO_ID,
+        }),
+      ],
+    });
+    expect(uploadIntakePhoto).toHaveBeenCalledTimes(1);
+    expect(api.items).toEqual([]);
+  });
 });

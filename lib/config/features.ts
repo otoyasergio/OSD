@@ -98,3 +98,15 @@ export function checkoutEvidenceEnabled(
 ): boolean {
   return env.CHECKOUT_EVIDENCE_ENABLED === "1";
 }
+
+/**
+ * Persist the photo upload queue in IndexedDB. Unset or any value other than
+ * "1" keeps the in-memory volatile store so a tab close still drops pending
+ * photos (legacy behavior). Independent of CHECKOUT_EVIDENCE_ENABLED — roll
+ * the durable queue first, then the checkout gate.
+ */
+export function photoUploadQueueEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return env.PHOTO_UPLOAD_QUEUE_ENABLED === "1";
+}

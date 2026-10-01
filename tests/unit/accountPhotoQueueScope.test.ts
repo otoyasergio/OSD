@@ -39,10 +39,10 @@ describe("account photo queue scope", () => {
       join(process.cwd(), "components/layout/AppShell.tsx"),
       "utf8"
     );
-    expect(account).toMatch(/key=\{`\$\{userId\}:\$\{locationId\}`\}/);
-    expect(appShell).toMatch(
-      /key=\{`\$\{user\.(user_id|active_location_id)\}:\$\{user\.(active_location_id|user_id)\}`\}/
-    );
+    expect(account).toMatch(/photoUploadQueueProviderKey\(/);
+    expect(account).toMatch(/durableQueueEnabled/);
+    expect(appShell).toMatch(/photoUploadQueueProviderKey\(/);
+    expect(appShell).toMatch(/durableQueueEnabled=/);
   });
 });
 

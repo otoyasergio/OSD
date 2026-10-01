@@ -19,6 +19,7 @@ import {
   staffHomePath,
 } from "@/lib/permissions/checks";
 import { listUnreadStaffNotifications } from "@/lib/services/staffNotifications";
+import { photoUploadQueueEnabled } from "@/lib/config/features";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       locations={locations}
       profilePhotoUrl={profilePhotoUrl}
       initialNotifications={initialNotifications}
+      durablePhotoUploadQueue={photoUploadQueueEnabled()}
     >
       {children}
     </AppShell>
