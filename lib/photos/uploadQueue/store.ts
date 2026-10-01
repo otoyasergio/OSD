@@ -1,5 +1,7 @@
 import { assertPhotoUploadTransition } from "./stateTransitions";
 import type {
+  PhotoUploadConfirmationInput,
+  PhotoUploadConfirmationReceipt,
   PhotoUploadOutcome,
   PhotoUploadQueuePatch,
   PhotoUploadScope,
@@ -49,13 +51,27 @@ export type PhotoUploadFailureSettlement = {
   updatedAt: number;
 };
 
-/**
- * Creates the state persisted for one observed uploader failure.
- *
- * Claims and uploader starts do not count as attempts. Interrupted uploads are
- * replayed at least once, so the Task 2 server uploader must use clientUploadId
- * idempotently before this queue is integrated.
- */
+/** Metadata-only receipt written atomically when a claimed upload is confirmed. */
+export function createPhotoUploadConfirmationReceipt(
+  item: QueuedPhotoUpload,
+  confirmation: PhotoUploadConfirmationInput,
+  confirmedAt: number
+): PhotoUploadConfirmationReceipt {
+  return {
+    queueId: item.queueId,
+    clientUploadId: confirmation.clientUploadId,
+    photoId: confirmation.photoId,
+    userId: item.userId,
+    locationId: item.locationId,
+    confirmedAt,
+    category: item.category,
+    ...(item.workOrderId ? { workOrderId: item.workOrderId } : {}),
+    ...(item.jobId ? { jobId: item.jobId } : {}),
+    ...(item.inspectionResultId ? { inspectionResultId: item.inspectionResultId } : {}),
+    ...(item.assistantThreadId ? { assistantThreadId: item.assistantThreadId } : {}),
+  };
+}
+
 export function attachQueuedPhotoToWorkOrder(
   item: QueuedPhotoUpload,
   workOrderId: string,
@@ -90,6 +106,13 @@ export function createManualRetryState(
   };
 }
 
+/**
+ * Creates the state persisted for one observed uploader failure.
+ *
+ * Claims and uploader starts do not count as attempts. Interrupted uploads are
+ * replayed at least once, so the Task 2 server uploader must use clientUploadId
+ * idempotently before this queue is integrated.
+ */
 export function createPhotoUploadFailureSettlement(
   persistedFailureCount: number,
   outcome: PhotoUploadFailureOutcome,
@@ -184,8 +207,15 @@ export interface PhotoUploadQueueStore {
     queueId: string,
     scope: PhotoUploadScope,
     owner: string,
-    now: number
+    now: number,
+    confirmation: PhotoUploadConfirmationInput
   ): Promise<boolean>;
+  listConfirmations(scope: PhotoUploadScope): Promise<PhotoUploadConfirmationReceipt[]>;
+  getConfirmation(
+    queueId: string,
+    scope: PhotoUploadScope
+  ): Promise<PhotoUploadConfirmationReceipt | null>;
+  pruneConfirmations(scope: PhotoUploadScope, olderThan: number): Promise<number>;
   releaseUploadClaim(
     queueId: string,
     scope: PhotoUploadScope,

@@ -51,7 +51,10 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
       "utf8"
     );
     expect(source).toMatch(/queue\.enqueue/);
-    expect(source).toMatch(/clientUploadId|workOrderId/);
+    expect(source).toMatch(/applyPickedFile/);
+    expect(source).toMatch(/subscribeConfirmation/);
+    expect(source).toMatch(/categoryRef|notesRef/);
+    expect(source).not.toMatch(/pendingFile/);
     expect(source).not.toMatch(/DataTransfer/);
     expect(source).not.toMatch(/useActionState\(uploadAction/);
   });
@@ -62,9 +65,11 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
       "utf8"
     );
     expect(source).toMatch(/queue\.enqueue/);
+    expect(source).toMatch(/queue\.confirmations/);
     expect(source).toMatch(/UNREADABLE_PHOTO_MESSAGE/);
     expect(source).toMatch(/workOrderId/);
     expect(source).toMatch(/jobId/);
+    expect(source).not.toMatch(/ownedQueueIds/);
     expect(source).not.toMatch(/useImperativeHandle/);
     expect(source).not.toMatch(/openCamera|openLibrary/);
     expect(source).not.toMatch(/name="file"/);
@@ -81,6 +86,16 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
     expect(source).not.toMatch(/name="file"/);
   });
 
+  it("floor shell no longer keeps unused proof action pending state", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/technician/TechnicianFloorShell.tsx"),
+      "utf8"
+    );
+    expect(source).not.toMatch(/uploadJobProofAction/);
+    expect(source).not.toMatch(/proofPending/);
+    expect(source).not.toMatch(/proofState/);
+  });
+
   it("diagnostics picker enqueues and selects a saved confirmation once", () => {
     const source = readFileSync(
       join(process.cwd(), "components/diagnostics/DiagnosticsPhotoPicker.tsx"),
@@ -89,6 +104,11 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
     expect(source).toMatch(/queue\.enqueue/);
     expect(source).toMatch(/assistantThreadId/);
     expect(source).toMatch(/subscribeConfirmation/);
+    expect(source).toMatch(/usePhotoUploadQueue/);
+    expect(source).toMatch(/htmlFor=\{cameraInputId\}/);
+    expect(source).toMatch(/htmlFor=\{libraryInputId\}/);
+    expect(source).not.toMatch(/useOptionalPhotoUploadQueue/);
+    expect(source).not.toMatch(/\.click\(\)/);
     expect(source).not.toMatch(/uploadAssistantPhotoAction/);
     expect(source).not.toMatch(/withPhotoUploadRetries/);
   });

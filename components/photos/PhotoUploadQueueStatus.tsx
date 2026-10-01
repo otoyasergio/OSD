@@ -49,7 +49,7 @@ export function PhotoUploadQueueStatus() {
               const categoryLabel =
                 PHOTO_CATEGORY_LABELS[item.category as PhotoCategory] ?? item.category;
               const canRemove = item.status !== "uploading";
-              const canRetry = item.status === "failed" || item.status === "queued";
+              const canRetry = item.status === "failed";
               return (
                 <li key={item.queueId} className="photo-queue-status-item">
                   <p className="photo-queue-status-item-title">{categoryLabel}</p>

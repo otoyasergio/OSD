@@ -34,7 +34,6 @@ import {
   filesFromQueuedIntakeItems,
   INTAKE_PHOTOS_RESTORED,
   intakeContractHref,
-  requiredQueueIdsForIntake,
 } from "@/lib/photos/intakeQueue";
 import { CustomerSearchPicker } from "@/components/forms/CustomerSearchPicker";
 import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
@@ -454,14 +453,11 @@ export function CreateWorkOrderForm({
         return;
       }
 
-      const requiredQueueIds = requiredQueueIdsForIntake(queue.items, ALL_REQUIRED, {
-        intakeDraftId,
-      });
       const waited = await attachAndWaitForRequiredIntakePhotos({
         queue,
         intakeDraftId,
         workOrderId: created.workOrderId,
-        requiredQueueIds,
+        requiredCategories: ALL_REQUIRED,
       });
 
       if (!waited.ok) {
@@ -495,7 +491,6 @@ export function CreateWorkOrderForm({
         workOrderNumber={recovery?.workOrderNumber}
         missingCategories={missingCategories}
         initialError={recovery?.error}
-        optionalPhotos={optionalIntakePhotos}
       />
     );
   }

@@ -10,8 +10,8 @@ export function photoQueueStatusLabel(item: QueuedPhotoUpload, online: boolean):
   if (item.status === "uploading") return "Uploading";
   if (item.status === "saved") return "Saved";
   if (item.status === "failed") return "Failed";
-  if (!online || item.status === "retry_wait") return "Waiting for connection";
-  return "Waiting for connection";
+  if (!online) return "Waiting for connection";
+  return "Waiting to upload";
 }
 
 export function photoQueueStatusDetail(item: QueuedPhotoUpload, online: boolean): string {

@@ -20,9 +20,14 @@ import {
   prepareQueuedPhoto,
 } from "@/lib/photos/uploadQueue/prepareQueuedPhoto";
 import { PhotoUploadQueueRunner } from "@/lib/photos/uploadQueue/runner";
+import { PhotoUploadQueueClosedError } from "@/lib/photos/uploadQueue/errors";
 import { IndexedDbPhotoUploadQueueStore } from "@/lib/photos/uploadQueue/indexedDbStore";
 import type { PhotoUploadQueueStore } from "@/lib/photos/uploadQueue/store";
-import type { PhotoUploadScope, QueuedPhotoUpload } from "@/lib/photos/uploadQueue/types";
+import type {
+  PhotoUploadConfirmationReceipt,
+  PhotoUploadScope,
+  QueuedPhotoUpload,
+} from "@/lib/photos/uploadQueue/types";
 import {
   uploadQueuedPhoto,
   type QueuedPhotoUploadActions,
@@ -48,10 +53,11 @@ export type EnqueuePhotoInput = {
 
 export type PhotoUploadQueueWaitResult =
   | { ok: true; confirmations: PhotoUploadConfirmation[] }
-  | { ok: false; failed: QueuedPhotoUpload[] };
+  | { ok: false; failed: QueuedPhotoUpload[]; missingQueueIds: string[] };
 
 export type PhotoUploadQueueApi = {
   items: QueuedPhotoUpload[];
+  confirmations: PhotoUploadConfirmationReceipt[];
   counts: { waiting: number; uploading: number; failed: number };
   enqueue(input: EnqueuePhotoInput): Promise<QueuedPhotoUpload>;
   remove(queueId: string): Promise<boolean>;
@@ -115,14 +121,18 @@ export function PhotoUploadQueueProvider({
   const nowFnRef = useRef(now);
   const isOnlineFnRef = useRef(isOnline);
   const [items, setItems] = useState<QueuedPhotoUpload[]>([]);
+  const [confirmations, setConfirmations] = useState<PhotoUploadConfirmationReceipt[]>(
+    []
+  );
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
-  const confirmationsRef = useRef(new Map<string, PhotoUploadConfirmation>());
   const confirmationListenersRef = useRef(
     new Set<(confirmation: PhotoUploadConfirmation) => void>()
   );
-  const waitersRef = useRef(new Set<() => void>());
+  const seenReceiptIdsRef = useRef(new Set<string>());
+  const waitersRef = useRef(new Set<ConfirmationWaiter>());
   const runnerRef = useRef<PhotoUploadQueueRunner | null>(null);
   const previewUrlsRef = useRef<Record<string, string>>({});
+  const closedRef = useRef(false);
   const storeEvents = useMemo(() => new EventTarget(), []);
 
   const readNow = useCallback(() => {
@@ -147,22 +157,40 @@ export function PhotoUploadQueueProvider({
     [innerStore, storeEvents]
   );
 
+  const rejectWaiters = useCallback((error: Error) => {
+    const waiters = [...waitersRef.current];
+    waitersRef.current.clear();
+    for (const waiter of waiters) waiter.reject(error);
+  }, []);
+
+  const emitNewReceipts = useCallback((receipts: PhotoUploadConfirmationReceipt[]) => {
+    for (const receipt of receipts) {
+      if (seenReceiptIdsRef.current.has(receipt.queueId)) continue;
+      seenReceiptIdsRef.current.add(receipt.queueId);
+      const confirmation: PhotoUploadConfirmation = {
+        queueId: receipt.queueId,
+        clientUploadId: receipt.clientUploadId,
+        photoId: receipt.photoId,
+      };
+      for (const listener of confirmationListenersRef.current) listener(confirmation);
+    }
+  }, []);
+
   const refreshItems = useCallback(async () => {
-    const next = await store.list(scope);
+    const [next, receipts] = await Promise.all([
+      store.list(scope),
+      store.listConfirmations(scope),
+    ]);
     setItems(next);
+    setConfirmations(receipts);
     setPreviewUrls((current) => {
       const synced = syncPreviewUrls(current, next);
       previewUrlsRef.current = synced;
       return synced;
     });
-    for (const waiter of waitersRef.current) waiter();
-  }, [store, scope]);
-
-  const recordConfirmation = useCallback((confirmation: PhotoUploadConfirmation) => {
-    confirmationsRef.current.set(confirmation.queueId, confirmation);
-    for (const listener of confirmationListenersRef.current) listener(confirmation);
-    for (const waiter of waitersRef.current) waiter();
-  }, []);
+    emitNewReceipts(receipts);
+    for (const waiter of waitersRef.current) waiter.refresh();
+  }, [emitNewReceipts, store, scope]);
 
   useEffect(() => {
     nowFnRef.current = now;
@@ -178,7 +206,8 @@ export function PhotoUploadQueueProvider({
   }, [refreshItems, storeEvents]);
 
   useEffect(() => {
-    confirmationsRef.current = new Map();
+    closedRef.current = false;
+    seenReceiptIdsRef.current = new Set();
     const ownerId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()
@@ -186,20 +215,11 @@ export function PhotoUploadQueueProvider({
     const runner = new PhotoUploadQueueRunner({
       scope,
       store,
-      uploader: async (item, signal) => {
-        const outcome = await uploadQueuedPhoto(item, signal, {
+      uploader: async (item, signal) =>
+        uploadQueuedPhoto(item, signal, {
           uploadIntakePhoto,
           uploadAssistantPhoto,
-        });
-        if (outcome.ok) {
-          recordConfirmation({
-            queueId: item.queueId,
-            clientUploadId: item.clientUploadId,
-            photoId: outcome.photoId,
-          });
-        }
-        return outcome;
-      },
+        }),
       now: readNow,
       timer: {
         setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
@@ -215,13 +235,15 @@ export function PhotoUploadQueueProvider({
       storeEvents.dispatchEvent(new Event("change"));
     });
     return () => {
+      closedRef.current = true;
+      rejectWaiters(new PhotoUploadQueueClosedError());
       void runner.stop();
       if (runnerRef.current === runner) runnerRef.current = null;
     };
   }, [
     isOnlineFn,
     readNow,
-    recordConfirmation,
+    rejectWaiters,
     scope,
     store,
     storeEvents,
@@ -316,32 +338,74 @@ export function PhotoUploadQueueProvider({
 
   const waitForConfirmations = useCallback(
     async (queueIds: string[]): Promise<PhotoUploadQueueWaitResult> => {
-      const inspect = async (): Promise<PhotoUploadQueueWaitResult | null> => {
-        const listed = await store.list(scope);
-        const confirmations = queueIds.flatMap((queueId) => {
-          const confirmation = confirmationsRef.current.get(queueId);
-          return confirmation ? [confirmation] : [];
-        });
-        if (confirmations.length === queueIds.length) {
-          return { ok: true, confirmations };
-        }
-        const failed = listed.filter(
-          (item) => queueIds.includes(item.queueId) && item.status === "failed"
+      const expected = [...new Set(queueIds)];
+      if (expected.length === 0) {
+        return { ok: false, failed: [], missingQueueIds: [] };
+      }
+
+      const inspect = async (): Promise<PhotoUploadQueueWaitResult | "wait"> => {
+        if (closedRef.current) throw new PhotoUploadQueueClosedError();
+        const [listed, receipts] = await Promise.all([
+          store.list(scope),
+          store.listConfirmations(scope),
+        ]);
+        const receiptById = new Map(
+          receipts.map((receipt) => [receipt.queueId, receipt] as const)
         );
-        if (failed.length > 0) return { ok: false, failed };
-        return null;
+        const itemById = new Map(listed.map((item) => [item.queueId, item] as const));
+        const confirmed: PhotoUploadConfirmation[] = [];
+        const failed: QueuedPhotoUpload[] = [];
+        const missingQueueIds: string[] = [];
+
+        for (const queueId of expected) {
+          const receipt = receiptById.get(queueId);
+          if (receipt) {
+            confirmed.push({
+              queueId: receipt.queueId,
+              clientUploadId: receipt.clientUploadId,
+              photoId: receipt.photoId,
+            });
+            continue;
+          }
+          const item = itemById.get(queueId);
+          if (!item) {
+            missingQueueIds.push(queueId);
+            continue;
+          }
+          if (item.status === "failed") failed.push(item);
+        }
+
+        if (missingQueueIds.length > 0 || failed.length > 0) {
+          return { ok: false, failed, missingQueueIds };
+        }
+        if (confirmed.length === expected.length) {
+          return { ok: true, confirmations: confirmed };
+        }
+        return "wait";
       };
 
       const immediate = await inspect();
-      if (immediate) return immediate;
+      if (immediate !== "wait") return immediate;
 
-      return new Promise((resolve) => {
-        const waiter = () => {
-          void inspect().then((result) => {
-            if (!result) return;
+      return new Promise((resolve, reject) => {
+        const waiter: ConfirmationWaiter = {
+          refresh: () => {
+            void inspect().then(
+              (result) => {
+                if (result === "wait") return;
+                waitersRef.current.delete(waiter);
+                resolve(result);
+              },
+              (error: unknown) => {
+                waitersRef.current.delete(waiter);
+                reject(error);
+              }
+            );
+          },
+          reject: (error) => {
             waitersRef.current.delete(waiter);
-            resolve(result);
-          });
+            reject(error);
+          },
         };
         waitersRef.current.add(waiter);
       });
@@ -367,6 +431,7 @@ export function PhotoUploadQueueProvider({
   const api = useMemo<PhotoUploadQueueApi>(
     () => ({
       items,
+      confirmations,
       counts: photoUploadQueueCounts(items),
       enqueue,
       remove,
@@ -380,6 +445,7 @@ export function PhotoUploadQueueProvider({
     }),
     [
       attachDraftToWorkOrder,
+      confirmations,
       enqueue,
       findNewestIncompleteIntakeDraft,
       isOnlineFn,
@@ -398,6 +464,11 @@ export function PhotoUploadQueueProvider({
     </PhotoUploadQueueContext.Provider>
   );
 }
+
+type ConfirmationWaiter = {
+  refresh(): void;
+  reject(error: Error): void;
+};
 
 function syncPreviewUrls(
   current: Record<string, string>,

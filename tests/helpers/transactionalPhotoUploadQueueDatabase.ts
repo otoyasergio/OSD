@@ -2,7 +2,11 @@ import type {
   PhotoUploadQueueDatabase,
   PhotoUploadQueueTransaction,
 } from "@/lib/photos/uploadQueue/indexedDbStore";
-import type { PhotoUploadScope, QueuedPhotoUpload } from "@/lib/photos/uploadQueue/types";
+import type {
+  PhotoUploadConfirmationReceipt,
+  PhotoUploadScope,
+  QueuedPhotoUpload,
+} from "@/lib/photos/uploadQueue/types";
 
 type CommitGate = {
   started: Promise<void>;
@@ -38,7 +42,8 @@ export type TransactionalPhotoUploadQueueDatabase = {
 };
 
 export function createTransactionalPhotoUploadQueueDatabase(): TransactionalPhotoUploadQueueDatabase {
-  let committed = new Map<string, QueuedPhotoUpload>();
+  let committedItems = new Map<string, QueuedPhotoUpload>();
+  let committedConfirmations = new Map<string, PhotoUploadConfirmationReceipt>();
   let transactionTail = Promise.resolve();
   let nextCommitGate: MutableCommitGate | null = null;
 
@@ -49,19 +54,29 @@ export function createTransactionalPhotoUploadQueueDatabase(): TransactionalPhot
       transactionTail = new Promise<void>((resolve) => {
         releaseTransaction = resolve;
       });
-      let staged: Map<string, QueuedPhotoUpload> | null = null;
+      let stagedItems: Map<string, QueuedPhotoUpload> | null = null;
+      let stagedConfirmations: Map<string, PhotoUploadConfirmationReceipt> | null = null;
       let operationTail = Promise.resolve();
       let donePromise: Promise<void> | null = null;
 
       const withStaged = <T>(
-        operation: (items: Map<string, QueuedPhotoUpload>) => T | Promise<T>
+        operation: (
+          items: Map<string, QueuedPhotoUpload>,
+          confirmations: Map<string, PhotoUploadConfirmationReceipt>
+        ) => T | Promise<T>
       ): Promise<T> => {
         const result = operationTail.then(async () => {
           await waitForPriorTransaction;
-          staged ??= new Map(
-            [...committed].map(([key, item]) => [key, structuredClone(item)])
+          stagedItems ??= new Map(
+            [...committedItems].map(([key, item]) => [key, structuredClone(item)])
           );
-          return operation(staged);
+          stagedConfirmations ??= new Map(
+            [...committedConfirmations].map(([key, receipt]) => [
+              key,
+              structuredClone(receipt),
+            ])
+          );
+          return operation(stagedItems, stagedConfirmations);
         });
         operationTail = result.then(
           () => undefined,
@@ -87,6 +102,23 @@ export function createTransactionalPhotoUploadQueueDatabase(): TransactionalPhot
           withStaged((items) => {
             items.delete(queueId);
           }),
+        getConfirmation: (queueId) =>
+          withStaged((_items, confirmations) => confirmations.get(queueId)),
+        listConfirmationsByScope: (scope: PhotoUploadScope) =>
+          withStaged((_items, confirmations) =>
+            [...confirmations.values()].filter(
+              (receipt) =>
+                receipt.userId === scope.userId && receipt.locationId === scope.locationId
+            )
+          ),
+        putConfirmation: (receipt) =>
+          withStaged((_items, confirmations) => {
+            confirmations.set(receipt.queueId, structuredClone(receipt));
+          }),
+        deleteConfirmation: (queueId) =>
+          withStaged((_items, confirmations) => {
+            confirmations.delete(queueId);
+          }),
         get done() {
           donePromise ??= (async () => {
             try {
@@ -103,7 +135,8 @@ export function createTransactionalPhotoUploadQueueDatabase(): TransactionalPhot
                 gate.markStarted();
                 await gate.released;
               }
-              if (staged) committed = staged;
+              if (stagedItems) committedItems = stagedItems;
+              if (stagedConfirmations) committedConfirmations = stagedConfirmations;
             } finally {
               releaseTransaction();
             }
@@ -122,6 +155,7 @@ export function createTransactionalPhotoUploadQueueDatabase(): TransactionalPhot
       nextCommitGate = gate;
       return gate;
     },
-    committedItems: () => [...committed.values()].map((item) => structuredClone(item)),
+    committedItems: () =>
+      [...committedItems.values()].map((item) => structuredClone(item)),
   };
 }

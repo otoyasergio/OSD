@@ -174,6 +174,10 @@ describe("photo upload queue persistence", () => {
           delete: async (queueId: string) => {
             staged.delete(queueId);
           },
+          getConfirmation: async () => undefined,
+          listConfirmationsByScope: async () => [],
+          putConfirmation: async () => undefined,
+          deleteConfirmation: async () => undefined,
           done,
         };
       },
@@ -367,6 +371,10 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
             listByScope: async () => [],
             put: async () => undefined,
             delete: async () => undefined,
+            getConfirmation: async () => undefined,
+            listConfirmationsByScope: async () => [],
+            putConfirmation: async () => undefined,
+            deleteConfirmation: async () => undefined,
             done: Promise.reject(completionError),
           }),
         }),
@@ -894,7 +902,10 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
       })
     ).resolves.toBeNull();
     await expect(
-      store.completeClaimedUpload("queue-1", SCOPE, "runner-b", 2_100)
+      store.completeClaimedUpload("queue-1", SCOPE, "runner-b", 2_100, {
+        photoId: "photo-1",
+        clientUploadId: "client-upload-1",
+      })
     ).resolves.toBe(false);
     await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
       status: "uploading",
@@ -909,9 +920,57 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
       })
     ).resolves.toMatchObject({ status: "uploading" });
     await expect(
-      store.completeClaimedUpload("queue-1", SCOPE, "runner-a", 2_100)
+      store.completeClaimedUpload("queue-1", SCOPE, "runner-a", 2_100, {
+        photoId: "photo-1",
+        clientUploadId: "client-upload-1",
+      })
     ).resolves.toBe(true);
     await expect(store.get("queue-1", SCOPE)).resolves.toBeNull();
+    const receipts = await store.listConfirmations(SCOPE);
+    expect(receipts).toEqual([
+      expect.objectContaining({
+        queueId: "queue-1",
+        clientUploadId: "client-upload-1",
+        photoId: "photo-1",
+        userId: SCOPE.userId,
+        locationId: SCOPE.locationId,
+        confirmedAt: 2_100,
+        category: "damage",
+        workOrderId: "work-order-1",
+      }),
+    ]);
+    expect(receipts[0]).not.toHaveProperty("blob");
+  });
+
+  it("hydrates scoped confirmation receipts without photo bytes after remount", async () => {
+    const shared = createMemoryPhotoUploadQueueDatabase();
+    const first = new MemoryPhotoUploadQueueStore(shared);
+    await first.put(
+      SCOPE,
+      queuedPhoto({
+        status: "uploading",
+        leaseOwner: "runner-a",
+        leaseExpiresAt: 3_000,
+        uploadSlotOwner: "runner-a",
+        uploadSlotExpiresAt: 3_000,
+      })
+    );
+    await expect(
+      first.completeClaimedUpload("queue-1", SCOPE, "runner-a", 2_100, {
+        photoId: "photo-1",
+        clientUploadId: "client-upload-1",
+      })
+    ).resolves.toBe(true);
+
+    const remounted = new MemoryPhotoUploadQueueStore(shared);
+    await expect(remounted.get("queue-1", SCOPE)).resolves.toBeNull();
+    await expect(remounted.getConfirmation("queue-1", SCOPE)).resolves.toMatchObject({
+      photoId: "photo-1",
+      clientUploadId: "client-upload-1",
+    });
+    await expect(
+      remounted.listConfirmations({ userId: "user-b", locationId: SCOPE.locationId })
+    ).resolves.toEqual([]);
   });
 });
 
@@ -2759,10 +2818,11 @@ describe("PhotoUploadQueueRunner", () => {
         queueId: string,
         scope: PhotoUploadScope,
         owner: string,
-        now: number
+        now: number,
+        confirmation: { photoId: string; clientUploadId: string }
       ): Promise<boolean> {
         if (queueId === "queue-1") throw settlementError;
-        return super.completeClaimedUpload(queueId, scope, owner, now);
+        return super.completeClaimedUpload(queueId, scope, owner, now, confirmation);
       }
     }
     const store = new BlockingSecondClaimStore(createMemoryPhotoUploadQueueDatabase());

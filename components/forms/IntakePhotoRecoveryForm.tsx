@@ -11,7 +11,7 @@ import {
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
-import { intakeContractHref, requiredQueueIdsForIntake } from "@/lib/photos/intakeQueue";
+import { intakeContractHref } from "@/lib/photos/intakeQueue";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 
@@ -25,7 +25,6 @@ export function IntakePhotoRecoveryForm({
   workOrderNumber?: string | null;
   missingCategories: PhotoCategory[];
   initialError?: string | null;
-  optionalPhotos?: File[];
 }) {
   const router = useRouter();
   const queue = usePhotoUploadQueue();
@@ -45,9 +44,21 @@ export function IntakePhotoRecoveryForm({
     setSubmitting(true);
 
     try {
-      const requiredQueueIds = requiredQueueIdsForIntake(queue.items, remaining, {
-        workOrderId,
+      const requiredQueueIds = remaining.flatMap((category) => {
+        const item = queue.items.find(
+          (candidate) =>
+            candidate.category === category && candidate.workOrderId === workOrderId
+        );
+        return item ? [item.queueId] : [];
       });
+      if (requiredQueueIds.length !== remaining.length) {
+        setClientError(
+          `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${remaining
+            .map((category) => PHOTO_CATEGORY_LABELS[category] ?? category)
+            .join(", ")}.`
+        );
+        return;
+      }
       const waited = await queue.waitForConfirmations(requiredQueueIds);
 
       if (!waited.ok) {

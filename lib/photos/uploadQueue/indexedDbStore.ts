@@ -11,6 +11,7 @@ import {
   type AcquiredPhotoUploadClaim,
   attachQueuedPhotoToWorkOrder,
   createManualRetryState,
+  createPhotoUploadConfirmationReceipt,
   createPhotoUploadFailureSettlement,
   DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
   type PhotoUploadClaim,
@@ -20,18 +21,32 @@ import {
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
 } from "./store";
-import type { PhotoUploadQueuePatch, PhotoUploadScope, QueuedPhotoUpload } from "./types";
+import type {
+  PhotoUploadConfirmationInput,
+  PhotoUploadConfirmationReceipt,
+  PhotoUploadQueuePatch,
+  PhotoUploadScope,
+  QueuedPhotoUpload,
+} from "./types";
 
 export const PHOTO_UPLOAD_QUEUE_DB_NAME = "otomoto-photo-upload-queue";
-export const PHOTO_UPLOAD_QUEUE_DB_VERSION = 2;
+export const PHOTO_UPLOAD_QUEUE_DB_VERSION = 3;
 
 const PHOTO_UPLOAD_STORE_NAME = "photoUploads";
+const PHOTO_UPLOAD_CONFIRMATION_STORE_NAME = "photoUploadConfirmations";
 const PHOTO_UPLOAD_SCOPE_INDEX = "byUserAndLocation";
 
 interface PhotoUploadQueueSchema extends DBSchema {
   photoUploads: {
     key: string;
     value: QueuedPhotoUpload;
+    indexes: {
+      byUserAndLocation: [string, string];
+    };
+  };
+  photoUploadConfirmations: {
+    key: string;
+    value: PhotoUploadConfirmationReceipt;
     indexes: {
       byUserAndLocation: [string, string];
     };
@@ -43,6 +58,12 @@ export type PhotoUploadQueueTransaction = {
   listByScope(scope: PhotoUploadScope): Promise<QueuedPhotoUpload[]>;
   put(item: QueuedPhotoUpload): Promise<unknown>;
   delete(queueId: string): Promise<unknown>;
+  getConfirmation(queueId: string): Promise<PhotoUploadConfirmationReceipt | undefined>;
+  listConfirmationsByScope(
+    scope: PhotoUploadScope
+  ): Promise<PhotoUploadConfirmationReceipt[]>;
+  putConfirmation(receipt: PhotoUploadConfirmationReceipt): Promise<unknown>;
+  deleteConfirmation(queueId: string): Promise<unknown>;
   done: Promise<void>;
 };
 
@@ -61,15 +82,27 @@ function wrapDatabase(
 ): PhotoUploadQueueDatabase {
   return {
     transaction(mode) {
-      const transaction = database.transaction(PHOTO_UPLOAD_STORE_NAME, mode);
+      const transaction = database.transaction(
+        [PHOTO_UPLOAD_STORE_NAME, PHOTO_UPLOAD_CONFIRMATION_STORE_NAME],
+        mode
+      );
+      const uploads = transaction.objectStore(PHOTO_UPLOAD_STORE_NAME);
+      const confirmations = transaction.objectStore(PHOTO_UPLOAD_CONFIRMATION_STORE_NAME);
       return {
-        get: (queueId) => transaction.store.get(queueId),
+        get: (queueId) => uploads.get(queueId),
         listByScope: (scope) =>
-          transaction.store
+          uploads
             .index(PHOTO_UPLOAD_SCOPE_INDEX)
             .getAll([scope.userId, scope.locationId]),
-        put: (item) => transaction.store.put!(item),
-        delete: (queueId) => transaction.store.delete!(queueId),
+        put: (item) => uploads.put(item),
+        delete: (queueId) => uploads.delete(queueId),
+        getConfirmation: (queueId) => confirmations.get(queueId),
+        listConfirmationsByScope: (scope) =>
+          confirmations
+            .index(PHOTO_UPLOAD_SCOPE_INDEX)
+            .getAll([scope.userId, scope.locationId]),
+        putConfirmation: (receipt) => confirmations.put(receipt),
+        deleteConfirmation: (queueId) => confirmations.delete(queueId),
         done: transaction.done,
       };
     },
@@ -77,16 +110,28 @@ function wrapDatabase(
   };
 }
 
+function ensurePhotoUploadObjectStores(
+  upgradeDatabase: IDBPDatabase<PhotoUploadQueueSchema>
+): void {
+  if (!upgradeDatabase.objectStoreNames.contains(PHOTO_UPLOAD_STORE_NAME)) {
+    const store = upgradeDatabase.createObjectStore(PHOTO_UPLOAD_STORE_NAME, {
+      keyPath: "queueId",
+    });
+    store.createIndex(PHOTO_UPLOAD_SCOPE_INDEX, ["userId", "locationId"]);
+  }
+  if (!upgradeDatabase.objectStoreNames.contains(PHOTO_UPLOAD_CONFIRMATION_STORE_NAME)) {
+    const confirmations = upgradeDatabase.createObjectStore(
+      PHOTO_UPLOAD_CONFIRMATION_STORE_NAME,
+      { keyPath: "queueId" }
+    );
+    confirmations.createIndex(PHOTO_UPLOAD_SCOPE_INDEX, ["userId", "locationId"]);
+  }
+}
+
 const openIndexedDatabase: PhotoUploadQueueDatabaseOpener = async (name, version) => {
   const database = await openDB<PhotoUploadQueueSchema>(name, version, {
     upgrade(upgradeDatabase) {
-      if (upgradeDatabase.objectStoreNames.contains(PHOTO_UPLOAD_STORE_NAME)) {
-        return;
-      }
-      const store = upgradeDatabase.createObjectStore(PHOTO_UPLOAD_STORE_NAME, {
-        keyPath: "queueId",
-      });
-      store.createIndex(PHOTO_UPLOAD_SCOPE_INDEX, ["userId", "locationId"]);
+      ensurePhotoUploadObjectStores(upgradeDatabase);
     },
   });
   return wrapDatabase(database);
@@ -575,7 +620,8 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     queueId: string,
     scope: PhotoUploadScope,
     owner: string,
-    now: number
+    now: number,
+    confirmation: PhotoUploadConfirmationInput
   ): Promise<boolean> {
     try {
       const transaction = (await this.database).transaction("readwrite");
@@ -585,16 +631,88 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
           !item ||
           !belongsToScope(item, scope) ||
           item.status !== "uploading" ||
-          !ownsLiveUploadClaim(item, owner, now)
+          !ownsLiveUploadClaim(item, owner, now) ||
+          confirmation.clientUploadId !== item.clientUploadId
         ) {
           return false;
         }
         assertPhotoUploadTransition(item.status, "saved");
+        await transaction.putConfirmation(
+          createPhotoUploadConfirmationReceipt(item, confirmation, now)
+        );
         await transaction.delete(queueId);
         return true;
       });
     } catch (error) {
       if (error instanceof InvalidPhotoUploadTransitionError) throw error;
+      throw persistenceError(error);
+    }
+  }
+
+  async listConfirmations(
+    scope: PhotoUploadScope
+  ): Promise<PhotoUploadConfirmationReceipt[]> {
+    try {
+      const transaction = (await this.database).transaction("readonly");
+      return await runTransaction(transaction, async () => {
+        const receipts = await transaction.listConfirmationsByScope(scope);
+        return receipts
+          .filter(
+            (receipt) =>
+              receipt.userId === scope.userId && receipt.locationId === scope.locationId
+          )
+          .sort(
+            (left, right) =>
+              left.confirmedAt - right.confirmedAt ||
+              left.queueId.localeCompare(right.queueId)
+          );
+      });
+    } catch (error) {
+      throw persistenceError(error);
+    }
+  }
+
+  async getConfirmation(
+    queueId: string,
+    scope: PhotoUploadScope
+  ): Promise<PhotoUploadConfirmationReceipt | null> {
+    try {
+      const transaction = (await this.database).transaction("readonly");
+      return await runTransaction(transaction, async () => {
+        const receipt = await transaction.getConfirmation(queueId);
+        if (
+          !receipt ||
+          receipt.userId !== scope.userId ||
+          receipt.locationId !== scope.locationId
+        ) {
+          return null;
+        }
+        return receipt;
+      });
+    } catch (error) {
+      throw persistenceError(error);
+    }
+  }
+
+  async pruneConfirmations(scope: PhotoUploadScope, olderThan: number): Promise<number> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      return await runTransaction(transaction, async () => {
+        const receipts = await transaction.listConfirmationsByScope(scope);
+        let removed = 0;
+        for (const receipt of receipts) {
+          if (
+            receipt.userId === scope.userId &&
+            receipt.locationId === scope.locationId &&
+            receipt.confirmedAt < olderThan
+          ) {
+            await transaction.deleteConfirmation(receipt.queueId);
+            removed += 1;
+          }
+        }
+        return removed;
+      });
+    } catch (error) {
       throw persistenceError(error);
     }
   }

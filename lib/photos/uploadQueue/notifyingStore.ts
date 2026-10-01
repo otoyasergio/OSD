@@ -12,6 +12,7 @@ const MUTATING_METHODS = new Set<keyof PhotoUploadQueueStore>([
   "updateClaimed",
   "settleClaimedFailure",
   "completeClaimedUpload",
+  "pruneConfirmations",
   "releaseUploadClaim",
   "attachDraftToWorkOrder",
   "retryFailed",

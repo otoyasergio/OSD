@@ -189,12 +189,12 @@ describe("DiagnosticsPhotoPicker", () => {
     container.querySelector<HTMLInputElement>('input[type="file"][capture]');
   const libraryInput = () =>
     container.querySelector<HTMLInputElement>('input[type="file"]:not([capture])');
-  const buttonByText = (text: string) =>
-    Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
-      (b) => b.textContent?.trim() === text
+  const labelByText = (text: string) =>
+    Array.from(container.querySelectorAll<HTMLLabelElement>("label")).find(
+      (label) => label.textContent?.trim() === text
     )!;
-  const cameraButton = () => buttonByText("Camera");
-  const libraryButton = () => buttonByText("Library");
+  const cameraButton = () => labelByText("Camera");
+  const libraryButton = () => labelByText("Library");
 
   async function pick(input: HTMLInputElement, files: File[]) {
     Object.defineProperty(input, "files", { value: files, configurable: true });
@@ -282,8 +282,8 @@ describe("DiagnosticsPhotoPicker", () => {
     expect(thumbButtons()[3].disabled).toBe(true);
     expect(cameraInput()!.disabled).toBe(true);
     expect(libraryInput()!.disabled).toBe(true);
-    expect(cameraButton().disabled).toBe(true);
-    expect(libraryButton().disabled).toBe(true);
+    expect(cameraButton().getAttribute("aria-disabled")).toBe("true");
+    expect(libraryButton().getAttribute("aria-disabled")).toBe("true");
     expect(container.textContent).toMatch(/3 of 3/);
   });
 
@@ -437,15 +437,10 @@ describe("DiagnosticsPhotoPicker", () => {
   ])("is inert when %s", async (_name, flags) => {
     await render({ photos: [photo(1)], ...flags });
     expect(thumbButtons().every((b) => b.disabled)).toBe(true);
-    expect(cameraButton().disabled).toBe(true);
     expect(cameraButton().getAttribute("aria-disabled")).toBe("true");
-    expect(libraryButton().disabled).toBe(true);
+    expect(libraryButton().getAttribute("aria-disabled")).toBe("true");
     expect(cameraInput()!.disabled).toBe(true);
     expect(libraryInput()!.disabled).toBe(true);
-
-    const clickSpy = vi.spyOn(cameraInput()!, "click");
-    await click(cameraButton());
-    expect(clickSpy).not.toHaveBeenCalled();
 
     const file = new File(["x"], "x.jpg", { type: "image/jpeg" });
     await pick(cameraInput()!, [file]);
@@ -493,22 +488,17 @@ describe("DiagnosticsPhotoPicker", () => {
     expect(document.activeElement).toBe(document.body);
   });
 
-  it("uses real focusable Camera and Library buttons that open the hidden inputs", async () => {
+  it("uses native Camera and Library labels instead of programmatic click()", async () => {
     await render();
     for (const [button, input] of [
       [cameraButton(), cameraInput()!],
       [libraryButton(), libraryInput()!],
     ] as const) {
-      expect(button.tagName).toBe("BUTTON");
-      expect(button.type).toBe("button");
-      expect(button.tabIndex).toBe(0);
-      expect(button.disabled).toBe(false);
+      expect(button.tagName).toBe("LABEL");
+      expect(button.htmlFor).toBe(input.id);
       expect(button.getAttribute("aria-disabled")).toBe("false");
       expect(input.tabIndex).toBe(-1);
       expect(input.getAttribute("aria-hidden")).toBe("true");
-      const spy = vi.spyOn(input, "click");
-      await click(button);
-      expect(spy).toHaveBeenCalledTimes(1);
     }
     expect(cameraInput()!.getAttribute("capture")).toBe("environment");
     expect(libraryInput()!.hasAttribute("capture")).toBe(false);
@@ -609,8 +599,8 @@ describe("DiagnosticsPhotoPicker", () => {
         container.querySelectorAll<HTMLButtonElement>('button[aria-label^="Remove"]')
       ).every((b) => b.disabled)
     ).toBe(true);
-    expect(cameraButton().disabled).toBe(true);
-    expect(libraryButton().disabled).toBe(true);
+    expect(cameraButton().getAttribute("aria-disabled")).toBe("true");
+    expect(libraryButton().getAttribute("aria-disabled")).toBe("true");
 
     await act(async () => gate.resolve(uploaded(9)));
 

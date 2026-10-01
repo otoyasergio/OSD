@@ -12,8 +12,11 @@ import {
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { photoFileInputProps, CAMERA_ROLL_HINT } from "@/lib/forms/photoSourceInputs";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
-import { useOptionalPhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
-import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
+import {
+  PhotoQueuePersistenceError,
+  PhotoUploadQueueClosedError,
+} from "@/lib/photos/uploadQueue/errors";
 import {
   DIAGNOSTICS_PHOTO_MAX_SELECTED,
   DIAGNOSTICS_PHOTO_PURPOSE_MAX,
@@ -89,9 +92,9 @@ export function DiagnosticsPhotoPicker({
   const Heading = headingLevel === 5 ? "h5" : "h4";
   const headingId = useId();
   const noteId = useId();
-  const queue = useOptionalPhotoUploadQueue();
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const libraryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputId = useId();
+  const libraryInputId = useId();
+  const queue = usePhotoUploadQueue();
   const regionRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
   const selectionsRef = useRef(selections);
@@ -111,7 +114,7 @@ export function DiagnosticsPhotoPicker({
   const jobScoped = Boolean(thread.jobId);
   const atLimit = selections.length >= DIAGNOSTICS_PHOTO_MAX_SELECTED;
   const uploadEnabled =
-    interactive && uploadAllowed && jobScoped && !atLimit && !uploading && Boolean(queue);
+    interactive && uploadAllowed && jobScoped && !atLimit && !uploading;
   const selectionEditable = interactive && !uploading;
 
   useEffect(() => {
@@ -275,7 +278,6 @@ export function DiagnosticsPhotoPicker({
   });
 
   useEffect(() => {
-    if (!queue) return undefined;
     return queue.subscribeConfirmation((confirmation) => {
       if (!pendingByQueueId.current.has(confirmation.queueId)) return;
       applyConfirmationRef.current(confirmation.queueId, confirmation.photoId);
@@ -283,7 +285,6 @@ export function DiagnosticsPhotoPicker({
   }, [queue]);
 
   useEffect(() => {
-    if (!queue) return;
     for (const item of queue.items) {
       if (!pendingByQueueId.current.has(item.queueId) || item.status !== "failed") {
         continue;
@@ -291,6 +292,18 @@ export function DiagnosticsPhotoPicker({
       pendingByQueueId.current.delete(item.queueId);
       if (mountedRef.current) {
         setError(item.lastError ?? "Could not upload that photo. Try again.");
+        if (pendingByQueueId.current.size === 0) setBusyRef.current(false);
+      }
+    }
+    for (const queueId of [...pendingByQueueId.current.keys()]) {
+      const stillQueued = queue.items.some((item) => item.queueId === queueId);
+      const confirmed = queue.confirmations.some(
+        (receipt) => receipt.queueId === queueId
+      );
+      if (stillQueued || confirmed) continue;
+      pendingByQueueId.current.delete(queueId);
+      if (mountedRef.current) {
+        setError("Could not upload that photo. Try again.");
         if (pendingByQueueId.current.size === 0) setBusyRef.current(false);
       }
     }
@@ -304,11 +317,6 @@ export function DiagnosticsPhotoPicker({
     setError(null);
     setNotice(null);
     setBusy(true);
-    if (!queue) {
-      input.value = "";
-      setBusy(false);
-      return;
-    }
     try {
       const prepared = await readPickedPhotoFiles(input);
       for (const [index, file] of prepared.entries()) {
@@ -337,10 +345,11 @@ export function DiagnosticsPhotoPicker({
         if (!queue.isOnline()) continue;
         const waited = await queue.waitForConfirmations([queuedItem.queueId]);
         if (!waited.ok) {
-          const failed = waited.failed[0];
           pendingByQueueId.current.delete(queuedItem.queueId);
+          const failed = waited.failed[0];
           if (mountedRef.current) {
             setError(failed?.lastError ?? "Could not upload that photo. Try again.");
+            if (pendingByQueueId.current.size === 0) setBusy(false);
           }
           break;
         }
@@ -352,8 +361,11 @@ export function DiagnosticsPhotoPicker({
         setError(
           caught instanceof PhotoQueuePersistenceError
             ? caught.message
-            : UNREADABLE_PHOTO_MESSAGE
+            : caught instanceof PhotoUploadQueueClosedError
+              ? "Could not upload that photo. Try again."
+              : UNREADABLE_PHOTO_MESSAGE
         );
+        setBusy(false);
       }
     } finally {
       if (pendingByQueueId.current.size === 0) setBusy(false);
@@ -487,7 +499,7 @@ export function DiagnosticsPhotoPicker({
       {jobScoped ? (
         <div className="flex flex-wrap items-center gap-2">
           <input
-            ref={cameraInputRef}
+            id={cameraInputId}
             type="file"
             accept={cameraProps.accept}
             capture={cameraProps.capture}
@@ -498,7 +510,7 @@ export function DiagnosticsPhotoPicker({
             onChange={(event) => void uploadFromInput(event.currentTarget)}
           />
           <input
-            ref={libraryInputRef}
+            id={libraryInputId}
             type="file"
             accept={libraryProps.accept}
             multiple
@@ -508,26 +520,26 @@ export function DiagnosticsPhotoPicker({
             disabled={!uploadEnabled}
             onChange={(event) => void uploadFromInput(event.currentTarget)}
           />
-          <button
-            type="button"
-            className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!uploadEnabled}
+          <label
+            htmlFor={cameraInputId}
+            className={`btn btn-secondary ${
+              uploadEnabled ? "" : "pointer-events-none cursor-not-allowed opacity-50"
+            }`}
             aria-disabled={!uploadEnabled}
             aria-describedby={noteId}
-            onClick={() => cameraInputRef.current?.click()}
           >
             Camera
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!uploadEnabled}
+          </label>
+          <label
+            htmlFor={libraryInputId}
+            className={`btn btn-secondary ${
+              uploadEnabled ? "" : "pointer-events-none cursor-not-allowed opacity-50"
+            }`}
             aria-disabled={!uploadEnabled}
             aria-describedby={noteId}
-            onClick={() => libraryInputRef.current?.click()}
           >
             Library
-          </button>
+          </label>
           <span id={noteId} className="text-xs text-[var(--status-neutral)]">
             {CAMERA_ROLL_HINT}
           </span>

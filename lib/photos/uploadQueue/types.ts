@@ -62,3 +62,22 @@ export type PhotoUploadQueuePatch = Partial<
 
 export type PhotoUploadOutcome =
   { ok: true; photoId: string } | { ok: false; retryable: boolean; message: string };
+
+export type PhotoUploadConfirmationReceipt = {
+  queueId: string;
+  clientUploadId: string;
+  photoId: string;
+  userId: string;
+  locationId: string;
+  confirmedAt: number;
+  category?: string;
+  workOrderId?: string;
+  jobId?: string;
+  inspectionResultId?: string;
+  assistantThreadId?: string;
+};
+
+export type PhotoUploadConfirmationInput = {
+  photoId: string;
+  clientUploadId: string;
+};

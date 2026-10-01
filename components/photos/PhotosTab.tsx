@@ -1,15 +1,15 @@
 "use client";
 
-import { useActionState, useId, useMemo, useState } from "react";
+import { useActionState, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { IntakePhoto } from "@/lib/services/photos";
 import type { PhotoCategory } from "@/lib/database/types";
 import type { PhotoFormState } from "@/app/(app)/work_orders/photo-actions";
 import { PHOTO_CATEGORY_LABELS, REQUIRED_PHOTO_CATEGORIES } from "@/lib/status/labels";
-import { FormError, TextField } from "@/components/forms/Field";
+import { FormError } from "@/components/forms/Field";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
-import { persistQueueErrorMessage } from "@/lib/photos/intakeQueue";
 import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
@@ -40,20 +40,25 @@ export function PhotosTab({
   deleteAction: Action;
 }) {
   const queue = usePhotoUploadQueue();
+  const router = useRouter();
   const titleId = useId();
   const cameraInputId = useId();
   const libraryInputId = useId();
+  const defaultCategory =
+    REQUIRED_PHOTO_CATEGORIES.find(
+      (category) => !photos.some((photo) => photo.category === category)
+    ) ?? "front";
+  const categoryRef = useRef<PhotoCategory>(defaultCategory);
+  const notesRef = useRef("");
+  const refreshedIds = useRef(new Set<string>());
   const [deleteState, deleteFormAction, deletePending] = useActionState(deleteAction, {
     error: null,
   });
   const [filter, setFilter] = useState<PhotoCategory | "all">("all");
   const [chooserOpen, setChooserOpen] = useState(false);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
-  const [enqueueing, setEnqueueing] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
-  const pendingFileName = pendingFile?.name ?? null;
 
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
@@ -72,6 +77,25 @@ export function PhotosTab({
     ? lightboxPhotos.findIndex((p) => p.id === lightboxPhotoId)
     : -1;
 
+  useEffect(() => {
+    return queue.subscribeConfirmation((confirmation) => {
+      if (refreshedIds.current.has(confirmation.queueId)) return;
+      const matches =
+        queue.confirmations.some(
+          (receipt) =>
+            receipt.queueId === confirmation.queueId &&
+            receipt.workOrderId === workOrderId
+        ) ||
+        queue.items.some(
+          (item) =>
+            item.queueId === confirmation.queueId && item.workOrderId === workOrderId
+        );
+      if (!matches) return;
+      refreshedIds.current.add(confirmation.queueId);
+      router.refresh();
+    });
+  }, [queue, router, workOrderId]);
+
   async function applyPickedFile(input: HTMLInputElement) {
     setChooserOpen(false);
     setPickError(null);
@@ -79,41 +103,21 @@ export function PhotosTab({
     try {
       const files = await readPickedPhotoFiles(input);
       const file = files[0] ?? null;
-      setPendingFile(file);
-    } catch {
-      setPendingFile(null);
-      setPickError(UNREADABLE_PHOTO_MESSAGE);
-    } finally {
-      setPreparing(false);
-    }
-  }
-
-  async function enqueueSelected(form: HTMLFormElement) {
-    if (!pendingFile) {
-      setChooserOpen(true);
-      return;
-    }
-    const formData = new FormData(form);
-    const category = String(formData.get("category") || "front");
-    const notes = String(formData.get("notes") ?? "").trim();
-    setEnqueueing(true);
-    setPickError(null);
-    try {
+      if (!file) return;
       await queue.enqueue({
-        file: pendingFile,
-        category,
+        file,
+        category: categoryRef.current,
         workOrderId,
-        notes: notes || undefined,
+        notes: notesRef.current || undefined,
       });
-      setPendingFile(null);
     } catch (error) {
       if (error instanceof PhotoQueuePersistenceError) {
         setPickError(error.message);
       } else {
-        setPickError(persistQueueErrorMessage(error));
+        setPickError(UNREADABLE_PHOTO_MESSAGE);
       }
     } finally {
-      setEnqueueing(false);
+      setPreparing(false);
     }
   }
 
@@ -142,7 +146,6 @@ export function PhotosTab({
           className="relative flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
           onSubmit={(event) => {
             event.preventDefault();
-            void enqueueSelected(event.currentTarget);
           }}
         >
           <h3 className="text-base font-semibold text-foreground">Upload intake photo</h3>
@@ -156,6 +159,9 @@ export function PhotosTab({
               name="category"
               required
               defaultValue={missingRequired[0] ?? "front"}
+              onChange={(event) => {
+                categoryRef.current = event.target.value as PhotoCategory;
+              }}
             >
               {ALL_CATEGORIES.map((category) => (
                 <option key={category} value={category}>
@@ -197,26 +203,27 @@ export function PhotosTab({
                 onClick={() => setChooserOpen(true)}
                 disabled={preparing}
               >
-                {preparing
-                  ? "Preparing photo…"
-                  : pendingFileName
-                    ? "Change photo"
-                    : "Choose photo"}
+                {preparing ? "Preparing photo…" : "Choose photo"}
               </button>
             </div>
-            {pendingFileName ? (
-              <p className="mt-1.5 text-sm text-[var(--status-neutral)]">
-                {pendingFileName}
-              </p>
-            ) : (
-              <p className="mt-1.5 text-sm text-[var(--status-neutral)]">
-                {preparing
-                  ? "Preparing photo — keep this screen open."
-                  : "Camera or Library — required before upload."}
-              </p>
-            )}
+            <p className="mt-1.5 text-sm text-[var(--status-neutral)]">
+              {preparing
+                ? "Preparing photo — keep this screen open."
+                : "Camera or Library — the photo queues as soon as you choose it."}
+            </p>
           </div>
-          <TextField label="Notes" name="notes" />
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">
+              Notes
+            </span>
+            <input
+              className={SELECT_CLASS}
+              name="notes"
+              onChange={(event) => {
+                notesRef.current = event.target.value.trim();
+              }}
+            />
+          </label>
           {queuedHere.map((item) => (
             <p
               key={item.queueId}
@@ -226,15 +233,6 @@ export function PhotosTab({
               {photoQueueStatusLabel(item, queue.isOnline())}
             </p>
           ))}
-          <div>
-            <button
-              type="submit"
-              className="btn btn-primary min-h-11"
-              disabled={preparing || enqueueing}
-            >
-              {preparing ? "Preparing…" : enqueueing ? "Uploading…" : "Upload photo"}
-            </button>
-          </div>
         </form>
       ) : null}
 

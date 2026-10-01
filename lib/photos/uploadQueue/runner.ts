@@ -350,7 +350,11 @@ export class PhotoUploadQueueRunner {
         uploading.queueId,
         this.options.scope,
         this.options.ownerId,
-        this.options.now()
+        this.options.now(),
+        {
+          photoId: outcome.photoId,
+          clientUploadId: uploading.clientUploadId,
+        }
       );
       if (completed) {
         claim.ownsClaim = false;

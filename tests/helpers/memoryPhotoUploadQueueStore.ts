@@ -1,5 +1,6 @@
 import {
   type AcquiredPhotoUploadClaim,
+  createPhotoUploadConfirmationReceipt,
   createPhotoUploadFailureSettlement,
   DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
   type PhotoUploadClaim,
@@ -13,6 +14,8 @@ import {
 } from "@/lib/photos/uploadQueue/store";
 import { assertPhotoUploadTransition } from "@/lib/photos/uploadQueue/stateTransitions";
 import type {
+  PhotoUploadConfirmationInput,
+  PhotoUploadConfirmationReceipt,
   PhotoUploadQueuePatch,
   PhotoUploadScope,
   QueuedPhotoUpload,
@@ -20,10 +23,11 @@ import type {
 
 export type MemoryPhotoUploadQueueDatabase = {
   items: Map<string, QueuedPhotoUpload>;
+  confirmations: Map<string, PhotoUploadConfirmationReceipt>;
 };
 
 export function createMemoryPhotoUploadQueueDatabase(): MemoryPhotoUploadQueueDatabase {
-  return { items: new Map() };
+  return { items: new Map(), confirmations: new Map() };
 }
 
 function belongsToScope(item: QueuedPhotoUpload, scope: PhotoUploadScope): boolean {
@@ -356,20 +360,67 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     queueId: string,
     scope: PhotoUploadScope,
     owner: string,
-    now: number
+    now: number,
+    confirmation: PhotoUploadConfirmationInput
   ): Promise<boolean> {
     const item = this.database.items.get(queueId);
     if (
       !item ||
       !belongsToScope(item, scope) ||
       item.status !== "uploading" ||
-      !ownsLiveUploadClaim(item, owner, now)
+      !ownsLiveUploadClaim(item, owner, now) ||
+      confirmation.clientUploadId !== item.clientUploadId
     ) {
       return false;
     }
     assertPhotoUploadTransition(item.status, "saved");
+    this.database.confirmations.set(
+      queueId,
+      createPhotoUploadConfirmationReceipt(item, confirmation, now)
+    );
     this.database.items.delete(queueId);
     return true;
+  }
+
+  async listConfirmations(
+    scope: PhotoUploadScope
+  ): Promise<PhotoUploadConfirmationReceipt[]> {
+    return [...this.database.confirmations.values()]
+      .filter(
+        (receipt) =>
+          receipt.userId === scope.userId && receipt.locationId === scope.locationId
+      )
+      .map((receipt) => ({ ...receipt }));
+  }
+
+  async getConfirmation(
+    queueId: string,
+    scope: PhotoUploadScope
+  ): Promise<PhotoUploadConfirmationReceipt | null> {
+    const receipt = this.database.confirmations.get(queueId);
+    if (
+      !receipt ||
+      receipt.userId !== scope.userId ||
+      receipt.locationId !== scope.locationId
+    ) {
+      return null;
+    }
+    return { ...receipt };
+  }
+
+  async pruneConfirmations(scope: PhotoUploadScope, olderThan: number): Promise<number> {
+    let removed = 0;
+    for (const [queueId, receipt] of [...this.database.confirmations]) {
+      if (
+        receipt.userId === scope.userId &&
+        receipt.locationId === scope.locationId &&
+        receipt.confirmedAt < olderThan
+      ) {
+        this.database.confirmations.delete(queueId);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 
   async releaseUploadClaim(

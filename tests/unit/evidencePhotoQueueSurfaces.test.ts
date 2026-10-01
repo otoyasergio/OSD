@@ -114,6 +114,16 @@ describe("evidence photo queue surfaces", () => {
       );
     });
 
+    const notes = container.querySelector(
+      'input[name="notes"], textarea[name="notes"]'
+    ) as HTMLInputElement | HTMLTextAreaElement;
+    expect(notes).toBeTruthy();
+    await act(async () => {
+      notes.value = "scratched tank";
+      notes.dispatchEvent(new Event("input", { bubbles: true }));
+      notes.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
     const library = container.querySelector(
       'input[aria-label="Photo library"]'
     ) as HTMLInputElement;
@@ -123,25 +133,6 @@ describe("evidence photo queue surfaces", () => {
     });
     await act(async () => {
       library.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-
-    const notes = container.querySelector(
-      'input[name="notes"], textarea[name="notes"]'
-    ) as HTMLInputElement | HTMLTextAreaElement | null;
-    if (notes) {
-      await act(async () => {
-        notes.value = "scratched tank";
-        notes.dispatchEvent(new Event("input", { bubbles: true }));
-        notes.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-    }
-
-    const submit = Array.from(container.querySelectorAll("button")).find((button) =>
-      /upload photo/i.test(button.textContent ?? "")
-    );
-    expect(submit).toBeTruthy();
-    await act(async () => {
-      submit!.click();
     });
 
     await vi.waitFor(async () => {
@@ -244,5 +235,70 @@ describe("evidence photo queue surfaces", () => {
       workOrderId: "wo-1",
       jobId: "job-1",
     });
+    expect(container.textContent).toMatch(/Waiting for connection|Photo queued/);
+  });
+
+  it("floor picker hydrates receipt Saved state after remount", async () => {
+    const database = createMemoryPhotoUploadQueueDatabase();
+    const store = new MemoryPhotoUploadQueueStore(database);
+    await store.put(
+      { userId: "user-a", locationId: "location-a" },
+      {
+        queueId: "proof-1",
+        clientUploadId: "client-1",
+        userId: "user-a",
+        locationId: "location-a",
+        workOrderId: "wo-1",
+        jobId: "job-1",
+        category: "job_proof",
+        blob: new Blob(["x"], { type: "image/jpeg" }),
+        fileName: "proof.jpg",
+        mimeType: "image/jpeg",
+        lastModified: 1,
+        byteCount: 1,
+        status: "uploading",
+        attemptCount: 0,
+        retryAt: null,
+        lastError: null,
+        createdAt: 1,
+        updatedAt: 1,
+        leaseOwner: "runner-a",
+        leaseExpiresAt: 9_999,
+        uploadSlotOwner: "runner-a",
+        uploadSlotExpiresAt: 9_999,
+      }
+    );
+    await store.completeClaimedUpload(
+      "proof-1",
+      { userId: "user-a", locationId: "location-a" },
+      "runner-a",
+      2_000,
+      { photoId: "photo-proof", clientUploadId: "client-1" }
+    );
+
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "user-a",
+            locationId: "location-a",
+            store: new MemoryPhotoUploadQueueStore(database),
+            isOnline: () => true,
+          },
+          createElement(FloorPhotoField, {
+            hint: "Camera or photo library",
+            workOrderId: "wo-1",
+            jobId: "job-1",
+            category: "job_proof",
+          })
+        )
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toMatch(/Saved/);
+    });
+    expect(refresh).toHaveBeenCalled();
   });
 });

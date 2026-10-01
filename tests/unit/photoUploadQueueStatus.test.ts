@@ -124,9 +124,35 @@ describe("photo upload queue status and sign-out", () => {
 
     expect(container.textContent).toMatch(/front/i);
     expect(container.textContent).toMatch(/work-order-1|work order/i);
-    expect(container.querySelector("button[aria-label^='Retry']")).toBeTruthy();
+    expect(container.textContent).toMatch(/Waiting for connection/);
+    expect(container.querySelector("button[aria-label^='Retry']")).toBeNull();
     expect(container.querySelector("button[aria-label^='Remove']")).toBeTruthy();
     expect(enqueue).toBeTruthy();
+  });
+
+  it("shows Waiting to upload for online queued items and Retry only after failure", async () => {
+    await renderStatus(true);
+    const enqueueButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("enqueue")
+    )!;
+    await act(async () => {
+      enqueueButton.click();
+    });
+    await vi.waitFor(() => {
+      expect(container.textContent).toMatch(/Waiting to upload|failed/i);
+    });
+    const toggle = container.querySelector(
+      '[aria-haspopup="true"], button[aria-expanded]'
+    ) as HTMLButtonElement | null;
+    if (toggle && toggle.getAttribute("aria-expanded") !== "true") {
+      await act(async () => {
+        toggle.click();
+      });
+    }
+    await vi.waitFor(() => {
+      expect(container.querySelector("button[aria-label^='Retry']")).toBeTruthy();
+    });
+    expect(container.textContent).toMatch(/Failed/);
   });
 
   it("warns before sign-out when scoped queue items remain", async () => {

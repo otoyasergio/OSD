@@ -64,16 +64,35 @@ describe("intake photo queue helpers", () => {
       waitForConfirmations: vi.fn(async () => ({
         ok: false as const,
         failed: [failed],
+        missingQueueIds: [],
       })),
     };
     const result = await attachAndWaitForRequiredIntakePhotos({
       queue: queue as never,
       intakeDraftId: "draft-1",
       workOrderId: "wo-1",
-      requiredQueueIds: [...REQUIRED],
+      requiredCategories: [...REQUIRED],
     });
     expect(queue.attachDraftToWorkOrder).toHaveBeenCalledWith("draft-1", "wo-1");
+    expect(queue.waitForConfirmations).toHaveBeenCalledWith([...REQUIRED]);
     expect(result).toEqual({ ok: false, failedCategories: ["vin"] });
+  });
+
+  it("uses attach return ids and fails when a required category is missing", async () => {
+    const queue = {
+      attachDraftToWorkOrder: vi.fn(async () =>
+        REQUIRED.slice(0, 5).map((category) => ({ queueId: category, category }))
+      ),
+      waitForConfirmations: vi.fn(),
+    };
+    const result = await attachAndWaitForRequiredIntakePhotos({
+      queue: queue as never,
+      intakeDraftId: "draft-1",
+      workOrderId: "wo-1",
+      requiredCategories: [...REQUIRED],
+    });
+    expect(queue.waitForConfirmations).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, failedCategories: ["odometer"] });
   });
 });
 
@@ -137,7 +156,7 @@ describe("IntakePhotoSlots queue commit", () => {
     });
 
     await vi.waitFor(() => expect(onChange).toHaveBeenCalled());
-    expect(container.textContent).toMatch(/Ready/);
+    expect(container.textContent).toMatch(/Waiting for connection/);
     const listed = await store.list({ userId: "user-a", locationId: "location-a" });
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
@@ -196,6 +215,62 @@ describe("IntakePhotoSlots queue commit", () => {
       );
     });
     expect(onChange).not.toHaveBeenCalled();
+    expect(container.textContent).not.toMatch(/Ready/);
+  });
+
+  it("clears Ready when the queued photo is removed globally", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    function Harness() {
+      const [value, setValue] = useState<Record<string, File | null>>({});
+      return createElement(IntakePhotoSlots, {
+        value,
+        htmlRequired: false,
+        intakeDraftId: "draft-1",
+        onChange: setValue,
+      });
+    }
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "user-a",
+            locationId: "location-a",
+            store,
+            isOnline: () => false,
+          },
+          createElement(Harness)
+        )
+      );
+    });
+    const input = container.querySelector(
+      'input[aria-label="Front photo library"]'
+    ) as HTMLInputElement;
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["tiny-jpeg-bytes"], "library.jpg", { type: "image/jpeg" })],
+    });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await vi.waitFor(() => {
+      expect(container.textContent).toMatch(/Waiting for connection/);
+    });
+    const listed = await store.list({ userId: "user-a", locationId: "location-a" });
+    expect(listed).toHaveLength(1);
+    const remove = container.querySelector(
+      "button[aria-label='Remove Front photo']"
+    ) as HTMLButtonElement;
+    expect(remove).toBeTruthy();
+    await act(async () => {
+      remove.click();
+    });
+    await vi.waitFor(async () => {
+      expect(
+        await store.list({ userId: "user-a", locationId: "location-a" })
+      ).toHaveLength(0);
+    });
+    expect(container.textContent).not.toMatch(/Waiting for connection/);
     expect(container.textContent).not.toMatch(/Ready/);
   });
 });

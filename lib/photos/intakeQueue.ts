@@ -29,6 +29,26 @@ export function requiredQueueIdsForIntake(
     .map((item) => item.queueId);
 }
 
+export function requiredAttachedIntakeItems(
+  attached: QueuedPhotoUpload[],
+  requiredCategories: readonly string[]
+): {
+  items: QueuedPhotoUpload[];
+  missingCategories: string[];
+} {
+  const items: QueuedPhotoUpload[] = [];
+  const missingCategories: string[] = [];
+  for (const category of requiredCategories) {
+    const match = attached.find((item) => item.category === category);
+    if (!match) {
+      missingCategories.push(category);
+      continue;
+    }
+    items.push(match);
+  }
+  return { items, missingCategories };
+}
+
 export function intakeContractHref(
   workOrderId: string,
   optionalPhotoFailures = 0
@@ -62,19 +82,35 @@ export async function attachAndWaitForRequiredIntakePhotos({
   queue,
   intakeDraftId,
   workOrderId,
-  requiredQueueIds,
+  requiredCategories,
 }: {
   queue: Pick<PhotoUploadQueueApi, "attachDraftToWorkOrder" | "waitForConfirmations">;
   intakeDraftId: string;
   workOrderId: string;
-  requiredQueueIds: string[];
+  requiredCategories: readonly string[];
 }): Promise<{ ok: true } | { ok: false; failedCategories: string[] }> {
-  await queue.attachDraftToWorkOrder(intakeDraftId, workOrderId);
-  const waited = await queue.waitForConfirmations(requiredQueueIds);
+  const attached = await queue.attachDraftToWorkOrder(intakeDraftId, workOrderId);
+  const { items, missingCategories } = requiredAttachedIntakeItems(
+    attached,
+    requiredCategories
+  );
+  if (missingCategories.length > 0 || items.length !== requiredCategories.length) {
+    return {
+      ok: false,
+      failedCategories:
+        missingCategories.length > 0 ? missingCategories : [...requiredCategories],
+    };
+  }
+  const waited = await queue.waitForConfirmations(items.map((item) => item.queueId));
   if (waited.ok) return { ok: true };
+  const failedFromItems = waited.failed.map((item) => item.category);
+  const failedFromMissing = waited.missingQueueIds.flatMap((queueId) => {
+    const item = items.find((candidate) => candidate.queueId === queueId);
+    return item ? [item.category] : [];
+  });
   return {
     ok: false,
-    failedCategories: waited.failed.map((item) => item.category),
+    failedCategories: [...new Set([...failedFromItems, ...failedFromMissing])],
   };
 }
 
@@ -85,6 +121,9 @@ export async function waitForRequiredIntakePhotos({
   queue: Pick<PhotoUploadQueueApi, "waitForConfirmations">;
   requiredQueueIds: string[];
 }): Promise<{ ok: true } | { ok: false; failedCategories: string[] }> {
+  if (requiredQueueIds.length === 0) {
+    return { ok: false, failedCategories: [] };
+  }
   const waited = await queue.waitForConfirmations(requiredQueueIds);
   if (waited.ok) return { ok: true };
   return {

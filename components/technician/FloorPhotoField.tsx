@@ -11,8 +11,8 @@ import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
 function readyLabel(count: number): string | null {
   if (count === 0) return null;
-  if (count === 1) return "Photo ready";
-  return `${count} photos ready`;
+  if (count === 1) return "Photo queued";
+  return `${count} photos queued`;
 }
 
 export function FloorPhotoField({
@@ -34,7 +34,6 @@ export function FloorPhotoField({
   const queue = usePhotoUploadQueue();
   const cameraInputId = useId();
   const libraryInputId = useId();
-  const ownedQueueIds = useRef(new Set<string>());
   const refreshedIds = useRef(new Set<string>());
   const [photoLabel, setPhotoLabel] = useState<string | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
@@ -49,15 +48,37 @@ export function FloorPhotoField({
       item.jobId === jobId &&
       item.category === category
   );
+  const receipts = queue.confirmations.filter(
+    (receipt) =>
+      receipt.workOrderId === workOrderId &&
+      receipt.jobId === jobId &&
+      receipt.category === category
+  );
 
   useEffect(() => {
     return queue.subscribeConfirmation((confirmation) => {
-      if (!ownedQueueIds.current.has(confirmation.queueId)) return;
       if (refreshedIds.current.has(confirmation.queueId)) return;
+      const receipt = queue.confirmations.find(
+        (candidate) => candidate.queueId === confirmation.queueId
+      );
+      const matches =
+        receipt?.workOrderId === workOrderId &&
+        receipt?.jobId === jobId &&
+        receipt?.category === category;
+      if (!matches) return;
       refreshedIds.current.add(confirmation.queueId);
       router.refresh();
     });
-  }, [queue, router]);
+  }, [category, jobId, queue, router, workOrderId]);
+
+  useEffect(() => {
+    for (const receipt of receipts) {
+      if (refreshedIds.current.has(receipt.queueId)) continue;
+      refreshedIds.current.add(receipt.queueId);
+      router.refresh();
+      break;
+    }
+  }, [receipts, router]);
 
   function notifyPhotoReady(count: number) {
     const label = readyLabel(count);
@@ -75,13 +96,12 @@ export function FloorPhotoField({
       }
       let added = 0;
       for (const file of prepared) {
-        const item = await queue.enqueue({
+        await queue.enqueue({
           file,
           category,
           workOrderId,
           jobId,
         });
-        ownedQueueIds.current.add(item.queueId);
         added += 1;
       }
       notifyPhotoReady(queued.length + added);
@@ -151,6 +171,11 @@ export function FloorPhotoField({
           {queued.map((item) => (
             <p key={item.queueId} className="pit-photo-hint" role="status">
               {photoQueueStatusLabel(item, online)}
+            </p>
+          ))}
+          {receipts.map((receipt) => (
+            <p key={receipt.queueId} className="pit-photo-hint" role="status">
+              Saved
             </p>
           ))}
         </>

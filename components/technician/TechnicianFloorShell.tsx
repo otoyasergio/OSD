@@ -48,7 +48,6 @@ import {
   skipProofAction,
   swapBenchJobAction,
   toggleChecklistAction,
-  uploadJobProofAction,
   type FloorActionState,
 } from "@/app/(app)/technician/floor-actions";
 import { techJobPacketHref } from "@/lib/technician/assignmentHref";
@@ -235,7 +234,6 @@ export function TechnicianFloorShell({
     installPartFloorAction,
     null
   );
-  const [proofState, , proofPending] = useActionState(uploadJobProofAction, null);
   const [skipState, skipAction, skipPending] = useActionState(skipProofAction, null);
   const [workState, workAction, workPending] = useActionState(
     completePerformWorkAction,
@@ -427,7 +425,6 @@ export function TechnicianFloorShell({
     resumePending ||
     swapPending ||
     completePending ||
-    proofPending ||
     skipPending ||
     workPending ||
     passQcPending ||
@@ -948,11 +945,9 @@ export function TechnicianFloorShell({
                                     ? toggleState
                                     : installState?.error
                                       ? installState
-                                      : proofState?.error
-                                        ? proofState
-                                        : workState?.error
-                                          ? workState
-                                          : null
+                                      : workState?.error
+                                        ? workState
+                                        : null
                         }
                       />
                     }

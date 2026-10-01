@@ -8,6 +8,7 @@ import {
   usePhotoUploadQueue,
   type PhotoUploadQueueApi,
 } from "@/components/photos/PhotoUploadQueueProvider";
+import { PhotoUploadQueueClosedError } from "@/lib/photos/uploadQueue/errors";
 import type { QueuedPhotoUpload } from "@/lib/photos/uploadQueue/types";
 import {
   createMemoryPhotoUploadQueueDatabase,
@@ -298,6 +299,121 @@ describe("PhotoUploadQueueProvider", () => {
     });
     listed = await store.list(USER_A);
     expect(listed.map((item) => item.category)).toEqual(["front"]);
+  });
+
+  it("waitForConfirmations fails immediately for an empty id set", async () => {
+    let api!: PhotoUploadQueueApi;
+    await renderProvider({
+      onReady: (next) => {
+        api = next;
+      },
+    });
+    await expect(api.waitForConfirmations([])).resolves.toEqual({
+      ok: false,
+      failed: [],
+      missingQueueIds: [],
+    });
+  });
+
+  it("waitForConfirmations fails immediately when an id is missing", async () => {
+    let api!: PhotoUploadQueueApi;
+    await renderProvider({
+      onReady: (next) => {
+        api = next;
+      },
+    });
+    await expect(api.waitForConfirmations(["missing-queue"])).resolves.toEqual({
+      ok: false,
+      failed: [],
+      missingQueueIds: ["missing-queue"],
+    });
+  });
+
+  it("waitForConfirmations fails immediately after a queued id is removed", async () => {
+    let api!: PhotoUploadQueueApi;
+    await renderProvider({
+      isOnline: () => false,
+      onReady: (next) => {
+        api = next;
+      },
+    });
+    let queueId = "";
+    await act(async () => {
+      const item = await api.enqueue({
+        file: photoFile(),
+        category: "front",
+        workOrderId: "work-order-1",
+      });
+      queueId = item.queueId;
+      await api.remove(queueId);
+    });
+    await expect(api.waitForConfirmations([queueId])).resolves.toEqual({
+      ok: false,
+      failed: [],
+      missingQueueIds: [queueId],
+    });
+  });
+
+  it("waitForConfirmations resolves remounted durable receipts", async () => {
+    const database = createMemoryPhotoUploadQueueDatabase();
+    let firstApi!: PhotoUploadQueueApi;
+    await renderProvider({
+      store: new MemoryPhotoUploadQueueStore(database),
+      onReady: (next) => {
+        firstApi = next;
+      },
+    });
+    let queueId = "";
+    await act(async () => {
+      const item = await firstApi.enqueue({
+        file: photoFile(),
+        category: "front",
+        workOrderId: "work-order-1",
+      });
+      queueId = item.queueId;
+    });
+    await vi.waitFor(() => expect(firstApi.items).toHaveLength(0));
+    await expect(firstApi.waitForConfirmations([queueId])).resolves.toMatchObject({
+      ok: true,
+    });
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    let remounted!: PhotoUploadQueueApi;
+    await renderProvider({
+      store: new MemoryPhotoUploadQueueStore(database),
+      onReady: (next) => {
+        remounted = next;
+      },
+    });
+    await vi.waitFor(() => expect(remounted.confirmations).toHaveLength(1));
+    await expect(remounted.waitForConfirmations([queueId])).resolves.toMatchObject({
+      ok: true,
+      confirmations: [expect.objectContaining({ queueId, photoId: PHOTO_ID })],
+    });
+  });
+
+  it("waitForConfirmations rejects waiters when the provider unmounts", async () => {
+    let api!: PhotoUploadQueueApi;
+    await renderProvider({
+      isOnline: () => false,
+      onReady: (next) => {
+        api = next;
+      },
+    });
+    let queueId = "";
+    await act(async () => {
+      const item = await api.enqueue({
+        file: photoFile(),
+        category: "front",
+        workOrderId: "work-order-1",
+      });
+      queueId = item.queueId;
+    });
+    const pending = api.waitForConfirmations([queueId]);
+    act(() => root.unmount());
+    root = createRoot(container);
+    await expect(pending).rejects.toBeInstanceOf(PhotoUploadQueueClosedError);
   });
 
   it("waitForConfirmations stays failed when any required photo fails", async () => {
