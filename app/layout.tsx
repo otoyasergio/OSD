@@ -16,6 +16,12 @@ const ibmPlexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "OTOMOTO Workshop",
   description: "OTOMOTO workshop management app",
+  // Safari on iOS rewrites anything that looks like a phone number into a
+  // `tel:` link at parse time. Work-order numbers, VINs, part SKUs, odometer
+  // readings and prices all qualify, and a tapped customer number would dial
+  // from the staff member's own device instead of the shop line used by
+  // ClickToCallButton. The rewrite also mutates the DOM under React.
+  formatDetection: { telephone: false },
   appleWebApp: {
     title: "OTOMOTO",
     // Deliberately not "capable": a home-screen launch stays in Safari so staff
