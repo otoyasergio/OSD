@@ -435,6 +435,10 @@ describe("DiagnosticsPhotoPicker", () => {
         { photoId: id(12), purpose: "Work photo for analysis" },
       ]);
     });
+    expect(container.querySelector('[role="alert"]')?.textContent ?? "").not.toContain(
+      "That photo is too large."
+    );
+    expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(uploadAssistantPhotoAction).toHaveBeenCalledTimes(2);
     const listed = await testStore.list({
       userId: "user-a",

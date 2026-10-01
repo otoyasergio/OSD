@@ -240,6 +240,7 @@ export function DiagnosticsPhotoPicker({
     const pending = pendingByQueueId.current.get(queueId);
     pendingByQueueId.current.delete(queueId);
     if (!mountedRef.current) return;
+    setError(null);
     const file = pending?.file;
     const purpose = pending?.purpose ?? defaultPurpose;
     if (file) {
