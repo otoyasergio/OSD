@@ -9,7 +9,7 @@ export type PhotoUploadQueueTimer = {
 export type PhotoUploadQueueRunnerOptions = {
   scope: PhotoUploadScope;
   store: PhotoUploadQueueStore;
-  uploader(item: QueuedPhotoUpload): Promise<PhotoUploadOutcome>;
+  uploader(item: QueuedPhotoUpload, signal: AbortSignal): Promise<PhotoUploadOutcome>;
   now(): number;
   timer: PhotoUploadQueueTimer;
   isOnline(): boolean;
@@ -23,11 +23,27 @@ export type PhotoUploadQueueRunnerOptions = {
   maxAttempts?: number;
 };
 
+type ActiveUploadClaim = {
+  queueId: string;
+  generation: number;
+  abortController: AbortController;
+  ownsClaim: boolean;
+  expiresAt: number;
+  renewalTimer: unknown;
+};
+
 export class PhotoUploadQueueRunner {
   private retryTimer: unknown = null;
   private pumpPromise: Promise<void> | null = null;
+  private pendingWake = false;
   private listening = false;
-  private readonly stopLeaseRenewals = new Set<() => void>();
+  private stopped = false;
+  private generation = 1;
+  private readonly activeClaims = new Map<string, ActiveUploadClaim>();
+  private resolveStopped: () => void = () => {};
+  private readonly stoppedPromise = new Promise<void>((resolve) => {
+    this.resolveStopped = resolve;
+  });
   private readonly handleOnline = (): void => {
     void this.wake();
   };
@@ -41,6 +57,7 @@ export class PhotoUploadQueueRunner {
   constructor(private readonly options: PhotoUploadQueueRunnerOptions) {}
 
   async start(): Promise<void> {
+    if (this.stopped) return;
     if (!this.listening) {
       this.options.eventTarget.addEventListener("online", this.handleOnline);
       this.options.eventTarget.addEventListener("pageshow", this.handlePageShow);
@@ -51,28 +68,52 @@ export class PhotoUploadQueueRunner {
       this.listening = true;
     }
     await this.options.store.recoverInterrupted(this.options.scope, this.options.now());
+    if (!this.isCurrent(this.generation)) return;
     await this.wake();
   }
 
   wake(): Promise<void> {
+    if (this.stopped) return Promise.resolve();
+    this.pendingWake = true;
     if (this.pumpPromise) return this.pumpPromise;
-    const pumping = this.pump();
+    const generation = this.generation;
+    const pumping = this.drainWakeRequests(generation);
     this.pumpPromise = pumping.finally(() => {
       this.pumpPromise = null;
     });
     return this.pumpPromise;
   }
 
-  private async pump(): Promise<void> {
+  private async drainWakeRequests(generation: number): Promise<void> {
+    do {
+      this.pendingWake = false;
+      await this.pump(generation);
+      await Promise.resolve();
+    } while (this.pendingWake && this.isCurrent(generation));
+  }
+
+  private isCurrent(generation: number): boolean {
+    return !this.stopped && this.generation === generation;
+  }
+
+  private canProcess(generation: number): boolean {
+    return (
+      this.isCurrent(generation) && this.options.isOnline() && this.options.isVisible()
+    );
+  }
+
+  private async pump(generation: number): Promise<void> {
     this.clearRetryTimer();
-    if (!this.options.isOnline() || !this.options.isVisible()) return;
+    if (!this.canProcess(generation)) return;
     await this.options.store.recoverInterrupted(this.options.scope, this.options.now());
+    if (!this.canProcess(generation)) return;
     const concurrency = Math.min(2, Math.max(1, this.options.maxConcurrency ?? 2));
     const active = new Set<Promise<void>>();
     const activeQueueIds = new Set<string>();
 
-    while (this.options.isOnline() && this.options.isVisible()) {
+    while (this.canProcess(generation)) {
       const items = await this.options.store.list(this.options.scope);
+      if (!this.canProcess(generation)) return;
       const now = this.options.now();
       const candidates = items.filter(
         (candidate) =>
@@ -84,18 +125,44 @@ export class PhotoUploadQueueRunner {
       );
 
       while (active.size < concurrency && candidates.length > 0) {
+        if (!this.canProcess(generation)) return;
         const item = candidates.shift()!;
-        const acquired = await this.options.store.tryAcquireLease(
+        const ttlMs = this.options.leaseTtlMs ?? 30_000;
+        const acquired = await this.options.store.tryAcquireUploadClaim(
           item.queueId,
           this.options.scope,
           this.options.ownerId,
           this.options.now(),
-          this.options.leaseTtlMs ?? 30_000
+          ttlMs,
+          2
         );
+        if (!this.canProcess(generation)) {
+          if (acquired) {
+            await this.options.store.releaseUploadClaim(
+              item.queueId,
+              this.options.scope,
+              this.options.ownerId,
+              this.options.now()
+            );
+          }
+          return;
+        }
         if (!acquired) continue;
-        const uploading = await this.options.store.update(
+
+        const claim: ActiveUploadClaim = {
+          queueId: item.queueId,
+          generation,
+          abortController: new AbortController(),
+          ownsClaim: true,
+          expiresAt: this.options.now() + ttlMs,
+          renewalTimer: null,
+        };
+        this.activeClaims.set(item.queueId, claim);
+        const uploading = await this.options.store.updateClaimed(
           item.queueId,
           this.options.scope,
+          this.options.ownerId,
+          this.options.now(),
           {
             status: "uploading",
             attemptCount: item.attemptCount + 1,
@@ -104,34 +171,56 @@ export class PhotoUploadQueueRunner {
             updatedAt: this.options.now(),
           }
         );
-        if (!uploading) continue;
+        if (!this.canProcess(generation) || !uploading) {
+          await this.releaseClaim(claim);
+          this.activeClaims.delete(item.queueId);
+          if (!this.canProcess(generation)) return;
+          continue;
+        }
 
         activeQueueIds.add(item.queueId);
-        const uploadPromise = this.uploadOne(uploading).finally(() => {
+        const uploadPromise = this.uploadOne(uploading, claim).finally(() => {
           active.delete(uploadPromise);
           activeQueueIds.delete(item.queueId);
+          this.activeClaims.delete(item.queueId);
         });
         active.add(uploadPromise);
       }
 
       if (active.size === 0) {
-        this.scheduleNextRetry(await this.options.store.list(this.options.scope));
+        const remaining = await this.options.store.list(this.options.scope);
+        if (!this.canProcess(generation)) return;
+        this.scheduleNextRetry(remaining, generation);
         return;
       }
 
-      await Promise.race(active);
+      await Promise.race([Promise.race(active), this.stoppedPromise]);
+      if (!this.isCurrent(generation)) return;
     }
-
-    await Promise.all(active);
   }
 
-  private async uploadOne(uploading: QueuedPhotoUpload): Promise<void> {
-    const stopRenewingLease = this.startLeaseRenewal(uploading.queueId);
+  private async uploadOne(
+    uploading: QueuedPhotoUpload,
+    claim: ActiveUploadClaim
+  ): Promise<void> {
+    this.scheduleClaimRenewal(claim, Math.floor((this.options.leaseTtlMs ?? 30_000) / 2));
     try {
+      if (!this.canProcess(claim.generation) || !claim.ownsClaim) {
+        await this.releaseClaim(claim);
+        return;
+      }
+
       let outcome: PhotoUploadOutcome;
       try {
-        outcome = await this.options.uploader(uploading);
+        outcome = await this.options.uploader(uploading, claim.abortController.signal);
       } catch (error) {
+        if (
+          claim.abortController.signal.aborted ||
+          !claim.ownsClaim ||
+          !this.isCurrent(claim.generation)
+        ) {
+          return;
+        }
         outcome = {
           ok: false,
           retryable: true,
@@ -141,122 +230,168 @@ export class PhotoUploadQueueRunner {
               : "The photo upload was interrupted.",
         };
       }
+      if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
+
       if (!outcome.ok) {
-        if (
-          !outcome.retryable ||
-          uploading.attemptCount >= (this.options.maxAttempts ?? 5)
-        ) {
-          await this.options.store.update(uploading.queueId, this.options.scope, {
-            status: "failed",
-            retryAt: null,
-            lastError: outcome.message,
-            updatedAt: this.options.now(),
-            leaseOwner: null,
-            leaseExpiresAt: null,
-          });
-          return;
-        }
+        const failed =
+          !outcome.retryable || uploading.attemptCount >= (this.options.maxAttempts ?? 5);
         const retryDelay = Math.min(
           (this.options.baseRetryDelayMs ?? 1_000) *
             2 ** Math.max(0, uploading.attemptCount - 1),
           this.options.maxRetryDelayMs ?? 60_000
         );
-        const retryAt = this.options.now() + retryDelay;
-        await this.options.store.update(uploading.queueId, this.options.scope, {
-          status: "retry_wait",
-          retryAt,
-          lastError: outcome.message,
-          updatedAt: this.options.now(),
-          leaseOwner: null,
-          leaseExpiresAt: null,
-        });
-        return;
-      }
-
-      await this.options.store.update(uploading.queueId, this.options.scope, {
-        status: "saved",
-        updatedAt: this.options.now(),
-        leaseOwner: null,
-        leaseExpiresAt: null,
-      });
-      await this.options.store.remove(uploading.queueId, this.options.scope);
-    } finally {
-      stopRenewingLease();
-    }
-  }
-
-  private startLeaseRenewal(queueId: string): () => void {
-    const ttlMs = this.options.leaseTtlMs ?? 30_000;
-    let stopped = false;
-    let timerHandle: unknown = null;
-
-    const schedule = (): void => {
-      timerHandle = this.options.timer.setTimeout(
-        () => {
-          timerHandle = null;
-          void renew();
-        },
-        Math.max(1, Math.floor(ttlMs / 2))
-      );
-    };
-    const renew = async (): Promise<void> => {
-      if (stopped) return;
-      try {
-        const renewed = await this.options.store.tryAcquireLease(
-          queueId,
+        const updated = await this.options.store.updateClaimed(
+          uploading.queueId,
           this.options.scope,
           this.options.ownerId,
           this.options.now(),
-          ttlMs
+          {
+            status: failed ? "failed" : "retry_wait",
+            retryAt: failed ? null : this.options.now() + retryDelay,
+            lastError: outcome.message,
+            updatedAt: this.options.now(),
+          },
+          true
         );
-        if (renewed && !stopped) schedule();
-      } catch {
-        // The active upload still settles its queue item. A later hydration can
-        // recover it if storage remains unavailable long enough for the lease
-        // to expire.
+        claim.ownsClaim = false;
+        if (!updated) claim.abortController.abort();
+        return;
       }
-    };
-    const stop = (): void => {
-      if (stopped) return;
-      stopped = true;
-      if (timerHandle !== null) {
-        this.options.timer.clearTimeout(timerHandle);
-        timerHandle = null;
-      }
-      this.stopLeaseRenewals.delete(stop);
-    };
 
-    this.stopLeaseRenewals.add(stop);
-    schedule();
-    return stop;
+      const completed = await this.options.store.completeClaimedUpload(
+        uploading.queueId,
+        this.options.scope,
+        this.options.ownerId,
+        this.options.now()
+      );
+      claim.ownsClaim = false;
+      if (!completed) claim.abortController.abort();
+    } finally {
+      this.clearClaimRenewal(claim);
+    }
   }
 
-  private scheduleNextRetry(items: QueuedPhotoUpload[]): void {
+  private scheduleClaimRenewal(claim: ActiveUploadClaim, delayMs: number): void {
+    if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
+    this.clearClaimRenewal(claim);
+    claim.renewalTimer = this.options.timer.setTimeout(
+      () => {
+        claim.renewalTimer = null;
+        void this.renewClaim(claim);
+      },
+      Math.max(1, delayMs)
+    );
+  }
+
+  private async renewClaim(claim: ActiveUploadClaim): Promise<void> {
+    if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
+    const now = this.options.now();
+    if (now >= claim.expiresAt) {
+      this.loseClaim(claim);
+      return;
+    }
+    const ttlMs = this.options.leaseTtlMs ?? 30_000;
+    try {
+      const renewed = await this.options.store.renewUploadClaim(
+        claim.queueId,
+        this.options.scope,
+        this.options.ownerId,
+        now,
+        ttlMs
+      );
+      if (!this.isCurrent(claim.generation)) return;
+      if (!renewed) {
+        this.loseClaim(claim);
+        return;
+      }
+      claim.expiresAt = now + ttlMs;
+      this.scheduleClaimRenewal(claim, Math.floor(ttlMs / 2));
+    } catch {
+      if (!this.isCurrent(claim.generation) || !claim.ownsClaim) return;
+      const remainingMs = claim.expiresAt - this.options.now();
+      if (remainingMs <= 0) {
+        this.loseClaim(claim);
+        return;
+      }
+      this.scheduleClaimRenewal(
+        claim,
+        Math.min(
+          Math.max(1, Math.floor(ttlMs / 4)),
+          Math.max(1, Math.floor(remainingMs / 2))
+        )
+      );
+    }
+  }
+
+  private loseClaim(claim: ActiveUploadClaim): void {
+    claim.ownsClaim = false;
+    this.clearClaimRenewal(claim);
+    claim.abortController.abort();
+  }
+
+  private clearClaimRenewal(claim: ActiveUploadClaim): void {
+    if (claim.renewalTimer === null) return;
+    this.options.timer.clearTimeout(claim.renewalTimer);
+    claim.renewalTimer = null;
+  }
+
+  private async releaseClaim(claim: ActiveUploadClaim): Promise<void> {
+    this.clearClaimRenewal(claim);
+    claim.abortController.abort();
+    if (!claim.ownsClaim) return;
+    claim.ownsClaim = false;
+    try {
+      await this.options.store.releaseUploadClaim(
+        claim.queueId,
+        this.options.scope,
+        this.options.ownerId,
+        this.options.now()
+      );
+    } catch {
+      // The expiring persisted claim remains recoverable after storage returns.
+    }
+  }
+
+  private scheduleNextRetry(items: QueuedPhotoUpload[], generation: number): void {
+    if (!this.isCurrent(generation)) return;
     const now = this.options.now();
     const wakeAt = items.reduce<number | null>((earliest, item) => {
+      const liveSlotExpiresAt =
+        item.uploadSlotOwner !== null &&
+        item.uploadSlotExpiresAt !== null &&
+        item.uploadSlotExpiresAt > now
+          ? item.uploadSlotExpiresAt
+          : null;
       const liveLeaseExpiresAt =
         item.leaseOwner !== null &&
         item.leaseExpiresAt !== null &&
         item.leaseExpiresAt > now
           ? item.leaseExpiresAt
           : null;
+      const liveClaimExpiresAt =
+        liveSlotExpiresAt === null
+          ? liveLeaseExpiresAt
+          : liveLeaseExpiresAt === null
+            ? liveSlotExpiresAt
+            : Math.min(liveSlotExpiresAt, liveLeaseExpiresAt);
       const pendingRetryAt =
         item.status === "retry_wait" && item.retryAt !== null && item.retryAt > now
           ? item.retryAt
           : null;
-      const itemWakeAt = liveLeaseExpiresAt ?? pendingRetryAt;
+      const itemWakeAt = liveClaimExpiresAt ?? pendingRetryAt;
       if (itemWakeAt === null) return earliest;
       return earliest === null ? itemWakeAt : Math.min(earliest, itemWakeAt);
     }, null);
-    if (wakeAt !== null) this.scheduleRetry(wakeAt);
+    if (wakeAt !== null) this.scheduleRetry(wakeAt, generation);
   }
 
-  private scheduleRetry(retryAt: number): void {
+  private scheduleRetry(retryAt: number, generation: number): void {
+    if (!this.isCurrent(generation)) return;
     this.clearRetryTimer();
     this.retryTimer = this.options.timer.setTimeout(
       () => {
         this.retryTimer = null;
-        void this.wake();
+        if (this.isCurrent(generation)) void this.wake();
       },
       Math.max(0, retryAt - this.options.now())
     );
@@ -268,9 +403,13 @@ export class PhotoUploadQueueRunner {
     this.retryTimer = null;
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.generation += 1;
+    this.pendingWake = false;
+    this.resolveStopped();
     this.clearRetryTimer();
-    for (const stopRenewal of [...this.stopLeaseRenewals]) stopRenewal();
     if (this.listening) {
       this.options.eventTarget.removeEventListener("online", this.handleOnline);
       this.options.eventTarget.removeEventListener("pageshow", this.handlePageShow);
@@ -280,5 +419,7 @@ export class PhotoUploadQueueRunner {
       );
       this.listening = false;
     }
+    const claims = [...this.activeClaims.values()];
+    await Promise.all(claims.map((claim) => this.releaseClaim(claim)));
   }
 }

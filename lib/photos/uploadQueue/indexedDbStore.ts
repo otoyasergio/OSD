@@ -11,7 +11,7 @@ import { PhotoUploadQueueScopeError, type PhotoUploadQueueStore } from "./store"
 import type { PhotoUploadQueuePatch, PhotoUploadScope, QueuedPhotoUpload } from "./types";
 
 export const PHOTO_UPLOAD_QUEUE_DB_NAME = "otomoto-photo-upload-queue";
-export const PHOTO_UPLOAD_QUEUE_DB_VERSION = 1;
+export const PHOTO_UPLOAD_QUEUE_DB_VERSION = 2;
 
 const PHOTO_UPLOAD_STORE_NAME = "photoUploads";
 const PHOTO_UPLOAD_SCOPE_INDEX = "byUserAndLocation";
@@ -82,6 +82,34 @@ const openIndexedDatabase: PhotoUploadQueueDatabaseOpener = async (name, version
 
 function belongsToScope(item: QueuedPhotoUpload, scope: PhotoUploadScope): boolean {
   return item.userId === scope.userId && item.locationId === scope.locationId;
+}
+
+function ownsLiveUploadClaim(
+  item: QueuedPhotoUpload,
+  owner: string,
+  now: number
+): boolean {
+  return (
+    item.leaseOwner === owner &&
+    item.leaseExpiresAt !== null &&
+    item.leaseExpiresAt > now &&
+    item.uploadSlotOwner === owner &&
+    item.uploadSlotExpiresAt !== null &&
+    item.uploadSlotExpiresAt > now
+  );
+}
+
+function hasLivePersistedUploadClaim(item: QueuedPhotoUpload, now: number): boolean {
+  const liveLease =
+    item.leaseOwner !== null && item.leaseExpiresAt !== null && item.leaseExpiresAt > now;
+  const hasSlotMetadata =
+    Object.prototype.hasOwnProperty.call(item, "uploadSlotOwner") ||
+    Object.prototype.hasOwnProperty.call(item, "uploadSlotExpiresAt");
+  const liveSlot =
+    item.uploadSlotOwner !== null &&
+    item.uploadSlotExpiresAt !== null &&
+    item.uploadSlotExpiresAt > now;
+  return liveLease && (!hasSlotMetadata || liveSlot);
 }
 
 function persistenceError(error: unknown): PhotoQueuePersistenceError {
@@ -212,7 +240,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
         if (
           !belongsToScope(item, scope) ||
           item.status !== "uploading" ||
-          (item.leaseExpiresAt !== null && item.leaseExpiresAt > now)
+          hasLivePersistedUploadClaim(item, now)
         ) {
           continue;
         }
@@ -223,6 +251,8 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
           updatedAt: now,
           leaseOwner: null,
           leaseExpiresAt: null,
+          uploadSlotOwner: null,
+          uploadSlotExpiresAt: null,
         });
         recovered += 1;
       }
@@ -240,9 +270,21 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     now: number,
     ttlMs: number
   ): Promise<boolean> {
+    return this.tryAcquireUploadClaim(queueId, scope, owner, now, ttlMs, 2);
+  }
+
+  async tryAcquireUploadClaim(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    ttlMs: number,
+    maxScopeSlots: number
+  ): Promise<boolean> {
     try {
       const transaction = (await this.database).transaction("readwrite");
       const item = await transaction.get(queueId);
+      const scopeItems = await transaction.listByScope(scope);
       const processable =
         item?.status === "queued" ||
         item?.status === "retry_wait" ||
@@ -253,7 +295,31 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
         item.leaseOwner !== owner &&
         item.leaseExpiresAt !== null &&
         item.leaseExpiresAt > now;
-      if (!item || !belongsToScope(item, scope) || !processable || liveCompetingLease) {
+      const liveCompetingSlot =
+        item !== undefined &&
+        item.uploadSlotOwner !== null &&
+        item.uploadSlotOwner !== owner &&
+        item.uploadSlotExpiresAt !== null &&
+        item.uploadSlotExpiresAt > now;
+      const alreadyOwnsLiveSlot =
+        item?.uploadSlotOwner === owner &&
+        item.uploadSlotExpiresAt !== null &&
+        item.uploadSlotExpiresAt > now;
+      const slotLimit = Math.min(2, Math.max(1, maxScopeSlots));
+      const activeScopeSlots = scopeItems.filter(
+        (candidate) =>
+          candidate.uploadSlotOwner !== null &&
+          candidate.uploadSlotExpiresAt !== null &&
+          candidate.uploadSlotExpiresAt > now
+      ).length;
+      if (
+        !item ||
+        !belongsToScope(item, scope) ||
+        !processable ||
+        liveCompetingLease ||
+        liveCompetingSlot ||
+        (!alreadyOwnsLiveSlot && activeScopeSlots >= slotLimit)
+      ) {
         await transaction.done;
         return false;
       }
@@ -261,6 +327,146 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
         ...item,
         leaseOwner: owner,
         leaseExpiresAt: now + ttlMs,
+        uploadSlotOwner: owner,
+        uploadSlotExpiresAt: now + ttlMs,
+      });
+      await transaction.done;
+      return true;
+    } catch (error) {
+      throw persistenceError(error);
+    }
+  }
+
+  async renewUploadClaim(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    ttlMs: number
+  ): Promise<boolean> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      const item = await transaction.get(queueId);
+      if (
+        !item ||
+        !belongsToScope(item, scope) ||
+        !ownsLiveUploadClaim(item, owner, now)
+      ) {
+        await transaction.done;
+        return false;
+      }
+      await transaction.put({
+        ...item,
+        leaseExpiresAt: now + ttlMs,
+        uploadSlotExpiresAt: now + ttlMs,
+      });
+      await transaction.done;
+      return true;
+    } catch (error) {
+      throw persistenceError(error);
+    }
+  }
+
+  async updateClaimed(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    patch: PhotoUploadQueuePatch,
+    releaseClaim = false
+  ): Promise<QueuedPhotoUpload | null> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      const item = await transaction.get(queueId);
+      if (
+        !item ||
+        !belongsToScope(item, scope) ||
+        !ownsLiveUploadClaim(item, owner, now)
+      ) {
+        await transaction.done;
+        return null;
+      }
+      if (patch.status) {
+        assertPhotoUploadTransition(item.status, patch.status);
+      }
+      const updated: QueuedPhotoUpload = {
+        ...item,
+        ...patch,
+        ...(releaseClaim
+          ? {
+              leaseOwner: null,
+              leaseExpiresAt: null,
+              uploadSlotOwner: null,
+              uploadSlotExpiresAt: null,
+            }
+          : {}),
+      };
+      await transaction.put(updated);
+      await transaction.done;
+      return updated;
+    } catch (error) {
+      if (error instanceof InvalidPhotoUploadTransitionError) throw error;
+      throw persistenceError(error);
+    }
+  }
+
+  async completeClaimedUpload(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number
+  ): Promise<boolean> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      const item = await transaction.get(queueId);
+      if (
+        !item ||
+        !belongsToScope(item, scope) ||
+        item.status !== "uploading" ||
+        !ownsLiveUploadClaim(item, owner, now)
+      ) {
+        await transaction.done;
+        return false;
+      }
+      assertPhotoUploadTransition(item.status, "saved");
+      await transaction.delete(queueId);
+      await transaction.done;
+      return true;
+    } catch (error) {
+      if (error instanceof InvalidPhotoUploadTransitionError) throw error;
+      throw persistenceError(error);
+    }
+  }
+
+  async releaseUploadClaim(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number
+  ): Promise<boolean> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      const item = await transaction.get(queueId);
+      if (!item || !belongsToScope(item, scope)) {
+        await transaction.done;
+        return false;
+      }
+      const ownsLease = item.leaseOwner === owner;
+      const ownsSlot = item.uploadSlotOwner === owner;
+      if (!ownsLease && !ownsSlot) {
+        await transaction.done;
+        return false;
+      }
+      const recoverToQueued = item.status === "uploading" && ownsLease && ownsSlot;
+      await transaction.put({
+        ...item,
+        status: recoverToQueued ? "queued" : item.status,
+        retryAt: recoverToQueued ? null : item.retryAt,
+        updatedAt: now,
+        leaseOwner: ownsLease ? null : item.leaseOwner,
+        leaseExpiresAt: ownsLease ? null : item.leaseExpiresAt,
+        uploadSlotOwner: ownsSlot ? null : item.uploadSlotOwner,
+        uploadSlotExpiresAt: ownsSlot ? null : item.uploadSlotExpiresAt,
       });
       await transaction.done;
       return true;

@@ -40,6 +40,8 @@ type QueuedPhotoUploadFields = {
   updatedAt: number;
   leaseOwner: string | null;
   leaseExpiresAt: number | null;
+  uploadSlotOwner: string | null;
+  uploadSlotExpiresAt: number | null;
 };
 
 export type QueuedPhotoUpload = QueuedPhotoUploadFields &
@@ -48,13 +50,7 @@ export type QueuedPhotoUpload = QueuedPhotoUploadFields &
 export type PhotoUploadQueuePatch = Partial<
   Pick<
     QueuedPhotoUploadFields,
-    | "status"
-    | "attemptCount"
-    | "retryAt"
-    | "lastError"
-    | "updatedAt"
-    | "leaseOwner"
-    | "leaseExpiresAt"
+    "status" | "attemptCount" | "retryAt" | "lastError" | "updatedAt"
   >
 >;
 

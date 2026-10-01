@@ -26,4 +26,39 @@ export interface PhotoUploadQueueStore {
     now: number,
     ttlMs: number
   ): Promise<boolean>;
+  tryAcquireUploadClaim(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    ttlMs: number,
+    maxScopeSlots: number
+  ): Promise<boolean>;
+  renewUploadClaim(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    ttlMs: number
+  ): Promise<boolean>;
+  updateClaimed(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number,
+    patch: PhotoUploadQueuePatch,
+    releaseClaim?: boolean
+  ): Promise<QueuedPhotoUpload | null>;
+  completeClaimedUpload(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number
+  ): Promise<boolean>;
+  releaseUploadClaim(
+    queueId: string,
+    scope: PhotoUploadScope,
+    owner: string,
+    now: number
+  ): Promise<boolean>;
 }
