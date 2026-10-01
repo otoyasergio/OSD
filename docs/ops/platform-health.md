@@ -90,20 +90,38 @@ version returned by the approved production procedure.
 
 ## Release order
 
-1. Apply and verify migrations on an isolated database.
+Safari photo / checkout evidence ships **queue-first, checkout-second**, and
+only from `main`.
+
+1. Apply and verify migrations on an isolated database (filename order:
+   intake photo idempotency, checkout evidence gates, checkout review
+   fixes, then intake photo storage policies).
 2. Regenerate and review TypeScript types against non-production.
 3. Configure a Preview deployment with non-production Supabase and provider
-   credentials.
-4. Run pgTAP, integration tests, stateful Safari E2E, and the Ask OTOMOTO
-   acceptance worksheet.
-5. Obtain technician and service-advisor signoff.
-6. Confirm with the shop owner whether signed Wix booking webhooks should
+   credentials. Leave `PHOTO_UPLOAD_QUEUE_ENABLED` and
+   `CHECKOUT_EVIDENCE_ENABLED` unset (volatile queue, ungated checkout).
+4. Run pgTAP, integration tests, stateful Safari E2E, the Ask OTOMOTO
+   acceptance worksheet, and `npm run photos:reconcile` as a **read-only**
+   reconciliation check.
+5. Enable `PHOTO_UPLOAD_QUEUE_ENABLED=1` on Preview only. Walk
+   [docs/ops/safari-photo-acceptance.md](safari-photo-acceptance.md) on
+   current shop iPad (portrait and landscape), iPhone Safari, and macOS
+   Safari. Linux Playwright WebKit is not device Safari.
+6. After durable-queue signoff, enable `CHECKOUT_EVIDENCE_ENABLED=1` on
+   Preview. Re-run Ready/Complete block and owner/manager override rows
+   from the same runbook.
+7. Obtain technician and service-advisor signoff.
+8. Confirm with the shop owner whether signed Wix booking webhooks should
    automatically create work orders. The platform-hardening migration repairs
    that previously blocked path.
-7. During a separately approved production rollout, apply verified production
-   migrations first.
-8. Deploy current `main` with `npm run deploy:production`.
-9. Re-run health, logs, advisors, and smoke checks.
+9. During a separately approved production rollout, apply verified production
+   migrations first. Then set `PHOTO_UPLOAD_QUEUE_ENABLED=1` (durable queue
+   first). Only after shop-device acceptance, set
+   `CHECKOUT_EVIDENCE_ENABLED=1`.
+10. Deploy current `main` with `npm run deploy:production`. Never deploy
+    production from a feature branch.
+11. Re-run health, logs, advisors, smoke checks, and a read-only
+    reconciliation report.
 
 Do not apply production migrations or deploy production from a feature branch.
 

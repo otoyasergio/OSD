@@ -1,0 +1,57 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+function source(relativePath: string): string {
+  return readFileSync(join(process.cwd(), relativePath), "utf8");
+}
+
+describe("stateful Safari photo reliability wiring", () => {
+  it("lists the spec in STATEFUL_SPECS and every WebKit mutation project", () => {
+    const config = source("playwright.config.ts");
+    expect(config).toMatch(/safari-photo-reliability\.spec\.ts/);
+    expect(config).toMatch(/const STATEFUL_SPECS = \[[\s\S]*safari-photo-reliability/);
+    expect(config).toMatch(/name:\s*"webkit-desktop"/);
+    expect(config).toMatch(/name:\s*"webkit-ipad-landscape"/);
+    expect(config).toMatch(/name:\s*"webkit-ipad-portrait"/);
+    expect(config).toMatch(/name:\s*"mobile-phone"/);
+    expect(config).toMatch(/workers:\s*allowMutation \? 1/);
+    expect(config).toMatch(/testMatch:\s*STATEFUL_SPECS/);
+  });
+
+  it("covers offline HEIC enqueue, reopen resume, lightbox, and corrective delete", () => {
+    const spec = source("tests/e2e/safari-photo-reliability.spec.ts");
+    expect(spec).toMatch(/storageStatePath\("owner"\)/);
+    expect(spec).toMatch(/setOffline\(true\)/);
+    expect(spec).toMatch(/setInputFiles/);
+    expect(spec).toMatch(/sample\.heic/);
+    expect(spec).toMatch(/Photo library/i);
+    expect(spec).toMatch(/waiting for connection/i);
+    expect(spec).toMatch(/page\.close\(/);
+    expect(spec).toMatch(/newPage\(/);
+    expect(spec).toMatch(/getByRole\("dialog"\)|lightbox/i);
+    expect(spec).toMatch(/Permanently remove photo|Correction reason/);
+    expect(spec).not.toMatch(/reproduces iOS Photos picker/);
+  });
+
+  it("wires a dedicated script and isolated CI job with mutation guards", () => {
+    const pkg = JSON.parse(source("package.json")) as { scripts: Record<string, string> };
+    expect(pkg.scripts["test:e2e:safari-photo"]).toMatch(
+      /safari-photo-reliability\.spec\.ts/
+    );
+
+    const ci = source(".github/workflows/ci.yml");
+    expect(ci).toMatch(/PHOTO_UPLOAD_QUEUE_ENABLED:\s*["']?1["']?/);
+    expect(ci).toMatch(/CHECKOUT_EVIDENCE_ENABLED:\s*["']?1["']?/);
+    expect(ci).toMatch(/test:e2e:safari-photo|safari-photo-reliability/);
+    expect(ci).toMatch(/E2E_ALLOW_MUTATION:\s*["']?1["']?/);
+    expect(ci).toMatch(/E2E_ENV_GUARD_SECRET/);
+    expect(ci).toMatch(/OPENAI_API_KEY:\s*["']?["']?/);
+    expect(ci).toMatch(/TWILIO_AUTH_TOKEN:\s*["']?["']?/);
+    expect(ci).toMatch(/RESEND_API_KEY:\s*["']?["']?/);
+    expect(ci).toMatch(/playwright install --with-deps chromium webkit/);
+    expect(ci).toMatch(/continue-on-error:\s*true/);
+    expect(ci).not.toMatch(/secrets|sample\.heic|photo bytes/i);
+    expect(ci).not.toMatch(/actions\/upload-artifact/);
+  });
+});

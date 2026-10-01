@@ -10,6 +10,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:safari-photo": "playwright test tests/e2e/safari-photo-reliability.spec.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:diagnostics:eval": "vitest run --config vitest.diagnostics-eval.config.ts",
     "analyze": "ANALYZE=true next build --webpack",

@@ -21,6 +21,7 @@ const STATEFUL_SPECS = [
   "**/keyboard.spec.ts",
   "**/responsive.spec.ts",
   "**/diagnostics-assistant.spec.ts",
+  "**/safari-photo-reliability.spec.ts",
 ];
 
 /**
