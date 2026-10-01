@@ -91,7 +91,12 @@ export function createTransactionalPhotoUploadQueueDatabase(): TransactionalPhot
           donePromise ??= (async () => {
             try {
               await waitForPriorTransaction;
-              await operationTail;
+              let observedOperations: Promise<void>;
+              do {
+                observedOperations = operationTail;
+                await observedOperations;
+                await Promise.resolve();
+              } while (observedOperations !== operationTail);
               const gate = nextCommitGate;
               nextCommitGate = null;
               if (gate) {

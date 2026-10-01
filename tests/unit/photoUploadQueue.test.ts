@@ -298,6 +298,42 @@ describe("photo upload queue persistence", () => {
 });
 
 describe("IndexedDbPhotoUploadQueueStore adapter", () => {
+  it("consumes transaction completion rejection after a request rejects", async () => {
+    const requestError = new DOMException("Request failed.", "UnknownError");
+    const completionError = new DOMException("Transaction aborted.", "AbortError");
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      if (reason === completionError) unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+
+    try {
+      const store = new IndexedDbPhotoUploadQueueStore({
+        openDatabase: async () => ({
+          transaction: () => ({
+            get: async () => {
+              throw requestError;
+            },
+            listByScope: async () => [],
+            put: async () => undefined,
+            delete: async () => undefined,
+            done: Promise.reject(completionError),
+          }),
+        }),
+      });
+
+      const failure = await store.get("queue-1", SCOPE).catch((error) => error);
+      expect(failure).toBeInstanceOf(PhotoQueuePersistenceError);
+      expect(failure).toMatchObject({ code: "persistence_failed" });
+      expect((failure as Error).cause).toBe(requestError);
+
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("scopes mutation and resolves only after its transaction commits", async () => {
     const database = createTransactionalPhotoUploadQueueDatabase();
     const store = new IndexedDbPhotoUploadQueueStore({
@@ -1044,6 +1080,68 @@ describe("PhotoUploadQueueRunner", () => {
     await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
       status: "uploading",
     });
+  });
+
+  it("immediately repumps once after releasing an expired acquisition", async () => {
+    const firstClaimPersisted = deferred();
+    const releaseFirstAcquisition = deferred();
+    class FirstAcquisitionDelayStore extends MemoryPhotoUploadQueueStore {
+      claimCalls = 0;
+
+      override async tryAcquireUploadClaim(
+        queueId: string,
+        scope: PhotoUploadScope,
+        owner: string,
+        now: number,
+        ttlMs: number,
+        maxScopeSlots: number
+      ): Promise<PhotoUploadClaim | null> {
+        this.claimCalls += 1;
+        const claim = await super.tryAcquireUploadClaim(
+          queueId,
+          scope,
+          owner,
+          now,
+          ttlMs,
+          maxScopeSlots
+        );
+        if (this.claimCalls === 1) {
+          firstClaimPersisted.resolve();
+          await releaseFirstAcquisition.promise;
+        }
+        return claim;
+      }
+    }
+    const store = new FirstAcquisitionDelayStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const timer = new ManualClockTimer();
+    const uploader = vi.fn().mockResolvedValue({
+      ok: true,
+      photoId: "photo-1",
+    });
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      leaseTtlMs: 1_000,
+    });
+
+    const running = runner.start();
+    await firstClaimPersisted.promise;
+    timer.advanceBy(1_001);
+    releaseFirstAcquisition.resolve();
+    await running;
+
+    expect(store.claimCalls).toBe(2);
+    expect(uploader).toHaveBeenCalledTimes(1);
+    await expect(store.get("queue-1", SCOPE)).resolves.toBeNull();
+    await runner.stop();
   });
 
   it("aborts at persisted expiry while renewal remains pending", async () => {

@@ -86,9 +86,14 @@ export class PhotoUploadQueueRunner {
   }
 
   private async drainWakeRequests(generation: number): Promise<void> {
+    let retriedExpiredAcquisition = false;
     do {
       this.pendingWake = false;
-      await this.pump(generation);
+      const pumpResult = await this.pump(generation);
+      if (pumpResult === "released_expired_acquisition" && !retriedExpiredAcquisition) {
+        retriedExpiredAcquisition = true;
+        this.pendingWake = true;
+      }
       await Promise.resolve();
     } while (this.pendingWake && this.isCurrent(generation));
   }
@@ -103,7 +108,7 @@ export class PhotoUploadQueueRunner {
     );
   }
 
-  private async pump(generation: number): Promise<void> {
+  private async pump(generation: number): Promise<"released_expired_acquisition" | void> {
     this.clearRetryTimer();
     if (!this.canProcess(generation)) return;
     await this.options.store.recoverInterrupted(this.options.scope, this.options.now());
@@ -156,7 +161,7 @@ export class PhotoUploadQueueRunner {
             this.options.ownerId,
             this.options.now()
           );
-          continue;
+          return "released_expired_acquisition";
         }
 
         const claim: ActiveUploadClaim = {
