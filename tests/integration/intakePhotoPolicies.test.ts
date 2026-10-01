@@ -1,10 +1,9 @@
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   createAnonClient,
   createServiceClient,
-  describeIntegration,
   integrationConfigured,
 } from "@/tests/integration/helpers";
 
@@ -13,7 +12,11 @@ import {
  * Never reads NEXT_PUBLIC_* — those may point at production.
  */
 
-const admin = process.env.TEST_SUPABASE_URL ? createServiceClient() : null;
+const configured = integrationConfigured();
+const anonConfigured = Boolean(process.env.TEST_SUPABASE_ANON_KEY?.trim());
+const suiteReady = configured && anonConfigured;
+const describePhotoPolicies = suiteReady ? describe : describe.skip;
+const admin = suiteReady ? createServiceClient() : null;
 const PASSWORD = "Synthetic-Photo-Policy-2026!";
 const JPEG = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]);
 
@@ -53,6 +56,7 @@ const objectPaths = {
   owner: `${ids.workOrder}/vin/${ids.photoOwner}.jpg`,
   replay: `${ids.workOrder}/odometer/${ids.replayPhoto}.jpg`,
   malformed: `not-a-uuid/front/${ids.photoTech}.jpg`,
+  foreign: `${ids.workOrder}/damage/${randomUUID()}.jpg`,
 };
 
 function errorText(error: { message?: string; code?: string } | null): string {
@@ -66,10 +70,19 @@ async function signIn(email: string): Promise<SupabaseClient> {
   return client;
 }
 
+function requireAdmin(): SupabaseClient {
+  if (!admin) {
+    throw new Error(
+      "intake photo policy suite missing isolated TEST_SUPABASE service client"
+    );
+  }
+  return admin;
+}
+
 async function ensureAuthUser(userId: string, email: string): Promise<void> {
-  if (!admin) return;
-  await admin.auth.admin.deleteUser(userId);
-  const created = await admin.auth.admin.createUser({
+  const service = requireAdmin();
+  await service.auth.admin.deleteUser(userId);
+  const created = await service.auth.admin.createUser({
     id: userId,
     email,
     password: PASSWORD,
@@ -79,35 +92,38 @@ async function ensureAuthUser(userId: string, email: string): Promise<void> {
 }
 
 async function cleanupFixtures(): Promise<void> {
-  if (!admin) return;
+  const service = requireAdmin();
   const photoIds = [ids.photoTech, ids.photoAdvisor, ids.photoOwner, ids.replayPhoto];
   const workOrders = [ids.workOrder, ids.checkoutWorkOrder, ids.overrideWorkOrder];
-  await admin.storage.from("intake-photos").remove(Object.values(objectPaths));
-  await admin.from("intake_photo").delete().in("photo_id", photoIds);
-  await admin.from("intake_photo").delete().in("work_order_id", workOrders);
-  await admin.from("audit_log").delete().in("entity_id", photoIds);
-  await admin.from("job").delete().eq("job_id", ids.job);
-  await admin.from("work_order").delete().in("work_order_id", workOrders);
-  await admin.from("motorcycle").delete().eq("motorcycle_id", ids.motorcycle);
-  await admin.from("customer").delete().eq("customer_id", ids.customer);
-  await admin.from("service").delete().eq("service_id", ids.service);
-  await admin
+  await service.storage.from("intake-photos").remove(Object.values(objectPaths));
+  await service.from("intake_photo").delete().in("photo_id", photoIds);
+  await service.from("intake_photo").delete().in("work_order_id", workOrders);
+  await service.from("audit_log").delete().in("entity_id", photoIds);
+  await service.from("job").delete().eq("job_id", ids.job);
+  await service.from("work_order").delete().in("work_order_id", workOrders);
+  await service.from("motorcycle").delete().eq("motorcycle_id", ids.motorcycle);
+  await service.from("customer").delete().eq("customer_id", ids.customer);
+  await service.from("service").delete().eq("service_id", ids.service);
+  await service
     .from("user_location")
     .delete()
     .in("user_id", [ids.tech, ids.advisor, ids.owner, ids.manager, ids.foreign]);
-  await admin
+  await service
     .from("app_user")
     .delete()
     .in("user_id", [ids.tech, ids.advisor, ids.owner, ids.manager, ids.foreign]);
-  await admin.from("location").delete().in("location_id", [ids.locationA, ids.locationB]);
+  await service
+    .from("location")
+    .delete()
+    .in("location_id", [ids.locationA, ids.locationB]);
   for (const userId of [ids.tech, ids.advisor, ids.owner, ids.manager, ids.foreign]) {
-    await admin.auth.admin.deleteUser(userId);
+    await service.auth.admin.deleteUser(userId);
   }
 }
 
-describeIntegration("intake photo policies (isolated db)", () => {
+describePhotoPolicies("intake photo policies (isolated db)", () => {
   beforeAll(async () => {
-    if (!admin) return;
+    const admin = requireAdmin();
     await cleanupFixtures();
     await admin.from("location").upsert([
       {
@@ -208,7 +224,7 @@ describeIntegration("intake photo policies (isolated db)", () => {
   });
 
   it("lets assigned technician and advisor select/insert but cannot update or delete the object or DELETE the row", async () => {
-    if (!admin || !process.env.TEST_SUPABASE_ANON_KEY) return;
+    const admin = requireAdmin();
     const tech = await signIn(emails.tech);
     try {
       const insertRow = await tech.from("intake_photo").insert({
@@ -291,7 +307,7 @@ describeIntegration("intake photo policies (isolated db)", () => {
   });
 
   it("lets assigned owner and manager delete the row and object", async () => {
-    if (!admin || !process.env.TEST_SUPABASE_ANON_KEY) return;
+    const admin = requireAdmin();
     const owner = await signIn(emails.owner);
     try {
       const insertRow = await owner.from("intake_photo").insert({
@@ -349,7 +365,7 @@ describeIntegration("intake photo policies (isolated db)", () => {
   });
 
   it("blocks cross-location staff from selecting, inserting, or deleting row or object", async () => {
-    if (!process.env.TEST_SUPABASE_ANON_KEY) return;
+    requireAdmin();
     const foreign = await signIn(emails.foreign);
     try {
       const select = await foreign
@@ -369,8 +385,17 @@ describeIntegration("intake photo policies (isolated db)", () => {
 
       const upload = await foreign.storage
         .from("intake-photos")
-        .upload(objectPaths.tech, JPEG, { contentType: "image/jpeg", upsert: false });
+        .upload(objectPaths.foreign, JPEG, {
+          contentType: "image/jpeg",
+          upsert: false,
+        });
       expect(upload.error).not.toBeNull();
+      expect(errorText(upload.error)).not.toMatch(
+        /already exists|duplicate|resource already|23505/i
+      );
+      expect(errorText(upload.error)).toMatch(
+        /policy|row-level|unauthorized|403|denied|security|rls|violat/i
+      );
 
       const remove = await foreign.storage
         .from("intake-photos")
@@ -389,7 +414,7 @@ describeIntegration("intake photo policies (isolated db)", () => {
   });
 
   it("fails closed on malformed object paths without a database cast error", async () => {
-    if (!admin || !process.env.TEST_SUPABASE_ANON_KEY) return;
+    const admin = requireAdmin();
     const { data, error } = await admin.rpc("intake_photo_object_in_user_locations", {
       object_name: objectPaths.malformed,
     });
@@ -413,7 +438,7 @@ describeIntegration("intake photo policies (isolated db)", () => {
   });
 
   it("replays client_upload_id through the real RPC as one row, event, and audit", async () => {
-    if (!admin || !process.env.TEST_SUPABASE_ANON_KEY) return;
+    const admin = requireAdmin();
     const tech = await signIn(emails.tech);
     const payload = {
       p_photo_id: ids.replayPhoto,
@@ -462,7 +487,7 @@ describeIntegration("intake photo policies (isolated db)", () => {
   });
 
   it("blocks ready/completed and same-update required=false until five photos or owner override", async () => {
-    if (!admin || !process.env.TEST_SUPABASE_ANON_KEY) return;
+    const admin = requireAdmin();
     const ready = await admin
       .from("work_order")
       .update({ status: "ready_for_pickup" })
@@ -524,13 +549,31 @@ describeIntegration("intake photo policies (isolated db)", () => {
       expect(override.error).toBeNull();
       expect(override.data?.checkout_evidence_override_reason).toMatch(/Camera failed/);
       expect(override.data?.checkout_evidence_override_at).toBeTruthy();
+
+      const readyOverride = await owner
+        .from("work_order")
+        .update({ status: "ready_for_pickup" })
+        .eq("work_order_id", ids.overrideWorkOrder)
+        .select("status")
+        .single();
+      expect(readyOverride.error).toBeNull();
+      expect(readyOverride.data?.status).toBe("ready_for_pickup");
+
+      const completedOverride = await owner
+        .from("work_order")
+        .update({ status: "completed" })
+        .eq("work_order_id", ids.overrideWorkOrder)
+        .select("status")
+        .single();
+      expect(completedOverride.error).toBeNull();
+      expect(completedOverride.data?.status).toBe("completed");
     } finally {
       await owner.auth.signOut();
     }
   });
 
   it("rejects non-owner override create/change/clear and clears via validated reopen RPC", async () => {
-    if (!admin || !process.env.TEST_SUPABASE_ANON_KEY) return;
+    const admin = requireAdmin();
     const owner = await signIn(emails.owner);
     try {
       const seeded = await owner

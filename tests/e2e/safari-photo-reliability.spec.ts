@@ -1,7 +1,14 @@
 import { test, expect } from "@playwright/test";
 import { join } from "node:path";
 import { storageStatePath } from "./fixtures/auth";
+import { assertSafeMutationEnvironment } from "./fixtures/environmentGuard";
 import { FIXTURE_WORK_ORDER } from "./fixtures/ids";
+import {
+  assertIntakePhotoRemoved,
+  findIntakePhotosByNote,
+  removeIntakePhotoArtifacts,
+} from "./fixtures/safariPhotoIsolation";
+import { createServiceRoleClient } from "./fixtures/seedSyntheticShop";
 
 /**
  * Stateful WebKit photo reliability. Uses Playwright setInputFiles — that is
@@ -21,46 +28,64 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
   page,
   context,
 }, testInfo) => {
+  assertSafeMutationEnvironment();
+  const admin = createServiceRoleClient();
   const note = `safari-photo-${testInfo.project.name}-${Date.now()}`;
 
-  await page.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
-  await expect(page.getByText("Upload intake photo")).toBeVisible();
+  try {
+    await page.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
+    await expect(page.getByText("Upload intake photo")).toBeVisible();
 
-  await page.locator('select[name="category"]').selectOption("other");
-  await page.locator('input[name="notes"]').fill(note);
+    await page.locator('select[name="category"]').selectOption("other");
+    await page.locator('input[name="notes"]').fill(note);
 
-  await context.setOffline(true);
-  const library = page.getByLabel("Photo library");
-  await library.setInputFiles(HEIC_FIXTURE);
+    await context.setOffline(true);
+    const library = page.getByLabel("Photo library");
+    await library.setInputFiles(HEIC_FIXTURE);
 
-  await expect(page.getByText(/waiting for connection/i).first()).toBeVisible({
-    timeout: 30_000,
-  });
-  await expect(page.getByText(note)).toHaveCount(0);
+    await expect(page.getByText(/waiting for connection/i).first()).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText(note)).toHaveCount(0);
 
-  await page.close();
-  await context.setOffline(false);
+    await page.close();
+    await context.setOffline(false);
 
-  const resumed = await context.newPage();
-  await resumed.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
-  await expect(resumed.getByText(note, { exact: true })).toBeVisible({
-    timeout: 90_000,
-  });
+    const resumed = await context.newPage();
+    await resumed.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
+    await expect(resumed.getByText(note, { exact: true })).toBeVisible({
+      timeout: 90_000,
+    });
 
-  await resumed
-    .getByRole("button", { name: /View Other photo full size/i })
-    .first()
-    .click();
-  const dialog = resumed.getByRole("dialog");
-  await expect(dialog).toBeVisible();
-  await resumed.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
+    const card = resumed.locator("li").filter({ hasText: note });
+    await expect(card).toHaveCount(1);
+    await card.getByRole("button", { name: /View Other photo full size/i }).click();
+    const dialog = resumed.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await resumed.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
 
-  const card = resumed.locator("li").filter({ hasText: note }).first();
-  await card.getByRole("button", { name: /Remove Other photo/i }).click();
-  await card.locator('textarea[name="reason"]').fill("Safari reliability cleanup");
-  await card.getByRole("button", { name: /Permanently remove photo/i }).click();
-  await expect(resumed.getByText(note)).toHaveCount(0, { timeout: 30_000 });
-  await expect(resumed.locator(".photo-queue-status")).toHaveCount(0);
-  await expect(resumed.getByText(/waiting for connection/i)).toHaveCount(0);
+    const captured = await findIntakePhotosByNote(admin, FIXTURE_WORK_ORDER.id, note);
+    expect(captured.length).toBeGreaterThan(0);
+    expect(captured[0]?.storage_path).toBeTruthy();
+    expect(captured[0]).toHaveProperty("thumb_storage_path");
+
+    await card.getByRole("button", { name: /Remove Other photo/i }).click();
+    await card.locator('textarea[name="reason"]').fill("Safari reliability cleanup");
+    await card.getByRole("button", { name: /Permanently remove photo/i }).click();
+    await expect(resumed.getByText(note)).toHaveCount(0, { timeout: 30_000 });
+    await expect(resumed.locator(".photo-queue-status")).toHaveCount(0);
+    await expect(resumed.getByText(/waiting for connection/i)).toHaveCount(0);
+
+    await assertIntakePhotoRemoved(admin, captured[0]!);
+  } finally {
+    await context.setOffline(false);
+    for (const openPage of context.pages()) {
+      if (!openPage.isClosed()) {
+        await openPage.close();
+      }
+    }
+    const leftovers = await findIntakePhotosByNote(admin, FIXTURE_WORK_ORDER.id, note);
+    await removeIntakePhotoArtifacts(admin, leftovers); // intake-photos original + thumb
+  }
 });

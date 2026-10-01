@@ -34,6 +34,33 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).not.toMatch(/reproduces iOS Photos picker/);
   });
 
+  it("scopes the lightbox to the unique-note card and never page-wide .first()", () => {
+    const spec = source("tests/e2e/safari-photo-reliability.spec.ts");
+    expect(spec).toMatch(/locator\("li"\)\.filter\(\{\s*hasText:\s*note/);
+    expect(spec).toMatch(
+      /card\.getByRole\(\s*"button",\s*\{\s*name:\s*\/View Other photo full size/
+    );
+    expect(spec).not.toMatch(
+      /getByRole\(\s*"button",\s*\{\s*name:\s*\/View Other photo full size[\s\S]{0,80}\.first\(/
+    );
+  });
+
+  it("wraps mutations in try/finally with guarded service-role leftover cleanup", () => {
+    const spec = source("tests/e2e/safari-photo-reliability.spec.ts");
+    expect(spec).toMatch(/assertSafeMutationEnvironment\(/);
+    expect(spec).toMatch(/createServiceRoleClient\(/);
+    expect(spec).toMatch(/try\s*\{/);
+    expect(spec).toMatch(/finally\s*\{/);
+    expect(spec).toMatch(/storage_path/);
+    expect(spec).toMatch(/thumb_storage_path/);
+    expect(spec).toMatch(/intake-photos/);
+    expect(spec).toMatch(/setOffline\(false\)/);
+    expect(spec).toMatch(/findIntakePhotosByNote|notes/);
+    expect(spec).toMatch(
+      /removeIntakePhotoArtifacts|storage\.from\("intake-photos"\)\.remove/
+    );
+  });
+
   it("wires a dedicated script and isolated CI job with mutation guards", () => {
     const pkg = JSON.parse(source("package.json")) as { scripts: Record<string, string> };
     expect(pkg.scripts["test:e2e:safari-photo"]).toMatch(
