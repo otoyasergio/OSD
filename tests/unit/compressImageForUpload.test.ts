@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   BIKE_PHOTO_COMPRESS,
   DOCUMENT_IMAGE_COMPRESS,
+  MAX_CANVAS_AREA,
   compressImageForUpload,
   fitDimensions,
   fitEncodedImage,
@@ -55,6 +56,37 @@ describe("fitDimensions", () => {
       width: 640,
       height: 480,
     });
+  });
+
+  it("keeps portrait iPhone shots at their native size instead of stretching to the long edge", () => {
+    // 12 MP portrait: the old resizeWidth decode hint blew this up to 4096×5461.
+    expect(fitDimensions({ width: 3024, height: 4032 }, 4096)).toEqual({
+      width: 3024,
+      height: 4032,
+    });
+    // 24 MP portrait (iPhone 15/16 default) scales on the long edge only.
+    expect(fitDimensions({ width: 4284, height: 5712 }, 4096)).toEqual({
+      width: 3072,
+      height: 4096,
+    });
+  });
+
+  it("stays under the iOS 17 canvas area limit for square and near-square shots", () => {
+    const square = fitDimensions({ width: 6000, height: 6000 }, 4096);
+    expect(square.width * square.height).toBeLessThanOrEqual(MAX_CANVAS_AREA);
+    expect(square.width).toBe(square.height);
+    expect(square.width).toBe(4000);
+
+    const nearSquare = fitDimensions({ width: 5000, height: 4500 }, 4096);
+    expect(nearSquare.width * nearSquare.height).toBeLessThanOrEqual(MAX_CANVAS_AREA);
+    expect(nearSquare.width / nearSquare.height).toBeCloseTo(5000 / 4500, 2);
+
+    // Ordinary 4:3 and 3:4 camera frames are already well under it.
+    expect(fitDimensions({ width: 5712, height: 4284 }, 4096)).toEqual({
+      width: 4096,
+      height: 3072,
+    });
+    expect(MAX_CANVAS_AREA).toBeLessThan(16_777_216);
   });
 });
 

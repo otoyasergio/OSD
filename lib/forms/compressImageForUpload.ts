@@ -39,6 +39,12 @@ const QUALITY_STEP = 0.08;
 /** Never shrink the longest edge below this while chasing `maxBytes`. */
 const MIN_DIMENSION = 640;
 const MAX_ENCODE_ATTEMPTS = 10;
+/**
+ * iOS Safari through iOS 17 refuses canvases over 16,777,216 px (4096×4096):
+ * drawing silently produces nothing and `toBlob` returns null. A square shot
+ * at our 4096 long edge sits exactly on that line, so keep a margin.
+ */
+export const MAX_CANVAS_AREA = 16_000_000;
 
 export type ImageSize = { width: number; height: number };
 
@@ -55,9 +61,18 @@ export type FittedImage = {
   quality: number;
 };
 
-/** Scale `source` so its longest edge is at most `maxDimension` (never upscales). */
-export function fitDimensions(source: ImageSize, maxDimension: number): ImageSize {
-  const scale = Math.min(1, maxDimension / Math.max(source.width, source.height));
+/**
+ * Scale `source` so its longest edge is at most `maxDimension` and its area at
+ * most `maxArea` (never upscales, keeps the aspect ratio).
+ */
+export function fitDimensions(
+  source: ImageSize,
+  maxDimension: number,
+  maxArea = MAX_CANVAS_AREA
+): ImageSize {
+  let scale = Math.min(1, maxDimension / Math.max(source.width, source.height));
+  const area = source.width * source.height * scale * scale;
+  if (area > maxArea) scale *= Math.sqrt(maxArea / area);
   return {
     width: Math.max(1, Math.round(source.width * scale)),
     height: Math.max(1, Math.round(source.height * scale)),
@@ -133,16 +148,16 @@ export async function compressImageForUpload(
 
   if (typeof document === "undefined") return file;
 
-  let bitmap: ImageBitmap | null = null;
+  let decoded: DecodedImage | null = null;
   try {
-    bitmap = await decodeImageBitmap(file, resolved.maxDimension);
-    const source = bitmap;
+    decoded = await decodeImage(file);
+    const { source } = decoded;
 
     const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
 
-    // Redraw from the decoded bitmap whenever the size changes so repeated
+    // Redraw from the decoded image whenever the size changes so repeated
     // dimension steps do not stack resampling blur; quality-only retries
     // re-encode the pixels already on the canvas.
     let drawn: ImageSize | null = null;
@@ -160,7 +175,7 @@ export async function compressImageForUpload(
 
     const fitted = await fitEncodedImage(
       encode,
-      { width: source.width, height: source.height },
+      { width: decoded.width, height: decoded.height },
       resolved
     );
     if (!fitted) return file;
@@ -173,39 +188,77 @@ export async function compressImageForUpload(
   } catch {
     return file;
   } finally {
-    bitmap?.close();
+    decoded?.release();
   }
 }
 
-async function decodeImageBitmap(file: File, maxDimension: number): Promise<ImageBitmap> {
-  // Resize while decoding so a 12MP camera shot is not fully expanded on the
-  // main thread before the canvas step. Older browsers ignore the options.
-  const resized: ImageBitmapOptions = {
-    imageOrientation: "from-image",
-    resizeWidth: maxDimension,
-    resizeQuality: "medium",
-  };
-  try {
-    return await createImageBitmap(file, resized);
-  } catch {
+type DecodedImage = ImageSize & {
+  source: CanvasImageSource;
+  release: () => void;
+};
+
+/**
+ * Decode at native size, oriented per EXIF. Fitting happens on the canvas.
+ *
+ * No `resizeWidth` decode hint: with only one edge given, browsers keep the
+ * aspect ratio, so a portrait iPhone shot (3024×4032) would be *upscaled* to
+ * 4096×5461 — about 90 MB of bitmap on an iPad — and then drawn back down,
+ * softer than the original. Native decode is bounded by the camera (~50 MB at
+ * 12 MP, ~100 MB at 24 MP) and iOS already subsamples very large images.
+ *
+ * Fallbacks: Safari before 16 rejects the "from-image" enum but still applies
+ * EXIF orientation by default; an `<img>` drawn straight to the canvas covers
+ * browsers without `createImageBitmap` at all (respects EXIF since Safari 13.1).
+ */
+async function decodeImage(file: File): Promise<DecodedImage> {
+  if (typeof createImageBitmap === "function") {
     try {
-      return await createImageBitmap(file);
+      return fromBitmap(
+        await createImageBitmap(file, { imageOrientation: "from-image" })
+      );
     } catch {
-      if (typeof Image === "undefined" || typeof URL === "undefined") {
-        throw new Error("IMAGE_DECODE_FAILED");
-      }
-      const url = URL.createObjectURL(file);
       try {
-        const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => resolve(img);
-          img.onerror = () => reject(new Error("IMAGE_DECODE_FAILED"));
-          img.src = url;
-        });
-        return await createImageBitmap(image);
-      } finally {
-        URL.revokeObjectURL(url);
+        return fromBitmap(await createImageBitmap(file));
+      } catch {
+        // Fall through to the element decoder below.
       }
     }
   }
+
+  if (typeof Image === "undefined" || typeof URL === "undefined") {
+    throw new Error("IMAGE_DECODE_FAILED");
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("IMAGE_DECODE_FAILED"));
+      img.src = url;
+    });
+    if (image.naturalWidth === 0 || image.naturalHeight === 0) {
+      throw new Error("IMAGE_DECODE_FAILED");
+    }
+    return {
+      source: image,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      release: () => {
+        URL.revokeObjectURL(url);
+        image.src = "";
+      },
+    };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+function fromBitmap(bitmap: ImageBitmap): DecodedImage {
+  return {
+    source: bitmap,
+    width: bitmap.width,
+    height: bitmap.height,
+    release: () => bitmap.close(),
+  };
 }
