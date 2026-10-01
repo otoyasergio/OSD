@@ -1,4 +1,5 @@
 import {
+  type PhotoUploadClaim,
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
 } from "@/lib/photos/uploadQueue/store";
@@ -123,7 +124,9 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     now: number,
     ttlMs: number
   ): Promise<boolean> {
-    return this.tryAcquireUploadClaim(queueId, scope, owner, now, ttlMs, 2);
+    return (
+      (await this.tryAcquireUploadClaim(queueId, scope, owner, now, ttlMs, 2)) !== null
+    );
   }
 
   async tryAcquireUploadClaim(
@@ -133,26 +136,26 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     now: number,
     ttlMs: number,
     maxScopeSlots: number
-  ): Promise<boolean> {
+  ): Promise<PhotoUploadClaim | null> {
     const item = this.database.items.get(queueId);
-    if (!item || !belongsToScope(item, scope)) return false;
+    if (!item || !belongsToScope(item, scope)) return null;
     const processable =
       item.status === "queued" ||
       item.status === "retry_wait" ||
       item.status === "uploading";
-    if (!processable) return false;
+    if (!processable) return null;
     const hasLiveCompetingLease =
       item.leaseOwner !== null &&
       item.leaseOwner !== owner &&
       item.leaseExpiresAt !== null &&
       item.leaseExpiresAt > now;
-    if (hasLiveCompetingLease) return false;
+    if (hasLiveCompetingLease) return null;
     const hasLiveCompetingSlot =
       item.uploadSlotOwner !== null &&
       item.uploadSlotOwner !== owner &&
       item.uploadSlotExpiresAt !== null &&
       item.uploadSlotExpiresAt > now;
-    if (hasLiveCompetingSlot) return false;
+    if (hasLiveCompetingSlot) return null;
 
     const alreadyOwnsLiveSlot =
       item.uploadSlotOwner === owner &&
@@ -166,16 +169,17 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
         candidate.uploadSlotExpiresAt !== null &&
         candidate.uploadSlotExpiresAt > now
     ).length;
-    if (!alreadyOwnsLiveSlot && activeScopeSlots >= slotLimit) return false;
+    if (!alreadyOwnsLiveSlot && activeScopeSlots >= slotLimit) return null;
 
+    const expiresAt = now + ttlMs;
     this.database.items.set(queueId, {
       ...item,
       leaseOwner: owner,
-      leaseExpiresAt: now + ttlMs,
+      leaseExpiresAt: expiresAt,
       uploadSlotOwner: owner,
-      uploadSlotExpiresAt: now + ttlMs,
+      uploadSlotExpiresAt: expiresAt,
     });
-    return true;
+    return { expiresAt };
   }
 
   async renewUploadClaim(
@@ -184,17 +188,18 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     owner: string,
     now: number,
     ttlMs: number
-  ): Promise<boolean> {
+  ): Promise<PhotoUploadClaim | null> {
     const item = this.database.items.get(queueId);
     if (!item || !belongsToScope(item, scope) || !ownsLiveUploadClaim(item, owner, now)) {
-      return false;
+      return null;
     }
+    const expiresAt = now + ttlMs;
     this.database.items.set(queueId, {
       ...item,
-      leaseExpiresAt: now + ttlMs,
-      uploadSlotExpiresAt: now + ttlMs,
+      leaseExpiresAt: expiresAt,
+      uploadSlotExpiresAt: expiresAt,
     });
-    return true;
+    return { expiresAt };
   }
 
   async updateClaimed(

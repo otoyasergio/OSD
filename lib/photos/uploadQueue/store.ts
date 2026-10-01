@@ -8,6 +8,10 @@ export class PhotoUploadQueueScopeError extends Error {
   }
 }
 
+export type PhotoUploadClaim = {
+  expiresAt: number;
+};
+
 export interface PhotoUploadQueueStore {
   put(scope: PhotoUploadScope, item: QueuedPhotoUpload): Promise<void>;
   get(queueId: string, scope: PhotoUploadScope): Promise<QueuedPhotoUpload | null>;
@@ -33,14 +37,14 @@ export interface PhotoUploadQueueStore {
     now: number,
     ttlMs: number,
     maxScopeSlots: number
-  ): Promise<boolean>;
+  ): Promise<PhotoUploadClaim | null>;
   renewUploadClaim(
     queueId: string,
     scope: PhotoUploadScope,
     owner: string,
     now: number,
     ttlMs: number
-  ): Promise<boolean>;
+  ): Promise<PhotoUploadClaim | null>;
   updateClaimed(
     queueId: string,
     scope: PhotoUploadScope,

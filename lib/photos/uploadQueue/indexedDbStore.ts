@@ -7,7 +7,11 @@ import {
   assertPhotoUploadTransition,
   InvalidPhotoUploadTransitionError,
 } from "./stateTransitions";
-import { PhotoUploadQueueScopeError, type PhotoUploadQueueStore } from "./store";
+import {
+  type PhotoUploadClaim,
+  PhotoUploadQueueScopeError,
+  type PhotoUploadQueueStore,
+} from "./store";
 import type { PhotoUploadQueuePatch, PhotoUploadScope, QueuedPhotoUpload } from "./types";
 
 export const PHOTO_UPLOAD_QUEUE_DB_NAME = "otomoto-photo-upload-queue";
@@ -270,7 +274,9 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     now: number,
     ttlMs: number
   ): Promise<boolean> {
-    return this.tryAcquireUploadClaim(queueId, scope, owner, now, ttlMs, 2);
+    return (
+      (await this.tryAcquireUploadClaim(queueId, scope, owner, now, ttlMs, 2)) !== null
+    );
   }
 
   async tryAcquireUploadClaim(
@@ -280,7 +286,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     now: number,
     ttlMs: number,
     maxScopeSlots: number
-  ): Promise<boolean> {
+  ): Promise<PhotoUploadClaim | null> {
     try {
       const transaction = (await this.database).transaction("readwrite");
       const item = await transaction.get(queueId);
@@ -321,17 +327,18 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
         (!alreadyOwnsLiveSlot && activeScopeSlots >= slotLimit)
       ) {
         await transaction.done;
-        return false;
+        return null;
       }
+      const expiresAt = now + ttlMs;
       await transaction.put({
         ...item,
         leaseOwner: owner,
-        leaseExpiresAt: now + ttlMs,
+        leaseExpiresAt: expiresAt,
         uploadSlotOwner: owner,
-        uploadSlotExpiresAt: now + ttlMs,
+        uploadSlotExpiresAt: expiresAt,
       });
       await transaction.done;
-      return true;
+      return { expiresAt };
     } catch (error) {
       throw persistenceError(error);
     }
@@ -343,7 +350,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     owner: string,
     now: number,
     ttlMs: number
-  ): Promise<boolean> {
+  ): Promise<PhotoUploadClaim | null> {
     try {
       const transaction = (await this.database).transaction("readwrite");
       const item = await transaction.get(queueId);
@@ -353,15 +360,16 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
         !ownsLiveUploadClaim(item, owner, now)
       ) {
         await transaction.done;
-        return false;
+        return null;
       }
+      const expiresAt = now + ttlMs;
       await transaction.put({
         ...item,
-        leaseExpiresAt: now + ttlMs,
-        uploadSlotExpiresAt: now + ttlMs,
+        leaseExpiresAt: expiresAt,
+        uploadSlotExpiresAt: expiresAt,
       });
       await transaction.done;
-      return true;
+      return { expiresAt };
     } catch (error) {
       throw persistenceError(error);
     }

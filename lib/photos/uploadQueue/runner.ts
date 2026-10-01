@@ -30,6 +30,7 @@ type ActiveUploadClaim = {
   ownsClaim: boolean;
   expiresAt: number;
   renewalTimer: unknown;
+  expiryTimer: unknown;
 };
 
 export class PhotoUploadQueueRunner {
@@ -128,7 +129,7 @@ export class PhotoUploadQueueRunner {
         if (!this.canProcess(generation)) return;
         const item = candidates.shift()!;
         const ttlMs = this.options.leaseTtlMs ?? 30_000;
-        const acquired = await this.options.store.tryAcquireUploadClaim(
+        const acquiredClaim = await this.options.store.tryAcquireUploadClaim(
           item.queueId,
           this.options.scope,
           this.options.ownerId,
@@ -137,7 +138,7 @@ export class PhotoUploadQueueRunner {
           2
         );
         if (!this.canProcess(generation)) {
-          if (acquired) {
+          if (acquiredClaim) {
             await this.options.store.releaseUploadClaim(
               item.queueId,
               this.options.scope,
@@ -147,17 +148,28 @@ export class PhotoUploadQueueRunner {
           }
           return;
         }
-        if (!acquired) continue;
+        if (!acquiredClaim) continue;
+        if (acquiredClaim.expiresAt <= this.options.now()) {
+          await this.options.store.releaseUploadClaim(
+            item.queueId,
+            this.options.scope,
+            this.options.ownerId,
+            this.options.now()
+          );
+          continue;
+        }
 
         const claim: ActiveUploadClaim = {
           queueId: item.queueId,
           generation,
           abortController: new AbortController(),
           ownsClaim: true,
-          expiresAt: this.options.now() + ttlMs,
+          expiresAt: acquiredClaim.expiresAt,
           renewalTimer: null,
+          expiryTimer: null,
         };
         this.activeClaims.set(item.queueId, claim);
+        this.scheduleClaimExpiry(claim);
         const uploading = await this.options.store.updateClaimed(
           item.queueId,
           this.options.scope,
@@ -203,7 +215,14 @@ export class PhotoUploadQueueRunner {
     uploading: QueuedPhotoUpload,
     claim: ActiveUploadClaim
   ): Promise<void> {
-    this.scheduleClaimRenewal(claim, Math.floor((this.options.leaseTtlMs ?? 30_000) / 2));
+    if (this.options.now() >= claim.expiresAt) {
+      this.loseClaim(claim);
+      return;
+    }
+    this.scheduleClaimRenewal(
+      claim,
+      Math.floor((claim.expiresAt - this.options.now()) / 2)
+    );
     try {
       if (!this.canProcess(claim.generation) || !claim.ownsClaim) {
         await this.releaseClaim(claim);
@@ -267,7 +286,7 @@ export class PhotoUploadQueueRunner {
       claim.ownsClaim = false;
       if (!completed) claim.abortController.abort();
     } finally {
-      this.clearClaimRenewal(claim);
+      this.clearClaimTimers(claim);
     }
   }
 
@@ -283,6 +302,25 @@ export class PhotoUploadQueueRunner {
     );
   }
 
+  private scheduleClaimExpiry(claim: ActiveUploadClaim): void {
+    if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
+    if (claim.expiryTimer !== null) {
+      this.options.timer.clearTimeout(claim.expiryTimer);
+    }
+    claim.expiryTimer = this.options.timer.setTimeout(
+      () => {
+        claim.expiryTimer = null;
+        if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
+        if (this.options.now() >= claim.expiresAt) {
+          this.loseClaim(claim);
+        } else {
+          this.scheduleClaimExpiry(claim);
+        }
+      },
+      Math.max(0, claim.expiresAt - this.options.now())
+    );
+  }
+
   private async renewClaim(claim: ActiveUploadClaim): Promise<void> {
     if (!claim.ownsClaim || !this.isCurrent(claim.generation)) return;
     const now = this.options.now();
@@ -292,20 +330,28 @@ export class PhotoUploadQueueRunner {
     }
     const ttlMs = this.options.leaseTtlMs ?? 30_000;
     try {
-      const renewed = await this.options.store.renewUploadClaim(
+      const renewedClaim = await this.options.store.renewUploadClaim(
         claim.queueId,
         this.options.scope,
         this.options.ownerId,
         now,
         ttlMs
       );
-      if (!this.isCurrent(claim.generation)) return;
-      if (!renewed) {
+      if (!this.isCurrent(claim.generation) || !claim.ownsClaim) return;
+      if (!renewedClaim) {
         this.loseClaim(claim);
         return;
       }
-      claim.expiresAt = now + ttlMs;
-      this.scheduleClaimRenewal(claim, Math.floor(ttlMs / 2));
+      claim.expiresAt = renewedClaim.expiresAt;
+      if (claim.expiresAt <= this.options.now()) {
+        this.loseClaim(claim);
+        return;
+      }
+      this.scheduleClaimExpiry(claim);
+      this.scheduleClaimRenewal(
+        claim,
+        Math.floor((claim.expiresAt - this.options.now()) / 2)
+      );
     } catch {
       if (!this.isCurrent(claim.generation) || !claim.ownsClaim) return;
       const remainingMs = claim.expiresAt - this.options.now();
@@ -325,7 +371,7 @@ export class PhotoUploadQueueRunner {
 
   private loseClaim(claim: ActiveUploadClaim): void {
     claim.ownsClaim = false;
-    this.clearClaimRenewal(claim);
+    this.clearClaimTimers(claim);
     claim.abortController.abort();
   }
 
@@ -335,8 +381,15 @@ export class PhotoUploadQueueRunner {
     claim.renewalTimer = null;
   }
 
-  private async releaseClaim(claim: ActiveUploadClaim): Promise<void> {
+  private clearClaimTimers(claim: ActiveUploadClaim): void {
     this.clearClaimRenewal(claim);
+    if (claim.expiryTimer === null) return;
+    this.options.timer.clearTimeout(claim.expiryTimer);
+    claim.expiryTimer = null;
+  }
+
+  private async releaseClaim(claim: ActiveUploadClaim): Promise<void> {
+    this.clearClaimTimers(claim);
     claim.abortController.abort();
     if (!claim.ownsClaim) return;
     claim.ownsClaim = false;

@@ -13,6 +13,7 @@ import {
   PHOTO_UPLOAD_QUEUE_DB_VERSION,
 } from "@/lib/photos/uploadQueue/indexedDbStore";
 import { PhotoUploadQueueRunner } from "@/lib/photos/uploadQueue/runner";
+import type { PhotoUploadClaim } from "@/lib/photos/uploadQueue/store";
 import type { PhotoUploadScope, QueuedPhotoUpload } from "@/lib/photos/uploadQueue/types";
 import {
   createMemoryPhotoUploadQueueDatabase,
@@ -432,13 +433,13 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
       database.committedItems().filter((item) => item.uploadSlotOwner !== null)
     ).toHaveLength(0);
     gate.release();
-    await expect(firstClaim).resolves.toBe(true);
+    await expect(firstClaim).resolves.toEqual({ expiresAt: 3_000 });
 
     const remainingClaims = await Promise.all([
       store.tryAcquireUploadClaim("claim-2", SCOPE, "runner-b", 2_000, 1_000, 2),
       store.tryAcquireUploadClaim("claim-3", SCOPE, "runner-c", 2_000, 1_000, 2),
     ]);
-    expect(remainingClaims.filter(Boolean)).toHaveLength(1);
+    expect(remainingClaims.filter((claim) => claim !== null)).toHaveLength(1);
     expect(
       database
         .committedItems()
@@ -456,7 +457,7 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
     await store.put(SCOPE, queuedPhoto());
     await expect(
       store.tryAcquireUploadClaim("queue-1", SCOPE, "runner-a", 2_000, 1_000, 2)
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ expiresAt: 3_000 });
 
     await expect(
       store.updateClaimed("queue-1", SCOPE, "runner-b", 2_100, {
@@ -970,6 +971,149 @@ describe("PhotoUploadQueueRunner", () => {
     runner.stop();
   });
 
+  it("uses persisted expiry when acquisition resolves after a delay", async () => {
+    const claimPersisted = deferred();
+    const releaseAcquisition = deferred();
+    const stalledRenewal = deferred<PhotoUploadClaim | null>();
+    class DelayedAcquisitionStore extends MemoryPhotoUploadQueueStore {
+      override async tryAcquireUploadClaim(
+        queueId: string,
+        scope: PhotoUploadScope,
+        owner: string,
+        now: number,
+        ttlMs: number,
+        maxScopeSlots: number
+      ): Promise<PhotoUploadClaim | null> {
+        const acquired = await super.tryAcquireUploadClaim(
+          queueId,
+          scope,
+          owner,
+          now,
+          ttlMs,
+          maxScopeSlots
+        );
+        claimPersisted.resolve();
+        await releaseAcquisition.promise;
+        return acquired;
+      }
+
+      override async renewUploadClaim(): Promise<PhotoUploadClaim | null> {
+        return stalledRenewal.promise;
+      }
+    }
+    const store = new DelayedAcquisitionStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const timer = new ManualClockTimer();
+    let finishUpload: () => void = () => {};
+    let uploadSignal: AbortSignal | undefined;
+    const uploader = vi.fn((_item: QueuedPhotoUpload, signal: AbortSignal) => {
+      uploadSignal = signal;
+      return new Promise<{ ok: true; photoId: string }>((resolve) => {
+        finishUpload = () => resolve({ ok: true, photoId: "stale-photo" });
+      });
+    });
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      leaseTtlMs: 1_000,
+    });
+
+    const running = runner.start();
+    await claimPersisted.promise;
+    timer.advanceBy(500);
+    releaseAcquisition.resolve();
+    await vi.waitFor(() => expect(uploadSignal).toBeDefined());
+    await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+      leaseExpiresAt: 3_000,
+      uploadSlotExpiresAt: 3_000,
+    });
+
+    timer.advanceBy(500);
+    await vi.waitFor(() => expect(uploadSignal?.aborted).toBe(true));
+
+    finishUpload();
+    await runner.stop();
+    await running;
+    await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+      status: "uploading",
+    });
+  });
+
+  it("aborts at persisted expiry while renewal remains pending", async () => {
+    const renewalStarted = deferred();
+    const releaseRenewal = deferred();
+    class StalledRenewalStore extends MemoryPhotoUploadQueueStore {
+      override async renewUploadClaim(
+        queueId: string,
+        scope: PhotoUploadScope,
+        owner: string,
+        now: number,
+        ttlMs: number
+      ): Promise<PhotoUploadClaim | null> {
+        renewalStarted.resolve();
+        await releaseRenewal.promise;
+        return super.renewUploadClaim(queueId, scope, owner, now, ttlMs);
+      }
+    }
+    const store = new StalledRenewalStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const timer = new ManualClockTimer();
+    let finishUpload: () => void = () => {};
+    let uploadSignal: AbortSignal | undefined;
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader: (_item, signal) => {
+        uploadSignal = signal;
+        return new Promise<{ ok: true; photoId: string }>((resolve) => {
+          finishUpload = () => resolve({ ok: true, photoId: "stale-photo" });
+        });
+      },
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      leaseTtlMs: 1_000,
+    });
+
+    const running = runner.start();
+    await vi.waitFor(() => expect(uploadSignal).toBeDefined());
+    timer.advanceBy(500);
+    await renewalStarted.promise;
+
+    timer.advanceBy(500);
+    await vi.waitFor(() => expect(uploadSignal?.aborted).toBe(true));
+
+    await expect(
+      store.tryAcquireUploadClaim("queue-1", SCOPE, "runner-b", timer.now, 1_000, 2)
+    ).resolves.toEqual({ expiresAt: 4_000 });
+    await expect(
+      store.updateClaimed("queue-1", SCOPE, "runner-b", timer.now, {
+        status: "uploading",
+      })
+    ).resolves.toMatchObject({ leaseOwner: "runner-b" });
+
+    finishUpload();
+    releaseRenewal.resolve();
+    await running;
+
+    await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+      status: "uploading",
+      leaseOwner: "runner-b",
+      uploadSlotOwner: "runner-b",
+    });
+    await runner.stop();
+  });
+
   it("retries a transient lease-renewal error before ownership expires", async () => {
     class FlakyRenewalStore extends MemoryPhotoUploadQueueStore {
       claimCalls = 0;
@@ -981,7 +1125,7 @@ describe("PhotoUploadQueueRunner", () => {
         now: number,
         ttlMs: number,
         maxScopeSlots: number
-      ): Promise<boolean> {
+      ): Promise<PhotoUploadClaim | null> {
         this.claimCalls += 1;
         return super.tryAcquireUploadClaim(
           queueId,
@@ -999,7 +1143,7 @@ describe("PhotoUploadQueueRunner", () => {
         owner: string,
         now: number,
         ttlMs: number
-      ): Promise<boolean> {
+      ): Promise<PhotoUploadClaim | null> {
         this.claimCalls += 1;
         if (this.claimCalls === 2) {
           throw new DOMException("IndexedDB is temporarily unavailable.", "UnknownError");
@@ -1057,7 +1201,7 @@ describe("PhotoUploadQueueRunner", () => {
         now: number,
         ttlMs: number,
         maxScopeSlots: number
-      ): Promise<boolean> {
+      ): Promise<PhotoUploadClaim | null> {
         this.claimCalls += 1;
         return super.tryAcquireUploadClaim(
           queueId,
@@ -1075,14 +1219,14 @@ describe("PhotoUploadQueueRunner", () => {
         owner: string,
         now: number,
         ttlMs: number
-      ): Promise<boolean> {
+      ): Promise<PhotoUploadClaim | null> {
         this.claimCalls += 1;
         await super.releaseUploadClaim(queueId, scope, owner, now);
         await super.tryAcquireUploadClaim(queueId, scope, "runner-b", now, ttlMs, 2);
         await super.updateClaimed(queueId, scope, "runner-b", now, {
           status: "uploading",
         });
-        return false;
+        return null;
       }
     }
     const store = new LosingLeaseStore(createMemoryPhotoUploadQueueDatabase());
