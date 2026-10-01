@@ -8,6 +8,7 @@ import {
   completeWorkOrder,
   markReadyForPickup,
   placeWorkOrderOnHold,
+  recordCheckoutEvidenceOverride,
   resumeWorkOrderFromHold,
 } from "@/lib/services/quality";
 
@@ -46,6 +47,23 @@ export async function completeQualityCheckAction(
       workOrderId,
       String(formData.get("quality_check_notes") ?? ""),
       { signatureDataUrl: String(formData.get("signature_data_url") ?? "") }
+    );
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+  revalidateWorkOrder(workOrderId);
+  return { error: null };
+}
+
+export async function recordCheckoutEvidenceOverrideAction(
+  workOrderId: string,
+  _prevState: QualityFormState,
+  formData: FormData
+): Promise<QualityFormState> {
+  try {
+    await recordCheckoutEvidenceOverride(
+      workOrderId,
+      String(formData.get("reason") ?? "")
     );
   } catch (error) {
     return { error: toFormErrorMessage(error) };

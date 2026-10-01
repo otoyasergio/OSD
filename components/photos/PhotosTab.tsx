@@ -10,6 +10,7 @@ import {
   PHOTO_CATEGORY_LABELS,
   REQUIRED_PHOTO_CATEGORIES,
 } from "@/lib/status/labels";
+import { CHECKOUT_PHOTO_CATEGORIES } from "@/lib/status/checkoutEvidence";
 import { FormError } from "@/components/forms/Field";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
@@ -27,6 +28,16 @@ const SELECT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
 const UPLOAD_CATEGORIES = GENERAL_WORK_ORDER_PHOTO_CATEGORIES;
+const FILTER_CATEGORIES = [
+  ...GENERAL_WORK_ORDER_PHOTO_CATEGORIES,
+  "inspection_tires",
+  "inspection_brakes",
+  "inspection_forks",
+  "inspection_item",
+  "job_proof",
+  "job_work",
+  ...CHECKOUT_PHOTO_CATEGORIES,
+] as PhotoCategory[];
 
 export function PhotosTab({
   photos,
@@ -269,7 +280,7 @@ export function PhotosTab({
           onChange={(e) => setFilter(e.target.value as PhotoCategory | "all")}
         >
           <option value="all">All categories</option>
-          {UPLOAD_CATEGORIES.map((category) => (
+          {FILTER_CATEGORIES.map((category) => (
             <option key={category} value={category}>
               {PHOTO_CATEGORY_LABELS[category]}
             </option>

@@ -114,6 +114,7 @@ import {
   completeWorkOrderAction,
   markReadyForPickupAction,
   placeWorkOrderOnHoldAction,
+  recordCheckoutEvidenceOverrideAction,
   resumeWorkOrderFromHoldAction,
 } from "@/app/(app)/work_orders/quality-actions";
 import { overrideSafetyRequirementAction } from "@/app/(app)/work_orders/safety-actions";
@@ -467,8 +468,11 @@ export default async function WorkOrderDetailPage({
             canOverrideComplete={canOverrideComplete}
             canClearFlags={canClearFlags}
             canOverrideSafety={canOverrideSafety}
+            canOverrideCheckout={canOverrideComplete}
             inspectionCompleted={Boolean(inspection?.completed_at)}
             readOnly={detail.is_foreign_location}
+            photos={photos}
+            canUploadPhotos={canUploadPhotos}
             assignAction={assignTechnicianAction.bind(null, detail.work_order_id)}
             setPrimaryAction={setPrimaryTechnicianAction.bind(null, detail.work_order_id)}
             qcAction={completeQualityCheckAction.bind(null, detail.work_order_id)}
@@ -479,6 +483,10 @@ export default async function WorkOrderDetailPage({
             holdAction={placeWorkOrderOnHoldAction.bind(null, detail.work_order_id)}
             resumeAction={resumeWorkOrderFromHoldAction.bind(null, detail.work_order_id)}
             safetyOverrideAction={overrideSafetyRequirementAction.bind(
+              null,
+              detail.work_order_id
+            )}
+            checkoutOverrideAction={recordCheckoutEvidenceOverrideAction.bind(
               null,
               detail.work_order_id
             )}

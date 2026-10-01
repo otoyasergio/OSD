@@ -14,6 +14,9 @@ import { getWorkOrderNextAction } from "@/lib/work-orders/nextAction";
 import { buildVisitWorkList } from "@/lib/work-orders/visitWorkList";
 import { VisitWorkListSections } from "@/components/work_orders/VisitWorkListSections";
 import { SignOffPad } from "@/components/inspections/SignOffPad";
+import { CheckoutEvidencePanel } from "@/components/photos/CheckoutEvidencePanel";
+import type { IntakePhoto } from "@/lib/services/photos";
+import { checkoutCoverageFromPhotos } from "@/lib/status/checkoutEvidence";
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
@@ -63,6 +66,10 @@ export function OverviewTab({
   resumeAction,
   clearFlagAction,
   safetyOverrideAction,
+  photos = [],
+  canUploadPhotos = false,
+  canOverrideCheckout = false,
+  checkoutOverrideAction,
 }: {
   detail: WorkOrderDetail;
   openRecommendations?: Array<{
@@ -94,6 +101,10 @@ export function OverviewTab({
   resumeAction: QualityAction;
   clearFlagAction?: QualityAction;
   safetyOverrideAction?: SafetyAction;
+  photos?: IntakePhoto[];
+  canUploadPhotos?: boolean;
+  canOverrideCheckout?: boolean;
+  checkoutOverrideAction?: QualityAction;
 }) {
   const [assignState, assignFormAction] = useActionState(assignAction, {
     error: null,
@@ -147,6 +158,15 @@ export function OverviewTab({
   const readyDone = Boolean(
     detail.ready_for_pickup_at || detail.status === "ready_for_pickup"
   );
+  const checkoutCoverage = checkoutCoverageFromPhotos(photos);
+  const checkoutOverridden = Boolean(detail.checkout_evidence_override_at);
+  const checkoutReady =
+    !detail.checkout_evidence_required || checkoutCoverage.complete || checkoutOverridden;
+  const activeJobs = detail.jobs.filter(
+    (job) => job.status !== "cancelled" && job.status !== "declined"
+  );
+  const jobsComplete =
+    activeJobs.length > 0 && activeJobs.every((job) => job.status === "completed");
   const showCompletion =
     !readOnly && !locked && (canRunQc || canMarkReady || canComplete || canHoldOrCancel);
 
@@ -488,7 +508,29 @@ export function OverviewTab({
               </form>
             ) : null}
 
-            {canMarkReady && qcDone && (!safetyNeeded || safetyDone) && !readyDone ? (
+            {detail.checkout_evidence_required ? (
+              <div className="lg:col-span-2">
+                <CheckoutEvidencePanel
+                  workOrderId={detail.work_order_id}
+                  required
+                  photos={photos}
+                  jobsComplete={jobsComplete}
+                  qcComplete={qcDone}
+                  canUpload={canUploadPhotos}
+                  locked={locked}
+                  canOverride={canOverrideCheckout}
+                  overrideAction={checkoutOverrideAction}
+                  overridden={checkoutOverridden}
+                  overrideReason={detail.checkout_evidence_override_reason}
+                />
+              </div>
+            ) : null}
+
+            {canMarkReady &&
+            qcDone &&
+            (!safetyNeeded || safetyDone) &&
+            !readyDone &&
+            checkoutReady ? (
               <form
                 action={readyFormAction}
                 className="flex flex-col gap-3 rounded border border-[var(--border)] p-4"
