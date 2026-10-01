@@ -10,11 +10,8 @@ import {
   allRequiredIntakeSelected,
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
-import {
-  intakeContractHref,
-  uploadOptionalIntakePhotos,
-  uploadSelectedIntakePhoto,
-} from "@/components/forms/intakePhotoUploadClient";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
+import { intakeContractHref, requiredQueueIdsForIntake } from "@/lib/photos/intakeQueue";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 
@@ -23,7 +20,6 @@ export function IntakePhotoRecoveryForm({
   workOrderNumber,
   missingCategories,
   initialError,
-  optionalPhotos = [],
 }: {
   workOrderId: string;
   workOrderNumber?: string | null;
@@ -32,6 +28,7 @@ export function IntakePhotoRecoveryForm({
   optionalPhotos?: File[];
 }) {
   const router = useRouter();
+  const queue = usePhotoUploadQueue();
   const [submitting, setSubmitting] = useState(false);
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [clientError, setClientError] = useState<string | null>(initialError ?? null);
@@ -43,38 +40,29 @@ export function IntakePhotoRecoveryForm({
   const needed = remaining.length;
   const allSelected = allRequiredIntakeSelected(intakePhotos, remaining);
 
-  async function uploadRemaining() {
+  async function waitForRemaining() {
     setClientError(null);
     setSubmitting(true);
-    const failed: PhotoCategory[] = [];
 
     try {
-      for (const category of remaining) {
-        const original = intakePhotos[category];
-        if (!(original instanceof File) || original.size === 0) {
-          failed.push(category);
-          continue;
-        }
+      const requiredQueueIds = requiredQueueIdsForIntake(queue.items, remaining, {
+        workOrderId,
+      });
+      const waited = await queue.waitForConfirmations(requiredQueueIds);
 
-        const uploaded = await uploadSelectedIntakePhoto(workOrderId, original, category);
-        if (!uploaded) failed.push(category);
-      }
-
-      if (failed.length > 0) {
-        setRemaining(failed);
+      if (!waited.ok) {
+        const failed = remaining.filter((category) =>
+          waited.failed.map((item) => item.category).includes(category)
+        );
+        setRemaining(failed.length > 0 ? failed : remaining);
         const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
         setClientError(
           `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`
         );
-        setIntakePhotos({});
         return;
       }
 
-      const optionalFailures = await uploadOptionalIntakePhotos(
-        workOrderId,
-        optionalPhotos
-      );
-      router.push(intakeContractHref(workOrderId, optionalFailures));
+      router.push(intakeContractHref(workOrderId));
       router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));
@@ -93,7 +81,7 @@ export function IntakePhotoRecoveryForm({
           setClientError("Add all remaining intake photos before continuing.");
           return;
         }
-        void uploadRemaining();
+        void waitForRemaining();
       }}
     >
       <FormError message={clientError} />
@@ -123,6 +111,7 @@ export function IntakePhotoRecoveryForm({
         <IntakePhotoSlots
           categories={remaining}
           value={intakePhotos}
+          workOrderId={workOrderId}
           onChange={(next) => {
             setIntakePhotos(next);
             setClientError(null);

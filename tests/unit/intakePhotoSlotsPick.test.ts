@@ -4,6 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IntakePhotoSlots } from "@/components/forms/IntakePhotoSlots";
+import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
+import {
+  createMemoryPhotoUploadQueueDatabase,
+  MemoryPhotoUploadQueueStore,
+} from "@/tests/helpers/memoryPhotoUploadQueueStore";
 
 describe("IntakePhotoSlots pick flow", () => {
   let container: HTMLDivElement | null = null;
@@ -35,13 +40,24 @@ describe("IntakePhotoSlots pick flow", () => {
     root = createRoot(container);
 
     const onChange = vi.fn();
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
     await act(async () => {
       root!.render(
-        createElement(IntakePhotoSlots, {
-          value: {},
-          onChange,
-          htmlRequired: false,
-        })
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "user-a",
+            locationId: "location-a",
+            store,
+            isOnline: () => false,
+          },
+          createElement(IntakePhotoSlots, {
+            value: {},
+            onChange,
+            htmlRequired: false,
+            intakeDraftId: "draft-1",
+          })
+        )
       );
     });
 
@@ -89,13 +105,24 @@ describe("IntakePhotoSlots pick flow", () => {
     root = createRoot(container);
 
     const onChange = vi.fn();
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
     await act(async () => {
       root!.render(
-        createElement(IntakePhotoSlots, {
-          value: {},
-          onChange,
-          htmlRequired: false,
-        })
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "user-a",
+            locationId: "location-a",
+            store,
+            isOnline: () => false,
+          },
+          createElement(IntakePhotoSlots, {
+            value: {},
+            onChange,
+            htmlRequired: false,
+            intakeDraftId: "draft-1",
+          })
+        )
       );
     });
 

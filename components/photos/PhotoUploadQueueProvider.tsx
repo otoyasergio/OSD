@@ -43,6 +43,7 @@ export type EnqueuePhotoInput = {
   inspectionResultId?: string;
   assistantThreadId?: string;
   notes?: string;
+  replaceExisting?: boolean;
 };
 
 export type PhotoUploadQueueWaitResult =
@@ -247,8 +248,13 @@ export function PhotoUploadQueueProvider({
         locationId: scope.locationId,
         now: readNow(),
       });
+      const replaceExisting =
+        input.replaceExisting ??
+        Boolean(
+          prepared.intakeDraftId && !prepared.workOrderId && prepared.category !== "other"
+        );
       const queued =
-        prepared.intakeDraftId && !prepared.workOrderId
+        replaceExisting && prepared.intakeDraftId
           ? await store.replaceDraftCategory(
               scope,
               prepared.intakeDraftId,

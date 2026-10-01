@@ -2,7 +2,10 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CameraIcon, LibraryIcon } from "@/components/forms/IntakePhotoSlots";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import { persistQueueErrorMessage } from "@/lib/photos/intakeQueue";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
@@ -10,6 +13,8 @@ type Props = {
   value: File[];
   onChange: (next: File[]) => void;
   disabled?: boolean;
+  intakeDraftId?: string;
+  workOrderId?: string;
 };
 
 function fileIdentity(file: File): string {
@@ -35,7 +40,14 @@ export function mergeOptionalIntakePhotos(
   return next;
 }
 
-export function OptionalIntakePhotos({ value, onChange, disabled = false }: Props) {
+export function OptionalIntakePhotos({
+  value,
+  onChange,
+  disabled = false,
+  intakeDraftId,
+  workOrderId,
+}: Props) {
+  const queue = usePhotoUploadQueue();
   const titleId = useId();
   const cameraInputId = `${useId()}-optional-camera`;
   const libraryInputId = `${useId()}-optional-library`;
@@ -82,14 +94,56 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
     setPreparing(true);
     try {
       const prepared = await readPickedPhotoFiles(input);
-      const next = mergeOptionalIntakePhotos(valueRef.current, prepared);
+      const committed: File[] = [];
+      for (const file of prepared) {
+        await queue.enqueue({
+          file,
+          category: "other",
+          intakeDraftId: workOrderId ? undefined : intakeDraftId,
+          workOrderId,
+          replaceExisting: false,
+        });
+        committed.push(file);
+      }
+      if (committed.length === 0) return;
+      const next = mergeOptionalIntakePhotos(valueRef.current, committed);
       valueRef.current = next;
       onChange(next);
-    } catch {
-      setPickError(UNREADABLE_PHOTO_MESSAGE);
+    } catch (error) {
+      if (error instanceof PhotoQueuePersistenceError) {
+        setPickError(error.message);
+      } else {
+        setPickError(UNREADABLE_PHOTO_MESSAGE);
+      }
     } finally {
       setPreparing(false);
     }
+  }
+
+  async function removeAt(index: number) {
+    const file = value[index];
+    if (!file) return;
+    const match = queue.items.find(
+      (item) =>
+        item.category === "other" &&
+        item.fileName === file.name &&
+        item.byteCount === file.size &&
+        item.lastModified === file.lastModified &&
+        (workOrderId
+          ? item.workOrderId === workOrderId
+          : item.intakeDraftId === intakeDraftId)
+    );
+    if (match) {
+      try {
+        await queue.remove(match.queueId);
+      } catch (error) {
+        setPickError(persistQueueErrorMessage(error));
+        return;
+      }
+    }
+    const next = value.filter((_, itemIndex) => itemIndex !== index);
+    valueRef.current = next;
+    onChange(next);
   }
 
   return (
@@ -127,9 +181,7 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
               disabled={disabled || preparing}
               aria-label={`Remove extra intake photo ${index + 1}`}
               onClick={() => {
-                const next = value.filter((_, itemIndex) => itemIndex !== index);
-                valueRef.current = next;
-                onChange(next);
+                void removeAt(index);
               }}
             >
               Remove

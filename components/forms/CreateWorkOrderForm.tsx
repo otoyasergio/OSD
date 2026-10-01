@@ -27,11 +27,15 @@ import {
 } from "@/components/forms/IntakePhotoSlots";
 import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
 import { OptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import {
+  attachAndWaitForRequiredIntakePhotos,
+  extraFilesFromQueuedIntakeItems,
+  filesFromQueuedIntakeItems,
+  INTAKE_PHOTOS_RESTORED,
   intakeContractHref,
-  uploadOptionalIntakePhotos,
-  uploadSelectedIntakePhoto,
-} from "@/components/forms/intakePhotoUploadClient";
+  requiredQueueIdsForIntake,
+} from "@/lib/photos/intakeQueue";
 import { CustomerSearchPicker } from "@/components/forms/CustomerSearchPicker";
 import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
 import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
@@ -46,7 +50,6 @@ import {
   canSubmitCreateWorkOrderWizard,
 } from "@/lib/forms/createWorkOrderWizard";
 import { stripIntakePhotoFields } from "@/lib/forms/intakeFormData";
-import { mapWithConcurrency } from "@/lib/forms/mapWithConcurrency";
 import {
   createIntakeServiceLineDraft,
   formatServiceLineSummary,
@@ -105,7 +108,6 @@ const REVIEW_STEP_INDEX = CREATE_WORK_ORDER_WIZARD_STEPS.findIndex(
   (step) => step.id === "review"
 );
 const DEFAULT_OPEN_SERVICE_CATEGORY = "Inspection & Diagnostics";
-const REQUIRED_PHOTO_UPLOAD_CONCURRENCY = 2;
 
 function newMotorcycleForIntakeHref(customerId: string): string {
   if (!customerId) return "/motorcycles/new";
@@ -125,8 +127,12 @@ export function CreateWorkOrderForm({
   closureDates,
 }: Props) {
   const router = useRouter();
+  const queue = usePhotoUploadQueue();
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const [intakeDraftId, setIntakeDraftId] = useState(() => crypto.randomUUID());
+  const [photosRestored, setPhotosRestored] = useState(false);
+  const hydratedDraftRef = useRef(false);
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [optionalIntakePhotos, setOptionalIntakePhotos] = useState<File[]>([]);
   const [clientError, setClientError] = useState<string | null>(null);
@@ -372,6 +378,27 @@ export function CreateWorkOrderForm({
   }, [resolvedInitialCustomerId]);
 
   useEffect(() => {
+    if (hydratedDraftRef.current) return;
+    hydratedDraftRef.current = true;
+    let cancelled = false;
+    void queue.findNewestIncompleteIntakeDraft().then((draft) => {
+      if (cancelled || !draft) return;
+      setIntakeDraftId(draft.intakeDraftId);
+      setIntakePhotos(filesFromQueuedIntakeItems(draft.items));
+      setOptionalIntakePhotos(extraFilesFromQueuedIntakeItems(draft.items));
+      setPhotosRestored(true);
+      if (
+        allRequiredIntakeSelected(filesFromQueuedIntakeItems(draft.items), ALL_REQUIRED)
+      ) {
+        setMaxReachedIndex((prev) => Math.max(prev, REVIEW_STEP_INDEX));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [queue]);
+
+  useEffect(() => {
     if (!motorcycleId) return;
 
     let cancelled = false;
@@ -427,33 +454,31 @@ export function CreateWorkOrderForm({
         return;
       }
 
-      const uploadResults = await mapWithConcurrency(
-        ALL_REQUIRED,
-        REQUIRED_PHOTO_UPLOAD_CONCURRENCY,
-        async (category) => {
-          const original = intakePhotos[category];
-          if (!(original instanceof File) || original.size === 0) return false;
-          return uploadSelectedIntakePhoto(created.workOrderId!, original, category);
-        }
-      );
-      const failed = ALL_REQUIRED.filter((_, index) => !uploadResults[index]);
+      const requiredQueueIds = requiredQueueIdsForIntake(queue.items, ALL_REQUIRED, {
+        intakeDraftId,
+      });
+      const waited = await attachAndWaitForRequiredIntakePhotos({
+        queue,
+        intakeDraftId,
+        workOrderId: created.workOrderId,
+        requiredQueueIds,
+      });
 
-      if (failed.length > 0) {
+      if (!waited.ok) {
+        const failed = ALL_REQUIRED.filter((category) =>
+          waited.failedCategories.includes(category)
+        );
         const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
         setRecovery({
           error: `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`,
           workOrderId: created.workOrderId,
           workOrderNumber: created.workOrderNumber,
-          missingCategories: failed,
+          missingCategories: failed.length > 0 ? failed : ALL_REQUIRED,
         });
         return;
       }
 
-      const optionalFailures = await uploadOptionalIntakePhotos(
-        created.workOrderId,
-        optionalIntakePhotos
-      );
-      router.push(intakeContractHref(created.workOrderId, optionalFailures));
+      router.push(intakeContractHref(created.workOrderId));
       router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));
@@ -1111,9 +1136,18 @@ export function CreateWorkOrderForm({
             </div>
           ) : null}
         </div>
+        {photosRestored ? (
+          <p
+            role="status"
+            className="mb-3 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          >
+            {INTAKE_PHOTOS_RESTORED}
+          </p>
+        ) : null}
         <IntakePhotoSlots
           value={intakePhotos}
           htmlRequired={false}
+          intakeDraftId={intakeDraftId}
           disabled={stepId !== "photos" || submitting}
           onChange={(next) => {
             // Ignore changes while off the photos step so hidden inputs
@@ -1132,6 +1166,7 @@ export function CreateWorkOrderForm({
         />
         <OptionalIntakePhotos
           value={optionalIntakePhotos}
+          intakeDraftId={intakeDraftId}
           disabled={stepId !== "photos" || submitting}
           onChange={(next) => {
             if (stepId !== "photos") return;

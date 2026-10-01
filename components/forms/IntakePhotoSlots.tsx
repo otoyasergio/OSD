@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import type { PhotoCategory } from "@/lib/database/types";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { persistQueueErrorMessage } from "@/lib/photos/intakeQueue";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
 
@@ -22,6 +25,8 @@ type Props = {
   disabled?: boolean;
   /** When false, skip HTML required so step wizards can gate submit themselves. */
   htmlRequired?: boolean;
+  intakeDraftId?: string;
+  workOrderId?: string;
 };
 
 function slotsFor(categories?: PhotoCategory[]): SlotDef[] {
@@ -153,7 +158,10 @@ export function IntakePhotoSlots({
   onChange,
   disabled = false,
   htmlRequired = true,
+  intakeDraftId,
+  workOrderId,
 }: Props) {
+  const queue = usePhotoUploadQueue();
   const slots = slotsFor(categories);
   const titleId = useId();
   const inputIdPrefix = useId();
@@ -166,6 +174,21 @@ export function IntakePhotoSlots({
     valueRef.current = value;
   }, [value]);
 
+  function matchingQueuedItems(category: PhotoCategory) {
+    return queue.items.filter((item) => {
+      if (item.category !== category) return false;
+      if (workOrderId) return item.workOrderId === workOrderId;
+      if (intakeDraftId) return item.intakeDraftId === intakeDraftId;
+      return false;
+    });
+  }
+
+  async function removeQueuedCategory(category: PhotoCategory) {
+    for (const item of matchingQueuedItems(category)) {
+      await queue.remove(item.queueId);
+    }
+  }
+
   async function applyPickedFile(category: PhotoCategory, input: HTMLInputElement) {
     setChooserCategory(null);
     setPickError(null);
@@ -173,13 +196,50 @@ export function IntakePhotoSlots({
     try {
       const files = await readPickedPhotoFiles(input);
       const file = files[0] ?? null;
+      if (!file) return;
+      if (workOrderId) {
+        await removeQueuedCategory(category);
+        await queue.enqueue({
+          file,
+          category,
+          workOrderId,
+          replaceExisting: false,
+        });
+      } else {
+        if (!intakeDraftId) {
+          setPickError(persistQueueErrorMessage(new Error("missing intake draft")));
+          return;
+        }
+        await queue.enqueue({
+          file,
+          category,
+          intakeDraftId,
+        });
+      }
       const next = { ...valueRef.current, [category]: file };
       valueRef.current = next;
       onChange(next);
-    } catch {
-      setPickError(UNREADABLE_PHOTO_MESSAGE);
+    } catch (error) {
+      if (error instanceof PhotoQueuePersistenceError) {
+        setPickError(error.message);
+      } else {
+        setPickError(UNREADABLE_PHOTO_MESSAGE);
+      }
     } finally {
       setPreparingCategory(null);
+    }
+  }
+
+  async function clearCategory(category: PhotoCategory) {
+    setPickError(null);
+    try {
+      await removeQueuedCategory(category);
+      const next = { ...valueRef.current, [category]: null };
+      valueRef.current = next;
+      onChange(next);
+      setChooserCategory(null);
+    } catch (error) {
+      setPickError(persistQueueErrorMessage(error));
     }
   }
 
@@ -382,8 +442,7 @@ export function IntakePhotoSlots({
                 type="button"
                 className="btn btn-ghost photo-source-sheet-action text-red-700"
                 onClick={() => {
-                  onChange({ ...value, [chooserSlot.category]: null });
-                  setChooserCategory(null);
+                  void clearCategory(chooserSlot.category);
                 }}
               >
                 Clear photo
