@@ -24,6 +24,7 @@ type QueuedPhotoUploadFields = {
   category: string;
   jobId?: string;
   inspectionResultId?: string;
+  assistantThreadId?: string;
   notes?: string;
   blob: Blob;
   fileName: string;

@@ -197,6 +197,7 @@ export class PhotoUploadQueueRunner {
     const now = this.options.now();
     const candidates = items.filter(
       (candidate) =>
+        Boolean(candidate.workOrderId) &&
         !this.activeUploads.has(candidate.queueId) &&
         (candidate.status === "queued" ||
           (candidate.status === "retry_wait" &&

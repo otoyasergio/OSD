@@ -9,6 +9,8 @@ import {
 } from "./stateTransitions";
 import {
   type AcquiredPhotoUploadClaim,
+  attachQueuedPhotoToWorkOrder,
+  createManualRetryState,
   createPhotoUploadFailureSettlement,
   DEFAULT_PHOTO_UPLOAD_MAX_ATTEMPTS,
   type PhotoUploadClaim,
@@ -628,6 +630,119 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
         return true;
       });
     } catch (error) {
+      throw persistenceError(error);
+    }
+  }
+
+  async attachDraftToWorkOrder(
+    scope: PhotoUploadScope,
+    intakeDraftId: string,
+    workOrderId: string,
+    now: number
+  ): Promise<QueuedPhotoUpload[]> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      return await runTransaction(transaction, async () => {
+        const items = await transaction.listByScope(scope);
+        const attached: QueuedPhotoUpload[] = [];
+        for (const item of items) {
+          if (!belongsToScope(item, scope) || item.intakeDraftId !== intakeDraftId) {
+            continue;
+          }
+          const next = attachQueuedPhotoToWorkOrder(item, workOrderId, now);
+          await transaction.put(next);
+          attached.push(next);
+        }
+        return attached;
+      });
+    } catch (error) {
+      if (error instanceof PhotoUploadQueueScopeError) throw error;
+      throw persistenceError(error);
+    }
+  }
+
+  async retryFailed(
+    queueId: string,
+    scope: PhotoUploadScope,
+    now: number
+  ): Promise<QueuedPhotoUpload | null> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      return await runTransaction(transaction, async () => {
+        const item = await transaction.get(queueId);
+        if (!item || !belongsToScope(item, scope) || item.status !== "failed") {
+          return null;
+        }
+        const retried = createManualRetryState(item, now);
+        await transaction.put(retried);
+        return retried;
+      });
+    } catch (error) {
+      if (error instanceof InvalidPhotoUploadTransitionError) throw error;
+      throw persistenceError(error);
+    }
+  }
+
+  async removeUnclaimed(
+    queueId: string,
+    scope: PhotoUploadScope,
+    now: number
+  ): Promise<boolean> {
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      return await runTransaction(transaction, async () => {
+        const item = await transaction.get(queueId);
+        if (
+          !item ||
+          !belongsToScope(item, scope) ||
+          hasLivePersistedUploadClaim(item, now)
+        ) {
+          return false;
+        }
+        await transaction.delete(queueId);
+        return true;
+      });
+    } catch (error) {
+      throw persistenceError(error);
+    }
+  }
+
+  async replaceDraftCategory(
+    scope: PhotoUploadScope,
+    intakeDraftId: string,
+    category: string,
+    item: QueuedPhotoUpload,
+    now: number
+  ): Promise<QueuedPhotoUpload> {
+    if (!belongsToScope(item, scope) || item.intakeDraftId !== intakeDraftId) {
+      throw new PhotoUploadQueueScopeError();
+    }
+    try {
+      const transaction = (await this.database).transaction("readwrite");
+      return await runTransaction(transaction, async () => {
+        const existingItems = await transaction.listByScope(scope);
+        for (const existing of existingItems) {
+          if (
+            !belongsToScope(existing, scope) ||
+            existing.intakeDraftId !== intakeDraftId ||
+            existing.category !== category
+          ) {
+            continue;
+          }
+          if (hasLivePersistedUploadClaim(existing, now)) continue;
+          await transaction.delete(existing.queueId);
+        }
+        const queued: QueuedPhotoUpload = {
+          ...item,
+          category,
+          intakeDraftId,
+          updatedAt: now,
+        };
+        await transaction.put(queued);
+        return queued;
+      });
+    } catch (error) {
+      if (error instanceof PhotoUploadQueueScopeError) throw error;
       throw persistenceError(error);
     }
   }

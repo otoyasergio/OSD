@@ -6,6 +6,8 @@ import {
   type PhotoUploadFailureOutcome,
   type PhotoUploadRetryPolicy,
   PHOTO_UPLOAD_MAX_ATTEMPTS_ERROR,
+  attachQueuedPhotoToWorkOrder,
+  createManualRetryState,
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
 } from "@/lib/photos/uploadQueue/store";
@@ -26,6 +28,14 @@ export function createMemoryPhotoUploadQueueDatabase(): MemoryPhotoUploadQueueDa
 
 function belongsToScope(item: QueuedPhotoUpload, scope: PhotoUploadScope): boolean {
   return item.userId === scope.userId && item.locationId === scope.locationId;
+}
+
+function cloneQueuedPhoto(item: QueuedPhotoUpload): QueuedPhotoUpload {
+  const { blob, ...rest } = item;
+  const cloned = structuredClone(rest) as Omit<QueuedPhotoUpload, "blob">;
+  const nextBlob =
+    blob instanceof Blob ? new Blob([blob], { type: item.mimeType || blob.type }) : blob;
+  return { ...cloned, blob: nextBlob } as QueuedPhotoUpload;
 }
 
 function ownsLiveUploadClaim(
@@ -67,18 +77,18 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     if (existing && !belongsToScope(existing, scope)) {
       throw new PhotoUploadQueueScopeError();
     }
-    this.database.items.set(item.queueId, structuredClone(item));
+    this.database.items.set(item.queueId, cloneQueuedPhoto(item));
   }
 
   async get(queueId: string, scope: PhotoUploadScope): Promise<QueuedPhotoUpload | null> {
     const item = this.database.items.get(queueId);
-    return item && belongsToScope(item, scope) ? structuredClone(item) : null;
+    return item && belongsToScope(item, scope) ? cloneQueuedPhoto(item) : null;
   }
 
   async list(scope: PhotoUploadScope): Promise<QueuedPhotoUpload[]> {
     return [...this.database.items.values()]
       .filter((item) => belongsToScope(item, scope))
-      .map((item) => structuredClone(item));
+      .map((item) => cloneQueuedPhoto(item));
   }
 
   async update(
@@ -93,7 +103,7 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     }
     const updated = { ...item, ...patch };
     this.database.items.set(queueId, updated);
-    return structuredClone(updated);
+    return cloneQueuedPhoto(updated);
   }
 
   async remove(queueId: string, scope: PhotoUploadScope): Promise<void> {
@@ -212,7 +222,7 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     this.database.items.set(queueId, claimedItem);
     return {
       expiresAt,
-      item: structuredClone(claimedItem),
+      item: cloneQueuedPhoto(claimedItem),
       priorEligibility,
     };
   }
@@ -303,7 +313,7 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
         : {}),
     };
     this.database.items.set(queueId, updated);
-    return structuredClone(updated);
+    return cloneQueuedPhoto(updated);
   }
 
   async settleClaimedFailure(
@@ -339,7 +349,7 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
       uploadSlotExpiresAt: null,
     };
     this.database.items.set(queueId, updated);
-    return structuredClone(updated);
+    return cloneQueuedPhoto(updated);
   }
 
   async completeClaimedUpload(
@@ -388,5 +398,81 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
       uploadSlotExpiresAt: ownsSlot ? null : item.uploadSlotExpiresAt,
     });
     return true;
+  }
+
+  async attachDraftToWorkOrder(
+    scope: PhotoUploadScope,
+    intakeDraftId: string,
+    workOrderId: string,
+    now: number
+  ): Promise<QueuedPhotoUpload[]> {
+    const attached: QueuedPhotoUpload[] = [];
+    for (const [queueId, item] of this.database.items) {
+      if (!belongsToScope(item, scope) || item.intakeDraftId !== intakeDraftId) {
+        continue;
+      }
+      const next = attachQueuedPhotoToWorkOrder(item, workOrderId, now);
+      this.database.items.set(queueId, next);
+      attached.push(cloneQueuedPhoto(next));
+    }
+    return attached;
+  }
+
+  async retryFailed(
+    queueId: string,
+    scope: PhotoUploadScope,
+    now: number
+  ): Promise<QueuedPhotoUpload | null> {
+    const item = this.database.items.get(queueId);
+    if (!item || !belongsToScope(item, scope) || item.status !== "failed") {
+      return null;
+    }
+    const retried = createManualRetryState(item, now);
+    this.database.items.set(queueId, retried);
+    return cloneQueuedPhoto(retried);
+  }
+
+  async removeUnclaimed(
+    queueId: string,
+    scope: PhotoUploadScope,
+    now: number
+  ): Promise<boolean> {
+    const item = this.database.items.get(queueId);
+    if (!item || !belongsToScope(item, scope) || hasLivePersistedUploadClaim(item, now)) {
+      return false;
+    }
+    this.database.items.delete(queueId);
+    return true;
+  }
+
+  async replaceDraftCategory(
+    scope: PhotoUploadScope,
+    intakeDraftId: string,
+    category: string,
+    item: QueuedPhotoUpload,
+    now: number
+  ): Promise<QueuedPhotoUpload> {
+    if (!belongsToScope(item, scope) || item.intakeDraftId !== intakeDraftId) {
+      throw new PhotoUploadQueueScopeError();
+    }
+    for (const [queueId, existing] of [...this.database.items]) {
+      if (
+        !belongsToScope(existing, scope) ||
+        existing.intakeDraftId !== intakeDraftId ||
+        existing.category !== category
+      ) {
+        continue;
+      }
+      if (hasLivePersistedUploadClaim(existing, now)) continue;
+      this.database.items.delete(queueId);
+    }
+    const queued: QueuedPhotoUpload = {
+      ...item,
+      category,
+      intakeDraftId,
+      updatedAt: now,
+    };
+    this.database.items.set(item.queueId, queued);
+    return cloneQueuedPhoto(queued);
   }
 }

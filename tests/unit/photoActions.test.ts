@@ -107,4 +107,21 @@ describe("uploadIntakePhotoAction", () => {
       thumbUrl: "https://signed.example/thumb.jpg",
     });
   });
+
+  it("passes an optional job id through to the intake uploader", async () => {
+    const jobId = "51111111-1111-4111-8111-111111111111";
+    uploadIntakePhoto.mockResolvedValue(uploadedPhoto(CLIENT_UPLOAD_ID));
+    const form = uploadForm(CLIENT_UPLOAD_ID);
+    form.set("job_id", jobId);
+
+    await uploadIntakePhotoAction(WORK_ORDER_ID, { error: null }, form);
+
+    expect(uploadIntakePhoto).toHaveBeenCalledWith(
+      WORK_ORDER_ID,
+      expect.objectContaining({
+        job_id: jobId,
+        client_upload_id: CLIENT_UPLOAD_ID,
+      })
+    );
+  });
 });

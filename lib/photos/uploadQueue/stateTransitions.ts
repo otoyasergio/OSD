@@ -14,7 +14,7 @@ const ALLOWED_TRANSITIONS: Record<PhotoUploadStatus, readonly PhotoUploadStatus[
   uploading: ["retry_wait", "saved", "failed"],
   retry_wait: ["uploading"],
   saved: [],
-  failed: [],
+  failed: ["queued"],
 };
 
 export function assertPhotoUploadTransition(

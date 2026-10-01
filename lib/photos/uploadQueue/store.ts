@@ -1,3 +1,4 @@
+import { assertPhotoUploadTransition } from "./stateTransitions";
 import type {
   PhotoUploadOutcome,
   PhotoUploadQueuePatch,
@@ -55,6 +56,40 @@ export type PhotoUploadFailureSettlement = {
  * replayed at least once, so the Task 2 server uploader must use clientUploadId
  * idempotently before this queue is integrated.
  */
+export function attachQueuedPhotoToWorkOrder(
+  item: QueuedPhotoUpload,
+  workOrderId: string,
+  now: number
+): QueuedPhotoUpload {
+  const { intakeDraftId: _removed, ...fields } = item as QueuedPhotoUpload & {
+    intakeDraftId?: string;
+  };
+  return {
+    ...fields,
+    workOrderId,
+    updatedAt: now,
+  };
+}
+
+export function createManualRetryState(
+  item: QueuedPhotoUpload,
+  now: number
+): QueuedPhotoUpload {
+  assertPhotoUploadTransition(item.status, "queued");
+  return {
+    ...item,
+    status: "queued",
+    attemptCount: 0,
+    retryAt: null,
+    lastError: null,
+    updatedAt: now,
+    leaseOwner: null,
+    leaseExpiresAt: null,
+    uploadSlotOwner: null,
+    uploadSlotExpiresAt: null,
+  };
+}
+
 export function createPhotoUploadFailureSettlement(
   persistedFailureCount: number,
   outcome: PhotoUploadFailureOutcome,
@@ -158,4 +193,27 @@ export interface PhotoUploadQueueStore {
     now: number,
     maxAttempts?: number
   ): Promise<boolean>;
+  attachDraftToWorkOrder(
+    scope: PhotoUploadScope,
+    intakeDraftId: string,
+    workOrderId: string,
+    now: number
+  ): Promise<QueuedPhotoUpload[]>;
+  retryFailed(
+    queueId: string,
+    scope: PhotoUploadScope,
+    now: number
+  ): Promise<QueuedPhotoUpload | null>;
+  removeUnclaimed(
+    queueId: string,
+    scope: PhotoUploadScope,
+    now: number
+  ): Promise<boolean>;
+  replaceDraftCategory(
+    scope: PhotoUploadScope,
+    intakeDraftId: string,
+    category: string,
+    item: QueuedPhotoUpload,
+    now: number
+  ): Promise<QueuedPhotoUpload>;
 }

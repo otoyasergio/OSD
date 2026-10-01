@@ -8114,3 +8114,64 @@ button.pit-current-card {
   padding: 0;
   overflow: hidden;
 }
+
+.photo-queue-status {
+  position: relative;
+}
+
+.photo-queue-status-toggle {
+  min-height: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--chrome-border, #334155);
+  background: var(--chrome-elevated, #1e293b);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--chrome-foreground, #f8fafc);
+}
+
+.photo-queue-status-panel {
+  position: absolute;
+  right: 0;
+  z-index: 40;
+  margin-top: 0.5rem;
+  width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid var(--border, #d6d3d1);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.75rem;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 0.16);
+}
+
+.photo-queue-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-queue-status-item-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.photo-queue-status-item-meta,
+.photo-queue-status-item-detail {
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--status-neutral, #57534e);
+}
+
+.photo-queue-status-item-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.photo-queue-status-banner {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 0.75rem;
+}

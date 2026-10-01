@@ -41,6 +41,8 @@ import { staffNotificationHref } from "@/lib/technician/assignmentHref";
 import { FloorTopBar } from "@/components/technician/FloorTopBar";
 import { CommsLayer } from "@/components/comms/CommsLayer";
 import { CommsDock } from "@/components/comms/CommsDock";
+import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
+import { PhotoUploadQueueStatus } from "@/components/photos/PhotoUploadQueueStatus";
 
 function IncomingAlertBanner({
   notification,
@@ -113,6 +115,15 @@ function isInspectionFullscreenPath(pathname: string) {
 
 function isCompactFloorPath(pathname: string) {
   return pathname === "/technician" || pathname === "/technician/";
+}
+
+function withPhotoQueue(user: AppUser, node: React.ReactNode) {
+  if (!user.active_location_id) return node;
+  return (
+    <PhotoUploadQueueProvider userId={user.user_id} locationId={user.active_location_id}>
+      {node}
+    </PhotoUploadQueueProvider>
+  );
 }
 
 export function AppShell({
@@ -274,9 +285,13 @@ export function AppShell({
   );
 
   if (hideChrome) {
-    return (
+    return withPhotoQueue(
+      user,
       <CommsLayer user={user}>
         <div className="flex min-h-full flex-1 flex-col bg-background">
+          <div className="photo-queue-status-banner">
+            <PhotoUploadQueueStatus />
+          </div>
           <main className="inspection-fullscreen-main">{children}</main>
         </div>
       </CommsLayer>
@@ -284,7 +299,8 @@ export function AppShell({
   }
 
   if (compactFloor) {
-    return (
+    return withPhotoQueue(
+      user,
       <CommsLayer user={user}>
         <div className="app-shell app-shell--floor-compact bg-background">
           <a href="#main-content" className="skip-link">
@@ -293,6 +309,7 @@ export function AppShell({
           <FloorTopBar
             trailing={
               <>
+                <PhotoUploadQueueStatus />
                 {messengerEnabled ? <CommsDock slot="floor" /> : null}
                 {locations.length > 1 && user.active_location_id ? (
                   <LocationSwitcher
@@ -324,7 +341,8 @@ export function AppShell({
     );
   }
 
-  return (
+  return withPhotoQueue(
+    user,
     <CommsLayer user={user}>
       <div
         className={`app-shell bg-background${mobileNavOpen ? " app-shell-nav-open" : ""}`}
@@ -348,6 +366,7 @@ export function AppShell({
             />
           </Link>
           <div className="flex items-center gap-2">
+            <PhotoUploadQueueStatus />
             {messengerEnabled ? <CommsDock slot="mobile" /> : null}
             {notificationsEnabled ? notificationBellFor("mobile") : null}
             <Link href="/account" aria-label="Open my account">
@@ -408,6 +427,7 @@ export function AppShell({
           <header className="main-topbar">
             <GlobalSearch />
             <div className="main-topbar-actions">
+              <PhotoUploadQueueStatus />
               {messengerEnabled ? <CommsDock slot="desktop" /> : null}
               {notificationsEnabled ? notificationBellFor("desktop") : null}
               {user.active_location_id ? (

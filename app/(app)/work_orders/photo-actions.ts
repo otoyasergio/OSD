@@ -34,6 +34,7 @@ export async function uploadIntakePhotoAction(
     }
 
     const resultId = String(formData.get("inspection_result_id") ?? "").trim();
+    const jobId = String(formData.get("job_id") ?? "").trim();
     const category = String(formData.get("category") ?? "") as PhotoCategory;
     const notes = String(formData.get("notes") ?? "").trim() || null;
     const clientUploadId =
@@ -48,6 +49,7 @@ export async function uploadIntakePhotoAction(
           notes,
           inspection_result_id: resultId || null,
           file,
+          ...(jobId ? { job_id: jobId } : {}),
           ...(clientUploadId && index === 0 ? { client_upload_id: clientUploadId } : {}),
         };
         const photo = await uploadIntakePhoto(workOrderId, upload);
