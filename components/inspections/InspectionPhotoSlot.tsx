@@ -6,10 +6,14 @@ import type { PhotoCategory } from "@/lib/database/types";
 import { FormError } from "@/components/forms/Field";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 
 export function InspectionPhotoSlot({
@@ -106,6 +110,10 @@ export function InspectionPhotoSlot({
       const files = await readPickedPhotoFiles(input, { surface: "inspection" });
       if (files.length === 0) return;
       for (const file of files) {
+        if (exceedsServerActionUploadLimit(file)) {
+          setClientError(photoTooLargeMessage(file));
+          continue;
+        }
         const queuedItem = await queue.enqueue({
           file,
           category,

@@ -15,8 +15,8 @@ import {
   labelsForRecoveryWaitFailure,
   requiredQueueIdsForRemainingCategories,
 } from "@/lib/photos/intakeQueue";
-import { toFormErrorMessage } from "@/lib/services/errors";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
+import { toFormErrorMessage } from "@/lib/services/errors";
 
 export function IntakePhotoRecoveryForm({
   workOrderId,
@@ -86,7 +86,6 @@ export function IntakePhotoRecoveryForm({
   async function waitForRemaining() {
     setClientError(null);
     setSubmitting(true);
-
     try {
       const liveIds = new Set<string>();
       for (const item of queue.items) {

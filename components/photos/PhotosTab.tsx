@@ -13,11 +13,15 @@ import {
 import { CHECKOUT_PHOTO_CATEGORIES } from "@/lib/status/checkoutEvidence";
 import { FormError } from "@/components/forms/Field";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 import { formatDateTime } from "@/lib/datetime/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
@@ -140,6 +144,10 @@ export function PhotosTab({
       const notes = String(formData?.get("notes") ?? notesRef.current).trim();
       categoryRef.current = category as PhotoCategory;
       notesRef.current = notes;
+      if (exceedsServerActionUploadLimit(file)) {
+        setPickError(photoTooLargeMessage(file));
+        return;
+      }
       await queue.enqueue({
         file,
         category,

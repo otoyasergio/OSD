@@ -11,12 +11,16 @@ import {
 } from "react";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { photoFileInputProps, CAMERA_ROLL_HINT } from "@/lib/forms/photoSourceInputs";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import {
   PhotoQueuePersistenceError,
   PhotoUploadQueueClosedError,
 } from "@/lib/photos/uploadQueue/errors";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 import {
   DIAGNOSTICS_PHOTO_MAX_SELECTED,
   DIAGNOSTICS_PHOTO_PURPOSE_MAX,
@@ -338,6 +342,10 @@ export function DiagnosticsPhotoPicker({
               } extra photo(s) were not uploaded.`
             );
           }
+          break;
+        }
+        if (exceedsServerActionUploadLimit(file)) {
+          if (mountedRef.current) setError(photoTooLargeMessage(file));
           break;
         }
         const queuedItem = await queue.enqueue({

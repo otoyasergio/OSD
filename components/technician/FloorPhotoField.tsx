@@ -4,10 +4,14 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 
 function readyLabel(count: number): string | null {
   if (count === 0) return null;
@@ -96,6 +100,10 @@ export function FloorPhotoField({
       }
       let added = 0;
       for (const file of prepared) {
+        if (exceedsServerActionUploadLimit(file)) {
+          setPickError(photoTooLargeMessage(file));
+          continue;
+        }
         await queue.enqueue({
           file,
           category,

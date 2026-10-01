@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import { CameraIcon, LibraryIcon } from "@/components/forms/IntakePhotoSlots";
 import { FormError } from "@/components/forms/Field";
 import { DOCUMENT_IMAGE_COMPRESS } from "@/lib/forms/compressImageForUpload";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  describePhotoUploadFailure,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { cloneFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 import { withIntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import {
@@ -15,6 +19,7 @@ import {
   photoFileInputProps,
 } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 
 type Props = {
   action: (formData: FormData) => Promise<{ error: string | null }>;
@@ -71,11 +76,21 @@ export function PaperAgreementCopyUpload({ action, continueHref }: Props) {
       setError("Choose a photo or PDF of the signed paper agreement.");
       return;
     }
+    if (exceedsServerActionUploadLimit(file)) {
+      setError(photoTooLargeMessage(file));
+      return;
+    }
 
     startTransition(async () => {
       const formData = new FormData();
       formData.set("file", file);
-      const result = await action(formData);
+      let result: { error: string | null };
+      try {
+        result = await action(formData);
+      } catch (error) {
+        setError(describePhotoUploadFailure(error));
+        return;
+      }
       if (result.error) {
         setError(result.error);
         return;

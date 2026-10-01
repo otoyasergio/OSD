@@ -7,6 +7,12 @@ import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { IMAGE_ACCEPT } from "@/lib/forms/photoSourceInputs";
 import { UserAvatar } from "@/components/ui/UserAvatar";
+import { photoTooLargeMessage } from "@/lib/forms/photoUploadErrors";
+import {
+  SERVER_ACTION_UPLOAD_MAX_BYTES,
+  exceedsServerActionUploadLimit,
+  formatMegabytes,
+} from "@/lib/forms/uploadLimits";
 
 type Action = (
   state: ProfilePhotoFormState,
@@ -35,6 +41,7 @@ export function ProfilePhotoForm({
   const [uploadState, uploadFormAction] = useActionState(uploadAction, INITIAL);
   const [removeState, removeFormAction] = useActionState(removeAction, INITIAL);
   const [preparing, setPreparing] = useState(false);
+  const [sizeError, setSizeError] = useState<string | null>(null);
 
   const success = uploadState.success ?? removeState.success;
 
@@ -58,7 +65,7 @@ export function ProfilePhotoForm({
         </div>
       </div>
 
-      <FormError message={uploadState.error ?? removeState.error} />
+      <FormError message={sizeError ?? uploadState.error ?? removeState.error} />
       {success ? (
         <p
           role="status"
@@ -73,6 +80,18 @@ export function ProfilePhotoForm({
         action={uploadFormAction}
         encType="multipart/form-data"
         className="flex flex-col gap-3"
+        onSubmit={(event) => {
+          // The raw file goes straight to the action; Vercel refuses bodies over
+          // its cap before the app can answer, so stop those here with a reason.
+          const file = event.currentTarget.elements.namedItem("file");
+          const picked = file instanceof HTMLInputElement ? file.files?.[0] : undefined;
+          if (picked && exceedsServerActionUploadLimit(picked)) {
+            event.preventDefault();
+            setSizeError(photoTooLargeMessage(picked));
+            return;
+          }
+          setSizeError(null);
+        }}
       >
         <label htmlFor="profile-photo" className="field-label">
           Choose profile photo
@@ -86,7 +105,8 @@ export function ProfilePhotoForm({
           onPreparingChange={setPreparing}
         />
         <p className="text-sm text-[var(--status-neutral)]">
-          JPEG, PNG, WebP, or iPhone photo. Maximum 5 MB. Square photos work best.
+          JPEG, PNG, WebP, or iPhone photo up to{" "}
+          {formatMegabytes(SERVER_ACTION_UPLOAD_MAX_BYTES)}. Square photos work best.
         </p>
         <div>
           <SubmitButton
