@@ -27,6 +27,10 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).toMatch(/sample\.heic/);
     expect(spec).toMatch(/Photo library/i);
     expect(spec).toMatch(/waiting for connection/i);
+    const prepare = source("lib/forms/preparePhotoFileForUpload.ts");
+    expect(prepare).toMatch(/navigator\.onLine === false/);
+    const uploader = source("lib/photos/uploadQueue/uploadQueuedPhoto.ts");
+    expect(uploader).toMatch(/compressImageForUpload/);
     expect(spec).toMatch(/page\.close\(/);
     expect(spec).toMatch(/newPage\(/);
     expect(spec).toMatch(/getByRole\("dialog"\)|lightbox/i);
@@ -55,6 +59,7 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).toMatch(/thumb_storage_path/);
     expect(spec).toMatch(/intake-photos/);
     expect(spec).toMatch(/setOffline\(false\)/);
+    expect(spec).toMatch(/timeout:\s*180_000/);
     expect(spec).toMatch(/findIntakePhotosByNote|notes/);
     expect(spec).toMatch(
       /removeIntakePhotoArtifacts|storage\.from\("intake-photos"\)\.remove/

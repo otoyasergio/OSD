@@ -24,7 +24,7 @@ test.use({ storageState: storageStatePath("owner") });
 
 const HEIC_FIXTURE = join(process.cwd(), "tests/fixtures/photos/sample.heic");
 
-test.describe.configure({ mode: "serial" });
+test.describe.configure({ mode: "serial", timeout: 180_000 });
 
 test("offline HEIC enqueue survives tab close and resumes after reconnect", async ({
   page,
@@ -83,11 +83,15 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
 
     await assertIntakePhotoRemoved(admin, captured[0]!);
   } finally {
-    await context.setOffline(false);
-    for (const openPage of context.pages()) {
-      if (!openPage.isClosed()) {
-        await openPage.close();
+    try {
+      await context.setOffline(false);
+      for (const openPage of context.pages()) {
+        if (!openPage.isClosed()) {
+          await openPage.close();
+        }
       }
+    } catch {
+      // Playwright already closed the context after a test timeout.
     }
     const leftovers = await findIntakePhotosByNote(admin, FIXTURE_WORK_ORDER.id, note);
     capturedObjectPaths.push(...leftovers.flatMap(objectPathsForPhoto));

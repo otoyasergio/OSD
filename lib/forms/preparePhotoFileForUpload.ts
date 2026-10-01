@@ -31,6 +31,11 @@ export async function preparePhotoFileForUpload(
   }
 
   const cloned = await cloneFileForUpload(file);
+  // The durable queue must persist the pick immediately. Compression waits
+  // for a worker script and canvas decode; both stall or fail when offline.
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return cloned;
+  }
   return compressImageForUpload(cloned, options);
 }
 

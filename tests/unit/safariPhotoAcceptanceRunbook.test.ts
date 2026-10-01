@@ -68,7 +68,7 @@ describe("Safari real-device acceptance runbook", () => {
     expect(health).toMatch(/guard-prod-deploy|main branch guard|after the main/i);
   });
 
-  it("lists isolated Safari/checkout migrations through 20261001121000 and 20261001121010 in filename order", () => {
+  it("lists isolated Safari/checkout migrations through 20261001121010 and 20261001133000 in filename order", () => {
     const health = source("docs/ops/platform-health.md");
     const tokens = [
       "intake photo idempotency",
@@ -77,6 +77,7 @@ describe("Safari real-device acceptance runbook", () => {
       "intake photo storage",
       "20261001121000",
       "20261001121010",
+      "20261001133000",
     ];
     let last = -1;
     for (const token of tokens) {
