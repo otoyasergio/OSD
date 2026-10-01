@@ -48,7 +48,9 @@ export function useIntakeDraftHydration(): {
     return () => {
       cancelled = true;
     };
-  }, [queue]);
+    // Finder identity is stable across item notifications; queue is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- retain pick gate, avoid re-hydrate
+  }, [queue.findNewestIncompleteIntakeDraft]);
 
   const markPicksBegun = useCallback(() => {
     picksBegunRef.current = true;

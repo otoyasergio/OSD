@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import type { IntakePhoto } from "@/lib/services/photos";
 import type { PhotoCategory } from "@/lib/database/types";
 import type { PhotoFormState } from "@/app/(app)/work_orders/photo-actions";
-import { PHOTO_CATEGORY_LABELS, REQUIRED_PHOTO_CATEGORIES } from "@/lib/status/labels";
+import {
+  GENERAL_WORK_ORDER_PHOTO_CATEGORIES,
+  PHOTO_CATEGORY_LABELS,
+  REQUIRED_PHOTO_CATEGORIES,
+} from "@/lib/status/labels";
 import { FormError } from "@/components/forms/Field";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
@@ -22,7 +26,7 @@ type Action = (state: PhotoFormState, formData: FormData) => Promise<PhotoFormSt
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
-const ALL_CATEGORIES = Object.keys(PHOTO_CATEGORY_LABELS) as PhotoCategory[];
+const UPLOAD_CATEGORIES = GENERAL_WORK_ORDER_PHOTO_CATEGORIES;
 
 export function PhotosTab({
   photos,
@@ -181,7 +185,7 @@ export function PhotosTab({
                 categoryRef.current = event.target.value as PhotoCategory;
               }}
             >
-              {ALL_CATEGORIES.map((category) => (
+              {UPLOAD_CATEGORIES.map((category) => (
                 <option key={category} value={category}>
                   {PHOTO_CATEGORY_LABELS[category]}
                   {REQUIRED_PHOTO_CATEGORIES.includes(category) && !covered.has(category)
@@ -265,7 +269,7 @@ export function PhotosTab({
           onChange={(e) => setFilter(e.target.value as PhotoCategory | "all")}
         >
           <option value="all">All categories</option>
-          {ALL_CATEGORIES.map((category) => (
+          {UPLOAD_CATEGORIES.map((category) => (
             <option key={category} value={category}>
               {PHOTO_CATEGORY_LABELS[category]}
             </option>

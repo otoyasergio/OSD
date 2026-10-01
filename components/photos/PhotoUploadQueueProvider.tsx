@@ -134,6 +134,7 @@ export function PhotoUploadQueueProvider({
   const runnerRef = useRef<PhotoUploadQueueRunner | null>(null);
   const previewUrlsRef = useRef<Record<string, string>>({});
   const closedRef = useRef(false);
+  const scopeEpochRef = useRef(0);
   const pruneScheduledRef = useRef(false);
   const storeEvents = useMemo(() => new EventTarget(), []);
 
@@ -180,11 +181,13 @@ export function PhotoUploadQueueProvider({
 
   const refreshItems = useCallback(async () => {
     if (closedRef.current) return;
+    const epoch = scopeEpochRef.current;
+    const scoped = scope;
     const [next, receipts] = await Promise.all([
-      store.list(scope),
-      store.listConfirmations(scope),
+      store.list(scoped),
+      store.listConfirmations(scoped),
     ]);
-    if (closedRef.current) return;
+    if (closedRef.current || scopeEpochRef.current !== epoch) return;
     setItems(next);
     setConfirmations(receipts);
     setPreviewUrls((current) => {
@@ -201,9 +204,9 @@ export function PhotoUploadQueueProvider({
       ...[...waitersRef.current].flatMap((waiter) => waiter.queueIds),
     ]);
     void store
-      .pruneConfirmations(scope, readNow() - PHOTO_CONFIRMATION_TTL_MS, keep)
+      .pruneConfirmations(scoped, readNow() - PHOTO_CONFIRMATION_TTL_MS, keep)
       .catch(() => {
-        pruneScheduledRef.current = false;
+        if (scopeEpochRef.current === epoch) pruneScheduledRef.current = false;
       });
   }, [emitNewReceipts, readNow, store, scope]);
 
@@ -221,6 +224,7 @@ export function PhotoUploadQueueProvider({
   }, [refreshItems, storeEvents]);
 
   useEffect(() => {
+    const epoch = ++scopeEpochRef.current;
     closedRef.current = false;
     pruneScheduledRef.current = false;
     seenReceiptIdsRef.current = new Set();
@@ -252,6 +256,7 @@ export function PhotoUploadQueueProvider({
     });
     return () => {
       closedRef.current = true;
+      if (scopeEpochRef.current === epoch) scopeEpochRef.current += 1;
       rejectWaiters(new PhotoUploadQueueClosedError());
       void runner.stop();
       if (runnerRef.current === runner) runnerRef.current = null;
@@ -360,12 +365,15 @@ export function PhotoUploadQueueProvider({
       }
 
       const inspect = async (): Promise<PhotoUploadQueueWaitResult | "wait"> => {
+        const epoch = scopeEpochRef.current;
         if (closedRef.current) throw new PhotoUploadQueueClosedError();
         const [listed, receipts] = await Promise.all([
           store.list(scope),
           store.listConfirmations(scope),
         ]);
-        if (closedRef.current) throw new PhotoUploadQueueClosedError();
+        if (closedRef.current || scopeEpochRef.current !== epoch) {
+          throw new PhotoUploadQueueClosedError();
+        }
         const receiptById = new Map(
           receipts.map((receipt) => [receipt.queueId, receipt] as const)
         );

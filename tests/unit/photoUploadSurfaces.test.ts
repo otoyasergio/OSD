@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  GENERAL_WORK_ORDER_PHOTO_CATEGORIES,
+  PHOTO_CATEGORY_LABELS,
+} from "@/lib/status/labels";
 
 const PICKERS = [
   "components/forms/IntakePhotoSlots.tsx",
@@ -11,6 +15,23 @@ const PICKERS = [
   "components/messages/Composer.tsx",
   "components/motorcycles/MotorcycleDocuments.tsx",
 ];
+
+describe("general work-order photo categories", () => {
+  it("excludes job and inspection categories that cannot be linked from Photos tab", () => {
+    expect(GENERAL_WORK_ORDER_PHOTO_CATEGORIES).toContain("front");
+    expect(GENERAL_WORK_ORDER_PHOTO_CATEGORIES).toContain("other");
+    expect(GENERAL_WORK_ORDER_PHOTO_CATEGORIES).not.toContain("job_proof");
+    expect(GENERAL_WORK_ORDER_PHOTO_CATEGORIES).not.toContain("job_work");
+    expect(
+      GENERAL_WORK_ORDER_PHOTO_CATEGORIES.filter((category) =>
+        category.startsWith("inspection_")
+      )
+    ).toEqual([]);
+    expect(GENERAL_WORK_ORDER_PHOTO_CATEGORIES.length).toBeLessThan(
+      Object.keys(PHOTO_CATEGORY_LABELS).length
+    );
+  });
+});
 
 describe("photo upload surfaces clone files before clearing the picker", () => {
   it.each(PICKERS)("%s prepares files before upload", (relativePath) => {
@@ -54,6 +75,7 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
     expect(source).toMatch(/applyPickedFile/);
     expect(source).toMatch(/subscribeConfirmation/);
     expect(source).toMatch(/categoryRef|notesRef/);
+    expect(source).toMatch(/GENERAL_WORK_ORDER_PHOTO_CATEGORIES/);
     expect(source).not.toMatch(/pendingFile/);
     expect(source).not.toMatch(/DataTransfer/);
     expect(source).not.toMatch(/useActionState\(uploadAction/);

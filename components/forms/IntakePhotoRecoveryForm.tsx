@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { PhotoCategory } from "@/lib/database/types";
 import { FormError } from "@/components/forms/Field";
 import {
   IntakePhotoSlots,
-  allRequiredIntakeSelected,
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
 import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import {
   intakeContractHref,
+  labelsForRecoveryWaitFailure,
   requiredQueueIdsForRemainingCategories,
 } from "@/lib/photos/intakeQueue";
 import { toFormErrorMessage } from "@/lib/services/errors";
@@ -36,24 +36,58 @@ export function IntakePhotoRecoveryForm({
   const [clientError, setClientError] = useState<string | null>(initialError ?? null);
   const [remaining, setRemaining] = useState<PhotoCategory[]>(missingCategories);
   const preferredIdsRef = useRef<Partial<Record<string, string>>>({});
+
   useEffect(() => {
+    const liveIds = new Set<string>();
+    for (const item of queue.items) {
+      if (item.workOrderId === workOrderId) liveIds.add(item.queueId);
+    }
+    for (const receipt of queue.confirmations) {
+      if (receipt.workOrderId === workOrderId) liveIds.add(receipt.queueId);
+    }
+    for (const [category, queueId] of Object.entries(preferredIdsRef.current)) {
+      if (!queueId || !liveIds.has(queueId)) {
+        delete preferredIdsRef.current[category];
+      }
+    }
     for (const item of queue.items) {
       if (item.workOrderId !== workOrderId) continue;
       preferredIdsRef.current[item.category] = item.queueId;
     }
-  }, [queue.items, workOrderId]);
+  }, [queue.confirmations, queue.items, workOrderId]);
 
-  const selectedCount = Object.values(intakePhotos).filter(
-    (file) => file instanceof File && file.size > 0
-  ).length;
-  const needed = remaining.length;
-  const allSelected = allRequiredIntakeSelected(intakePhotos, remaining);
+  const readiness = useMemo(
+    () =>
+      requiredQueueIdsForRemainingCategories({
+        remaining,
+        workOrderId,
+        items: queue.items,
+        receipts: queue.confirmations,
+      }),
+    [queue.confirmations, queue.items, remaining, workOrderId]
+  );
+  const selectedCount = remaining.length - readiness.missingCategories.length;
+  const allSelected =
+    readiness.missingCategories.length === 0 &&
+    readiness.queueIds.length === remaining.length;
 
   async function waitForRemaining() {
     setClientError(null);
     setSubmitting(true);
 
     try {
+      const liveIds = new Set<string>();
+      for (const item of queue.items) {
+        if (item.workOrderId === workOrderId) liveIds.add(item.queueId);
+      }
+      for (const receipt of queue.confirmations) {
+        if (receipt.workOrderId === workOrderId) liveIds.add(receipt.queueId);
+      }
+      for (const [category, queueId] of Object.entries(preferredIdsRef.current)) {
+        if (!queueId || !liveIds.has(queueId)) {
+          delete preferredIdsRef.current[category];
+        }
+      }
       for (const item of queue.items) {
         if (item.workOrderId !== workOrderId) continue;
         preferredIdsRef.current[item.category] = item.queueId;
@@ -67,7 +101,7 @@ export function IntakePhotoRecoveryForm({
           preferredByCategory: preferredIdsRef.current,
         });
       if (stillMissing.length > 0 || requiredQueueIds.length !== remaining.length) {
-        const labels = (stillMissing.length > 0 ? stillMissing : remaining)
+        const labels = stillMissing
           .map((category) => PHOTO_CATEGORY_LABELS[category as PhotoCategory] ?? category)
           .join(", ");
         setClientError(
@@ -78,11 +112,17 @@ export function IntakePhotoRecoveryForm({
       const waited = await queue.waitForConfirmations(requiredQueueIds);
 
       if (!waited.ok) {
-        const failed = remaining.filter((category) =>
-          waited.failed.map((item) => item.category).includes(category)
+        const failedCategories = labelsForRecoveryWaitFailure({
+          remaining,
+          requiredQueueIds,
+          waited,
+        }).filter((category): category is PhotoCategory =>
+          remaining.includes(category as PhotoCategory)
         );
-        setRemaining(failed.length > 0 ? failed : remaining);
-        const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
+        setRemaining(failedCategories.length > 0 ? failedCategories : remaining);
+        const labels = (failedCategories.length > 0 ? failedCategories : remaining)
+          .map((category) => PHOTO_CATEGORY_LABELS[category] ?? category)
+          .join(", ");
         setClientError(
           `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`
         );
@@ -104,7 +144,7 @@ export function IntakePhotoRecoveryForm({
       className="intake-wizard"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!allRequiredIntakeSelected(intakePhotos, remaining)) {
+        if (!allSelected) {
           setClientError("Add all remaining intake photos before continuing.");
           return;
         }
@@ -130,15 +170,16 @@ export function IntakePhotoRecoveryForm({
             aria-live="polite"
           >
             <span className="intake-photo-progress-meter">
-              {selectedCount}/{needed}
+              {selectedCount}/{remaining.length}
             </span>
-            {allSelected ? "Ready to upload" : "remaining"}
+            {allSelected ? "Ready to continue" : "remaining"}
           </div>
         </div>
         <IntakePhotoSlots
           categories={remaining}
           value={intakePhotos}
           workOrderId={workOrderId}
+          htmlRequired={!allSelected}
           onChange={(next) => {
             setIntakePhotos(next);
             setClientError(null);
@@ -152,7 +193,11 @@ export function IntakePhotoRecoveryForm({
           disabled={submitting}
           className="btn btn-primary min-h-12 min-w-[8rem] px-6 text-base disabled:opacity-60 sm:min-h-14 sm:text-lg"
         >
-          {submitting ? "Uploading…" : "Upload remaining photos"}
+          {submitting
+            ? "Uploading…"
+            : allSelected
+              ? "Continue"
+              : "Upload remaining photos"}
         </button>
         <Link
           href={`/work_orders/${workOrderId}?tab=photos`}

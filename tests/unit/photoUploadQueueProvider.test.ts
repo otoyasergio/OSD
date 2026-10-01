@@ -776,6 +776,111 @@ describe("PhotoUploadQueueProvider", () => {
     ]);
   });
 
+  it("does not apply a delayed previous-scope list after the user or location changes", async () => {
+    const database = createMemoryPhotoUploadQueueDatabase();
+    const store = new MemoryPhotoUploadQueueStore(database);
+    await store.put(USER_A, {
+      queueId: "stale-front",
+      clientUploadId: CLIENT_ID,
+      userId: USER_A.userId,
+      locationId: USER_A.locationId,
+      workOrderId: "work-order-a",
+      category: "front",
+      blob: new Blob(["a"], { type: "image/jpeg" }),
+      fileName: "front.jpg",
+      mimeType: "image/jpeg",
+      lastModified: 1,
+      byteCount: 1,
+      status: "queued",
+      attemptCount: 0,
+      retryAt: null,
+      lastError: null,
+      createdAt: 1,
+      updatedAt: 1,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      uploadSlotOwner: null,
+      uploadSlotExpiresAt: null,
+    });
+    database.confirmations.set("stale-receipt", {
+      queueId: "stale-receipt",
+      clientUploadId: CLIENT_ID,
+      photoId: PHOTO_ID,
+      userId: USER_A.userId,
+      locationId: USER_A.locationId,
+      confirmedAt: 2_000,
+      category: "rear",
+      workOrderId: "work-order-a",
+    });
+
+    let releaseA!: () => void;
+    const holdA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    let aListStarted = 0;
+    const originalList = store.list.bind(store);
+    const originalListConfirmations = store.listConfirmations.bind(store);
+    store.list = async (scope) => {
+      if (scope.userId === USER_A.userId) {
+        aListStarted += 1;
+        await holdA;
+      }
+      return originalList(scope);
+    };
+    store.listConfirmations = async (scope) => {
+      if (scope.userId === USER_A.userId) await holdA;
+      return originalListConfirmations(scope);
+    };
+
+    let api!: PhotoUploadQueueApi;
+    const listener = vi.fn();
+    await renderProvider({
+      store,
+      isOnline: () => false,
+      onReady: (next) => {
+        api = next;
+      },
+    });
+    api.subscribeConfirmation(listener);
+    await vi.waitFor(() => expect(aListStarted).toBeGreaterThan(0));
+
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: USER_B.userId,
+            locationId: USER_B.locationId,
+            store,
+            isOnline: () => false,
+            uploadIntakePhoto: async () => ({ error: null, photoId: PHOTO_ID }),
+          },
+          createElement(Probe, {
+            onReady: (next) => {
+              api = next;
+            },
+          })
+        )
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(api.items).toEqual([]);
+      expect(api.confirmations).toEqual([]);
+    });
+
+    releaseA();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(api.items).toEqual([]);
+    expect(api.confirmations).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("does not render another user or location queue after the scope changes", async () => {
     const database = createMemoryPhotoUploadQueueDatabase();
     const store = new MemoryPhotoUploadQueueStore(database);

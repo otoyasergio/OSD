@@ -86,6 +86,16 @@ export const PHOTO_CATEGORY_LABELS: Record<PhotoCategory, string> = {
   job_work: "Work photo",
 };
 
+/** Categories the generic work-order Photos tab can upload without job/inspection linkage. */
+export const GENERAL_WORK_ORDER_PHOTO_CATEGORIES: PhotoCategory[] = (
+  Object.keys(PHOTO_CATEGORY_LABELS) as PhotoCategory[]
+).filter(
+  (category) =>
+    !category.startsWith("inspection_") &&
+    category !== "job_proof" &&
+    category !== "job_work"
+);
+
 /** Categories required at work-order create (also shown as missing on Photos tab). */
 export const REQUIRED_PHOTO_CATEGORIES: PhotoCategory[] = [
   "front",

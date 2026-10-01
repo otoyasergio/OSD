@@ -149,6 +149,41 @@ describe("evidence photo queue surfaces", () => {
     });
   });
 
+  it("Photos tab upload options exclude categories that require job or inspection linkage", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "user-a",
+            locationId: "location-a",
+            store,
+            isOnline: () => false,
+          },
+          createElement(PhotosTab, {
+            photos: [],
+            readOnly: false,
+            canUpload: true,
+            canDelete: false,
+            workOrderId: "wo-1",
+            deleteAction: async () => ({ error: null }),
+          })
+        )
+      );
+    });
+
+    const uploadSelect = container.querySelector(
+      'select[name="category"]'
+    ) as HTMLSelectElement;
+    const uploadValues = Array.from(uploadSelect.options).map((option) => option.value);
+    expect(uploadValues).toContain("front");
+    expect(uploadValues).toContain("other");
+    expect(uploadValues).not.toContain("job_proof");
+    expect(uploadValues).not.toContain("job_work");
+    expect(uploadValues.filter((value) => value.startsWith("inspection_"))).toEqual([]);
+  });
+
   it("floor picker shows the unreadable-file error", async () => {
     const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
     await act(async () => {

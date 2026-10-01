@@ -47,6 +47,8 @@ import {
   canNavigateToWizardStep,
   canProceedFromWizardStep,
   canSubmitCreateWorkOrderWizard,
+  shouldApplyCreateIntakePhotoChange,
+  shouldApplyCreateOptionalPhotoChange,
 } from "@/lib/forms/createWorkOrderWizard";
 import { stripIntakePhotoFields } from "@/lib/forms/intakeFormData";
 import {
@@ -1147,9 +1149,9 @@ export function CreateWorkOrderForm({
           intakeDraftId={intakeDraftId}
           disabled={stepId !== "photos" || submitting || draftHydration.hydrating}
           onChange={(next) => {
-            // Ignore changes while off the photos step so hidden inputs
-            // stay in the form for submit (disabled inputs are omitted).
-            if (stepId !== "photos") return;
+            if (!shouldApplyCreateIntakePhotoChange(stepId, visibleIntakePhotos, next)) {
+              return;
+            }
             draftHydration.markPicksBegun();
             setIntakePhotos(next);
             setClientError(null);
@@ -1167,7 +1169,11 @@ export function CreateWorkOrderForm({
           intakeDraftId={intakeDraftId}
           disabled={stepId !== "photos" || submitting || draftHydration.hydrating}
           onChange={(next) => {
-            if (stepId !== "photos") return;
+            if (
+              !shouldApplyCreateOptionalPhotoChange(stepId, visibleOptionalPhotos, next)
+            ) {
+              return;
+            }
             draftHydration.markPicksBegun();
             setOptionalIntakePhotos(next);
             setClientError(null);

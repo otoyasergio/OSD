@@ -8,6 +8,8 @@ import {
   canProceedFromVisitStep,
   canSubmitCreateWorkOrderWizard,
   isWizardStepComplete,
+  shouldApplyCreateIntakePhotoChange,
+  shouldApplyCreateOptionalPhotoChange,
 } from "@/lib/forms/createWorkOrderWizard";
 import { allRequiredIntakeSelected } from "@/components/forms/IntakePhotoSlots";
 import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
@@ -145,5 +147,19 @@ describe("create work order wizard steps", () => {
     expect(
       canSubmitCreateWorkOrderWizard({ ...ready, servicePricingComplete: false })
     ).toBe(false);
+  });
+
+  it("applies review-step and global photo clears even off the photos step", () => {
+    const front = new File(["front"], "front.jpg", { type: "image/jpeg" });
+    expect(shouldApplyCreateIntakePhotoChange("photos", {}, { front })).toBe(true);
+    expect(shouldApplyCreateIntakePhotoChange("review", { front }, { front })).toBe(
+      false
+    );
+    expect(shouldApplyCreateIntakePhotoChange("review", { front }, { front: null })).toBe(
+      true
+    );
+    expect(shouldApplyCreateOptionalPhotoChange("photos", [], [front])).toBe(true);
+    expect(shouldApplyCreateOptionalPhotoChange("review", [front], [front])).toBe(false);
+    expect(shouldApplyCreateOptionalPhotoChange("review", [front], [])).toBe(true);
   });
 });

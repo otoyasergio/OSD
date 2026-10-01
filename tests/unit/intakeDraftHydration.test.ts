@@ -24,7 +24,19 @@ describe("intake draft hydration source", () => {
     );
     expect(source).toMatch(/useIntakeDraftHydration/);
     expect(source).toMatch(/INTAKE_DRAFT_HYDRATING_COPY|hydrating/);
+    expect(source).toMatch(/shouldApplyCreateIntakePhotoChange/);
+    expect(source).toMatch(/shouldApplyCreateOptionalPhotoChange/);
     expect(source).not.toMatch(/hydratedDraftRef/);
+    expect(source).not.toMatch(/if \(stepId !== "photos"\) return;/);
+  });
+
+  it("hydrates from findNewestIncompleteIntakeDraft without depending on the queue identity", () => {
+    const source = readFileSync(
+      join(process.cwd(), "components/forms/useIntakeDraftHydration.ts"),
+      "utf8"
+    );
+    expect(source).toMatch(/\[queue\.findNewestIncompleteIntakeDraft\]/);
+    expect(source).not.toMatch(/}, \[queue\]\);/);
   });
 });
 
@@ -157,5 +169,90 @@ describe("delayed intake draft hydration", () => {
     const front = listed.find((item) => item.category === "front")!;
     expect(front.intakeDraftId).toBe("adopted-draft");
     expect(listed.some((item) => item.intakeDraftId === "adopted-draft")).toBe(true);
+  });
+
+  it("does not re-enter hydrating after queue item notifications", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, {
+      queueId: "restored-rear",
+      clientUploadId: "client-restored",
+      userId: SCOPE.userId,
+      locationId: SCOPE.locationId,
+      intakeDraftId: "adopted-draft",
+      category: "rear",
+      blob: new Blob(["rear-bytes"], { type: "image/jpeg" }),
+      fileName: "rear.jpg",
+      mimeType: "image/jpeg",
+      lastModified: 9,
+      byteCount: 10,
+      status: "queued",
+      attemptCount: 0,
+      retryAt: null,
+      lastError: null,
+      createdAt: 1,
+      updatedAt: 1,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      uploadSlotOwner: null,
+      uploadSlotExpiresAt: null,
+    });
+
+    function Harness() {
+      const hydration = useIntakeDraftHydration();
+      const [value, setValue] = useState<Record<string, File | null>>({});
+      return createElement(
+        "div",
+        null,
+        hydration.hydrating
+          ? createElement("p", { role: "status" }, INTAKE_DRAFT_HYDRATING_COPY)
+          : null,
+        createElement(IntakePhotoSlots, {
+          value,
+          htmlRequired: false,
+          intakeDraftId: hydration.intakeDraftId,
+          disabled: hydration.hydrating,
+          onChange: (next) => {
+            hydration.markPicksBegun();
+            setValue(next);
+          },
+        })
+      );
+    }
+
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: SCOPE.userId,
+            locationId: SCOPE.locationId,
+            store,
+            isOnline: () => false,
+          },
+          createElement(Harness)
+        )
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).not.toMatch(/Restoring saved photos/i);
+    });
+
+    const input = container.querySelector(
+      'input[aria-label="Front photo library"]'
+    ) as HTMLInputElement;
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [new File(["front-bytes"], "front.jpg", { type: "image/jpeg" })],
+    });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    await vi.waitFor(async () => {
+      const listed = await store.list(SCOPE);
+      expect(listed.some((item) => item.category === "front")).toBe(true);
+    });
+    expect(container.textContent).not.toMatch(/Restoring saved photos/i);
   });
 });

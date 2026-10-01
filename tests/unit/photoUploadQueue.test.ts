@@ -208,7 +208,8 @@ describe("photo upload queue persistence", () => {
     await expect(enqueue).resolves.toMatchObject({ status: "queued" });
     expect(openDatabase).toHaveBeenCalledWith(
       PHOTO_UPLOAD_QUEUE_DB_NAME,
-      PHOTO_UPLOAD_QUEUE_DB_VERSION
+      PHOTO_UPLOAD_QUEUE_DB_VERSION,
+      expect.objectContaining({ onBlocking: expect.any(Function) })
     );
 
     const reopenedStore = new IndexedDbPhotoUploadQueueStore({ openDatabase });

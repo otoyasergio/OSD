@@ -1,10 +1,14 @@
 /** @vitest-environment jsdom */
-import { createElement } from "react";
+import { createElement, useEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
-import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
+import {
+  PhotoUploadQueueProvider,
+  usePhotoUploadQueue,
+  type PhotoUploadQueueApi,
+} from "@/components/photos/PhotoUploadQueueProvider";
 import {
   intakeContractHref,
   requiredQueueIdsForRemainingCategories,
@@ -27,6 +31,18 @@ function photoFile(name: string, bytes = "jpeg-bytes"): File {
   return new File([bytes], name, { type: "image/jpeg", lastModified: 1_700 });
 }
 
+function QueueProbe({
+  onReady,
+}: {
+  onReady: (api: PhotoUploadQueueApi) => void;
+}): ReactNode {
+  const api = usePhotoUploadQueue();
+  useEffect(() => {
+    onReady(api);
+  }, [api, onReady]);
+  return null;
+}
+
 describe("requiredQueueIdsForRemainingCategories", () => {
   it("prefers enqueue ids, then scoped items, then durable receipts", () => {
     const built = requiredQueueIdsForRemainingCategories({
@@ -34,6 +50,11 @@ describe("requiredQueueIdsForRemainingCategories", () => {
       workOrderId: "wo-1",
       preferredByCategory: { vin: "enqueued-vin" },
       items: [
+        {
+          queueId: "enqueued-vin",
+          category: "vin",
+          workOrderId: "wo-1",
+        },
         {
           queueId: "item-odo",
           category: "odometer",
@@ -74,6 +95,32 @@ describe("requiredQueueIdsForRemainingCategories", () => {
     expect(built).toEqual({
       queueIds: ["item-vin"],
       missingCategories: ["odometer"],
+    });
+  });
+
+  it("ignores preferred ids that are no longer in scoped items or receipts", () => {
+    const built = requiredQueueIdsForRemainingCategories({
+      remaining: ["vin", "odometer"],
+      workOrderId: "wo-1",
+      preferredByCategory: { vin: "removed-vin", odometer: "receipt-odo" },
+      items: [
+        {
+          queueId: "replacement-vin",
+          category: "vin",
+          workOrderId: "wo-1",
+        },
+      ],
+      receipts: [
+        {
+          queueId: "receipt-odo",
+          category: "odometer",
+          workOrderId: "wo-1",
+        },
+      ],
+    });
+    expect(built).toEqual({
+      queueIds: ["replacement-vin", "receipt-odo"],
+      missingCategories: [],
     });
   });
 });
@@ -167,7 +214,7 @@ describe("IntakePhotoRecoveryForm confirmation-before-submit", () => {
     expect(push).not.toHaveBeenCalled();
 
     const submit = Array.from(container.querySelectorAll("button")).find((button) =>
-      /upload remaining photos/i.test(button.textContent ?? "")
+      /continue|upload remaining photos/i.test(button.textContent ?? "")
     ) as HTMLButtonElement;
     await act(async () => {
       submit.click();
@@ -233,7 +280,7 @@ describe("IntakePhotoRecoveryForm confirmation-before-submit", () => {
     });
 
     const submit = Array.from(container.querySelectorAll("button")).find((button) =>
-      /upload remaining photos/i.test(button.textContent ?? "")
+      /continue|upload remaining photos/i.test(button.textContent ?? "")
     ) as HTMLButtonElement;
     await act(async () => {
       submit.click();
@@ -241,6 +288,215 @@ describe("IntakePhotoRecoveryForm confirmation-before-submit", () => {
 
     await vi.waitFor(() => {
       expect(push).toHaveBeenCalledWith(intakeContractHref("wo-1"));
+    });
+  });
+
+  it("retries a failed queued item to Saved and submits without retaking", async () => {
+    const database = createMemoryPhotoUploadQueueDatabase();
+    const store = new MemoryPhotoUploadQueueStore(database);
+    await store.put(SCOPE, {
+      queueId: "failed-vin",
+      clientUploadId: "client-vin",
+      userId: SCOPE.userId,
+      locationId: SCOPE.locationId,
+      workOrderId: "wo-1",
+      category: "vin",
+      blob: new Blob(["vin-bytes"], { type: "image/jpeg" }),
+      fileName: "vin.jpg",
+      mimeType: "image/jpeg",
+      lastModified: 1,
+      byteCount: 9,
+      status: "failed",
+      attemptCount: 1,
+      retryAt: null,
+      lastError: "network",
+      createdAt: 1,
+      updatedAt: 1,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      uploadSlotOwner: null,
+      uploadSlotExpiresAt: null,
+    });
+    database.confirmations.set("receipt-odo", {
+      queueId: "receipt-odo",
+      clientUploadId: "client-odo",
+      photoId: `${PHOTO_ID}-odo`,
+      userId: SCOPE.userId,
+      locationId: SCOPE.locationId,
+      confirmedAt: Date.now(),
+      category: "odometer",
+      workOrderId: "wo-1",
+    });
+
+    const uploadIntakePhoto = vi.fn(
+      async (_id: string, _prev: unknown, form: FormData) => ({
+        error: null,
+        photoId: `${PHOTO_ID}-vin`,
+        clientUploadId: String(form.get("client_upload_id")),
+      })
+    );
+
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: SCOPE.userId,
+            locationId: SCOPE.locationId,
+            store,
+            uploadIntakePhoto,
+          },
+          createElement(IntakePhotoRecoveryForm, {
+            workOrderId: "wo-1",
+            workOrderNumber: "WO-1",
+            missingCategories: ["vin", "odometer"],
+          })
+        )
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toMatch(/2\/2/);
+      expect(container.textContent).toMatch(/Ready to (upload|continue)|Continue/i);
+    });
+    expect(container.querySelector('input[aria-label="VIN photo library"]')).toBeTruthy();
+    const hiddenVin = container.querySelector(
+      'input[name="intake_vin_present"]'
+    ) as HTMLInputElement | null;
+    const hiddenOdo = container.querySelector(
+      'input[name="intake_odometer_present"]'
+    ) as HTMLInputElement | null;
+    expect(hiddenVin?.required ?? false).toBe(false);
+    expect(hiddenOdo?.required ?? false).toBe(false);
+
+    const retry = container.querySelector(
+      'button[aria-label="Retry VIN photo"]'
+    ) as HTMLButtonElement;
+    expect(retry).toBeTruthy();
+    await act(async () => {
+      retry.click();
+    });
+
+    await vi.waitFor(async () => {
+      const receipts = await store.listConfirmations(SCOPE);
+      expect(receipts.some((receipt) => receipt.queueId === "failed-vin")).toBe(true);
+    });
+    expect(uploadIntakePhoto).toHaveBeenCalledTimes(1);
+
+    const submit = Array.from(container.querySelectorAll("button")).find((button) =>
+      /continue|upload remaining photos/i.test(button.textContent ?? "")
+    ) as HTMLButtonElement;
+    await act(async () => {
+      submit.click();
+    });
+
+    await vi.waitFor(() => {
+      expect(push).toHaveBeenCalledWith(intakeContractHref("wo-1"));
+    });
+    expect(uploadIntakePhoto).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('input[aria-label="VIN photo library"]')).toBeTruthy();
+  });
+
+  it("lists remaining categories when wait fails on missing queue ids", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, {
+      queueId: "queued-vin",
+      clientUploadId: "client-vin",
+      userId: SCOPE.userId,
+      locationId: SCOPE.locationId,
+      workOrderId: "wo-1",
+      category: "vin",
+      blob: new Blob(["vin-bytes"], { type: "image/jpeg" }),
+      fileName: "vin.jpg",
+      mimeType: "image/jpeg",
+      lastModified: 1,
+      byteCount: 9,
+      status: "queued",
+      attemptCount: 0,
+      retryAt: null,
+      lastError: null,
+      createdAt: 1,
+      updatedAt: 1,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      uploadSlotOwner: null,
+      uploadSlotExpiresAt: null,
+    });
+    await store.put(SCOPE, {
+      queueId: "queued-odo",
+      clientUploadId: "client-odo",
+      userId: SCOPE.userId,
+      locationId: SCOPE.locationId,
+      workOrderId: "wo-1",
+      category: "odometer",
+      blob: new Blob(["odo-bytes"], { type: "image/jpeg" }),
+      fileName: "odo.jpg",
+      mimeType: "image/jpeg",
+      lastModified: 1,
+      byteCount: 9,
+      status: "queued",
+      attemptCount: 0,
+      retryAt: null,
+      lastError: null,
+      createdAt: 2,
+      updatedAt: 2,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      uploadSlotOwner: null,
+      uploadSlotExpiresAt: null,
+    });
+
+    let api!: PhotoUploadQueueApi;
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: SCOPE.userId,
+            locationId: SCOPE.locationId,
+            store,
+            isOnline: () => false,
+            uploadIntakePhoto: async () => ({ error: "offline" }),
+          },
+          createElement(
+            "div",
+            null,
+            createElement(QueueProbe, {
+              onReady: (next) => {
+                api = next;
+              },
+            }),
+            createElement(IntakePhotoRecoveryForm, {
+              workOrderId: "wo-1",
+              missingCategories: ["vin", "odometer"],
+            })
+          )
+        )
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toMatch(/2\/2/);
+    });
+
+    const submit = Array.from(container.querySelectorAll("button")).find((button) =>
+      /continue|upload remaining photos/i.test(button.textContent ?? "")
+    ) as HTMLButtonElement;
+    await act(async () => {
+      submit.click();
+    });
+    expect(push).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await store.remove("queued-vin", SCOPE);
+      await store.remove("queued-odo", SCOPE);
+      await api.remove("queued-vin");
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toMatch(/Missing:.*VIN/i);
+      expect(container.textContent).toMatch(/Odometer/i);
+      expect(container.textContent).not.toMatch(/Missing: \./);
     });
   });
 });

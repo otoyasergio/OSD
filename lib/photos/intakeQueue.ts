@@ -27,11 +27,18 @@ export function requiredQueueIdsForRemainingCategories({
   receipts: Array<{ queueId: string; category?: string; workOrderId?: string }>;
   preferredByCategory?: Partial<Record<string, string>>;
 }): { queueIds: string[]; missingCategories: string[] } {
+  const liveIds = new Set<string>();
+  for (const item of items) {
+    if (item.workOrderId === workOrderId) liveIds.add(item.queueId);
+  }
+  for (const receipt of receipts) {
+    if (receipt.workOrderId === workOrderId) liveIds.add(receipt.queueId);
+  }
   const queueIds: string[] = [];
   const missingCategories: string[] = [];
   for (const category of remaining) {
     const preferred = preferredByCategory[category];
-    if (preferred) {
+    if (preferred && liveIds.has(preferred)) {
       queueIds.push(preferred);
       continue;
     }
@@ -54,6 +61,27 @@ export function requiredQueueIdsForRemainingCategories({
     missingCategories.push(category);
   }
   return { queueIds, missingCategories };
+}
+
+export function labelsForRecoveryWaitFailure({
+  remaining,
+  requiredQueueIds,
+  waited,
+  stillMissing = [],
+}: {
+  remaining: readonly string[];
+  requiredQueueIds: readonly string[];
+  waited: { failed: Array<{ category: string }>; missingQueueIds: string[] };
+  stillMissing?: readonly string[];
+}): string[] {
+  const fromFailed = waited.failed.map((item) => item.category);
+  const fromMissingIds = waited.missingQueueIds.flatMap((queueId) => {
+    const index = requiredQueueIds.indexOf(queueId);
+    return index >= 0 ? [remaining[index]] : [];
+  });
+  return [
+    ...new Set([...stillMissing, ...fromFailed, ...fromMissingIds].filter(Boolean)),
+  ];
 }
 
 export function requiredQueueIdsForIntake(

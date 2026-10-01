@@ -85,6 +85,38 @@ describe("IndexedDB photo queue opener", () => {
     expect(db.close).toHaveBeenCalled();
   });
 
+  it("closes and clears the exact cached connection on versionchange blocking then reopens", async () => {
+    const first = fakeDatabase();
+    const second = fakeDatabase();
+    let attempt = 0;
+    let firstBlocking: (() => void) | undefined;
+    const open = vi.fn(async (_name, _version, options: { blocking?: () => void }) => {
+      attempt += 1;
+      if (attempt === 1) {
+        firstBlocking = options.blocking;
+        return first;
+      }
+      return second;
+    });
+    const store = new IndexedDbPhotoUploadQueueStore({
+      openDatabase: createIndexedDatabaseOpener(open as never),
+    });
+    await expect(store.list(SCOPE)).resolves.toEqual([]);
+    expect(attempt).toBe(1);
+
+    firstBlocking?.();
+    expect(first.close).toHaveBeenCalled();
+
+    await expect(store.list(SCOPE)).resolves.toEqual([]);
+    expect(attempt).toBe(2);
+    expect(second.close).not.toHaveBeenCalled();
+
+    firstBlocking?.();
+    expect(second.close).not.toHaveBeenCalled();
+    await expect(store.list(SCOPE)).resolves.toEqual([]);
+    expect(attempt).toBe(2);
+  });
+
   it("reopens after a blocked upgrade once the other tab closes", async () => {
     let attempt = 0;
     const open = vi.fn(async (_name, _version, options: { blocked?: () => void }) => {

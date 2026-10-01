@@ -74,7 +74,8 @@ export type PhotoUploadQueueDatabase = {
 
 export type PhotoUploadQueueDatabaseOpener = (
   name: string,
-  version: number
+  version: number,
+  hooks?: { onBlocking?: () => void }
 ) => Promise<PhotoUploadQueueDatabase>;
 
 function wrapDatabase(
@@ -141,7 +142,7 @@ export type PhotoUploadQueueIdbOpen = (
 export function createIndexedDatabaseOpener(
   open: PhotoUploadQueueIdbOpen = openDB as PhotoUploadQueueIdbOpen
 ): PhotoUploadQueueDatabaseOpener {
-  return async (name, version) => {
+  return async (name, version, hooks) => {
     let opened: IDBPDatabase<PhotoUploadQueueSchema> | null = null;
     let settled = false;
     const blockedError = new PhotoQueuePersistenceError(
@@ -165,6 +166,7 @@ export function createIndexedDatabaseOpener(
         },
         blocking() {
           opened?.close();
+          hooks?.onBlocking?.();
         },
       });
       pending.then(
@@ -277,7 +279,15 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
   }
 
   private beginOpen(): Promise<PhotoUploadQueueDatabase> {
-    const pending = this.openDatabaseFn(this.databaseName, PHOTO_UPLOAD_QUEUE_DB_VERSION);
+    const pending = this.openDatabaseFn(
+      this.databaseName,
+      PHOTO_UPLOAD_QUEUE_DB_VERSION,
+      {
+        onBlocking: () => {
+          if (this.databasePromise === pending) this.databasePromise = null;
+        },
+      }
+    );
     void pending.catch(() => {
       if (this.databasePromise === pending) this.databasePromise = null;
     });
