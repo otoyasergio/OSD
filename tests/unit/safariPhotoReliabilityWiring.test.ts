@@ -55,6 +55,7 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).toMatch(/thumb_storage_path/);
     expect(spec).toMatch(/intake-photos/);
     expect(spec).toMatch(/setOffline\(false\)/);
+    expect(spec).toMatch(/timeout:\s*180_000/);
     expect(spec).toMatch(/findIntakePhotosByNote|notes/);
     expect(spec).toMatch(
       /removeIntakePhotoArtifacts|storage\.from\("intake-photos"\)\.remove/
