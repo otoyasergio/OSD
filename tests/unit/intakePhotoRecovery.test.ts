@@ -356,9 +356,14 @@ describe("IntakePhotoRecoveryForm confirmation-before-submit", () => {
     });
 
     await vi.waitFor(() => {
-      expect(container.textContent).toMatch(/2\/2/);
-      expect(container.textContent).toMatch(/Ready to (upload|continue)|Continue/i);
+      expect(container.textContent).toMatch(/1\/2/);
+      expect(container.textContent).toMatch(/Retry/i);
     });
+    expect(container.textContent).not.toMatch(/Ready to continue/i);
+    const continueBeforeRetry = Array.from(container.querySelectorAll("button")).find(
+      (button) => /^continue$/i.test(button.textContent ?? "")
+    );
+    expect(continueBeforeRetry).toBeUndefined();
     expect(container.querySelector('input[aria-label="VIN photo library"]')).toBeTruthy();
     const hiddenVin = container.querySelector(
       'input[name="intake_vin_present"]'
@@ -382,6 +387,10 @@ describe("IntakePhotoRecoveryForm confirmation-before-submit", () => {
       expect(receipts.some((receipt) => receipt.queueId === "failed-vin")).toBe(true);
     });
     expect(uploadIntakePhoto).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(container.textContent).toMatch(/2\/2/);
+      expect(container.textContent).toMatch(/Ready to continue/i);
+    });
 
     const submit = Array.from(container.querySelectorAll("button")).find((button) =>
       /continue|upload remaining photos/i.test(button.textContent ?? "")

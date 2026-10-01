@@ -289,11 +289,20 @@ export function DiagnosticsPhotoPicker({
       if (!pendingByQueueId.current.has(item.queueId) || item.status !== "failed") {
         continue;
       }
-      pendingByQueueId.current.delete(item.queueId);
       if (mountedRef.current) {
         setError(item.lastError ?? "Could not upload that photo. Try again.");
-        if (pendingByQueueId.current.size === 0) setBusyRef.current(false);
+        setBusyRef.current(false);
       }
+    }
+    for (const receipt of queue.confirmations) {
+      if (!pendingByQueueId.current.has(receipt.queueId)) continue;
+      if (handledConfirmations.current.has(receipt.queueId)) continue;
+      if (receipt.workOrderId && receipt.workOrderId !== thread.workOrderId) continue;
+      if (receipt.jobId && receipt.jobId !== (thread.jobId ?? undefined)) continue;
+      if (receipt.assistantThreadId && receipt.assistantThreadId !== thread.threadId) {
+        continue;
+      }
+      applyConfirmationRef.current(receipt.queueId, receipt.photoId);
     }
     for (const queueId of [...pendingByQueueId.current.keys()]) {
       const stillQueued = queue.items.some((item) => item.queueId === queueId);
@@ -307,7 +316,7 @@ export function DiagnosticsPhotoPicker({
         if (pendingByQueueId.current.size === 0) setBusyRef.current(false);
       }
     }
-  }, [queue]);
+  }, [queue, thread.jobId, thread.threadId, thread.workOrderId]);
 
   async function uploadFromInput(input: HTMLInputElement) {
     if (!uploadEnabled) {
@@ -345,11 +354,10 @@ export function DiagnosticsPhotoPicker({
         if (!queue.isOnline()) continue;
         const waited = await queue.waitForConfirmations([queuedItem.queueId]);
         if (!waited.ok) {
-          pendingByQueueId.current.delete(queuedItem.queueId);
           const failed = waited.failed[0];
           if (mountedRef.current) {
             setError(failed?.lastError ?? "Could not upload that photo. Try again.");
-            if (pendingByQueueId.current.size === 0) setBusy(false);
+            setBusy(false);
           }
           break;
         }

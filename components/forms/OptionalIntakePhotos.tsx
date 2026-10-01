@@ -6,6 +6,7 @@ import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvide
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { persistQueueErrorMessage } from "@/lib/photos/intakeQueue";
 import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
+import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
@@ -79,6 +80,7 @@ export function OptionalIntakePhotos({
           index,
           url: queuedUrl,
           ownedUrl: queuedUrl ? null : URL.createObjectURL(file),
+          status: match ? photoQueueStatusLabel(match, queue.isOnline()) : null,
         };
       }),
     [intakeDraftId, queue, value, workOrderId]
@@ -183,7 +185,7 @@ export function OptionalIntakePhotos({
       ) : null}
 
       <div className="optional-intake-photos-grid">
-        {previews.map(({ file, index, url, ownedUrl }) => (
+        {previews.map(({ file, index, url, ownedUrl, status }) => (
           <div
             key={`${fileIdentity(file)}:${index}`}
             className="optional-intake-photo-card"
@@ -193,6 +195,11 @@ export function OptionalIntakePhotos({
               <img src={url ?? ownedUrl ?? ""} alt={`Extra intake photo ${index + 1}`} />
             ) : null}
             <span className="optional-intake-photo-label">Extra {index + 1}</span>
+            {status ? (
+              <p className="optional-intake-photo-status" role="status">
+                {status}
+              </p>
+            ) : null}
             <button
               type="button"
               className="optional-intake-photo-remove"

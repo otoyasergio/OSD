@@ -9,6 +9,7 @@ import { OptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
 import {
   attachAndWaitForRequiredIntakePhotos,
   filesFromQueuedIntakeItems,
+  waitForRequiredIntakePhotos,
 } from "@/lib/photos/intakeQueue";
 import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import {
@@ -93,6 +94,25 @@ describe("intake photo queue helpers", () => {
     });
     expect(queue.waitForConfirmations).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: false, failedCategories: ["odometer"] });
+  });
+
+  it("includes missingQueueIds when required confirmations never appear", async () => {
+    const queue = {
+      waitForConfirmations: vi.fn(async () => ({
+        ok: false as const,
+        failed: [],
+        missingQueueIds: ["gone-vin"],
+      })),
+    };
+    const result = await waitForRequiredIntakePhotos({
+      queue: queue as never,
+      requiredQueueIds: ["gone-vin"],
+    });
+    expect(result).toEqual({
+      ok: false,
+      failedCategories: [],
+      missingQueueIds: ["gone-vin"],
+    });
   });
 });
 
@@ -339,6 +359,7 @@ describe("OptionalIntakePhotos queue commit", () => {
     expect(
       (await store.list({ userId: "user-a", locationId: "location-a" }))[0]
     ).toMatchObject({ category: "other", intakeDraftId: "draft-1" });
+    expect(container.textContent).toMatch(/Waiting for connection/);
   });
 });
 

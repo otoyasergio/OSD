@@ -29,6 +29,21 @@ describe("account photo queue scope", () => {
     expect(source).toMatch(/user\.active_location_id/);
     expect(source).toMatch(/SignOutButton/);
   });
+
+  it("keys the queue provider by user and location", () => {
+    const account = readFileSync(
+      join(process.cwd(), "components/account/AccountPhotoQueueScope.tsx"),
+      "utf8"
+    );
+    const appShell = readFileSync(
+      join(process.cwd(), "components/layout/AppShell.tsx"),
+      "utf8"
+    );
+    expect(account).toMatch(/key=\{`\$\{userId\}:\$\{locationId\}`\}/);
+    expect(appShell).toMatch(
+      /key=\{`\$\{user\.(user_id|active_location_id)\}:\$\{user\.(active_location_id|user_id)\}`\}/
+    );
+  });
 });
 
 describe("AccountPhotoQueueScope", () => {

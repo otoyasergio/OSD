@@ -120,7 +120,11 @@ function isCompactFloorPath(pathname: string) {
 function withPhotoQueue(user: AppUser, node: React.ReactNode) {
   if (!user.active_location_id) return node;
   return (
-    <PhotoUploadQueueProvider userId={user.user_id} locationId={user.active_location_id}>
+    <PhotoUploadQueueProvider
+      key={`${user.user_id}:${user.active_location_id}`}
+      userId={user.user_id}
+      locationId={user.active_location_id}
+    >
       {node}
     </PhotoUploadQueueProvider>
   );

@@ -66,8 +66,20 @@ export function IntakePhotoRecoveryForm({
       }),
     [queue.confirmations, queue.items, remaining, workOrderId]
   );
-  const selectedCount = remaining.length - readiness.missingCategories.length;
+  const failedRequired = remaining.filter((category) =>
+    queue.items.some(
+      (item) =>
+        item.workOrderId === workOrderId &&
+        item.category === category &&
+        item.status === "failed"
+    )
+  );
+  const selectedCount = remaining.filter((category) => {
+    if (failedRequired.includes(category)) return false;
+    return !readiness.missingCategories.includes(category);
+  }).length;
   const allSelected =
+    failedRequired.length === 0 &&
     readiness.missingCategories.length === 0 &&
     readiness.queueIds.length === remaining.length;
 
@@ -172,7 +184,11 @@ export function IntakePhotoRecoveryForm({
             <span className="intake-photo-progress-meter">
               {selectedCount}/{remaining.length}
             </span>
-            {allSelected ? "Ready to continue" : "remaining"}
+            {allSelected
+              ? "Ready to continue"
+              : failedRequired.length > 0
+                ? "Retry"
+                : "remaining"}
           </div>
         </div>
         <IntakePhotoSlots

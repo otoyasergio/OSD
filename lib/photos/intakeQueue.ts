@@ -191,14 +191,17 @@ export async function waitForRequiredIntakePhotos({
 }: {
   queue: Pick<PhotoUploadQueueApi, "waitForConfirmations">;
   requiredQueueIds: string[];
-}): Promise<{ ok: true } | { ok: false; failedCategories: string[] }> {
+}): Promise<
+  { ok: true } | { ok: false; failedCategories: string[]; missingQueueIds: string[] }
+> {
   if (requiredQueueIds.length === 0) {
-    return { ok: false, failedCategories: [] };
+    return { ok: false, failedCategories: [], missingQueueIds: [] };
   }
   const waited = await queue.waitForConfirmations(requiredQueueIds);
   if (waited.ok) return { ok: true };
   return {
     ok: false,
     failedCategories: waited.failed.map((item) => item.category),
+    missingQueueIds: waited.missingQueueIds,
   };
 }

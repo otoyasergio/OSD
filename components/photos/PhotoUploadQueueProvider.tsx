@@ -118,6 +118,7 @@ export function PhotoUploadQueueProvider({
     () => ({ userId, locationId }),
     [userId, locationId]
   );
+  const scopeKey = `${userId}:${locationId}`;
   const lastNowRef = useRef(0);
   const nowFnRef = useRef(now);
   const isOnlineFnRef = useRef(isOnline);
@@ -126,6 +127,7 @@ export function PhotoUploadQueueProvider({
     []
   );
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [activeScopeKey, setActiveScopeKey] = useState(scopeKey);
   const confirmationListenersRef = useRef(
     new Set<(confirmation: PhotoUploadConfirmation) => void>()
   );
@@ -136,6 +138,15 @@ export function PhotoUploadQueueProvider({
   const closedRef = useRef(false);
   const scopeEpochRef = useRef(0);
   const pruneScheduledRef = useRef(false);
+  if (activeScopeKey !== scopeKey) {
+    setActiveScopeKey(scopeKey);
+    setItems([]);
+    setConfirmations([]);
+    setPreviewUrls((current) => {
+      for (const url of Object.values(current)) URL.revokeObjectURL(url);
+      return {};
+    });
+  }
   const storeEvents = useMemo(() => new EventTarget(), []);
 
   const readNow = useCallback(() => {
@@ -183,10 +194,18 @@ export function PhotoUploadQueueProvider({
     if (closedRef.current) return;
     const epoch = scopeEpochRef.current;
     const scoped = scope;
-    const [next, receipts] = await Promise.all([
-      store.list(scoped),
-      store.listConfirmations(scoped),
-    ]);
+    let next: QueuedPhotoUpload[];
+    let receipts: PhotoUploadConfirmationReceipt[];
+    try {
+      [next, receipts] = await Promise.all([
+        store.list(scoped),
+        store.listConfirmations(scoped),
+      ]);
+    } catch (error) {
+      if (closedRef.current || scopeEpochRef.current !== epoch) return;
+      console.error("Photo upload queue refresh failed", error);
+      return;
+    }
     if (closedRef.current || scopeEpochRef.current !== epoch) return;
     setItems(next);
     setConfirmations(receipts);
@@ -228,6 +247,7 @@ export function PhotoUploadQueueProvider({
     closedRef.current = false;
     pruneScheduledRef.current = false;
     seenReceiptIdsRef.current = new Set();
+    previewUrlsRef.current = {};
     const ownerId =
       typeof crypto !== "undefined" && "randomUUID" in crypto
         ? crypto.randomUUID()

@@ -20,6 +20,7 @@ export function AccountPhotoQueueScope({
   if (!locationId) return children;
   return (
     <PhotoUploadQueueProvider
+      key={`${userId}:${locationId}`}
       userId={userId}
       locationId={locationId}
       store={store}

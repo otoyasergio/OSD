@@ -90,6 +90,73 @@ describe("evidence photo queue surfaces", () => {
     });
   });
 
+  it("refreshes once when an inspection receipt photo is missing from current urls", async () => {
+    const database = createMemoryPhotoUploadQueueDatabase();
+    const store = new MemoryPhotoUploadQueueStore(database);
+    database.confirmations.set("insp-receipt", {
+      queueId: "insp-receipt",
+      clientUploadId: "client-insp",
+      photoId: "photo-insp-1",
+      userId: "user-a",
+      locationId: "location-a",
+      confirmedAt: Date.now(),
+      category: "inspection_tires",
+      workOrderId: "wo-1",
+      inspectionResultId: "ir-1",
+    });
+
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "user-a",
+            locationId: "location-a",
+            store,
+            isOnline: () => false,
+          },
+          createElement(InspectionPhotoSlot, {
+            workOrderId: "wo-1",
+            category: "inspection_tires",
+            inspectionResultId: "ir-1",
+            label: "Tires",
+            existingUrls: [],
+          })
+        )
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: "user-a",
+            locationId: "location-a",
+            store,
+            isOnline: () => false,
+          },
+          createElement(InspectionPhotoSlot, {
+            workOrderId: "wo-1",
+            category: "inspection_tires",
+            inspectionResultId: "ir-1",
+            label: "Tires",
+            existingUrls: ["https://signed.example/photo-insp-1.jpg"],
+          })
+        )
+      );
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it("Photos tab enqueues category and notes", async () => {
     const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
     await act(async () => {

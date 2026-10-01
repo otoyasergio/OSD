@@ -881,6 +881,142 @@ describe("PhotoUploadQueueProvider", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("clears items, receipts, and previews on the first render after a scope change", async () => {
+    const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
+    let releaseB!: () => void;
+    const holdB = new Promise<void>((resolve) => {
+      releaseB = resolve;
+    });
+    const originalList = store.list.bind(store);
+    store.list = async (scope) => {
+      if (scope.userId === USER_B.userId) await holdB;
+      return originalList(scope);
+    };
+
+    let api!: PhotoUploadQueueApi;
+    await renderProvider({
+      store,
+      isOnline: () => false,
+      onReady: (next) => {
+        api = next;
+      },
+    });
+    await act(async () => {
+      await api.enqueue({
+        file: photoFile(),
+        category: "front",
+        workOrderId: "work-order-1",
+      });
+    });
+    const oldQueueId = api.items[0]?.queueId;
+    expect(oldQueueId).toBeTruthy();
+    expect(api.previewUrl(oldQueueId!)).toMatch(/^blob:/);
+    const listener = vi.fn();
+    api.subscribeConfirmation(listener);
+
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: USER_B.userId,
+            locationId: USER_B.locationId,
+            store,
+            isOnline: () => false,
+            uploadIntakePhoto: async () => ({ error: null, photoId: PHOTO_ID }),
+          },
+          createElement(Probe, {
+            onReady: (next) => {
+              api = next;
+            },
+          })
+        )
+      );
+    });
+
+    expect(api.items).toEqual([]);
+    expect(api.confirmations).toEqual([]);
+    expect(api.previewUrl(oldQueueId!)).toBeNull();
+    expect(revokeObjectURL).toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+    releaseB();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.items).toEqual([]);
+    expect(api.confirmations).toEqual([]);
+  });
+
+  it("stays empty and emits nothing when the new-scope list rejects", async () => {
+    const database = createMemoryPhotoUploadQueueDatabase();
+    const store = new MemoryPhotoUploadQueueStore(database);
+    let api!: PhotoUploadQueueApi;
+    await renderProvider({
+      store,
+      isOnline: () => false,
+      onReady: (next) => {
+        api = next;
+      },
+    });
+    await act(async () => {
+      await api.enqueue({
+        file: photoFile(),
+        category: "front",
+        workOrderId: "work-order-1",
+      });
+    });
+    expect(api.items.length).toBeGreaterThan(0);
+    database.confirmations.set("old-receipt", {
+      queueId: "old-receipt",
+      clientUploadId: CLIENT_ID,
+      photoId: PHOTO_ID,
+      userId: USER_A.userId,
+      locationId: USER_A.locationId,
+      confirmedAt: Date.now(),
+      category: "rear",
+      workOrderId: "work-order-1",
+    });
+    const listener = vi.fn();
+    api.subscribeConfirmation(listener);
+
+    const originalList = store.list.bind(store);
+    store.list = async (scope) => {
+      if (scope.userId === USER_B.userId) {
+        throw new Error("new-scope list failed");
+      }
+      return originalList(scope);
+    };
+
+    await act(async () => {
+      root.render(
+        createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: USER_B.userId,
+            locationId: USER_B.locationId,
+            store,
+            isOnline: () => false,
+            uploadIntakePhoto: async () => ({ error: null, photoId: PHOTO_ID }),
+          },
+          createElement(Probe, {
+            onReady: (next) => {
+              api = next;
+            },
+          })
+        )
+      );
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(api.items).toEqual([]);
+    expect(api.confirmations).toEqual([]);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("does not render another user or location queue after the scope changes", async () => {
     const database = createMemoryPhotoUploadQueueDatabase();
     const store = new MemoryPhotoUploadQueueStore(database);

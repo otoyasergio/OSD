@@ -16,6 +16,7 @@ vi.mock("@/lib/forms/readPickedPhotoFiles", () => ({ readPickedPhotoFiles }));
 
 import { DiagnosticsPhotoPicker } from "@/components/diagnostics/DiagnosticsPhotoPicker";
 import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
+import { PhotoUploadQueueStatus } from "@/components/photos/PhotoUploadQueueStatus";
 import {
   createMemoryPhotoUploadQueueDatabase,
   MemoryPhotoUploadQueueStore,
@@ -60,6 +61,7 @@ type HarnessProps = {
   readOnly?: boolean;
   disabled?: boolean;
   initialSelections?: DiagnosticsPhotoSelection[];
+  showQueueStatus?: boolean;
 };
 
 let testStore = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
@@ -96,6 +98,7 @@ function Harness({
   readOnly = false,
   disabled = false,
   initialSelections = [],
+  showQueueStatus = false,
 }: HarnessProps) {
   const [selections, setSelections] = useState(initialSelections);
   return React.createElement(
@@ -110,6 +113,7 @@ function Harness({
     React.createElement(
       "div",
       null,
+      showQueueStatus ? React.createElement(PhotoUploadQueueStatus) : null,
       React.createElement(DiagnosticsPhotoPicker, {
         thread: { threadId: THREAD, workOrderId: WO, jobId },
         photos,
@@ -381,6 +385,63 @@ describe("DiagnosticsPhotoPicker", () => {
       );
     });
     expect(payload()).toEqual([]);
+  });
+
+  it("selects a terminal failure once after global retry of the same queueId", async () => {
+    const file = new File(["x"], "retry.jpg", { type: "image/jpeg" });
+    readPickedPhotoFiles.mockResolvedValue([file]);
+    uploadAssistantPhotoAction
+      .mockResolvedValueOnce({
+        status: "error",
+        error: "That photo is too large.",
+      })
+      .mockResolvedValueOnce({
+        status: "success",
+        error: null,
+        data: {
+          photoId: id(12),
+          workOrderId: WO,
+          jobId: JOB,
+          category: "job_work",
+          notes: null,
+          createdAt: "2026-09-29T15:00:00.000Z",
+        },
+      });
+    await render({ showQueueStatus: true });
+    await pick(cameraInput()!, [file]);
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "That photo is too large."
+      );
+    });
+    expect(payload()).toEqual([]);
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toMatch(/1 failed/i);
+    });
+    const toggle = Array.from(container.querySelectorAll("button")).find((button) =>
+      /1 failed/i.test(button.textContent ?? "")
+    );
+    expect(toggle).toBeTruthy();
+    await click(toggle!);
+    const retry = Array.from(container.querySelectorAll("button")).find((button) =>
+      /retry/i.test(button.getAttribute("aria-label") ?? button.textContent ?? "")
+    );
+    expect(retry).toBeTruthy();
+    await click(retry!);
+
+    await vi.waitFor(() => {
+      expect(payload()).toEqual([
+        { photoId: id(12), purpose: "Work photo for analysis" },
+      ]);
+    });
+    expect(uploadAssistantPhotoAction).toHaveBeenCalledTimes(2);
+    const listed = await testStore.list({
+      userId: "user-a",
+      locationId: "location-a",
+    });
+    expect(listed).toHaveLength(0);
+    expect(payload()).toHaveLength(1);
   });
 
   it("retries transient upload failures with the shared retry helper", async () => {

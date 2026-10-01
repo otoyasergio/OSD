@@ -66,6 +66,29 @@ export function InspectionPhotoSlot({
   }, [queue, router]);
 
   useEffect(() => {
+    for (const receipt of queue.confirmations) {
+      if (receipt.workOrderId !== workOrderId || receipt.category !== category) {
+        continue;
+      }
+      if (inspectionResultId && receipt.inspectionResultId !== inspectionResultId) {
+        continue;
+      }
+      if (!receipt.photoId || refreshedIds.current.has(receipt.queueId)) continue;
+      const present = existingUrls.some((url) => url.includes(receipt.photoId));
+      if (present) continue;
+      refreshedIds.current.add(receipt.queueId);
+      router.refresh();
+    }
+  }, [
+    category,
+    existingUrls,
+    inspectionResultId,
+    queue.confirmations,
+    router,
+    workOrderId,
+  ]);
+
+  useEffect(() => {
     if (!chooserOpen) return;
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setChooserOpen(false);

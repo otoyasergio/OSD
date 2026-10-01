@@ -59,6 +59,7 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
     expect(source).toMatch(/previewUrl/);
     expect(source).toMatch(/subscribeConfirmation/);
     expect(source).toMatch(/router\.refresh\(\)/);
+    expect(source).toMatch(/queue\.confirmations/);
     expect(source).toMatch(/Ask OTOMOTO/);
     expect(source).toMatch(/Retry/);
     expect(source).not.toMatch(/uploadIntakePhotoAction/);
