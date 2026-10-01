@@ -585,6 +585,13 @@ export async function getWorkOrderDetail(
     safety_required: (row.safety_required as boolean | null) ?? null,
     safety_waived: Boolean(row.safety_waived),
     ready_for_pickup_at: row.ready_for_pickup_at as string | null,
+    checkout_evidence_required: Boolean(row.checkout_evidence_required),
+    checkout_evidence_override_at:
+      (row.checkout_evidence_override_at as string | null) ?? null,
+    checkout_evidence_override_by_user_id:
+      (row.checkout_evidence_override_by_user_id as string | null) ?? null,
+    checkout_evidence_override_reason:
+      (row.checkout_evidence_override_reason as string | null) ?? null,
     completed_at: row.completed_at as string | null,
     released_by_user_id: row.released_by_user_id as string | null,
     pickup_notes: row.pickup_notes as string | null,

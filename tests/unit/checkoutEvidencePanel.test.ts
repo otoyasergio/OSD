@@ -10,6 +10,7 @@ import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueuePr
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
 import { CHECKOUT_PHOTO_CATEGORIES } from "@/lib/status/checkoutEvidence";
 import type { WorkOrderDetail } from "@/lib/services/workOrders";
+import type { IntakePhoto } from "@/lib/services/photos";
 import {
   createMemoryPhotoUploadQueueDatabase,
   MemoryPhotoUploadQueueStore,
@@ -80,8 +81,7 @@ function detail(overrides: Partial<WorkOrderDetail> = {}): WorkOrderDetail {
     jobs: [
       {
         job_id: "job-1",
-        work_order_id: "wo-1",
-        service_id: null,
+        service_id: "svc-1",
         service_name_snapshot: "Oil Change",
         status: "completed",
         origin: "customer_request",
@@ -97,7 +97,6 @@ function detail(overrides: Partial<WorkOrderDetail> = {}): WorkOrderDetail {
         started_at: null,
         completed_at: "2026-10-01T11:00:00.000Z",
         assigned_technician: null,
-        service_id: "svc-1",
       },
     ],
     flags: [],
@@ -255,7 +254,9 @@ describe("Overview completion checkout gate", () => {
 
   function renderOverview(
     overrides: Partial<WorkOrderDetail> = {},
-    photos: unknown[] = []
+    photos: Array<
+      Pick<IntakePhoto, "photo_id" | "category"> & { signed_url?: string }
+    > = []
   ) {
     const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
     return act(async () => {
@@ -281,7 +282,7 @@ describe("Overview completion checkout gate", () => {
             canOverrideCheckout: true,
             inspectionCompleted: true,
             readOnly: false,
-            photos,
+            photos: photos as IntakePhoto[],
             canUploadPhotos: true,
             assignAction: noopAction,
             setPrimaryAction: noopAction,
