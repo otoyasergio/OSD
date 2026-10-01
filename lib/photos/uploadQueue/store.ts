@@ -12,6 +12,10 @@ export type PhotoUploadClaim = {
   expiresAt: number;
 };
 
+export type AcquiredPhotoUploadClaim = PhotoUploadClaim & {
+  item: QueuedPhotoUpload;
+};
+
 export interface PhotoUploadQueueStore {
   put(scope: PhotoUploadScope, item: QueuedPhotoUpload): Promise<void>;
   get(queueId: string, scope: PhotoUploadScope): Promise<QueuedPhotoUpload | null>;
@@ -36,8 +40,9 @@ export interface PhotoUploadQueueStore {
     owner: string,
     now: number,
     ttlMs: number,
-    maxScopeSlots: number
-  ): Promise<PhotoUploadClaim | null>;
+    maxScopeSlots: number,
+    maxAttempts: number
+  ): Promise<AcquiredPhotoUploadClaim | null>;
   renewUploadClaim(
     queueId: string,
     scope: PhotoUploadScope,

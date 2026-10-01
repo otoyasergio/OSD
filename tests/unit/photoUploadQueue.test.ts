@@ -12,8 +12,14 @@ import {
   PHOTO_UPLOAD_QUEUE_DB_NAME,
   PHOTO_UPLOAD_QUEUE_DB_VERSION,
 } from "@/lib/photos/uploadQueue/indexedDbStore";
-import { PhotoUploadQueueRunner } from "@/lib/photos/uploadQueue/runner";
-import type { PhotoUploadClaim } from "@/lib/photos/uploadQueue/store";
+import {
+  PhotoUploadQueueRunner,
+  PhotoUploadQueueRunnerError,
+} from "@/lib/photos/uploadQueue/runner";
+import type {
+  AcquiredPhotoUploadClaim,
+  PhotoUploadClaim,
+} from "@/lib/photos/uploadQueue/store";
 import type { PhotoUploadScope, QueuedPhotoUpload } from "@/lib/photos/uploadQueue/types";
 import {
   createMemoryPhotoUploadQueueDatabase,
@@ -98,6 +104,23 @@ function deferred<T = void>(): {
     resolve = resolvePromise;
   });
   return { promise, resolve };
+}
+
+class ControllableRecoveryStore extends MemoryPhotoUploadQueueStore {
+  recoveryFailure: Error | null = null;
+
+  override async recoverInterrupted(
+    scope: PhotoUploadScope,
+    now: number
+  ): Promise<number> {
+    if (this.recoveryFailure) throw this.recoveryFailure;
+    return super.recoverInterrupted(scope, now);
+  }
+}
+
+async function flushUnhandledRejections(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 describe("photo upload queue persistence", () => {
@@ -458,7 +481,7 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
     const gate = database.pauseNextCommit();
     let firstClaimSettled = false;
     const firstClaim = store
-      .tryAcquireUploadClaim("claim-1", SCOPE, "runner-a", 2_000, 1_000, 2)
+      .tryAcquireUploadClaim("claim-1", SCOPE, "runner-a", 2_000, 1_000, 2, 5)
       .then((claimed) => {
         firstClaimSettled = true;
         return claimed;
@@ -469,11 +492,14 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
       database.committedItems().filter((item) => item.uploadSlotOwner !== null)
     ).toHaveLength(0);
     gate.release();
-    await expect(firstClaim).resolves.toEqual({ expiresAt: 3_000 });
+    await expect(firstClaim).resolves.toMatchObject({
+      expiresAt: 3_000,
+      item: { status: "uploading", attemptCount: 1 },
+    });
 
     const remainingClaims = await Promise.all([
-      store.tryAcquireUploadClaim("claim-2", SCOPE, "runner-b", 2_000, 1_000, 2),
-      store.tryAcquireUploadClaim("claim-3", SCOPE, "runner-c", 2_000, 1_000, 2),
+      store.tryAcquireUploadClaim("claim-2", SCOPE, "runner-b", 2_000, 1_000, 2, 5),
+      store.tryAcquireUploadClaim("claim-3", SCOPE, "runner-c", 2_000, 1_000, 2, 5),
     ]);
     expect(remainingClaims.filter((claim) => claim !== null)).toHaveLength(1);
     expect(
@@ -485,6 +511,66 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
     ).toHaveLength(2);
   });
 
+  it("atomically enforces retry timing and attempt limits when claiming", async () => {
+    const database = createTransactionalPhotoUploadQueueDatabase();
+    const store = new IndexedDbPhotoUploadQueueStore({
+      openDatabase: database.openDatabase,
+    });
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        queueId: "retrying",
+        clientUploadId: "retrying-client",
+        status: "retry_wait",
+        attemptCount: 1,
+        retryAt: 3_000,
+      })
+    );
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        queueId: "exhausted",
+        clientUploadId: "exhausted-client",
+        attemptCount: 2,
+      })
+    );
+
+    await expect(
+      store.tryAcquireUploadClaim("retrying", SCOPE, "runner-a", 2_999, 1_000, 2, 5)
+    ).resolves.toBeNull();
+    await expect(store.get("retrying", SCOPE)).resolves.toMatchObject({
+      status: "retry_wait",
+      attemptCount: 1,
+      retryAt: 3_000,
+    });
+
+    await expect(
+      store.tryAcquireUploadClaim("retrying", SCOPE, "runner-a", 3_000, 1_000, 2, 5)
+    ).resolves.toMatchObject({
+      expiresAt: 4_000,
+      item: {
+        status: "uploading",
+        attemptCount: 2,
+        retryAt: null,
+        leaseOwner: "runner-a",
+      },
+    });
+    await expect(store.get("retrying", SCOPE)).resolves.toMatchObject({
+      status: "uploading",
+      attemptCount: 2,
+      retryAt: null,
+    });
+
+    await expect(
+      store.tryAcquireUploadClaim("exhausted", SCOPE, "runner-b", 3_000, 1_000, 2, 2)
+    ).resolves.toBeNull();
+    await expect(store.get("exhausted", SCOPE)).resolves.toMatchObject({
+      status: "queued",
+      attemptCount: 2,
+      leaseOwner: null,
+    });
+  });
+
   it("fences claimed mutation and completion by persisted owner", async () => {
     const database = createTransactionalPhotoUploadQueueDatabase();
     const store = new IndexedDbPhotoUploadQueueStore({
@@ -492,8 +578,11 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
     });
     await store.put(SCOPE, queuedPhoto());
     await expect(
-      store.tryAcquireUploadClaim("queue-1", SCOPE, "runner-a", 2_000, 1_000, 2)
-    ).resolves.toEqual({ expiresAt: 3_000 });
+      store.tryAcquireUploadClaim("queue-1", SCOPE, "runner-a", 2_000, 1_000, 2, 5)
+    ).resolves.toMatchObject({
+      expiresAt: 3_000,
+      item: { status: "uploading", attemptCount: 1 },
+    });
 
     await expect(
       store.updateClaimed("queue-1", SCOPE, "runner-b", 2_100, {
@@ -504,7 +593,8 @@ describe("IndexedDbPhotoUploadQueueStore adapter", () => {
       store.completeClaimedUpload("queue-1", SCOPE, "runner-b", 2_100)
     ).resolves.toBe(false);
     await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
-      status: "queued",
+      status: "uploading",
+      attemptCount: 1,
       leaseOwner: "runner-a",
       uploadSlotOwner: "runner-a",
     });
@@ -803,6 +893,113 @@ describe("PhotoUploadQueueRunner", () => {
     }
   );
 
+  it.each(["online", "pageshow", "visibilitychange"] as const)(
+    "surfaces a rejecting %s event wake without an unhandled rejection",
+    async (source) => {
+      const store = new ControllableRecoveryStore(createMemoryPhotoUploadQueueDatabase());
+      const timer = new ManualClockTimer();
+      const events = new EventTarget();
+      const failure = new PhotoQueuePersistenceError(
+        "persistence_failed",
+        "IndexedDB became unavailable."
+      );
+      const onError = vi.fn();
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown): void => {
+        unhandled.push(reason);
+      };
+      process.on("unhandledRejection", onUnhandled);
+      const runner = new PhotoUploadQueueRunner({
+        scope: SCOPE,
+        store,
+        uploader: vi.fn(),
+        now: () => timer.now,
+        timer,
+        isOnline: () => true,
+        isVisible: () => true,
+        eventTarget: events,
+        ownerId: "runner-a",
+        onError,
+      });
+
+      try {
+        await runner.start();
+        store.recoveryFailure = failure;
+        events.dispatchEvent(new Event(source));
+        await flushUnhandledRejections();
+
+        expect(onError).toHaveBeenCalledTimes(1);
+        const reported = onError.mock.calls[0]?.[0];
+        expect(reported).toBeInstanceOf(PhotoUploadQueueRunnerError);
+        expect(reported).toMatchObject({
+          name: "PhotoUploadQueueRunnerError",
+          source,
+        });
+        expect((reported as Error).cause).toBe(failure);
+        expect(unhandled).toEqual([]);
+      } finally {
+        await runner.stop();
+        process.off("unhandledRejection", onUnhandled);
+      }
+    }
+  );
+
+  it("surfaces a rejecting retry timer wake without an unhandled rejection", async () => {
+    const store = new ControllableRecoveryStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(
+      SCOPE,
+      queuedPhoto({
+        status: "retry_wait",
+        attemptCount: 1,
+        retryAt: 3_000,
+      })
+    );
+    const timer = new ManualClockTimer();
+    const failure = new PhotoQueuePersistenceError(
+      "persistence_failed",
+      "IndexedDB became unavailable."
+    );
+    const onError = vi.fn();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    const runner = new PhotoUploadQueueRunner({
+      scope: SCOPE,
+      store,
+      uploader: vi.fn(),
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      ownerId: "runner-a",
+      onError,
+    });
+
+    try {
+      await runner.start();
+      expect(timer.nextDelay).toBe(1_000);
+      store.recoveryFailure = failure;
+      timer.advanceBy(1_000);
+      await flushUnhandledRejections();
+
+      expect(onError).toHaveBeenCalledTimes(1);
+      const reported = onError.mock.calls[0]?.[0];
+      expect(reported).toBeInstanceOf(PhotoUploadQueueRunnerError);
+      expect(reported).toMatchObject({
+        name: "PhotoUploadQueueRunnerError",
+        source: "retry_timer",
+      });
+      expect((reported as Error).cause).toBe(failure);
+      expect(unhandled).toEqual([]);
+    } finally {
+      await runner.stop();
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
   it("runs no more than two uploads concurrently", async () => {
     const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
     for (let index = 1; index <= 3; index += 1) {
@@ -917,6 +1114,80 @@ describe("PhotoUploadQueueRunner", () => {
     for (const runner of runners) runner.stop();
   });
 
+  it("atomically rejects a stale snapshot after another runner schedules backoff", async () => {
+    const staleListCaptured = deferred();
+    const releaseStaleList = deferred();
+    class StaleFirstListStore extends MemoryPhotoUploadQueueStore {
+      private listCalls = 0;
+
+      override async list(scope: PhotoUploadScope): Promise<QueuedPhotoUpload[]> {
+        this.listCalls += 1;
+        const snapshot = await super.list(scope);
+        if (this.listCalls === 1) {
+          staleListCaptured.resolve();
+          await releaseStaleList.promise;
+        }
+        return snapshot;
+      }
+    }
+    const store = new StaleFirstListStore(createMemoryPhotoUploadQueueDatabase());
+    await store.put(SCOPE, queuedPhoto());
+    const timer = new ManualClockTimer();
+    const staleUploader = vi.fn().mockResolvedValue({
+      ok: true,
+      photoId: "stale-photo",
+    });
+    const retryingUploader = vi.fn().mockResolvedValue({
+      ok: false,
+      retryable: true,
+      message: "Network unavailable",
+    });
+    const sharedOptions = {
+      scope: SCOPE,
+      store,
+      now: () => timer.now,
+      timer,
+      isOnline: () => true,
+      isVisible: () => true,
+      eventTarget: new EventTarget(),
+      baseRetryDelayMs: 1_000,
+      maxAttempts: 5,
+    };
+    const staleRunner = new PhotoUploadQueueRunner({
+      ...sharedOptions,
+      uploader: staleUploader,
+      ownerId: "stale-runner",
+    });
+    const retryingRunner = new PhotoUploadQueueRunner({
+      ...sharedOptions,
+      uploader: retryingUploader,
+      ownerId: "retrying-runner",
+    });
+
+    const staleStart = staleRunner.start();
+    await staleListCaptured.promise;
+    await retryingRunner.start();
+    timer.advanceBy(1_000);
+    await retryingRunner.wake();
+    await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+      status: "retry_wait",
+      attemptCount: 2,
+      retryAt: 5_000,
+    });
+
+    releaseStaleList.resolve();
+    await staleStart;
+
+    expect(staleUploader).not.toHaveBeenCalled();
+    await expect(store.get("queue-1", SCOPE)).resolves.toMatchObject({
+      status: "retry_wait",
+      attemptCount: 2,
+      retryAt: 5_000,
+    });
+    await staleRunner.stop();
+    await retryingRunner.stop();
+  });
+
   it("uses a live item lease to block a second runner", async () => {
     const store = new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase());
     await store.put(SCOPE, queuedPhoto());
@@ -1018,15 +1289,17 @@ describe("PhotoUploadQueueRunner", () => {
         owner: string,
         now: number,
         ttlMs: number,
-        maxScopeSlots: number
-      ): Promise<PhotoUploadClaim | null> {
+        maxScopeSlots: number,
+        maxAttempts: number
+      ): Promise<AcquiredPhotoUploadClaim | null> {
         const acquired = await super.tryAcquireUploadClaim(
           queueId,
           scope,
           owner,
           now,
           ttlMs,
-          maxScopeSlots
+          maxScopeSlots,
+          maxAttempts
         );
         claimPersisted.resolve();
         await releaseAcquisition.promise;
@@ -1094,8 +1367,9 @@ describe("PhotoUploadQueueRunner", () => {
         owner: string,
         now: number,
         ttlMs: number,
-        maxScopeSlots: number
-      ): Promise<PhotoUploadClaim | null> {
+        maxScopeSlots: number,
+        maxAttempts: number
+      ): Promise<AcquiredPhotoUploadClaim | null> {
         this.claimCalls += 1;
         const claim = await super.tryAcquireUploadClaim(
           queueId,
@@ -1103,7 +1377,8 @@ describe("PhotoUploadQueueRunner", () => {
           owner,
           now,
           ttlMs,
-          maxScopeSlots
+          maxScopeSlots,
+          maxAttempts
         );
         if (this.claimCalls === 1) {
           firstClaimPersisted.resolve();
@@ -1192,8 +1467,11 @@ describe("PhotoUploadQueueRunner", () => {
     await vi.waitFor(() => expect(uploadSignal?.aborted).toBe(true));
 
     await expect(
-      store.tryAcquireUploadClaim("queue-1", SCOPE, "runner-b", timer.now, 1_000, 2)
-    ).resolves.toEqual({ expiresAt: 4_000 });
+      store.tryAcquireUploadClaim("queue-1", SCOPE, "runner-b", timer.now, 1_000, 2, 5)
+    ).resolves.toMatchObject({
+      expiresAt: 4_000,
+      item: { status: "uploading", attemptCount: 2 },
+    });
     await expect(
       store.updateClaimed("queue-1", SCOPE, "runner-b", timer.now, {
         status: "uploading",
@@ -1222,8 +1500,9 @@ describe("PhotoUploadQueueRunner", () => {
         owner: string,
         now: number,
         ttlMs: number,
-        maxScopeSlots: number
-      ): Promise<PhotoUploadClaim | null> {
+        maxScopeSlots: number,
+        maxAttempts: number
+      ): Promise<AcquiredPhotoUploadClaim | null> {
         this.claimCalls += 1;
         return super.tryAcquireUploadClaim(
           queueId,
@@ -1231,7 +1510,8 @@ describe("PhotoUploadQueueRunner", () => {
           owner,
           now,
           ttlMs,
-          maxScopeSlots
+          maxScopeSlots,
+          maxAttempts
         );
       }
 
@@ -1298,8 +1578,9 @@ describe("PhotoUploadQueueRunner", () => {
         owner: string,
         now: number,
         ttlMs: number,
-        maxScopeSlots: number
-      ): Promise<PhotoUploadClaim | null> {
+        maxScopeSlots: number,
+        maxAttempts: number
+      ): Promise<AcquiredPhotoUploadClaim | null> {
         this.claimCalls += 1;
         return super.tryAcquireUploadClaim(
           queueId,
@@ -1307,7 +1588,8 @@ describe("PhotoUploadQueueRunner", () => {
           owner,
           now,
           ttlMs,
-          maxScopeSlots
+          maxScopeSlots,
+          maxAttempts
         );
       }
 
@@ -1320,7 +1602,7 @@ describe("PhotoUploadQueueRunner", () => {
       ): Promise<PhotoUploadClaim | null> {
         this.claimCalls += 1;
         await super.releaseUploadClaim(queueId, scope, owner, now);
-        await super.tryAcquireUploadClaim(queueId, scope, "runner-b", now, ttlMs, 2);
+        await super.tryAcquireUploadClaim(queueId, scope, "runner-b", now, ttlMs, 2, 5);
         await super.updateClaimed(queueId, scope, "runner-b", now, {
           status: "uploading",
         });
@@ -1535,33 +1817,35 @@ describe("PhotoUploadQueueRunner", () => {
   });
 
   it("rechecks visibility immediately before invoking the uploader", async () => {
-    const uploadingPersisted = deferred();
-    const releaseUpdate = deferred();
-    class BlockingUpdateStore extends MemoryPhotoUploadQueueStore {
-      override async updateClaimed(
+    const claimPersisted = deferred();
+    const releaseClaim = deferred();
+    class BlockingClaimStore extends MemoryPhotoUploadQueueStore {
+      override async tryAcquireUploadClaim(
         queueId: string,
         scope: PhotoUploadScope,
         owner: string,
         now: number,
-        patch: Parameters<MemoryPhotoUploadQueueStore["updateClaimed"]>[4],
-        releaseClaim = false
-      ): Promise<QueuedPhotoUpload | null> {
-        const updated = await super.updateClaimed(
+        ttlMs: number,
+        maxScopeSlots: number,
+        maxAttempts: number
+      ): Promise<AcquiredPhotoUploadClaim | null> {
+        const acquired = await super.tryAcquireUploadClaim(
           queueId,
           scope,
           owner,
           now,
-          patch,
-          releaseClaim
+          ttlMs,
+          maxScopeSlots,
+          maxAttempts
         );
-        if (patch.status === "uploading") {
-          uploadingPersisted.resolve();
-          await releaseUpdate.promise;
+        if (acquired) {
+          claimPersisted.resolve();
+          await releaseClaim.promise;
         }
-        return updated;
+        return acquired;
       }
     }
-    const store = new BlockingUpdateStore(createMemoryPhotoUploadQueueDatabase());
+    const store = new BlockingClaimStore(createMemoryPhotoUploadQueueDatabase());
     await store.put(SCOPE, queuedPhoto());
     let visible = true;
     const uploader = vi.fn().mockResolvedValue({ ok: true, photoId: "photo-1" });
@@ -1578,9 +1862,9 @@ describe("PhotoUploadQueueRunner", () => {
     });
 
     const starting = runner.start();
-    await uploadingPersisted.promise;
+    await claimPersisted.promise;
     visible = false;
-    releaseUpdate.resolve();
+    releaseClaim.resolve();
     await starting;
 
     expect(uploader).not.toHaveBeenCalled();

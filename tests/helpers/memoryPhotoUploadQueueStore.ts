@@ -1,4 +1,5 @@
 import {
+  type AcquiredPhotoUploadClaim,
   type PhotoUploadClaim,
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
@@ -125,7 +126,15 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     ttlMs: number
   ): Promise<boolean> {
     return (
-      (await this.tryAcquireUploadClaim(queueId, scope, owner, now, ttlMs, 2)) !== null
+      (await this.tryAcquireUploadClaim(
+        queueId,
+        scope,
+        owner,
+        now,
+        ttlMs,
+        2,
+        Number.MAX_SAFE_INTEGER
+      )) !== null
     );
   }
 
@@ -135,15 +144,16 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     owner: string,
     now: number,
     ttlMs: number,
-    maxScopeSlots: number
-  ): Promise<PhotoUploadClaim | null> {
+    maxScopeSlots: number,
+    maxAttempts: number
+  ): Promise<AcquiredPhotoUploadClaim | null> {
     const item = this.database.items.get(queueId);
     if (!item || !belongsToScope(item, scope)) return null;
     const processable =
       item.status === "queued" ||
-      item.status === "retry_wait" ||
-      item.status === "uploading";
-    if (!processable) return null;
+      (item.status === "retry_wait" && item.retryAt !== null && item.retryAt <= now) ||
+      (item.status === "uploading" && !hasLivePersistedUploadClaim(item, now));
+    if (!processable || item.attemptCount >= maxAttempts) return null;
     const hasLiveCompetingLease =
       item.leaseOwner !== null &&
       item.leaseOwner !== owner &&
@@ -172,14 +182,20 @@ export class MemoryPhotoUploadQueueStore implements PhotoUploadQueueStore {
     if (!alreadyOwnsLiveSlot && activeScopeSlots >= slotLimit) return null;
 
     const expiresAt = now + ttlMs;
-    this.database.items.set(queueId, {
+    const claimedItem: QueuedPhotoUpload = {
       ...item,
+      status: "uploading",
+      attemptCount: item.attemptCount + 1,
+      retryAt: null,
+      lastError: null,
+      updatedAt: now,
       leaseOwner: owner,
       leaseExpiresAt: expiresAt,
       uploadSlotOwner: owner,
       uploadSlotExpiresAt: expiresAt,
-    });
-    return { expiresAt };
+    };
+    this.database.items.set(queueId, claimedItem);
+    return { expiresAt, item: structuredClone(claimedItem) };
   }
 
   async renewUploadClaim(

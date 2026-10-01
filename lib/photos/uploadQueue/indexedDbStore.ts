@@ -8,6 +8,7 @@ import {
   InvalidPhotoUploadTransitionError,
 } from "./stateTransitions";
 import {
+  type AcquiredPhotoUploadClaim,
   type PhotoUploadClaim,
   PhotoUploadQueueScopeError,
   type PhotoUploadQueueStore,
@@ -301,7 +302,15 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     ttlMs: number
   ): Promise<boolean> {
     return (
-      (await this.tryAcquireUploadClaim(queueId, scope, owner, now, ttlMs, 2)) !== null
+      (await this.tryAcquireUploadClaim(
+        queueId,
+        scope,
+        owner,
+        now,
+        ttlMs,
+        2,
+        Number.MAX_SAFE_INTEGER
+      )) !== null
     );
   }
 
@@ -311,8 +320,9 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
     owner: string,
     now: number,
     ttlMs: number,
-    maxScopeSlots: number
-  ): Promise<PhotoUploadClaim | null> {
+    maxScopeSlots: number,
+    maxAttempts: number
+  ): Promise<AcquiredPhotoUploadClaim | null> {
     try {
       const transaction = (await this.database).transaction("readwrite");
       return await runTransaction(transaction, async () => {
@@ -320,8 +330,10 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
         const scopeItems = await transaction.listByScope(scope);
         const processable =
           item?.status === "queued" ||
-          item?.status === "retry_wait" ||
-          item?.status === "uploading";
+          (item?.status === "retry_wait" &&
+            item.retryAt !== null &&
+            item.retryAt <= now) ||
+          (item?.status === "uploading" && !hasLivePersistedUploadClaim(item, now));
         const liveCompetingLease =
           item !== undefined &&
           item.leaseOwner !== null &&
@@ -349,6 +361,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
           !item ||
           !belongsToScope(item, scope) ||
           !processable ||
+          item.attemptCount >= maxAttempts ||
           liveCompetingLease ||
           liveCompetingSlot ||
           (!alreadyOwnsLiveSlot && activeScopeSlots >= slotLimit)
@@ -356,14 +369,20 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
           return null;
         }
         const expiresAt = now + ttlMs;
-        await transaction.put({
+        const claimedItem: QueuedPhotoUpload = {
           ...item,
+          status: "uploading",
+          attemptCount: item.attemptCount + 1,
+          retryAt: null,
+          lastError: null,
+          updatedAt: now,
           leaseOwner: owner,
           leaseExpiresAt: expiresAt,
           uploadSlotOwner: owner,
           uploadSlotExpiresAt: expiresAt,
-        });
-        return { expiresAt };
+        };
+        await transaction.put(claimedItem);
+        return { expiresAt, item: claimedItem };
       });
     } catch (error) {
       throw persistenceError(error);

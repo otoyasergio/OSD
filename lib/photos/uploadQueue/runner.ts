@@ -6,6 +6,20 @@ export type PhotoUploadQueueTimer = {
   clearTimeout(handle: unknown): void;
 };
 
+export type PhotoUploadQueueWakeSource =
+  "online" | "pageshow" | "visibilitychange" | "retry_timer";
+
+export class PhotoUploadQueueRunnerError extends Error {
+  readonly name = "PhotoUploadQueueRunnerError";
+
+  constructor(
+    readonly source: PhotoUploadQueueWakeSource,
+    cause: unknown
+  ) {
+    super(`Photo upload queue wake failed after ${source}.`, { cause });
+  }
+}
+
 export type PhotoUploadQueueRunnerOptions = {
   scope: PhotoUploadScope;
   store: PhotoUploadQueueStore;
@@ -21,6 +35,7 @@ export type PhotoUploadQueueRunnerOptions = {
   baseRetryDelayMs?: number;
   maxRetryDelayMs?: number;
   maxAttempts?: number;
+  onError?(error: PhotoUploadQueueRunnerError): void | Promise<void>;
 };
 
 type ActiveUploadClaim = {
@@ -46,13 +61,13 @@ export class PhotoUploadQueueRunner {
     this.resolveStopped = resolve;
   });
   private readonly handleOnline = (): void => {
-    void this.wake();
+    this.requestWake("online");
   };
   private readonly handlePageShow = (): void => {
-    void this.wake();
+    this.requestWake("pageshow");
   };
   private readonly handleVisibilityChange = (): void => {
-    if (this.options.isVisible()) void this.wake();
+    if (this.options.isVisible()) this.requestWake("visibilitychange");
   };
 
   constructor(private readonly options: PhotoUploadQueueRunnerOptions) {}
@@ -83,6 +98,22 @@ export class PhotoUploadQueueRunner {
       this.pumpPromise = null;
     });
     return this.pumpPromise;
+  }
+
+  private requestWake(source: PhotoUploadQueueWakeSource): void {
+    void this.wake().catch((cause: unknown) => {
+      const report = this.options.onError;
+      if (!report) return;
+      try {
+        void Promise.resolve(
+          report(new PhotoUploadQueueRunnerError(source, cause))
+        ).catch(() => {
+          // Error observers cannot be allowed to create an unhandled rejection.
+        });
+      } catch {
+        // Error observers cannot be allowed to break native event callbacks.
+      }
+    });
   }
 
   private async drainWakeRequests(generation: number): Promise<void> {
@@ -140,7 +171,8 @@ export class PhotoUploadQueueRunner {
           this.options.ownerId,
           this.options.now(),
           ttlMs,
-          2
+          2,
+          this.options.maxAttempts ?? 5
         );
         if (!this.canProcess(generation)) {
           if (acquiredClaim) {
@@ -175,28 +207,8 @@ export class PhotoUploadQueueRunner {
         };
         this.activeClaims.set(item.queueId, claim);
         this.scheduleClaimExpiry(claim);
-        const uploading = await this.options.store.updateClaimed(
-          item.queueId,
-          this.options.scope,
-          this.options.ownerId,
-          this.options.now(),
-          {
-            status: "uploading",
-            attemptCount: item.attemptCount + 1,
-            retryAt: null,
-            lastError: null,
-            updatedAt: this.options.now(),
-          }
-        );
-        if (!this.canProcess(generation) || !uploading) {
-          await this.releaseClaim(claim);
-          this.activeClaims.delete(item.queueId);
-          if (!this.canProcess(generation)) return;
-          continue;
-        }
-
         activeQueueIds.add(item.queueId);
-        const uploadPromise = this.uploadOne(uploading, claim).finally(() => {
+        const uploadPromise = this.uploadOne(acquiredClaim.item, claim).finally(() => {
           active.delete(uploadPromise);
           activeQueueIds.delete(item.queueId);
           this.activeClaims.delete(item.queueId);
@@ -449,7 +461,7 @@ export class PhotoUploadQueueRunner {
     this.retryTimer = this.options.timer.setTimeout(
       () => {
         this.retryTimer = null;
-        if (this.isCurrent(generation)) void this.wake();
+        if (this.isCurrent(generation)) this.requestWake("retry_timer");
       },
       Math.max(0, retryAt - this.options.now())
     );
