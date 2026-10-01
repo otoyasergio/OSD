@@ -116,6 +116,8 @@ const MESSAGES: Record<string, string> = {
   PHOTO_TOO_LARGE: "Photos must be 10 MB or smaller.",
   PHOTO_TYPE_INVALID: "Use a JPEG, PNG, WebP, or HEIC image.",
   PHOTO_UPLOAD_FAILED: "Could not upload the photo. Try again.",
+  PHOTO_UPLOAD_ID_CONFLICT:
+    "This photo upload was already used for a different work item.",
   PHOTO_DELETE_FAILED: "Could not remove the photo. Try again.",
   PHOTO_NOT_FOUND: "That photo no longer exists.",
   INTAKE_PHOTOS_REQUIRED:

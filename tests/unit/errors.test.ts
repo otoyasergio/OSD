@@ -47,6 +47,12 @@ describe("toFormErrorMessage", () => {
     );
   });
 
+  it("maps an upload ID linkage conflict without exposing internals", () => {
+    expect(toFormErrorMessage(new Error("PHOTO_UPLOAD_ID_CONFLICT"))).toBe(
+      "This photo upload was already used for a different work item."
+    );
+  });
+
   it("maps password change validation errors", () => {
     expect(toFormErrorMessage(new Error("CURRENT_PASSWORD_INVALID"))).toBe(
       "Current password is incorrect."

@@ -59,6 +59,45 @@ export type Database = {
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
       };
+      intake_photo: {
+        Row: {
+          photo_id: string;
+          work_order_id: string;
+          uploaded_by_user_id: string | null;
+          storage_path: string;
+          thumb_storage_path: string | null;
+          photo_url: string | null;
+          category: string;
+          notes: string | null;
+          inspection_result_id: string | null;
+          job_id: string | null;
+          client_upload_id: string | null;
+          content_type: string | null;
+          byte_size: number | null;
+          pixel_width: number | null;
+          pixel_height: number | null;
+          created_at: string;
+        };
+        Insert: {
+          photo_id?: string;
+          work_order_id: string;
+          uploaded_by_user_id?: string | null;
+          storage_path: string;
+          thumb_storage_path?: string | null;
+          photo_url?: string | null;
+          category: string;
+          notes?: string | null;
+          inspection_result_id?: string | null;
+          job_id?: string | null;
+          client_upload_id?: string | null;
+          content_type?: string | null;
+          byte_size?: number | null;
+          pixel_width?: number | null;
+          pixel_height?: number | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["intake_photo"]["Insert"]>;
+      };
       ai_assistant_thread: {
         Row: {
           ai_assistant_thread_id: string;

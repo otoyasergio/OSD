@@ -221,6 +221,7 @@ export const intakePhotoSchema = z.object({
   notes: z.string().nullable().optional(),
   inspection_result_id: z.string().uuid().nullable().optional(),
   job_id: z.string().uuid().nullable().optional(),
+  client_upload_id: z.string().uuid().nullable().optional(),
 });
 
 export const technicianNoteTypeSchema = z.enum([

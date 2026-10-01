@@ -13,7 +13,15 @@ import {
 import { intakePhotoSchema } from "@/lib/validation/schemas";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
-import { intakeThumbStoragePath, makeIntakeThumb } from "@/lib/photos/makeIntakeThumb";
+import {
+  canonicalizeIntakePhoto,
+  INTAKE_PHOTO_MAX_SOURCE_BYTES,
+  makeCanonicalIntakeThumbnail,
+} from "@/lib/photos/canonicalizeIntakePhoto";
+import {
+  orchestrateIntakePhotoUpload,
+  type IntakePhotoUploadRow,
+} from "@/lib/photos/intakePhotoUploadOrchestrator";
 import { INTAKE_PHOTO_BUCKET, signStoragePaths } from "@/lib/photos/signedUrls";
 import { PHOTO_UPLOAD_RETRY_ATTEMPTS } from "@/lib/forms/photoUploadErrors";
 import { classifyStorageUploadError } from "@/lib/forms/storageUploadRetry";
@@ -29,6 +37,11 @@ export type IntakePhoto = {
   notes: string | null;
   inspection_result_id: string | null;
   job_id: string | null;
+  client_upload_id: string | null;
+  content_type: string | null;
+  byte_size: number | null;
+  pixel_width: number | null;
+  pixel_height: number | null;
   created_at: string;
   /** Full-size signed URL — lightbox and inspection zoom. */
   signed_url?: string | null;
@@ -42,12 +55,12 @@ export type IntakePhoto = {
 };
 
 const COLUMNS =
-  "photo_id, work_order_id, uploaded_by_user_id, storage_path, thumb_storage_path, photo_url, category, notes, inspection_result_id, job_id, created_at";
+  "photo_id, work_order_id, uploaded_by_user_id, storage_path, thumb_storage_path, photo_url, category, notes, inspection_result_id, job_id, client_upload_id, content_type, byte_size, pixel_width, pixel_height, created_at";
 
 const BUCKET = INTAKE_PHOTO_BUCKET;
 
 export { signStoragePaths };
-const MAX_BYTES = 10 * 1024 * 1024;
+const MAX_BYTES = INTAKE_PHOTO_MAX_SOURCE_BYTES;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -89,20 +102,16 @@ async function requireMutableWorkOrder(
   };
 }
 
-function extensionForType(type: string): string {
-  if (type === "image/png") return "png";
-  if (type === "image/webp") return "webp";
-  if (type === "image/heic" || type === "image/heif") return "heic";
-  return "jpg";
-}
-
 async function uploadIntakeBytes(
   supabase: DbClient,
   storagePath: string,
   bytes: Uint8Array,
   contentType: string
 ) {
-  let lastError: { message?: string } | null = null;
+  let lastError: {
+    message?: string | null;
+    statusCode?: string | number | null;
+  } | null = null;
   for (let attempt = 0; attempt < PHOTO_UPLOAD_RETRY_ATTEMPTS; attempt += 1) {
     const { error } = await supabase.storage.from(BUCKET).upload(storagePath, bytes, {
       contentType,
@@ -115,7 +124,11 @@ async function uploadIntakeBytes(
     await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
   }
   if (lastError) {
-    console.error("intake photo upload failed", lastError);
+    const safeError = new Error("PHOTO_UPLOAD_FAILED") as Error & {
+      statusCode?: string | number | null;
+    };
+    safeError.statusCode = lastError.statusCode;
+    throw safeError;
   }
   throw new Error("PHOTO_UPLOAD_FAILED");
 }
@@ -313,6 +326,7 @@ export async function uploadIntakePhoto(
     notes?: string | null;
     inspection_result_id?: string | null;
     job_id?: string | null;
+    client_upload_id?: string | null;
     file: File;
   }
 ): Promise<IntakePhoto> {
@@ -324,6 +338,7 @@ export async function uploadIntakePhoto(
     notes: input.notes,
     inspection_result_id: input.inspection_result_id,
     job_id: input.job_id,
+    client_upload_id: input.client_upload_id,
   });
 
   if (parsed.category === "inspection_item" && !parsed.inspection_result_id) {
@@ -388,84 +403,87 @@ export async function uploadIntakePhoto(
     }
   }
 
-  const ext = extensionForType(file.type || "image/jpeg");
-  const photoId = crypto.randomUUID();
-  const storagePath = `${workOrderId}/${parsed.category}/${photoId}.${ext}`;
-  const thumbPath = intakeThumbStoragePath(storagePath);
-
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.byteLength === 0) throw new Error("PHOTO_REQUIRED");
-  // Build the preview while the original is in flight so the slot is not
-  // stuck on "Uploading" for a second full image encode after storage.
-  const thumbPromise = makeIntakeThumb(bytes);
-  await uploadIntakeBytes(supabase, storagePath, bytes, file.type || "image/jpeg");
 
-  let thumbStoragePath: string | null = null;
-  const thumbBytes = await thumbPromise;
-  if (thumbBytes && thumbBytes.byteLength > 0) {
-    const { error: thumbError } = await supabase.storage
-      .from(BUCKET)
-      .upload(thumbPath, thumbBytes, {
-        contentType: "image/jpeg",
-        upsert: false,
-      });
-    if (thumbError) {
-      console.error("intake photo thumb upload failed", thumbError);
-    } else {
-      thumbStoragePath = thumbPath;
-    }
-  }
-
-  const { data, error } = await supabase
-    .from("intake_photo")
-    .insert({
-      photo_id: photoId,
-      work_order_id: workOrderId,
-      uploaded_by_user_id: user.user_id,
-      storage_path: storagePath,
-      thumb_storage_path: thumbStoragePath,
-      photo_url: null,
+  const photo = await orchestrateIntakePhotoUpload(
+    {
+      workOrderId,
+      uploadedByUserId: user.user_id,
+      clientUploadId: parsed.client_upload_id ?? null,
       category: parsed.category,
       notes: parsed.notes ?? null,
-      inspection_result_id: parsed.inspection_result_id ?? null,
-      job_id: parsed.job_id ?? null,
-    })
-    .select(COLUMNS)
-    .single();
-
-  if (error) {
-    const toRemove = thumbStoragePath ? [storagePath, thumbStoragePath] : [storagePath];
-    await supabase.storage.from(BUCKET).remove(toRemove);
-    throw error;
-  }
-
-  const photo = data as IntakePhoto;
-  const categoryLabel = PHOTO_CATEGORY_LABELS[photo.category] ?? photo.category;
-
-  await addTimelineEvent(supabase, {
-    work_order_id: workOrderId,
-    user_id: user.user_id,
-    event_type: TimelineEventType.INTAKE_PHOTO_UPLOADED,
-    entity_type: "intake_photo",
-    entity_id: photo.photo_id,
-    description: `Intake photo uploaded (${categoryLabel})`,
-    new_value: { category: photo.category, storage_path: storagePath },
-  });
-
-  await addAuditLog(supabase, {
-    actor_user_id: user.user_id,
-    location_id: locationId,
-    action: "intake_photo_uploaded",
-    entity_type: "intake_photo",
-    entity_id: photo.photo_id,
-    description: `Intake photo (${categoryLabel}) uploaded on ${workOrderNumber}`,
-    new_value: {
-      category: photo.category,
-      storage_path: storagePath,
+      inspectionResultId: parsed.inspection_result_id ?? null,
+      jobId: parsed.job_id ?? null,
+      sourceBytes: bytes,
     },
-  });
+    {
+      createPhotoId: () => crypto.randomUUID(),
+      findPhotoByClientUploadId: async (clientUploadId) => {
+        const { data, error } = await supabase
+          .from("intake_photo")
+          .select(COLUMNS)
+          .eq("client_upload_id", clientUploadId)
+          .maybeSingle();
+        if (error) throw error;
+        return (data as IntakePhotoUploadRow | null) ?? null;
+      },
+      prepareCanonicalPhoto: canonicalizeIntakePhoto,
+      makeThumbnail: makeCanonicalIntakeThumbnail,
+      uploadObject: async (upload) => {
+        await uploadIntakeBytes(supabase, upload.path, upload.bytes, upload.contentType);
+      },
+      removeObjects: async (paths) => {
+        await supabase.storage.from(BUCKET).remove(paths);
+      },
+      insertPhoto: async (insert) => {
+        const { data, error } = await supabase
+          .from("intake_photo")
+          .insert(insert)
+          .select(COLUMNS)
+          .single();
+        if (error) throw error;
+        return data as IntakePhotoUploadRow;
+      },
+      recordTimeline: async (savedPhoto) => {
+        const categoryLabel =
+          PHOTO_CATEGORY_LABELS[savedPhoto.category] ?? savedPhoto.category;
+        await addTimelineEvent(supabase, {
+          work_order_id: workOrderId,
+          user_id: user.user_id,
+          event_type: TimelineEventType.INTAKE_PHOTO_UPLOADED,
+          entity_type: "intake_photo",
+          entity_id: savedPhoto.photo_id,
+          description: `Intake photo uploaded (${categoryLabel})`,
+          new_value: {
+            category: savedPhoto.category,
+            storage_path: savedPhoto.storage_path,
+          },
+        });
+      },
+      recordAudit: async (savedPhoto) => {
+        const categoryLabel =
+          PHOTO_CATEGORY_LABELS[savedPhoto.category] ?? savedPhoto.category;
+        await addAuditLog(supabase, {
+          actor_user_id: user.user_id,
+          location_id: locationId,
+          action: "intake_photo_uploaded",
+          entity_type: "intake_photo",
+          entity_id: savedPhoto.photo_id,
+          description: `Intake photo (${categoryLabel}) uploaded on ${workOrderNumber}`,
+          new_value: {
+            category: savedPhoto.category,
+            storage_path: savedPhoto.storage_path,
+          },
+        });
+      },
+      logThumbnailFailure: (details) => {
+        console.error("intake photo thumbnail failed", details);
+      },
+    }
+  );
 
-  const [signed] = await signPaths(supabase, [photo]);
+  const [signed] = await signPaths(supabase, [photo as IntakePhoto]);
   return signed;
 }
 
