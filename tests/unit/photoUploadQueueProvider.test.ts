@@ -66,7 +66,15 @@ describe("PhotoUploadQueueProvider", () => {
     userId?: string;
     locationId?: string;
     store?: MemoryPhotoUploadQueueStore;
-    uploadIntakePhoto?: ReturnType<typeof vi.fn>;
+    uploadIntakePhoto?: (
+      workOrderId: string,
+      previous: { error: string | null },
+      formData: FormData
+    ) => Promise<{
+      error: string | null;
+      photoId?: string;
+      clientUploadId?: string;
+    }>;
     isOnline?: () => boolean;
     onReady: (api: PhotoUploadQueueApi) => void;
   }) {

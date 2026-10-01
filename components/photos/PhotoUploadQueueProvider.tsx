@@ -89,7 +89,7 @@ export function useOptionalPhotoUploadQueue(): PhotoUploadQueueApi | null {
 type ProviderProps = {
   userId: string;
   locationId: string;
-  children: ReactNode;
+  children?: ReactNode;
   store?: PhotoUploadQueueStore;
   uploadIntakePhoto?: QueuedPhotoUploadActions["uploadIntakePhoto"];
   uploadAssistantPhoto?: QueuedPhotoUploadActions["uploadAssistantPhoto"];

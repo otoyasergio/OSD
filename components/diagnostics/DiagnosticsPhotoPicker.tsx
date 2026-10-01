@@ -266,11 +266,19 @@ export function DiagnosticsPhotoPicker({
     if (pendingByQueueId.current.size === 0) setBusy(false);
   }
 
+  const applyConfirmationRef = useRef(applyConfirmation);
+  const setBusyRef = useRef(setBusy);
+
+  useEffect(() => {
+    applyConfirmationRef.current = applyConfirmation;
+    setBusyRef.current = setBusy;
+  });
+
   useEffect(() => {
     if (!queue) return undefined;
     return queue.subscribeConfirmation((confirmation) => {
       if (!pendingByQueueId.current.has(confirmation.queueId)) return;
-      applyConfirmation(confirmation.queueId, confirmation.photoId);
+      applyConfirmationRef.current(confirmation.queueId, confirmation.photoId);
     });
   }, [queue]);
 
@@ -283,7 +291,7 @@ export function DiagnosticsPhotoPicker({
       pendingByQueueId.current.delete(item.queueId);
       if (mountedRef.current) {
         setError(item.lastError ?? "Could not upload that photo. Try again.");
-        if (pendingByQueueId.current.size === 0) setBusy(false);
+        if (pendingByQueueId.current.size === 0) setBusyRef.current(false);
       }
     }
   }, [queue]);
