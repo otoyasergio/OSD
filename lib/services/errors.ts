@@ -73,7 +73,7 @@ const MESSAGES: Record<string, string> = {
   QC_FAIL_REASON_REQUIRED: "Enter a reason when failing quality check.",
   QC_ASSIGNEE_REQUIRED: "Choose who should check your work.",
   QC_ASSIGNEE_NOT_AVAILABLE:
-    "That technician is not clocked in or available for peer QC.",
+    "That technician isn't available for peer QC. Pick someone who didn't work this bike.",
   INVALID_FLAG_REASON: "Choose a valid flag reason.",
   ADMIN_FLAG_NOT_FOUND: "That admin flag no longer exists.",
   ADMIN_FLAG_ALREADY_CLEARED: "That admin flag was already cleared.",

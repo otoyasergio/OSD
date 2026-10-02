@@ -171,8 +171,12 @@ export type FloorOsSurface = {
     description: string;
     severity: string;
   }>;
-  /** Clocked-in peers the finishing tech can pick for peer QC. */
-  peer_qc_candidates: Array<{ user_id: string; display_name: string }>;
+  /** Techs the finishing tech can hand this bike to for peer QC. */
+  peer_qc_candidates: Array<{
+    user_id: string;
+    display_name: string;
+    clocked_in: boolean;
+  }>;
   checkout_evidence_required: boolean;
   checkout_photos: CommittedCheckoutPhoto[];
   jobs_complete: boolean;
