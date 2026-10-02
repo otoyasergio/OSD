@@ -38,6 +38,7 @@
     "@supabase/supabase-js": "^2.110.1",
     "@tanstack/react-virtual": "^3.14.6",
     "@twilio/voice-sdk": "^2.18.3",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "fflate": "^0.8.3",
     "heic-decode": "^2.1.0",
