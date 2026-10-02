@@ -30,8 +30,14 @@ function pruneSignedUrlCache(now: number): void {
   }
 }
 
-export async function signStoragePaths(
+function cacheKey(bucket: string, path: string): string {
+  return `${bucket}:${path}`;
+}
+
+/** Sign storage paths for any private bucket, reusing tokens for 45 minutes. */
+export async function signBucketPaths(
   supabase: DbClient,
+  bucket: string,
   paths: string[],
   expiresInSeconds = DEFAULT_SIGN_TTL_SECONDS
 ): Promise<Map<string, string | null>> {
@@ -46,7 +52,7 @@ export async function signStoragePaths(
   const misses: string[] = [];
   if (cacheable) {
     for (const path of unique) {
-      const hit = signedUrlCache.get(path);
+      const hit = signedUrlCache.get(cacheKey(bucket, path));
       if (hit && hit.freshUntil > now) byPath.set(path, hit.url);
       else misses.push(path);
     }
@@ -56,7 +62,7 @@ export async function signStoragePaths(
   }
 
   const { data, error } = await supabase.storage
-    .from(INTAKE_PHOTO_BUCKET)
+    .from(bucket)
     .createSignedUrls(misses, expiresInSeconds);
 
   if (error || !data) {
@@ -69,9 +75,20 @@ export async function signStoragePaths(
     const url = row.signedUrl ?? null;
     byPath.set(row.path, url);
     if (cacheable && url) {
-      signedUrlCache.set(row.path, { url, freshUntil: now + SIGNED_URL_REUSE_MS });
+      signedUrlCache.set(cacheKey(bucket, row.path), {
+        url,
+        freshUntil: now + SIGNED_URL_REUSE_MS,
+      });
     }
   }
   if (cacheable) pruneSignedUrlCache(now);
   return byPath;
+}
+
+export async function signStoragePaths(
+  supabase: DbClient,
+  paths: string[],
+  expiresInSeconds = DEFAULT_SIGN_TTL_SECONDS
+): Promise<Map<string, string | null>> {
+  return signBucketPaths(supabase, INTAKE_PHOTO_BUCKET, paths, expiresInSeconds);
 }

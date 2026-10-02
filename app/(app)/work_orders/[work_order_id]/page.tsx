@@ -1,4 +1,5 @@
 import Link from "next/link";
+import nextDynamic from "next/dynamic";
 import { notFound, redirect } from "next/navigation";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import type { ReadView } from "@/lib/auth/role-preview-shared";
@@ -64,17 +65,13 @@ import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNot
 import { AgreementFollowUpNotice } from "@/components/work_orders/AgreementFollowUpNotice";
 import { ComingSoonPanel, WorkOrderTabs } from "@/components/work_orders/WorkOrderTabs";
 import { resolveWorkOrderTabId, type WorkOrderTabId } from "@/lib/workOrders/tabs";
-import { EstimateJobsWorkspace } from "@/components/estimates/EstimateJobsWorkspace";
 import type { EstimateVersionHistoryEntry } from "@/components/estimates/EstimateVersionHistory";
 import type { WorkspaceJob, WorkspacePart } from "@/components/estimates/workspaceModel";
 import { OverviewTab } from "@/components/work_orders/OverviewTab";
 import { ServiceInfoTab } from "@/components/work_orders/ServiceInfoTab";
-import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
 import { SendMessagePanel } from "@/components/communications/SendMessagePanel";
-import { SquareInvoicePanel } from "@/components/square/SquareInvoicePanel";
 import { estimateTotalsWithHst } from "@/lib/pricing/hst";
 import { JobsTab } from "@/components/jobs/JobsTab";
-import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 import { RecommendationsTab } from "@/components/recommendations/RecommendationsTab";
 import { PartsTab } from "@/components/parts/PartsTab";
 import { PhotosTab } from "@/components/photos/PhotosTab";
@@ -130,7 +127,6 @@ import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { floorTechWorkOrderRedirect } from "@/lib/technician/assignmentHref";
 import { isRouteUuid } from "@/lib/technician/routeState";
 import { createDiagnosticsAssistantService } from "@/lib/services/diagnosticsAssistant";
-import { AskOtomotoPanel } from "@/components/diagnostics/AskOtomotoPanel";
 import {
   askOtomotoCapabilities,
   loadAskOtomotoPanelData,
@@ -140,6 +136,28 @@ import { toDiagnosticsPhotoSourceRows } from "@/lib/diagnostics/photoSelection";
 
 export const dynamic = "force-dynamic";
 const diagnosticsAssistant = createDiagnosticsAssistantService();
+
+const EstimateJobsWorkspace = nextDynamic(() =>
+  import("@/components/estimates/EstimateJobsWorkspace").then(
+    (mod) => mod.EstimateJobsWorkspace
+  )
+);
+const AskOtomotoPanel = nextDynamic(() =>
+  import("@/components/diagnostics/AskOtomotoPanel").then((mod) => mod.AskOtomotoPanel)
+);
+const ContractSigningPanel = nextDynamic(() =>
+  import("@/components/contracts/ContractSigningPanel").then(
+    (mod) => mod.ContractSigningPanel
+  )
+);
+const SquareInvoicePanel = nextDynamic(() =>
+  import("@/components/square/SquareInvoicePanel").then((mod) => mod.SquareInvoicePanel)
+);
+const InspectionChecklist = nextDynamic(() =>
+  import("@/components/inspections/InspectionChecklist").then(
+    (mod) => mod.InspectionChecklist
+  )
+);
 
 export default async function WorkOrderDetailPage({
   params,
@@ -184,65 +202,53 @@ export default async function WorkOrderDetailPage({
     redirect(floorTechWorkOrderRedirect(work_order_id, tabParam, assistantThreadId));
   }
 
-  const detail = await getWorkOrderDetail(work_order_id).catch((error: unknown) => {
+  const isEstimateTab = activeTab === "estimate";
+  const needsInspection =
+    activeTab === "overview" || activeTab === "inspection" || isEstimateTab;
+  const needsParts = activeTab === "overview" || activeTab === "parts" || isEstimateTab;
+  const needsRecommendations = activeTab === "overview" || isEstimateTab;
+  const workflowFlags = readWorkflowV2Flags();
+  const showV2Workspace =
+    isEstimateTab && v2WritesEnabled(workflowFlags) && canViewPricing(viewRole);
+
+  const detailPromise = getWorkOrderDetail(work_order_id).catch((error: unknown) => {
     if (error instanceof Error && error.message === "FORBIDDEN") {
       redirect(staffHomePath(viewRole));
     }
     throw error;
   });
-  if (!detail) notFound();
-
-  const foreign = detail.is_foreign_location;
-  const isEstimateTab = activeTab === "estimate";
-  const needsTechs = !foreign && (activeTab === "overview" || isEstimateTab);
-  const needsServices = !foreign && isEstimateTab;
-  const needsInspection =
-    activeTab === "overview" || activeTab === "inspection" || isEstimateTab;
-  const needsParts = activeTab === "overview" || activeTab === "parts" || isEstimateTab;
-  const needsRecommendations = activeTab === "overview" || isEstimateTab;
-
-  // The V2 workspace serves only when writes are enabled; legacy mode keeps
-  // the old Jobs + Recommendations content (merged onto this tab) unchanged.
-  const workflowFlags = readWorkflowV2Flags();
-  const showV2Workspace =
-    isEstimateTab && v2WritesEnabled(workflowFlags) && canViewPricing(viewRole);
 
   const [
+    detail,
     photos,
-    technicians,
-    services,
     inspection,
     recommendations,
-    outstandingRecommendations,
     recommendationEstimateLines,
     parts,
     notes,
     timeline,
-    serviceInformation,
     agreement,
     agreementTemplate,
     communicationLogs,
     liveEstimate,
     estimateVersionRows,
-    assistantData,
   ] = await Promise.all([
-    listIntakePhotos(work_order_id),
-    needsTechs ? listTechniciansForActiveLocation() : Promise.resolve([]),
-    needsServices ? listServices({ includeInactive: false }) : Promise.resolve([]),
-    needsInspection ? getInspectionForWorkOrder(work_order_id) : Promise.resolve(null),
+    detailPromise,
+    listIntakePhotos(work_order_id, {
+      sign: activeTab === "photos" ? "all" : "thumbs",
+    }),
+    needsInspection
+      ? getInspectionForWorkOrder(work_order_id, {
+          sign: activeTab === "inspection" ? "all" : "none",
+        })
+      : Promise.resolve(null),
     needsRecommendations
       ? listRecommendationsForWorkOrder(work_order_id)
-      : Promise.resolve([]),
-    isEstimateTab
-      ? listOutstandingRecommendationsForMotorcycle(detail.motorcycle_id, work_order_id)
       : Promise.resolve([]),
     isEstimateTab ? listRecommendationEstimateLines(work_order_id) : Promise.resolve([]),
     needsParts ? listPartsForWorkOrder(work_order_id) : Promise.resolve([]),
     activeTab === "notes" ? listTechnicianNotes(work_order_id) : Promise.resolve([]),
     activeTab === "timeline" ? listTimelineEvents(work_order_id) : Promise.resolve([]),
-    activeTab === "service-info"
-      ? getServiceInformation(detail.motorcycle_id)
-      : Promise.resolve(null),
     activeTab === "contract" ? getDropOffAgreement(work_order_id) : Promise.resolve(null),
     activeTab === "contract" ? getActiveAgreementTemplate() : Promise.resolve(null),
     activeTab === "messages" ? listCommunicationLog(work_order_id) : Promise.resolve([]),
@@ -258,6 +264,28 @@ export default async function WorkOrderDetailPage({
           return [];
         })
       : Promise.resolve([]),
+  ]);
+  if (!detail) notFound();
+
+  const foreign = detail.is_foreign_location;
+  const needsTechs = !foreign && (activeTab === "overview" || isEstimateTab);
+  const needsServices = !foreign && isEstimateTab;
+
+  const [
+    technicians,
+    services,
+    outstandingRecommendations,
+    serviceInformation,
+    assistantData,
+  ] = await Promise.all([
+    needsTechs ? listTechniciansForActiveLocation() : Promise.resolve([]),
+    needsServices ? listServices({ includeInactive: false }) : Promise.resolve([]),
+    isEstimateTab
+      ? listOutstandingRecommendationsForMotorcycle(detail.motorcycle_id, work_order_id)
+      : Promise.resolve([]),
+    activeTab === "service-info"
+      ? getServiceInformation(detail.motorcycle_id)
+      : Promise.resolve(null),
     activeTab === "assistant"
       ? loadAskOtomotoPanelData({
           service: diagnosticsAssistant,

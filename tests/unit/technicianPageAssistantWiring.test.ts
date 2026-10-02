@@ -166,6 +166,7 @@ describe("technician page Ask OTOMOTO wiring", () => {
 
   it("lets a technician mutate outside preview without front-office modes", async () => {
     const { packetAssistant } = await shellProps("technician", false);
+    expect(listIntakePhotos).toHaveBeenCalledWith(WO, { sign: "thumbs" });
     expect(packetAssistant?.capabilities).toEqual({
       canMutate: true,
       preview: false,

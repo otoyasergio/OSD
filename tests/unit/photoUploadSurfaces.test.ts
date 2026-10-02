@@ -143,6 +143,7 @@ describe("photo upload surfaces clone files before clearing the picker", () => {
     );
     expect(source).toMatch(/signStoragePaths/);
     expect(source).not.toMatch(/createSignedUrls/);
+    expect(source).toMatch(/signPhotos = options\?\.sign !== "none"/);
   });
 
   it("lightbox offers save-to-device for the open photo", () => {
