@@ -1,4 +1,5 @@
 import type { DbClient } from "@/lib/database/types";
+import { signBucketPaths } from "@/lib/photos/signedUrls";
 
 export const PROFILE_PHOTO_BUCKET = "profile-photos";
 export const PROFILE_PHOTO_MAX_BYTES = 5 * 1024 * 1024;
@@ -20,10 +21,13 @@ export async function createProfilePhotoSignedUrl(
   expiresInSeconds = 60 * 60
 ): Promise<string | null> {
   if (!storagePath) return null;
-  const { data, error } = await supabase.storage
-    .from(PROFILE_PHOTO_BUCKET)
-    .createSignedUrl(storagePath, expiresInSeconds);
-  return error ? null : (data?.signedUrl ?? null);
+  const signed = await signBucketPaths(
+    supabase,
+    PROFILE_PHOTO_BUCKET,
+    [storagePath],
+    expiresInSeconds
+  );
+  return signed.get(storagePath) ?? null;
 }
 
 export async function createProfilePhotoSignedUrls(
@@ -31,22 +35,10 @@ export async function createProfilePhotoSignedUrls(
   storagePaths: Array<string | null>,
   expiresInSeconds = 60 * 60
 ): Promise<Map<string, string | null>> {
-  const paths = [
-    ...new Set(storagePaths.filter((path): path is string => Boolean(path))),
-  ];
-  const byPath = new Map<string, string | null>();
-  if (paths.length === 0) return byPath;
-
-  const { data, error } = await supabase.storage
-    .from(PROFILE_PHOTO_BUCKET)
-    .createSignedUrls(paths, expiresInSeconds);
-  if (error || !data) {
-    paths.forEach((path) => byPath.set(path, null));
-    return byPath;
-  }
-
-  data.forEach((row) => {
-    if (row.path) byPath.set(row.path, row.signedUrl ?? null);
-  });
-  return byPath;
+  return signBucketPaths(
+    supabase,
+    PROFILE_PHOTO_BUCKET,
+    storagePaths.filter((path): path is string => Boolean(path)),
+    expiresInSeconds
+  );
 }

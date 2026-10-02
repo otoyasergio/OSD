@@ -39,6 +39,20 @@ describe("toLightboxPhotos", () => {
     expect(result[0]?.caption).toBe("Scratch on tank");
   });
 
+  it("keeps a thumbs-only photo so the header strip does not go blank", () => {
+    const result = toLightboxPhotos([
+      {
+        photo_id: "p-thumb",
+        signed_url: null,
+        photo_url: null,
+        thumb_url: "https://signed.example/thumb-only.jpg",
+        category: "front",
+      },
+    ]);
+    expect(result[0]?.src).toBe("https://signed.example/thumb-only.jpg");
+    expect(result[0]?.previewSrc).toBe("https://signed.example/thumb-only.jpg");
+  });
+
   it("drops photos without any viewable URL", () => {
     const result = toLightboxPhotos([
       { photo_id: "p3", signed_url: null, photo_url: null, category: "rear" },

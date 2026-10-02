@@ -203,6 +203,8 @@ export async function getInspectionForWorkOrder(
   options?: {
     /** Trusted presentation principal (owner "view as") — read shaping only. */
     view?: ReadView;
+    /** Skip storage signing on Overview/Estimate — those tabs never show the photos. */
+    sign?: "none" | "all";
   }
 ): Promise<InspectionDetail | null> {
   const user = await requireUser();
@@ -348,8 +350,9 @@ export async function getInspectionForWorkOrder(
     photo_url: string | null;
   }>;
 
+  const signPhotos = options?.sign !== "none";
   const signedByPath =
-    rawPhotos.length === 0
+    !signPhotos || rawPhotos.length === 0
       ? new Map<string, string | null>()
       : await signStoragePaths(
           supabase,
@@ -361,6 +364,16 @@ export async function getInspectionForWorkOrder(
         );
 
   const photos = rawPhotos.map((p) => {
+    if (!signPhotos) {
+      return {
+        photo_id: p.photo_id,
+        category: p.category,
+        inspection_result_id: p.inspection_result_id,
+        notes: p.notes,
+        signed_url: null,
+        thumb_url: null,
+      };
+    }
     const signed_url = signedByPath.get(p.storage_path) ?? p.photo_url;
     return {
       photo_id: p.photo_id,
@@ -377,12 +390,11 @@ export async function getInspectionForWorkOrder(
   const signaturePath =
     (inspection as { signature_storage_path?: string | null }).signature_storage_path ??
     null;
-  const { createInspectionSignatureSignedUrl } =
-    await import("@/lib/services/inspectionSignatures");
-  const signatureSignedUrl = await createInspectionSignatureSignedUrl(
-    supabase,
-    signaturePath
-  );
+  const signatureSignedUrl = signPhotos
+    ? await (
+        await import("@/lib/services/inspectionSignatures")
+      ).createInspectionSignatureSignedUrl(supabase, signaturePath)
+    : null;
 
   let completedByName: string | null = null;
   if (inspection.completed_by_user_id) {

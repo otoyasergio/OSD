@@ -209,7 +209,7 @@ export async function createWorkOrderWithIntakePhotosAction(
 async function missingRequiredIntakeCategories(
   workOrderId: string
 ): Promise<PhotoCategory[]> {
-  const existing = await listIntakePhotos(workOrderId);
+  const existing = await listIntakePhotos(workOrderId, { sign: "none" });
   const covered = new Set(existing.map((photo) => photo.category));
   return REQUIRED_INTAKE_CATEGORIES.filter((category) => !covered.has(category));
 }

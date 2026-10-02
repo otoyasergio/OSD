@@ -11,6 +11,7 @@ export function photoPreviewUrl(photo: {
 export function photoFullUrl(photo: {
   signed_url?: string | null;
   photo_url?: string | null;
+  thumb_url?: string | null;
 }): string | null {
-  return photo.signed_url || photo.photo_url || null;
+  return photo.signed_url || photo.photo_url || photo.thumb_url || null;
 }

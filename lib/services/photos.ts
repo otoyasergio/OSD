@@ -285,20 +285,45 @@ export async function resolveBoardPrimaryPhotos(
   return { urls, counts };
 }
 
+export type IntakePhotoSignMode = "none" | "thumbs" | "all";
+
+export type ListIntakePhotosOptions = {
+  category?: PhotoCategory | null;
+  sign?: IntakePhotoSignMode;
+};
+
+/** Storage paths to sign for a given display mode. */
+export function pathsToSignForIntakePhotos(
+  photos: Array<{ storage_path: string; thumb_storage_path?: string | null }>,
+  sign: IntakePhotoSignMode = "all"
+): string[] {
+  if (sign === "none") return [];
+  if (sign === "thumbs") {
+    return photos.map((p) => p.thumb_storage_path || p.storage_path);
+  }
+  return photos.flatMap((p) =>
+    p.thumb_storage_path ? [p.storage_path, p.thumb_storage_path] : [p.storage_path]
+  );
+}
+
 async function signPaths(
   supabase: DbClient,
-  photos: IntakePhoto[]
+  photos: IntakePhoto[],
+  sign: IntakePhotoSignMode = "all"
 ): Promise<IntakePhoto[]> {
-  if (photos.length === 0) return photos;
+  if (photos.length === 0 || sign === "none") return photos;
 
   const byPath = await signStoragePaths(
     supabase,
-    photos.flatMap((p) =>
-      p.thumb_storage_path ? [p.storage_path, p.thumb_storage_path] : [p.storage_path]
-    )
+    pathsToSignForIntakePhotos(photos, sign)
   );
 
   return photos.map((p) => {
+    if (sign === "thumbs") {
+      const preview =
+        byPath.get(p.thumb_storage_path || p.storage_path) ?? p.photo_url ?? null;
+      return { ...p, signed_url: null, thumb_url: preview };
+    }
     const signed_url = byPath.get(p.storage_path) ?? p.photo_url;
     return {
       ...p,
@@ -311,10 +336,12 @@ async function signPaths(
 
 export async function listIntakePhotos(
   workOrderId: string,
-  category?: PhotoCategory | null
+  options?: ListIntakePhotosOptions
 ): Promise<IntakePhoto[]> {
   await requireUser();
   const supabase = await createClient();
+  const category = options?.category;
+  const sign = options?.sign ?? "all";
 
   let query = supabase
     .from("intake_photo")
@@ -339,7 +366,7 @@ export async function listIntakePhotos(
   if (error) throw error;
 
   const photos = (data ?? []) as unknown as IntakePhoto[];
-  return signPaths(supabase, photos);
+  return signPaths(supabase, photos, sign);
 }
 
 export async function countIntakePhotos(workOrderId: string): Promise<number> {
