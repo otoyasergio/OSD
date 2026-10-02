@@ -123,6 +123,30 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("in_progress");
   });
 
+  it("keeps an owner placement when quality check was waived", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        qualityCheckWaived: true,
+      })
+    ).toBe("in_progress");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_pickup",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        qualityCheckWaived: true,
+      })
+    ).toBe("ready_for_pickup");
+  });
+
   it("sets quality_check when all active jobs completed and QC missing", () => {
     expect(
       deriveWorkOrderStatus({

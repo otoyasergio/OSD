@@ -10,6 +10,7 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import { checkoutEvidenceOverridden } from "@/lib/status/checkoutEvidence";
 import { loadCommittedCheckoutCoverage } from "@/lib/services/checkoutEvidence";
+import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 
 export type DeriveJobInput = {
   status: JobStatus | string;
@@ -36,6 +37,11 @@ export type DeriveWorkOrderStatusInput = {
   checkoutEvidenceRequired?: boolean;
   checkoutEvidenceComplete?: boolean;
   checkoutEvidenceOverridden?: boolean;
+  /**
+   * Owner placed this bike from the board without a quality check.
+   * Keep that placement instead of forcing the visit back into QC.
+   */
+  qualityCheckWaived?: boolean;
 };
 
 function isActiveJob(status: string) {
@@ -76,6 +82,7 @@ export function deriveWorkOrderStatus(
     checkoutEvidenceRequired = false,
     checkoutEvidenceComplete = false,
     checkoutEvidenceOverridden = false,
+    qualityCheckWaived = false,
   } = input;
 
   if (
@@ -110,6 +117,9 @@ export function deriveWorkOrderStatus(
   // original-job complete or peer QC. Only jobs waiting_for_approval freeze WO.
 
   if (allActiveCompleted && !qualityCheckComplete) {
+    if (qualityCheckWaived && currentStatus !== "quality_check") {
+      return currentStatus as WorkOrderStatus;
+    }
     return "quality_check";
   }
 
@@ -159,13 +169,22 @@ export async function recalculateWorkOrderStatus(
   workOrderId: string,
   actorUserId: string | null = null
 ) {
-  const { data: workOrder, error: woError } = await supabase
+  const workOrderSelect =
+    "work_order_id, status, location_id, quality_checked_at, quality_checked_by_user_id, quality_check_waived, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived, checkout_evidence_required, checkout_evidence_override_at, checkout_evidence_override_by_user_id, checkout_evidence_override_reason";
+  const workOrderSelectLegacy = workOrderSelect.replace(", quality_check_waived", "");
+  let workOrderResult = await supabase
     .from("work_order")
-    .select(
-      "work_order_id, status, location_id, quality_checked_at, quality_checked_by_user_id, safety_checked_at, safety_checked_by_user_id, safety_required, safety_waived, checkout_evidence_required, checkout_evidence_override_at, checkout_evidence_override_by_user_id, checkout_evidence_override_reason"
-    )
+    .select(workOrderSelect)
     .eq("work_order_id", workOrderId)
     .single();
+  if (isUndefinedColumnError(workOrderResult.error, "quality_check_waived")) {
+    workOrderResult = await supabase
+      .from("work_order")
+      .select(workOrderSelectLegacy)
+      .eq("work_order_id", workOrderId)
+      .single();
+  }
+  const { data: workOrder, error: woError } = workOrderResult;
 
   if (woError) throw woError;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
@@ -213,6 +232,17 @@ export async function recalculateWorkOrderStatus(
   });
 
   const checkoutCoverage = await loadCommittedCheckoutCoverage(supabase, workOrderId);
+  const activeJobs = (jobs ?? []).filter(
+    (job: { status: string }) => job.status !== "cancelled" && job.status !== "declined"
+  );
+  const allActiveCompleted =
+    activeJobs.length > 0 &&
+    activeJobs.every((job: { status: string }) => job.status === "completed");
+  const storedWaiver = Boolean(
+    (workOrder as { quality_check_waived?: boolean | null }).quality_check_waived
+  );
+  // New unfinished work cancels an owner placement so the next finish enters QC.
+  const clearWaiver = storedWaiver && !allActiveCompleted;
   const nextStatus = deriveWorkOrderStatus({
     currentStatus: workOrder.status,
     jobs: jobs ?? [],
@@ -229,18 +259,36 @@ export async function recalculateWorkOrderStatus(
     checkoutEvidenceRequired: Boolean(workOrder.checkout_evidence_required),
     checkoutEvidenceComplete: checkoutCoverage.complete,
     checkoutEvidenceOverridden: checkoutEvidenceOverridden(workOrder),
+    qualityCheckWaived: storedWaiver && allActiveCompleted,
   });
+
+  if (nextStatus === workOrder.status && !clearWaiver) {
+    return nextStatus;
+  }
+
+  const now = new Date().toISOString();
+  const statusPatch: Record<string, unknown> = { updated_at: now };
+  if (nextStatus !== workOrder.status) statusPatch.status = nextStatus;
+  if (clearWaiver) statusPatch.quality_check_waived = false;
+
+  let { error: updateError } = await supabase
+    .from("work_order")
+    .update(statusPatch)
+    .eq("work_order_id", workOrderId);
+  if (updateError && isUndefinedColumnError(updateError, "quality_check_waived")) {
+    delete statusPatch.quality_check_waived;
+    if (!("status" in statusPatch)) return nextStatus;
+    ({ error: updateError } = await supabase
+      .from("work_order")
+      .update(statusPatch)
+      .eq("work_order_id", workOrderId));
+  }
+
+  if (updateError) throw updateError;
 
   if (nextStatus === workOrder.status) {
     return nextStatus;
   }
-
-  const { error: updateError } = await supabase
-    .from("work_order")
-    .update({ status: nextStatus, updated_at: new Date().toISOString() })
-    .eq("work_order_id", workOrderId);
-
-  if (updateError) throw updateError;
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,

@@ -319,6 +319,44 @@ describe("pickup service gates query committed checkout photos", () => {
     expect(client.updates.some((row) => row.payload.status === "completed")).toBe(false);
   });
 
+  it("lets the owner move a bike to pickup without a quality check", async () => {
+    requireUser.mockResolvedValue(owner);
+    const client = makeClient({
+      workOrder: {
+        status: "quality_check",
+        quality_checked_at: null,
+        quality_checked_by_user_id: null,
+        checkout_evidence_required: false,
+        safety_required: false,
+        safety_waived: true,
+      },
+    });
+    createClient.mockResolvedValue(client);
+    await moveWorkOrderOnBoard(WO, "pickup");
+    expect(client.updates.some((row) => row.payload.status === "ready_for_pickup")).toBe(
+      true
+    );
+    expect(client.updates.some((row) => row.payload.quality_check_waived === true)).toBe(
+      true
+    );
+  });
+
+  it("still requires a quality check when a non-owner moves the bike to pickup", async () => {
+    requireUser.mockResolvedValue(advisor);
+    const client = makeClient({
+      workOrder: {
+        status: "quality_check",
+        quality_checked_at: null,
+        quality_checked_by_user_id: null,
+        checkout_evidence_required: false,
+        safety_required: false,
+        safety_waived: true,
+      },
+    });
+    createClient.mockResolvedValue(client);
+    await expect(moveWorkOrderOnBoard(WO, "pickup")).rejects.toThrow("QC_REQUIRED");
+  });
+
   it("board pickup moves reject missing committed checkout evidence", async () => {
     const client = makeClient({ photos: [] });
     createClient.mockResolvedValue(client);

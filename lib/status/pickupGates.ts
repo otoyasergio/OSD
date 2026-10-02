@@ -6,6 +6,8 @@ export type PickupLeaveGateInput = {
   checkoutEvidenceRequired?: boolean;
   checkoutEvidenceComplete?: boolean;
   checkoutEvidenceOverridden?: boolean;
+  /** Owner board moves may place a bike without a peer quality check. */
+  waiveQualityCheck?: boolean;
 };
 
 export type PickupLeaveBlockReason =
@@ -23,7 +25,7 @@ export function pickupLeaveBlockReason(
   input: PickupLeaveGateInput
 ): PickupLeaveBlockReason | null {
   if (!input.inspectionComplete) return "INSPECTION_REQUIRED_BEFORE_PICKUP";
-  if (!input.qualityChecked) return "QC_REQUIRED";
+  if (!input.qualityChecked && !input.waiveQualityCheck) return "QC_REQUIRED";
   if (input.safetyRequired && !input.safetyChecked) {
     return "SAFETY_REQUIRED_BEFORE_PICKUP";
   }

@@ -16,6 +16,7 @@ import {
   isPickupBoardColumn,
   isQcBoardColumn,
 } from "@/lib/status/transitions";
+import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -80,7 +81,8 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
  *
  * Gates:
  * - Ready / gallery Ready require a finished inspection, QC pass, and
- *   head-tech safety unless office waived it.
+ *   head-tech safety unless office waived it. The owner may place a bike
+ *   without the quality check; that placement is kept.
  * - complete uses the same leave gates as Overview (`completeWorkOrder`).
  *   Billing is collected on the Billing tab; rejecting an unpaid drop here
  *   snapped the card back with no way to enter an override reason.
@@ -105,6 +107,9 @@ export async function moveWorkOrderOnBoard(
   if (!canDropInColumn(user.role, targetColumnId, workOrder.status)) {
     throw new Error("FORBIDDEN");
   }
+
+  const ownerMove = user.role === "owner";
+  const waiveQualityCheck = ownerMove && !isQcBoardColumn(targetColumnId);
 
   if (isQcBoardColumn(targetColumnId)) {
     await assertAllActiveJobsCompleted(supabase, workOrderId);
@@ -133,6 +138,7 @@ export async function moveWorkOrderOnBoard(
       qualityChecked: Boolean(
         workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
       ),
+      waiveQualityCheck,
       safetyRequired: isSafetyRequired({
         safety_required: workOrder.safety_required,
         safety_waived: workOrder.safety_waived,
@@ -148,21 +154,32 @@ export async function moveWorkOrderOnBoard(
 
   if (targetColumnId === "complete") {
     const { completeWorkOrder } = await import("@/lib/services/quality");
-    await completeWorkOrder(workOrderId, null);
+    await completeWorkOrder(workOrderId, null, { waiveQualityCheck: ownerMove });
     return;
   }
 
   if (targetStatus === workOrder.status) return;
 
   const now = new Date().toISOString();
-  const { error } = await supabase
+  const movePatch: Record<string, unknown> = {
+    status: targetStatus,
+    updated_at: now,
+    ...(isPickupBoardColumn(targetColumnId) ? { ready_for_pickup_at: now } : {}),
+  };
+  if (ownerMove) {
+    movePatch.quality_check_waived = waiveQualityCheck;
+  }
+  let { error } = await supabase
     .from("work_order")
-    .update({
-      status: targetStatus,
-      updated_at: now,
-      ...(isPickupBoardColumn(targetColumnId) ? { ready_for_pickup_at: now } : {}),
-    })
+    .update(movePatch)
     .eq("work_order_id", workOrderId);
+  if (error && isUndefinedColumnError(error, "quality_check_waived")) {
+    delete movePatch.quality_check_waived;
+    ({ error } = await supabase
+      .from("work_order")
+      .update(movePatch)
+      .eq("work_order_id", workOrderId));
+  }
   if (error) throw error;
 
   await addTimelineEvent(supabase, {
@@ -182,7 +199,12 @@ export async function moveWorkOrderOnBoard(
     action: "work_order_board_move",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Board move to ${targetColumnId} (${targetStatus})`,
+    description:
+      waiveQualityCheck &&
+      !workOrder.quality_checked_at &&
+      !workOrder.quality_checked_by_user_id
+        ? `Owner moved the bike to ${targetColumnId} without a quality check`
+        : `Board move to ${targetColumnId} (${targetStatus})`,
     old_value: { status: workOrder.status },
     new_value: { status: targetStatus, column: targetColumnId },
   });

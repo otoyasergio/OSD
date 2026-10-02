@@ -59,6 +59,7 @@ export type Database = {
           checkout_evidence_override_at: string | null;
           checkout_evidence_override_by_user_id: string | null;
           checkout_evidence_override_reason: string | null;
+          quality_check_waived: boolean;
         };
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
