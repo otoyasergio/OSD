@@ -406,7 +406,7 @@ export function OverviewTab({
               {detail.quality_check_assignee
                 ? `${detail.quality_check_assignee.first_name} ${detail.quality_check_assignee.last_name}`
                 : detail.status === "quality_check"
-                  ? "Unassigned (no eligible peer clocked in)"
+                  ? "Unassigned"
                   : "—"}
             </dd>
           </div>

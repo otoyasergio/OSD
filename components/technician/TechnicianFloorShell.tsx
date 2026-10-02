@@ -72,6 +72,7 @@ import {
   isFloorJobFinished,
   type PitBoardStep,
 } from "@/lib/technician/pitBoard";
+import { presentPeerQcPickerOptions } from "@/lib/jobs-v2/peerQcCompletion";
 import {
   buildFloorActionModel,
   splitDocketByWait,
@@ -202,6 +203,7 @@ export function TechnicianFloorShell({
   const activeStage: FloorStage | null =
     stage ?? (surface ? deriveDefaultStage(surface) : null);
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [qcQuery, setQcQuery] = useState("");
   const [qcChecks, setQcChecks] = useState<boolean[]>([false, false, false]);
   const [note, setNote] = useState<string | null>(null);
   const [timerSecs, setTimerSecs] = useState(surface?.timer_secs ?? 0);
@@ -534,6 +536,7 @@ export function TechnicianFloorShell({
       return;
     }
     if (primary.action === "complete" && surface.job_id) {
+      setQcQuery("");
       setOverlay("qc_pick");
       return;
     }
@@ -591,6 +594,7 @@ export function TechnicianFloorShell({
       return;
     }
     if (step.kind === "complete" && surface.job_id) {
+      setQcQuery("");
       setOverlay("qc_pick");
     }
   }
@@ -604,6 +608,9 @@ export function TechnicianFloorShell({
     if (assigneeId) fields.qc_assignee_id = assigneeId;
     dispatchFloorAction(completeAction, fields);
   }
+
+  const qcRoster = surface?.peer_qc_candidates ?? [];
+  const qcChoices = presentPeerQcPickerOptions(qcRoster, qcQuery);
 
   const showPacket = panel === "packet";
 
@@ -1027,29 +1034,50 @@ export function TechnicianFloorShell({
               <>
                 <h3 className="pit-sheet-title">Who should check your work?</h3>
                 <p className="pit-sheet-or">
-                  Pick a clocked-in tech. They get this bike for peer QC.
+                  Find a tech who didn&apos;t work this bike. They get it for peer QC.
                 </p>
-                {surface.peer_qc_candidates.length > 0 ? (
-                  <ul className="pit-sheet-list">
-                    {surface.peer_qc_candidates.map((tech) => (
-                      <li key={tech.user_id}>
-                        <button
-                          type="button"
-                          className="pit-sheet-btn"
-                          disabled={completePending}
-                          onClick={() => completeWithQcAssignee(tech.user_id)}
-                        >
-                          {tech.display_name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                {qcRoster.length > 0 ? (
+                  <>
+                    <label className="pit-sheet-label">
+                      Find a tech
+                      <input
+                        type="search"
+                        className="pit-sheet-input"
+                        value={qcQuery}
+                        placeholder="Name"
+                        autoComplete="off"
+                        enterKeyHint="search"
+                        onChange={(event) => setQcQuery(event.target.value)}
+                      />
+                    </label>
+                    {qcChoices.length > 0 ? (
+                      <ul className="pit-sheet-list">
+                        {qcChoices.map((tech) => (
+                          <li key={tech.user_id}>
+                            <button
+                              type="button"
+                              className="pit-sheet-btn"
+                              disabled={completePending}
+                              onClick={() => completeWithQcAssignee(tech.user_id)}
+                            >
+                              {tech.display_name}
+                              {tech.clocked_in ? (
+                                <span className="pit-sheet-btn-sub">On the clock</span>
+                              ) : null}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="pit-sheet-or">No tech matches that name.</p>
+                    )}
+                  </>
                 ) : (
                   <p className="pit-sheet-or">
-                    No other techs are clocked in. Front desk will cover QC.
+                    Everyone else already worked this bike. Front desk will cover QC.
                   </p>
                 )}
-                {surface.peer_qc_candidates.length === 0 ? (
+                {qcRoster.length === 0 ? (
                   <button
                     type="button"
                     className="pit-go"
