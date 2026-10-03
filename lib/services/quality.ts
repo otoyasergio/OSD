@@ -13,6 +13,7 @@ import {
 } from "@/lib/permissions";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import {
@@ -94,7 +95,8 @@ async function assertPickupLeaveGates(
     | "checkout_evidence_override_at"
     | "checkout_evidence_override_by_user_id"
     | "checkout_evidence_override_reason"
-  >
+  >,
+  options: { waiveQualityCheck?: boolean } = {}
 ) {
   const [
     { data: safetyRow, error: safetyError },
@@ -128,6 +130,7 @@ async function assertPickupLeaveGates(
     qualityChecked: Boolean(
       workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
     ),
+    waiveQualityCheck: options.waiveQualityCheck,
     safetyRequired: isSafetyRequired({
       safety_required: (safetyRow?.safety_required as boolean | null) ?? null,
       safety_waived: Boolean(safetyRow?.safety_waived),
@@ -287,7 +290,8 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
 
 export async function completeWorkOrder(
   workOrderId: string,
-  pickupNotes?: string | null
+  pickupNotes?: string | null,
+  options: { waiveQualityCheck?: boolean } = {}
 ): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canCompleteWorkOrder(user.role)) throw new Error("FORBIDDEN");
@@ -301,21 +305,30 @@ export async function completeWorkOrder(
     throw new Error("NOT_READY_FOR_PICKUP");
   }
 
-  await assertPickupLeaveGates(supabase, workOrderId, workOrder);
+  await assertPickupLeaveGates(supabase, workOrderId, workOrder, options);
 
   const now = new Date().toISOString();
   const trimmedNotes = pickupNotes?.trim() || null;
 
-  const { error } = await supabase
+  const completionPatch: Record<string, unknown> = {
+    status: "completed",
+    completed_at: now,
+    released_by_user_id: user.user_id,
+    pickup_notes: trimmedNotes,
+    updated_at: now,
+  };
+  if (options.waiveQualityCheck) completionPatch.quality_check_waived = true;
+  let { error } = await supabase
     .from("work_order")
-    .update({
-      status: "completed",
-      completed_at: now,
-      released_by_user_id: user.user_id,
-      pickup_notes: trimmedNotes,
-      updated_at: now,
-    })
+    .update(completionPatch)
     .eq("work_order_id", workOrderId);
+  if (error && isUndefinedColumnError(error, "quality_check_waived")) {
+    delete completionPatch.quality_check_waived;
+    ({ error } = await supabase
+      .from("work_order")
+      .update(completionPatch)
+      .eq("work_order_id", workOrderId));
+  }
   if (error) throw error;
 
   await addTimelineEvent(supabase, {
