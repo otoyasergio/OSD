@@ -1,3 +1,4 @@
+import { isBrowserOffline } from "@/lib/forms/browserOnline";
 import {
   fitEncodedImage,
   redrawOnResize,
@@ -55,10 +56,6 @@ export const DOCUMENT_IMAGE_COMPRESS: Required<CompressImageOptions> = {
  * Defaults keep bike photos large enough to inspect VIN, scratches, and
  * fasteners when opened full-screen.
  */
-function isNavigatorOffline(): boolean {
-  return typeof navigator !== "undefined" && navigator.onLine === false;
-}
-
 export async function compressImageForUpload(
   file: File,
   options: CompressImageOptions = {}
@@ -76,7 +73,7 @@ export async function compressImageForUpload(
   let fitted: FittedImage | null = null;
   // Offline, `new Worker(url)` hangs waiting for a chunk that cannot load.
   // Persist/queue the original (or main-thread JPEG) instead of waiting 45s.
-  if (!isNavigatorOffline()) {
+  if (!isBrowserOffline()) {
     try {
       fitted = await compressInWorker(file, resolved);
     } catch {

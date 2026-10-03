@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { isBrowserOnline } from "@/lib/forms/browserOnline";
 import { uploadAssistantPhotoAction } from "@/app/(app)/work_orders/assistant-actions";
 import { uploadIntakePhotoAction } from "@/app/(app)/work_orders/photo-actions";
 import { enqueuePhotoUpload } from "@/lib/photos/uploadQueue/enqueue";
@@ -19,6 +20,7 @@ import {
   newestIncompleteIntakeDraft,
   photoUploadQueueCounts,
   prepareQueuedPhoto,
+  prepareQueuedPhotoFromBytes,
 } from "@/lib/photos/uploadQueue/prepareQueuedPhoto";
 import { PhotoUploadQueueRunner } from "@/lib/photos/uploadQueue/runner";
 import {
@@ -110,6 +112,19 @@ type ProviderProps = {
   uploadAssistantPhoto?: QueuedPhotoUploadActions["uploadAssistantPhoto"];
   isOnline?: () => boolean;
   now?: () => number;
+  /** Isolated mutation E2E only — never enabled in production. */
+  e2ePhotoQueueHook?: boolean;
+};
+
+export type E2ePhotoQueueHook = {
+  enqueueIntakeHeic(payload: {
+    base64: string;
+    name: string;
+    category: string;
+    workOrderId: string;
+    notes?: string;
+  }): Promise<QueuedPhotoUpload>;
+  isOnline(): boolean;
 };
 
 export function PhotoUploadQueueProvider({
@@ -122,6 +137,7 @@ export function PhotoUploadQueueProvider({
   uploadAssistantPhoto = uploadAssistantPhotoAction,
   isOnline,
   now,
+  e2ePhotoQueueHook = false,
 }: ProviderProps) {
   const scope = useMemo<PhotoUploadScope>(
     () => ({ userId, locationId }),
@@ -163,10 +179,7 @@ export function PhotoUploadQueueProvider({
     lastNowRef.current = value > lastNowRef.current ? value : lastNowRef.current + 1;
     return lastNowRef.current;
   }, []);
-  const isOnlineFn = useCallback(
-    () => (isOnlineFnRef.current ?? (() => navigator.onLine))(),
-    []
-  );
+  const isOnlineFn = useCallback(() => (isOnlineFnRef.current ?? isBrowserOnline)(), []);
 
   const innerStore = useMemo(
     () => storeOverride ?? createPhotoUploadQueueStore(durableQueueEnabled),
@@ -512,6 +525,62 @@ export function PhotoUploadQueueProvider({
     [previewUrls]
   );
 
+  const [onlineTick, setOnlineTick] = useState(0);
+  useEffect(() => {
+    isBrowserOnline();
+    const bump = () => setOnlineTick((value) => value + 1);
+    window.addEventListener("offline", bump);
+    window.addEventListener("online", bump);
+    return () => {
+      window.removeEventListener("offline", bump);
+      window.removeEventListener("online", bump);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!e2ePhotoQueueHook) return;
+    const hook: E2ePhotoQueueHook = {
+      async enqueueIntakeHeic(payload) {
+        const binary = atob(payload.base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        if (bytes.byteLength === 0) {
+          throw new Error("E2E HEIC payload was empty");
+        }
+        const prepared = prepareQueuedPhotoFromBytes({
+          bytes,
+          fileName: payload.name,
+          mimeType: "image/heic",
+          userId: scope.userId,
+          locationId: scope.locationId,
+          category: payload.category,
+          workOrderId: payload.workOrderId,
+          notes: payload.notes,
+          now: readNow(),
+        });
+        const queued = await enqueuePhotoUpload({
+          store,
+          scope,
+          item: prepared,
+          now: readNow(),
+          surface: "photos_tab",
+        });
+        await refreshItems();
+        if (queued.workOrderId) await runnerRef.current?.wake();
+        return queued;
+      },
+      isOnline: isOnlineFn,
+    };
+    (window as Window & { __otomotoPhotoQueue?: E2ePhotoQueueHook }).__otomotoPhotoQueue =
+      hook;
+    return () => {
+      delete (window as Window & { __otomotoPhotoQueue?: E2ePhotoQueueHook })
+        .__otomotoPhotoQueue;
+    };
+  }, [e2ePhotoQueueHook, isOnlineFn, onlineTick, readNow, refreshItems, scope, store]);
+
   const api = useMemo<PhotoUploadQueueApi>(
     () => ({
       items,
@@ -539,6 +608,7 @@ export function PhotoUploadQueueProvider({
       retry,
       subscribeConfirmation,
       waitForConfirmations,
+      onlineTick,
     ]
   );
 

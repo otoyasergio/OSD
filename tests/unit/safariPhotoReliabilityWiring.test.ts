@@ -23,12 +23,25 @@ describe("stateful Safari photo reliability wiring", () => {
     const spec = source("tests/e2e/safari-photo-reliability.spec.ts");
     expect(spec).toMatch(/storageStatePath\("owner"\)/);
     expect(spec).toMatch(/setOffline\(true\)/);
-    expect(spec).toMatch(/setInputFiles/);
+    expect(spec).toMatch(/getByRole\(\s*"heading",\s*\{\s*name:\s*"Upload intake photo"/);
+    expect(spec).toMatch(/Navigator\.prototype/);
+    expect(spec).toMatch(/dispatchEvent\(\s*new Event\(\s*"offline"/);
+    expect(spec).toMatch(/__otomotoPhotoQueue/);
+    expect(spec).toMatch(/enqueueIntakeHeic/);
+    expect(spec).toMatch(/toString\("base64"\)/);
     expect(spec).toMatch(/sample\.heic/);
-    expect(spec).toMatch(/Photo library/i);
     expect(spec).toMatch(/waiting for connection/i);
+    const layout = source("app/(app)/layout.tsx");
+    expect(layout).toMatch(
+      /e2ePhotoQueueHook=\{\s*process\.env\.E2E_ALLOW_MUTATION === "1"/
+    );
+    const provider = source("components/photos/PhotoUploadQueueProvider.tsx");
+    expect(provider).toMatch(/e2ePhotoQueueHook/);
+    expect(provider).toMatch(/__otomotoPhotoQueue/);
+    expect(provider).toMatch(/prepareQueuedPhotoFromBytes/);
+    expect(provider).toMatch(/atob\(/);
     const prepare = source("lib/forms/preparePhotoFileForUpload.ts");
-    expect(prepare).toMatch(/navigator\.onLine === false/);
+    expect(prepare).toMatch(/isBrowserOffline/);
     const uploader = source("lib/photos/uploadQueue/uploadQueuedPhoto.ts");
     expect(uploader).toMatch(/compressImageForUpload/);
     expect(spec).toMatch(/page\.close\(/);
