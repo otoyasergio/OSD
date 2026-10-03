@@ -50,4 +50,59 @@ describe("getWorkOrderNextAction", () => {
     });
     expect(next?.title).toMatch(/Final inspection/i);
   });
+
+  const afterQcSafety = {
+    workOrderId: "wo-1",
+    status: "safety_check" as const,
+    qualityChecked: true,
+    safetyChecked: true,
+    readyForPickup: false,
+    safety_required: true,
+    safety_waived: false,
+    jobs: [{ status: "completed", service_name_snapshot: "Oil Change" }],
+    hasAssignedTech: true,
+    inspectionCompleted: true,
+  };
+
+  it("asks to capture checkout evidence after QC/safety when committed photos are missing", () => {
+    const next = getWorkOrderNextAction({
+      ...afterQcSafety,
+      checkoutEvidenceRequired: true,
+      checkoutEvidenceComplete: false,
+      checkoutEvidenceOverridden: false,
+    });
+    expect(next?.title).toMatch(/checkout evidence/i);
+    expect(next?.detail).toMatch(/checkout/i);
+    expect(next?.title).not.toMatch(/Mark ready/i);
+    expect(next?.detail).not.toMatch(/Mark ready/i);
+  });
+
+  it("asks to mark ready when checkout is complete, overridden, or not required", () => {
+    expect(
+      getWorkOrderNextAction({
+        ...afterQcSafety,
+        checkoutEvidenceRequired: false,
+        checkoutEvidenceComplete: false,
+        checkoutEvidenceOverridden: false,
+      })?.title
+    ).toMatch(/Mark ready/i);
+
+    expect(
+      getWorkOrderNextAction({
+        ...afterQcSafety,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: true,
+        checkoutEvidenceOverridden: false,
+      })?.title
+    ).toMatch(/Mark ready/i);
+
+    expect(
+      getWorkOrderNextAction({
+        ...afterQcSafety,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+        checkoutEvidenceOverridden: true,
+      })?.title
+    ).toMatch(/Mark ready/i);
+  });
 });

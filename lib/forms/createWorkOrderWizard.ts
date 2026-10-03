@@ -121,6 +121,30 @@ export function canSubmitCreateWorkOrderWizard(data: {
   );
 }
 
+export function shouldApplyCreateIntakePhotoChange(
+  stepId: string,
+  previous: Record<string, File | null | undefined>,
+  next: Record<string, File | null | undefined>
+): boolean {
+  if (stepId === "photos") return true;
+  const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+  for (const key of keys) {
+    const had = previous[key] instanceof File && (previous[key] as File).size > 0;
+    const has = next[key] instanceof File && (next[key] as File).size > 0;
+    if (had && !has) return true;
+  }
+  return false;
+}
+
+export function shouldApplyCreateOptionalPhotoChange(
+  stepId: string,
+  previous: readonly File[],
+  next: readonly File[]
+): boolean {
+  if (stepId === "photos") return true;
+  return next.length < previous.length;
+}
+
 export function canProceedFromWizardStep(
   stepId: CreateWorkOrderWizardStepId,
   data: StepCompleteInput

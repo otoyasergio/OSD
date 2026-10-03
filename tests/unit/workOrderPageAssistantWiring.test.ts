@@ -119,10 +119,8 @@ function findPanelProps(node: unknown): Record<string, unknown> | null {
     return null;
   }
   const element = node as { type?: unknown; props?: Record<string, unknown> };
-  if (
-    typeof element.type === "function" &&
-    (element.type as { name?: string }).name === "AskOtomotoPanel"
-  ) {
+  const route = element.props?.route as { surface?: string } | undefined;
+  if (route?.surface === "office") {
     return element.props ?? null;
   }
   return findPanelProps(element.props?.children);

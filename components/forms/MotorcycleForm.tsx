@@ -233,6 +233,8 @@ export function MotorcycleForm({
           defaultValue={motorcycle?.plate_number}
           maxLength={20}
           autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
           autoComplete="off"
           hint="Saved in uppercase."
         />

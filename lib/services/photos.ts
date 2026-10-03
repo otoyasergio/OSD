@@ -13,9 +13,22 @@ import {
 import { intakePhotoSchema } from "@/lib/validation/schemas";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
-import { intakeThumbStoragePath, makeIntakeThumb } from "@/lib/photos/makeIntakeThumb";
+import {
+  canonicalizeIntakePhoto,
+  INTAKE_PHOTO_MAX_SOURCE_BYTES,
+  makeCanonicalIntakeThumbnail,
+} from "@/lib/photos/canonicalizeIntakePhoto";
+import {
+  orchestrateIntakePhotoUpload,
+  type IntakePhotoUploadRow,
+} from "@/lib/photos/intakePhotoUploadOrchestrator";
+import { INTAKE_PHOTO_BUCKET, signStoragePaths } from "@/lib/photos/signedUrls";
+import { cleanupUnreferencedIntakePhotoObjectsAsAdmin } from "@/lib/photos/cleanupUnreferencedIntakePhotoObjects";
+import { parseIntakePhotoCorrectionReason } from "@/lib/photos/intakePhotoCorrectionReason";
+import { isCheckoutPhotoCategory } from "@/lib/status/checkoutEvidence";
 import { PHOTO_UPLOAD_RETRY_ATTEMPTS } from "@/lib/forms/photoUploadErrors";
 import { classifyStorageUploadError } from "@/lib/forms/storageUploadRetry";
+import { logIntakeThumbnailFailure } from "@/lib/photos/intakeThumbnailTelemetry";
 
 export type IntakePhoto = {
   photo_id: string;
@@ -28,6 +41,11 @@ export type IntakePhoto = {
   notes: string | null;
   inspection_result_id: string | null;
   job_id: string | null;
+  client_upload_id: string | null;
+  content_type: string | null;
+  byte_size: number | null;
+  pixel_width: number | null;
+  pixel_height: number | null;
   created_at: string;
   /** Full-size signed URL — lightbox and inspection zoom. */
   signed_url?: string | null;
@@ -41,10 +59,12 @@ export type IntakePhoto = {
 };
 
 const COLUMNS =
-  "photo_id, work_order_id, uploaded_by_user_id, storage_path, thumb_storage_path, photo_url, category, notes, inspection_result_id, job_id, created_at";
+  "photo_id, work_order_id, uploaded_by_user_id, storage_path, thumb_storage_path, photo_url, category, notes, inspection_result_id, job_id, client_upload_id, content_type, byte_size, pixel_width, pixel_height, created_at";
 
-const BUCKET = "intake-photos";
-const MAX_BYTES = 10 * 1024 * 1024;
+const BUCKET = INTAKE_PHOTO_BUCKET;
+
+export { signStoragePaths };
+const MAX_BYTES = INTAKE_PHOTO_MAX_SOURCE_BYTES;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -64,11 +84,15 @@ async function requireMutableWorkOrder(
   supabase: DbClient;
   locationId: string;
   workOrderNumber: string;
+  qualityCheckedAt: string | null;
+  qualityCheckedByUserId: string | null;
 }> {
   const supabase = await createClient();
   const { data: workOrder, error } = await supabase
     .from("work_order")
-    .select("work_order_id, location_id, work_order_number, status")
+    .select(
+      "work_order_id, location_id, work_order_number, status, quality_checked_at, quality_checked_by_user_id"
+    )
     .eq("work_order_id", workOrderId)
     .maybeSingle();
 
@@ -83,14 +107,34 @@ async function requireMutableWorkOrder(
     supabase,
     locationId: workOrder.location_id,
     workOrderNumber: workOrder.work_order_number,
+    qualityCheckedAt: workOrder.quality_checked_at as string | null,
+    qualityCheckedByUserId: workOrder.quality_checked_by_user_id as string | null,
   };
 }
 
-function extensionForType(type: string): string {
-  if (type === "image/png") return "png";
-  if (type === "image/webp") return "webp";
-  if (type === "image/heic" || type === "image/heif") return "heic";
-  return "jpg";
+function isActiveJobStatus(status: string): boolean {
+  return status !== "cancelled" && status !== "declined";
+}
+
+async function assertCheckoutPhotoCaptureReady(
+  supabase: DbClient,
+  workOrderId: string,
+  workOrder: { qualityCheckedAt: string | null; qualityCheckedByUserId: string | null }
+): Promise<void> {
+  if (!workOrder.qualityCheckedAt || !workOrder.qualityCheckedByUserId) {
+    throw new Error("CHECKOUT_EVIDENCE_NOT_READY");
+  }
+  const { data: jobs, error } = await supabase
+    .from("job")
+    .select("job_id, status")
+    .eq("work_order_id", workOrderId);
+  if (error) throw error;
+  const active = (jobs ?? []).filter((job: { status: string }) =>
+    isActiveJobStatus(job.status)
+  );
+  if (active.length === 0 || active.some((job) => job.status !== "completed")) {
+    throw new Error("CHECKOUT_EVIDENCE_NOT_READY");
+  }
 }
 
 async function uploadIntakeBytes(
@@ -99,7 +143,10 @@ async function uploadIntakeBytes(
   bytes: Uint8Array,
   contentType: string
 ) {
-  let lastError: { message?: string } | null = null;
+  let lastError: {
+    message?: string | null;
+    statusCode?: string | number | null;
+  } | null = null;
   for (let attempt = 0; attempt < PHOTO_UPLOAD_RETRY_ATTEMPTS; attempt += 1) {
     const { error } = await supabase.storage.from(BUCKET).upload(storagePath, bytes, {
       contentType,
@@ -112,7 +159,11 @@ async function uploadIntakeBytes(
     await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
   }
   if (lastError) {
-    console.error("intake photo upload failed", lastError);
+    const safeError = new Error("PHOTO_UPLOAD_FAILED") as Error & {
+      statusCode?: string | number | null;
+    };
+    safeError.statusCode = lastError.statusCode;
+    throw safeError;
   }
   throw new Error("PHOTO_UPLOAD_FAILED");
 }
@@ -154,80 +205,6 @@ export function pickPrimaryIntakePhoto<T extends IntakePhotoRef>(photos: T[]): T
     if (rankA !== rankB) return rankA - rankB;
     return (a.created_at ?? "").localeCompare(b.created_at ?? "");
   })[0];
-}
-
-const DEFAULT_SIGN_TTL_SECONDS = 60 * 60;
-/** Reuse a signed URL for 45 min of its 60 min validity. */
-const SIGNED_URL_REUSE_MS = 45 * 60 * 1000;
-const SIGNED_URL_CACHE_MAX = 4000;
-
-/**
- * Per-instance cache of signed URLs. Without it every server render mints a
- * new token per photo, so the URL changes and the browser re-downloads every
- * thumbnail on every realtime-driven refresh. A stable URL lets the browser
- * cache do its job. Signed URLs are bearer links to staff photos either way;
- * all callers are staff/portal surfaces already authorized to view them.
- */
-const signedUrlCache = new Map<string, { url: string; freshUntil: number }>();
-
-function pruneSignedUrlCache(now: number): void {
-  if (signedUrlCache.size <= SIGNED_URL_CACHE_MAX) return;
-  for (const [key, value] of signedUrlCache) {
-    if (value.freshUntil <= now) signedUrlCache.delete(key);
-  }
-  if (signedUrlCache.size <= SIGNED_URL_CACHE_MAX) return;
-  // Still over cap: drop oldest half by insertion order.
-  let toDrop = Math.ceil(signedUrlCache.size / 2);
-  for (const key of signedUrlCache.keys()) {
-    if (toDrop-- <= 0) break;
-    signedUrlCache.delete(key);
-  }
-}
-
-export async function signStoragePaths(
-  supabase: DbClient,
-  paths: string[],
-  expiresInSeconds = DEFAULT_SIGN_TTL_SECONDS
-): Promise<Map<string, string | null>> {
-  const unique = [...new Set(paths.filter(Boolean))];
-  const byPath = new Map<string, string | null>();
-  if (unique.length === 0) return byPath;
-
-  // Only the default TTL flows through the cache; custom expiries (e.g.
-  // portal links) always sign fresh.
-  const cacheable = expiresInSeconds === DEFAULT_SIGN_TTL_SECONDS;
-  const now = Date.now();
-  const misses: string[] = [];
-  if (cacheable) {
-    for (const path of unique) {
-      const hit = signedUrlCache.get(path);
-      if (hit && hit.freshUntil > now) byPath.set(path, hit.url);
-      else misses.push(path);
-    }
-    if (misses.length === 0) return byPath;
-  } else {
-    misses.push(...unique);
-  }
-
-  const { data, error } = await supabase.storage
-    .from(BUCKET)
-    .createSignedUrls(misses, expiresInSeconds);
-
-  if (error || !data) {
-    for (const path of misses) byPath.set(path, null);
-    return byPath;
-  }
-
-  for (const row of data) {
-    if (!row.path) continue;
-    const url = row.signedUrl ?? null;
-    byPath.set(row.path, url);
-    if (cacheable && url) {
-      signedUrlCache.set(row.path, { url, freshUntil: now + SIGNED_URL_REUSE_MS });
-    }
-  }
-  if (cacheable) pruneSignedUrlCache(now);
-  return byPath;
 }
 
 /** Sign one display URL per work order (front preferred). */
@@ -308,20 +285,45 @@ export async function resolveBoardPrimaryPhotos(
   return { urls, counts };
 }
 
+export type IntakePhotoSignMode = "none" | "thumbs" | "all";
+
+export type ListIntakePhotosOptions = {
+  category?: PhotoCategory | null;
+  sign?: IntakePhotoSignMode;
+};
+
+/** Storage paths to sign for a given display mode. */
+export function pathsToSignForIntakePhotos(
+  photos: Array<{ storage_path: string; thumb_storage_path?: string | null }>,
+  sign: IntakePhotoSignMode = "all"
+): string[] {
+  if (sign === "none") return [];
+  if (sign === "thumbs") {
+    return photos.map((p) => p.thumb_storage_path || p.storage_path);
+  }
+  return photos.flatMap((p) =>
+    p.thumb_storage_path ? [p.storage_path, p.thumb_storage_path] : [p.storage_path]
+  );
+}
+
 async function signPaths(
   supabase: DbClient,
-  photos: IntakePhoto[]
+  photos: IntakePhoto[],
+  sign: IntakePhotoSignMode = "all"
 ): Promise<IntakePhoto[]> {
-  if (photos.length === 0) return photos;
+  if (photos.length === 0 || sign === "none") return photos;
 
   const byPath = await signStoragePaths(
     supabase,
-    photos.flatMap((p) =>
-      p.thumb_storage_path ? [p.storage_path, p.thumb_storage_path] : [p.storage_path]
-    )
+    pathsToSignForIntakePhotos(photos, sign)
   );
 
   return photos.map((p) => {
+    if (sign === "thumbs") {
+      const preview =
+        byPath.get(p.thumb_storage_path || p.storage_path) ?? p.photo_url ?? null;
+      return { ...p, signed_url: null, thumb_url: preview };
+    }
     const signed_url = byPath.get(p.storage_path) ?? p.photo_url;
     return {
       ...p,
@@ -334,10 +336,12 @@ async function signPaths(
 
 export async function listIntakePhotos(
   workOrderId: string,
-  category?: PhotoCategory | null
+  options?: ListIntakePhotosOptions
 ): Promise<IntakePhoto[]> {
   await requireUser();
   const supabase = await createClient();
+  const category = options?.category;
+  const sign = options?.sign ?? "all";
 
   let query = supabase
     .from("intake_photo")
@@ -362,7 +366,7 @@ export async function listIntakePhotos(
   if (error) throw error;
 
   const photos = (data ?? []) as unknown as IntakePhoto[];
-  return signPaths(supabase, photos);
+  return signPaths(supabase, photos, sign);
 }
 
 export async function countIntakePhotos(workOrderId: string): Promise<number> {
@@ -384,6 +388,7 @@ export async function uploadIntakePhoto(
     notes?: string | null;
     inspection_result_id?: string | null;
     job_id?: string | null;
+    client_upload_id?: string | null;
     file: File;
   }
 ): Promise<IntakePhoto> {
@@ -395,6 +400,7 @@ export async function uploadIntakePhoto(
     notes: input.notes,
     inspection_result_id: input.inspection_result_id,
     job_id: input.job_id,
+    client_upload_id: input.client_upload_id,
   });
 
   if (parsed.category === "inspection_item" && !parsed.inspection_result_id) {
@@ -418,10 +424,15 @@ export async function uploadIntakePhoto(
     throw new Error("PHOTO_TYPE_INVALID");
   }
 
-  const { supabase, locationId, workOrderNumber } = await requireMutableWorkOrder(
-    user,
-    workOrderId
-  );
+  const { supabase, qualityCheckedAt, qualityCheckedByUserId } =
+    await requireMutableWorkOrder(user, workOrderId);
+
+  if (isCheckoutPhotoCategory(parsed.category)) {
+    await assertCheckoutPhotoCaptureReady(supabase, workOrderId, {
+      qualityCheckedAt,
+      qualityCheckedByUserId,
+    });
+  }
 
   if (parsed.job_id) {
     const { data: jobRow, error: jobError } = await supabase
@@ -459,81 +470,70 @@ export async function uploadIntakePhoto(
     }
   }
 
-  const ext = extensionForType(file.type || "image/jpeg");
-  const photoId = crypto.randomUUID();
-  const storagePath = `${workOrderId}/${parsed.category}/${photoId}.${ext}`;
-  const thumbPath = intakeThumbStoragePath(storagePath);
-
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.byteLength === 0) throw new Error("PHOTO_REQUIRED");
-  await uploadIntakeBytes(supabase, storagePath, bytes, file.type || "image/jpeg");
 
-  let thumbStoragePath: string | null = null;
-  const thumbBytes = await makeIntakeThumb(bytes);
-  if (thumbBytes && thumbBytes.byteLength > 0) {
-    const { error: thumbError } = await supabase.storage
-      .from(BUCKET)
-      .upload(thumbPath, thumbBytes, {
-        contentType: "image/jpeg",
-        upsert: false,
-      });
-    if (thumbError) {
-      console.error("intake photo thumb upload failed", thumbError);
-    } else {
-      thumbStoragePath = thumbPath;
-    }
-  }
-
-  const { data, error } = await supabase
-    .from("intake_photo")
-    .insert({
-      photo_id: photoId,
-      work_order_id: workOrderId,
-      uploaded_by_user_id: user.user_id,
-      storage_path: storagePath,
-      thumb_storage_path: thumbStoragePath,
-      photo_url: null,
+  const photo = await orchestrateIntakePhotoUpload(
+    {
+      workOrderId,
+      uploadedByUserId: user.user_id,
+      clientUploadId: parsed.client_upload_id ?? null,
       category: parsed.category,
       notes: parsed.notes ?? null,
-      inspection_result_id: parsed.inspection_result_id ?? null,
-      job_id: parsed.job_id ?? null,
-    })
-    .select(COLUMNS)
-    .single();
-
-  if (error) {
-    const toRemove = thumbStoragePath ? [storagePath, thumbStoragePath] : [storagePath];
-    await supabase.storage.from(BUCKET).remove(toRemove);
-    throw error;
-  }
-
-  const photo = data as IntakePhoto;
-  const categoryLabel = PHOTO_CATEGORY_LABELS[photo.category] ?? photo.category;
-
-  await addTimelineEvent(supabase, {
-    work_order_id: workOrderId,
-    user_id: user.user_id,
-    event_type: TimelineEventType.INTAKE_PHOTO_UPLOADED,
-    entity_type: "intake_photo",
-    entity_id: photo.photo_id,
-    description: `Intake photo uploaded (${categoryLabel})`,
-    new_value: { category: photo.category, storage_path: storagePath },
-  });
-
-  await addAuditLog(supabase, {
-    actor_user_id: user.user_id,
-    location_id: locationId,
-    action: "intake_photo_uploaded",
-    entity_type: "intake_photo",
-    entity_id: photo.photo_id,
-    description: `Intake photo (${categoryLabel}) uploaded on ${workOrderNumber}`,
-    new_value: {
-      category: photo.category,
-      storage_path: storagePath,
+      inspectionResultId: parsed.inspection_result_id ?? null,
+      jobId: parsed.job_id ?? null,
+      sourceBytes: bytes,
     },
-  });
+    {
+      createPhotoId: () => crypto.randomUUID(),
+      findPhotoByClientUploadId: async (clientUploadId) => {
+        const { data, error } = await supabase
+          .from("intake_photo")
+          .select(COLUMNS)
+          .eq("client_upload_id", clientUploadId)
+          .maybeSingle();
+        if (error) throw error;
+        return (data as IntakePhotoUploadRow | null) ?? null;
+      },
+      prepareCanonicalPhoto: canonicalizeIntakePhoto,
+      makeThumbnail: makeCanonicalIntakeThumbnail,
+      uploadObject: async (upload) => {
+        await uploadIntakeBytes(supabase, upload.path, upload.bytes, upload.contentType);
+      },
+      removeObjects: async (paths) => {
+        await cleanupUnreferencedIntakePhotoObjectsAsAdmin(paths, (details) => {
+          console.error("intake photo storage cleanup failed", details);
+        });
+      },
+      insertPhoto: async (insert) => {
+        const { data, error } = await supabase.rpc("create_intake_photo_with_event", {
+          p_photo_id: insert.photo_id,
+          p_work_order_id: insert.work_order_id,
+          p_storage_path: insert.storage_path,
+          p_thumb_storage_path: insert.thumb_storage_path,
+          p_category: insert.category,
+          p_notes: insert.notes,
+          p_inspection_result_id: insert.inspection_result_id,
+          p_job_id: insert.job_id,
+          p_client_upload_id: insert.client_upload_id,
+          p_content_type: insert.content_type,
+          p_byte_size: insert.byte_size,
+          p_pixel_width: insert.pixel_width,
+          p_pixel_height: insert.pixel_height,
+        });
+        if (error) throw error;
+        const row = Array.isArray(data) ? data[0] : data;
+        if (!row) throw new Error("PHOTO_UPLOAD_FAILED");
+        return row as IntakePhotoUploadRow;
+      },
+      logThumbnailFailure: logIntakeThumbnailFailure,
+      logCleanupFailure: (details) => {
+        console.error("intake photo leftover cleanup failed", details);
+      },
+    }
+  );
 
-  const [signed] = await signPaths(supabase, [photo]);
+  const [signed] = await signPaths(supabase, [photo as IntakePhoto]);
   return signed;
 }
 
@@ -543,10 +543,12 @@ export async function uploadIntakePhoto(
  */
 export async function deleteIntakePhoto(
   workOrderId: string,
-  photoId: string
+  photoId: string,
+  reason: string
 ): Promise<void> {
   const user = await requireUser();
   if (!canDeleteIntakePhoto(user.role)) throw new Error("FORBIDDEN");
+  const correctionReason = parseIntakePhotoCorrectionReason(reason);
 
   const supabase = await createClient();
   const { data: workOrder, error: woError } = await supabase
@@ -585,10 +587,24 @@ export async function deleteIntakePhoto(
     .remove(storagePaths);
   if (storageError) {
     // Row is gone; storage orphan is preferable to failing the user action.
-    console.error("intake photo storage remove failed", storageError);
+    const statusCode =
+      storageError.statusCode == null ? undefined : String(storageError.statusCode);
+    console.error("intake photo storage remove failed", {
+      photoId,
+      pathCount: storagePaths.length,
+      ...(statusCode ? { statusCode } : {}),
+    });
   }
 
   const categoryLabel = PHOTO_CATEGORY_LABELS[row.category] ?? row.category;
+  const evidence = {
+    reason: correctionReason,
+    category: row.category,
+    storage_path: row.storage_path,
+    thumb_storage_path: row.thumb_storage_path,
+    uploaded_by_user_id: row.uploaded_by_user_id,
+    created_at: row.created_at,
+  };
 
   await addTimelineEvent(supabase, {
     work_order_id: workOrderId,
@@ -596,11 +612,8 @@ export async function deleteIntakePhoto(
     event_type: TimelineEventType.INTAKE_PHOTO_DELETED,
     entity_type: "intake_photo",
     entity_id: photoId,
-    description: `Intake photo removed (${categoryLabel})`,
-    old_value: {
-      category: row.category,
-      storage_path: row.storage_path,
-    },
+    description: `Intake photo removed (${categoryLabel}): ${correctionReason}`,
+    old_value: evidence,
   });
 
   await addAuditLog(supabase, {
@@ -609,10 +622,7 @@ export async function deleteIntakePhoto(
     action: "intake_photo_deleted",
     entity_type: "intake_photo",
     entity_id: photoId,
-    description: `Intake photo (${categoryLabel}) removed from ${workOrder.work_order_number}`,
-    old_value: {
-      category: row.category,
-      storage_path: row.storage_path,
-    },
+    description: `Intake photo (${categoryLabel}) removed from ${workOrder.work_order_number}: ${correctionReason}`,
+    old_value: evidence,
   });
 }

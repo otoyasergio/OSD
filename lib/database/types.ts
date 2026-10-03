@@ -69,7 +69,12 @@ export type PhotoCategory =
   | "inspection_forks"
   | "inspection_item"
   | "job_proof"
-  | "job_work";
+  | "job_work"
+  | "checkout_front"
+  | "checkout_rear"
+  | "checkout_left_side"
+  | "checkout_right_side"
+  | "checkout_odometer";
 
 export type TechnicianNoteType =
   | "general"

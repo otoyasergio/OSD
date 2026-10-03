@@ -73,7 +73,7 @@ const MESSAGES: Record<string, string> = {
   QC_FAIL_REASON_REQUIRED: "Enter a reason when failing quality check.",
   QC_ASSIGNEE_REQUIRED: "Choose who should check your work.",
   QC_ASSIGNEE_NOT_AVAILABLE:
-    "That technician is not clocked in or available for peer QC.",
+    "That technician isn't available for peer QC. Pick someone who didn't work this bike.",
   INVALID_FLAG_REASON: "Choose a valid flag reason.",
   ADMIN_FLAG_NOT_FOUND: "That admin flag no longer exists.",
   ADMIN_FLAG_ALREADY_CLEARED: "That admin flag was already cleared.",
@@ -116,8 +116,15 @@ const MESSAGES: Record<string, string> = {
   PHOTO_TOO_LARGE: "Photos must be 10 MB or smaller.",
   PHOTO_TYPE_INVALID: "Use a JPEG, PNG, WebP, or HEIC image.",
   PHOTO_UPLOAD_FAILED: "Could not upload the photo. Try again.",
+  PHOTO_UPLOAD_ID_CONFLICT:
+    "This photo upload was already used for a different work item.",
   PHOTO_DELETE_FAILED: "Could not remove the photo. Try again.",
   PHOTO_NOT_FOUND: "That photo no longer exists.",
+  PHOTO_CORRECTION_REASON_REQUIRED: "Enter a reason for permanently removing this photo.",
+  PHOTO_CORRECTION_REASON_TOO_LONG:
+    "Keep the correction reason to 500 characters or fewer.",
+  PHOTO_ADMIN_MISCONFIGURED:
+    "Photo reconciliation needs SUPABASE_SERVICE_ROLE_KEY and Supabase URL.",
   INTAKE_PHOTOS_REQUIRED:
     "Add all six required intake photos before creating the work order.",
   INTAKE_PHOTOS_PARTIAL:
@@ -127,6 +134,13 @@ const MESSAGES: Record<string, string> = {
   NO_JOBS_TO_ASSIGN: "This work order has no active jobs to assign. Add a job first.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
   QC_REQUIRED: "Complete the quality check before the bike can leave.",
+  CHECKOUT_EVIDENCE_REQUIRED:
+    "Add the five checkout photos, or have an owner or manager record an emergency override, before the bike can leave.",
+  CHECKOUT_EVIDENCE_NOT_READY:
+    "Finish every active job and complete the quality check before taking checkout photos.",
+  CHECKOUT_EVIDENCE_OVERRIDE_FORBIDDEN:
+    "You do not have permission to perform this action.",
+  OVERRIDE_REASON_TOO_LONG: "Keep the override reason to 500 characters or fewer.",
   SAFETY_FAIL_RECOMMENDATIONS_REQUIRED:
     "Add at least one recommendation when failing safety.",
   NOT_READY_FOR_PICKUP:

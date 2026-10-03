@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { preparePhotoFileForUpload } from "@/lib/forms/preparePhotoFileForUpload";
 
 const JPEG_HEADER = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
@@ -21,6 +21,10 @@ function libraryFileReportingSizeZero(
 }
 
 describe("preparePhotoFileForUpload", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("returns a new File instance so clearing the input cannot invalidate the upload", async () => {
     const original = new File(["tiny-jpeg-bytes"], "library.jpg", {
       type: "image/jpeg",
@@ -74,5 +78,16 @@ describe("preparePhotoFileForUpload", () => {
     expect(prepared.type).toBe("image/heic");
     expect(prepared.size).toBeGreaterThan(0);
     expect(prepared.name.toLowerCase()).toContain("img_0001");
+  });
+
+  it("clones immediately and skips compression while offline so the queue can persist", async () => {
+    vi.stubGlobal("navigator", { onLine: false });
+    const original = libraryFileReportingSizeZero(heicHeader(), "IMG_0001.HEIC");
+
+    const prepared = await preparePhotoFileForUpload(original);
+
+    expect(prepared).not.toBe(original);
+    expect(prepared.type).toBe("image/heic");
+    expect(prepared.size).toBe(original.size || heicHeader().byteLength);
   });
 });

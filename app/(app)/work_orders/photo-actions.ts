@@ -6,7 +6,12 @@ import { toFormErrorMessage } from "@/lib/services/errors";
 import type { PhotoCategory } from "@/lib/database/types";
 import { collectPhotoFiles } from "@/lib/forms/photoFiles";
 
-export type PhotoFormState = { error: string | null };
+export type PhotoFormState = {
+  error: string | null;
+  photoId?: string;
+  clientUploadId?: string;
+  thumbUrl?: string | null;
+};
 
 function revalidatePhotos(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
@@ -14,6 +19,7 @@ function revalidatePhotos(workOrderId: string) {
   revalidatePath("/work_orders");
   revalidatePath("/dashboard");
   revalidatePath("/technician");
+  revalidatePath("/gallery");
 }
 
 export async function uploadIntakePhotoAction(
@@ -28,22 +34,44 @@ export async function uploadIntakePhotoAction(
     }
 
     const resultId = String(formData.get("inspection_result_id") ?? "").trim();
+    const jobId = String(formData.get("job_id") ?? "").trim();
     const category = String(formData.get("category") ?? "") as PhotoCategory;
     const notes = String(formData.get("notes") ?? "").trim() || null;
-    for (const file of files) {
-      await uploadIntakePhoto(workOrderId, {
-        category,
-        notes,
-        inspection_result_id: resultId || null,
-        file,
-      });
+    const clientUploadId =
+      String(formData.get("client_upload_id") ?? "").trim() || undefined;
+    let saved = 0;
+    let firstError: string | null = null;
+    let confirmation: Awaited<ReturnType<typeof uploadIntakePhoto>> | null = null;
+    for (const [index, file] of files.entries()) {
+      try {
+        const upload = {
+          category,
+          notes,
+          inspection_result_id: resultId || null,
+          file,
+          ...(jobId ? { job_id: jobId } : {}),
+          ...(clientUploadId && index === 0 ? { client_upload_id: clientUploadId } : {}),
+        };
+        const photo = await uploadIntakePhoto(workOrderId, upload);
+        confirmation ??= photo;
+        saved += 1;
+      } catch (error) {
+        if (!firstError) firstError = toFormErrorMessage(error);
+      }
     }
+    if (saved > 0) revalidatePhotos(workOrderId);
+    if (!confirmation) return { error: firstError };
+    return {
+      error: firstError,
+      photoId: confirmation.photo_id,
+      ...(confirmation.client_upload_id
+        ? { clientUploadId: confirmation.client_upload_id }
+        : {}),
+      thumbUrl: confirmation.thumb_url ?? null,
+    };
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
-
-  revalidatePhotos(workOrderId);
-  return { error: null };
 }
 
 export async function deleteIntakePhotoAction(
@@ -56,7 +84,8 @@ export async function deleteIntakePhotoAction(
     if (!photoId) {
       return { error: toFormErrorMessage(new Error("PHOTO_NOT_FOUND")) };
     }
-    await deleteIntakePhoto(workOrderId, photoId);
+    const reason = String(formData.get("reason") ?? "");
+    await deleteIntakePhoto(workOrderId, photoId, reason);
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

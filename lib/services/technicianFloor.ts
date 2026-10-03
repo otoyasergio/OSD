@@ -49,6 +49,9 @@ import {
   type PitBoardStep,
 } from "@/lib/technician/pitBoard";
 import { isTerminalWorkOrderStatus } from "@/lib/technician/floorActionModel";
+import { loadCommittedCheckoutPhotos } from "@/lib/services/checkoutEvidence";
+import type { CommittedCheckoutPhoto } from "@/lib/services/checkoutEvidence";
+import { checkoutCapturePreconditions } from "@/lib/status/checkoutEvidence";
 
 export type FloorOsMode = "job" | "inspection" | "parts" | "qc" | "notes" | "safety";
 
@@ -168,8 +171,16 @@ export type FloorOsSurface = {
     description: string;
     severity: string;
   }>;
-  /** Clocked-in peers the finishing tech can pick for peer QC. */
-  peer_qc_candidates: Array<{ user_id: string; display_name: string }>;
+  /** Techs the finishing tech can hand this bike to for peer QC. */
+  peer_qc_candidates: Array<{
+    user_id: string;
+    display_name: string;
+    clocked_in: boolean;
+  }>;
+  checkout_evidence_required: boolean;
+  checkout_photos: CommittedCheckoutPhoto[];
+  jobs_complete: boolean;
+  qc_complete: boolean;
 };
 
 export type TechnicianFloorOs = {
@@ -398,6 +409,9 @@ export async function getTechnicianFloorOs(input: {
         }>
       | null;
     inspection?: InspectionCompletionRelation;
+    checkout_evidence_required?: boolean | null;
+    quality_checked_at?: string | null;
+    quality_checked_by_user_id?: string | null;
   };
 
   const unwrapWo = (raw: unknown) => {
@@ -625,7 +639,8 @@ export async function getTechnicianFloorOs(input: {
     const jobSelectWo = `,
         work_order:work_order_id (
           work_order_id, work_order_number, status, location_id,
-          quality_check_assigned_to, internal_notes,
+          quality_check_assigned_to, quality_checked_at, quality_checked_by_user_id,
+          internal_notes, checkout_evidence_required,
           motorcycle:motorcycle_id (
             year, make, model,
             customer:customer_id ( first_name, last_name )
@@ -695,6 +710,7 @@ export async function getTechnicianFloorOs(input: {
         pendingRecommendationsResult,
         technicianNotesResult,
         peerQcCandidates,
+        checkoutPhotos,
       ] = await Promise.all([
         listJobChecklist(job.job_id, supabase),
         supabase
@@ -757,6 +773,7 @@ export async function getTechnicianFloorOs(input: {
           .order("created_at", { ascending: false })
           .limit(20),
         listPeerQcPickerOptions(subject.userId, wo.work_order_id).catch(() => []),
+        loadCommittedCheckoutPhotos(supabase, wo.work_order_id),
       ]);
       const { data: parts } = partsResult;
       const { data: proofs } = proofsResult;
@@ -918,6 +935,11 @@ export async function getTechnicianFloorOs(input: {
       const jobNotes =
         [job.notes?.trim(), wo.internal_notes?.trim()].filter(Boolean).join("\n\n") ||
         null;
+      const checkoutReady = checkoutCapturePreconditions({
+        jobs: workOrderJobs ?? [],
+        qualityCheckedAt: wo.quality_checked_at ?? null,
+        qualityCheckedByUserId: wo.quality_checked_by_user_id ?? null,
+      });
 
       selected = {
         mode,
@@ -996,6 +1018,10 @@ export async function getTechnicianFloorOs(input: {
           technician_notes: technicianNotes,
         },
         pending_recommendations: pendingRecommendations,
+        checkout_evidence_required: Boolean(wo.checkout_evidence_required),
+        checkout_photos: checkoutPhotos,
+        jobs_complete: checkoutReady.jobsComplete,
+        qc_complete: checkoutReady.qcComplete,
       };
     }
   } else if (selectedWoId) {
@@ -1004,7 +1030,8 @@ export async function getTechnicianFloorOs(input: {
       .select(
         `
         work_order_id, work_order_number, status, location_id,
-        primary_technician_id, quality_check_assigned_to,
+        primary_technician_id, quality_check_assigned_to, quality_checked_at,
+        quality_checked_by_user_id, checkout_evidence_required,
         motorcycle:motorcycle_id (
           year, make, model,
           customer:customer_id ( first_name, last_name )
@@ -1046,21 +1073,23 @@ export async function getTechnicianFloorOs(input: {
             }
           : null
       );
-      const [{ data: openFlags }, { data: pendingRecs }] = await Promise.all([
-        supabase
-          .from("admin_flag")
-          .select(
-            "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
-          )
-          .eq("work_order_id", wo.work_order_id)
-          .is("cleared_at", null),
-        supabase
-          .from("recommendation")
-          .select("recommendation_id, description, severity")
-          .eq("work_order_id", wo.work_order_id)
-          .eq("status", "pending")
-          .order("created_at", { ascending: true }),
-      ]);
+      const [{ data: openFlags }, { data: pendingRecs }, checkoutPhotos] =
+        await Promise.all([
+          supabase
+            .from("admin_flag")
+            .select(
+              "admin_flag_id, work_order_id, job_id, reason, note, created_by_user_id, created_at, cleared_at, cleared_by_user_id"
+            )
+            .eq("work_order_id", wo.work_order_id)
+            .is("cleared_at", null),
+          supabase
+            .from("recommendation")
+            .select("recommendation_id, description, severity")
+            .eq("work_order_id", wo.work_order_id)
+            .eq("status", "pending")
+            .order("created_at", { ascending: true }),
+          loadCommittedCheckoutPhotos(supabase, wo.work_order_id),
+        ]);
       const inspectionHrefs = floorInspectionHrefs({
         workOrderId: wo.work_order_id,
       });
@@ -1081,6 +1110,27 @@ export async function getTechnicianFloorOs(input: {
         steps: [],
         complete_gate_ok: false,
         qc_checks_done: false,
+      });
+      const woJobs = (
+        (wo.job as Array<{
+          job_id: string;
+          service_name_snapshot: string;
+          status: JobStatus;
+          assigned_technician_id: string | null;
+          created_at: string;
+        }> | null) ?? []
+      )
+        .filter(
+          (workOrderJob) => !["cancelled", "declined"].includes(workOrderJob.status)
+        )
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+      const woCheckoutReady = checkoutCapturePreconditions({
+        jobs: (wo.job as Array<{ status: string }> | null) ?? [],
+        qualityCheckedAt:
+          (wo as { quality_checked_at?: string | null }).quality_checked_at ?? null,
+        qualityCheckedByUserId:
+          (wo as { quality_checked_by_user_id?: string | null })
+            .quality_checked_by_user_id ?? null,
       });
       selected = {
         mode: mode === "job" && (isSafety || isQc) ? (isSafety ? "safety" : "qc") : mode,
@@ -1105,27 +1155,14 @@ export async function getTechnicianFloorOs(input: {
         estimated_labour: null,
         labour_label: null,
         labour_over: false,
-        jobs: (
-          (wo.job as Array<{
-            job_id: string;
-            service_name_snapshot: string;
-            status: JobStatus;
-            assigned_technician_id: string | null;
-            created_at: string;
-          }> | null) ?? []
-        )
-          .filter(
-            (workOrderJob) => !["cancelled", "declined"].includes(workOrderJob.status)
-          )
-          .sort((a, b) => a.created_at.localeCompare(b.created_at))
-          .map((workOrderJob) => ({
-            job_id: workOrderJob.job_id,
-            service_name: workOrderJob.service_name_snapshot,
-            status: workOrderJob.status,
-            status_label: JOB_STATUS_LABELS[workOrderJob.status] ?? workOrderJob.status,
-            assigned_to_me: workOrderJob.assigned_technician_id === subject.userId,
-            is_selected: false,
-          })),
+        jobs: woJobs.map((workOrderJob) => ({
+          job_id: workOrderJob.job_id,
+          service_name: workOrderJob.service_name_snapshot,
+          status: workOrderJob.status,
+          status_label: JOB_STATUS_LABELS[workOrderJob.status] ?? workOrderJob.status,
+          assigned_to_me: workOrderJob.assigned_technician_id === subject.userId,
+          is_selected: false,
+        })),
         checklist: [],
         parts: [],
         proof_count: 0,
@@ -1163,6 +1200,13 @@ export async function getTechnicianFloorOs(input: {
           description: string;
           severity: string;
         }>,
+        checkout_evidence_required: Boolean(
+          (wo as { checkout_evidence_required?: boolean | null })
+            .checkout_evidence_required
+        ),
+        checkout_photos: checkoutPhotos,
+        jobs_complete: woCheckoutReady.jobsComplete,
+        qc_complete: woCheckoutReady.qcComplete,
       };
     }
   }

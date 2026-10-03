@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 import type { LightboxPhoto } from "@/lib/photos/lightbox";
 import { saveRemotePhotoToCameraRoll } from "@/lib/forms/savePhotosToCameraRoll";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 
 /**
  * Full-screen photo viewer. Rendered only while open (parent keeps the
@@ -162,8 +163,11 @@ export function PhotoLightbox({
             <ChevronLeft size={26} aria-hidden />
           </button>
         ) : null}
-        {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
-        <img src={photo.src} alt={photo.label} className="photo-lightbox-img" />
+        <RecoverableSignedImage
+          src={photo.src}
+          alt={photo.label}
+          className="photo-lightbox-img"
+        />
         {count > 1 ? (
           <button
             type="button"

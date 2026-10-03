@@ -104,7 +104,13 @@ body {
   line-height: 1.5;
 }
 
-/* Prefer visible controls over hover-only affordances (Safari / iPad). */
+/*
+ * Prefer visible controls over hover-only affordances (Safari / iPad).
+ *
+ * Touch Safari applies `:hover` on tap and leaves it stuck until the next tap,
+ * so every custom hover rule in this file sits under `@media (hover: hover)`,
+ * the same guard Tailwind puts on its `hover:` utilities.
+ */
 button,
 [role="button"],
 a,
@@ -121,6 +127,22 @@ button,
 select,
 summary {
   min-height: var(--tap-min);
+}
+
+/*
+ * Board cards start a touch drag from a stationary long-press
+ * (`useBoardDragSensors`). On iOS that same hold is Safari's cue for the link /
+ * image callout sheet and the text-selection loupe, so a finger that pauses on
+ * a bike photo gets "Save Image" instead of a drag. Only the draggable states
+ * opt out; static cards keep normal copy-and-select behaviour.
+ */
+.wo-card-drag-wrap--draggable,
+.pit-queue-drag-wrap,
+.cc-bike-card:not(.cc-bike-card--static),
+.cc-mini-bike:not(.cc-mini-bike--static) {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /*
@@ -455,8 +477,10 @@ summary {
   white-space: nowrap;
 }
 
-.role-preview-banner-exit:hover {
-  background: rgb(240 253 250 / 0.12);
+@media (hover: hover) {
+  .role-preview-banner-exit:hover {
+    background: rgb(240 253 250 / 0.12);
+  }
 }
 
 .role-preview-banner-exit:disabled {
@@ -857,9 +881,11 @@ a.stat-card {
   cursor: pointer;
 }
 
-a.stat-card:hover {
-  border-color: color-mix(in srgb, var(--chrome) 45%, var(--border));
-  box-shadow: var(--shadow-md);
+@media (hover: hover) {
+  a.stat-card:hover {
+    border-color: color-mix(in srgb, var(--chrome) 45%, var(--border));
+    box-shadow: var(--shadow-md);
+  }
 }
 
 .stat-card:active {
@@ -1166,10 +1192,16 @@ a.stat-card:hover {
   color: var(--chrome-foreground);
 }
 
-.search-typeahead-option:hover,
 .search-typeahead-option.is-active {
   background: var(--chrome);
   color: var(--chrome-foreground);
+}
+
+@media (hover: hover) {
+  .search-typeahead-option:hover {
+    background: var(--chrome);
+    color: var(--chrome-foreground);
+  }
 }
 
 .search-typeahead-option-label {
@@ -1451,9 +1483,11 @@ a.stat-card:hover {
   margin-top: 0.875rem;
 }
 
-.garage-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-md);
+@media (hover: hover) {
+  .garage-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-md);
+  }
 }
 
 .garage-card-main {
@@ -1483,8 +1517,10 @@ a.stat-card:hover {
   underline-offset: 2px;
 }
 
-.garage-card-transfer:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .garage-card-transfer:hover {
+    text-decoration: underline;
+  }
 }
 
 .garage-card-vin {
@@ -2497,9 +2533,14 @@ button.board-control-link {
   border: 0;
 }
 
-.inspection-photo-slot-expand:hover img,
 .inspection-photo-slot-expand:focus-visible img {
   opacity: 0.92;
+}
+
+@media (hover: hover) {
+  .inspection-photo-slot-expand:hover img {
+    opacity: 0.92;
+  }
 }
 
 .inspection-photo-slot-expand:focus-visible {
@@ -3079,9 +3120,11 @@ button.board-control-link {
   cursor: pointer;
 }
 
-.intake-wizard-progress-btn.is-clickable:hover .intake-wizard-progress-pill {
-  border-color: var(--chrome);
-  transform: scale(1.04);
+@media (hover: hover) {
+  .intake-wizard-progress-btn.is-clickable:hover .intake-wizard-progress-pill {
+    border-color: var(--chrome);
+    transform: scale(1.04);
+  }
 }
 
 .intake-wizard-progress-btn.is-current {
@@ -3225,9 +3268,14 @@ button.board-control-link {
   color: #18181b;
 }
 
-.customer-picker-option:hover,
 .customer-picker-option.is-active {
   background: #f4f4f5;
+}
+
+@media (hover: hover) {
+  .customer-picker-option:hover {
+    background: #f4f4f5;
+  }
 }
 
 .customer-picker-option-label {
@@ -3354,9 +3402,11 @@ button.board-control-link {
   font: inherit;
 }
 
-.intake-photo-slot:hover {
-  border-color: var(--chrome-muted);
-  box-shadow: var(--shadow-sm);
+@media (hover: hover) {
+  .intake-photo-slot:hover {
+    border-color: var(--chrome-muted);
+    box-shadow: var(--shadow-sm);
+  }
 }
 
 .intake-photo-slot:has(.intake-photo-slot-trigger:active) {
@@ -3531,9 +3581,14 @@ button.board-control-link {
   transition: opacity 0.15s ease;
 }
 
-.intake-photo-slot.is-filled:hover .intake-photo-slot-retake,
 .intake-photo-slot.is-filled:focus-within .intake-photo-slot-retake {
   opacity: 1;
+}
+
+@media (hover: hover) {
+  .intake-photo-slot.is-filled:hover .intake-photo-slot-retake {
+    opacity: 1;
+  }
 }
 
 @media (hover: none) {
@@ -3658,9 +3713,11 @@ button.board-control-link {
   cursor: pointer;
 }
 
-.optional-intake-photo-add:hover {
-  border-color: var(--chrome-muted);
-  background: var(--surface);
+@media (hover: hover) {
+  .optional-intake-photo-add:hover {
+    border-color: var(--chrome-muted);
+    background: var(--surface);
+  }
 }
 
 .optional-intake-photo-add:disabled {
@@ -3829,9 +3886,11 @@ label.photo-source-sheet-action {
     border-color 0.15s ease;
 }
 
-.photo-lightbox-btn:hover {
-  background: rgb(255 255 255 / 0.22);
-  border-color: rgb(255 255 255 / 0.45);
+@media (hover: hover) {
+  .photo-lightbox-btn:hover {
+    background: rgb(255 255 255 / 0.22);
+    border-color: rgb(255 255 255 / 0.45);
+  }
 }
 
 .photo-lightbox-btn:focus-visible {
@@ -3984,9 +4043,11 @@ label.photo-source-sheet-action {
     box-shadow 0.15s ease;
 }
 
-.intake-review-card:hover {
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
+@media (hover: hover) {
+  .intake-review-card:hover {
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-sm);
+  }
 }
 
 .intake-review-card.is-wide {
@@ -4181,8 +4242,10 @@ label.photo-source-sheet-action {
   box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.04));
 }
 
-.floor-bike-card:hover {
-  border-color: var(--border-strong);
+@media (hover: hover) {
+  .floor-bike-card:hover {
+    border-color: var(--border-strong);
+  }
 }
 
 .floor-bike-card--selected {
@@ -4308,8 +4371,10 @@ label.photo-source-sheet-action {
     color 0.15s;
 }
 
-.floor-queue-card:hover {
-  border-color: var(--border-strong);
+@media (hover: hover) {
+  .floor-queue-card:hover {
+    border-color: var(--border-strong);
+  }
 }
 
 .floor-queue-card--selected {
@@ -4467,8 +4532,10 @@ label.photo-source-sheet-action {
   text-decoration: none;
 }
 
-.floor-service-item:hover {
-  border-color: var(--border-strong);
+@media (hover: hover) {
+  .floor-service-item:hover {
+    border-color: var(--border-strong);
+  }
 }
 
 .floor-service-item--selected {
@@ -5141,9 +5208,11 @@ a.cc-kpi-link:focus-visible {
     box-shadow 0.15s;
 }
 
-.cc-cohort-row:hover {
-  border-color: color-mix(in srgb, var(--chrome) 45%, var(--border));
-  box-shadow: var(--shadow-sm);
+@media (hover: hover) {
+  .cc-cohort-row:hover {
+    border-color: color-mix(in srgb, var(--chrome) 45%, var(--border));
+    box-shadow: var(--shadow-sm);
+  }
 }
 
 .cc-cohort-row:focus-visible {
@@ -5226,8 +5295,10 @@ a.cc-kpi-link:focus-visible {
   cursor: pointer;
 }
 
-.cc-scroll-btn:hover {
-  background: var(--surface-muted);
+@media (hover: hover) {
+  .cc-scroll-btn:hover {
+    background: var(--surface-muted);
+  }
 }
 
 .cc-carousel {
@@ -6343,9 +6414,11 @@ a.cc-kpi-link:focus-visible {
   cursor: pointer;
 }
 
-.pit-step--viewable:hover {
-  border-color: #a1a1aa;
-  background: #fafafa;
+@media (hover: hover) {
+  .pit-step--viewable:hover {
+    border-color: #a1a1aa;
+    background: #fafafa;
+  }
 }
 
 .pit-step--viewable:focus-visible {
@@ -6571,10 +6644,16 @@ a.cc-kpi-link:focus-visible {
   text-decoration: none;
 }
 
-.pit-surface-heading-link:hover .pit-bike-title,
 .pit-surface-heading-link:focus-visible .pit-bike-title {
   text-decoration: underline;
   text-underline-offset: 0.12em;
+}
+
+@media (hover: hover) {
+  .pit-surface-heading-link:hover .pit-bike-title {
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
+  }
 }
 
 .pit-header-access {
@@ -7314,6 +7393,12 @@ button.pit-current-card {
   color: #71717a;
 }
 
+.pit-photo-error {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #991b1b;
+}
+
 .pit-sheet-close {
   display: flex;
   align-items: center;
@@ -7906,9 +7991,11 @@ button.pit-current-card {
   color: var(--chrome-foreground);
 }
 
-.comms-dock-icon--header:hover {
-  border-color: #475569;
-  background: #1e293b;
+@media (hover: hover) {
+  .comms-dock-icon--header:hover {
+    border-color: #475569;
+    background: #1e293b;
+  }
 }
 
 .comms-dock-icon .comms-unread-badge {
@@ -7981,9 +8068,11 @@ button.pit-current-card {
   color: #475569;
 }
 
-.incoming-alert-banner-dismiss:hover {
-  background: rgb(15 23 42 / 0.08);
-  color: #0f172a;
+@media (hover: hover) {
+  .incoming-alert-banner-dismiss:hover {
+    background: rgb(15 23 42 / 0.08);
+    color: #0f172a;
+  }
 }
 
 .comms-unread-badge {
@@ -8030,4 +8119,65 @@ button.pit-current-card {
   width: min(48rem, 100%);
   padding: 0;
   overflow: hidden;
+}
+
+.photo-queue-status {
+  position: relative;
+}
+
+.photo-queue-status-toggle {
+  min-height: 2.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--chrome-border, #334155);
+  background: var(--chrome-elevated, #1e293b);
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--chrome-foreground, #f8fafc);
+}
+
+.photo-queue-status-panel {
+  position: absolute;
+  right: 0;
+  z-index: 40;
+  margin-top: 0.5rem;
+  width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid var(--border, #d6d3d1);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.75rem;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 0.16);
+}
+
+.photo-queue-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.photo-queue-status-item-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.photo-queue-status-item-meta,
+.photo-queue-status-item-detail {
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--status-neutral, #57534e);
+}
+
+.photo-queue-status-item-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.photo-queue-status-banner {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 0.75rem;
 }

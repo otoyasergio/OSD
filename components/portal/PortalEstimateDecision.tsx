@@ -214,6 +214,8 @@ export function PortalEstimateDecision({ estimate, defaultSignerName, action }: 
             value={signerName}
             onChange={(event) => setSignerName(event.target.value)}
             autoComplete="name"
+            autoCapitalize="words"
+            autoCorrect="off"
           />
         </label>
 

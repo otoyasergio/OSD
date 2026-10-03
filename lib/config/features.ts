@@ -88,3 +88,25 @@ export function v2ReadEnabledForLocation(
 export function legacyWritesRequired(flags: WorkflowV2Flags): boolean {
   return flags.killSwitch || flags.writeMode !== "v2";
 }
+
+/**
+ * Opt new work orders into the five-photo checkout handoff gate.
+ * Unset or any value other than "1" leaves existing workflow unchanged.
+ */
+export function checkoutEvidenceEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return env.CHECKOUT_EVIDENCE_ENABLED === "1";
+}
+
+/**
+ * Persist the photo upload queue in IndexedDB. Unset or any value other than
+ * "1" keeps the in-memory volatile store so a tab close still drops pending
+ * photos (legacy behavior). Independent of CHECKOUT_EVIDENCE_ENABLED — roll
+ * the durable queue first, then the checkout gate.
+ */
+export function photoUploadQueueEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return env.PHOTO_UPLOAD_QUEUE_ENABLED === "1";
+}

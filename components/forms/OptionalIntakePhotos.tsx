@@ -2,7 +2,11 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { CameraIcon, LibraryIcon } from "@/components/forms/IntakePhotoSlots";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import { persistQueueErrorMessage } from "@/lib/photos/intakeQueue";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
+import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 
@@ -10,6 +14,8 @@ type Props = {
   value: File[];
   onChange: (next: File[]) => void;
   disabled?: boolean;
+  intakeDraftId?: string;
+  workOrderId?: string;
 };
 
 function fileIdentity(file: File): string {
@@ -35,7 +41,14 @@ export function mergeOptionalIntakePhotos(
   return next;
 }
 
-export function OptionalIntakePhotos({ value, onChange, disabled = false }: Props) {
+export function OptionalIntakePhotos({
+  value,
+  onChange,
+  disabled = false,
+  intakeDraftId,
+  workOrderId,
+}: Props) {
+  const queue = usePhotoUploadQueue();
   const titleId = useId();
   const cameraInputId = `${useId()}-optional-camera`;
   const libraryInputId = `${useId()}-optional-library`;
@@ -50,17 +63,34 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
 
   const previews = useMemo(
     () =>
-      value.map((file, index) => ({
-        file,
-        index,
-        url: URL.createObjectURL(file),
-      })),
-    [value]
+      value.map((file, index) => {
+        const match = queue.items.find(
+          (item) =>
+            item.category === "other" &&
+            item.fileName === file.name &&
+            item.byteCount === file.size &&
+            item.lastModified === file.lastModified &&
+            (workOrderId
+              ? item.workOrderId === workOrderId
+              : item.intakeDraftId === intakeDraftId)
+        );
+        const queuedUrl = match ? queue.previewUrl(match.queueId) : null;
+        return {
+          file,
+          index,
+          url: queuedUrl,
+          ownedUrl: queuedUrl ? null : URL.createObjectURL(file),
+          status: match ? photoQueueStatusLabel(match, queue.isOnline()) : null,
+        };
+      }),
+    [intakeDraftId, queue, value, workOrderId]
   );
 
   useEffect(() => {
     return () => {
-      for (const preview of previews) URL.revokeObjectURL(preview.url);
+      for (const preview of previews) {
+        if (preview.ownedUrl) URL.revokeObjectURL(preview.ownedUrl);
+      }
     };
   }, [previews]);
 
@@ -81,15 +111,58 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
     setPickError(null);
     setPreparing(true);
     try {
-      const prepared = await readPickedPhotoFiles(input);
-      const next = mergeOptionalIntakePhotos(valueRef.current, prepared);
+      const prepared = await readPickedPhotoFiles(input, { surface: "intake" });
+      const committed: File[] = [];
+      for (const file of prepared) {
+        await queue.enqueue({
+          file,
+          category: "other",
+          intakeDraftId: workOrderId ? undefined : intakeDraftId,
+          workOrderId,
+          replaceExisting: false,
+          surface: "intake",
+        });
+        committed.push(file);
+      }
+      if (committed.length === 0) return;
+      const next = mergeOptionalIntakePhotos(valueRef.current, committed);
       valueRef.current = next;
       onChange(next);
-    } catch {
-      setPickError(UNREADABLE_PHOTO_MESSAGE);
+    } catch (error) {
+      if (error instanceof PhotoQueuePersistenceError) {
+        setPickError(error.message);
+      } else {
+        setPickError(UNREADABLE_PHOTO_MESSAGE);
+      }
     } finally {
       setPreparing(false);
     }
+  }
+
+  async function removeAt(index: number) {
+    const file = value[index];
+    if (!file) return;
+    const match = queue.items.find(
+      (item) =>
+        item.category === "other" &&
+        item.fileName === file.name &&
+        item.byteCount === file.size &&
+        item.lastModified === file.lastModified &&
+        (workOrderId
+          ? item.workOrderId === workOrderId
+          : item.intakeDraftId === intakeDraftId)
+    );
+    if (match) {
+      try {
+        await queue.remove(match.queueId);
+      } catch (error) {
+        setPickError(persistQueueErrorMessage(error));
+        return;
+      }
+    }
+    const next = value.filter((_, itemIndex) => itemIndex !== index);
+    valueRef.current = next;
+    onChange(next);
   }
 
   return (
@@ -113,23 +186,28 @@ export function OptionalIntakePhotos({ value, onChange, disabled = false }: Prop
       ) : null}
 
       <div className="optional-intake-photos-grid">
-        {previews.map(({ file, index, url }) => (
+        {previews.map(({ file, index, url, ownedUrl, status }) => (
           <div
             key={`${fileIdentity(file)}:${index}`}
             className="optional-intake-photo-card"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt={`Extra intake photo ${index + 1}`} />
+            {url || ownedUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={url ?? ownedUrl ?? ""} alt={`Extra intake photo ${index + 1}`} />
+            ) : null}
             <span className="optional-intake-photo-label">Extra {index + 1}</span>
+            {status ? (
+              <p className="optional-intake-photo-status" role="status">
+                {status}
+              </p>
+            ) : null}
             <button
               type="button"
               className="optional-intake-photo-remove"
               disabled={disabled || preparing}
               aria-label={`Remove extra intake photo ${index + 1}`}
               onClick={() => {
-                const next = value.filter((_, itemIndex) => itemIndex !== index);
-                valueRef.current = next;
-                onChange(next);
+                void removeAt(index);
               }}
             >
               Remove

@@ -123,6 +123,30 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("in_progress");
   });
 
+  it("keeps an owner placement when quality check was waived", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        qualityCheckWaived: true,
+      })
+    ).toBe("in_progress");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_pickup",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        qualityCheckWaived: true,
+      })
+    ).toBe("ready_for_pickup");
+  });
+
   it("sets quality_check when all active jobs completed and QC missing", () => {
     expect(
       deriveWorkOrderStatus({
@@ -218,6 +242,66 @@ describe("deriveWorkOrderStatus", () => {
         qualityCheckComplete: true,
         safetyRequired: false,
         safetyCheckComplete: false,
+      })
+    ).toBe("ready_for_pickup");
+  });
+
+  it("stays in the final pre-ready status when checkout evidence is required and incomplete", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "quality_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+        checkoutEvidenceOverridden: false,
+      })
+    ).toBe("quality_check");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: true,
+        safetyCheckComplete: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+        checkoutEvidenceOverridden: false,
+      })
+    ).toBe("safety_check");
+  });
+
+  it("derives ready_for_pickup when checkout evidence is complete or overridden", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "quality_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: true,
+        checkoutEvidenceOverridden: false,
+      })
+    ).toBe("ready_for_pickup");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: true,
+        safetyCheckComplete: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+        checkoutEvidenceOverridden: true,
       })
     ).toBe("ready_for_pickup");
   });

@@ -21,6 +21,7 @@ const STATEFUL_SPECS = [
   "**/keyboard.spec.ts",
   "**/responsive.spec.ts",
   "**/diagnostics-assistant.spec.ts",
+  "**/safari-photo-reliability.spec.ts",
 ];
 
 /**
@@ -37,7 +38,9 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   // Stateful runs share one seeded dataset; serialize to keep them honest.
-  workers: allowMutation ? 1 : undefined,
+  // In CI, cap workers so Chromium + three WebKit projects do not starve the
+  // Next server (WebKit `load` timeouts showed up under the default fan-out).
+  workers: allowMutation ? 1 : process.env.CI ? 2 : undefined,
   globalSetup: "./tests/e2e/global.setup.ts",
   globalTeardown: "./tests/e2e/global.teardown.ts",
   use: {

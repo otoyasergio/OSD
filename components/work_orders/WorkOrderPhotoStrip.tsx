@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { IntakePhoto } from "@/lib/services/photos";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 
 export function WorkOrderPhotoStrip({ photos }: { photos: IntakePhoto[] }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
@@ -31,8 +32,7 @@ export function WorkOrderPhotoStrip({ photos }: { photos: IntakePhoto[] }) {
             aria-label={`View ${photo.label} photo`}
             onClick={() => setOpenIndex(index)}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
-            <img
+            <RecoverableSignedImage
               src={photo.previewSrc ?? photo.src}
               alt={photo.label}
               className="wo-photo-strip-img"

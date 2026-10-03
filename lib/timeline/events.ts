@@ -27,6 +27,7 @@ export const TimelineEventType = {
   SAFETY_CHECK_PASSED: "Safety Check Passed",
   SAFETY_CHECK_FAILED: "Safety Check Failed",
   READY_FOR_PICKUP: "Ready For Pickup",
+  CHECKOUT_EVIDENCE_OVERRIDDEN: "Checkout Evidence Overridden",
   WORK_ORDER_COMPLETED: "Work Order Completed",
   WORK_ORDER_CANCELLED: "Work Order Cancelled",
   WORK_ORDER_PLACED_ON_HOLD: "Work Order Placed On Hold",

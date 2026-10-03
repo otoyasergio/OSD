@@ -30,6 +30,7 @@ export function EmailField({ defaultValue, error, onValueChange }: Props) {
         required
         autoComplete="email"
         autoCapitalize="none"
+        autoCorrect="off"
         spellCheck={false}
         aria-invalid={error ? true : undefined}
         aria-describedby={errorId}

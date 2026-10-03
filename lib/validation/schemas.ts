@@ -214,6 +214,11 @@ export const photoCategorySchema = z.enum([
   "inspection_item",
   "job_proof",
   "job_work",
+  "checkout_front",
+  "checkout_rear",
+  "checkout_left_side",
+  "checkout_right_side",
+  "checkout_odometer",
 ]);
 
 export const intakePhotoSchema = z.object({
@@ -221,6 +226,7 @@ export const intakePhotoSchema = z.object({
   notes: z.string().nullable().optional(),
   inspection_result_id: z.string().uuid().nullable().optional(),
   job_id: z.string().uuid().nullable().optional(),
+  client_upload_id: z.string().uuid().nullable().optional(),
 });
 
 export const technicianNoteTypeSchema = z.enum([

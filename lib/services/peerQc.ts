@@ -16,6 +16,7 @@ import {
   buildLegacyReworkJobUpdate,
   collectVisitWorkerIds,
   filterEligibleQcCandidates,
+  presentPeerQcPickerOptions,
 } from "@/lib/jobs-v2/peerQcCompletion";
 import { pickPeerQcAssignee } from "@/lib/status/peerQcAssigner";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
@@ -27,6 +28,7 @@ import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignm
 export type PeerQcPickerOption = {
   user_id: string;
   display_name: string;
+  clocked_in: boolean;
 };
 
 async function listClockedInTechnicians(
@@ -67,6 +69,36 @@ async function listClockedInTechnicianIds(
   return techs.map((row) => row.user_id);
 }
 
+/** Active floor techs who belong to the work order's location. */
+async function listLocationFloorTechs(
+  supabase: DbClient,
+  locationId: string
+): Promise<Array<{ user_id: string; first_name: string; last_name: string }>> {
+  const { data: memberships, error: membershipError } = await supabase
+    .from("user_location")
+    .select("user_id")
+    .eq("location_id", locationId);
+  if (membershipError) throw membershipError;
+
+  const userIds = [
+    ...new Set((memberships ?? []).map((row: { user_id: string }) => row.user_id)),
+  ];
+  if (userIds.length === 0) return [];
+
+  const { data: techs, error: techError } = await supabase
+    .from("app_user")
+    .select("user_id, first_name, last_name")
+    .in("user_id", userIds)
+    .in("role", ["technician", "head_tech"])
+    .eq("status", "active");
+  if (techError) throw techError;
+  return (techs ?? []) as Array<{
+    user_id: string;
+    first_name: string;
+    last_name: string;
+  }>;
+}
+
 /**
  * Every user who worked ANY job on the visit — assigned technicians plus
  * job_time_entry contributors. None of them may peer-QC the visit.
@@ -102,9 +134,10 @@ async function listVisitWorkerIds(
 }
 
 /**
- * Clocked-in peers a tech can ask to check their work. Excludes the asking
- * tech and — when the work order is known — EVERYONE who worked any job on
- * that visit (assigned or logged time), not just the finisher.
+ * Peers a tech can ask to check their work. The roster is every active
+ * technician at the location — not only people punched in — because the
+ * floor clock is optional. Excludes the asking tech and, when the work
+ * order is known, everyone who worked any job on that visit.
  */
 export async function listPeerQcPickerOptions(
   excludeUserId: string,
@@ -124,17 +157,26 @@ export async function listPeerQcPickerOptions(
     assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
     locationId = workOrder.location_id;
   }
-  const techs = await listClockedInTechnicians(supabase, locationId);
+  const [techs, clockedIn] = await Promise.all([
+    listLocationFloorTechs(supabase, locationId),
+    listClockedInTechnicianIds(supabase, locationId).catch(() => [] as string[]),
+  ]);
+  const clockedInIds = new Set(clockedIn);
   const workedUserIds = workOrderId
     ? await listVisitWorkerIds(supabase, workOrderId)
     : new Set<string>();
-  return filterEligibleQcCandidates(techs, workedUserIds, excludeUserId)
-    .map((tech) => ({
+  const options = filterEligibleQcCandidates(techs, workedUserIds, excludeUserId).map(
+    (tech) => ({
       user_id: tech.user_id,
       display_name: `${tech.first_name} ${tech.last_name}`.trim() || "Technician",
-    }))
-    .sort((a, b) => a.display_name.localeCompare(b.display_name));
+      clocked_in: clockedInIds.has(tech.user_id),
+    })
+  );
+  return presentPeerQcPickerOptions(options, "");
 }
+
+const UNASSIGNED_QC_NOTE =
+  "No peer QC assignee available — no eligible clocked-in technician.";
 
 /** Tech-chosen peer QC assignee after finishing a job. */
 export async function assignPeerQcByTechnician(
@@ -158,8 +200,14 @@ export async function assignPeerQcByTechnician(
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
   assertViewerCanAccessWorkOrderLocation(user, workOrder.location_id);
 
-  const clockedIn = await listClockedInTechnicianIds(supabase, workOrder.location_id);
-  if (!clockedIn.includes(assigneeUserId)) {
+  const { data: membership, error: membershipError } = await supabase
+    .from("user_location")
+    .select("user_id")
+    .eq("location_id", workOrder.location_id)
+    .eq("user_id", assigneeUserId)
+    .maybeSingle();
+  if (membershipError) throw membershipError;
+  if (!membership) {
     throw new Error("QC_ASSIGNEE_NOT_AVAILABLE");
   }
 
@@ -213,10 +261,21 @@ export async function assignPeerQcByTechnician(
     description: `Peer QC chosen by finishing tech → ${name || assigneeUserId}`,
     new_value: { quality_check_assigned_to: assigneeUserId },
   });
-}
 
-const UNASSIGNED_QC_NOTE =
-  "No peer QC assignee available — no eligible clocked-in technician.";
+  // Auto-assign flags the visit before this choice lands, because it only
+  // sees clocked-in peers. The chosen person makes that flag stale.
+  const { error: clearFlagError } = await supabase
+    .from("admin_flag")
+    .update({
+      cleared_at: new Date().toISOString(),
+      cleared_by_user_id: user.user_id,
+    })
+    .eq("work_order_id", workOrderId)
+    .eq("reason", "quality")
+    .eq("note", UNASSIGNED_QC_NOTE)
+    .is("cleared_at", null);
+  if (clearFlagError) throw clearFlagError;
+}
 
 async function flagUnassignedPeerQc(
   supabase: DbClient,

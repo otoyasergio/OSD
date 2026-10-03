@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 import type { GarageBikeCard } from "@/lib/services/clientGarage";
 
 function BikeSilhouette() {
@@ -34,8 +35,7 @@ export function GarageBikeCardView({
         <div className="wo-card-strip wo-card-strip-neutral" aria-hidden />
         <div className="wo-card-photo-frame" aria-hidden={!bike.primary_photo_url}>
           {bike.primary_photo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-            <img
+            <RecoverableSignedImage
               src={bike.primary_photo_url}
               alt=""
               className="wo-card-photo-img"

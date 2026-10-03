@@ -13,8 +13,14 @@ import {
 } from "@/lib/permissions";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
+import {
+  checkoutPickupGateInput,
+  loadCheckoutEvidenceState,
+} from "@/lib/services/checkoutEvidence";
+import { CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH } from "@/lib/status/checkoutEvidence";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -23,6 +29,10 @@ type WorkOrderRow = {
   quality_checked_at: string | null;
   quality_checked_by_user_id: string | null;
   ready_for_pickup_at: string | null;
+  checkout_evidence_required: boolean;
+  checkout_evidence_override_at: string | null;
+  checkout_evidence_override_by_user_id: string | null;
+  checkout_evidence_override_reason: string | null;
 };
 
 async function loadWorkOrder(
@@ -32,7 +42,7 @@ async function loadWorkOrder(
   const { data, error } = await supabase
     .from("work_order")
     .select(
-      "work_order_id, location_id, status, quality_checked_at, quality_checked_by_user_id, ready_for_pickup_at"
+      "work_order_id, location_id, status, quality_checked_at, quality_checked_by_user_id, ready_for_pickup_at, checkout_evidence_required, checkout_evidence_override_at, checkout_evidence_override_by_user_id, checkout_evidence_override_reason"
     )
     .eq("work_order_id", workOrderId)
     .maybeSingle();
@@ -77,7 +87,16 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
 async function assertPickupLeaveGates(
   supabase: DbClient,
   workOrderId: string,
-  workOrder: Pick<WorkOrderRow, "quality_checked_at" | "quality_checked_by_user_id">
+  workOrder: Pick<
+    WorkOrderRow,
+    | "quality_checked_at"
+    | "quality_checked_by_user_id"
+    | "checkout_evidence_required"
+    | "checkout_evidence_override_at"
+    | "checkout_evidence_override_by_user_id"
+    | "checkout_evidence_override_reason"
+  >,
+  options: { waiveQualityCheck?: boolean } = {}
 ) {
   const [
     { data: safetyRow, error: safetyError },
@@ -105,11 +124,13 @@ async function assertPickupLeaveGates(
   if (jobsError) throw jobsError;
   if (inspectionError) throw inspectionError;
 
+  const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
   const blocked = pickupLeaveBlockReason({
     inspectionComplete: Boolean(inspection?.completed_at),
     qualityChecked: Boolean(
       workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
     ),
+    waiveQualityCheck: options.waiveQualityCheck,
     safetyRequired: isSafetyRequired({
       safety_required: (safetyRow?.safety_required as boolean | null) ?? null,
       safety_waived: Boolean(safetyRow?.safety_waived),
@@ -118,6 +139,7 @@ async function assertPickupLeaveGates(
     safetyChecked: Boolean(
       safetyRow?.safety_checked_at || safetyRow?.safety_checked_by_user_id
     ),
+    ...checkoutPickupGateInput(checkout),
   });
   if (blocked) throw new Error(blocked);
 }
@@ -268,7 +290,8 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
 
 export async function completeWorkOrder(
   workOrderId: string,
-  pickupNotes?: string | null
+  pickupNotes?: string | null,
+  options: { waiveQualityCheck?: boolean } = {}
 ): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canCompleteWorkOrder(user.role)) throw new Error("FORBIDDEN");
@@ -282,21 +305,30 @@ export async function completeWorkOrder(
     throw new Error("NOT_READY_FOR_PICKUP");
   }
 
-  await assertPickupLeaveGates(supabase, workOrderId, workOrder);
+  await assertPickupLeaveGates(supabase, workOrderId, workOrder, options);
 
   const now = new Date().toISOString();
   const trimmedNotes = pickupNotes?.trim() || null;
 
-  const { error } = await supabase
+  const completionPatch: Record<string, unknown> = {
+    status: "completed",
+    completed_at: now,
+    released_by_user_id: user.user_id,
+    pickup_notes: trimmedNotes,
+    updated_at: now,
+  };
+  if (options.waiveQualityCheck) completionPatch.quality_check_waived = true;
+  let { error } = await supabase
     .from("work_order")
-    .update({
-      status: "completed",
-      completed_at: now,
-      released_by_user_id: user.user_id,
-      pickup_notes: trimmedNotes,
-      updated_at: now,
-    })
+    .update(completionPatch)
     .eq("work_order_id", workOrderId);
+  if (error && isUndefinedColumnError(error, "quality_check_waived")) {
+    delete completionPatch.quality_check_waived;
+    ({ error } = await supabase
+      .from("work_order")
+      .update(completionPatch)
+      .eq("work_order_id", workOrderId));
+  }
   if (error) throw error;
 
   await addTimelineEvent(supabase, {
@@ -327,6 +359,78 @@ export async function completeWorkOrder(
       status: "completed",
       completed_at: now,
       pickup_notes: trimmedNotes,
+    },
+  });
+}
+
+export async function recordCheckoutEvidenceOverride(
+  workOrderId: string,
+  reason: string
+): Promise<void> {
+  const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
+  if (!canOverrideWorkOrderStatus(user.role)) throw new Error("FORBIDDEN");
+
+  const trimmed = reason.trim();
+  if (!trimmed) throw new Error("OVERRIDE_REASON_REQUIRED");
+  if (trimmed.length > CHECKOUT_EVIDENCE_OVERRIDE_REASON_MAX_LENGTH) {
+    throw new Error("OVERRIDE_REASON_TOO_LONG");
+  }
+
+  const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .from("work_order")
+    .update({
+      checkout_evidence_override_reason: trimmed,
+      updated_at: now,
+    })
+    .eq("work_order_id", workOrderId);
+  if (error) throw error;
+
+  await addTimelineEvent(supabase, {
+    work_order_id: workOrderId,
+    user_id: user.user_id,
+    event_type: TimelineEventType.CHECKOUT_EVIDENCE_OVERRIDDEN,
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Checkout evidence emergency override: ${trimmed}`,
+    old_value: {
+      checkout_evidence_override_at: workOrder.checkout_evidence_override_at,
+      checkout_evidence_override_by_user_id:
+        workOrder.checkout_evidence_override_by_user_id,
+      checkout_evidence_override_reason: workOrder.checkout_evidence_override_reason,
+    },
+    new_value: {
+      reason: trimmed,
+      actor_user_id: user.user_id,
+      missing_categories: checkout.missing,
+      prior_override: {
+        at: workOrder.checkout_evidence_override_at,
+        by_user_id: workOrder.checkout_evidence_override_by_user_id,
+        reason: workOrder.checkout_evidence_override_reason,
+      },
+    },
+  });
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    location_id: workOrder.location_id,
+    action: "checkout_evidence_overridden",
+    entity_type: "work_order",
+    entity_id: workOrderId,
+    description: `Checkout evidence emergency override: ${trimmed}`,
+    old_value: {
+      checkout_evidence_override_reason: workOrder.checkout_evidence_override_reason,
+    },
+    new_value: {
+      reason: trimmed,
+      actor_user_id: user.user_id,
+      missing_categories: checkout.missing,
+      prior_override: {
+        at: workOrder.checkout_evidence_override_at,
+        by_user_id: workOrder.checkout_evidence_override_by_user_id,
+        reason: workOrder.checkout_evidence_override_reason,
+      },
     },
   });
 }

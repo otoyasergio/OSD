@@ -71,7 +71,38 @@ describe("readPickedPhotoFiles", () => {
     expect(savePhotos).toHaveBeenCalledTimes(1);
     expect(savePhotos.mock.calls[0][0]).toEqual([original]);
     expect(prepared[0]).not.toBe(original);
-    expect(input.value).toBe("");
+    await vi.waitFor(() => {
+      expect(input.value).toBe("");
+    });
+  });
+
+  it("returns photos for upload without waiting for the device save sheet", async () => {
+    let release: () => void = () => {};
+    const savePhotos = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    const original = new File(["tiny-jpeg-bytes"], "shot.jpg", {
+      type: "image/jpeg",
+    });
+    const input = {
+      ...fakeInput([original]),
+      capture: "environment",
+    } as unknown as HTMLInputElement;
+
+    const prepared = await readPickedPhotoFiles(input, { savePhotos });
+
+    expect(prepared).toHaveLength(1);
+    expect(prepared[0]).not.toBe(original);
+    expect(savePhotos).toHaveBeenCalledWith([original]);
+    expect(input.value).not.toBe("");
+
+    release();
+    await vi.waitFor(() => {
+      expect(input.value).toBe("");
+    });
   });
 
   it("does not archive library picks — those are already on the device", async () => {

@@ -9,6 +9,7 @@ import {
   canUploadCustomerDocuments,
   canViewCustomerDocuments,
 } from "@/lib/permissions";
+import { canonicalizeUploadedFile } from "@/lib/photos/canonicalizeUploadedFile";
 
 export type CustomerDocumentSource = "upload" | "drop_off_agreement";
 
@@ -32,24 +33,34 @@ export type CustomerDocument = {
 const UPLOAD_BUCKET = "customer-documents";
 const CONTRACT_BUCKET = "contract-signatures";
 const MAX_BYTES = 10 * 1024 * 1024;
-const ALLOWED_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-]);
-
 const COLUMNS =
   "document_id, customer_id, title, source, work_order_id, agreement_id, storage_bucket, storage_path, mime_type, file_size, uploaded_by_user_id, created_at";
 
-function extensionForType(type: string): string {
-  if (type === "application/pdf") return "pdf";
-  if (type === "image/png") return "png";
-  if (type === "image/webp") return "webp";
-  if (type === "image/heic" || type === "image/heif") return "heic";
-  return "jpg";
+function mapDocumentCanonicalError(error: unknown): never {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "REQUIRED") throw new Error("DOCUMENT_REQUIRED");
+  if (code === "TOO_LARGE") throw new Error("DOCUMENT_TOO_LARGE");
+  if (code === "TYPE_INVALID") throw new Error("DOCUMENT_TYPE_INVALID");
+  throw error instanceof Error ? error : new Error("DOCUMENT_TYPE_INVALID");
+}
+
+async function prepareStoredDocument(file: File): Promise<{
+  bytes: Buffer;
+  contentType: string;
+  extension: string;
+  byteSize: number;
+}> {
+  if (!(file instanceof File)) throw new Error("DOCUMENT_REQUIRED");
+  try {
+    return await canonicalizeUploadedFile({
+      bytes: Buffer.from(await file.arrayBuffer()),
+      declaredType: file.type,
+      maxBytes: MAX_BYTES,
+      allowPdf: true,
+    });
+  } catch (error) {
+    mapDocumentCanonicalError(error);
+  }
 }
 
 function dropOffTitle(workOrderNumber: string, signedAt: string | Date): string {
@@ -164,13 +175,7 @@ export async function uploadCustomerDocument(
 
   const title = input.title.trim();
   if (!title) throw new Error("DOCUMENT_TITLE_REQUIRED");
-  if (!(input.file instanceof File) || input.file.size === 0) {
-    throw new Error("DOCUMENT_REQUIRED");
-  }
-  if (input.file.size > MAX_BYTES) throw new Error("DOCUMENT_TOO_LARGE");
-  if (!ALLOWED_TYPES.has(input.file.type)) {
-    throw new Error("DOCUMENT_TYPE_INVALID");
-  }
+  const prepared = await prepareStoredDocument(input.file);
 
   const supabase = await createClient();
   const { data: customer, error: customerError } = await supabase
@@ -183,14 +188,12 @@ export async function uploadCustomerDocument(
   if (!customer) throw new Error("CUSTOMER_NOT_FOUND");
 
   const documentId = crypto.randomUUID();
-  const ext = extensionForType(input.file.type);
-  const storagePath = `${customerId}/${documentId}.${ext}`;
-  const bytes = Buffer.from(await input.file.arrayBuffer());
+  const storagePath = `${customerId}/${documentId}.${prepared.extension}`;
 
   const { error: uploadError } = await supabase.storage
     .from(UPLOAD_BUCKET)
-    .upload(storagePath, bytes, {
-      contentType: input.file.type,
+    .upload(storagePath, prepared.bytes, {
+      contentType: prepared.contentType,
       upsert: false,
     });
 
@@ -207,8 +210,8 @@ export async function uploadCustomerDocument(
       agreement_id: null,
       storage_bucket: UPLOAD_BUCKET,
       storage_path: storagePath,
-      mime_type: input.file.type,
-      file_size: input.file.size,
+      mime_type: prepared.contentType,
+      file_size: prepared.byteSize,
       uploaded_by_user_id: user.user_id,
     })
     .select(COLUMNS)
@@ -226,7 +229,7 @@ export async function uploadCustomerDocument(
     entity_type: "customer_document",
     entity_id: documentId,
     description: `Uploaded document “${title}” for customer`,
-    new_value: { customer_id: customerId, title, mime_type: input.file.type },
+    new_value: { customer_id: customerId, title, mime_type: prepared.contentType },
   });
 
   const { data: signed } = await supabase.storage
@@ -247,12 +250,7 @@ export async function uploadPaperDropOffAgreementCopy(
   const user = await requireUser();
   if (!canUploadCustomerDocuments(user.role)) throw new Error("FORBIDDEN");
 
-  const file = input.file;
-  if (!(file instanceof File) || file.size === 0) {
-    throw new Error("DOCUMENT_REQUIRED");
-  }
-  if (file.size > MAX_BYTES) throw new Error("DOCUMENT_TOO_LARGE");
-  if (!ALLOWED_TYPES.has(file.type)) throw new Error("DOCUMENT_TYPE_INVALID");
+  const prepared = await prepareStoredDocument(input.file);
 
   const supabase = await createClient();
   const { data: workOrder, error: workOrderError } = await supabase
@@ -288,14 +286,12 @@ export async function uploadPaperDropOffAgreementCopy(
   if (existing) throw new Error("PAPER_COPY_ALREADY_UPLOADED");
 
   const documentId = crypto.randomUUID();
-  const ext = extensionForType(file.type);
-  const storagePath = `${workOrder.customer_id}/${documentId}.${ext}`;
-  const bytes = Buffer.from(await file.arrayBuffer());
+  const storagePath = `${workOrder.customer_id}/${documentId}.${prepared.extension}`;
 
   const { error: uploadError } = await supabase.storage
     .from(UPLOAD_BUCKET)
-    .upload(storagePath, bytes, {
-      contentType: file.type,
+    .upload(storagePath, prepared.bytes, {
+      contentType: prepared.contentType,
       upsert: false,
     });
 
@@ -313,8 +309,8 @@ export async function uploadPaperDropOffAgreementCopy(
       agreement_id: agreement.agreement_id,
       storage_bucket: UPLOAD_BUCKET,
       storage_path: storagePath,
-      mime_type: file.type,
-      file_size: file.size,
+      mime_type: prepared.contentType,
+      file_size: prepared.byteSize,
       uploaded_by_user_id: user.user_id,
     })
     .select(COLUMNS)
@@ -333,7 +329,7 @@ export async function uploadPaperDropOffAgreementCopy(
     entity_type: "customer_document",
     entity_id: documentId,
     description: "Signed paper drop-off agreement copy uploaded",
-    new_value: { mime_type: file.type, storage_path: storagePath },
+    new_value: { mime_type: prepared.contentType, storage_path: storagePath },
   });
 
   await addAuditLog(supabase, {
@@ -345,7 +341,7 @@ export async function uploadPaperDropOffAgreementCopy(
     description: `Uploaded signed paper agreement for ${workOrder.work_order_number}`,
     new_value: {
       agreement_id: agreement.agreement_id,
-      mime_type: file.type,
+      mime_type: prepared.contentType,
       storage_path: storagePath,
     },
   });

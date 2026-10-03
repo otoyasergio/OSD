@@ -6,7 +6,9 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 const nextConfig: NextConfig = {
-  // Six intake photos at create can approach the per-file 10 MB cap.
+  // Only Next's own guard. On Vercel every Server Action body is still capped
+  // at 4.5 MB by the platform (413 before the app runs), so the client sends
+  // one photo per request and compresses under that — see lib/forms/uploadLimits.ts.
   experimental: {
     serverActions: {
       bodySizeLimit: "64mb",

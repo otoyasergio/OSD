@@ -52,6 +52,11 @@ vi.mock("@/app/(app)/work_orders/note-actions", () => ({
 }));
 
 import { TechnicianFloorShell } from "@/components/technician/TechnicianFloorShell";
+import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
+import {
+  createMemoryPhotoUploadQueueDatabase,
+  MemoryPhotoUploadQueueStore,
+} from "@/tests/helpers/memoryPhotoUploadQueueStore";
 import type { AskOtomotoPanelData } from "@/lib/diagnostics/askOtomotoView";
 import type { JobPacket } from "@/lib/services/jobPacket";
 
@@ -157,27 +162,38 @@ describe("TechnicianFloorShell Ask OTOMOTO packet wiring", () => {
   ) {
     await act(async () => {
       root.render(
-        React.createElement(TechnicianFloorShell, {
-          floor: {
-            priority: [],
-            readyToPull: [],
-            needsQc: [],
-            safeties: [],
-            flagged: [],
-            selected: null,
+        React.createElement(
+          PhotoUploadQueueProvider,
+          {
+            userId: TECH,
+            locationId: "location-a",
+            store: new MemoryPhotoUploadQueueStore(
+              createMemoryPhotoUploadQueueDatabase()
+            ),
+            isOnline: () => false,
           },
-          stage: "work",
-          viewerUserId: TECH,
-          docketItems: [],
-          readyForPickup: [],
-          panel: "packet",
-          packet,
-          packetSection: "assistant",
-          packetPhotos: [],
-          packetWorkOrderId: WO,
-          packetJobId: JOB,
-          ...props,
-        })
+          React.createElement(TechnicianFloorShell, {
+            floor: {
+              priority: [],
+              readyToPull: [],
+              needsQc: [],
+              safeties: [],
+              flagged: [],
+              selected: null,
+            },
+            stage: "work",
+            viewerUserId: TECH,
+            docketItems: [],
+            readyForPickup: [],
+            panel: "packet",
+            packet,
+            packetSection: "assistant",
+            packetPhotos: [],
+            packetWorkOrderId: WO,
+            packetJobId: JOB,
+            ...props,
+          })
+        )
       );
     });
   }

@@ -1,80 +1,146 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { PhotoCategory } from "@/lib/database/types";
 import { FormError } from "@/components/forms/Field";
 import {
   IntakePhotoSlots,
-  allRequiredIntakeSelected,
   type IntakePhotoSelection,
 } from "@/components/forms/IntakePhotoSlots";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import {
   intakeContractHref,
-  uploadOptionalIntakePhotos,
-  uploadSelectedIntakePhoto,
-} from "@/components/forms/intakePhotoUploadClient";
-import { toFormErrorMessage } from "@/lib/services/errors";
+  labelsForRecoveryWaitFailure,
+  requiredQueueIdsForRemainingCategories,
+} from "@/lib/photos/intakeQueue";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
+import { toFormErrorMessage } from "@/lib/services/errors";
 
 export function IntakePhotoRecoveryForm({
   workOrderId,
   workOrderNumber,
   missingCategories,
   initialError,
-  optionalPhotos = [],
 }: {
   workOrderId: string;
   workOrderNumber?: string | null;
   missingCategories: PhotoCategory[];
   initialError?: string | null;
-  optionalPhotos?: File[];
 }) {
   const router = useRouter();
+  const queue = usePhotoUploadQueue();
   const [submitting, setSubmitting] = useState(false);
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [clientError, setClientError] = useState<string | null>(initialError ?? null);
   const [remaining, setRemaining] = useState<PhotoCategory[]>(missingCategories);
+  const preferredIdsRef = useRef<Partial<Record<string, string>>>({});
 
-  const selectedCount = Object.values(intakePhotos).filter(
-    (file) => file instanceof File && file.size > 0
-  ).length;
-  const needed = remaining.length;
-  const allSelected = allRequiredIntakeSelected(intakePhotos, remaining);
+  useEffect(() => {
+    const liveIds = new Set<string>();
+    for (const item of queue.items) {
+      if (item.workOrderId === workOrderId) liveIds.add(item.queueId);
+    }
+    for (const receipt of queue.confirmations) {
+      if (receipt.workOrderId === workOrderId) liveIds.add(receipt.queueId);
+    }
+    for (const [category, queueId] of Object.entries(preferredIdsRef.current)) {
+      if (!queueId || !liveIds.has(queueId)) {
+        delete preferredIdsRef.current[category];
+      }
+    }
+    for (const item of queue.items) {
+      if (item.workOrderId !== workOrderId) continue;
+      preferredIdsRef.current[item.category] = item.queueId;
+    }
+  }, [queue.confirmations, queue.items, workOrderId]);
 
-  async function uploadRemaining() {
+  const readiness = useMemo(
+    () =>
+      requiredQueueIdsForRemainingCategories({
+        remaining,
+        workOrderId,
+        items: queue.items,
+        receipts: queue.confirmations,
+      }),
+    [queue.confirmations, queue.items, remaining, workOrderId]
+  );
+  const failedRequired = remaining.filter((category) =>
+    queue.items.some(
+      (item) =>
+        item.workOrderId === workOrderId &&
+        item.category === category &&
+        item.status === "failed"
+    )
+  );
+  const selectedCount = remaining.filter((category) => {
+    if (failedRequired.includes(category)) return false;
+    return !readiness.missingCategories.includes(category);
+  }).length;
+  const allSelected =
+    failedRequired.length === 0 &&
+    readiness.missingCategories.length === 0 &&
+    readiness.queueIds.length === remaining.length;
+
+  async function waitForRemaining() {
     setClientError(null);
     setSubmitting(true);
-    const failed: PhotoCategory[] = [];
-
     try {
-      for (const category of remaining) {
-        const original = intakePhotos[category];
-        if (!(original instanceof File) || original.size === 0) {
-          failed.push(category);
-          continue;
-        }
-
-        const uploaded = await uploadSelectedIntakePhoto(workOrderId, original, category);
-        if (!uploaded) failed.push(category);
+      const liveIds = new Set<string>();
+      for (const item of queue.items) {
+        if (item.workOrderId === workOrderId) liveIds.add(item.queueId);
       }
-
-      if (failed.length > 0) {
-        setRemaining(failed);
-        const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
+      for (const receipt of queue.confirmations) {
+        if (receipt.workOrderId === workOrderId) liveIds.add(receipt.queueId);
+      }
+      for (const [category, queueId] of Object.entries(preferredIdsRef.current)) {
+        if (!queueId || !liveIds.has(queueId)) {
+          delete preferredIdsRef.current[category];
+        }
+      }
+      for (const item of queue.items) {
+        if (item.workOrderId !== workOrderId) continue;
+        preferredIdsRef.current[item.category] = item.queueId;
+      }
+      const { queueIds: requiredQueueIds, missingCategories: stillMissing } =
+        requiredQueueIdsForRemainingCategories({
+          remaining,
+          workOrderId,
+          items: queue.items,
+          receipts: queue.confirmations,
+          preferredByCategory: preferredIdsRef.current,
+        });
+      if (stillMissing.length > 0 || requiredQueueIds.length !== remaining.length) {
+        const labels = stillMissing
+          .map((category) => PHOTO_CATEGORY_LABELS[category as PhotoCategory] ?? category)
+          .join(", ");
         setClientError(
           `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`
         );
-        setIntakePhotos({});
+        return;
+      }
+      const waited = await queue.waitForConfirmations(requiredQueueIds);
+
+      if (!waited.ok) {
+        const failedCategories = labelsForRecoveryWaitFailure({
+          remaining,
+          requiredQueueIds,
+          waited,
+        }).filter((category): category is PhotoCategory =>
+          remaining.includes(category as PhotoCategory)
+        );
+        setRemaining(failedCategories.length > 0 ? failedCategories : remaining);
+        const labels = (failedCategories.length > 0 ? failedCategories : remaining)
+          .map((category) => PHOTO_CATEGORY_LABELS[category] ?? category)
+          .join(", ");
+        setClientError(
+          `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`
+        );
         return;
       }
 
-      const optionalFailures = await uploadOptionalIntakePhotos(
-        workOrderId,
-        optionalPhotos
-      );
-      router.push(intakeContractHref(workOrderId, optionalFailures));
+      router.push(intakeContractHref(workOrderId));
       router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));
@@ -89,11 +155,11 @@ export function IntakePhotoRecoveryForm({
       className="intake-wizard"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!allRequiredIntakeSelected(intakePhotos, remaining)) {
+        if (!allSelected) {
           setClientError("Add all remaining intake photos before continuing.");
           return;
         }
-        void uploadRemaining();
+        void waitForRemaining();
       }}
     >
       <FormError message={clientError} />
@@ -115,14 +181,20 @@ export function IntakePhotoRecoveryForm({
             aria-live="polite"
           >
             <span className="intake-photo-progress-meter">
-              {selectedCount}/{needed}
+              {selectedCount}/{remaining.length}
             </span>
-            {allSelected ? "Ready to upload" : "remaining"}
+            {allSelected
+              ? "Ready to continue"
+              : failedRequired.length > 0
+                ? "Retry"
+                : "remaining"}
           </div>
         </div>
         <IntakePhotoSlots
           categories={remaining}
           value={intakePhotos}
+          workOrderId={workOrderId}
+          htmlRequired={!allSelected}
           onChange={(next) => {
             setIntakePhotos(next);
             setClientError(null);
@@ -136,7 +208,11 @@ export function IntakePhotoRecoveryForm({
           disabled={submitting}
           className="btn btn-primary min-h-12 min-w-[8rem] px-6 text-base disabled:opacity-60 sm:min-h-14 sm:text-lg"
         >
-          {submitting ? "Uploading…" : "Upload remaining photos"}
+          {submitting
+            ? "Uploading…"
+            : allSelected
+              ? "Continue"
+              : "Upload remaining photos"}
         </button>
         <Link
           href={`/work_orders/${workOrderId}?tab=photos`}

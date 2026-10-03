@@ -16,8 +16,17 @@ import {
 } from "@/app/(app)/motorcycles/document-actions";
 import { FormError } from "@/components/forms/Field";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
-import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import {
+  CAMERA_ROLL_HINT,
+  DOCUMENT_FILE_ACCEPT,
+  photoFileInputProps,
+} from "@/lib/forms/photoSourceInputs";
+import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import {
+  describeUploadOutcome,
+  uploadPhotosIndividually,
+} from "@/lib/forms/uploadPhotosIndividually";
 import { formatDate } from "@/lib/datetime/format";
 import type { LightboxPhoto } from "@/lib/photos/lightbox";
 
@@ -78,25 +87,34 @@ export function MotorcycleDocuments({
 
     setPreparing(true);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, {
+        surface: "motorcycle_documents",
+      });
       if (files.length === 0) return;
-      const formData = new FormData(formRef.current);
-      formData.delete("file");
-      for (const file of files) formData.append("file", file);
+      const shared = new FormData(formRef.current);
+      shared.delete("file");
       startTransition(() => {
         startPending(async () => {
-          const result = await uploadMotorcycleDocumentAction(motorcycleId, formData);
-          if (result.error) {
-            setError(result.error);
-            return;
+          // One request per document: several photos in one body would exceed
+          // Vercel's 4.5 MB request cap and fail before the action runs.
+          const outcome = await uploadPhotosIndividually(files, (file) => {
+            const formData = new FormData();
+            for (const [key, value] of shared.entries()) formData.append(key, value);
+            formData.set("file", file);
+            return uploadMotorcycleDocumentAction(motorcycleId, formData);
+          });
+          if (outcome.failed > 0) {
+            setError(describeUploadOutcome(outcome, "document"));
           }
-          setTitle("");
-          refresh();
+          if (outcome.uploaded > 0) {
+            setTitle("");
+            refresh();
+          }
         });
       });
     } catch {
       input.value = "";
-      setError("Could not read that photo. Try again, or use the camera instead.");
+      setError(UNREADABLE_PHOTO_MESSAGE);
     } finally {
       setPreparing(false);
     }
@@ -118,7 +136,6 @@ export function MotorcycleDocuments({
   }
 
   const cameraProps = photoFileInputProps("camera");
-  const libraryProps = photoFileInputProps("library");
 
   return (
     <section aria-labelledby={titleId}>
@@ -229,7 +246,7 @@ export function MotorcycleDocuments({
             id={cameraInputId}
             type="file"
             name="file"
-            className="sr-only"
+            className="photo-file-input"
             multiple
             {...cameraProps}
             onChange={(e) => void uploadFromInput(e.currentTarget)}
@@ -237,9 +254,9 @@ export function MotorcycleDocuments({
           <input
             id={libraryInputId}
             type="file"
-            className="sr-only"
+            className="photo-file-input"
             multiple
-            accept={`${libraryProps.accept},application/pdf`}
+            accept={DOCUMENT_FILE_ACCEPT}
             onChange={(e) => void uploadFromInput(e.currentTarget)}
           />
           <div className="flex flex-wrap gap-2">

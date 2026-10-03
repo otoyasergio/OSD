@@ -1,54 +1,83 @@
 "use client";
 
-import { useActionState, useId, useMemo, useRef, useState } from "react";
+import { useActionState, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { IntakePhoto } from "@/lib/services/photos";
 import type { PhotoCategory } from "@/lib/database/types";
 import type { PhotoFormState } from "@/app/(app)/work_orders/photo-actions";
-import { PHOTO_CATEGORY_LABELS, REQUIRED_PHOTO_CATEGORIES } from "@/lib/status/labels";
-import { FormError, TextField } from "@/components/forms/Field";
-import { SubmitButton } from "@/components/forms/SubmitButton";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import {
+  GENERAL_WORK_ORDER_PHOTO_CATEGORIES,
+  PHOTO_CATEGORY_LABELS,
+  REQUIRED_PHOTO_CATEGORIES,
+} from "@/lib/status/labels";
+import { CHECKOUT_PHOTO_CATEGORIES } from "@/lib/status/checkoutEvidence";
+import { FormError } from "@/components/forms/Field";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
+import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 import { formatDateTime } from "@/lib/datetime/format";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
+import { PHOTO_CORRECTION_REASON_MAX_LENGTH } from "@/lib/photos/intakePhotoCorrectionReason";
 
 type Action = (state: PhotoFormState, formData: FormData) => Promise<PhotoFormState>;
 
 const SELECT_CLASS =
   "min-h-11 w-full rounded border border-[var(--border-strong)] bg-white px-3 py-2 text-base text-foreground outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-ring)]";
 
-const ALL_CATEGORIES = Object.keys(PHOTO_CATEGORY_LABELS) as PhotoCategory[];
+const UPLOAD_CATEGORIES = GENERAL_WORK_ORDER_PHOTO_CATEGORIES;
+const FILTER_CATEGORIES = [
+  ...GENERAL_WORK_ORDER_PHOTO_CATEGORIES,
+  "inspection_tires",
+  "inspection_brakes",
+  "inspection_forks",
+  "inspection_item",
+  "job_proof",
+  "job_work",
+  ...CHECKOUT_PHOTO_CATEGORIES,
+] as PhotoCategory[];
 
 export function PhotosTab({
   photos,
   readOnly,
   canUpload,
   canDelete,
-  uploadAction,
+  workOrderId,
   deleteAction,
 }: {
   photos: IntakePhoto[];
   readOnly: boolean;
   canUpload: boolean;
   canDelete: boolean;
-  uploadAction: Action;
+  workOrderId: string;
   deleteAction: Action;
 }) {
+  const queue = usePhotoUploadQueue();
+  const router = useRouter();
   const titleId = useId();
   const cameraInputId = useId();
   const libraryInputId = useId();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadState, uploadFormAction] = useActionState(uploadAction, {
-    error: null,
-  });
+  const defaultCategory =
+    REQUIRED_PHOTO_CATEGORIES.find(
+      (category) => !photos.some((photo) => photo.category === category)
+    ) ?? "front";
+  const categoryRef = useRef<PhotoCategory>(defaultCategory);
+  const notesRef = useRef("");
+  const refreshedIds = useRef(new Set<string>());
   const [deleteState, deleteFormAction, deletePending] = useActionState(deleteAction, {
     error: null,
   });
   const [filter, setFilter] = useState<PhotoCategory | "all">("all");
+  const [confirmingPhotoId, setConfirmingPhotoId] = useState<string | null>(null);
   const [chooserOpen, setChooserOpen] = useState(false);
-  const [pendingFileName, setPendingFileName] = useState<string | null>(null);
   const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null);
   const [preparing, setPreparing] = useState(false);
   const [pickError, setPickError] = useState<string | null>(null);
@@ -70,35 +99,74 @@ export function PhotosTab({
     ? lightboxPhotos.findIndex((p) => p.id === lightboxPhotoId)
     : -1;
 
+  useEffect(() => {
+    return queue.subscribeConfirmation((confirmation) => {
+      if (refreshedIds.current.has(confirmation.queueId)) return;
+      const matches =
+        queue.confirmations.some(
+          (receipt) =>
+            receipt.queueId === confirmation.queueId &&
+            receipt.workOrderId === workOrderId
+        ) ||
+        queue.items.some(
+          (item) =>
+            item.queueId === confirmation.queueId && item.workOrderId === workOrderId
+        );
+      if (!matches) return;
+      refreshedIds.current.add(confirmation.queueId);
+      router.refresh();
+    });
+  }, [queue, router, workOrderId]);
+
+  useEffect(() => {
+    for (const receipt of queue.confirmations) {
+      if (receipt.workOrderId !== workOrderId || !receipt.photoId) continue;
+      if (photos.some((photo) => photo.photo_id === receipt.photoId)) continue;
+      if (refreshedIds.current.has(receipt.queueId)) continue;
+      refreshedIds.current.add(receipt.queueId);
+      router.refresh();
+    }
+  }, [photos, queue.confirmations, router, workOrderId]);
+
   async function applyPickedFile(input: HTMLInputElement) {
-    const target = fileInputRef.current;
     setChooserOpen(false);
     setPickError(null);
-    if (!target) {
-      input.value = "";
-      return;
-    }
     setPreparing(true);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, { surface: "photos_tab" });
       const file = files[0] ?? null;
-      if (!file) {
-        target.value = "";
-        setPendingFileName(null);
+      if (!file) return;
+      const form = input.form;
+      const formData = form ? new FormData(form) : null;
+      const category = String(
+        formData?.get("category") || categoryRef.current || "front"
+      );
+      const notes = String(formData?.get("notes") ?? notesRef.current).trim();
+      categoryRef.current = category as PhotoCategory;
+      notesRef.current = notes;
+      if (exceedsServerActionUploadLimit(file)) {
+        setPickError(photoTooLargeMessage(file));
         return;
       }
-      const transfer = new DataTransfer();
-      transfer.items.add(file);
-      target.files = transfer.files;
-      setPendingFileName(file.name);
-    } catch {
-      target.value = "";
-      setPendingFileName(null);
-      setPickError(UNREADABLE_PHOTO_MESSAGE);
+      await queue.enqueue({
+        file,
+        category,
+        workOrderId,
+        notes: notes || undefined,
+        surface: "photos_tab",
+      });
+    } catch (error) {
+      if (error instanceof PhotoQueuePersistenceError) {
+        setPickError(error.message);
+      } else {
+        setPickError(UNREADABLE_PHOTO_MESSAGE);
+      }
     } finally {
       setPreparing(false);
     }
   }
+
+  const queuedHere = queue.items.filter((item) => item.workOrderId === workOrderId);
 
   return (
     <div className="flex flex-col gap-4">
@@ -120,18 +188,13 @@ export function PhotosTab({
 
       {!readOnly && canUpload ? (
         <form
-          action={uploadFormAction}
           className="relative flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
-          encType="multipart/form-data"
           onSubmit={(event) => {
-            if (!fileInputRef.current?.files?.length) {
-              event.preventDefault();
-              setChooserOpen(true);
-            }
+            event.preventDefault();
           }}
         >
           <h3 className="text-base font-semibold text-foreground">Upload intake photo</h3>
-          <FormError message={uploadState.error ?? pickError} />
+          <FormError message={pickError} />
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-foreground">
               Category <span className="text-red-600">*</span>
@@ -141,8 +204,11 @@ export function PhotosTab({
               name="category"
               required
               defaultValue={missingRequired[0] ?? "front"}
+              onChange={(event) => {
+                categoryRef.current = event.target.value as PhotoCategory;
+              }}
             >
-              {ALL_CATEGORIES.map((category) => (
+              {UPLOAD_CATEGORIES.map((category) => (
                 <option key={category} value={category}>
                   {PHOTO_CATEGORY_LABELS[category]}
                   {REQUIRED_PHOTO_CATEGORIES.includes(category) && !covered.has(category)
@@ -156,20 +222,6 @@ export function PhotosTab({
             <span className="mb-1.5 block text-sm font-medium text-foreground">
               Photo <span className="text-red-600">*</span>
             </span>
-            {/* Form-submitted file field; populated from Camera / Library pickers. */}
-            <input
-              ref={fileInputRef}
-              className="photo-file-input"
-              type="file"
-              name="file"
-              accept={libraryProps.accept}
-              tabIndex={-1}
-              aria-label="Selected photo"
-              onChange={(event) => {
-                const file = event.target.files?.[0] ?? null;
-                setPendingFileName(file?.name ?? null);
-              }}
-            />
             <input
               id={cameraInputId}
               className="photo-file-input"
@@ -196,33 +248,36 @@ export function PhotosTab({
                 onClick={() => setChooserOpen(true)}
                 disabled={preparing}
               >
-                {preparing
-                  ? "Preparing photo…"
-                  : pendingFileName
-                    ? "Change photo"
-                    : "Choose photo"}
+                {preparing ? "Preparing photo…" : "Choose photo"}
               </button>
             </div>
-            {pendingFileName ? (
-              <p className="mt-1.5 text-sm text-[var(--status-neutral)]">
-                {pendingFileName}
-              </p>
-            ) : (
-              <p className="mt-1.5 text-sm text-[var(--status-neutral)]">
-                {preparing
-                  ? "Preparing photo — keep this screen open."
-                  : "Camera or Library — required before upload."}
-              </p>
-            )}
+            <p className="mt-1.5 text-sm text-[var(--status-neutral)]">
+              {preparing
+                ? "Preparing photo — keep this screen open."
+                : "Camera or Library — the photo queues as soon as you choose it."}
+            </p>
           </div>
-          <TextField label="Notes" name="notes" />
-          <div>
-            <SubmitButton
-              label={preparing ? "Preparing…" : "Upload photo"}
-              pendingLabel="Uploading…"
-              disabled={preparing}
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-foreground">
+              Notes
+            </span>
+            <input
+              className={SELECT_CLASS}
+              name="notes"
+              onChange={(event) => {
+                notesRef.current = event.target.value.trim();
+              }}
             />
-          </div>
+          </label>
+          {queuedHere.map((item) => (
+            <p
+              key={item.queueId}
+              role="status"
+              className="text-sm text-[var(--status-neutral)]"
+            >
+              {photoQueueStatusLabel(item, queue.isOnline())}
+            </p>
+          ))}
         </form>
       ) : null}
 
@@ -237,7 +292,7 @@ export function PhotosTab({
           onChange={(e) => setFilter(e.target.value as PhotoCategory | "all")}
         >
           <option value="all">All categories</option>
-          {ALL_CATEGORIES.map((category) => (
+          {FILTER_CATEGORIES.map((category) => (
             <option key={category} value={category}>
               {PHOTO_CATEGORY_LABELS[category]}
             </option>
@@ -285,8 +340,7 @@ export function PhotosTab({
                   aria-label={`View ${PHOTO_CATEGORY_LABELS[photo.category]} photo full size`}
                   onClick={() => setLightboxPhotoId(photo.photo_id)}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <RecoverableSignedImage
                     src={photo.thumb_url ?? photo.signed_url ?? ""}
                     alt={`${PHOTO_CATEGORY_LABELS[photo.category]} intake photo`}
                     className="aspect-[4/3] w-full object-cover bg-[var(--surface-muted)]"
@@ -309,17 +363,48 @@ export function PhotosTab({
                 </p>
                 {photo.notes ? <p className="text-foreground">{photo.notes}</p> : null}
                 {!readOnly && canDelete ? (
-                  <form action={deleteFormAction}>
-                    <input type="hidden" name="photo_id" value={photo.photo_id} />
+                  confirmingPhotoId === photo.photo_id ? (
+                    <form action={deleteFormAction} className="space-y-2">
+                      <input type="hidden" name="photo_id" value={photo.photo_id} />
+                      <label className="block">
+                        <span className="mb-1.5 block text-sm font-medium text-foreground">
+                          Correction reason <span className="text-red-600">*</span>
+                        </span>
+                        <textarea
+                          className={SELECT_CLASS}
+                          name="reason"
+                          required
+                          rows={3}
+                          maxLength={PHOTO_CORRECTION_REASON_MAX_LENGTH}
+                        />
+                      </label>
+                      <button
+                        type="submit"
+                        className="btn btn-ghost min-h-10 w-full text-red-700 hover:bg-red-50"
+                        disabled={deletePending}
+                      >
+                        {deletePending ? "Removing…" : "Permanently remove photo"}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost min-h-10 w-full"
+                        onClick={() => setConfirmingPhotoId(null)}
+                        disabled={deletePending}
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
                     <button
-                      type="submit"
+                      type="button"
                       className="btn btn-ghost min-h-10 w-full text-red-700 hover:bg-red-50"
+                      onClick={() => setConfirmingPhotoId(photo.photo_id)}
                       disabled={deletePending}
                       aria-label={`Remove ${PHOTO_CATEGORY_LABELS[photo.category]} photo`}
                     >
-                      {deletePending ? "Removing…" : "Remove photo"}
+                      Remove photo
                     </button>
-                  </form>
+                  )
                 ) : null}
               </div>
             </li>

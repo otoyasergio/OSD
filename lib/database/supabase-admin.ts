@@ -1,8 +1,10 @@
+import "server-only";
+
 import { createClient } from "@supabase/supabase-js";
 
 function createServiceRoleClient(configurationError: string) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !key) {
     throw new Error(configurationError);
   }
@@ -25,4 +27,12 @@ export function createAdminClient() {
  */
 export function createDiagnosticsAdminClient() {
   return createServiceRoleClient("ASK_OTOMOTO_DIAGNOSTICS_MISCONFIGURED");
+}
+
+/**
+ * Server/script-only service-role client for intake photo reconciliation.
+ * Never import this into client components.
+ */
+export function createPhotoAdminClient() {
+  return createServiceRoleClient("PHOTO_ADMIN_MISCONFIGURED");
 }

@@ -119,6 +119,8 @@ export function VinField({
           name={name}
           value={value}
           autoComplete="off"
+          autoCapitalize="characters"
+          autoCorrect="off"
           spellCheck={false}
           maxLength={17}
           placeholder="17-character VIN"

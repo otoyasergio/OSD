@@ -1,21 +1,20 @@
 "use client";
 
-import {
-  startTransition,
-  useActionState,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { PhotoCategory } from "@/lib/database/types";
-import {
-  uploadIntakePhotoAction,
-  type PhotoFormState,
-} from "@/app/(app)/work_orders/photo-actions";
 import { FormError } from "@/components/forms/Field";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
+import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 
 export function InspectionPhotoSlot({
   workOrderId,
@@ -36,21 +35,63 @@ export function InspectionPhotoSlot({
   readOnly?: boolean;
   onExpand?: (src: string) => void;
 }) {
+  const router = useRouter();
+  const queue = usePhotoUploadQueue();
   const titleId = useId();
   const cameraInputId = useId();
   const libraryInputId = useId();
-  const formRef = useRef<HTMLFormElement>(null);
   const [chooserOpen, setChooserOpen] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
-  const [state, formAction, pending] = useActionState(
-    uploadIntakePhotoAction.bind(null, workOrderId),
-    { error: null } satisfies PhotoFormState
-  );
+  const ownedQueueIds = useRef(new Set<string>());
+  const refreshedIds = useRef(new Set<string>());
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
-  const busy = pending || preparing;
-  const hasPhotos = existingUrls.length > 0;
+
+  const queued = queue.items.filter((item) => {
+    if (item.workOrderId !== workOrderId || item.category !== category) return false;
+    if (inspectionResultId) return item.inspectionResultId === inspectionResultId;
+    return true;
+  });
+  const busy = preparing || queued.some((item) => item.status === "uploading");
+  const hasPhotos = existingUrls.length > 0 || queued.length > 0;
+  const online = queue.isOnline();
+
+  useEffect(() => {
+    for (const item of queued) ownedQueueIds.current.add(item.queueId);
+  }, [queued]);
+
+  useEffect(() => {
+    return queue.subscribeConfirmation((confirmation) => {
+      if (!ownedQueueIds.current.has(confirmation.queueId)) return;
+      if (refreshedIds.current.has(confirmation.queueId)) return;
+      refreshedIds.current.add(confirmation.queueId);
+      router.refresh();
+    });
+  }, [queue, router]);
+
+  useEffect(() => {
+    for (const receipt of queue.confirmations) {
+      if (receipt.workOrderId !== workOrderId || receipt.category !== category) {
+        continue;
+      }
+      if (inspectionResultId && receipt.inspectionResultId !== inspectionResultId) {
+        continue;
+      }
+      if (!receipt.photoId || refreshedIds.current.has(receipt.queueId)) continue;
+      const present = existingUrls.some((url) => url.includes(receipt.photoId));
+      if (present) continue;
+      refreshedIds.current.add(receipt.queueId);
+      router.refresh();
+    }
+  }, [
+    category,
+    existingUrls,
+    inspectionResultId,
+    queue.confirmations,
+    router,
+    workOrderId,
+  ]);
 
   useEffect(() => {
     if (!chooserOpen) return;
@@ -61,30 +102,56 @@ export function InspectionPhotoSlot({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [chooserOpen]);
 
-  async function uploadFromInput(input: HTMLInputElement) {
+  async function enqueueFromInput(input: HTMLInputElement) {
     setChooserOpen(false);
     setClientError(null);
-    if (!formRef.current) {
-      input.value = "";
-      return;
-    }
-
     setPreparing(true);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, { surface: "inspection" });
       if (files.length === 0) return;
-      const formData = new FormData(formRef.current);
-      formData.delete("file");
-      for (const file of files) formData.append("file", file);
-      startTransition(() => {
-        formAction(formData);
-      });
-    } catch {
-      setClientError("Could not read that photo. Try again, or use the camera instead.");
+      for (const file of files) {
+        if (exceedsServerActionUploadLimit(file)) {
+          setClientError(photoTooLargeMessage(file));
+          continue;
+        }
+        const queuedItem = await queue.enqueue({
+          file,
+          category,
+          workOrderId,
+          inspectionResultId: inspectionResultId ?? undefined,
+          surface: "inspection",
+        });
+        ownedQueueIds.current.add(queuedItem.queueId);
+      }
+    } catch (error) {
+      if (error instanceof PhotoQueuePersistenceError) {
+        setClientError(error.message);
+      } else {
+        setClientError(UNREADABLE_PHOTO_MESSAGE);
+      }
     } finally {
       setPreparing(false);
     }
   }
+
+  const previews = [
+    ...queued.map((item) => ({
+      key: item.queueId,
+      src: queue.previewUrl(item.queueId),
+      pending: item.status !== "failed" && item.status !== "saved",
+      failed: item.status === "failed",
+      status: photoQueueStatusLabel(item, online),
+      queueId: item.queueId,
+    })),
+    ...existingUrls.map((src, index) => ({
+      key: `saved-${src}-${index}`,
+      src,
+      pending: false,
+      failed: false,
+      status: "Saved",
+      queueId: null as string | null,
+    })),
+  ];
 
   return (
     <div
@@ -94,21 +161,63 @@ export function InspectionPhotoSlot({
     >
       <div className="inspection-photo-slot-preview">
         {hasPhotos ? (
-          existingUrls.map((src, index) =>
-            onExpand ? (
+          previews.map((preview, index) =>
+            onExpand && preview.src && !preview.pending && !preview.failed ? (
               <button
-                key={`${src}-${index}`}
+                key={preview.key}
                 type="button"
                 className="inspection-photo-slot-expand"
-                onClick={() => onExpand(src)}
+                onClick={() => onExpand(preview.src!)}
                 aria-label={`View ${label} photo ${index + 1} larger`}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URLs */}
-                <img src={src} alt={`${label} ${index + 1}`} />
+                {preview.queueId ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- local queue object URL
+                  <img
+                    src={preview.src}
+                    alt={`${label} ${index + 1}`}
+                    decoding="async"
+                    loading={preview.pending ? "eager" : "lazy"}
+                  />
+                ) : (
+                  <RecoverableSignedImage
+                    src={preview.src}
+                    alt={`${label} ${index + 1}`}
+                    decoding="async"
+                    loading={preview.pending ? "eager" : "lazy"}
+                  />
+                )}
               </button>
+            ) : preview.src ? (
+              preview.queueId ? (
+                // eslint-disable-next-line @next/next/no-img-element -- local queue object URL
+                <img
+                  key={preview.key}
+                  src={preview.src}
+                  alt={
+                    preview.failed
+                      ? `${label} ${index + 1} failed to save`
+                      : `${label} ${index + 1}`
+                  }
+                  decoding="async"
+                  loading={preview.pending ? "eager" : "lazy"}
+                />
+              ) : (
+                <RecoverableSignedImage
+                  key={preview.key}
+                  src={preview.src}
+                  alt={
+                    preview.failed
+                      ? `${label} ${index + 1} failed to save`
+                      : `${label} ${index + 1}`
+                  }
+                  decoding="async"
+                  loading={preview.pending ? "eager" : "lazy"}
+                />
+              )
             ) : (
-              // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-              <img key={`${src}-${index}`} src={src} alt={`${label} ${index + 1}`} />
+              <span key={preview.key} className="inspection-photo-slot-placeholder">
+                {preview.status}
+              </span>
             )
           )
         ) : (
@@ -121,19 +230,26 @@ export function InspectionPhotoSlot({
         <p className="inspection-photo-slot-label">{label}</p>
         {hasPhotos ? (
           <p className="inspection-photo-slot-count">
-            {existingUrls.length} photo{existingUrls.length === 1 ? "" : "s"}
+            {previews.length} photo{previews.length === 1 ? "" : "s"}
           </p>
         ) : null}
+        {queued.map((item) => (
+          <p
+            key={`${item.queueId}-status`}
+            className="inspection-photo-slot-count"
+            role="status"
+          >
+            {photoQueueStatusLabel(item, online)}
+            {item.status === "queued" && !online
+              ? " — Saved on this device — waiting for connection."
+              : ""}
+          </p>
+        ))}
         {!readOnly ? (
-          <form ref={formRef} action={formAction} className="inspection-photo-slot-form">
-            <input type="hidden" name="category" value={category} />
-            {inspectionResultId ? (
-              <input
-                type="hidden"
-                name="inspection_result_id"
-                value={inspectionResultId}
-              />
-            ) : null}
+          <form
+            className="inspection-photo-slot-form"
+            onSubmit={(event) => event.preventDefault()}
+          >
             <input
               id={cameraInputId}
               type="file"
@@ -142,8 +258,8 @@ export function InspectionPhotoSlot({
               className="photo-file-input"
               tabIndex={-1}
               aria-label={`${label} camera`}
-              onChange={(e) => {
-                void uploadFromInput(e.currentTarget);
+              onChange={(event) => {
+                void enqueueFromInput(event.currentTarget);
               }}
             />
             <input
@@ -154,8 +270,8 @@ export function InspectionPhotoSlot({
               className="photo-file-input"
               tabIndex={-1}
               aria-label={`${label} photo library`}
-              onChange={(e) => {
-                void uploadFromInput(e.currentTarget);
+              onChange={(event) => {
+                void enqueueFromInput(event.currentTarget);
               }}
             />
             <button
@@ -164,9 +280,29 @@ export function InspectionPhotoSlot({
               className="btn btn-secondary min-h-12 w-full"
               onClick={() => setChooserOpen(true)}
             >
-              {busy ? "Uploading…" : hasPhotos ? "Add another photo" : "Add photo"}
+              {preparing
+                ? "Preparing photo…"
+                : busy
+                  ? "Uploading…"
+                  : hasPhotos
+                    ? "Add another photo"
+                    : "Add photo"}
             </button>
-            <FormError message={state.error ?? clientError} />
+            {queued
+              .filter((item) => item.status === "failed")
+              .map((item) => (
+                <button
+                  key={`${item.queueId}-retry`}
+                  type="button"
+                  className="btn btn-secondary min-h-11 w-full"
+                  onClick={() => {
+                    void queue.retry(item.queueId);
+                  }}
+                >
+                  Retry
+                </button>
+              ))}
+            <FormError message={clientError} />
           </form>
         ) : null}
       </div>
@@ -188,8 +324,9 @@ export function InspectionPhotoSlot({
               {hasPhotos ? `Add another ${label}` : `Add ${label}`}
             </p>
             <p className="photo-source-sheet-lede">
-              Take as many as you need. Camera takes one at a time; library can pick
-              several. {CAMERA_ROLL_HINT}
+              Take as many as you need. Each photo is saved on this inspection and kept
+              for Ask OTOMOTO. Camera takes one at a time; library can pick several.{" "}
+              {CAMERA_ROLL_HINT}
             </p>
             <label
               htmlFor={cameraInputId}

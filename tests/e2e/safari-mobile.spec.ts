@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 
 /**
  * Safari / iOS layout gates. These run on the public sign-in page only — no
@@ -27,9 +27,19 @@ const ZOOMING_INPUT_TYPES = [
   "week",
 ];
 
+/**
+ * WebKit in CI often never fires the full `load` event under parallel project
+ * load. Layout gates only need the document; wait for DOMContentLoaded.
+ */
+async function openLogin(page: Page) {
+  await page.goto("/login", { waitUntil: "domcontentloaded", timeout: 60_000 });
+}
+
 test.describe("Safari layout gates", () => {
+  test.describe.configure({ timeout: 60_000 });
+
   test("viewport opts into the safe-area insets", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
     const content = await page.locator('meta[name="viewport"]').getAttribute("content");
     // Without viewport-fit=cover every env(safe-area-inset-*) resolves to 0px
     // and fixed chrome slides under the notch and the home indicator.
@@ -41,7 +51,7 @@ test.describe("Safari layout gates", () => {
   });
 
   test("iOS home-screen and status bar metadata is present", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute(
       "content",
       "#0b1220"
@@ -52,8 +62,76 @@ test.describe("Safari layout gates", () => {
     );
   });
 
+  test("Safari phone-number detection is turned off", async ({ page }) => {
+    await openLogin(page);
+    // Otherwise iOS rewrites work-order numbers, VINs, SKUs and prices into
+    // tel: links under React, and a tapped customer number dials from the
+    // staff member's own device instead of the shop line.
+    const content = await page
+      .locator('meta[name="format-detection"]')
+      .getAttribute("content");
+    expect(content).toContain("telephone=no");
+  });
+
+  test("sign-in email field opts out of autocorrect and capitalisation", async ({
+    page,
+  }) => {
+    await openLogin(page);
+    const email = page.locator("#email");
+    await expect(email).toHaveAttribute("autocapitalize", "none");
+    await expect(email).toHaveAttribute("autocorrect", "off");
+    await expect(email).toHaveAttribute("spellcheck", "false");
+  });
+
+  test("long-press draggable cards suppress selection and the iOS callout", async ({
+    page,
+  }) => {
+    await openLogin(page);
+    const result = await page.evaluate(() => {
+      const host = document.createElement("div");
+      host.innerHTML =
+        '<div class="wo-card-drag-wrap wo-card-drag-wrap--draggable" data-probe="wo">x</div>' +
+        '<div class="pit-queue-drag-wrap" data-probe="pit">x</div>' +
+        '<button class="cc-bike-card" data-probe="cc">x</button>' +
+        '<div class="cc-mini-bike" data-probe="mini">x</div>' +
+        '<button class="cc-bike-card cc-bike-card--static" data-probe="static">x</button>';
+      document.body.append(host);
+      // `-webkit-touch-callout` exists only in iOS WebKit; Playwright's Linux
+      // WebKit reports it as undefined, so only assert it where it exists.
+      const calloutSupported = CSS.supports("-webkit-touch-callout", "none");
+      const read = (probe: string) => {
+        const el = host.querySelector<HTMLElement>(`[data-probe="${probe}"]`)!;
+        const cs = getComputedStyle(el);
+        return {
+          callout: cs.getPropertyValue("-webkit-touch-callout"),
+          userSelect:
+            cs.getPropertyValue("user-select") ||
+            cs.getPropertyValue("-webkit-user-select"),
+        };
+      };
+      const out = {
+        calloutSupported,
+        wo: read("wo"),
+        pit: read("pit"),
+        cc: read("cc"),
+        mini: read("mini"),
+        staticCard: read("static"),
+      };
+      host.remove();
+      return out;
+    });
+
+    for (const probe of [result.wo, result.pit, result.cc, result.mini]) {
+      expect(probe.userSelect).toBe("none");
+      if (result.calloutSupported) expect(probe.callout).toBe("none");
+    }
+    // Static cards keep copy-and-select so staff can grab a WO number.
+    expect(result.staticCard.userSelect).not.toBe("none");
+    if (result.calloutSupported) expect(result.staticCard.callout).not.toBe("none");
+  });
+
   test("sign-in page has no horizontal overflow", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
     await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
     const overflow = await page.evaluate(() => {
       const doc = document.documentElement;
@@ -63,14 +141,14 @@ test.describe("Safari layout gates", () => {
   });
 
   test("primary action meets the 44px touch target", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
     const submit = page.getByRole("button", { name: /sign in/i });
     const box = await submit.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   });
 
   test("text controls never compute below 16px on touch devices", async ({ page }) => {
-    await page.goto("/login");
+    await openLogin(page);
 
     const coarse = await page.evaluate(
       () => window.matchMedia("(pointer: coarse)").matches
@@ -125,7 +203,7 @@ test.describe("Safari layout gates", () => {
   test("selects drop the native iOS chrome so they line up with inputs", async ({
     page,
   }) => {
-    await page.goto("/login");
+    await openLogin(page);
 
     const result = await page.evaluate(() => {
       const host = document.createElement("div");

@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { StaffGalleryPhoto } from "@/lib/services/photoGallery";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 import { formatDateTime } from "@/lib/datetime/format";
 
 export type StaffPhotoGridMode = "gallery" | "bike";
@@ -66,8 +67,7 @@ export function StaffPhotoGrid({
               disabled={!photo.signed_url && !photo.thumb_url}
             >
               {photo.thumb_url || photo.signed_url ? (
-                // eslint-disable-next-line @next/next/no-img-element -- signed storage URLs
-                <img
+                <RecoverableSignedImage
                   src={photo.thumb_url ?? photo.signed_url ?? ""}
                   alt={photo.category_label}
                   className="staff-photo-img"

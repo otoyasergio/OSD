@@ -9,14 +9,18 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import {
-  uploadAssistantPhotoAction,
-  type AssistantActionState,
-} from "@/app/(app)/work_orders/assistant-actions";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { photoFileInputProps, CAMERA_ROLL_HINT } from "@/lib/forms/photoSourceInputs";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
-import { withPhotoUploadRetries } from "@/lib/forms/retryPhotoUpload";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
+import {
+  PhotoQueuePersistenceError,
+  PhotoUploadQueueClosedError,
+} from "@/lib/photos/uploadQueue/errors";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 import {
   DIAGNOSTICS_PHOTO_MAX_SELECTED,
   DIAGNOSTICS_PHOTO_PURPOSE_MAX,
@@ -25,14 +29,11 @@ import {
   createObjectUrlRegistry,
   defaultPhotoPurpose,
   isDiagnosticsPhotoEligible,
-  parseUploadedAssistantPhoto,
   type DiagnosticsPhotoSelection,
   type DiagnosticsPhotoSourceRow,
 } from "@/lib/diagnostics/photoSelection";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import type { PhotoCategory } from "@/lib/database/types";
-
-const IDLE: AssistantActionState = { status: "idle", error: null };
 
 type GridPhoto = {
   photoId: string;
@@ -95,13 +96,16 @@ export function DiagnosticsPhotoPicker({
   const Heading = headingLevel === 5 ? "h5" : "h4";
   const headingId = useId();
   const noteId = useId();
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const libraryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputId = useId();
+  const libraryInputId = useId();
+  const queue = usePhotoUploadQueue();
   const regionRef = useRef<HTMLDivElement>(null);
   const mountedRef = useRef(true);
   const selectionsRef = useRef(selections);
   const interactiveRef = useRef(false);
   const focusedRequests = useRef(new Set<string>());
+  const pendingByQueueId = useRef(new Map<string, { file: File; purpose: string }>());
+  const handledConfirmations = useRef(new Set<string>());
   const [registry] = useState(() => createObjectUrlRegistry());
   const [localPhotos, setLocalPhotos] = useState<LocalPhoto[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -234,6 +238,91 @@ export function DiagnosticsPhotoPicker({
     onBusyChange?.(busy);
   }
 
+  function applyConfirmation(queueId: string, photoId: string) {
+    if (handledConfirmations.current.has(queueId)) return;
+    handledConfirmations.current.add(queueId);
+    const pending = pendingByQueueId.current.get(queueId);
+    pendingByQueueId.current.delete(queueId);
+    if (!mountedRef.current) return;
+    setError(null);
+    const file = pending?.file;
+    const purpose = pending?.purpose ?? defaultPurpose;
+    if (file) {
+      const previewUrl = registry.create(file, photoId);
+      setLocalPhotos((previous) => [
+        ...previous.filter((photo) => photo.photoId !== photoId),
+        {
+          photoId,
+          category: "job_work",
+          createdAt: new Date().toISOString(),
+          previewUrl,
+          file,
+        },
+      ]);
+    }
+    const added = addPhotoSelection(selectionsRef.current, photoId, purpose);
+    if (added.added) {
+      selectionsRef.current = added.selections;
+      onSelectionsChange(added.selections);
+    } else {
+      setNotice(
+        added.reason === "limit"
+          ? `Photo saved, but not selected: ${DIAGNOSTICS_PHOTO_MAX_SELECTED} photos are already selected. Deselect one, then select the new photo.`
+          : "Photo saved, but it was already selected."
+      );
+    }
+    if (pendingByQueueId.current.size === 0) setBusy(false);
+  }
+
+  const applyConfirmationRef = useRef(applyConfirmation);
+  const setBusyRef = useRef(setBusy);
+
+  useEffect(() => {
+    applyConfirmationRef.current = applyConfirmation;
+    setBusyRef.current = setBusy;
+  });
+
+  useEffect(() => {
+    return queue.subscribeConfirmation((confirmation) => {
+      if (!pendingByQueueId.current.has(confirmation.queueId)) return;
+      applyConfirmationRef.current(confirmation.queueId, confirmation.photoId);
+    });
+  }, [queue]);
+
+  useEffect(() => {
+    for (const item of queue.items) {
+      if (!pendingByQueueId.current.has(item.queueId) || item.status !== "failed") {
+        continue;
+      }
+      if (mountedRef.current) {
+        setError(item.lastError ?? "Could not upload that photo. Try again.");
+        setBusyRef.current(false);
+      }
+    }
+    for (const receipt of queue.confirmations) {
+      if (!pendingByQueueId.current.has(receipt.queueId)) continue;
+      if (handledConfirmations.current.has(receipt.queueId)) continue;
+      if (receipt.workOrderId && receipt.workOrderId !== thread.workOrderId) continue;
+      if (receipt.jobId && receipt.jobId !== (thread.jobId ?? undefined)) continue;
+      if (receipt.assistantThreadId && receipt.assistantThreadId !== thread.threadId) {
+        continue;
+      }
+      applyConfirmationRef.current(receipt.queueId, receipt.photoId);
+    }
+    for (const queueId of [...pendingByQueueId.current.keys()]) {
+      const stillQueued = queue.items.some((item) => item.queueId === queueId);
+      const confirmed = queue.confirmations.some(
+        (receipt) => receipt.queueId === queueId
+      );
+      if (stillQueued || confirmed) continue;
+      pendingByQueueId.current.delete(queueId);
+      if (mountedRef.current) {
+        setError("Could not upload that photo. Try again.");
+        if (pendingByQueueId.current.size === 0) setBusyRef.current(false);
+      }
+    }
+  }, [queue, thread.jobId, thread.threadId, thread.workOrderId]);
+
   async function uploadFromInput(input: HTMLInputElement) {
     if (!uploadEnabled) {
       input.value = "";
@@ -243,8 +332,7 @@ export function DiagnosticsPhotoPicker({
     setNotice(null);
     setBusy(true);
     try {
-      const prepared = await readPickedPhotoFiles(input);
-      const scope = { workOrderId: thread.workOrderId, jobId: thread.jobId };
+      const prepared = await readPickedPhotoFiles(input, { surface: "diagnostics" });
       for (const [index, file] of prepared.entries()) {
         if (selectionsRef.current.length >= DIAGNOSTICS_PHOTO_MAX_SELECTED) {
           if (mountedRef.current) {
@@ -256,61 +344,49 @@ export function DiagnosticsPhotoPicker({
           }
           break;
         }
-        const result = await withPhotoUploadRetries(
-          () => {
-            const form = new FormData();
-            form.set("thread_id", thread.threadId);
-            form.set("purpose", defaultPurpose);
-            form.set("file", file);
-            return uploadAssistantPhotoAction(thread.workOrderId, IDLE, form);
-          },
-          {
-            isSuccess: (value) => value.status === "success",
-            getFailureMessage: (value) => value.error,
-          }
-        );
-        if (result.status !== "success") {
+        if (exceedsServerActionUploadLimit(file)) {
+          if (mountedRef.current) setError(photoTooLargeMessage(file));
+          break;
+        }
+        const queuedItem = await queue.enqueue({
+          file,
+          category: "job_work",
+          workOrderId: thread.workOrderId,
+          jobId: thread.jobId ?? undefined,
+          assistantThreadId: thread.threadId,
+          notes: defaultPurpose,
+          surface: "diagnostics",
+        });
+        pendingByQueueId.current.set(queuedItem.queueId, {
+          file,
+          purpose: defaultPurpose,
+        });
+        if (!queue.isOnline()) continue;
+        const waited = await queue.waitForConfirmations([queuedItem.queueId]);
+        if (!waited.ok) {
+          const failed = waited.failed[0];
           if (mountedRef.current) {
-            setError(result.error ?? "Could not upload that photo. Try again.");
+            setError(failed?.lastError ?? "Could not upload that photo. Try again.");
+            setBusy(false);
           }
           break;
         }
-        const stored = parseUploadedAssistantPhoto(result.data, scope);
-        if (!stored) {
-          if (mountedRef.current) {
-            setError(
-              "The photo was uploaded, but it could not be selected. Refresh, then select it from the photo list."
-            );
-          }
-          break;
-        }
-        if (!mountedRef.current) break;
-        const previewUrl = registry.create(file, stored.photoId);
-        setLocalPhotos((previous) => [
-          ...previous.filter((photo) => photo.photoId !== stored.photoId),
-          { ...stored, previewUrl, file },
-        ]);
-        const added = addPhotoSelection(
-          selectionsRef.current,
-          stored.photoId,
-          defaultPurpose
-        );
-        if (added.added) {
-          selectionsRef.current = added.selections;
-          onSelectionsChange(added.selections);
-        } else {
-          setNotice(
-            added.reason === "limit"
-              ? `Photo saved, but not selected: ${DIAGNOSTICS_PHOTO_MAX_SELECTED} photos are already selected. Deselect one, then select the new photo.`
-              : "Photo saved, but it was already selected."
-          );
-          break;
-        }
+        const confirmation = waited.confirmations[0];
+        if (confirmation) applyConfirmation(confirmation.queueId, confirmation.photoId);
       }
-    } catch {
-      if (mountedRef.current) setError(UNREADABLE_PHOTO_MESSAGE);
+    } catch (caught) {
+      if (mountedRef.current) {
+        setError(
+          caught instanceof PhotoQueuePersistenceError
+            ? caught.message
+            : caught instanceof PhotoUploadQueueClosedError
+              ? "Could not upload that photo. Try again."
+              : UNREADABLE_PHOTO_MESSAGE
+        );
+        setBusy(false);
+      }
     } finally {
-      setBusy(false);
+      if (pendingByQueueId.current.size === 0) setBusy(false);
     }
   }
 
@@ -441,7 +517,7 @@ export function DiagnosticsPhotoPicker({
       {jobScoped ? (
         <div className="flex flex-wrap items-center gap-2">
           <input
-            ref={cameraInputRef}
+            id={cameraInputId}
             type="file"
             accept={cameraProps.accept}
             capture={cameraProps.capture}
@@ -452,7 +528,7 @@ export function DiagnosticsPhotoPicker({
             onChange={(event) => void uploadFromInput(event.currentTarget)}
           />
           <input
-            ref={libraryInputRef}
+            id={libraryInputId}
             type="file"
             accept={libraryProps.accept}
             multiple
@@ -462,26 +538,26 @@ export function DiagnosticsPhotoPicker({
             disabled={!uploadEnabled}
             onChange={(event) => void uploadFromInput(event.currentTarget)}
           />
-          <button
-            type="button"
-            className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!uploadEnabled}
+          <label
+            htmlFor={cameraInputId}
+            className={`btn btn-secondary ${
+              uploadEnabled ? "" : "pointer-events-none cursor-not-allowed opacity-50"
+            }`}
             aria-disabled={!uploadEnabled}
             aria-describedby={noteId}
-            onClick={() => cameraInputRef.current?.click()}
           >
             Camera
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!uploadEnabled}
+          </label>
+          <label
+            htmlFor={libraryInputId}
+            className={`btn btn-secondary ${
+              uploadEnabled ? "" : "pointer-events-none cursor-not-allowed opacity-50"
+            }`}
             aria-disabled={!uploadEnabled}
             aria-describedby={noteId}
-            onClick={() => libraryInputRef.current?.click()}
           >
             Library
-          </button>
+          </label>
           <span id={noteId} className="text-xs text-[var(--status-neutral)]">
             {CAMERA_ROLL_HINT}
           </span>

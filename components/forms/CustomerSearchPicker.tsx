@@ -229,6 +229,8 @@ export function CustomerSearchPicker({
         }
         placeholder="Search name, email, or phone…"
         autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
         enterKeyHint="search"
         disabled={disabled}
         value={query}

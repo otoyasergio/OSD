@@ -24,6 +24,16 @@ describe("pickupLeaveBlockReason", () => {
     expect(
       pickupLeaveBlockReason({
         inspectionComplete: true,
+        qualityChecked: false,
+        safetyRequired: true,
+        safetyChecked: false,
+        waiveQualityCheck: true,
+      })
+    ).toBe("SAFETY_REQUIRED_BEFORE_PICKUP");
+
+    expect(
+      pickupLeaveBlockReason({
+        inspectionComplete: true,
         qualityChecked: true,
         safetyRequired: true,
         safetyChecked: false,

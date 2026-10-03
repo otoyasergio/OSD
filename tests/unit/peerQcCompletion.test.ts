@@ -3,6 +3,7 @@ import {
   buildLegacyReworkJobUpdate,
   collectVisitWorkerIds,
   filterEligibleQcCandidates,
+  presentPeerQcPickerOptions,
 } from "@/lib/jobs-v2/peerQcCompletion";
 import { latestTechnicianNotes } from "@/lib/services/notes";
 
@@ -47,6 +48,27 @@ describe("filterEligibleQcCandidates", () => {
       "drive-by-contributor",
       "fresh-eyes",
     ]);
+  });
+});
+
+describe("presentPeerQcPickerOptions", () => {
+  const roster = [
+    { user_id: "b", display_name: "Stefano Franco", clocked_in: false },
+    { user_id: "a", display_name: "Colton McDonald", clocked_in: true },
+    { user_id: "c", display_name: "Ethan Powell", clocked_in: false },
+  ];
+
+  it("lists everyone, with people on the clock first", () => {
+    expect(
+      presentPeerQcPickerOptions(roster, "").map((person) => person.user_id)
+    ).toEqual(["a", "c", "b"]);
+  });
+
+  it("filters by name without dropping people who are not clocked in", () => {
+    expect(
+      presentPeerQcPickerOptions(roster, "  stef ").map((person) => person.display_name)
+    ).toEqual(["Stefano Franco"]);
+    expect(presentPeerQcPickerOptions(roster, "nomatch")).toEqual([]);
   });
 });
 

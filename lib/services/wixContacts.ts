@@ -355,7 +355,7 @@ export async function reconcileWixContactsToApp(options?: {
   };
 
   const isCron = options?.triggeredBy === "cron";
-  let lockHeld = false;
+  let lockToken: string | null = null;
   if (isCron) {
     const { data: acquired, error: lockError } = await supabase.rpc(
       "try_wix_contacts_sync_lock"
@@ -365,14 +365,22 @@ export async function reconcileWixContactsToApp(options?: {
       stats.skipped_reason = "already_running";
       return stats;
     }
-    lockHeld = true;
+    lockToken = String(acquired);
   }
 
   try {
     return await reconcileWixContactsToAppBody(supabase, stats);
   } finally {
-    if (lockHeld) {
-      await supabase.rpc("release_wix_contacts_sync_lock");
+    if (lockToken) {
+      const { error: releaseError } = await supabase.rpc(
+        "release_wix_contacts_sync_lock",
+        {
+          p_locked_at: lockToken,
+        }
+      );
+      if (releaseError) {
+        console.error("wix contacts sync lock release failed", releaseError.message);
+      }
     }
   }
 }

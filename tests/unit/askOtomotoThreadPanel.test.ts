@@ -36,13 +36,35 @@ import {
   AskOtomotoThreadPanel,
   useDeadlineReached,
 } from "@/components/diagnostics/AskOtomotoThreadPanel";
+import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
+import {
+  createMemoryPhotoUploadQueueDatabase,
+  MemoryPhotoUploadQueueStore,
+} from "@/tests/helpers/memoryPhotoUploadQueueStore";
 import type { AssistantComposerFlags } from "@/lib/diagnostics/assistantPageState";
 import type {
   AskOtomotoMessageView,
   AskOtomotoPanelData,
   AskOtomotoWorkspaceView,
 } from "@/lib/diagnostics/askOtomotoView";
+
+function withPhotoQueue(node: React.ReactNode) {
+  return React.createElement(
+    PhotoUploadQueueProvider,
+    {
+      userId: "user-a",
+      locationId: "location-a",
+      store: new MemoryPhotoUploadQueueStore(createMemoryPhotoUploadQueueDatabase()),
+      isOnline: () => false,
+    },
+    node
+  );
+}
+
+function queuePanel(props: React.ComponentProps<typeof AskOtomotoThreadPanel>) {
+  return withPhotoQueue(React.createElement(AskOtomotoThreadPanel, props));
+}
 import type { DiagnosticsPhotoSourceRow } from "@/lib/diagnostics/photoSelection";
 
 const JOB = "51111111-1111-4111-8111-111111111111";
@@ -148,7 +170,7 @@ describe("AskOtomotoThreadPanel", () => {
   it("shows the selected automatic thread, status, messages, and review label", async () => {
     await act(async () => {
       root.render(
-        React.createElement(AskOtomotoThreadPanel, {
+        queuePanel({
           workspace: workspace(),
         })
       );
@@ -165,7 +187,7 @@ describe("AskOtomotoThreadPanel", () => {
   it("shows refresh while pending and Retry only for failed threads", async () => {
     await act(async () => {
       root.render(
-        React.createElement(AskOtomotoThreadPanel, {
+        queuePanel({
           workspace: workspace({ status: "generating" }),
         })
       );
@@ -180,7 +202,7 @@ describe("AskOtomotoThreadPanel", () => {
 
     await act(async () => {
       root.render(
-        React.createElement(AskOtomotoThreadPanel, {
+        queuePanel({
           workspace: workspace({ status: "failed" }),
           canMutate: true,
         })
@@ -193,7 +215,7 @@ describe("AskOtomotoThreadPanel", () => {
   it("uses the exact inspection-review progress text", async () => {
     await act(async () => {
       root.render(
-        React.createElement(AskOtomotoThreadPanel, {
+        queuePanel({
           workspace: {
             ...workspace({
               status: "generating",
@@ -212,23 +234,25 @@ describe("AskOtomotoThreadPanel", () => {
   it("renders the exact selected workspace in the floor assistant packet", async () => {
     await act(async () => {
       root.render(
-        React.createElement(JobPacketPanel, {
-          packet: {
-            work_order_id: WORK_ORDER,
-            work_order_number: "WO-100",
-            wo_status: "in_progress",
-            wo_status_label: "In progress",
-            motorcycle_label: "2026 Honda CB500F",
-            is_foreign_location: false,
-            jobs: [],
-            pending_recommendations: [],
-            notes: [],
-          },
-          section: "assistant",
-          closeHref: `/technician?wo=${WORK_ORDER}`,
-          stage: "work",
-          assistant: packetAssistant(workspace()),
-        })
+        withPhotoQueue(
+          React.createElement(JobPacketPanel, {
+            packet: {
+              work_order_id: WORK_ORDER,
+              work_order_number: "WO-100",
+              wo_status: "in_progress",
+              wo_status_label: "In progress",
+              motorcycle_label: "2026 Honda CB500F",
+              is_foreign_location: false,
+              jobs: [],
+              pending_recommendations: [],
+              notes: [],
+            },
+            section: "assistant",
+            closeHref: `/technician?wo=${WORK_ORDER}`,
+            stage: "work",
+            assistant: packetAssistant(workspace()),
+          })
+        )
       );
     });
 
@@ -267,35 +291,37 @@ describe("AskOtomotoThreadPanel", () => {
     const render = async (flags: AssistantComposerFlags) => {
       await act(async () => {
         root.render(
-          React.createElement(JobPacketPanel, {
-            packet,
-            section: "assistant",
-            closeHref: `/technician?wo=${WORK_ORDER}`,
-            stage: "work",
-            assistant: packetAssistant(workspace({ jobId: JOB, triggerType: null }), {
-              photos: [
-                {
-                  photo_id: "a1111111-1111-4111-8111-111111111111",
-                  work_order_id: WORK_ORDER,
-                  job_id: JOB,
-                  category: "job_work",
-                  created_at: "2026-09-29T14:05:00.000Z",
-                  thumb_url: "https://signed.example/a1.jpg",
+          withPhotoQueue(
+            React.createElement(JobPacketPanel, {
+              packet,
+              section: "assistant",
+              closeHref: `/technician?wo=${WORK_ORDER}`,
+              stage: "work",
+              assistant: packetAssistant(workspace({ jobId: JOB, triggerType: null }), {
+                photos: [
+                  {
+                    photo_id: "a1111111-1111-4111-8111-111111111111",
+                    work_order_id: WORK_ORDER,
+                    job_id: JOB,
+                    category: "job_work",
+                    created_at: "2026-09-29T14:05:00.000Z",
+                    thumb_url: "https://signed.example/a1.jpg",
+                  },
+                ],
+                capabilities: {
+                  ...flags,
+                  lockReason: flags.preview ? "preview" : null,
+                  canUseFrontOfficeModes: false,
+                  canPromoteNotes: flags.canMutate,
                 },
+              }),
+              photos: [
+                row("a1111111-1111-4111-8111-111111111111", "job_work", JOB),
+                row("a2222222-2222-4222-8222-222222222222", "vin", null),
+                row("a3333333-3333-4333-8333-333333333333", "job_work", JOB),
               ],
-              capabilities: {
-                ...flags,
-                lockReason: flags.preview ? "preview" : null,
-                canUseFrontOfficeModes: false,
-                canPromoteNotes: flags.canMutate,
-              },
-            }),
-            photos: [
-              row("a1111111-1111-4111-8111-111111111111", "job_work", JOB),
-              row("a2222222-2222-4222-8222-222222222222", "vin", null),
-              row("a3333333-3333-4333-8333-333333333333", "job_work", JOB),
-            ],
-          })
+            })
+          )
         );
       });
     };
@@ -338,7 +364,7 @@ describe("AskOtomotoThreadPanel", () => {
     ) {
       await act(async () => {
         root.render(
-          React.createElement(AskOtomotoThreadPanel, {
+          queuePanel({
             workspace: ws,
             photos,
             canMutate: true,
@@ -631,7 +657,7 @@ describe("AskOtomotoThreadPanel", () => {
     ) {
       await act(async () => {
         root.render(
-          React.createElement(AskOtomotoThreadPanel, {
+          queuePanel({
             workspace: ws,
             photos: [],
             canMutate: true,

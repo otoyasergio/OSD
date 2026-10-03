@@ -1196,20 +1196,10 @@ export async function clearFinishedStampsForNewRecommendationWork(
   if (error) throw error;
   if (!wo || !workOrderNeedsReopenForNewRecommendationWork(wo)) return false;
 
-  const { error: clearError } = await supabase
-    .from("work_order")
-    .update({
-      quality_checked_at: null,
-      quality_checked_by_user_id: null,
-      quality_check_notes: null,
-      quality_check_assigned_to: null,
-      safety_checked_at: null,
-      safety_checked_by_user_id: null,
-      safety_check_notes: null,
-      ready_for_pickup_at: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("work_order_id", workOrderId);
+  const { error: clearError } = await supabase.rpc(
+    "reopen_work_order_for_recommendation_work",
+    { p_work_order_id: workOrderId }
+  );
   if (clearError) throw clearError;
   return true;
 }

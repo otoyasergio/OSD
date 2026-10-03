@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { useCallback, useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { searchShopRecords } from "@/app/(app)/actions/search";
 import type { SearchResult } from "@/lib/services/globalSearch";
@@ -180,6 +173,8 @@ export function SearchTypeahead({ inputId }: Props) {
         }
         placeholder="Name, bike, WO #, VIN…"
         autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
         enterKeyHint="search"
         value={query}
         onChange={(event) => {
@@ -263,9 +258,7 @@ export function SearchTypeahead({ inputId }: Props) {
                         <span className="search-typeahead-option-label">
                           {item.label}
                         </span>
-                        <span className="search-typeahead-option-meta">
-                          {item.meta}
-                        </span>
+                        <span className="search-typeahead-option-meta">{item.meta}</span>
                       </button>
                     </li>
                   );

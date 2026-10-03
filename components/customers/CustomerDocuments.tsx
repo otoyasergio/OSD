@@ -2,14 +2,16 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import type { CustomerDocument } from "@/lib/services/customerDocuments";
 import {
   deleteCustomerDocumentAction,
   uploadCustomerDocumentAction,
 } from "@/app/(app)/customers/document-actions";
 import { FormError } from "@/components/forms/Field";
+import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
 import { formatDate } from "@/lib/datetime/format";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/forms/photoSourceInputs";
 
 function sourceLabel(source: CustomerDocument["source"]) {
   return source === "drop_off_agreement" ? "Drop-off agreement" : "Upload";
@@ -27,26 +29,32 @@ export function CustomerDocuments({
   canDelete: boolean;
 }) {
   const router = useRouter();
+  const fileInputId = useId();
   const [title, setTitle] = useState("");
-  const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [preparing, setPreparing] = useState(false);
+  const [preparedFile, setPreparedFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
 
   function refresh() {
     router.refresh();
   }
 
-  function onUpload(event: React.FormEvent) {
+  function onUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
-    if (!file) {
+    const formData = new FormData(event.currentTarget);
+    const file = formData.get("file");
+    const chosen = file instanceof File && file.size > 0 ? file : preparedFile;
+    if (!chosen || chosen.size === 0) {
       setError("Choose a file to upload.");
       return;
     }
-
-    const formData = new FormData();
+    if (!(file instanceof File) || file.size === 0) {
+      formData.set("file", chosen);
+    }
     formData.set("title", title);
-    formData.set("file", file);
 
     startTransition(async () => {
       const result = await uploadCustomerDocumentAction(customerId, formData);
@@ -55,7 +63,8 @@ export function CustomerDocuments({
         return;
       }
       setTitle("");
-      setFile(null);
+      setPreparedFile(null);
+      setFileInputKey((key) => key + 1);
       refresh();
     });
   }
@@ -156,19 +165,28 @@ export function CustomerDocuments({
               placeholder="e.g. Insurance card"
             />
           </label>
-          <label className="block max-w-md">
-            <span className="field-label">File (PDF, JPEG, PNG, WebP)</span>
-            <input
-              type="file"
+          <div className="block max-w-md">
+            <label htmlFor={fileInputId} className="field-label">
+              File (PDF, JPEG, PNG, WebP, or iPhone photo)
+            </label>
+            <PreparedFileInput
+              key={fileInputKey}
+              id={fileInputId}
+              name="file"
               required
-              accept="application/pdf,image/jpeg,image/png,image/webp"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="mt-1 block w-full text-sm"
+              accept={DOCUMENT_FILE_ACCEPT}
+              surface="customer_documents"
+              disabled={pending}
+              onPreparingChange={(next) => {
+                setPreparing(next);
+                if (next) setPreparedFile(null);
+              }}
+              onPrepared={(files) => setPreparedFile(files[0] ?? null)}
             />
-          </label>
+          </div>
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || preparing}
             className="btn btn-primary min-h-11 self-start"
           >
             {pending ? "Saving…" : "Upload"}

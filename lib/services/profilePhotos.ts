@@ -5,8 +5,8 @@ import {
   PROFILE_PHOTO_ALLOWED_TYPES,
   PROFILE_PHOTO_BUCKET,
   PROFILE_PHOTO_MAX_BYTES,
-  profilePhotoExtension,
 } from "@/lib/profilePhotos/storage";
+import { canonicalizeUploadedFile } from "@/lib/photos/canonicalizeUploadedFile";
 
 type ProfilePhotoMetadata = {
   size: number;
@@ -45,20 +45,38 @@ async function updateProfilePhotoPath(
   if (error) throw new Error("PROFILE_PHOTO_UPDATE_FAILED");
 }
 
+function mapProfileCanonicalError(error: unknown): never {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "REQUIRED") throw new Error("PROFILE_PHOTO_REQUIRED");
+  if (code === "TOO_LARGE") throw new Error("PROFILE_PHOTO_TOO_LARGE");
+  if (code === "TYPE_INVALID") throw new Error("PROFILE_PHOTO_TYPE_INVALID");
+  throw error instanceof Error ? error : new Error("PROFILE_PHOTO_TYPE_INVALID");
+}
+
 export async function uploadOwnProfilePhoto(file: File): Promise<void> {
   const user = await getCurrentAppUser();
   if (!user) throw new Error("UNAUTHORIZED");
-  validateProfilePhotoMetadata(file);
+  if (!(file instanceof File)) throw new Error("PROFILE_PHOTO_REQUIRED");
+
+  let canonical;
+  try {
+    canonical = await canonicalizeUploadedFile({
+      bytes: new Uint8Array(await file.arrayBuffer()),
+      declaredType: file.type,
+      maxBytes: PROFILE_PHOTO_MAX_BYTES,
+      allowPdf: false,
+    });
+  } catch (error) {
+    mapProfileCanonicalError(error);
+  }
 
   const supabase = await createClient();
-  const extension = profilePhotoExtension(file.type);
-  const storagePath = `${user.user_id}/${crypto.randomUUID()}.${extension}`;
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const storagePath = `${user.user_id}/${crypto.randomUUID()}.${canonical.extension}`;
 
   const { error: uploadError } = await supabase.storage
     .from(PROFILE_PHOTO_BUCKET)
-    .upload(storagePath, bytes, {
-      contentType: file.type,
+    .upload(storagePath, canonical.bytes, {
+      contentType: canonical.contentType,
       upsert: false,
     });
   if (uploadError) throw new Error("PROFILE_PHOTO_UPLOAD_FAILED");

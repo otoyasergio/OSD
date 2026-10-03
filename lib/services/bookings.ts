@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/database/supabase-admin";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
+import { checkoutEvidenceEnabled } from "@/lib/config/features";
 import { getWixBooking, type WixBookingPayload } from "@/lib/wix/config";
 
 export type BookingWebhookResult = {
@@ -132,6 +133,7 @@ async function createBookingWorkOrder(
       scheduled_at: input.scheduledAt,
       source: "wix_booking",
       created_by_user_id: null,
+      checkout_evidence_required: checkoutEvidenceEnabled(),
     })
     .select("work_order_id, work_order_number")
     .single();
@@ -148,9 +150,7 @@ async function createBookingWorkOrder(
 
   const { data: templateItems } = await admin
     .from("inspection_template_item")
-    .select(
-      "template_item_id, category, item_name, display_order, requires_measurement"
-    )
+    .select("template_item_id, category, item_name, display_order, requires_measurement")
     .eq("active", true)
     .order("display_order");
 

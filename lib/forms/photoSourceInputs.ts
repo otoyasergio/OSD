@@ -7,7 +7,11 @@ export const CAMERA_ROLL_HINT = "Camera shots are also saved to this device’s 
  * Prefer `image/*` first — Safari (iPad/Mac) keys off that for Photos vs Files.
  * Explicit types remain as hints for other browsers / HEIC from iPhone libraries.
  */
-const IMAGE_ACCEPT = "image/*,image/jpeg,image/png,image/webp,image/heic,image/heif";
+export const IMAGE_ACCEPT =
+  "image/*,image/jpeg,image/png,image/webp,image/heic,image/heif";
+
+/** PDF first so document pickers keep Files/PDF, then the Safari image prefix. */
+export const DOCUMENT_FILE_ACCEPT = `application/pdf,${IMAGE_ACCEPT}`;
 
 export type PhotoFileInputProps = {
   accept: string;

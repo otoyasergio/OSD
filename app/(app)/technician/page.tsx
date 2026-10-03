@@ -70,7 +70,7 @@ async function loadPacketBundle({
     packet.jobs.map((job) => [job.job_id, job.service_name])
   );
   const [photos, assistantData] = await Promise.all([
-    listIntakePhotos(workOrderId).catch(() => []),
+    listIntakePhotos(workOrderId, { sign: "thumbs" }).catch(() => []),
     assistantActive
       ? loadAskOtomotoPanelData({
           service: diagnosticsAssistant,

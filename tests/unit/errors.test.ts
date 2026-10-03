@@ -17,6 +17,24 @@ describe("toFormErrorMessage", () => {
     );
   });
 
+  it("maps checkout evidence leave gate", () => {
+    expect(toFormErrorMessage(new Error("CHECKOUT_EVIDENCE_REQUIRED"))).toBe(
+      "Add the five checkout photos, or have an owner or manager record an emergency override, before the bike can leave."
+    );
+  });
+
+  it("maps checkout capture timing and oversized override reasons", () => {
+    expect(toFormErrorMessage(new Error("CHECKOUT_EVIDENCE_NOT_READY"))).toMatch(
+      /jobs|quality check|checkout/i
+    );
+    expect(toFormErrorMessage(new Error("CHECKOUT_EVIDENCE_NOT_READY"))).not.toBe(
+      "CHECKOUT_EVIDENCE_NOT_READY"
+    );
+    expect(toFormErrorMessage(new Error("OVERRIDE_REASON_TOO_LONG"))).toBe(
+      "Keep the override reason to 500 characters or fewer."
+    );
+  });
+
   it("maps signature required", () => {
     expect(toFormErrorMessage(new Error("SIGNATURE_REQUIRED"))).toBe(
       "Draw your signature before submitting."
@@ -44,6 +62,12 @@ describe("toFormErrorMessage", () => {
     );
     expect(toFormErrorMessage(new Error("SHOP_CLOSURE_IN_PAST"))).toBe(
       "Choose today or a future date."
+    );
+  });
+
+  it("maps an upload ID linkage conflict without exposing internals", () => {
+    expect(toFormErrorMessage(new Error("PHOTO_UPLOAD_ID_CONFLICT"))).toBe(
+      "This photo upload was already used for a different work item."
     );
   });
 

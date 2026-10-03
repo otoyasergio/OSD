@@ -225,6 +225,52 @@ describe("Ask OTOMOTO server actions", () => {
     expect(JSON.stringify(result)).not.toMatch(/storage_path|signed\.example|https?:/);
   });
 
+  it("passes the client upload ID and returns it with the existing photo payload", async () => {
+    const clientUploadId = "81111111-1111-4111-8111-111111111111";
+    uploadIntakePhoto.mockResolvedValue({
+      photo_id: MESSAGE,
+      work_order_id: WO,
+      job_id: JOB,
+      category: "job_work",
+      notes: "Caliper piston",
+      created_at: "2026-09-29T00:00:00.000Z",
+      client_upload_id: clientUploadId,
+    });
+    const form = new FormData();
+    form.set("thread_id", THREAD);
+    form.set("purpose", "Caliper piston");
+    form.set("client_upload_id", clientUploadId);
+    form.set("file", new File(["photo"], "photo.jpg", { type: "image/jpeg" }));
+
+    const result = await uploadAssistantPhotoAction(
+      WO,
+      { status: "idle", error: null },
+      form
+    );
+
+    expect(uploadIntakePhoto).toHaveBeenCalledWith(
+      WO,
+      expect.objectContaining({
+        client_upload_id: clientUploadId,
+        category: "job_work",
+        job_id: JOB,
+      })
+    );
+    expect(result).toEqual({
+      status: "success",
+      error: null,
+      data: {
+        photoId: MESSAGE,
+        workOrderId: WO,
+        jobId: JOB,
+        category: "job_work",
+        notes: "Caliper piston",
+        createdAt: "2026-09-29T00:00:00.000Z",
+        clientUploadId,
+      },
+    });
+  });
+
   it("rejects photo upload for a work-order-only thread before storage", async () => {
     authorizeThreadWrite.mockResolvedValue({ thread: { jobId: null }, messages: [] });
     const form = new FormData();

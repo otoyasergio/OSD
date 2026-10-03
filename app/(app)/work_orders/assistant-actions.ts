@@ -247,12 +247,15 @@ export async function uploadAssistantPhotoAction(
     const workspace = await service.authorizeThreadWrite(parsedWorkOrderId, threadId);
     if (!workspace.thread.jobId) throw new Error("DIAGNOSTICS_IMAGE_JOB_REQUIRED");
     const purpose = parseUploadPurpose(formData.get("purpose"));
+    const clientUploadId =
+      String(formData.get("client_upload_id") ?? "").trim() || undefined;
     const photo = await uploadIntakePhoto(parsedWorkOrderId, {
       category: "job_work",
       job_id: workspace.thread.jobId,
       notes: purpose,
       inspection_result_id: null,
       file,
+      ...(clientUploadId ? { client_upload_id: clientUploadId } : {}),
     });
     revalidateAssistant(workOrderId);
     return success({
@@ -262,6 +265,7 @@ export async function uploadAssistantPhotoAction(
       category: photo.category,
       notes: photo.notes,
       createdAt: photo.created_at,
+      ...(photo.client_upload_id ? { clientUploadId: photo.client_upload_id } : {}),
     });
   } catch (error) {
     return failure(error);

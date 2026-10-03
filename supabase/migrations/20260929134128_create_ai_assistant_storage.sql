@@ -62,7 +62,8 @@ CREATE TABLE public.ai_assistant_thread (
       'repair_planning',
       'repair_in_progress',
       'verification',
-      'ready_for_technician_verification'
+      'ready_for_technician_verification',
+      'closure_report'
     )
   ),
   CONSTRAINT ai_assistant_thread_work_order_location_fk
@@ -138,7 +139,8 @@ CREATE TABLE public.ai_assistant_message (
       'repair_planning',
       'repair_in_progress',
       'verification',
-      'ready_for_technician_verification'
+      'ready_for_technician_verification',
+      'closure_report'
     )
   ),
   CONSTRAINT ai_assistant_message_generation_payload_check CHECK (
@@ -193,6 +195,12 @@ ALTER TABLE public.technician_note
     ON DELETE SET NULL;
 
 CREATE INDEX idx_technician_note_source_ai_message
+  ON public.technician_note (source_ai_message_id)
+  WHERE source_ai_message_id IS NOT NULL;
+
+-- One reviewed assistant response may produce at most one append-only
+-- technician note (closes concurrent promotion races).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_technician_note_ai_source
   ON public.technician_note (source_ai_message_id)
   WHERE source_ai_message_id IS NOT NULL;
 

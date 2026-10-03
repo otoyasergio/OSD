@@ -27,11 +27,14 @@ import {
 } from "@/components/forms/IntakePhotoSlots";
 import { IntakePhotoRecoveryForm } from "@/components/forms/IntakePhotoRecoveryForm";
 import { OptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
+import { useIntakeDraftHydration } from "@/components/forms/useIntakeDraftHydration";
 import {
+  attachAndWaitForRequiredIntakePhotos,
+  INTAKE_DRAFT_HYDRATING_COPY,
+  INTAKE_PHOTOS_RESTORED,
   intakeContractHref,
-  uploadOptionalIntakePhotos,
-  uploadSelectedIntakePhoto,
-} from "@/components/forms/intakePhotoUploadClient";
+} from "@/lib/photos/intakeQueue";
 import { CustomerSearchPicker } from "@/components/forms/CustomerSearchPicker";
 import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
 import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
@@ -44,9 +47,10 @@ import {
   canNavigateToWizardStep,
   canProceedFromWizardStep,
   canSubmitCreateWorkOrderWizard,
+  shouldApplyCreateIntakePhotoChange,
+  shouldApplyCreateOptionalPhotoChange,
 } from "@/lib/forms/createWorkOrderWizard";
 import { stripIntakePhotoFields } from "@/lib/forms/intakeFormData";
-import { mapWithConcurrency } from "@/lib/forms/mapWithConcurrency";
 import {
   createIntakeServiceLineDraft,
   formatServiceLineSummary,
@@ -105,7 +109,6 @@ const REVIEW_STEP_INDEX = CREATE_WORK_ORDER_WIZARD_STEPS.findIndex(
   (step) => step.id === "review"
 );
 const DEFAULT_OPEN_SERVICE_CATEGORY = "Inspection & Diagnostics";
-const REQUIRED_PHOTO_UPLOAD_CONCURRENCY = 2;
 
 function newMotorcycleForIntakeHref(customerId: string): string {
   if (!customerId) return "/motorcycles/new";
@@ -125,10 +128,22 @@ export function CreateWorkOrderForm({
   closureDates,
 }: Props) {
   const router = useRouter();
+  const queue = usePhotoUploadQueue();
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const draftHydration = useIntakeDraftHydration();
+  const intakeDraftId = draftHydration.intakeDraftId;
+  const photosRestored = draftHydration.photosRestored;
   const [intakePhotos, setIntakePhotos] = useState<IntakePhotoSelection>({});
   const [optionalIntakePhotos, setOptionalIntakePhotos] = useState<File[]>([]);
+  const visibleIntakePhotos =
+    Object.keys(intakePhotos).length > 0 || draftHydration.hydrating
+      ? intakePhotos
+      : draftHydration.restoredPhotos;
+  const visibleOptionalPhotos =
+    optionalIntakePhotos.length > 0 || draftHydration.hydrating
+      ? optionalIntakePhotos
+      : draftHydration.restoredExtras;
   const [clientError, setClientError] = useState<string | null>(null);
   const [recovery, setRecovery] = useState<WorkOrderFormState | null>(null);
   const [loadedMotorcycles, setLoadedMotorcycles] = useState<MotorcycleWithCustomer[]>(
@@ -204,6 +219,13 @@ export function CreateWorkOrderForm({
 
   const [stepIndex, setStepIndex] = useState(initialStepIndex);
   const [maxReachedIndex, setMaxReachedIndex] = useState(initialStepIndex);
+  const effectiveMaxReachedIndex = Math.max(
+    maxReachedIndex,
+    draftHydration.photosRestored &&
+      allRequiredIntakeSelected(draftHydration.restoredPhotos, ALL_REQUIRED)
+      ? REVIEW_STEP_INDEX
+      : initialStepIndex
+  );
 
   const [knownCustomers, setKnownCustomers] = useState(customers);
 
@@ -226,7 +248,7 @@ export function CreateWorkOrderForm({
   );
   const serviceSearchActive = Boolean(serviceSearch.trim());
 
-  const intakeComplete = allRequiredIntakeSelected(intakePhotos, ALL_REQUIRED);
+  const intakeComplete = allRequiredIntakeSelected(visibleIntakePhotos, ALL_REQUIRED);
   const stepId = CREATE_WORK_ORDER_WIZARD_STEPS[stepIndex].id;
   const isLastStep = stepId === "review";
 
@@ -404,7 +426,7 @@ export function CreateWorkOrderForm({
   }
 
   function goToStep(index: number) {
-    if (!canNavigateToWizardStep(index, maxReachedIndex)) return;
+    if (!canNavigateToWizardStep(index, effectiveMaxReachedIndex)) return;
     setStepIndex(index);
     setClientError(null);
   }
@@ -427,33 +449,28 @@ export function CreateWorkOrderForm({
         return;
       }
 
-      const uploadResults = await mapWithConcurrency(
-        ALL_REQUIRED,
-        REQUIRED_PHOTO_UPLOAD_CONCURRENCY,
-        async (category) => {
-          const original = intakePhotos[category];
-          if (!(original instanceof File) || original.size === 0) return false;
-          return uploadSelectedIntakePhoto(created.workOrderId!, original, category);
-        }
-      );
-      const failed = ALL_REQUIRED.filter((_, index) => !uploadResults[index]);
+      const waited = await attachAndWaitForRequiredIntakePhotos({
+        queue,
+        intakeDraftId,
+        workOrderId: created.workOrderId,
+        requiredCategories: ALL_REQUIRED,
+      });
 
-      if (failed.length > 0) {
+      if (!waited.ok) {
+        const failed = ALL_REQUIRED.filter((category) =>
+          waited.failedCategories.includes(category)
+        );
         const labels = failed.map((c) => PHOTO_CATEGORY_LABELS[c] ?? c).join(", ");
         setRecovery({
           error: `${toFormErrorMessage(new Error("INTAKE_PHOTOS_PARTIAL"))} Missing: ${labels}.`,
           workOrderId: created.workOrderId,
           workOrderNumber: created.workOrderNumber,
-          missingCategories: failed,
+          missingCategories: failed.length > 0 ? failed : ALL_REQUIRED,
         });
         return;
       }
 
-      const optionalFailures = await uploadOptionalIntakePhotos(
-        created.workOrderId,
-        optionalIntakePhotos
-      );
-      router.push(intakeContractHref(created.workOrderId, optionalFailures));
+      router.push(intakeContractHref(created.workOrderId));
       router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));
@@ -470,12 +487,11 @@ export function CreateWorkOrderForm({
         workOrderNumber={recovery?.workOrderNumber}
         missingCategories={missingCategories}
         initialError={recovery?.error}
-        optionalPhotos={optionalIntakePhotos}
       />
     );
   }
 
-  const selectedPhotoCount = Object.values(intakePhotos).filter(
+  const selectedPhotoCount = Object.values(visibleIntakePhotos).filter(
     (file) => file instanceof File && file.size > 0
   ).length;
 
@@ -522,7 +538,7 @@ export function CreateWorkOrderForm({
 
       <WizardProgress
         stepIndex={stepIndex}
-        maxReachedIndex={maxReachedIndex}
+        maxReachedIndex={effectiveMaxReachedIndex}
         onSelect={goToStep}
       />
 
@@ -1111,14 +1127,32 @@ export function CreateWorkOrderForm({
             </div>
           ) : null}
         </div>
+        {draftHydration.hydrating ? (
+          <p
+            role="status"
+            className="mb-3 rounded border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--status-neutral)]"
+          >
+            {INTAKE_DRAFT_HYDRATING_COPY}
+          </p>
+        ) : null}
+        {photosRestored ? (
+          <p
+            role="status"
+            className="mb-3 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          >
+            {INTAKE_PHOTOS_RESTORED}
+          </p>
+        ) : null}
         <IntakePhotoSlots
-          value={intakePhotos}
+          value={visibleIntakePhotos}
           htmlRequired={false}
-          disabled={stepId !== "photos" || submitting}
+          intakeDraftId={intakeDraftId}
+          disabled={stepId !== "photos" || submitting || draftHydration.hydrating}
           onChange={(next) => {
-            // Ignore changes while off the photos step so hidden inputs
-            // stay in the form for submit (disabled inputs are omitted).
-            if (stepId !== "photos") return;
+            if (!shouldApplyCreateIntakePhotoChange(stepId, visibleIntakePhotos, next)) {
+              return;
+            }
+            draftHydration.markPicksBegun();
             setIntakePhotos(next);
             setClientError(null);
             if (allRequiredIntakeSelected(next, ALL_REQUIRED)) {
@@ -1131,10 +1165,16 @@ export function CreateWorkOrderForm({
           }}
         />
         <OptionalIntakePhotos
-          value={optionalIntakePhotos}
-          disabled={stepId !== "photos" || submitting}
+          value={visibleOptionalPhotos}
+          intakeDraftId={intakeDraftId}
+          disabled={stepId !== "photos" || submitting || draftHydration.hydrating}
           onChange={(next) => {
-            if (stepId !== "photos") return;
+            if (
+              !shouldApplyCreateOptionalPhotoChange(stepId, visibleOptionalPhotos, next)
+            ) {
+              return;
+            }
+            draftHydration.markPicksBegun();
             setOptionalIntakePhotos(next);
             setClientError(null);
           }}
@@ -1216,8 +1256,8 @@ export function CreateWorkOrderForm({
               value={
                 intakeComplete
                   ? `All 6 required ready${
-                      optionalIntakePhotos.length > 0
-                        ? ` + ${optionalIntakePhotos.length} extra`
+                      visibleOptionalPhotos.length > 0
+                        ? ` + ${visibleOptionalPhotos.length} extra`
                         : ""
                     }`
                   : "Incomplete"
@@ -1235,7 +1275,7 @@ export function CreateWorkOrderForm({
               className="btn btn-secondary min-h-11"
               onClick={() => goToStep(PHOTO_STEP_INDEX)}
             >
-              {optionalIntakePhotos.length > 0
+              {visibleOptionalPhotos.length > 0
                 ? "Edit intake photos"
                 : "Add optional extra photos"}
             </button>

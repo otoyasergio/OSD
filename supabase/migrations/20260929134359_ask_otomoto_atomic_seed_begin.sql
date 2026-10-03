@@ -1,7 +1,7 @@
 -- One-shot atomic claim for server-created trigger threads.
 -- Generated with `supabase migration new ask_otomoto_atomic_seed_begin`.
 
-CREATE FUNCTION public.ask_otomoto_begin_seed_turn(
+CREATE OR REPLACE FUNCTION public.ask_otomoto_begin_seed_turn(
   p_thread_id uuid,
   p_work_order_id uuid,
   p_trigger_type text,

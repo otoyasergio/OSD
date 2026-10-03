@@ -24,6 +24,7 @@ import { assignUnassignedJobsOnWorkOrderToTechnician } from "@/lib/services/jobs
 import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 import { withPrimaryPhotoUrls } from "@/lib/workOrders/listPhotos";
 import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
+import { checkoutEvidenceEnabled } from "@/lib/config/features";
 
 export type WorkOrder = {
   work_order_id: string;
@@ -53,6 +54,10 @@ export type WorkOrder = {
   completed_at: string | null;
   released_by_user_id: string | null;
   pickup_notes: string | null;
+  checkout_evidence_required: boolean;
+  checkout_evidence_override_at: string | null;
+  checkout_evidence_override_by_user_id: string | null;
+  checkout_evidence_override_reason: string | null;
   square_invoice_id: string | null;
   square_payment_status: string | null;
   square_invoice_public_url: string | null;
@@ -137,7 +142,7 @@ export type TechnicianOption = {
 };
 
 const WORK_ORDER_COLUMNS =
-  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, mileage_unit, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, quality_check_assigned_to, safety_checked_by_user_id, safety_checked_at, safety_check_notes, safety_required, safety_waived, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, square_invoice_id, square_payment_status, square_invoice_public_url, billing_stage, billing_amount_mode, billing_amount_cents, billing_collected_cents, estimate_sent_at, invoice_published_at, wix_booking_id, scheduled_at, source, created_at, updated_at";
+  "work_order_id, motorcycle_id, customer_id, location_id, work_order_number, external_invoice_number, status, primary_technician_id, created_by_user_id, date_created, estimated_completion, mileage, mileage_unit, internal_notes, quality_checked_by_user_id, quality_checked_at, quality_check_notes, quality_check_assigned_to, safety_checked_by_user_id, safety_checked_at, safety_check_notes, safety_required, safety_waived, ready_for_pickup_at, completed_at, released_by_user_id, pickup_notes, checkout_evidence_required, checkout_evidence_override_at, checkout_evidence_override_by_user_id, checkout_evidence_override_reason, square_invoice_id, square_payment_status, square_invoice_public_url, billing_stage, billing_amount_mode, billing_amount_cents, billing_collected_cents, estimate_sent_at, invoice_published_at, wix_booking_id, scheduled_at, source, created_at, updated_at";
 
 function normalizeOptional(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -580,6 +585,13 @@ export async function getWorkOrderDetail(
     safety_required: (row.safety_required as boolean | null) ?? null,
     safety_waived: Boolean(row.safety_waived),
     ready_for_pickup_at: row.ready_for_pickup_at as string | null,
+    checkout_evidence_required: Boolean(row.checkout_evidence_required),
+    checkout_evidence_override_at:
+      (row.checkout_evidence_override_at as string | null) ?? null,
+    checkout_evidence_override_by_user_id:
+      (row.checkout_evidence_override_by_user_id as string | null) ?? null,
+    checkout_evidence_override_reason:
+      (row.checkout_evidence_override_reason as string | null) ?? null,
     completed_at: row.completed_at as string | null,
     released_by_user_id: row.released_by_user_id as string | null,
     pickup_notes: row.pickup_notes as string | null,
@@ -900,6 +912,7 @@ export async function createWorkOrder(
       mileage_unit: parsed.mileage_unit,
       estimated_completion: parsed.estimated_completion,
       internal_notes: parsed.internal_notes ?? null,
+      checkout_evidence_required: checkoutEvidenceEnabled(),
     })
     .select("work_order_id, work_order_number, location_id, status")
     .single();

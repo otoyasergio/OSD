@@ -24,6 +24,7 @@ import {
   type InspectionPhotoRequirement,
 } from "@/lib/services/inspectionGate";
 import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
+import { signStoragePaths } from "@/lib/photos/signedUrls";
 
 export type InspectionResultRow = {
   inspection_result_id: string;
@@ -202,6 +203,8 @@ export async function getInspectionForWorkOrder(
   options?: {
     /** Trusted presentation principal (owner "view as") — read shaping only. */
     view?: ReadView;
+    /** Skip storage signing on Overview/Estimate — those tabs never show the photos. */
+    sign?: "none" | "all";
   }
 ): Promise<InspectionDetail | null> {
   const user = await requireUser();
@@ -347,22 +350,30 @@ export async function getInspectionForWorkOrder(
     photo_url: string | null;
   }>;
 
-  const signedByPath = new Map<string, string | null>();
-  if (rawPhotos.length > 0) {
-    const paths = rawPhotos.flatMap((p) =>
-      p.thumb_storage_path ? [p.storage_path, p.thumb_storage_path] : [p.storage_path]
-    );
-    const { data: signed } = await supabase.storage
-      .from("intake-photos")
-      .createSignedUrls(paths, 60 * 60);
-    for (const row of signed ?? []) {
-      if (row.path) {
-        signedByPath.set(row.path, row.signedUrl ?? null);
-      }
-    }
-  }
+  const signPhotos = options?.sign !== "none";
+  const signedByPath =
+    !signPhotos || rawPhotos.length === 0
+      ? new Map<string, string | null>()
+      : await signStoragePaths(
+          supabase,
+          rawPhotos.flatMap((p) =>
+            p.thumb_storage_path
+              ? [p.storage_path, p.thumb_storage_path]
+              : [p.storage_path]
+          )
+        );
 
   const photos = rawPhotos.map((p) => {
+    if (!signPhotos) {
+      return {
+        photo_id: p.photo_id,
+        category: p.category,
+        inspection_result_id: p.inspection_result_id,
+        notes: p.notes,
+        signed_url: null,
+        thumb_url: null,
+      };
+    }
     const signed_url = signedByPath.get(p.storage_path) ?? p.photo_url;
     return {
       photo_id: p.photo_id,
@@ -379,12 +390,11 @@ export async function getInspectionForWorkOrder(
   const signaturePath =
     (inspection as { signature_storage_path?: string | null }).signature_storage_path ??
     null;
-  const { createInspectionSignatureSignedUrl } =
-    await import("@/lib/services/inspectionSignatures");
-  const signatureSignedUrl = await createInspectionSignatureSignedUrl(
-    supabase,
-    signaturePath
-  );
+  const signatureSignedUrl = signPhotos
+    ? await (
+        await import("@/lib/services/inspectionSignatures")
+      ).createInspectionSignatureSignedUrl(supabase, signaturePath)
+    : null;
 
   let completedByName: string | null = null;
   if (inspection.completed_by_user_id) {

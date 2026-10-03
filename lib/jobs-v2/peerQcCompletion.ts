@@ -47,6 +47,31 @@ export function filterEligibleQcCandidates<T extends { user_id: string }>(
   );
 }
 
+export type NamedQcPickerOption = {
+  user_id: string;
+  display_name: string;
+  clocked_in: boolean;
+};
+
+/**
+ * People a finishing tech can hand peer QC to. Clocked-in names stay first
+ * so an on-the-clock peer is easy to tap, but anyone eligible stays choosable
+ * — the shop does not punch the time clock reliably.
+ */
+export function presentPeerQcPickerOptions<T extends NamedQcPickerOption>(
+  options: readonly T[],
+  query: string
+): T[] {
+  const needle = query.trim().toLowerCase();
+  const matched = needle
+    ? options.filter((option) => option.display_name.toLowerCase().includes(needle))
+    : [...options];
+  return matched.slice().sort((a, b) => {
+    if (a.clocked_in !== b.clocked_in) return a.clocked_in ? -1 : 1;
+    return a.display_name.localeCompare(b.display_name);
+  });
+}
+
 /**
  * Legacy QC-fail rework update: reopen the job WITHOUT erasing when it was
  * originally started/completed — that history is evidence, and the V2

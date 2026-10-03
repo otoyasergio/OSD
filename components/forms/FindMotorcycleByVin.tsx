@@ -162,6 +162,8 @@ export function FindMotorcycleByVin({
           value={vin}
           maxLength={17}
           autoComplete="off"
+          autoCapitalize="characters"
+          autoCorrect="off"
           spellCheck={false}
           placeholder="17-character VIN"
           onChange={(event) => {

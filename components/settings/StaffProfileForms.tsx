@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { StaffFormState } from "@/app/(app)/settings/staff/[user_id]/actions";
 import type {
   StaffDocument,
@@ -12,7 +12,9 @@ import {
   type StaffDocumentCategory,
 } from "@/lib/services/staffDocumentRetention";
 import { FormError, TextAreaField, TextField } from "@/components/forms/Field";
+import { PreparedFileInput } from "@/components/forms/PreparedFileInput";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/forms/photoSourceInputs";
 
 type Action = (state: StaffFormState, formData: FormData) => Promise<StaffFormState>;
 
@@ -67,6 +69,7 @@ export function StaffProfileForms({
   const [pinState, pinFormAction] = useActionState(setPinAction, { error: null });
   const [noteState, noteFormAction] = useActionState(addNoteAction, { error: null });
   const [docState, docFormAction] = useActionState(uploadDocumentAction, { error: null });
+  const [preparing, setPreparing] = useState(false);
 
   return (
     <div className="flex flex-col gap-8">
@@ -253,18 +256,28 @@ export function StaffProfileForms({
               Retention guidance is applied automatically from the category.
             </span>
           </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-foreground">File</span>
-            <input
-              type="file"
+          <div className="block">
+            <label
+              htmlFor="staff-document-file"
+              className="mb-1.5 block text-sm font-medium text-foreground"
+            >
+              File
+            </label>
+            <PreparedFileInput
+              id="staff-document-file"
               name="file"
               required
-              accept="application/pdf,image/jpeg,image/png,image/webp"
-              className="block w-full text-sm"
+              accept={DOCUMENT_FILE_ACCEPT}
+              surface="staff_documents"
+              onPreparingChange={setPreparing}
             />
-          </label>
+          </div>
           <div>
-            <SubmitButton label="Upload document" pendingLabel="Uploading…" />
+            <SubmitButton
+              label="Upload document"
+              pendingLabel="Uploading…"
+              disabled={preparing}
+            />
           </div>
         </form>
         <ul className="divide-y divide-[var(--border)]">

@@ -1,13 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import {
   sendMessageAction,
   uploadChatImageAction,
   uploadVoiceNoteAction,
 } from "@/app/(app)/messages/actions";
-import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
+import { IMAGE_ACCEPT } from "@/lib/forms/photoSourceInputs";
+import {
+  UNREADABLE_PHOTO_MESSAGE,
+  describePhotoUploadFailure,
+  photoTooLargeMessage,
+} from "@/lib/forms/photoUploadErrors";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
+import { exceedsServerActionUploadLimit } from "@/lib/forms/uploadLimits";
 
 type Props = {
   conversationId: string;
@@ -23,7 +29,7 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const startedAtRef = useRef<number>(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const photoInputId = useId();
 
   useEffect(() => {
     return () => {
@@ -47,17 +53,26 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
   }
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (pending) return;
     const input = e.currentTarget;
     setError(null);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, { surface: "composer" });
       const file = files[0];
       if (!file) return;
+      if (exceedsServerActionUploadLimit(file)) {
+        setError(photoTooLargeMessage(file));
+        return;
+      }
       const formData = new FormData();
       formData.set("file", file);
       startTransition(async () => {
-        const result = await uploadChatImageAction(conversationId, formData);
-        if (result.error) setError(result.error);
+        try {
+          const result = await uploadChatImageAction(conversationId, formData);
+          if (result.error) setError(result.error);
+        } catch (error) {
+          setError(describePhotoUploadFailure(error));
+        }
       });
     } catch {
       setError(UNREADABLE_PHOTO_MESSAGE);
@@ -120,22 +135,24 @@ export function Composer({ conversationId, replyTo, onClearReply }: Props) {
         <p className="mb-2 text-sm text-[var(--status-danger-fg)]">{error}</p>
       ) : null}
       <div className="flex items-end gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-          className="hidden"
-          onChange={onFileChange}
-        />
-        <button
-          type="button"
-          className="btn shrink-0"
-          disabled={pending}
-          onClick={() => fileInputRef.current?.click()}
+        <div className="relative">
+          <input
+            id={photoInputId}
+            type="file"
+            accept={IMAGE_ACCEPT}
+            className="photo-file-input"
+            disabled={pending}
+            onChange={onFileChange}
+          />
+        </div>
+        <label
+          htmlFor={pending ? undefined : photoInputId}
+          className={`btn shrink-0 ${pending ? "pointer-events-none" : ""}`}
           aria-label="Attach photo"
+          aria-disabled={pending}
         >
           +
-        </button>
+        </label>
         <textarea
           className="input min-h-[2.75rem] flex-1 resize-none py-2"
           placeholder="Message"

@@ -55,9 +55,53 @@ export type Database = {
           created_at: string;
           completed_at: string | null;
           opened_at: string | null;
+          checkout_evidence_required: boolean;
+          checkout_evidence_override_at: string | null;
+          checkout_evidence_override_by_user_id: string | null;
+          checkout_evidence_override_reason: string | null;
+          quality_check_waived: boolean;
         };
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
+      };
+      intake_photo: {
+        Row: {
+          photo_id: string;
+          work_order_id: string;
+          uploaded_by_user_id: string | null;
+          storage_path: string;
+          thumb_storage_path: string | null;
+          photo_url: string | null;
+          category: string;
+          notes: string | null;
+          inspection_result_id: string | null;
+          job_id: string | null;
+          client_upload_id: string | null;
+          content_type: string | null;
+          byte_size: number | null;
+          pixel_width: number | null;
+          pixel_height: number | null;
+          created_at: string;
+        };
+        Insert: {
+          photo_id?: string;
+          work_order_id: string;
+          uploaded_by_user_id?: string | null;
+          storage_path: string;
+          thumb_storage_path?: string | null;
+          photo_url?: string | null;
+          category: string;
+          notes?: string | null;
+          inspection_result_id?: string | null;
+          job_id?: string | null;
+          client_upload_id?: string | null;
+          content_type?: string | null;
+          byte_size?: number | null;
+          pixel_width?: number | null;
+          pixel_height?: number | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["intake_photo"]["Insert"]>;
       };
       ai_assistant_thread: {
         Row: {
@@ -601,6 +645,32 @@ export type Database = {
           assistant_message_id: string;
           generation_attempt_id: string;
         }[];
+      };
+      reopen_work_order_for_recommendation_work: {
+        Args: { p_work_order_id: string };
+        Returns: boolean;
+      };
+      create_intake_photo_with_event: {
+        Args: {
+          p_photo_id: string;
+          p_work_order_id: string;
+          p_storage_path: string;
+          p_thumb_storage_path: string | null;
+          p_category: string;
+          p_notes: string | null;
+          p_inspection_result_id: string | null;
+          p_job_id: string | null;
+          p_client_upload_id: string | null;
+          p_content_type: string;
+          p_byte_size: number;
+          p_pixel_width: number;
+          p_pixel_height: number;
+        };
+        Returns: Database["public"]["Tables"]["intake_photo"]["Row"][];
+      };
+      intake_photo_object_in_user_locations: {
+        Args: { object_name: string };
+        Returns: boolean;
       };
     };
     Enums: Record<string, never>;

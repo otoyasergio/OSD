@@ -18,10 +18,18 @@ const GROUPS: Array<{ id: GalleryPhotoGroup; label: string }> = [
   { id: "intake", label: "Intake" },
   { id: "inspection", label: "Inspection" },
   { id: "after", label: "After" },
+  { id: "checkout", label: "Checkout" },
 ];
 
 function parseGroup(value: string | undefined): GalleryPhotoGroup {
-  if (value === "intake" || value === "inspection" || value === "after") return value;
+  if (
+    value === "intake" ||
+    value === "inspection" ||
+    value === "after" ||
+    value === "checkout"
+  ) {
+    return value;
+  }
   return "all";
 }
 

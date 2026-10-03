@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -16,6 +18,12 @@ const ibmPlexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "OTOMOTO Workshop",
   description: "OTOMOTO workshop management app",
+  // Safari on iOS rewrites anything that looks like a phone number into a
+  // `tel:` link at parse time. Work-order numbers, VINs, part SKUs, odometer
+  // readings and prices all qualify, and a tapped customer number would dial
+  // from the staff member's own device instead of the shop line used by
+  // ClickToCallButton. The rewrite also mutates the DOM under React.
+  formatDetection: { telephone: false },
   appleWebApp: {
     title: "OTOMOTO",
     // Deliberately not "capable": a home-screen launch stays in Safari so staff
@@ -44,7 +52,11 @@ export default function RootLayout({
       lang="en"
       className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <Analytics />
+        <SpeedInsights />
+      </body>
     </html>
   );
 }

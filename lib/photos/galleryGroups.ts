@@ -1,7 +1,7 @@
 import type { PhotoCategory } from "@/lib/database/types";
 
 /** Shop gallery / bike-profile filter buckets. */
-export type GalleryPhotoGroup = "all" | "intake" | "inspection" | "after";
+export type GalleryPhotoGroup = "all" | "intake" | "inspection" | "after" | "checkout";
 
 const INTAKE_CATEGORIES = new Set<PhotoCategory>([
   "front",
@@ -25,11 +25,20 @@ const INSPECTION_CATEGORIES = new Set<PhotoCategory>([
 
 const AFTER_CATEGORIES = new Set<PhotoCategory>(["job_proof", "job_work"]);
 
+const CHECKOUT_CATEGORIES = new Set<PhotoCategory>([
+  "checkout_front",
+  "checkout_rear",
+  "checkout_left_side",
+  "checkout_right_side",
+  "checkout_odometer",
+]);
+
 export function galleryGroupForCategory(
   category: string
 ): Exclude<GalleryPhotoGroup, "all"> {
   if (INSPECTION_CATEGORIES.has(category as PhotoCategory)) return "inspection";
   if (AFTER_CATEGORIES.has(category as PhotoCategory)) return "after";
+  if (CHECKOUT_CATEGORIES.has(category as PhotoCategory)) return "checkout";
   if (INTAKE_CATEGORIES.has(category as PhotoCategory)) return "intake";
   return "intake";
 }
@@ -40,6 +49,7 @@ export function categoriesForGalleryGroup(
   if (group === "all") return null;
   if (group === "intake") return [...INTAKE_CATEGORIES];
   if (group === "inspection") return [...INSPECTION_CATEGORIES];
+  if (group === "checkout") return [...CHECKOUT_CATEGORIES];
   return [...AFTER_CATEGORIES];
 }
 

@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvider";
 import type { PhotoCategory } from "@/lib/database/types";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
+import { persistQueueErrorMessage } from "@/lib/photos/intakeQueue";
+import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
+import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
 import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
 
@@ -22,6 +26,8 @@ type Props = {
   disabled?: boolean;
   /** When false, skip HTML required so step wizards can gate submit themselves. */
   htmlRequired?: boolean;
+  intakeDraftId?: string;
+  workOrderId?: string;
 };
 
 function slotsFor(categories?: PhotoCategory[]): SlotDef[] {
@@ -153,11 +159,15 @@ export function IntakePhotoSlots({
   onChange,
   disabled = false,
   htmlRequired = true,
+  intakeDraftId,
+  workOrderId,
 }: Props) {
-  const slots = slotsFor(categories);
+  const queue = usePhotoUploadQueue();
+  const slots = useMemo(() => slotsFor(categories), [categories]);
   const titleId = useId();
   const inputIdPrefix = useId();
   const valueRef = useRef(value);
+  const seenQueueCategoriesRef = useRef(new Set<PhotoCategory>());
   const [chooserCategory, setChooserCategory] = useState<PhotoCategory | null>(null);
   const [preparingCategory, setPreparingCategory] = useState<PhotoCategory | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
@@ -166,20 +176,82 @@ export function IntakePhotoSlots({
     valueRef.current = value;
   }, [value]);
 
+  function matchingQueuedItems(category: PhotoCategory) {
+    return queue.items.filter((item) => {
+      if (item.category !== category) return false;
+      if (workOrderId) return item.workOrderId === workOrderId;
+      if (intakeDraftId) return item.intakeDraftId === intakeDraftId;
+      return false;
+    });
+  }
+
+  function matchingReceipts(category: PhotoCategory) {
+    return queue.confirmations.filter((receipt) => {
+      if (receipt.category !== category) return false;
+      if (workOrderId) return receipt.workOrderId === workOrderId;
+      return false;
+    });
+  }
+
+  async function removeQueuedCategory(category: PhotoCategory) {
+    for (const item of matchingQueuedItems(category)) {
+      await queue.remove(item.queueId);
+    }
+  }
+
   async function applyPickedFile(category: PhotoCategory, input: HTMLInputElement) {
     setChooserCategory(null);
     setPickError(null);
     setPreparingCategory(category);
     try {
-      const files = await readPickedPhotoFiles(input);
+      const files = await readPickedPhotoFiles(input, { surface: "intake" });
       const file = files[0] ?? null;
+      if (!file) return;
+      if (workOrderId) {
+        await removeQueuedCategory(category);
+        await queue.enqueue({
+          file,
+          category,
+          workOrderId,
+          replaceExisting: false,
+          surface: "intake",
+        });
+      } else {
+        if (!intakeDraftId) {
+          setPickError(persistQueueErrorMessage(new Error("missing intake draft")));
+          return;
+        }
+        await queue.enqueue({
+          file,
+          category,
+          intakeDraftId,
+          surface: "intake",
+        });
+      }
       const next = { ...valueRef.current, [category]: file };
       valueRef.current = next;
       onChange(next);
-    } catch {
-      setPickError(UNREADABLE_PHOTO_MESSAGE);
+    } catch (error) {
+      if (error instanceof PhotoQueuePersistenceError) {
+        setPickError(error.message);
+      } else {
+        setPickError(UNREADABLE_PHOTO_MESSAGE);
+      }
     } finally {
       setPreparingCategory(null);
+    }
+  }
+
+  async function clearCategory(category: PhotoCategory) {
+    setPickError(null);
+    try {
+      await removeQueuedCategory(category);
+      const next = { ...valueRef.current, [category]: null };
+      valueRef.current = next;
+      onChange(next);
+      setChooserCategory(null);
+    } catch (error) {
+      setPickError(persistQueueErrorMessage(error));
     }
   }
 
@@ -190,23 +262,47 @@ export function IntakePhotoSlots({
     return `${inputIdPrefix}-library-${category}`;
   }
 
-  const previews = useMemo(() => {
-    const next: Partial<Record<PhotoCategory, string>> = {};
-    for (const slot of CREATE_INTAKE_PHOTO_SLOTS) {
-      const file = value[slot.category];
-      if (file instanceof File && file.size > 0) {
-        next[slot.category] = URL.createObjectURL(file);
+  useEffect(() => {
+    function matchesQueue(category: PhotoCategory) {
+      return queue.items.some((item) => {
+        if (item.category !== category) return false;
+        if (workOrderId) return item.workOrderId === workOrderId;
+        if (intakeDraftId) return item.intakeDraftId === intakeDraftId;
+        return false;
+      });
+    }
+    function matchesReceipt(category: PhotoCategory) {
+      return queue.confirmations.some((receipt) => {
+        if (receipt.category !== category) return false;
+        if (workOrderId) return receipt.workOrderId === workOrderId;
+        return false;
+      });
+    }
+    let changed = false;
+    const next = { ...valueRef.current };
+    for (const slot of slots) {
+      const hasQueue = matchesQueue(slot.category);
+      const hasReceipt = matchesReceipt(slot.category);
+      if (hasQueue || hasReceipt) {
+        seenQueueCategoriesRef.current.add(slot.category);
+      }
+      const hasFile =
+        next[slot.category] instanceof File && (next[slot.category] as File).size > 0;
+      if (
+        seenQueueCategoriesRef.current.has(slot.category) &&
+        hasFile &&
+        !hasQueue &&
+        !hasReceipt
+      ) {
+        next[slot.category] = null;
+        seenQueueCategoriesRef.current.delete(slot.category);
+        changed = true;
       }
     }
-    return next;
-  }, [value]);
-
-  useEffect(() => {
-    const urls = Object.values(previews);
-    return () => {
-      for (const url of urls) URL.revokeObjectURL(url);
-    };
-  }, [previews]);
+    if (!changed) return;
+    valueRef.current = next;
+    onChange(next);
+  }, [onChange, queue.confirmations, queue.items, slots, workOrderId, intakeDraftId]);
 
   useEffect(() => {
     if (!chooserCategory) return;
@@ -233,10 +329,22 @@ export function IntakePhotoSlots({
       ) : null}
       <div className="intake-photo-grid">
         {slots.map((slot) => {
-          const preview = previews[slot.category];
+          const queuedItem = matchingQueuedItems(slot.category)[0];
+          const receipt = matchingReceipts(slot.category)[0];
           const selected = value[slot.category];
-          const filled = selected instanceof File && selected.size > 0;
+          const selectedFile = selected instanceof File && selected.size > 0;
+          const filled = Boolean(queuedItem || receipt || selectedFile);
           const preparing = preparingCategory === slot.category;
+          const online = queue.isOnline();
+          const preview = queuedItem ? queue.previewUrl(queuedItem.queueId) : null;
+          const badge = preparing
+            ? "Preparing"
+            : queuedItem
+              ? photoQueueStatusLabel(queuedItem, online)
+              : receipt
+                ? "Saved"
+                : "Required";
+          const failedItem = queuedItem?.status === "failed" ? queuedItem : null;
 
           return (
             <div
@@ -265,9 +373,7 @@ export function IntakePhotoSlots({
                       {slot.label} <span className="intake-photo-slot-req">*</span>
                     </span>
                   </span>
-                  <span className="intake-photo-slot-badge">
-                    {preparing ? "Preparing" : filled ? "Ready" : "Required"}
-                  </span>
+                  <span className="intake-photo-slot-badge">{badge}</span>
                 </span>
                 <span className="intake-photo-slot-body">
                   {preview ? (
@@ -296,6 +402,41 @@ export function IntakePhotoSlots({
                   )}
                 </span>
               </button>
+              {queuedItem || receipt ? (
+                <p className="intake-photo-slot-queue-status" role="status">
+                  {badge}
+                </p>
+              ) : null}
+              {failedItem || queuedItem ? (
+                <div className="intake-photo-slot-queue-actions">
+                  {failedItem ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      aria-label={`Retry ${slot.label} photo`}
+                      disabled={disabled}
+                      onClick={() => {
+                        void queue.retry(failedItem.queueId);
+                      }}
+                    >
+                      Retry
+                    </button>
+                  ) : null}
+                  {queuedItem ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      aria-label={`Remove ${slot.label} photo`}
+                      disabled={disabled || queuedItem.status === "uploading"}
+                      onClick={() => {
+                        void clearCategory(slot.category);
+                      }}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               {/* Native required sentinel — dual file inputs cannot both be required. */}
               {htmlRequired ? (
                 <input
@@ -376,14 +517,15 @@ export function IntakePhotoSlots({
               <LibraryIcon />
               Library
             </label>
-            {value[chooserSlot.category] instanceof File &&
-            (value[chooserSlot.category] as File).size > 0 ? (
+            {matchingQueuedItems(chooserSlot.category).length > 0 ||
+            matchingReceipts(chooserSlot.category).length > 0 ||
+            (value[chooserSlot.category] instanceof File &&
+              (value[chooserSlot.category] as File).size > 0) ? (
               <button
                 type="button"
                 className="btn btn-ghost photo-source-sheet-action text-red-700"
                 onClick={() => {
-                  onChange({ ...value, [chooserSlot.category]: null });
-                  setChooserCategory(null);
+                  void clearCategory(chooserSlot.category);
                 }}
               >
                 Clear photo
