@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildMotorcycleSearchOrFilter } from "@/lib/services/motorcycles";
+import {
+  MOTORCYCLE_SEARCH_CUSTOMER_ID_CAP,
+  buildMotorcycleSearchOrFilter,
+} from "@/lib/services/motorcycles";
 
 const CUSTOMER_A = "11111111-1111-4111-8111-111111111111";
 const CUSTOMER_B = "22222222-2222-4222-8222-222222222222";
@@ -7,7 +10,7 @@ const CUSTOMER_B = "22222222-2222-4222-8222-222222222222";
 describe("buildMotorcycleSearchOrFilter", () => {
   it("searches make, model, vin, and plate number", () => {
     expect(buildMotorcycleSearchOrFilter("honda", [])).toBe(
-      "make.ilike.%honda%,model.ilike.%honda%,vin.ilike.%honda%,plate_number.ilike.%honda%"
+      'make.ilike."%honda%",model.ilike."%honda%",vin.ilike."%honda%",plate_number.ilike."%honda%"'
     );
   });
 
@@ -27,7 +30,18 @@ describe("buildMotorcycleSearchOrFilter", () => {
 
   it("escapes ilike wildcards in the term", () => {
     expect(buildMotorcycleSearchOrFilter("cb_600", [])).toContain(
-      "make.ilike.%cb\\_600%"
+      'make.ilike."%cb\\\\_600%"'
     );
+  });
+
+  it("keeps the owner id list inside the URL cap", () => {
+    const ids = Array.from(
+      { length: MOTORCYCLE_SEARCH_CUSTOMER_ID_CAP + 10 },
+      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`
+    );
+    const filter = buildMotorcycleSearchOrFilter("ada", ids);
+    const included = ids.filter((id) => filter.includes(id));
+    expect(included).toEqual(ids.slice(0, MOTORCYCLE_SEARCH_CUSTOMER_ID_CAP));
+    expect(filter).not.toContain(ids[MOTORCYCLE_SEARCH_CUSTOMER_ID_CAP]);
   });
 });

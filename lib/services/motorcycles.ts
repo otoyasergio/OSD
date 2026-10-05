@@ -174,6 +174,18 @@ function isYear(term: string): boolean {
   return /^\d{4}$/.test(term);
 }
 
+/**
+ * PostgREST sends this `or` filter in the request URL. A one-letter name
+ * match is thousands of customer ids (2,591 names contain "c"), and that
+ * URL is rejected before the query runs. Keep the owner list inside a
+ * typeahead-sized cap.
+ */
+export const MOTORCYCLE_SEARCH_CUSTOMER_ID_CAP = 40;
+
+function ilikeFilter(column: string, pattern: string): string {
+  return `${column}.ilike.${JSON.stringify(pattern)}`;
+}
+
 export function buildMotorcycleSearchOrFilter(
   term: string,
   customerIds: string[]
@@ -181,18 +193,19 @@ export function buildMotorcycleSearchOrFilter(
   const cleaned = escapeSearchTerm(term);
   const pattern = `%${cleaned}%`;
   const filters = [
-    `make.ilike.${pattern}`,
-    `model.ilike.${pattern}`,
-    `vin.ilike.${pattern}`,
-    `plate_number.ilike.${pattern}`,
+    ilikeFilter("make", pattern),
+    ilikeFilter("model", pattern),
+    ilikeFilter("vin", pattern),
+    ilikeFilter("plate_number", pattern),
   ];
 
   if (isYear(cleaned)) {
     filters.push(`year.eq.${cleaned}`);
   }
 
-  if (customerIds.length > 0) {
-    filters.push(`customer_id.in.(${customerIds.join(",")})`);
+  const ownerIds = customerIds.slice(0, MOTORCYCLE_SEARCH_CUSTOMER_ID_CAP);
+  if (ownerIds.length > 0) {
+    filters.push(`customer_id.in.(${ownerIds.join(",")})`);
   }
 
   return filters.join(",");
@@ -222,10 +235,19 @@ export async function searchMotorcycles(term: string): Promise<MotorcycleWithCus
     .select(`${MOTORCYCLE_COLUMNS}, customer:customer_id(first_name, last_name)`);
 
   if (cleaned) {
-    const { data: customerRows } = await supabase
+    const ownerPattern = `%${cleaned}%`;
+    const { data: customerRows, error: customerError } = await supabase
       .from("customer")
       .select("customer_id")
-      .or(`first_name.ilike.%${cleaned}%,last_name.ilike.%${cleaned}%`);
+      .or(
+        [
+          ilikeFilter("first_name", ownerPattern),
+          ilikeFilter("last_name", ownerPattern),
+        ].join(",")
+      )
+      .order("updated_at", { ascending: false })
+      .limit(MOTORCYCLE_SEARCH_CUSTOMER_ID_CAP);
+    if (customerError) throw new Error(customerError.message);
     const customerIds = (customerRows ?? []).map(
       (row: { customer_id: string }) => row.customer_id
     );

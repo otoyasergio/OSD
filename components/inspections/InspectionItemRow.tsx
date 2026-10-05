@@ -7,6 +7,7 @@ import type { InspectionResultStatus } from "@/lib/database/types";
 import { saveInspectionResultAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import { BRAKE_INSPECTION_SKIP_ITEM } from "@/lib/services/inspectionGate";
+import { describeInspectionSaveFailure } from "@/lib/inspections/inspectionSaveFailure";
 import {
   shouldApplyServerInspectionText,
   textSaveStillMatchesLocal,
@@ -151,7 +152,17 @@ export function InspectionItemRow({
     onBusyChange?.(resultId, true);
     setError(null);
     startTransition(async () => {
-      const response = await saveInspectionResultAction(workOrderId, resultId, input);
+      let response: Awaited<ReturnType<typeof saveInspectionResultAction>>;
+      try {
+        response = await saveInspectionResultAction(workOrderId, resultId, input);
+      } catch (error) {
+        if (seq !== saveSeqRef.current) return;
+        // A thrown action did not write. Keep the draft on screen.
+        setSaveState("error");
+        setError(describeInspectionSaveFailure(error));
+        onBusyChange?.(resultId, false);
+        return;
+      }
       if (seq !== saveSeqRef.current) {
         // A newer save superseded this one; leave UI to the latest request.
         return;
