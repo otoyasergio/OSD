@@ -23,12 +23,33 @@ export function SignatureCanvas({ onChange, height = 180 }: Props) {
       if (rect.width <= 0) return;
 
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(rect.width * dpr);
-      canvas.height = Math.floor(height * dpr);
+      const nextWidth = Math.max(1, Math.floor(rect.width * dpr));
+      const nextHeight = Math.max(1, Math.floor(height * dpr));
+      // Setting canvas width clears the bitmap. iPad Safari fires resize
+      // while the keyboard or toolbar moves, which was wiping the signature.
+      if (canvas.width === nextWidth && canvas.height === nextHeight) {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.strokeStyle = "#111";
+        ctx.lineWidth = 2;
+        ctx.lineCap = "round";
+        return;
+      }
+
+      const copy =
+        canvas.width > 0 && canvas.height > 0 ? document.createElement("canvas") : null;
+      if (copy) {
+        copy.width = canvas.width;
+        copy.height = canvas.height;
+        copy.getContext("2d")?.drawImage(canvas, 0, 0);
+      }
+
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.strokeStyle = "#111";
       ctx.lineWidth = 2;
       ctx.lineCap = "round";
+      if (copy) ctx.drawImage(copy, 0, 0, rect.width, height);
     };
 
     setup();
@@ -102,7 +123,7 @@ export function SignatureCanvas({ onChange, height = 180 }: Props) {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        onPointerCancel={onPointerUp}
       />
       <button type="button" className="btn btn-secondary self-start" onClick={clear}>
         Clear signature

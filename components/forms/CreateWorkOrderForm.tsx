@@ -471,7 +471,6 @@ export function CreateWorkOrderForm({
       }
 
       router.push(intakeContractHref(created.workOrderId));
-      router.refresh();
     } catch (error) {
       setClientError(toFormErrorMessage(error));
     } finally {
@@ -1149,6 +1148,9 @@ export function CreateWorkOrderForm({
           intakeDraftId={intakeDraftId}
           disabled={stepId !== "photos" || submitting || draftHydration.hydrating}
           onChange={(next) => {
+            // Attaching the draft to a new work order used to look like the
+            // photos were deleted and bounce the wizard back to this step.
+            if (submittingRef.current) return;
             if (!shouldApplyCreateIntakePhotoChange(stepId, visibleIntakePhotos, next)) {
               return;
             }

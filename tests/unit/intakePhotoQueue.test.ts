@@ -9,6 +9,7 @@ import { OptionalIntakePhotos } from "@/components/forms/OptionalIntakePhotos";
 import {
   attachAndWaitForRequiredIntakePhotos,
   filesFromQueuedIntakeItems,
+  intakePhotoQueueIdsStillPresent,
   waitForRequiredIntakePhotos,
 } from "@/lib/photos/intakeQueue";
 import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
@@ -20,6 +21,25 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const REQUIRED = ["front", "rear", "left_side", "right_side", "vin", "odometer"] as const;
+
+describe("intakePhotoQueueIdsStillPresent", () => {
+  it("keeps a photo that moved from a draft onto a work order", () => {
+    expect(
+      intakePhotoQueueIdsStillPresent(["q-front"], [{ queueId: "q-front" }], [])
+    ).toBe(true);
+  });
+
+  it("keeps a photo after the queue item is confirmed", () => {
+    expect(
+      intakePhotoQueueIdsStillPresent(["q-front"], [], [{ queueId: "q-front" }])
+    ).toBe(true);
+  });
+
+  it("drops a photo only when its queue id is gone and unconfirmed", () => {
+    expect(intakePhotoQueueIdsStillPresent(["q-front"], [], [])).toBe(false);
+    expect(intakePhotoQueueIdsStillPresent([], [], [])).toBe(true);
+  });
+});
 
 describe("intake photo queue helpers", () => {
   it("rebuilds intake files from queued draft items", async () => {

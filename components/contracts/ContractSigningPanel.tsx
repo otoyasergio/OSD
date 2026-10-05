@@ -198,14 +198,20 @@ export function ContractSigningPanel({
     }
 
     startTransition(async () => {
-      const result = await action(formData);
-      if (result.error) {
-        setError(result.error);
+      try {
+        const result = await action(formData);
+        if (result.error) {
+          setError(result.error);
+          return;
+        }
+      } catch (error) {
+        setError(
+          error instanceof Error ? error.message : "Could not save the signature."
+        );
         return;
       }
       if (continueHref && !signedOnPaper) {
         router.push(continueHref);
-        router.refresh();
         return;
       }
       router.refresh();

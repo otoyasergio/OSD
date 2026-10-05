@@ -5,7 +5,10 @@ import { usePhotoUploadQueue } from "@/components/photos/PhotoUploadQueueProvide
 import type { PhotoCategory } from "@/lib/database/types";
 import { UNREADABLE_PHOTO_MESSAGE } from "@/lib/forms/photoUploadErrors";
 import { CAMERA_ROLL_HINT, photoFileInputProps } from "@/lib/forms/photoSourceInputs";
-import { persistQueueErrorMessage } from "@/lib/photos/intakeQueue";
+import {
+  intakePhotoQueueIdsStillPresent,
+  persistQueueErrorMessage,
+} from "@/lib/photos/intakeQueue";
 import { PhotoQueuePersistenceError } from "@/lib/photos/uploadQueue/errors";
 import { photoQueueStatusLabel } from "@/lib/photos/uploadQueue/statusCopy";
 import { readPickedPhotoFiles } from "@/lib/forms/readPickedPhotoFiles";
@@ -167,7 +170,7 @@ export function IntakePhotoSlots({
   const titleId = useId();
   const inputIdPrefix = useId();
   const valueRef = useRef(value);
-  const seenQueueCategoriesRef = useRef(new Set<PhotoCategory>());
+  const ownedQueueIdsRef = useRef<Partial<Record<PhotoCategory, Set<string>>>>({});
   const [chooserCategory, setChooserCategory] = useState<PhotoCategory | null>(null);
   const [preparingCategory, setPreparingCategory] = useState<PhotoCategory | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
@@ -263,41 +266,28 @@ export function IntakePhotoSlots({
   }
 
   useEffect(() => {
-    function matchesQueue(category: PhotoCategory) {
-      return queue.items.some((item) => {
-        if (item.category !== category) return false;
-        if (workOrderId) return item.workOrderId === workOrderId;
-        if (intakeDraftId) return item.intakeDraftId === intakeDraftId;
-        return false;
-      });
-    }
-    function matchesReceipt(category: PhotoCategory) {
-      return queue.confirmations.some((receipt) => {
-        if (receipt.category !== category) return false;
-        if (workOrderId) return receipt.workOrderId === workOrderId;
-        return false;
-      });
-    }
     let changed = false;
     const next = { ...valueRef.current };
     for (const slot of slots) {
-      const hasQueue = matchesQueue(slot.category);
-      const hasReceipt = matchesReceipt(slot.category);
-      if (hasQueue || hasReceipt) {
-        seenQueueCategoriesRef.current.add(slot.category);
+      const owned = ownedQueueIdsRef.current[slot.category] ?? new Set<string>();
+      ownedQueueIdsRef.current[slot.category] = owned;
+      for (const item of queue.items) {
+        if (item.category !== slot.category) continue;
+        const belongsToThisSlot =
+          (Boolean(workOrderId) && item.workOrderId === workOrderId) ||
+          (Boolean(intakeDraftId) && item.intakeDraftId === intakeDraftId) ||
+          owned.has(item.queueId);
+        if (belongsToThisSlot) owned.add(item.queueId);
       }
       const hasFile =
         next[slot.category] instanceof File && (next[slot.category] as File).size > 0;
-      if (
-        seenQueueCategoriesRef.current.has(slot.category) &&
-        hasFile &&
-        !hasQueue &&
-        !hasReceipt
-      ) {
-        next[slot.category] = null;
-        seenQueueCategoriesRef.current.delete(slot.category);
-        changed = true;
+      if (!hasFile || owned.size === 0) continue;
+      if (intakePhotoQueueIdsStillPresent([...owned], queue.items, queue.confirmations)) {
+        continue;
       }
+      next[slot.category] = null;
+      owned.clear();
+      changed = true;
     }
     if (!changed) return;
     valueRef.current = next;
@@ -343,7 +333,9 @@ export function IntakePhotoSlots({
               ? photoQueueStatusLabel(queuedItem, online)
               : receipt
                 ? "Saved"
-                : "Required";
+                : selectedFile
+                  ? "Ready"
+                  : "Required";
           const failedItem = queuedItem?.status === "failed" ? queuedItem : null;
 
           return (
@@ -387,6 +379,14 @@ export function IntakePhotoSlots({
                         {preparing ? "Preparing…" : "Tap to retake"}
                       </span>
                     </>
+                  ) : selectedFile ? (
+                    <span className="intake-photo-slot-empty">
+                      <span className="intake-photo-slot-check">
+                        <CheckIcon />
+                      </span>
+                      <span className="intake-photo-slot-hint">Photo ready</span>
+                      <span className="intake-photo-slot-subhint">Tap to retake</span>
+                    </span>
                   ) : (
                     <span className="intake-photo-slot-empty">
                       <span className="intake-photo-slot-icon">

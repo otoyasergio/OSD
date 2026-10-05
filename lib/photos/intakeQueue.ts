@@ -120,6 +120,24 @@ export function requiredAttachedIntakeItems(
   return { items, missingCategories };
 }
 
+/**
+ * A required intake photo stays selected while its queue id is still uploading
+ * or already confirmed. Attaching a draft to a work order keeps the same id
+ * and drops the draft id, so matching only on the draft would look like the
+ * photo was deleted and the form would ask for it again.
+ */
+export function intakePhotoQueueIdsStillPresent(
+  queueIds: readonly string[],
+  items: readonly { queueId: string }[],
+  confirmations: readonly { queueId: string }[]
+): boolean {
+  if (queueIds.length === 0) return true;
+  const live = new Set<string>();
+  for (const item of items) live.add(item.queueId);
+  for (const receipt of confirmations) live.add(receipt.queueId);
+  return queueIds.some((queueId) => live.has(queueId));
+}
+
 export function intakeContractHref(
   workOrderId: string,
   optionalPhotoFailures = 0
