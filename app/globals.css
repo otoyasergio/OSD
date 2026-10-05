@@ -27,38 +27,47 @@
   --signal-teal-bright: #a1a1aa;
   --signal-teal-muted: #e4e4e7;
 
-  /* Semantic status — label-first greys */
-  --status-info: #52525b;
-  --status-info-bg: #f4f4f5;
-  --status-info-fg: #18181b;
-  --status-warning: #52525b;
-  --status-warning-bg: #f4f4f5;
-  --status-warning-fg: #18181b;
-  --status-danger: #18181b;
-  --status-danger-bg: #e4e4e7;
-  --status-danger-fg: #0a0a0a;
-  --status-success: #27272a;
-  --status-success-bg: #f4f4f5;
-  --status-success-fg: #0a0a0a;
-  --status-neutral: #71717a;
-  --status-neutral-bg: #f4f4f5;
-  --status-neutral-fg: #3f3f46;
-  --status-waiting: #71717a;
-  --status-waiting-bg: #f4f4f5;
-  --status-waiting-fg: #3f3f46;
+  /* Semantic status — Apple system colors, always paired with a label */
+  --status-info: #007aff;
+  --status-info-bg: #e5f1ff;
+  --status-info-fg: #003e85;
+  --status-warning: #ff9500;
+  --status-warning-bg: #fff4e5;
+  --status-warning-fg: #7a4200;
+  --status-danger: #ff3b30;
+  --status-danger-bg: #ffe5e3;
+  --status-danger-fg: #8a100b;
+  --status-success: #34c759;
+  --status-success-bg: #e3f8e9;
+  --status-success-fg: #0b5c24;
+  --status-neutral: #8e8e93;
+  --status-neutral-bg: #f2f2f7;
+  --status-neutral-fg: #3a3a3c;
+  --status-waiting: #64d2ff;
+  --status-waiting-bg: #e5f6fd;
+  --status-waiting-fg: #0a556e;
+
+  /* Interactive tint — Apple HIG uses a single tint for actions */
+  --tint: #007aff;
 
   /* Borders & shadows */
-  --border: #e4e4e7;
-  --border-strong: #d4d4d8;
+  --border: #e5e5ea;
+  --border-strong: #d1d1d6;
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
   --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
   --shadow-chrome: 0 1px 0 0 rgb(255 255 255 / 0.06) inset;
 
-  /* Radii & spacing */
-  --radius-sm: 0.3125rem;
-  --radius-md: 0.4375rem;
-  --radius-lg: 0.625rem;
-  --tap-min: 2.75rem; /* 44px — Safari / iPad minimum */
+  /* Radii & spacing — iOS continuous-corner scale */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --tap-min: 2.75rem; /* 44px — Apple HIG minimum */
+  --tab-bar-height: 3.0625rem; /* 49px tab bar before home-indicator inset */
+
+  /* System / SF Pro on Apple devices; platform UI font elsewhere */
+  --font-ui:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI",
+    system-ui, sans-serif;
 
   /* Brand logos — single source of truth for display size */
   --logo-height-mobile: 3.5rem; /* 56px */
@@ -85,7 +94,7 @@
   --color-signal-teal-bright: var(--signal-teal-bright);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
-  --font-sans: var(--font-space-grotesk);
+  --font-sans: var(--font-ui);
   --font-mono: var(--font-ibm-plex-mono);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
@@ -95,13 +104,17 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  -webkit-tap-highlight-color: rgb(0 0 0 / 0.08);
+  color-scheme: light;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-ui);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /*
@@ -174,7 +187,7 @@ summary {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--tint);
   outline-offset: 2px;
 }
 
@@ -617,6 +630,174 @@ summary {
       max(1rem, env(safe-area-inset-right, 0px));
     padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
   }
+
+  .app-shell--has-tab-bar .main-body {
+    padding-bottom: calc(var(--tab-bar-height) + env(safe-area-inset-bottom, 0px) + 1rem);
+  }
+
+  .app-shell--has-tab-bar .app-tab-bar {
+    display: flex;
+  }
+
+  .app-shell--has-tab-bar .pit-floor-topbar-link {
+    display: none;
+  }
+}
+
+/* iPad / desktop compact floor: keep the full work surface, no drawer column. */
+@media (min-width: 768px) {
+  .app-shell--floor-compact .sidebar,
+  .app-shell--floor-compact .sidebar-backdrop {
+    display: none;
+  }
+}
+
+/* ── iPhone tab bar (Apple HIG primary navigation) ── */
+
+.app-tab-bar {
+  display: none;
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 35;
+  height: calc(var(--tab-bar-height) + env(safe-area-inset-bottom, 0px));
+  padding: 0.25rem 0 env(safe-area-inset-bottom, 0px);
+  border-top: 0.5px solid rgb(60 60 67 / 0.29);
+  background: rgb(249 249 249 / 0.94);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  overscroll-behavior: contain;
+}
+
+.app-tab-bar-item {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--tap-min);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  border: none;
+  background: transparent;
+  color: #8e8e93;
+  text-decoration: none;
+  padding: 0 0.25rem;
+}
+
+.app-tab-bar-item--selected {
+  color: var(--tint);
+}
+
+.app-tab-bar-icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.app-tab-bar-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.app-tab-bar-label {
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.app-tab-bar-badge {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.7rem;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--status-danger);
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1.05rem;
+  text-align: center;
+}
+
+/* ── Grouped inset lists (iOS Settings) ── */
+
+.ios-grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ios-grouped-header {
+  margin: 0;
+  padding: 0 1rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--status-neutral);
+  text-transform: uppercase;
+}
+
+.ios-grouped-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.ios-grouped-row {
+  display: flex;
+  min-height: var(--tap-min);
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 0.5px solid var(--border);
+}
+
+.ios-grouped-list > li:last-child .ios-grouped-row {
+  border-bottom: none;
+}
+
+.ios-grouped-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.ios-grouped-title {
+  font-size: 1.0625rem;
+  font-weight: 400;
+  color: var(--foreground);
+}
+
+.ios-grouped-subtitle {
+  font-size: 0.8125rem;
+  color: var(--status-neutral);
+}
+
+.ios-grouped-chevron {
+  flex-shrink: 0;
+  color: #c7c7cc;
+}
+
+@media (hover: hover) {
+  .ios-grouped-row:hover {
+    background: var(--surface-muted);
+  }
+}
+
+.ios-grouped-row:active {
+  background: var(--surface-muted);
 }
 
 .page-stack {
@@ -645,17 +826,40 @@ summary {
 }
 
 .page-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  letter-spacing: -0.025em;
+  font-size: 2.125rem; /* 34pt large title — Apple HIG */
+  font-weight: 700;
+  letter-spacing: 0.37px;
   color: var(--foreground);
-  line-height: 1.25;
+  line-height: 1.2;
+}
+
+@media (min-width: 768px) {
+  .page-title {
+    font-size: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
 }
 
 .page-subtitle {
   margin-top: 0.25rem;
   font-size: 0.875rem;
   color: var(--status-neutral);
+}
+
+.login-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.37px;
+  line-height: 1.2;
+  color: var(--chrome-foreground);
+}
+
+.login-subtitle {
+  margin-top: 0.35rem;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--chrome-muted);
 }
 
 /* ── Cards & panels ── */
@@ -803,13 +1007,14 @@ summary {
   gap: 0.375rem;
   border-radius: var(--radius-md);
   padding: 0.5rem 1rem;
-  font-size: 0.875rem;
+  font-size: 1.0625rem;
   font-weight: 600;
   line-height: 1.25;
   transition:
     background-color 0.15s,
     border-color 0.15s,
-    opacity 0.15s;
+    opacity 0.15s,
+    transform 0.12s;
 }
 
 .btn:disabled {
@@ -825,6 +1030,7 @@ summary {
 
 .btn-primary:active:not(:disabled) {
   background: var(--accent-hover);
+  transform: scale(0.98);
 }
 
 .btn-accent {
@@ -853,9 +1059,9 @@ summary {
 }
 
 .btn-danger {
-  border: 1px solid rgb(239 68 68 / 0.4);
+  border: 1px solid rgb(255 59 48 / 0.35);
   background: var(--surface);
-  color: var(--status-danger-fg);
+  color: var(--status-danger);
 }
 
 /* ── Dashboard stat cards ── */
@@ -975,12 +1181,8 @@ a.stat-card {
 
 .empty-state {
   border-radius: var(--radius-lg);
-  border: 1px dashed var(--border-strong);
-  background:
-    radial-gradient(ellipse at 50% 0%, rgb(20 184 166 / 0.12), transparent 55%),
-    radial-gradient(ellipse at 100% 100%, rgb(249 115 22 / 0.08), transparent 45%),
-    var(--surface);
-  padding: 2.5rem 1rem;
+  background: var(--surface-muted);
+  padding: 2.5rem 1.25rem;
   text-align: center;
   color: var(--status-neutral);
 }
@@ -3040,6 +3242,17 @@ button.board-control-link {
 @media (prefers-reduced-motion: reduce) {
   .intake-wizard-panel {
     animation: none;
+  }
+
+  .btn,
+  .btn-primary:active:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
+
+  .sidebar,
+  .sidebar-backdrop {
+    transition: none;
   }
 }
 

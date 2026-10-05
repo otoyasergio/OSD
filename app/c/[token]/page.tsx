@@ -34,16 +34,12 @@ export default async function CustomerPortalPage({
     : null;
 
   return (
-    <div className="min-h-dvh bg-zinc-100 px-4 py-8 portal-page">
+    <div className="portal-page min-h-dvh bg-[var(--surface-muted)] px-4 py-8">
       <div className="mx-auto max-w-2xl">
-        <header className="mb-6 text-center">
-          <p className="text-sm font-semibold uppercase tracking-widest text-zinc-500">
-            Toronto Moto
-          </p>
-          <h1 className="mt-1 text-2xl font-bold text-zinc-900">
-            {view.work_order_number}
-          </h1>
-          <p className="text-sm text-zinc-600">
+        <header className="mb-6">
+          <p className="ios-grouped-header px-0">OTOMOTO TORONTO MOTO INC.</p>
+          <h1 className="page-title mt-1">{view.work_order_number}</h1>
+          <p className="page-subtitle">
             {view.customer.first_name} {view.customer.last_name} · {view.motorcycle.year}{" "}
             {view.motorcycle.make} {view.motorcycle.model}
           </p>
