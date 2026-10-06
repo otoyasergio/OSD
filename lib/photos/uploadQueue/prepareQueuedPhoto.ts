@@ -16,13 +16,36 @@ export type PreparedPhotoUploadInput = {
   now: number;
 };
 
+export type PreparedPhotoBytesInput = Omit<PreparedPhotoUploadInput, "file"> & {
+  bytes: ArrayBuffer | Uint8Array;
+  fileName: string;
+  mimeType?: string;
+  lastModified?: number;
+};
+
 export async function prepareQueuedPhoto(
   input: PreparedPhotoUploadInput
 ): Promise<QueuedPhotoUpload> {
+  const bytes = await input.file.arrayBuffer();
+  return prepareQueuedPhotoFromBytes({
+    ...input,
+    bytes,
+    fileName: input.file.name,
+    mimeType: input.file.type || "image/jpeg",
+    lastModified: input.file.lastModified,
+  });
+}
+
+export function prepareQueuedPhotoFromBytes(
+  input: PreparedPhotoBytesInput
+): QueuedPhotoUpload {
   const queueId = input.queueId ?? crypto.randomUUID();
   const clientUploadId = input.clientUploadId ?? crypto.randomUUID();
-  const bytes = await input.file.arrayBuffer();
-  const blob = new Blob([bytes], { type: input.file.type || "image/jpeg" });
+  const source =
+    input.bytes instanceof Uint8Array ? input.bytes : new Uint8Array(input.bytes);
+  const copy = Uint8Array.from(source);
+  const mimeType = input.mimeType || "image/jpeg";
+  const blob = new Blob([copy.buffer], { type: mimeType });
   const base = {
     queueId,
     clientUploadId,
@@ -30,10 +53,10 @@ export async function prepareQueuedPhoto(
     locationId: input.locationId,
     category: input.category,
     blob,
-    fileName: input.file.name,
-    mimeType: input.file.type || "image/jpeg",
-    lastModified: input.file.lastModified,
-    byteCount: input.file.size,
+    fileName: input.fileName,
+    mimeType,
+    lastModified: input.lastModified || Date.now(),
+    byteCount: copy.byteLength,
     status: "preparing" as const,
     attemptCount: 0,
     retryAt: null,

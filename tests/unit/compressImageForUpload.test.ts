@@ -9,6 +9,7 @@ import {
   supportsWorkerCompression,
   type EncodeImage,
 } from "@/lib/forms/compressImageForUpload";
+import { isBrowserOffline, resetBrowserOnlineForTests } from "@/lib/forms/browserOnline";
 import { terminateCompressionWorker } from "@/lib/forms/compressImageWorker";
 import type { CompressWorkerResponse } from "@/lib/forms/compressImage.worker";
 import { SERVER_ACTION_UPLOAD_MAX_BYTES } from "@/lib/forms/uploadLimits";
@@ -224,6 +225,7 @@ describe("compressImageForUpload in a browser with Web Workers", () => {
 
   afterEach(() => {
     terminateCompressionWorker();
+    resetBrowserOnlineForTests();
     vi.unstubAllGlobals();
   });
 
@@ -264,6 +266,27 @@ describe("compressImageForUpload in a browser with Web Workers", () => {
       quality: 0.9,
     }));
     vi.stubGlobal("navigator", { onLine: false });
+
+    const result = await compressImageForUpload(heic);
+
+    expect(spawned).toHaveLength(0);
+    expect(result).toBe(heic);
+  });
+
+  it("does not spawn a worker after a window offline event even if navigator.onLine stays true", async () => {
+    const spawned = installAutoWorker(({ id }) => ({
+      id,
+      ok: true,
+      blob: new Blob([new Uint8Array(10)], { type: "image/jpeg" }),
+      width: 1,
+      height: 1,
+      quality: 0.9,
+    }));
+    const target = new EventTarget();
+    vi.stubGlobal("window", target);
+    vi.stubGlobal("navigator", { onLine: true });
+    expect(isBrowserOffline()).toBe(false);
+    target.dispatchEvent(new Event("offline"));
 
     const result = await compressImageForUpload(heic);
 

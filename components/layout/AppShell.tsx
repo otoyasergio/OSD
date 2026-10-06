@@ -108,6 +108,7 @@ type Props = {
   profilePhotoUrl: string | null;
   initialNotifications: StaffAssignmentNotification[];
   durablePhotoUploadQueue?: boolean;
+  e2ePhotoQueueHook?: boolean;
   children: React.ReactNode;
 };
 
@@ -122,7 +123,8 @@ function isCompactFloorPath(pathname: string) {
 function withPhotoQueue(
   user: AppUser,
   durableQueueEnabled: boolean,
-  node: React.ReactNode
+  node: React.ReactNode,
+  e2ePhotoQueueHook = false
 ) {
   if (!user.active_location_id) return node;
   return (
@@ -135,6 +137,7 @@ function withPhotoQueue(
       userId={user.user_id}
       locationId={user.active_location_id}
       durableQueueEnabled={durableQueueEnabled}
+      e2ePhotoQueueHook={e2ePhotoQueueHook}
     >
       {node}
     </PhotoUploadQueueProvider>
@@ -149,6 +152,7 @@ export function AppShell({
   profilePhotoUrl,
   initialNotifications,
   durablePhotoUploadQueue = false,
+  e2ePhotoQueueHook = false,
   children,
 }: Props) {
   const pathname = usePathname();
@@ -311,7 +315,8 @@ export function AppShell({
           </div>
           <main className="inspection-fullscreen-main">{children}</main>
         </div>
-      </CommsLayer>
+      </CommsLayer>,
+      e2ePhotoQueueHook
     );
   }
 
@@ -355,7 +360,8 @@ export function AppShell({
             {children}
           </main>
         </div>
-      </CommsLayer>
+      </CommsLayer>,
+      e2ePhotoQueueHook
     );
   }
 
@@ -490,6 +496,7 @@ export function AppShell({
           </main>
         </div>
       </div>
-    </CommsLayer>
+    </CommsLayer>,
+    e2ePhotoQueueHook
   );
 }

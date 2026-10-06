@@ -136,12 +136,19 @@ describeIntegration("workflow_v2 backfill reconciliation (isolated db)", () => {
       .is("cleared_at", null);
     expect(partsBlockers).toBe(1);
 
-    // Re-run is a no-op for this WO and duplicates nothing.
-    const { data: rerun } = await admin.rpc("workflow_v2_backfill_batch", {
+    // Re-run must not rewrite this WO or duplicate blockers. Other isolated
+    // files may insert work orders between the drain and this call, so the
+    // global processed count is not a reliable no-op signal.
+    await admin.rpc("workflow_v2_backfill_batch", {
       p_limit: 500,
       p_apply: true,
     });
-    expect((rerun as { work_orders_processed: number }).work_orders_processed).toBe(0);
+    const { data: stillMigrated } = await admin
+      .from("work_order")
+      .select("lifecycle_state")
+      .eq("work_order_id", ids.workOrder)
+      .single();
+    expect(stillMigrated?.lifecycle_state).toBe("active");
 
     const { count: blockersAfter } = await admin
       .from("job_blocker")

@@ -34,5 +34,10 @@ describe("durable photo queue flag wiring", () => {
     expect(accountScope).toMatch(/durableQueueEnabled=/);
     expect(provider).toMatch(/createPhotoUploadQueueStore\(/);
     expect(provider).toMatch(/durableQueueEnabled/);
+    expect(provider).toMatch(/isBrowserOnline/);
+    expect(provider).toMatch(/e2ePhotoQueueHook/);
+    expect(layout).toMatch(
+      /e2ePhotoQueueHook=\{\s*process\.env\.E2E_ALLOW_MUTATION === "1"/
+    );
   });
 });

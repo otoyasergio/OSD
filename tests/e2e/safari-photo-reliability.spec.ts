@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { storageStatePath } from "./fixtures/auth";
 import { assertSafeMutationEnvironment } from "./fixtures/environmentGuard";
@@ -11,13 +12,57 @@ import {
   removeIntakePhotoArtifacts,
 } from "./fixtures/safariPhotoIsolation";
 import { createServiceRoleClient } from "./fixtures/seedSyntheticShop";
+import type { E2ePhotoQueueHook } from "@/components/photos/PhotoUploadQueueProvider";
+
+declare global {
+  interface Window {
+    __otomotoPhotoQueue?: E2ePhotoQueueHook;
+  }
+}
 
 /**
- * Stateful WebKit photo reliability. Uses Playwright setInputFiles — that is
- * not claimed to reproduce iOS Photos picker bugs. Real-device acceptance
- * covers camera/library pickers. Requires E2E_ALLOW_MUTATION=1 against an
- * isolated TEST_SUPABASE and PHOTO_UPLOAD_QUEUE_ENABLED=1 so close/reopen
- * can resume the durable queue.
+ * Playwright WebKit often leaves `navigator.onLine === true` after
+ * `context.setOffline(true)`. The queue and HEIC clone-now path both key off
+ * that flag, so the spec must flip it (and fire `offline`) or enqueue waits
+ * on a worker chunk that cannot load.
+ */
+async function markBrowserOffline(page: Page) {
+  const online = await page.evaluate(() => {
+    Object.defineProperty(Navigator.prototype, "onLine", {
+      configurable: true,
+      get: () => false,
+    });
+    window.dispatchEvent(new Event("offline"));
+    return navigator.onLine;
+  });
+  expect(online).toBe(false);
+}
+
+async function enqueueOfflineHeic(page: Page, note: string) {
+  const base64 = readFileSync(HEIC_FIXTURE).toString("base64");
+  await page.evaluate(
+    async (payload) => {
+      const hook = window.__otomotoPhotoQueue;
+      if (!hook) throw new Error("E2E photo queue hook missing");
+      await hook.enqueueIntakeHeic(payload);
+    },
+    {
+      base64,
+      name: "sample.heic",
+      category: "other",
+      workOrderId: FIXTURE_WORK_ORDER.id,
+      notes: note,
+    }
+  );
+}
+
+/**
+ * Stateful WebKit photo reliability. Drives prepare+enqueue through the
+ * mutation-only queue hook — Playwright WebKit file inputs are not claimed
+ * to reproduce iOS Photos picker bugs. Real-device acceptance covers
+ * camera/library pickers. Requires E2E_ALLOW_MUTATION=1 against an isolated
+ * TEST_SUPABASE and PHOTO_UPLOAD_QUEUE_ENABLED=1 so close/reopen can resume
+ * the durable queue.
  */
 
 test.use({ storageState: storageStatePath("owner") });
@@ -37,14 +82,13 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
 
   try {
     await page.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
-    await expect(page.getByText("Upload intake photo")).toBeVisible();
-
-    await page.locator('select[name="category"]').selectOption("other");
-    await page.locator('input[name="notes"]').fill(note);
+    await expect(
+      page.getByRole("heading", { name: "Upload intake photo" })
+    ).toBeVisible();
 
     await context.setOffline(true);
-    const library = page.getByLabel("Photo library");
-    await library.setInputFiles(HEIC_FIXTURE);
+    await markBrowserOffline(page);
+    await enqueueOfflineHeic(page, note);
 
     await expect(page.getByText(/waiting for connection/i).first()).toBeVisible({
       timeout: 30_000,
