@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type BrowserContext, type Page } from "@playwright/test";
 import { join } from "node:path";
 import { storageStatePath } from "./fixtures/auth";
 import { assertSafeMutationEnvironment } from "./fixtures/environmentGuard";
@@ -24,6 +24,28 @@ test.use({ storageState: storageStatePath("owner") });
 
 const HEIC_FIXTURE = join(process.cwd(), "tests/fixtures/photos/sample.heic");
 
+/**
+ * Playwright WebKit treats a context offline switch as a failed local File
+ * read (NotReadableError), so the queue never receives the bytes. Real Safari
+ * can still read a local photo with the radio off. Block the network and
+ * report navigator.onLine false without that WebKit bug.
+ */
+async function blockRadio(page: Page) {
+  const context = page.context();
+  await context.route("**/*", (route) => route.abort("internetdisconnected"));
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      get: () => false,
+    });
+    window.dispatchEvent(new Event("offline"));
+  });
+}
+
+async function restoreRadio(context: BrowserContext) {
+  await context.unroute("**/*").catch(() => undefined);
+}
+
 test.describe.configure({ mode: "serial", timeout: 180_000 });
 
 test("offline HEIC enqueue survives tab close and resumes after reconnect", async ({
@@ -42,7 +64,7 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
     await page.locator('select[name="category"]').selectOption("other");
     await page.locator('input[name="notes"]').fill(note);
 
-    await context.setOffline(true);
+    await blockRadio(page);
     const library = page.getByLabel("Photo library");
     await library.setInputFiles(HEIC_FIXTURE);
 
@@ -52,7 +74,7 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
     await expect(page.getByText(note)).toHaveCount(0);
 
     await page.close();
-    await context.setOffline(false);
+    await restoreRadio(context);
 
     const resumed = await context.newPage();
     await resumed.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
@@ -84,7 +106,7 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
     await assertIntakePhotoRemoved(admin, captured[0]!);
   } finally {
     try {
-      await context.setOffline(false);
+      await restoreRadio(context);
       for (const openPage of context.pages()) {
         if (!openPage.isClosed()) {
           await openPage.close();

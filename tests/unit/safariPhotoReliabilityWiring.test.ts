@@ -22,7 +22,9 @@ describe("stateful Safari photo reliability wiring", () => {
   it("covers offline HEIC enqueue, reopen resume, lightbox, and corrective delete", () => {
     const spec = source("tests/e2e/safari-photo-reliability.spec.ts");
     expect(spec).toMatch(/storageStatePath\("owner"\)/);
-    expect(spec).toMatch(/setOffline\(true\)/);
+    expect(spec).toMatch(/blockRadio\(page\)/);
+    expect(spec).toMatch(/NotReadableError/);
+    expect(spec).not.toMatch(/setOffline\(/);
     expect(spec).toMatch(/setInputFiles/);
     expect(spec).toMatch(/sample\.heic/);
     expect(spec).toMatch(/Photo library/i);
@@ -58,7 +60,7 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).toMatch(/storage_path/);
     expect(spec).toMatch(/thumb_storage_path/);
     expect(spec).toMatch(/intake-photos/);
-    expect(spec).toMatch(/setOffline\(false\)/);
+    expect(spec).toMatch(/restoreRadio\(context\)/);
     expect(spec).toMatch(/timeout:\s*180_000/);
     expect(spec).toMatch(/findIntakePhotosByNote|notes/);
     expect(spec).toMatch(
