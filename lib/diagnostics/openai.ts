@@ -39,6 +39,45 @@ export const DIAGNOSTICS_MAX_MESSAGE_CHARS = 8_000;
 export const DIAGNOSTICS_MAX_IMAGES = 3;
 export const DIAGNOSTICS_MAX_IMAGE_DATA_URL_CHARS = 7_000_000;
 export const DIAGNOSTICS_PROVIDER_MAX_RETRIES = 1;
+/** Smallest output budget worth a second provider call after a token-limit rejection. */
+const OUTPUT_TOKEN_RETRY_FLOOR = 4_096;
+const OUTPUT_TOKEN_RETRY_MARGIN = 512;
+
+/**
+ * When the provider rejects a call because the reserved token count is above
+ * the account's per-minute limit, shrink this call's output ceiling by the
+ * overage. A smaller ceiling is the only change that can succeed: retrying
+ * the same reservation is rejected again. Returns null when the message is a
+ * short-window rate limit, or when even the input no longer fits.
+ */
+export function outputTokenBudgetForRateLimit(
+  message: string,
+  currentBudget: number
+): number | null {
+  if (!Number.isSafeInteger(currentBudget) || currentBudget <= OUTPUT_TOKEN_RETRY_FLOOR) {
+    return null;
+  }
+  const limit = Number(/Limit\s+(\d+)/i.exec(message)?.[1]);
+  const requested = Number(/Requested\s+(\d+)/i.exec(message)?.[1]);
+  if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(requested)) return null;
+  if (limit <= 0 || requested <= limit) return null;
+  const next = currentBudget - (requested - limit) - OUTPUT_TOKEN_RETRY_MARGIN;
+  if (
+    !Number.isSafeInteger(next) ||
+    next < OUTPUT_TOKEN_RETRY_FLOOR ||
+    next >= currentBudget
+  ) {
+    return null;
+  }
+  return next;
+}
+
+function isInsufficientQuota(error: RateLimitError): boolean {
+  return (
+    error.code === "insufficient_quota" ||
+    /insufficient[_\s]quota|exceeded your current quota/i.test(error.message)
+  );
+}
 
 export type DiagnosticsHistoryMessage = {
   role: "user" | "assistant";
@@ -254,6 +293,9 @@ function providerError(error: unknown): Error {
     return new Error("DIAGNOSTICS_AI_PROVIDER_TIMEOUT", { cause: error });
   }
   if (error instanceof RateLimitError) {
+    if (isInsufficientQuota(error)) {
+      return new Error("DIAGNOSTICS_AI_PROVIDER_QUOTA_EXCEEDED", { cause: error });
+    }
     return new Error("DIAGNOSTICS_AI_PROVIDER_RATE_LIMITED", { cause: error });
   }
   if (error instanceof AuthenticationError) {
@@ -307,79 +349,94 @@ export async function generateDiagnosticsDraft(
       timeout: config.timeoutMs,
     });
 
-  try {
-    const providerResponse = await client.responses.parse(
-      {
-        model: config.model,
-        instructions: buildDiagnosticsInstructions(
-          request.mode,
-          request.workOrderContext.missingReferences
-        ),
-        input: requestInput(request, contextBlock),
-        text: {
-          format: zodTextFormat(
-            diagnosticsResponseSchema,
-            "otomoto_diagnostics_response",
-            {
-              description:
-                "A staff-reviewed OTOMOTO diagnostic draft with one next step.",
-            }
-          ),
+  const instructions = buildDiagnosticsInstructions(
+    request.mode,
+    request.workOrderContext.missingReferences
+  );
+  const input = requestInput(request, contextBlock);
+  let outputBudget = config.maxOutputTokens;
+  let tokenBudgetShrunk = false;
+
+  for (;;) {
+    try {
+      const providerResponse = await client.responses.parse(
+        {
+          model: config.model,
+          instructions,
+          input,
+          text: {
+            format: zodTextFormat(
+              diagnosticsResponseSchema,
+              "otomoto_diagnostics_response",
+              {
+                description:
+                  "A staff-reviewed OTOMOTO diagnostic draft with one next step.",
+              }
+            ),
+          },
+          reasoning: { effort: "high" },
+          max_output_tokens: outputBudget,
+          safety_identifier: diagnosticsSafetyIdentifier(request.staffUserId),
+          store: false,
         },
-        reasoning: { effort: "high" },
-        max_output_tokens: config.maxOutputTokens,
-        safety_identifier: diagnosticsSafetyIdentifier(request.staffUserId),
-        store: false,
-      },
-      {
-        timeout: config.timeoutMs,
-        maxRetries: DIAGNOSTICS_PROVIDER_MAX_RETRIES,
+        {
+          timeout: config.timeoutMs,
+          maxRetries: DIAGNOSTICS_PROVIDER_MAX_RETRIES,
+        }
+      );
+
+      if (providerResponse.status !== "completed") {
+        throw new Error("DIAGNOSTICS_AI_RESPONSE_INCOMPLETE");
       }
-    );
 
-    if (providerResponse.status !== "completed") {
-      throw new Error("DIAGNOSTICS_AI_RESPONSE_INCOMPLETE");
+      if (
+        providerResponse.output?.some(
+          (item) =>
+            item.type === "message" &&
+            item.content.some((content) => content.type === "refusal")
+        )
+      ) {
+        throw new Error("DIAGNOSTICS_AI_RESPONSE_REFUSED");
+      }
+
+      const parsed = diagnosticsResponseSchema.safeParse(providerResponse.output_parsed);
+      if (!parsed.success) {
+        throw new Error("DIAGNOSTICS_AI_RESPONSE_SCHEMA_INVALID");
+      }
+
+      if (typeof providerResponse.model !== "string" || !providerResponse.model.trim()) {
+        throw new Error("DIAGNOSTICS_AI_RESPONSE_MODEL_MISSING");
+      }
+
+      assertDiagnosticsOutputAllowed(parsed.data, {
+        mode: request.mode,
+        requiredPhase: request.requiredPhase,
+        claims,
+      });
+
+      return {
+        response: parsed.data,
+        responseId: providerResponse.id,
+        requestedModel: config.model,
+        resolvedModel: providerResponse.model,
+        promptVersion: DIAGNOSTICS_PROMPT_VERSION,
+        contextHash,
+        usage: {
+          inputTokens: providerResponse.usage?.input_tokens ?? null,
+          outputTokens: providerResponse.usage?.output_tokens ?? null,
+          totalTokens: providerResponse.usage?.total_tokens ?? null,
+        },
+      };
+    } catch (error) {
+      if (!tokenBudgetShrunk && error instanceof RateLimitError) {
+        const nextBudget = outputTokenBudgetForRateLimit(error.message, outputBudget);
+        if (nextBudget !== null) {
+          outputBudget = nextBudget;
+          tokenBudgetShrunk = true;
+          continue;
+        }
+      }
+      throw providerError(error);
     }
-
-    if (
-      providerResponse.output?.some(
-        (item) =>
-          item.type === "message" &&
-          item.content.some((content) => content.type === "refusal")
-      )
-    ) {
-      throw new Error("DIAGNOSTICS_AI_RESPONSE_REFUSED");
-    }
-
-    const parsed = diagnosticsResponseSchema.safeParse(providerResponse.output_parsed);
-    if (!parsed.success) {
-      throw new Error("DIAGNOSTICS_AI_RESPONSE_SCHEMA_INVALID");
-    }
-
-    if (typeof providerResponse.model !== "string" || !providerResponse.model.trim()) {
-      throw new Error("DIAGNOSTICS_AI_RESPONSE_MODEL_MISSING");
-    }
-
-    assertDiagnosticsOutputAllowed(parsed.data, {
-      mode: request.mode,
-      requiredPhase: request.requiredPhase,
-      claims,
-    });
-
-    return {
-      response: parsed.data,
-      responseId: providerResponse.id,
-      requestedModel: config.model,
-      resolvedModel: providerResponse.model,
-      promptVersion: DIAGNOSTICS_PROMPT_VERSION,
-      contextHash,
-      usage: {
-        inputTokens: providerResponse.usage?.input_tokens ?? null,
-        outputTokens: providerResponse.usage?.output_tokens ?? null,
-        totalTokens: providerResponse.usage?.total_tokens ?? null,
-      },
-    };
-  } catch (error) {
-    throw providerError(error);
   }
 }

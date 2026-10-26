@@ -1,9 +1,10 @@
-import OpenAI, { OpenAIError } from "openai";
+import OpenAI, { OpenAIError, RateLimitError } from "openai";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   diagnosticsSafetyIdentifier,
   generateDiagnosticsDraft,
+  outputTokenBudgetForRateLimit,
 } from "@/lib/diagnostics/openai";
 import type { DiagnosticsConfig } from "@/lib/diagnostics/config";
 import type { ShapedDiagnosticsModelContext } from "@/lib/diagnostics/context";
@@ -180,6 +181,10 @@ function closureRequest() {
       },
     },
   };
+}
+
+function rateLimitError(code: string, message: string): RateLimitError {
+  return new RateLimitError(429, { code, message }, undefined, new Headers());
 }
 
 describe("OpenAI diagnostics provider", () => {
@@ -480,6 +485,82 @@ describe("OpenAI diagnostics provider", () => {
       generateDiagnosticsDraft(harmless, { client, config })
     ).resolves.toMatchObject({ responseId: "resp_test" });
     expect(parse).toHaveBeenCalledOnce();
+  });
+
+  it("shrinks the output budget when the reserved tokens exceed the account limit", async () => {
+    const parse = vi
+      .fn()
+      .mockRejectedValueOnce(
+        rateLimitError(
+          "rate_limit_exceeded",
+          "Rate limit reached for gpt-6-astra in organization org_test on tokens per min (TPM): Limit 30000, Requested 42000. Please try again in 1s."
+        )
+      )
+      .mockResolvedValueOnce(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    await expect(
+      generateDiagnosticsDraft(request(), {
+        client,
+        config: { ...config, maxOutputTokens: 28_000 },
+      })
+    ).resolves.toMatchObject({ responseId: "resp_test" });
+
+    expect(parse).toHaveBeenCalledTimes(2);
+    const first = parse.mock.calls[0]?.[0] as { max_output_tokens: number };
+    const second = parse.mock.calls[1]?.[0] as { max_output_tokens: number };
+    expect(first.max_output_tokens).toBe(28_000);
+    expect(second.max_output_tokens).toBe(15_488);
+    expect(second.max_output_tokens).toBeLessThan(first.max_output_tokens);
+  });
+
+  it("keeps a short-window rate limit and an exhausted account as distinct failures", async () => {
+    const rpmParse = vi
+      .fn()
+      .mockRejectedValue(
+        rateLimitError(
+          "rate_limit_exceeded",
+          "Rate limit reached. Please try again in 2s."
+        )
+      );
+    const rpmClient = { responses: { parse: rpmParse } } as unknown as OpenAI;
+    await expect(
+      generateDiagnosticsDraft(request(), {
+        client: rpmClient,
+        config: { ...config, maxOutputTokens: 28_000 },
+      })
+    ).rejects.toThrow("DIAGNOSTICS_AI_PROVIDER_RATE_LIMITED");
+    expect(rpmParse).toHaveBeenCalledOnce();
+
+    const quotaParse = vi
+      .fn()
+      .mockRejectedValue(
+        rateLimitError(
+          "insufficient_quota",
+          "You exceeded your current quota, please check your plan and billing details."
+        )
+      );
+    const quotaClient = { responses: { parse: quotaParse } } as unknown as OpenAI;
+    await expect(
+      generateDiagnosticsDraft(request(), { client: quotaClient, config })
+    ).rejects.toThrow("DIAGNOSTICS_AI_PROVIDER_QUOTA_EXCEEDED");
+    expect(quotaParse).toHaveBeenCalledOnce();
+  });
+
+  it("computes a smaller output budget only for a token-reservation rejection", () => {
+    expect(
+      outputTokenBudgetForRateLimit(
+        "429 Rate limit reached on tokens per min (TPM): Limit 30000, Requested 42000.",
+        28_000
+      )
+    ).toBe(15_488);
+    expect(outputTokenBudgetForRateLimit("Please try again in 2s.", 28_000)).toBeNull();
+    expect(
+      outputTokenBudgetForRateLimit("Limit 8000, Requested 50000.", 28_000)
+    ).toBeNull();
+    expect(
+      outputTokenBudgetForRateLimit("Limit 30000, Requested 42000.", 4_096)
+    ).toBeNull();
   });
 
   it("lists only references actually missing from the bounded context", async () => {

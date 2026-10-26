@@ -62,6 +62,8 @@ const DIAGNOSTICS_ERROR_MESSAGES: Readonly<Record<string, string>> = {
     "Ask OTOMOTO took too long to respond. Your work-order records were not changed; try again.",
   DIAGNOSTICS_AI_PROVIDER_RATE_LIMITED:
     "Ask OTOMOTO is receiving too many requests. Wait a moment and try again.",
+  DIAGNOSTICS_AI_PROVIDER_QUOTA_EXCEEDED:
+    "Ask OTOMOTO cannot draft because the OpenAI account is out of credit. Shop records were not changed.",
   DIAGNOSTICS_AI_PROVIDER_AUTH_FAILED:
     "Ask OTOMOTO could not authenticate with OpenAI. Check the server configuration.",
   DIAGNOSTICS_AI_PROVIDER_UNAVAILABLE:
