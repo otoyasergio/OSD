@@ -25,14 +25,12 @@ test.use({ storageState: storageStatePath("owner") });
 const HEIC_FIXTURE = join(process.cwd(), "tests/fixtures/photos/sample.heic");
 
 /**
- * Playwright WebKit treats a context offline switch as a failed local File
- * read (NotReadableError), so the queue never receives the bytes. Real Safari
- * can still read a local photo with the radio off. Block the network and
- * report navigator.onLine false without that WebKit bug.
+ * Playwright WebKit's offline switch makes File reads throw NotReadableError,
+ * and aborting every request makes IndexedDB blob writes fail. The queue
+ * follows navigator.onLine. Force that flag off for this page only; a new
+ * page starts online again, which is the reconnect.
  */
 async function blockRadio(page: Page) {
-  const context = page.context();
-  await context.route("**/*", (route) => route.abort("internetdisconnected"));
   await page.evaluate(() => {
     Object.defineProperty(navigator, "onLine", {
       configurable: true,
@@ -42,8 +40,8 @@ async function blockRadio(page: Page) {
   });
 }
 
-async function restoreRadio(context: BrowserContext) {
-  await context.unroute("**/*").catch(() => undefined);
+async function restoreRadio(_context: BrowserContext) {
+  // The closed page held the offline flag. The next page is a fresh document.
 }
 
 test.describe.configure({ mode: "serial", timeout: 180_000 });
@@ -68,7 +66,7 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
     const library = page.getByLabel("Photo library");
     await library.setInputFiles(HEIC_FIXTURE);
 
-    await expect(page.getByText(/waiting for connection/i).first()).toBeVisible({
+    await expect(page.getByText("Waiting for connection", { exact: true })).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByText(note)).toHaveCount(0);
@@ -99,7 +97,15 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
     await card.getByRole("button", { name: /Remove Other photo/i }).click();
     await card.locator('textarea[name="reason"]').fill("Safari reliability cleanup");
     await card.getByRole("button", { name: /Permanently remove photo/i }).click();
-    await expect(resumed.getByText(note)).toHaveCount(0, { timeout: 30_000 });
+    await expect
+      .poll(
+        async () =>
+          (await findIntakePhotosByNote(admin, FIXTURE_WORK_ORDER.id, note)).length,
+        { timeout: 30_000 }
+      )
+      .toBe(0);
+    await resumed.reload();
+    await expect(resumed.getByText(note)).toHaveCount(0);
     await expect(resumed.locator(".photo-queue-status")).toHaveCount(0);
     await expect(resumed.getByText(/waiting for connection/i)).toHaveCount(0);
 

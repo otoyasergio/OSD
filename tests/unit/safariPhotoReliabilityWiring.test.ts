@@ -31,6 +31,8 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).toMatch(/waiting for connection/i);
     const prepare = source("lib/forms/preparePhotoFileForUpload.ts");
     expect(prepare).toMatch(/navigator\.onLine === false/);
+    const indexedDb = source("lib/photos/uploadQueue/indexedDbStore.ts");
+    expect(indexedDb).toMatch(/Uint8Array/);
     const uploader = source("lib/photos/uploadQueue/uploadQueuedPhoto.ts");
     expect(uploader).toMatch(/compressImageForUpload/);
     expect(spec).toMatch(/page\.close\(/);
