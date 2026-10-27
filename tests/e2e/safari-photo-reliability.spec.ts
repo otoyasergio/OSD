@@ -57,7 +57,12 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
 
   try {
     await page.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
-    await expect(page.getByText("Upload intake photo")).toBeVisible();
+    // WebKit can keep a hidden copy of this heading in the DOM. Match the visible one.
+    await expect(
+      page
+        .getByRole("heading", { name: "Upload intake photo", exact: true })
+        .locator("visible=true")
+    ).toBeVisible();
 
     await page.locator('select[name="category"]').selectOption("other");
     await page.locator('input[name="notes"]').fill(note);
