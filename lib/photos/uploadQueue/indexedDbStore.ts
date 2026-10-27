@@ -78,6 +78,53 @@ export type PhotoUploadQueueDatabaseOpener = (
   hooks?: { onBlocking?: () => void }
 ) => Promise<PhotoUploadQueueDatabase>;
 
+/**
+ * Playwright WebKit rejects Blob/File values in IndexedDB
+ * (`UnknownError: Error preparing Blob/File data`). Real Safari can store
+ * them, but a Uint8Array round-trips in both, so the durable queue keeps the
+ * bytes and rebuilds a Blob when the record is read.
+ */
+type StoredQueuedPhotoUpload = Omit<QueuedPhotoUpload, "blob"> & {
+  bytes: Uint8Array;
+};
+
+type PhotoQueueRecord = QueuedPhotoUpload & { bytes?: Uint8Array };
+
+async function ensurePhotoBytes(item: QueuedPhotoUpload): Promise<PhotoQueueRecord> {
+  const record = item as PhotoQueueRecord;
+  if (record.bytes instanceof Uint8Array) return record;
+  return { ...item, bytes: new Uint8Array(await item.blob.arrayBuffer()) };
+}
+
+function photoRecordForStorage(item: PhotoQueueRecord): StoredQueuedPhotoUpload {
+  if (!(item.bytes instanceof Uint8Array)) {
+    throw new Error("PHOTO_BYTES_MISSING");
+  }
+  const { blob: _blob, bytes, ...rest } = item;
+  return { ...rest, bytes };
+}
+
+function photoRecordFromStorage(
+  item: PhotoQueueRecord | undefined
+): QueuedPhotoUpload | undefined {
+  if (!item) return undefined;
+  if (item.bytes instanceof Uint8Array) {
+    const { bytes, blob, ...rest } = item;
+    return {
+      ...rest,
+      bytes,
+      blob:
+        blob instanceof Blob
+          ? blob
+          : new Blob([new Uint8Array(bytes)], {
+              type: rest.mimeType || "application/octet-stream",
+            }),
+    } as unknown as QueuedPhotoUpload;
+  }
+  if (item.blob instanceof Blob) return item;
+  return item;
+}
+
 function wrapDatabase(
   database: IDBPDatabase<PhotoUploadQueueSchema>
 ): PhotoUploadQueueDatabase {
@@ -85,17 +132,26 @@ function wrapDatabase(
     transaction(mode) {
       const transaction = database.transaction(
         [PHOTO_UPLOAD_STORE_NAME, PHOTO_UPLOAD_CONFIRMATION_STORE_NAME],
-        mode
+        mode,
+        // Flush before the request resolves so a tab close cannot drop a photo
+        // the UI already described as saved on this device.
+        mode === "readwrite" ? { durability: "strict" } : undefined
       );
       const uploads = transaction.objectStore(PHOTO_UPLOAD_STORE_NAME);
       const confirmations = transaction.objectStore(PHOTO_UPLOAD_CONFIRMATION_STORE_NAME);
       return {
-        get: (queueId) => uploads.get(queueId),
-        listByScope: (scope) =>
-          uploads
+        get: async (queueId) => photoRecordFromStorage(await uploads.get(queueId)),
+        listByScope: async (scope) => {
+          const rows = await uploads
             .index(PHOTO_UPLOAD_SCOPE_INDEX)
-            .getAll([scope.userId, scope.locationId]),
-        put: (item) => uploads.put!(item),
+            .getAll([scope.userId, scope.locationId]);
+          return rows.flatMap((row) => {
+            const item = photoRecordFromStorage(row);
+            return item ? [item] : [];
+          });
+        },
+        put: (item) =>
+          uploads.put!(photoRecordForStorage(item) as unknown as QueuedPhotoUpload),
         delete: (queueId) => uploads.delete!(queueId),
         getConfirmation: (queueId) => confirmations.get(queueId),
         listConfirmationsByScope: (scope) =>
@@ -304,13 +360,14 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
       throw new PhotoUploadQueueScopeError();
     }
     try {
+      const ready = await ensurePhotoBytes(item);
       const transaction = (await this.getDatabase()).transaction("readwrite");
       await runTransaction(transaction, async () => {
-        const existing = await transaction.get(item.queueId);
+        const existing = await transaction.get(ready.queueId);
         if (existing && !belongsToScope(existing, scope)) {
           throw new PhotoUploadQueueScopeError();
         }
-        await transaction.put(item);
+        await transaction.put(ready);
       });
     } catch (error) {
       if (error instanceof PhotoUploadQueueScopeError) throw error;
@@ -919,6 +976,7 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
       throw new PhotoUploadQueueScopeError();
     }
     try {
+      const ready = await ensurePhotoBytes(item);
       const transaction = (await this.getDatabase()).transaction("readwrite");
       return await runTransaction(transaction, async () => {
         const existingItems = await transaction.listByScope(scope);
@@ -933,12 +991,12 @@ export class IndexedDbPhotoUploadQueueStore implements PhotoUploadQueueStore {
           if (hasLivePersistedUploadClaim(existing, now)) continue;
           await transaction.delete(existing.queueId);
         }
-        const queued: QueuedPhotoUpload = {
-          ...item,
+        const queued = {
+          ...ready,
           category,
           intakeDraftId,
           updatedAt: now,
-        };
+        } as unknown as QueuedPhotoUpload;
         await transaction.put(queued);
         return queued;
       });
