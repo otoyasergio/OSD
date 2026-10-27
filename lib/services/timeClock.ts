@@ -262,6 +262,8 @@ export async function clockSubjectOut(input: {
   const patch: Record<string, unknown> = { clock_out_at: clockOutAt };
   if (input.photoPath) patch.clock_out_photo_path = input.photoPath;
 
+  // The closed row must remain visible under time_clock_select_scoped.
+  // Postgres rejects this update when the new punch would fail that policy.
   const { data, error } = await supabase
     .from("time_clock_entry")
     .update(patch)
