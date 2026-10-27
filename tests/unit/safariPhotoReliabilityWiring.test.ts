@@ -29,6 +29,10 @@ describe("stateful Safari photo reliability wiring", () => {
     expect(spec).toMatch(/sample\.heic/);
     expect(spec).toMatch(/Photo library/i);
     expect(spec).toMatch(/waiting for connection/i);
+    expect(spec).toMatch(
+      /getByRole\("heading", \{ name: "Upload intake photo", exact: true \}\)/
+    );
+    expect(spec).toMatch(/\.locator\("visible=true"\)/);
     const prepare = source("lib/forms/preparePhotoFileForUpload.ts");
     expect(prepare).toMatch(/navigator\.onLine === false/);
     const indexedDb = source("lib/photos/uploadQueue/indexedDbStore.ts");
