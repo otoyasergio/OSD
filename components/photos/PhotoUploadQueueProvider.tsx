@@ -44,6 +44,7 @@ export type PhotoUploadConfirmation = {
   queueId: string;
   clientUploadId: string;
   photoId: string;
+  workOrderId?: string;
 };
 
 export type EnqueuePhotoInput = {
@@ -194,6 +195,7 @@ export function PhotoUploadQueueProvider({
         queueId: receipt.queueId,
         clientUploadId: receipt.clientUploadId,
         photoId: receipt.photoId,
+        ...(receipt.workOrderId ? { workOrderId: receipt.workOrderId } : {}),
       };
       for (const listener of confirmationListenersRef.current) listener(confirmation);
     }
