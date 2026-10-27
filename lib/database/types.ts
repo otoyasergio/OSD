@@ -23,6 +23,7 @@ export type WorkOrderStatus =
   | "quality_check"
   | "safety_check"
   | "ready_for_pickup"
+  | "in_storage"
   | "completed"
   | "cancelled"
   | "on_hold";

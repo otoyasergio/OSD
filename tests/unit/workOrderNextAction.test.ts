@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 import { getWorkOrderNextAction } from "@/lib/work-orders/nextAction";
 
 describe("getWorkOrderNextAction", () => {
+  it("tells the desk a stored bike waits until the customer wants it", () => {
+    const next = getWorkOrderNextAction({
+      workOrderId: "wo-1",
+      status: "in_storage",
+      qualityChecked: true,
+      safetyChecked: true,
+      readyForPickup: false,
+      safety_required: false,
+      safety_waived: false,
+      jobs: [{ status: "completed", service_name_snapshot: "Winter storage" }],
+      hasAssignedTech: false,
+      inspectionCompleted: true,
+    });
+    expect(next?.title).toMatch(/storage/i);
+    expect(next?.detail).toMatch(/Ready/i);
+  });
+
   it("asks to assign when no tech", () => {
     const next = getWorkOrderNextAction({
       workOrderId: "wo-1",

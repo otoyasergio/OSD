@@ -48,6 +48,13 @@ export function getWorkOrderNextAction(
       detail: "Resume from Overview when the hold reason is cleared.",
     };
   }
+  if (input.status === "in_storage") {
+    return {
+      title: "In storage",
+      detail:
+        "Work is finished and the bike is stored. Drag the card to Ready when the customer wants it.",
+    };
+  }
 
   if (!input.hasAssignedTech) {
     return {

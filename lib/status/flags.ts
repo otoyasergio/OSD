@@ -17,13 +17,16 @@ export type WorkOrderFlagInput = {
 
 const TERMINAL: WorkOrderStatus[] = ["completed", "cancelled"];
 
+/** Sitting in storage is expected for months — a past ETA is not overdue. */
+const NOT_OVERDUE: WorkOrderStatus[] = ["completed", "cancelled", "in_storage"];
+
 export function isOverdue(
   estimatedCompletion: string | null | undefined,
   status: WorkOrderStatus,
   now: Date = new Date()
 ): boolean {
   if (!estimatedCompletion) return false;
-  if (TERMINAL.includes(status)) return false;
+  if (NOT_OVERDUE.includes(status)) return false;
   return new Date(estimatedCompletion).getTime() < now.getTime();
 }
 

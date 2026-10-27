@@ -16,6 +16,7 @@ import {
   listControlCenterCompletedToday,
 } from "@/lib/services/controlCenter";
 import {
+  listInStorage,
   listReadyForPickup,
   listReadyForQc,
   listReadyForSafetyInspection,
@@ -57,6 +58,7 @@ export default async function ControlCenterPage({
     readyForQc,
     readyForSafety,
     readyForPickup,
+    inStorage,
     recentlyCompleted,
   ] = await Promise.all([
     getControlCenterData({ presentationRole: viewRole }),
@@ -64,6 +66,7 @@ export default async function ControlCenterPage({
     listReadyForQc().catch(() => []),
     listReadyForSafetyInspection().catch(() => []),
     listReadyForPickup().catch(() => []),
+    listInStorage().catch(() => []),
     listRecentlyCompleted().catch(() => []),
   ]);
 
@@ -76,6 +79,7 @@ export default async function ControlCenterPage({
       readyForQc={readyForQc}
       readyForSafety={readyForSafety}
       readyForPickup={readyForPickup}
+      inStorage={inStorage}
       recentlyCompleted={recentlyCompleted}
     />
   );

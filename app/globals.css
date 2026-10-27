@@ -5079,7 +5079,7 @@ label.photo-source-sheet-action {
 }
 
 .shop-board--gallery {
-  grid-template-columns: repeat(4, minmax(14rem, 1fr));
+  grid-template-columns: repeat(6, minmax(14rem, 1fr));
 }
 
 .floor-stage-pill--current {

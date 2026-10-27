@@ -6,7 +6,14 @@ import {
 } from "@/lib/status/transitions";
 
 /** Droppable ids for Control Center stage carousels (Shop Board column ids). */
-export const CC_STAGE_DROP_IDS = ["parts", "qc", "safety", "pickup", "complete"] as const;
+export const CC_STAGE_DROP_IDS = [
+  "parts",
+  "qc",
+  "safety",
+  "pickup",
+  "storage",
+  "complete",
+] as const;
 
 export type CcStageDropId = (typeof CC_STAGE_DROP_IDS)[number];
 
@@ -24,6 +31,8 @@ export function stageDropIdForStatus(status: WorkOrderStatus): CcStageDropId | n
       return "safety";
     case "ready_for_pickup":
       return "pickup";
+    case "in_storage":
+      return "storage";
     case "completed":
       return "complete";
     default:
@@ -100,6 +109,7 @@ export function removeWorkOrderFromControlCenterLists<
       qc: input.stages.qc.filter((bike) => bike.work_order_id !== workOrderId),
       safety: input.stages.safety.filter((bike) => bike.work_order_id !== workOrderId),
       pickup: input.stages.pickup.filter((bike) => bike.work_order_id !== workOrderId),
+      storage: input.stages.storage.filter((bike) => bike.work_order_id !== workOrderId),
       complete: input.stages.complete.filter(
         (bike) => bike.work_order_id !== workOrderId
       ),
@@ -117,7 +127,7 @@ export function isCcStageDropEnabledForRole(
 ): boolean {
   // Complete accepts ready-for-pickup bikes; probe that status for advisors.
   const probeStatus: WorkOrderStatus =
-    stageId === "complete" ? "ready_for_pickup" : "in_progress";
+    stageId === "complete" || stageId === "storage" ? "ready_for_pickup" : "in_progress";
   return canDropInColumn(role, stageId, probeStatus);
 }
 

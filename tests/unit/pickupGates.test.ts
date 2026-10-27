@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
+import {
+  pickupLeaveBlockReason,
+  storageLeaveBlockReason,
+} from "@/lib/status/pickupGates";
 
 describe("pickupLeaveBlockReason", () => {
   it("requires arrival inspection then QC then final inspection", () => {
@@ -48,6 +51,47 @@ describe("pickupLeaveBlockReason", () => {
         safetyChecked: true,
       })
     ).toBeNull();
+  });
+
+  it("lets a finished bike enter storage without checkout photos", () => {
+    expect(
+      storageLeaveBlockReason({
+        inspectionComplete: true,
+        qualityChecked: true,
+        safetyRequired: true,
+        safetyChecked: true,
+      })
+    ).toBeNull();
+
+    expect(
+      pickupLeaveBlockReason({
+        inspectionComplete: true,
+        qualityChecked: true,
+        safetyRequired: true,
+        safetyChecked: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+      })
+    ).toBe("CHECKOUT_EVIDENCE_REQUIRED");
+  });
+
+  it("still requires inspection, QC, and final inspection before storage", () => {
+    expect(
+      storageLeaveBlockReason({
+        inspectionComplete: false,
+        qualityChecked: true,
+        safetyRequired: false,
+        safetyChecked: false,
+      })
+    ).toBe("INSPECTION_REQUIRED_BEFORE_PICKUP");
+    expect(
+      storageLeaveBlockReason({
+        inspectionComplete: true,
+        qualityChecked: false,
+        safetyRequired: false,
+        safetyChecked: false,
+      })
+    ).toBe("QC_REQUIRED");
   });
 
   it("skips final inspection when waived", () => {

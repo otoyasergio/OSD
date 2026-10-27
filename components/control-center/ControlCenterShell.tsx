@@ -64,6 +64,7 @@ import { canDropInColumn } from "@/lib/status/transitions";
 import {
   CompleteCarousel,
   ReadyForPickupCarousel,
+  StorageCarousel,
   ReadyForQcCarousel,
   ReadyForSafetyInspectionCarousel,
   WaitingForPartsCarousel,
@@ -420,6 +421,7 @@ export function ControlCenterShell({
   readyForQc = [],
   readyForSafety = [],
   readyForPickup = [],
+  inStorage = [],
   recentlyCompleted = [],
 }: {
   data: ControlCenterData;
@@ -429,6 +431,7 @@ export function ControlCenterShell({
   readyForQc?: ReadyForPickupItem[];
   readyForSafety?: ReadyForPickupItem[];
   readyForPickup?: ReadyForPickupItem[];
+  inStorage?: ReadyForPickupItem[];
   recentlyCompleted?: ReadyForPickupItem[];
 }) {
   const router = useRouter();
@@ -442,6 +445,7 @@ export function ControlCenterShell({
   const [qcQueue, setQcQueue] = useState(readyForQc);
   const [safetyQueue, setSafetyQueue] = useState(readyForSafety);
   const [pickupQueue, setPickupQueue] = useState(readyForPickup);
+  const [storageQueue, setStorageQueue] = useState(inStorage);
   const [completeQueue, setCompleteQueue] = useState(recentlyCompleted);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -480,12 +484,21 @@ export function ControlCenterShell({
           qc: readyForQc.map((b) => b.work_order_id),
           safety: readyForSafety.map((b) => b.work_order_id),
           pickup: readyForPickup.map((b) => b.work_order_id),
+          storage: inStorage.map((b) => b.work_order_id),
           complete: recentlyCompleted.map((b) => b.work_order_id),
         },
         kpis: data.kpis,
         live: data.live_summary,
       }),
-    [data, waitingForParts, readyForQc, readyForSafety, readyForPickup, recentlyCompleted]
+    [
+      data,
+      waitingForParts,
+      readyForQc,
+      readyForSafety,
+      readyForPickup,
+      inStorage,
+      recentlyCompleted,
+    ]
   );
   const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
   if (
@@ -501,6 +514,7 @@ export function ControlCenterShell({
         qc: readyForQc,
         safety: readyForSafety,
         pickup: readyForPickup,
+        storage: inStorage,
         complete: recentlyCompleted,
       } as Record<CcStageDropId, WaitingStageBike[]>,
     };
@@ -529,6 +543,7 @@ export function ControlCenterShell({
     setQcQueue(next.stages.qc);
     setSafetyQueue(next.stages.safety);
     setPickupQueue(next.stages.pickup);
+    setStorageQueue(next.stages.storage);
     setCompleteQueue(next.stages.complete);
   }
 
@@ -604,9 +619,10 @@ export function ControlCenterShell({
         qc: qcQueue,
         safety: safetyQueue,
         pickup: pickupQueue,
+        storage: storageQueue,
         complete: completeQueue,
       }) as Record<CcStageDropId, WaitingStageBike[]>,
-    [partsQueue, qcQueue, safetyQueue, pickupQueue, completeQueue]
+    [partsQueue, qcQueue, safetyQueue, pickupQueue, storageQueue, completeQueue]
   );
   const knownWorkOrderIds = useMemo(
     () =>
@@ -696,6 +712,7 @@ export function ControlCenterShell({
     else if (stageId === "qc") setQcQueue(items);
     else if (stageId === "safety") setSafetyQueue(items);
     else if (stageId === "pickup") setPickupQueue(items);
+    else if (stageId === "storage") setStorageQueue(items);
     else setCompleteQueue(items);
   }
 
@@ -707,6 +724,7 @@ export function ControlCenterShell({
       qcQueue,
       safetyQueue,
       pickupQueue,
+      storageQueue,
       completeQueue,
     };
   }
@@ -719,6 +737,7 @@ export function ControlCenterShell({
     setQcQueue(previous.qcQueue);
     setSafetyQueue(previous.safetyQueue);
     setPickupQueue(previous.pickupQueue);
+    setStorageQueue(previous.storageQueue);
     setCompleteQueue(previous.completeQueue);
   }
 
@@ -789,6 +808,7 @@ export function ControlCenterShell({
     setQcQueue(lists.stages.qc);
     setSafetyQueue(lists.stages.safety);
     setPickupQueue(lists.stages.pickup);
+    setStorageQueue(lists.stages.storage);
     setCompleteQueue(lists.stages.complete);
     setPendingMove({
       workOrderId,
@@ -849,6 +869,7 @@ export function ControlCenterShell({
     setQcQueue(lists.stages.qc);
     setSafetyQueue(lists.stages.safety);
     setPickupQueue(lists.stages.pickup);
+    setStorageQueue(lists.stages.storage);
     setCompleteQueue(lists.stages.complete);
     if (targetId === POOL_ID) {
       setPool([moved, ...lists.pool]);
@@ -1312,6 +1333,14 @@ export function ControlCenterShell({
               ...stageDndBase,
               droppableId: "pickup",
               dropDisabled: !isCcStageDropEnabledForRole(data.role, "pickup"),
+            }}
+          />
+          <StorageCarousel
+            items={storageQueue}
+            dnd={{
+              ...stageDndBase,
+              droppableId: "storage",
+              dropDisabled: !isCcStageDropEnabledForRole(data.role, "storage"),
             }}
           />
           <CompleteCarousel

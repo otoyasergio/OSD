@@ -22,6 +22,7 @@ const COLUMN_TARGET_STATUS: Record<ShopBoardColumnId, WorkOrderStatus | null> = 
   qc: "quality_check",
   safety: "safety_check",
   pickup: "ready_for_pickup",
+  storage: "in_storage",
   complete: "completed",
   on_hold: null,
   gallery_intake: "open",
@@ -29,6 +30,7 @@ const COLUMN_TARGET_STATUS: Record<ShopBoardColumnId, WorkOrderStatus | null> = 
   gallery_qc: "quality_check",
   gallery_safety: "safety_check",
   gallery_ready: "ready_for_pickup",
+  gallery_storage: "in_storage",
 };
 
 export function getTargetStatusForColumn(columnId: string): WorkOrderStatus | null {
@@ -39,6 +41,11 @@ export function getTargetStatusForColumn(columnId: string): WorkOrderStatus | nu
 /** Shop-floor Ready and Control Center Ready both mean the bike can leave. */
 export function isPickupBoardColumn(columnId: string): boolean {
   return columnId === "pickup" || columnId === "gallery_ready";
+}
+
+/** Shop-floor Storage and gallery Storage — finished bike stays in the building. */
+export function isStorageBoardColumn(columnId: string): boolean {
+  return columnId === "storage" || columnId === "gallery_storage";
 }
 
 export function isQcBoardColumn(columnId: string): boolean {

@@ -4,7 +4,10 @@ import type { DbClient, WorkOrderStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
+import {
+  pickupLeaveBlockReason,
+  storageLeaveBlockReason,
+} from "@/lib/status/pickupGates";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import {
   checkoutPickupGateInput,
@@ -15,6 +18,7 @@ import {
   getTargetStatusForColumn,
   isPickupBoardColumn,
   isQcBoardColumn,
+  isStorageBoardColumn,
 } from "@/lib/status/transitions";
 import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 
@@ -115,7 +119,7 @@ export async function moveWorkOrderOnBoard(
     await assertAllActiveJobsCompleted(supabase, workOrderId);
   }
 
-  if (isPickupBoardColumn(targetColumnId)) {
+  if (isPickupBoardColumn(targetColumnId) || isStorageBoardColumn(targetColumnId)) {
     const [
       { data: safetyJobs, error: safetyJobsError },
       { data: inspection, error: inspectionError },
@@ -132,8 +136,7 @@ export async function moveWorkOrderOnBoard(
     ]);
     if (safetyJobsError) throw safetyJobsError;
     if (inspectionError) throw inspectionError;
-    const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
-    const blocked = pickupLeaveBlockReason({
+    const leaveInput = {
       inspectionComplete: Boolean(inspection?.completed_at),
       qualityChecked: Boolean(
         workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
@@ -147,9 +150,19 @@ export async function moveWorkOrderOnBoard(
       safetyChecked: Boolean(
         workOrder.safety_checked_at || workOrder.safety_checked_by_user_id
       ),
-      ...checkoutPickupGateInput(checkout),
-    });
-    if (blocked) throw new Error(blocked);
+    };
+    if (isStorageBoardColumn(targetColumnId)) {
+      await assertAllActiveJobsCompleted(supabase, workOrderId);
+      const blocked = storageLeaveBlockReason(leaveInput);
+      if (blocked) throw new Error(blocked);
+    } else {
+      const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
+      const blocked = pickupLeaveBlockReason({
+        ...leaveInput,
+        ...checkoutPickupGateInput(checkout),
+      });
+      if (blocked) throw new Error(blocked);
+    }
   }
 
   if (targetColumnId === "complete") {
@@ -165,16 +178,30 @@ export async function moveWorkOrderOnBoard(
     status: targetStatus,
     updated_at: now,
     ...(isPickupBoardColumn(targetColumnId) ? { ready_for_pickup_at: now } : {}),
+    ...(isStorageBoardColumn(targetColumnId) ? { stored_at: now } : {}),
+    ...(workOrder.status === "in_storage" && !isStorageBoardColumn(targetColumnId)
+      ? { stored_at: null }
+      : {}),
   };
   if (ownerMove) {
     movePatch.quality_check_waived = waiveQualityCheck;
   }
+  const optionalColumns = ["stored_at", "quality_check_waived"] as const;
   let { error } = await supabase
     .from("work_order")
     .update(movePatch)
     .eq("work_order_id", workOrderId);
-  if (error && isUndefinedColumnError(error, "quality_check_waived")) {
-    delete movePatch.quality_check_waived;
+  while (
+    error &&
+    optionalColumns.some(
+      (column) => column in movePatch && isUndefinedColumnError(error, column)
+    )
+  ) {
+    const missing = optionalColumns.find(
+      (column) => column in movePatch && isUndefinedColumnError(error, column)
+    );
+    if (!missing) break;
+    delete movePatch[missing];
     ({ error } = await supabase
       .from("work_order")
       .update(movePatch)

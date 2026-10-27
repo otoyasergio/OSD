@@ -522,7 +522,8 @@ export async function pullJob(
     workOrder.status === "waiting_for_parts" ||
     workOrder.status === "waiting_for_customer_approval" ||
     workOrder.status === "cancelled" ||
-    workOrder.status === "completed"
+    workOrder.status === "completed" ||
+    workOrder.status === "in_storage"
   ) {
     throw new Error("JOB_NOT_READY");
   }
