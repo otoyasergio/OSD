@@ -151,6 +151,7 @@ describe("photo upload queue persistence", () => {
   it("opens a versioned database and reports queued only after commit", async () => {
     const records = new Map<string, QueuedPhotoUpload>();
     let autoCommit = false;
+    let stagedPuts = 0;
     let commitNext: () => void = () => {};
     const openDatabase = vi.fn(async () => ({
       transaction: () => {
@@ -173,6 +174,7 @@ describe("photo upload queue persistence", () => {
                 item.userId === scope.userId && item.locationId === scope.locationId
             ),
           put: async (item: QueuedPhotoUpload) => {
+            stagedPuts += 1;
             staged.set(item.queueId, structuredClone(item));
           },
           delete: async (queueId: string) => {
@@ -198,7 +200,9 @@ describe("photo upload queue persistence", () => {
       return item;
     });
     await vi.waitFor(() => expect(openDatabase).toHaveBeenCalledTimes(1));
-    await Promise.resolve();
+    // Bytes are read before the transaction opens, so wait until the write is
+    // staged. Committing earlier resolves an empty transaction.
+    await vi.waitFor(() => expect(stagedPuts).toBe(1));
 
     expect(enqueueSettled).toBe(false);
     expect(records.size).toBe(0);

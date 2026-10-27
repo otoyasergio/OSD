@@ -71,7 +71,8 @@ export function PhotosTab({
     ) ?? "front";
   const categoryRef = useRef<PhotoCategory>(defaultCategory);
   const notesRef = useRef("");
-  const refreshedIds = useRef(new Set<string>());
+  const pendingPhotoIds = useRef(new Set<string>());
+  const refreshAttempts = useRef(0);
   const [deleteState, deleteFormAction, deletePending] = useActionState(deleteAction, {
     error: null,
   });
@@ -101,32 +102,36 @@ export function PhotosTab({
 
   useEffect(() => {
     return queue.subscribeConfirmation((confirmation) => {
-      if (refreshedIds.current.has(confirmation.queueId)) return;
-      const matches =
-        queue.confirmations.some(
-          (receipt) =>
-            receipt.queueId === confirmation.queueId &&
-            receipt.workOrderId === workOrderId
-        ) ||
-        queue.items.some(
-          (item) =>
-            item.queueId === confirmation.queueId && item.workOrderId === workOrderId
-        );
-      if (!matches) return;
-      refreshedIds.current.add(confirmation.queueId);
+      if (confirmation.workOrderId !== workOrderId) return;
+      pendingPhotoIds.current.add(confirmation.queueId);
+      refreshAttempts.current = 0;
       router.refresh();
     });
   }, [queue, router, workOrderId]);
 
   useEffect(() => {
     for (const receipt of queue.confirmations) {
-      if (receipt.workOrderId !== workOrderId || !receipt.photoId) continue;
-      if (photos.some((photo) => photo.photo_id === receipt.photoId)) continue;
-      if (refreshedIds.current.has(receipt.queueId)) continue;
-      refreshedIds.current.add(receipt.queueId);
-      router.refresh();
+      if (!receipt.photoId) continue;
+      if (photos.some((photo) => photo.photo_id === receipt.photoId)) {
+        pendingPhotoIds.current.delete(receipt.queueId);
+      }
     }
-  }, [photos, queue.confirmations, router, workOrderId]);
+  }, [photos, queue.confirmations]);
+
+  useEffect(() => {
+    // A refresh issued while this page is still opening can be ignored. Keep
+    // asking until the saved photo is in the list, then reload once.
+    const timer = window.setInterval(() => {
+      if (pendingPhotoIds.current.size === 0) return;
+      refreshAttempts.current += 1;
+      if (refreshAttempts.current >= 4) {
+        window.location.reload();
+        return;
+      }
+      router.refresh();
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [router]);
 
   async function applyPickedFile(input: HTMLInputElement) {
     setChooserOpen(false);
@@ -381,7 +386,7 @@ export function PhotosTab({
                       <button
                         type="submit"
                         className="btn btn-ghost min-h-10 w-full text-red-700 hover:bg-red-50"
-                        disabled={deletePending}
+                        // Safari drops the submit if this button is disabled while pending.
                       >
                         {deletePending ? "Removing…" : "Permanently remove photo"}
                       </button>
