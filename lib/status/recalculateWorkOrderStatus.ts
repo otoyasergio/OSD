@@ -118,6 +118,12 @@ export function deriveWorkOrderStatus(
 
   if (allActiveCompleted && !qualityCheckComplete) {
     if (qualityCheckWaived && currentStatus !== "quality_check") {
+      // Storage stays put only while safety still passes. Missing QC was waived
+      // on the way in; a new safety requirement pulls the bike back out.
+      if (currentStatus === "in_storage") {
+        if (safetyRequired && !safetyCheckComplete) return "safety_check";
+        return "in_storage";
+      }
       return currentStatus as WorkOrderStatus;
     }
     return "quality_check";
@@ -126,6 +132,11 @@ export function deriveWorkOrderStatus(
   if (allActiveCompleted && qualityCheckComplete) {
     if (safetyRequired && !safetyCheckComplete) {
       return "safety_check";
+    }
+    // Checkout photos are for departure. A stored bike keeps its column until
+    // someone drags it out or unfinished work appears.
+    if (currentStatus === "in_storage") {
+      return "in_storage";
     }
     if (
       checkoutEvidenceRequired &&
@@ -270,14 +281,29 @@ export async function recalculateWorkOrderStatus(
   const statusPatch: Record<string, unknown> = { updated_at: now };
   if (nextStatus !== workOrder.status) statusPatch.status = nextStatus;
   if (clearWaiver) statusPatch.quality_check_waived = false;
+  if (workOrder.status === "in_storage" && nextStatus !== "in_storage") {
+    statusPatch.stored_at = null;
+  }
 
   let { error: updateError } = await supabase
     .from("work_order")
     .update(statusPatch)
     .eq("work_order_id", workOrderId);
-  if (updateError && isUndefinedColumnError(updateError, "quality_check_waived")) {
-    delete statusPatch.quality_check_waived;
-    if (!("status" in statusPatch)) return nextStatus;
+  const optionalColumns = ["stored_at", "quality_check_waived"] as const;
+  while (
+    updateError &&
+    optionalColumns.some(
+      (column) => column in statusPatch && isUndefinedColumnError(updateError, column)
+    )
+  ) {
+    const missing = optionalColumns.find(
+      (column) => column in statusPatch && isUndefinedColumnError(updateError, column)
+    );
+    if (!missing) break;
+    delete statusPatch[missing];
+    if (!("status" in statusPatch) && !("quality_check_waived" in statusPatch)) {
+      return nextStatus;
+    }
     ({ error: updateError } = await supabase
       .from("work_order")
       .update(statusPatch)

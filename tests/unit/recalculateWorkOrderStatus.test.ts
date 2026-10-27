@@ -343,6 +343,45 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("waiting_for_customer_approval");
   });
 
+  it("keeps a stored bike in storage while every active job stays complete", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_storage",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+      })
+    ).toBe("in_storage");
+  });
+
+  it("pulls a stored bike back to the shop when new work is added", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_storage",
+        jobs: [{ status: "completed" }, { status: "approved" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        hasSignedAgreement: true,
+      })
+    ).toBe("ready_for_technician");
+  });
+
+  it("pulls a stored bike into the bay when a job is in progress", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_storage",
+        jobs: [{ status: "in_progress" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+      })
+    ).toBe("in_progress");
+  });
+
   it("demotes ready_for_technician to open when contract becomes unsigned", () => {
     expect(
       deriveWorkOrderStatus({

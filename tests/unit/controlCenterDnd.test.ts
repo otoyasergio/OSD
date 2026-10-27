@@ -18,6 +18,7 @@ describe("control center dnd helpers", () => {
     expect(isCcStageDropId("qc")).toBe(true);
     expect(isCcStageDropId("safety")).toBe(true);
     expect(isCcStageDropId("pickup")).toBe(true);
+    expect(isCcStageDropId("storage")).toBe(true);
     expect(isCcStageDropId("complete")).toBe(true);
     expect(isCcStageDropId("pool")).toBe(false);
   });
@@ -27,6 +28,7 @@ describe("control center dnd helpers", () => {
     expect(stageDropIdForStatus("quality_check")).toBe("qc");
     expect(stageDropIdForStatus("safety_check")).toBe("safety");
     expect(stageDropIdForStatus("ready_for_pickup")).toBe("pickup");
+    expect(stageDropIdForStatus("in_storage")).toBe("storage");
     expect(stageDropIdForStatus("completed")).toBe("complete");
     expect(stageDropIdForStatus("in_progress")).toBeNull();
 
@@ -34,6 +36,7 @@ describe("control center dnd helpers", () => {
     expect(statusForCcStage("qc")).toBe("quality_check");
     expect(statusForCcStage("safety")).toBe("safety_check");
     expect(statusForCcStage("pickup")).toBe("ready_for_pickup");
+    expect(statusForCcStage("storage")).toBe("in_storage");
     expect(statusForCcStage("complete")).toBe("completed");
   });
 
@@ -96,6 +99,8 @@ describe("control center dnd helpers", () => {
     expect(isCcStageDropEnabledForRole("admin", "pickup")).toBe(false);
     expect(isCcStageDropEnabledForRole("owner", "complete")).toBe(true);
     expect(isCcStageDropEnabledForRole("manager", "complete")).toBe(true);
+    expect(isCcStageDropEnabledForRole("service_advisor", "storage")).toBe(true);
+    expect(isCcStageDropEnabledForRole("technician", "storage")).toBe(false);
     expect(isCcStageDropEnabledForRole("service_advisor", "complete")).toBe(true);
     expect(isCcStageDropEnabledForRole("admin", "complete")).toBe(false);
     expect(isCcStageDropEnabledForRole("technician", "complete")).toBe(false);
@@ -109,6 +114,7 @@ describe("control center dnd helpers", () => {
     expect(isControlCenterDispatchStatus("quality_check")).toBe(false);
     expect(isControlCenterDispatchStatus("safety_check")).toBe(false);
     expect(isControlCenterDispatchStatus("ready_for_pickup")).toBe(false);
+    expect(isControlCenterDispatchStatus("in_storage")).toBe(false);
     expect(isControlCenterDispatchStatus("completed")).toBe(false);
   });
 
@@ -144,6 +150,7 @@ describe("control center dnd helpers", () => {
         qc: [{ work_order_id: "wo-4" }],
         safety: [],
         pickup: [],
+        storage: [{ work_order_id: "wo-store" }],
         complete: [],
       },
     });

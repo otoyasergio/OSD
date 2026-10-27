@@ -50,6 +50,12 @@ export const VISIT_PIPELINE_STAGES = [
     shortLabel: "Pickup",
     statuses: ["ready_for_pickup", "completed"] as WorkOrderStatus[],
   },
+  {
+    id: "storage",
+    label: "Storage",
+    shortLabel: "Store",
+    statuses: ["in_storage"] as WorkOrderStatus[],
+  },
 ] as const;
 
 export type VisitPipelineStageId = (typeof VISIT_PIPELINE_STAGES)[number]["id"];
@@ -102,6 +108,11 @@ export const SHOP_BOARD_COLUMNS = [
     statuses: ["ready_for_pickup"] as WorkOrderStatus[],
   },
   {
+    id: "storage",
+    label: "Storage",
+    statuses: ["in_storage"] as WorkOrderStatus[],
+  },
+  {
     id: "on_hold",
     label: "On hold",
     statuses: ["on_hold"] as WorkOrderStatus[],
@@ -145,6 +156,11 @@ export const GALLERY_BOARD_COLUMNS = [
     label: "Ready",
     statuses: ["ready_for_pickup", "completed"] as WorkOrderStatus[],
   },
+  {
+    id: "gallery_storage",
+    label: "Storage",
+    statuses: ["in_storage"] as WorkOrderStatus[],
+  },
 ] as const;
 
 export function getGalleryStageForStatus(status: WorkOrderStatus): {
@@ -161,6 +177,7 @@ export function getGalleryStageForStatus(status: WorkOrderStatus): {
       if (column.id === "gallery_qc") return { label: column.label, tone: "orange" };
       if (column.id === "gallery_safety") return { label: column.label, tone: "orange" };
       if (column.id === "gallery_ready") return { label: column.label, tone: "muted" };
+      if (column.id === "gallery_storage") return { label: column.label, tone: "muted" };
       return { label: column.label, tone: "teal" };
     }
   }
@@ -181,6 +198,9 @@ export function getWorkOrderNextAction(status: WorkOrderStatus, flags: string[])
   if (status === "cancelled") return "Work order cancelled";
   if (status === "on_hold") return "Resume when customer or parts are ready";
   if (status === "completed") return "Vehicle picked up — archive when done";
+  if (status === "in_storage") {
+    return "Bike is in storage — drag the card to Ready when the customer wants it";
+  }
 
   if (flags.includes("Admin flag")) return "Clear admin flag and unblock technician";
   if (flags.includes("No intake photos")) return "Capture intake photos";

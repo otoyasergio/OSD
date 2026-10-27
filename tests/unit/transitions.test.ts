@@ -2,10 +2,12 @@ import { describe, it, expect } from "vitest";
 import { GALLERY_BOARD_COLUMNS } from "@/lib/status/pipeline";
 import {
   boardColumnIdForStatus,
+  canDragWorkOrderOnBoard,
   canDropInColumn,
   getTargetStatusForColumn,
   isPickupBoardColumn,
   isQcBoardColumn,
+  isStorageBoardColumn,
   resolveShopBoardDropColumnId,
 } from "@/lib/status/transitions";
 
@@ -61,6 +63,33 @@ describe("board transitions", () => {
     expect(isPickupBoardColumn("pickup")).toBe(true);
     expect(isPickupBoardColumn("gallery_ready")).toBe(true);
     expect(isPickupBoardColumn("gallery_in_bay")).toBe(false);
+  });
+
+  it("lets front office drag a finished bike into storage and back out", () => {
+    expect(getTargetStatusForColumn("storage")).toBe("in_storage");
+    expect(getTargetStatusForColumn("gallery_storage")).toBe("in_storage");
+    expect(isStorageBoardColumn("storage")).toBe(true);
+    expect(isStorageBoardColumn("gallery_storage")).toBe(true);
+    expect(isStorageBoardColumn("pickup")).toBe(false);
+
+    expect(canDropInColumn("service_advisor", "storage", "ready_for_pickup")).toBe(true);
+    expect(
+      canDropInColumn("service_advisor", "gallery_storage", "ready_for_pickup")
+    ).toBe(true);
+    expect(canDropInColumn("owner", "pickup", "in_storage")).toBe(true);
+    expect(canDropInColumn("technician", "storage", "ready_for_pickup")).toBe(false);
+    expect(canDropInColumn("service_advisor", "storage", "completed")).toBe(false);
+    expect(canDropInColumn("service_advisor", "storage", "in_storage")).toBe(false);
+
+    expect(canDragWorkOrderOnBoard("service_advisor", "in_storage", false)).toBe(true);
+    expect(canDragWorkOrderOnBoard("technician", "in_storage", false)).toBe(false);
+    expect(canDragWorkOrderOnBoard("service_advisor", "completed", false)).toBe(false);
+  });
+
+  it("maps storage onto its own gallery column", () => {
+    expect(boardColumnIdForStatus("in_storage", GALLERY_BOARD_COLUMNS)).toBe(
+      "gallery_storage"
+    );
   });
 
   it("treats gallery QC as a QC drop so unfinished jobs cannot skip to check", () => {

@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth/session";
+import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 import { createClient } from "@/lib/database/supabase-server";
 import type { WorkOrderStatus } from "@/lib/database/types";
 import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
@@ -30,6 +31,7 @@ type StageRow = {
   work_order_number: string;
   ready_for_pickup_at: string | null;
   quality_checked_at: string | null;
+  stored_at?: string | null;
   updated_at: string;
   motorcycle: NestedMotorcycle | NestedMotorcycle[];
 };
@@ -162,6 +164,61 @@ export async function listReadyForSafetyInspection(): Promise<WaitingStageBike[]
       at: row.quality_checked_at,
       inferredFallback: row.updated_at,
     }),
+  });
+}
+
+/**
+ * Location-scoped work orders in storage. The bike stays in the building
+ * after work is finished. Timer prefers stored_at.
+ */
+export async function listInStorage(): Promise<WaitingStageBike[]> {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const locationId = user.active_location_id!;
+
+  const storageSelect = `
+      work_order_id,
+      work_order_number,
+      stored_at,
+      updated_at,
+      motorcycle:motorcycle_id ( year, make, model )
+    `;
+  const { data, error } = await supabase
+    .from("work_order")
+    .select(storageSelect)
+    .eq("location_id", locationId)
+    .eq("status", "in_storage")
+    .order("stored_at", { ascending: true, nullsFirst: false })
+    .limit(60);
+
+  if (error && isUndefinedColumnError(error, "stored_at")) {
+    return listWaitingStageBikes({
+      status: "in_storage",
+      orderColumn: "updated_at",
+      since: (row) => ({ at: null, inferredFallback: row.updated_at }),
+    });
+  }
+  if (error) throw error;
+
+  const rows = (data ?? []) as unknown as StageRow[];
+  const { urls } = await resolveBoardPrimaryPhotos(
+    supabase,
+    rows.map((row) => row.work_order_id)
+  );
+
+  return rows.map((row) => {
+    const motorcycle = asOne(row.motorcycle);
+    return {
+      work_order_id: row.work_order_id,
+      work_order_number: row.work_order_number,
+      motorcycle_label: motorcycle
+        ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
+        : "—",
+      ready_since: row.stored_at ?? row.updated_at,
+      ready_since_inferred: !row.stored_at,
+      primary_photo_url: urls.get(row.work_order_id) ?? null,
+      overview_href: `/work_orders/${row.work_order_id}`,
+    };
   });
 }
 

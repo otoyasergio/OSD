@@ -249,14 +249,23 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
   await assertPickupLeaveGates(supabase, workOrderId, workOrder);
 
   const now = new Date().toISOString();
-  const { error } = await supabase
+  const readyPatch: Record<string, unknown> = {
+    ready_for_pickup_at: now,
+    stored_at: null,
+    status: "ready_for_pickup",
+    updated_at: now,
+  };
+  let { error } = await supabase
     .from("work_order")
-    .update({
-      ready_for_pickup_at: now,
-      status: "ready_for_pickup",
-      updated_at: now,
-    })
+    .update(readyPatch)
     .eq("work_order_id", workOrderId);
+  if (error && isUndefinedColumnError(error, "stored_at")) {
+    delete readyPatch.stored_at;
+    ({ error } = await supabase
+      .from("work_order")
+      .update(readyPatch)
+      .eq("work_order_id", workOrderId));
+  }
   if (error) throw error;
 
   await addTimelineEvent(supabase, {
@@ -299,6 +308,7 @@ export async function completeWorkOrder(
   const canOverride = canOverrideWorkOrderStatus(user.role);
   if (
     workOrder.status !== "ready_for_pickup" &&
+    workOrder.status !== "in_storage" &&
     !workOrder.ready_for_pickup_at &&
     !canOverride
   ) {
@@ -315,15 +325,26 @@ export async function completeWorkOrder(
     completed_at: now,
     released_by_user_id: user.user_id,
     pickup_notes: trimmedNotes,
+    stored_at: null,
     updated_at: now,
   };
   if (options.waiveQualityCheck) completionPatch.quality_check_waived = true;
+  const optionalColumns = ["stored_at", "quality_check_waived"] as const;
   let { error } = await supabase
     .from("work_order")
     .update(completionPatch)
     .eq("work_order_id", workOrderId);
-  if (error && isUndefinedColumnError(error, "quality_check_waived")) {
-    delete completionPatch.quality_check_waived;
+  while (
+    error &&
+    optionalColumns.some(
+      (column) => column in completionPatch && isUndefinedColumnError(error, column)
+    )
+  ) {
+    const missing = optionalColumns.find(
+      (column) => column in completionPatch && isUndefinedColumnError(error, column)
+    );
+    if (!missing) break;
+    delete completionPatch[missing];
     ({ error } = await supabase
       .from("work_order")
       .update(completionPatch)

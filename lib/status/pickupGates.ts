@@ -38,3 +38,19 @@ export function pickupLeaveBlockReason(
   }
   return null;
 }
+
+/**
+ * Same leave gates as pickup, without checkout photos. The bike stays in the
+ * building, so departure evidence is not required to put it in storage.
+ */
+export function storageLeaveBlockReason(
+  input: Omit<
+    PickupLeaveGateInput,
+    "checkoutEvidenceRequired" | "checkoutEvidenceComplete" | "checkoutEvidenceOverridden"
+  >
+): PickupLeaveBlockReason | null {
+  return pickupLeaveBlockReason({
+    ...input,
+    checkoutEvidenceRequired: false,
+  });
+}

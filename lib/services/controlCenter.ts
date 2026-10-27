@@ -32,6 +32,7 @@ const ACTIVE_STATUSES: WorkOrderStatus[] = [
   "quality_check",
   "safety_check",
   "ready_for_pickup",
+  "in_storage",
   "on_hold",
 ];
 
@@ -191,12 +192,17 @@ function toBike(
   const lastJobActivityAt = latestJobActivityAt(
     jobs.flatMap((job) => [job.started_at, job.updated_at, job.created_at])
   );
-  const at_risk = isControlCenterAtRisk({
-    overdue,
-    safetyCritical,
-    lastJobActivityAt,
-    now,
-  });
+  // Stored bikes sit for months. Idle time and a past ETA are not at-risk;
+  // a still-open safety-critical recommendation is.
+  const at_risk =
+    row.status === "in_storage"
+      ? safetyCritical
+      : isControlCenterAtRisk({
+          overdue,
+          safetyCritical,
+          lastJobActivityAt,
+          now,
+        });
   const stage = getGalleryStageForStatus(row.status);
   const customer_name = customer
     ? `${customer.first_name} ${customer.last_name}`.trim()
@@ -291,7 +297,9 @@ export function buildKpis(input: {
 }): ControlCenterKpi[] {
   const inShop = input.bikes.length;
   const atRisk = input.bikes.filter((b) => b.at_risk).length;
-  const unassigned = input.bikes.filter((b) => !b.technician_id).length;
+  const unassigned = input.bikes.filter(
+    (b) => !b.technician_id && b.status !== "in_storage"
+  ).length;
   const inBay = input.bikes.filter((b) => b.status === "in_progress").length;
   const waitingApproval = input.bikes.filter(
     (b) => b.status === "waiting_for_customer_approval"

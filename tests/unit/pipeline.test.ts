@@ -17,6 +17,7 @@ describe("getPipelineStageIndex", () => {
     expect(getPipelineStageIndex("quality_check")).toBe(5);
     expect(getPipelineStageIndex("safety_check")).toBe(6);
     expect(getPipelineStageIndex("ready_for_pickup")).toBe(7);
+    expect(getPipelineStageIndex("in_storage")).toBe(8);
   });
 
   it("returns -1 for cancelled and -2 for on hold", () => {
@@ -51,13 +52,13 @@ describe("getWorkOrderNextAction", () => {
 
 describe("VISIT_PIPELINE_STAGES", () => {
   it("covers the main operational flow", () => {
-    expect(VISIT_PIPELINE_STAGES).toHaveLength(8);
+    expect(VISIT_PIPELINE_STAGES).toHaveLength(9);
   });
 });
 
 describe("GALLERY_BOARD_COLUMNS", () => {
   it("uses Track Day stages covering operational statuses", () => {
-    expect(GALLERY_BOARD_COLUMNS).toHaveLength(5);
+    expect(GALLERY_BOARD_COLUMNS).toHaveLength(6);
     const covered = new Set(
       GALLERY_BOARD_COLUMNS.flatMap((column) => [...column.statuses])
     );
@@ -73,6 +74,7 @@ describe("GALLERY_BOARD_COLUMNS", () => {
       "quality_check",
       "safety_check",
       "ready_for_pickup",
+      "in_storage",
       "completed",
     ];
     for (const status of required) {
@@ -87,5 +89,9 @@ describe("GALLERY_BOARD_COLUMNS", () => {
     });
     expect(getGalleryStageForStatus("quality_check").label).toBe("QC");
     expect(getGalleryStageForStatus("safety_check").label).toBe("Final");
+    expect(getGalleryStageForStatus("in_storage")).toEqual({
+      label: "Storage",
+      tone: "muted",
+    });
   });
 });

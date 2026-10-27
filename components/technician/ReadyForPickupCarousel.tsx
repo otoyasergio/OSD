@@ -15,6 +15,8 @@ const HOUR_MS = 60 * 60 * 1000;
 
 const PICKUP_YELLOW_MS = 1 * DAY_MS;
 const PICKUP_RED_MS = 3 * DAY_MS;
+const STORAGE_YELLOW_MS = 90 * DAY_MS;
+const STORAGE_RED_MS = 180 * DAY_MS;
 const SAFETY_YELLOW_MS = 2 * HOUR_MS;
 const SAFETY_RED_MS = 8 * HOUR_MS;
 
@@ -391,6 +393,23 @@ export function ReadyForSafetyInspectionCarousel({ items, dnd }: StageCarouselPr
       approxCaption="In queue (approx)"
       warnAfterMs={SAFETY_YELLOW_MS}
       lateAfterMs={SAFETY_RED_MS}
+      dnd={dnd}
+    />
+  );
+}
+
+/** Control Center — finished bikes stored in the building (drop to store). */
+export function StorageCarousel({ items, dnd }: StageCarouselProps) {
+  return (
+    <WaitingBikeCarousel
+      items={items}
+      title="Storage"
+      subtitle={dnd ? "Drop when work is finished" : "Bikes in storage"}
+      emptyMessage="No bikes in storage."
+      readyCaption="In storage"
+      approxCaption="In storage (approx)"
+      warnAfterMs={STORAGE_YELLOW_MS}
+      lateAfterMs={STORAGE_RED_MS}
       dnd={dnd}
     />
   );

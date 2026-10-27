@@ -102,6 +102,7 @@ describe("legacy work order status ↔ lifecycle", () => {
       "quality_check",
       "safety_check",
       "ready_for_pickup",
+      "in_storage",
     ] as const) {
       expect(mapLegacyWorkOrderStatus(status)).toBe("active");
     }
