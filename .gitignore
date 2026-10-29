@@ -45,6 +45,7 @@ yarn-error.log*
 
 # supabase cli scratch (blocks the production deploy guard when untracked)
 supabase/.temp/
+supabase/.branches/
 
 # typescript
 *.tsbuildinfo
