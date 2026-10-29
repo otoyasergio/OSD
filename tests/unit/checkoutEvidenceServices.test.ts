@@ -341,6 +341,79 @@ describe("pickup service gates query committed checkout photos", () => {
     );
   });
 
+  it("lets the office file a gone bike complete without final inspection or safety", async () => {
+    const goneBike = {
+      status: "quality_check",
+      quality_checked_at: null,
+      quality_checked_by_user_id: null,
+      ready_for_pickup_at: null,
+      safety_checked_at: null,
+      safety_checked_by_user_id: null,
+      safety_required: null,
+      safety_waived: false,
+      checkout_evidence_required: false,
+    };
+    for (const role of ["owner", "manager", "admin"] as const) {
+      requireUser.mockResolvedValue({ ...owner, role });
+      const client = makeClient({ workOrder: goneBike });
+      createClient.mockResolvedValue(client);
+      await moveWorkOrderOnBoard(WO, "complete");
+      expect(client.updates.some((row) => row.payload.status === "completed")).toBe(true);
+      expect(
+        client.updates.some((row) => row.payload.quality_check_waived === true)
+      ).toBe(true);
+    }
+  });
+
+  it("still requires arrival inspection and checkout photos when the office files complete", async () => {
+    requireUser.mockResolvedValue(owner);
+    const noInspection = makeClient({
+      workOrder: {
+        status: "quality_check",
+        quality_checked_at: null,
+        quality_checked_by_user_id: null,
+        safety_waived: true,
+        checkout_evidence_required: false,
+      },
+      inspection: null,
+    });
+    createClient.mockResolvedValue(noInspection);
+    await expect(moveWorkOrderOnBoard(WO, "complete")).rejects.toThrow(
+      "INSPECTION_REQUIRED_BEFORE_PICKUP"
+    );
+
+    const missingPhotos = makeClient({
+      workOrder: {
+        status: "ready_for_pickup",
+        quality_checked_at: null,
+        quality_checked_by_user_id: null,
+        safety_waived: true,
+        checkout_evidence_required: true,
+      },
+      photos: [],
+    });
+    createClient.mockResolvedValue(missingPhotos);
+    await expect(moveWorkOrderOnBoard(WO, "complete")).rejects.toThrow(
+      "CHECKOUT_EVIDENCE_REQUIRED"
+    );
+  });
+
+  it("still requires final inspection when an advisor drops a bike on complete", async () => {
+    requireUser.mockResolvedValue(advisor);
+    const client = makeClient({
+      workOrder: {
+        status: "ready_for_pickup",
+        ready_for_pickup_at: "2026-10-01T12:10:00.000Z",
+        quality_checked_at: null,
+        quality_checked_by_user_id: null,
+        safety_waived: true,
+        checkout_evidence_required: false,
+      },
+    });
+    createClient.mockResolvedValue(client);
+    await expect(moveWorkOrderOnBoard(WO, "complete")).rejects.toThrow("QC_REQUIRED");
+  });
+
   it("still requires a quality check when a non-owner moves the bike to pickup", async () => {
     requireUser.mockResolvedValue(advisor);
     const client = makeClient({

@@ -144,7 +144,15 @@ export function canMarkReadyForPickup(role: UserRole) {
   return FRONT_OFFICE.includes(role);
 }
 export function canCompleteWorkOrder(role: UserRole) {
-  return FRONT_OFFICE.includes(role);
+  return FRONT_OFFICE.includes(role) || role === "admin";
+}
+
+/**
+ * File a bike that already left. Skips final inspection and the safety check
+ * on the Complete drop only. Advisors and floor staff still wait for both.
+ */
+export function canCompleteWithoutFinalInspection(role: UserRole) {
+  return role === "owner" || role === "manager" || role === "admin";
 }
 export function canUpdateServiceInformation(role: UserRole) {
   return FRONT_OFFICE.includes(role);

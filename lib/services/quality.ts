@@ -5,6 +5,7 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import {
+  canCompleteWithoutFinalInspection,
   canCompleteWorkOrder,
   canMarkReadyForPickup,
   canOverrideWorkOrderStatus,
@@ -96,7 +97,7 @@ async function assertPickupLeaveGates(
     | "checkout_evidence_override_by_user_id"
     | "checkout_evidence_override_reason"
   >,
-  options: { waiveQualityCheck?: boolean } = {}
+  options: { waiveQualityCheck?: boolean; waiveSafetyCheck?: boolean } = {}
 ) {
   const [
     { data: safetyRow, error: safetyError },
@@ -131,6 +132,7 @@ async function assertPickupLeaveGates(
       workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
     ),
     waiveQualityCheck: options.waiveQualityCheck,
+    waiveSafetyCheck: options.waiveSafetyCheck,
     safetyRequired: isSafetyRequired({
       safety_required: (safetyRow?.safety_required as boolean | null) ?? null,
       safety_waived: Boolean(safetyRow?.safety_waived),
@@ -300,12 +302,14 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
 export async function completeWorkOrder(
   workOrderId: string,
   pickupNotes?: string | null,
-  options: { waiveQualityCheck?: boolean } = {}
+  options: { waiveQualityCheck?: boolean; waiveSafetyCheck?: boolean } = {}
 ): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canCompleteWorkOrder(user.role)) throw new Error("FORBIDDEN");
 
-  const canOverride = canOverrideWorkOrderStatus(user.role);
+  const fileWithoutFinalInspection =
+    Boolean(options.waiveQualityCheck) && canCompleteWithoutFinalInspection(user.role);
+  const canOverride = canOverrideWorkOrderStatus(user.role) || fileWithoutFinalInspection;
   if (
     workOrder.status !== "ready_for_pickup" &&
     workOrder.status !== "in_storage" &&
@@ -315,7 +319,10 @@ export async function completeWorkOrder(
     throw new Error("NOT_READY_FOR_PICKUP");
   }
 
-  await assertPickupLeaveGates(supabase, workOrderId, workOrder, options);
+  await assertPickupLeaveGates(supabase, workOrderId, workOrder, {
+    waiveQualityCheck: fileWithoutFinalInspection,
+    waiveSafetyCheck: fileWithoutFinalInspection && Boolean(options.waiveSafetyCheck),
+  });
 
   const now = new Date().toISOString();
   const trimmedNotes = pickupNotes?.trim() || null;
@@ -328,7 +335,11 @@ export async function completeWorkOrder(
     stored_at: null,
     updated_at: now,
   };
-  if (options.waiveQualityCheck) completionPatch.quality_check_waived = true;
+  const skippedFinalInspection =
+    fileWithoutFinalInspection &&
+    !workOrder.quality_checked_at &&
+    !workOrder.quality_checked_by_user_id;
+  if (skippedFinalInspection) completionPatch.quality_check_waived = true;
   const optionalColumns = ["stored_at", "quality_check_waived"] as const;
   let { error } = await supabase
     .from("work_order")
@@ -358,7 +369,9 @@ export async function completeWorkOrder(
     event_type: TimelineEventType.WORK_ORDER_COMPLETED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Work order completed / released",
+    description: skippedFinalInspection
+      ? "Completed without a final inspection — the bike had already left"
+      : "Work order completed / released",
     old_value: { status: workOrder.status },
     new_value: {
       status: "completed",
@@ -374,7 +387,9 @@ export async function completeWorkOrder(
     action: "work_order_completed",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Work order completed / released",
+    description: skippedFinalInspection
+      ? "Completed without a final inspection — the bike had already left"
+      : "Work order completed / released",
     old_value: { status: workOrder.status },
     new_value: {
       status: "completed",
