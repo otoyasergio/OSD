@@ -179,7 +179,7 @@ describe("buildFloorActionModel matrix", () => {
       can_safety: false,
     });
     expect(safetyTheirs.primary.enabled).toBe(false);
-    expect(safetyTheirs.waitOwner).toBe("qc");
+    expect(safetyTheirs.waitOwner).toBe("head_tech");
     assertInvariant(safetyTheirs, "safety theirs");
   });
 
@@ -300,6 +300,7 @@ describe("buildFloorActionModel matrix", () => {
     expect(waitOwnerDisplayLabel("front_desk")).toBe("Front desk");
     expect(waitOwnerDisplayLabel("parts")).toBe("Parts");
     expect(waitOwnerDisplayLabel("qc")).toBe("Final inspection");
+    expect(waitOwnerDisplayLabel("head_tech")).toBe("Head tech");
   });
 });
 

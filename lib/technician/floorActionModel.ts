@@ -20,7 +20,8 @@ import {
  * ("quality", "HOLD", "PAUSED") ever reaches these labels.
  */
 
-export type FloorWaitOwnerKind = "technician" | "front_desk" | "parts" | "qc";
+export type FloorWaitOwnerKind =
+  "technician" | "front_desk" | "parts" | "qc" | "head_tech";
 
 export type FloorActionControl = {
   action: string;
@@ -70,6 +71,8 @@ export function waitOwnerDisplayLabel(owner: FloorWaitOwnerKind): string {
       return "Parts";
     case "qc":
       return "Final inspection";
+    case "head_tech":
+      return "Head tech";
   }
 }
 
@@ -398,7 +401,7 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
       secondary: [],
       stateLabel: "Safety check",
       waitReason: "Waiting on head-tech safety check",
-      waitOwner: "qc",
+      waitOwner: "head_tech",
     };
   }
 
