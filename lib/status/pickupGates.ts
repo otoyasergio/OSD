@@ -40,8 +40,9 @@ export function pickupLeaveBlockReason(
 }
 
 /**
- * Same leave gates as pickup, without checkout photos. The bike stays in the
- * building, so departure evidence is not required to put it in storage.
+ * Storage keeps the bike in the building. Arrival inspection and QC still
+ * apply (the owner may waive QC). Final inspection and checkout photos are
+ * for a bike that is leaving, so they do not block this drop.
  */
 export function storageLeaveBlockReason(
   input: Omit<
@@ -49,8 +50,7 @@ export function storageLeaveBlockReason(
     "checkoutEvidenceRequired" | "checkoutEvidenceComplete" | "checkoutEvidenceOverridden"
   >
 ): PickupLeaveBlockReason | null {
-  return pickupLeaveBlockReason({
-    ...input,
-    checkoutEvidenceRequired: false,
-  });
+  if (!input.inspectionComplete) return "INSPECTION_REQUIRED_BEFORE_PICKUP";
+  if (!input.qualityChecked && !input.waiveQualityCheck) return "QC_REQUIRED";
+  return null;
 }

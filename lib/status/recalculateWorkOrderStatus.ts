@@ -118,25 +118,22 @@ export function deriveWorkOrderStatus(
 
   if (allActiveCompleted && !qualityCheckComplete) {
     if (qualityCheckWaived && currentStatus !== "quality_check") {
-      // Storage stays put only while safety still passes. Missing QC was waived
-      // on the way in; a new safety requirement pulls the bike back out.
-      if (currentStatus === "in_storage") {
-        if (safetyRequired && !safetyCheckComplete) return "safety_check";
-        return "in_storage";
-      }
+      // Storage is not a departure. An outstanding final inspection must not
+      // pull the bike back out after it was placed there.
+      if (currentStatus === "in_storage") return "in_storage";
       return currentStatus as WorkOrderStatus;
     }
     return "quality_check";
   }
 
   if (allActiveCompleted && qualityCheckComplete) {
-    if (safetyRequired && !safetyCheckComplete) {
-      return "safety_check";
-    }
-    // Checkout photos are for departure. A stored bike keeps its column until
-    // someone drags it out or unfinished work appears.
+    // Checkout photos and final inspection are for departure. A stored bike
+    // keeps its column until someone drags it out or unfinished work appears.
     if (currentStatus === "in_storage") {
       return "in_storage";
+    }
+    if (safetyRequired && !safetyCheckComplete) {
+      return "safety_check";
     }
     if (
       checkoutEvidenceRequired &&

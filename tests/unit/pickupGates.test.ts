@@ -75,7 +75,7 @@ describe("pickupLeaveBlockReason", () => {
     ).toBe("CHECKOUT_EVIDENCE_REQUIRED");
   });
 
-  it("still requires inspection, QC, and final inspection before storage", () => {
+  it("requires inspection and QC before storage, and does not require final inspection", () => {
     expect(
       storageLeaveBlockReason({
         inspectionComplete: false,
@@ -92,6 +92,23 @@ describe("pickupLeaveBlockReason", () => {
         safetyChecked: false,
       })
     ).toBe("QC_REQUIRED");
+    expect(
+      storageLeaveBlockReason({
+        inspectionComplete: true,
+        qualityChecked: true,
+        safetyRequired: true,
+        safetyChecked: false,
+      })
+    ).toBeNull();
+    expect(
+      storageLeaveBlockReason({
+        inspectionComplete: true,
+        qualityChecked: false,
+        safetyRequired: true,
+        safetyChecked: false,
+        waiveQualityCheck: true,
+      })
+    ).toBeNull();
   });
 
   it("skips final inspection when waived", () => {
