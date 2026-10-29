@@ -302,7 +302,7 @@ describe("final-inspection checkout capture", () => {
     expect(container.textContent).toMatch(/4 checkout photos? missing/i);
     expect(container.querySelectorAll(".inspection-photo-slot").length).toBe(5);
     expect(container.textContent).not.toMatch(/Record emergency override/i);
-    expect(container.textContent).toMatch(/Pass final inspection/i);
+    expect(container.textContent).toMatch(/Pass safety check/i);
   });
 
   it("does not render checkout capture for ordinary technicians without can_safety", async () => {
@@ -369,7 +369,7 @@ describe("final-inspection checkout capture", () => {
     });
     expect(container.querySelectorAll(".inspection-photo-slot").length).toBe(5);
     expect(container.querySelector('input[type="file"]')).toBeNull();
-    expect(container.textContent).toMatch(/after jobs and quality check/i);
+    expect(container.textContent).toMatch(/after jobs and final inspection/i);
 
     await act(async () => {
       root.render(

@@ -40,9 +40,10 @@ export function pickupLeaveBlockReason(
 }
 
 /**
- * Storage keeps the bike in the building. Arrival inspection and QC still
- * apply (the owner may waive QC). Final inspection and checkout photos are
- * for a bike that is leaving, so they do not block this drop.
+ * Storage keeps the bike in the building. Arrival inspection and final
+ * inspection still apply (the owner may waive final inspection). The safety
+ * check and checkout photos are for a bike that is leaving, so they do not
+ * block this drop.
  */
 export function storageLeaveBlockReason(
   input: Omit<

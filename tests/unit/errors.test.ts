@@ -4,7 +4,7 @@ import { toFormErrorMessage } from "@/lib/services/errors";
 describe("toFormErrorMessage", () => {
   it("maps QC_REQUIRED for pickup gate parity", () => {
     expect(toFormErrorMessage(new Error("QC_REQUIRED"))).toBe(
-      "Complete the quality check before the bike can leave."
+      "Complete the final inspection before the bike can leave."
     );
   });
 
@@ -13,7 +13,7 @@ describe("toFormErrorMessage", () => {
       "Complete the arrival inspection report before the bike can leave."
     );
     expect(toFormErrorMessage(new Error("SAFETY_REQUIRED_BEFORE_PICKUP"))).toBe(
-      "Head tech final inspection is required before the bike can leave."
+      "Head tech safety check is required before the bike can leave."
     );
   });
 
@@ -25,7 +25,7 @@ describe("toFormErrorMessage", () => {
 
   it("maps checkout capture timing and oversized override reasons", () => {
     expect(toFormErrorMessage(new Error("CHECKOUT_EVIDENCE_NOT_READY"))).toMatch(
-      /jobs|quality check|checkout/i
+      /final inspection|checkout/i
     );
     expect(toFormErrorMessage(new Error("CHECKOUT_EVIDENCE_NOT_READY"))).not.toBe(
       "CHECKOUT_EVIDENCE_NOT_READY"

@@ -130,17 +130,17 @@ function plateFor(s: FloorOsSurface) {
       kicker: "COMPLETE",
       title: "Your wrench work is done",
       body: "Here's the rest of its trip — none of it is yours unless it bounces back.",
-      pipe: ["WRENCH", "PEER QC", "FINAL", "PICKUP"],
+      pipe: ["WRENCH", "FINAL INSPECTION", "SAFETY", "PICKUP"],
     };
   }
   if (s.is_safety) {
     return {
-      kicker: "FINAL INSPECTION",
-      title: s.can_safety ? "Final inspection" : "Waiting on head tech",
+      kicker: "SAFETY CHECK",
+      title: s.can_safety ? "Safety check" : "Waiting on head tech",
       body: s.can_safety
         ? "Pass or fail below — pass requires your signature. Front desk books pickup after pass."
-        : "You're done unless this bike is assigned to you for final inspection.",
-      pipe: ["WRENCH", "PEER QC", "FINAL", "PICKUP"],
+        : "You're done unless this bike is assigned to you for the safety check.",
+      pipe: ["WRENCH", "FINAL INSPECTION", "SAFETY", "PICKUP"],
     };
   }
   return null;
@@ -205,7 +205,7 @@ export function FloorCurrentStep({
     return (
       <div className="pit-qc pit-current-card">
         <ShieldCheck className="pit-current-hero-icon" size={36} aria-hidden />
-        <p className="pit-plate-kicker">PEER QC — VOUCH FOR THIS BIKE</p>
+        <p className="pit-plate-kicker">FINAL INSPECTION — VOUCH FOR THIS BIKE</p>
         <ul className="pit-qc-list">
           {QC_JUDGEMENT_LABELS.map((label, i) => (
             <li key={label}>

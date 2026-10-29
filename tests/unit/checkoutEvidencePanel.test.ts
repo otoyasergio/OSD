@@ -229,7 +229,7 @@ describe("CheckoutEvidencePanel", () => {
       );
     });
     expect(container.querySelector('input[type="file"]')).toBeNull();
-    expect(container.textContent).toMatch(/after jobs and quality check/i);
+    expect(container.textContent).toMatch(/after jobs and final inspection/i);
   });
 });
 
@@ -305,14 +305,14 @@ describe("Overview completion checkout gate", () => {
       quality_checked_by_user_id: null,
     });
     expect(container.querySelector('input[type="file"]')).toBeNull();
-    expect(container.textContent).toMatch(/after jobs and quality check/i);
+    expect(container.textContent).toMatch(/after jobs and final inspection/i);
 
     await renderOverview({
       quality_checked_at: null,
       quality_checked_by_user_id: "user-1",
     });
     expect(container.querySelector('input[type="file"]')).toBeNull();
-    expect(container.textContent).toMatch(/after jobs and quality check/i);
+    expect(container.textContent).toMatch(/after jobs and final inspection/i);
 
     await renderOverview();
     expect(container.querySelector('input[type="file"]')).toBeTruthy();

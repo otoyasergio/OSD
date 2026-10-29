@@ -109,8 +109,8 @@ export function CheckoutEvidencePanel({
       )}
       {!inputsEnabled && !locked ? (
         <p className="mt-2 text-sm text-[var(--status-neutral)]">
-          Capture starts after jobs and quality check are complete enough to represent the
-          final condition.
+          Capture starts after jobs and final inspection are complete enough to represent
+          the final condition.
         </p>
       ) : null}
       {overridden ? (

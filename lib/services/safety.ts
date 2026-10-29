@@ -204,7 +204,7 @@ export async function passSafetyCheck(
     event_type: TimelineEventType.SAFETY_CHECK_PASSED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Final inspection passed",
+    description: "Safety check passed",
     old_value: {
       safety_checked_at: workOrder.safety_checked_at,
       safety_checked_by_user_id: workOrder.safety_checked_by_user_id,
@@ -223,7 +223,7 @@ export async function passSafetyCheck(
     action: "safety_check_passed",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Final inspection passed on ${workOrder.work_order_number}`,
+    description: `Safety check passed on ${workOrder.work_order_number}`,
     new_value: {
       safety_checked_at: now,
       safety_check_notes: trimmedNotes,

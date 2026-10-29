@@ -6,7 +6,7 @@ import { canCompleteJob, isFloorTech } from "@/lib/permissions";
 export const DEFAULT_JOB_CHECKLIST_TITLES = [
   "Perform work",
   "Verify fasteners/fluids/function",
-  "Area clean / ready for QC",
+  "Area clean / ready for final inspection",
 ] as const;
 
 export type JobChecklistItem = {

@@ -395,13 +395,13 @@ export function OverviewTab({
         ) : null}
         <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-[var(--status-neutral)]">Quality check</dt>
+            <dt className="text-[var(--status-neutral)]">Final inspection</dt>
             <dd className="font-medium text-foreground">
               {formatDate(detail.quality_checked_at) ?? "Not completed"}
             </dd>
           </div>
           <div>
-            <dt className="text-[var(--status-neutral)]">QC assignee</dt>
+            <dt className="text-[var(--status-neutral)]">Final inspection assignee</dt>
             <dd className="font-medium text-foreground">
               {detail.quality_check_assignee
                 ? `${detail.quality_check_assignee.first_name} ${detail.quality_check_assignee.last_name}`
@@ -411,7 +411,7 @@ export function OverviewTab({
             </dd>
           </div>
           <div>
-            <dt className="text-[var(--status-neutral)]">Final inspection</dt>
+            <dt className="text-[var(--status-neutral)]">Safety check</dt>
             <dd className="font-medium text-foreground">
               {detail.safety_waived
                 ? "Waived"
@@ -444,7 +444,7 @@ export function OverviewTab({
         </dl>
         {detail.quality_check_notes?.trim() ? (
           <p className="mt-3 whitespace-pre-wrap text-sm text-foreground">
-            QC notes: {detail.quality_check_notes}
+            Final inspection notes: {detail.quality_check_notes}
           </p>
         ) : null}
         {detail.safety_check_notes?.trim() ? (
@@ -458,12 +458,10 @@ export function OverviewTab({
             action={safetyFormAction}
             className="mt-4 flex flex-col gap-3 rounded border border-[var(--border)] p-4"
           >
-            <h3 className="font-semibold text-foreground">
-              Final inspection requirement
-            </h3>
+            <h3 className="font-semibold text-foreground">Safety check requirement</h3>
             <p className="text-sm text-[var(--status-neutral)]">
-              Default: required after QC so no bike leaves without a signed final
-              inspection. Office can waive a visit.
+              Default: required after final inspection so no bike leaves without a signed
+              safety check. Office can waive a visit.
             </p>
             <FormError message={safetyState.error} />
             <div className="flex flex-wrap gap-2">
@@ -505,19 +503,22 @@ export function OverviewTab({
                 action={qcFormAction}
                 className="flex flex-col gap-3 rounded border border-[var(--border)] p-4"
               >
-                <h3 className="font-semibold text-foreground">Quality check</h3>
+                <h3 className="font-semibold text-foreground">Final inspection</h3>
                 <p className="text-sm text-[var(--status-neutral)]">
                   Requires all active jobs completed. Draw your signature to vouch.
                 </p>
                 <FormError message={qcState.error} />
                 <TextAreaField
-                  label="QC notes (optional)"
+                  label="Final inspection notes (optional)"
                   name="quality_check_notes"
                   rows={2}
                 />
-                <SignOffPad label="QC signature" />
+                <SignOffPad label="Final inspection signature" />
                 <div>
-                  <SubmitButton label="Complete quality check" pendingLabel="Saving…" />
+                  <SubmitButton
+                    label="Complete final inspection"
+                    pendingLabel="Saving…"
+                  />
                 </div>
               </form>
             ) : null}
@@ -552,8 +553,8 @@ export function OverviewTab({
                 <h3 className="font-semibold text-foreground">Ready for pickup</h3>
                 <p className="text-sm text-[var(--status-neutral)]">
                   {detail.checkout_evidence_required
-                    ? "Requires QC, the five committed checkout photos or a recorded emergency override, and all active jobs completed."
-                    : "Requires QC and all active jobs completed."}
+                    ? "Requires final inspection, the five committed checkout photos or a recorded emergency override, and all active jobs completed."
+                    : "Requires final inspection and all active jobs completed."}
                 </p>
                 <FormError message={readyState.error} />
                 <div>

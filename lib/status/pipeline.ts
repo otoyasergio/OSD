@@ -34,14 +34,14 @@ export const VISIT_PIPELINE_STAGES = [
   },
   {
     id: "qc",
-    label: "Quality check",
-    shortLabel: "QC",
+    label: "Final inspection",
+    shortLabel: "Final inspection",
     statuses: ["quality_check"] as WorkOrderStatus[],
   },
   {
     id: "safety",
-    label: "Final inspection",
-    shortLabel: "Final",
+    label: "Safety check",
+    shortLabel: "Safety",
     statuses: ["safety_check"] as WorkOrderStatus[],
   },
   {
@@ -94,12 +94,12 @@ export const SHOP_BOARD_COLUMNS = [
   },
   {
     id: "qc",
-    label: "Quality check",
+    label: "Final inspection",
     statuses: ["quality_check"] as WorkOrderStatus[],
   },
   {
     id: "safety",
-    label: "Final inspection",
+    label: "Safety check",
     statuses: ["safety_check"] as WorkOrderStatus[],
   },
   {
@@ -143,12 +143,12 @@ export const GALLERY_BOARD_COLUMNS = [
   },
   {
     id: "gallery_qc",
-    label: "QC",
+    label: "Final inspection",
     statuses: ["quality_check"] as WorkOrderStatus[],
   },
   {
     id: "gallery_safety",
-    label: "Final",
+    label: "Safety",
     statuses: ["safety_check"] as WorkOrderStatus[],
   },
   {
@@ -226,7 +226,7 @@ export function getWorkOrderNextAction(status: WorkOrderStatus, flags: string[])
     case "in_progress":
       return "Complete assigned jobs";
     case "quality_check":
-      return "Peer QC on Tech floor or complete QC on Overview";
+      return "Final inspection on the tech floor or on Overview";
     case "safety_check":
       return "Head Tech safety pass on Tech floor";
     case "ready_for_pickup":

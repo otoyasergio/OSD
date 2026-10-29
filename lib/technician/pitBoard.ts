@@ -217,8 +217,8 @@ export function deriveGoAction(input: {
   if (status === "check") {
     return {
       action: "pass_qc",
-      label: "Pass QC — vouch for it ✓",
-      sub: "Sign off, then hands it to final inspection — your clock is not running.",
+      label: "Pass final inspection — vouch for it ✓",
+      sub: "Sign off, then hands it to the safety check — your clock is not running.",
       enabled: Boolean(input.qc_checks_done),
     };
   }

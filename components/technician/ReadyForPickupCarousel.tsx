@@ -369,9 +369,9 @@ export function ReadyForQcCarousel({ items, dnd }: StageCarouselProps) {
   return (
     <WaitingBikeCarousel
       items={items}
-      title="QC"
-      subtitle={dnd ? "Drop when jobs are complete" : "Waiting on quality check"}
-      emptyMessage="No bikes waiting for QC."
+      title="Final inspection"
+      subtitle={dnd ? "Drop when jobs are complete" : "Waiting on final inspection"}
+      emptyMessage="No bikes waiting for final inspection."
       readyCaption="In queue"
       approxCaption="In queue (approx)"
       warnAfterMs={SAFETY_YELLOW_MS}

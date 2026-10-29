@@ -91,8 +91,8 @@ export function getWorkOrderNextAction(
 
   if (!input.qualityChecked) {
     return {
-      title: "Run quality check",
-      detail: "All active jobs are done — peer QC (signed) is the next gate.",
+      title: "Run final inspection",
+      detail: "All active jobs are done — a signed final inspection is the next gate.",
     };
   }
 
@@ -103,8 +103,8 @@ export function getWorkOrderNextAction(
   });
   if (safetyNeeded && !input.safetyChecked) {
     return {
-      title: "Final inspection",
-      detail: "Waiting on head-tech final inspection (signed) before ready for pickup.",
+      title: "Safety check",
+      detail: "Waiting on the head-tech safety check (signed) before ready for pickup.",
     };
   }
 
@@ -123,7 +123,8 @@ export function getWorkOrderNextAction(
   if (!input.readyForPickup && input.status !== "ready_for_pickup") {
     return {
       title: "Mark ready for pickup",
-      detail: "QC is done — mark the bike ready when the customer can collect.",
+      detail:
+        "Final inspection is done — mark the bike ready when the customer can collect.",
     };
   }
 

@@ -525,7 +525,7 @@ export async function passPeerQcAction(
     const signatureDataUrl = String(formData.get("signature_data_url") ?? "");
     await passPeerQualityCheck(workOrderId, notes, signatureDataUrl);
     revalidateFloor(workOrderId);
-    return { success: "Quality check passed." };
+    return { success: "Final inspection passed." };
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -540,7 +540,7 @@ export async function failPeerQcAction(
     const reason = String(formData.get("reason") ?? "");
     await failPeerQualityCheck(workOrderId, reason);
     revalidateFloor(workOrderId);
-    return { success: "Quality check failed — returned for rework." };
+    return { success: "Final inspection failed — returned for rework." };
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

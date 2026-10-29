@@ -133,7 +133,7 @@ describe("buildFloorActionModel matrix", () => {
       qc_checks_done: true,
     });
     expect(qcMineReady.primary).toMatchObject({ action: "pass_qc", enabled: true });
-    expect(qcMineReady.stateLabel).toBe("Ready for QC");
+    expect(qcMineReady.stateLabel).toBe("Ready for final inspection");
     expect(qcMineReady.secondary.map((control) => control.action)).toEqual(["fail_qc"]);
     assertInvariant(qcMineReady, "qc mine ready");
 
@@ -299,7 +299,7 @@ describe("buildFloorActionModel matrix", () => {
     expect(waitOwnerDisplayLabel("technician")).toBe("You");
     expect(waitOwnerDisplayLabel("front_desk")).toBe("Front desk");
     expect(waitOwnerDisplayLabel("parts")).toBe("Parts");
-    expect(waitOwnerDisplayLabel("qc")).toBe("QC");
+    expect(waitOwnerDisplayLabel("qc")).toBe("Final inspection");
   });
 });
 
