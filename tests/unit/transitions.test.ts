@@ -60,6 +60,9 @@ describe("board transitions", () => {
     expect(boardColumnIdForStatus("ready_for_pickup", GALLERY_BOARD_COLUMNS)).toBe(
       "gallery_ready"
     );
+    expect(boardColumnIdForStatus("completed", GALLERY_BOARD_COLUMNS)).toBe("complete");
+    expect(getTargetStatusForColumn("complete")).toBe("completed");
+    expect(canDropInColumn("owner", "complete", "quality_check")).toBe(true);
   });
 
   it("treats gallery Ready as a pickup drop so inspection/QC/safety gates apply", () => {

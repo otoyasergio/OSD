@@ -43,6 +43,7 @@ function BoardColumn({
   role,
   isForeignLocation,
   dropDisabled,
+  emptyMessage = "No orders",
 }: {
   columnId: string;
   label: string;
@@ -51,6 +52,7 @@ function BoardColumn({
   role: UserRole;
   isForeignLocation: boolean;
   dropDisabled: boolean;
+  emptyMessage?: string;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: columnId,
@@ -73,7 +75,7 @@ function BoardColumn({
         estimateSize={compact ? 88 : 140}
         threshold={12}
         getKey={(wo) => wo.work_order_id}
-        empty={<p className="shop-board-empty">No orders</p>}
+        empty={<p className="shop-board-empty">{emptyMessage}</p>}
         renderItem={(wo) => (
           <DraggableWorkOrderCard
             workOrder={wo}
@@ -250,7 +252,7 @@ export function ShopBoard({
           {visibleColumns.map((column) => {
             const cards = column.statuses.flatMap((status) => byStatus.get(status) ?? []);
 
-            if (hideEmpty && cards.length === 0) return null;
+            if (hideEmpty && cards.length === 0 && column.id !== "complete") return null;
 
             const dropDisabled =
               getTargetStatusForColumn(column.id) === null || isForeignLocation;
@@ -265,6 +267,9 @@ export function ShopBoard({
                 role={role}
                 isForeignLocation={isForeignLocation}
                 dropDisabled={dropDisabled}
+                emptyMessage={
+                  column.id === "complete" ? "Drop a bike that already left" : "No orders"
+                }
               />
             );
           })}
