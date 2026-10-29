@@ -58,7 +58,13 @@ describe("VISIT_PIPELINE_STAGES", () => {
 
 describe("GALLERY_BOARD_COLUMNS", () => {
   it("uses Track Day stages covering operational statuses", () => {
-    expect(GALLERY_BOARD_COLUMNS).toHaveLength(6);
+    expect(GALLERY_BOARD_COLUMNS).toHaveLength(7);
+    expect(
+      GALLERY_BOARD_COLUMNS.find((column) => column.id === "gallery_ready")?.statuses
+    ).toEqual(["ready_for_pickup"]);
+    expect(
+      GALLERY_BOARD_COLUMNS.find((column) => column.id === "complete")?.statuses
+    ).toEqual(["completed"]);
     const covered = new Set(
       GALLERY_BOARD_COLUMNS.flatMap((column) => [...column.statuses])
     );
@@ -91,6 +97,10 @@ describe("GALLERY_BOARD_COLUMNS", () => {
     expect(getGalleryStageForStatus("safety_check").label).toBe("Safety");
     expect(getGalleryStageForStatus("in_storage")).toEqual({
       label: "Storage",
+      tone: "muted",
+    });
+    expect(getGalleryStageForStatus("completed")).toEqual({
+      label: "Complete",
       tone: "muted",
     });
   });

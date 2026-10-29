@@ -154,12 +154,17 @@ export const GALLERY_BOARD_COLUMNS = [
   {
     id: "gallery_ready",
     label: "Ready",
-    statuses: ["ready_for_pickup", "completed"] as WorkOrderStatus[],
+    statuses: ["ready_for_pickup"] as WorkOrderStatus[],
   },
   {
     id: "gallery_storage",
     label: "Storage",
     statuses: ["in_storage"] as WorkOrderStatus[],
+  },
+  {
+    id: "complete",
+    label: "Complete",
+    statuses: ["completed"] as WorkOrderStatus[],
   },
 ] as const;
 
@@ -178,6 +183,7 @@ export function getGalleryStageForStatus(status: WorkOrderStatus): {
       if (column.id === "gallery_safety") return { label: column.label, tone: "orange" };
       if (column.id === "gallery_ready") return { label: column.label, tone: "muted" };
       if (column.id === "gallery_storage") return { label: column.label, tone: "muted" };
+      if (column.id === "complete") return { label: column.label, tone: "muted" };
       return { label: column.label, tone: "teal" };
     }
   }
