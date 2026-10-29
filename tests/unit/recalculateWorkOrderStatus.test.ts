@@ -343,6 +343,33 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("waiting_for_customer_approval");
   });
 
+  it("keeps a stored bike in storage when final inspection has not happened", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_storage",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: true,
+        safetyCheckComplete: false,
+      })
+    ).toBe("in_storage");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_storage",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        qualityCheckWaived: true,
+        safetyRequired: true,
+        safetyCheckComplete: false,
+      })
+    ).toBe("in_storage");
+  });
+
   it("keeps a stored bike in storage while every active job stays complete", () => {
     expect(
       deriveWorkOrderStatus({
