@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
@@ -13,6 +12,7 @@ import {
 } from "@/lib/permissions";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { GroupedList } from "@/components/ui/GroupedList";
 
 export const dynamic = "force-dynamic";
 
@@ -21,13 +21,15 @@ export default async function SettingsPage() {
   if (!preview) redirect("/login");
   const viewRole = preview.role;
 
-  const links = [
+  const account = [
     {
       href: "/account",
       label: "My account",
-      description: "Manage your profile photo and password.",
-      visible: true,
+      description: "Profile photo and password.",
     },
+  ];
+
+  const shop = [
     {
       href: "/settings/timesheets",
       label: "Timesheets",
@@ -37,37 +39,42 @@ export default async function SettingsPage() {
     {
       href: "/settings/services",
       label: "Service catalogue",
-      description: "Manage the services jobs are created from.",
+      description: "Services jobs are created from.",
       visible: canManageServiceCatalogue(viewRole),
     },
     {
       href: "/settings/inspection_template",
       label: "Inspection template",
-      description: "Edit the checklist used for new inspections.",
+      description: "Checklist used for new inspections.",
       visible: canManageInspectionTemplate(viewRole),
     },
     {
       href: "/settings/contract_template",
       label: "Drop-off contract",
-      description: "Edit the agreement customers sign at intake.",
+      description: "Agreement customers sign at intake.",
       visible: canManageContractTemplate(viewRole),
     },
     {
       href: "/settings/closures",
       label: "Shop closures",
-      description: "Set holidays and special closed dates used by intake.",
+      description: "Holidays and special closed dates.",
       visible: canManageShopClosures(viewRole),
     },
     {
       href: "/settings/locations",
       label: "Locations",
-      description: "Create shops and assign staff to them.",
+      description: "Shops and staff assignments.",
       visible: canManageLocations(viewRole),
     },
+  ]
+    .filter((link) => link.visible)
+    .map(({ visible: _visible, ...link }) => link);
+
+  const admin = [
     {
       href: "/settings/users",
       label: "Users",
-      description: "Manage staff accounts, roles, and status.",
+      description: "Staff accounts, roles, and status.",
       visible: canManageUsers(viewRole),
     },
     {
@@ -76,35 +83,27 @@ export default async function SettingsPage() {
       description: "Every action recorded across the company.",
       visible: canViewAuditLog(viewRole),
     },
-  ].filter((link) => link.visible);
+  ]
+    .filter((link) => link.visible)
+    .map(({ visible: _visible, ...link }) => link);
+
+  const hasAny = account.length + shop.length + admin.length > 0;
 
   return (
-    <div className="page-stack">
+    <div className="page-stack page-stack--narrow">
       <PageHeader
         title="Settings"
-        subtitle="Manage your account, catalogue, locations, users, and audit."
+        subtitle="Account, catalogue, locations, users, and audit."
       />
 
-      {links.length === 0 ? (
-        <EmptyState description="You do not have access to any settings." />
+      {hasAny ? (
+        <div className="flex flex-col gap-8">
+          <GroupedList heading="Account" items={account} />
+          <GroupedList heading="Shop" items={shop} />
+          <GroupedList heading="Admin" items={admin} />
+        </div>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
-          {links.map((link) => (
-            <li key={link.href}>
-              <Link
-                href={link.href}
-                className="card block transition-shadow active:shadow-md"
-              >
-                <div className="card-body">
-                  <span className="font-semibold text-foreground">{link.label}</span>
-                  <span className="mt-1 block text-sm text-[var(--status-neutral)]">
-                    {link.description}
-                  </span>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <EmptyState description="You do not have access to any settings." />
       )}
     </div>
   );

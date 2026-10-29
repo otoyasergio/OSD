@@ -11,11 +11,11 @@ import { FIXTURE_USERS } from "./fixtures/ids";
 const ROLE_SELECT_LABEL = "View the app as another role";
 const TECH_SELECT_LABEL = "Technician to view as";
 
-/** The switcher lives in the sidebar — on phones that is the drawer. */
+/** The switcher lives in the sidebar — on phones that is the More sheet. */
 async function openNavIfMobile(page: Page): Promise<void> {
-  const menuButton = page.getByRole("button", { name: "Open menu" });
-  if (await menuButton.isVisible().catch(() => false)) {
-    await menuButton.click();
+  const moreButton = page.getByRole("button", { name: "More" });
+  if (await moreButton.isVisible().catch(() => false)) {
+    await moreButton.click();
   }
 }
 
@@ -157,7 +157,7 @@ test.describe("owner role preview on a phone viewport", () => {
 
   test("switcher works from the mobile drawer", async ({ page }) => {
     await page.goto("/dashboard");
-    await page.getByRole("button", { name: "Open menu" }).click();
+    await page.getByRole("button", { name: "More" }).click();
     await page.getByLabel(ROLE_SELECT_LABEL).selectOption("service_advisor");
     await expect(page.getByText("Viewing as Service Advisor.")).toBeVisible({
       timeout: 15_000,

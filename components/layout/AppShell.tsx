@@ -44,6 +44,7 @@ import { CommsDock } from "@/components/comms/CommsDock";
 import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
 import { PhotoUploadQueueStatus } from "@/components/photos/PhotoUploadQueueStatus";
 import { photoUploadQueueProviderKey } from "@/lib/photos/uploadQueue/createStore";
+import { TabBar } from "@/components/layout/TabBar";
 
 function IncomingAlertBanner({
   notification,
@@ -320,7 +321,11 @@ export function AppShell({
       user,
       durablePhotoUploadQueue,
       <CommsLayer user={user}>
-        <div className="app-shell app-shell--floor-compact bg-background">
+        <div
+          className={`app-shell app-shell--floor-compact app-shell--has-tab-bar bg-background${
+            mobileNavOpen ? " app-shell-nav-open" : ""
+          }`}
+        >
           <a href="#main-content" className="skip-link">
             Skip to main content
           </a>
@@ -340,6 +345,17 @@ export function AppShell({
               </>
             }
           />
+          <button
+            type="button"
+            className="sidebar-backdrop"
+            aria-label="Close navigation menu"
+            tabIndex={mobileNavOpen ? 0 : -1}
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <aside id="app-sidebar-nav" className="sidebar">
+            {rolePreview ? <RolePreviewSwitcher preview={rolePreview} /> : null}
+            <SidebarNav role={viewRole} onNavigate={() => setMobileNavOpen(false)} />
+          </aside>
           {rolePreview ? (
             <RolePreviewBanner preview={rolePreview} ownerName={displayName} />
           ) : null}
@@ -354,6 +370,11 @@ export function AppShell({
           <main id="main-content" className="main-body" tabIndex={-1}>
             {children}
           </main>
+          <TabBar
+            role={viewRole}
+            moreOpen={mobileNavOpen}
+            onMoreToggle={() => setMobileNavOpen((open) => !open)}
+          />
         </div>
       </CommsLayer>
     );
@@ -364,7 +385,7 @@ export function AppShell({
     durablePhotoUploadQueue,
     <CommsLayer user={user}>
       <div
-        className={`app-shell bg-background${mobileNavOpen ? " app-shell-nav-open" : ""}`}
+        className={`app-shell app-shell--has-tab-bar bg-background${mobileNavOpen ? " app-shell-nav-open" : ""}`}
       >
         <a href="#main-content" className="skip-link">
           Skip to main content
@@ -397,15 +418,6 @@ export function AppShell({
                 className="ring-1 ring-chrome-border"
               />
             </Link>
-            <button
-              type="button"
-              className="mobile-menu-button"
-              aria-expanded={mobileNavOpen}
-              aria-controls="app-sidebar-nav"
-              onClick={() => setMobileNavOpen((open) => !open)}
-            >
-              {mobileNavOpen ? "Close menu" : "Open menu"}
-            </button>
           </div>
         </header>
 
@@ -489,6 +501,11 @@ export function AppShell({
             {children}
           </main>
         </div>
+        <TabBar
+          role={viewRole}
+          moreOpen={mobileNavOpen}
+          onMoreToggle={() => setMobileNavOpen((open) => !open)}
+        />
       </div>
     </CommsLayer>
   );

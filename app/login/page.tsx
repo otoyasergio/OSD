@@ -66,8 +66,6 @@ export default function LoginPage() {
     <main className="flex min-h-full flex-1 items-center justify-center bg-chrome px-4 py-12">
       <div className="w-full max-w-md">
         <div className="card overflow-hidden border-chrome-border! bg-chrome-elevated! shadow-[var(--shadow-md)]">
-          <div className="h-1 bg-accent" aria-hidden="true" />
-
           <div className="card-body space-y-6 p-6 sm:p-8">
             <div className="flex flex-col items-start gap-3">
               <Image
@@ -79,11 +77,10 @@ export default function LoginPage() {
                 priority
               />
               <div>
-                <h1 className="text-lg font-semibold text-chrome-foreground">
-                  Workshop sign in
-                </h1>
-                <p className="mt-1 text-sm text-chrome-muted">
-                  Access work orders, inspections, and shop operations.
+                <h1 className="login-title">Workshop sign in</h1>
+                <p className="login-subtitle">
+                  Access work orders, inspections, and shop operations for OTOMOTO TORONTO
+                  MOTO INC.
                 </p>
               </div>
             </div>
@@ -102,6 +99,7 @@ export default function LoginPage() {
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
+                  enterKeyHint="next"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -118,6 +116,7 @@ export default function LoginPage() {
                   name="password"
                   type="password"
                   autoComplete="current-password"
+                  enterKeyHint="go"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}

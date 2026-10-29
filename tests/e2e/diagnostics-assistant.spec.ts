@@ -224,8 +224,8 @@ test.describe("Ask OTOMOTO role preview", () => {
     page,
   }) => {
     await page.goto("/dashboard");
-    const menu = page.getByRole("button", { name: "Open menu" });
-    if (await menu.isVisible().catch(() => false)) await menu.click();
+    const more = page.getByRole("button", { name: "More" });
+    if (await more.isVisible().catch(() => false)) await more.click();
     await page.getByLabel("View the app as another role").selectOption("service_advisor");
     await expect(page.getByText("Viewing as Service Advisor.")).toBeVisible({
       timeout: 15_000,
