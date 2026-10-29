@@ -13,6 +13,7 @@ import {
   checkoutPickupGateInput,
   loadCheckoutEvidenceState,
 } from "@/lib/services/checkoutEvidence";
+import { canCompleteWithoutFinalInspection } from "@/lib/permissions";
 import {
   canDropInColumn,
   getTargetStatusForColumn,
@@ -87,11 +88,13 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
  * - Ready / gallery Ready require a finished inspection, QC pass, and
  *   head-tech safety unless office waived it. The owner may place a bike
  *   without the quality check; that placement is kept.
- * - Storage requires finished jobs and the same inspection and QC gates.
- *   Final inspection does not apply, because the bike is not leaving.
+ * - Storage requires finished jobs, arrival inspection, and final inspection
+ *   (the owner may waive final inspection). Safety and checkout photos do not.
  * - complete uses the same leave gates as Overview (`completeWorkOrder`).
- *   Billing is collected on the Billing tab; rejecting an unpaid drop here
- *   snapped the card back with no way to enter an override reason.
+ *   Owner, manager, and admin may file a bike that already left without a
+ *   final inspection or safety check. Arrival inspection and checkout photos
+ *   still apply. Billing is collected on the Billing tab; rejecting an unpaid
+ *   drop here snapped the card back with no way to enter an override reason.
  */
 export async function moveWorkOrderOnBoard(
   workOrderId: string,
@@ -169,7 +172,11 @@ export async function moveWorkOrderOnBoard(
 
   if (targetColumnId === "complete") {
     const { completeWorkOrder } = await import("@/lib/services/quality");
-    await completeWorkOrder(workOrderId, null, { waiveQualityCheck: ownerMove });
+    const fileWithoutFinalInspection = canCompleteWithoutFinalInspection(user.role);
+    await completeWorkOrder(workOrderId, null, {
+      waiveQualityCheck: fileWithoutFinalInspection,
+      waiveSafetyCheck: fileWithoutFinalInspection,
+    });
     return;
   }
 

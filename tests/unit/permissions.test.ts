@@ -88,6 +88,7 @@ describe("permissions", () => {
 
   it("technician cannot complete work order", () => {
     expect(canCompleteWorkOrder("technician")).toBe(false);
+    expect(canCompleteWorkOrder("admin")).toBe(true);
   });
 
   it("floor techs cannot sign drop-off agreements", () => {

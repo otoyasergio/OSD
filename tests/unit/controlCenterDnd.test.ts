@@ -102,7 +102,7 @@ describe("control center dnd helpers", () => {
     expect(isCcStageDropEnabledForRole("service_advisor", "storage")).toBe(true);
     expect(isCcStageDropEnabledForRole("technician", "storage")).toBe(false);
     expect(isCcStageDropEnabledForRole("service_advisor", "complete")).toBe(true);
-    expect(isCcStageDropEnabledForRole("admin", "complete")).toBe(false);
+    expect(isCcStageDropEnabledForRole("admin", "complete")).toBe(true);
     expect(isCcStageDropEnabledForRole("technician", "complete")).toBe(false);
   });
 
@@ -183,10 +183,10 @@ describe("control center dnd helpers", () => {
       })
     ).toBe(true);
     expect(
-      canDragCcBike("admin", "in_progress", {
+      canDragCcBike("admin", "quality_check", {
         mode: "stage",
         canAssign: false,
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 });

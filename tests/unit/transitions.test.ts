@@ -29,6 +29,9 @@ describe("board transitions", () => {
     expect(canDropInColumn("service_advisor", "complete", "ready_for_pickup")).toBe(true);
     expect(canDropInColumn("technician", "complete", "ready_for_pickup")).toBe(false);
     expect(canDropInColumn("service_advisor", "complete", "completed")).toBe(false);
+    expect(canDropInColumn("admin", "complete", "quality_check")).toBe(true);
+    expect(canDropInColumn("admin", "pickup", "quality_check")).toBe(false);
+    expect(canDropInColumn("admin", "storage", "quality_check")).toBe(false);
   });
 
   it("resolves a drop onto another card to that card's column", () => {
