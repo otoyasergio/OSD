@@ -175,8 +175,12 @@ export async function listPeerQcPickerOptions(
   return presentPeerQcPickerOptions(options, "");
 }
 
-const UNASSIGNED_QC_NOTE =
+/** Older flags used this note. Clearing still matches it. */
+const LEGACY_UNASSIGNED_QC_NOTE =
   "No peer QC assignee available — no eligible clocked-in technician.";
+const UNASSIGNED_QC_NOTE =
+  "No one is available for final inspection — no eligible clocked-in technician.";
+const UNASSIGNED_QC_NOTES = [UNASSIGNED_QC_NOTE, LEGACY_UNASSIGNED_QC_NOTE];
 
 /** Tech-chosen peer QC assignee after finishing a job. */
 export async function assignPeerQcByTechnician(
@@ -248,7 +252,7 @@ export async function assignPeerQcByTechnician(
     event_type: TimelineEventType.WORK_ORDER_STATUS_CHANGED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Peer QC assigned to ${name || "technician"}`,
+    description: `Final inspection assigned to ${name || "technician"}`,
     new_value: { quality_check_assigned_to: assigneeUserId, chosen_by: user.user_id },
   });
 
@@ -258,7 +262,7 @@ export async function assignPeerQcByTechnician(
     action: "peer_qc_assigned",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Peer QC chosen by finishing tech → ${name || assigneeUserId}`,
+    description: `Final inspection chosen by finishing tech → ${name || assigneeUserId}`,
     new_value: { quality_check_assigned_to: assigneeUserId },
   });
 
@@ -272,7 +276,7 @@ export async function assignPeerQcByTechnician(
     })
     .eq("work_order_id", workOrderId)
     .eq("reason", "quality")
-    .eq("note", UNASSIGNED_QC_NOTE)
+    .in("note", UNASSIGNED_QC_NOTES)
     .is("cleared_at", null);
   if (clearFlagError) throw clearFlagError;
 }
@@ -289,7 +293,7 @@ async function flagUnassignedPeerQc(
     .eq("work_order_id", workOrderId)
     .eq("reason", "quality")
     .is("cleared_at", null)
-    .eq("note", UNASSIGNED_QC_NOTE)
+    .in("note", UNASSIGNED_QC_NOTES)
     .limit(1);
   if (existingError) throw existingError;
   if ((existing ?? []).length > 0) return;
@@ -308,7 +312,7 @@ async function flagUnassignedPeerQc(
     event_type: TimelineEventType.WORK_ORDER_STATUS_CHANGED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Peer QC unassigned — admin flag raised",
+    description: "Final inspection unassigned — admin flag raised",
     new_value: { quality_check_assigned_to: null, andon: true },
   });
 
@@ -423,7 +427,7 @@ export async function autoAssignPeerQc(
     event_type: TimelineEventType.WORK_ORDER_STATUS_CHANGED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Peer QC auto-assigned",
+    description: "Final inspection auto-assigned",
     new_value: { quality_check_assigned_to: assignee },
   });
 
@@ -433,7 +437,7 @@ export async function autoAssignPeerQc(
     action: "peer_qc_assigned",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Peer QC auto-assigned",
+    description: "Final inspection auto-assigned",
     new_value: { quality_check_assigned_to: assignee },
   });
 
@@ -571,7 +575,7 @@ export async function passPeerQualityCheck(
       event_type: TimelineEventType.QUALITY_CHECK_COMPLETED,
       entity_type: "work_order",
       entity_id: workOrderId,
-      description: "Quality check completed",
+      description: "Final inspection completed",
       new_value: {
         quality_check_notes: trimmedNotes,
         signature_storage_path: signaturePath,
@@ -583,7 +587,7 @@ export async function passPeerQualityCheck(
       action: "quality_check_completed",
       entity_type: "work_order",
       entity_id: workOrderId,
-      description: "Quality check completed",
+      description: "Final inspection completed",
       new_value: {
         quality_check_notes: trimmedNotes,
         signature_storage_path: signaturePath,
@@ -690,7 +694,7 @@ export async function failPeerQualityCheck(
   await createAdminFlag({
     workOrderId,
     reason: "quality",
-    note: `QC failed: ${trimmed}`,
+    note: `Final inspection failed: ${trimmed}`,
   });
 
   await addTimelineEvent(supabase, {
@@ -699,7 +703,7 @@ export async function failPeerQualityCheck(
     event_type: TimelineEventType.QUALITY_CHECK_COMPLETED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Peer QC failed: ${trimmed}`,
+    description: `Final inspection failed: ${trimmed}`,
     new_value: { failed: true, reason: trimmed },
   });
 
@@ -709,7 +713,7 @@ export async function failPeerQualityCheck(
     action: "peer_qc_failed",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: `Peer QC failed on ${workOrder.work_order_number}`,
+    description: `Final inspection failed on ${workOrder.work_order_number}`,
     new_value: { reason: trimmed },
   });
 

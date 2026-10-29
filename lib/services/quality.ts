@@ -208,7 +208,7 @@ export async function completeQualityCheck(
     event_type: TimelineEventType.QUALITY_CHECK_COMPLETED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Quality check completed",
+    description: "Final inspection completed",
     old_value: {
       quality_checked_at: workOrder.quality_checked_at,
       quality_checked_by_user_id: workOrder.quality_checked_by_user_id,
@@ -227,7 +227,7 @@ export async function completeQualityCheck(
     action: "quality_check_completed",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Quality check completed",
+    description: "Final inspection completed",
     old_value: {
       quality_checked_at: workOrder.quality_checked_at,
     },

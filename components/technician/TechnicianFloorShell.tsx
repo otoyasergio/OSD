@@ -255,7 +255,7 @@ export function TechnicianFloorShell({
       const workOrderId = String(formData.get("work_order_id") ?? "");
       const result = await passSafetyCheckAction(workOrderId, { error: null }, formData);
       if (result.error) return { error: result.error };
-      return { success: "Final inspection passed." };
+      return { success: "Safety check passed." };
     },
     null
   );
@@ -620,8 +620,8 @@ export function TechnicianFloorShell({
         <p className="pit-wordmark">OTOMOTO · TECH FLOOR</p>
         {previewMode ? (
           <p className="pit-preview-note" role="status">
-            Owner preview — the technician&apos;s bench, timer, and QC controls are
-            disabled.
+            Owner preview — the technician&apos;s bench, timer, and final inspection
+            controls are disabled.
           </p>
         ) : null}
         {readyForPickup.length > 0 ? (
@@ -917,7 +917,7 @@ export function TechnicianFloorShell({
                           className="btn btn-primary pit-go"
                           onClick={() => setOverlay("sign_safety")}
                         >
-                          Pass final inspection ✓
+                          Pass safety check ✓
                         </button>
                         <form
                           action={async (formData) => {
@@ -932,10 +932,10 @@ export function TechnicianFloorShell({
                           <input
                             type="hidden"
                             name="recommendation_description"
-                            value="Final inspection failed on floor"
+                            value="Safety check failed on floor"
                           />
                           <button type="submit" className="btn btn-secondary">
-                            Fail final inspection
+                            Fail safety check
                           </button>
                         </form>
                       </div>
@@ -1034,7 +1034,8 @@ export function TechnicianFloorShell({
               <>
                 <h3 className="pit-sheet-title">Who should check your work?</h3>
                 <p className="pit-sheet-or">
-                  Find a tech who didn&apos;t work this bike. They get it for peer QC.
+                  Find a tech who didn&apos;t work this bike. They get it for final
+                  inspection.
                 </p>
                 {qcRoster.length > 0 ? (
                   <>
@@ -1074,7 +1075,8 @@ export function TechnicianFloorShell({
                   </>
                 ) : (
                   <p className="pit-sheet-or">
-                    Everyone else already worked this bike. Front desk will cover QC.
+                    Everyone else already worked this bike. Front desk will cover final
+                    inspection.
                   </p>
                 )}
                 {qcRoster.length === 0 ? (
@@ -1105,7 +1107,7 @@ export function TechnicianFloorShell({
 
             {overlay === "fail" && surface ? (
               <>
-                <h3 className="pit-sheet-title">Fail peer QC</h3>
+                <h3 className="pit-sheet-title">Fail final inspection</h3>
                 <form action={failQcAction} className="pit-sheet-form">
                   <input
                     type="hidden"
@@ -1130,9 +1132,9 @@ export function TechnicianFloorShell({
 
             {overlay === "sign_qc" && surface ? (
               <>
-                <h3 className="pit-sheet-title">Sign quality check</h3>
+                <h3 className="pit-sheet-title">Sign final inspection</h3>
                 <p className="pit-sheet-or">
-                  Draw your signature to vouch for this bike before final inspection.
+                  Draw your signature to vouch for this bike before the safety check.
                 </p>
                 <form
                   action={passQcAction}
@@ -1143,9 +1145,9 @@ export function TechnicianFloorShell({
                     name="work_order_id"
                     value={surface.work_order_id}
                   />
-                  <SignOffPad label="QC signature" />
+                  <SignOffPad label="Final inspection signature" />
                   <button type="submit" className="pit-go" disabled={passQcPending}>
-                    Pass QC — vouch for it ✓
+                    Pass final inspection — vouch for it ✓
                   </button>
                 </form>
                 {passQcState?.error ? (
@@ -1158,9 +1160,9 @@ export function TechnicianFloorShell({
 
             {overlay === "sign_safety" && surface ? (
               <>
-                <h3 className="pit-sheet-title">Sign final inspection</h3>
+                <h3 className="pit-sheet-title">Sign safety check</h3>
                 <p className="pit-sheet-or">
-                  Draw your signature to pass final inspection and clear the bike for
+                  Draw your signature to pass the safety check and clear the bike for
                   pickup.
                 </p>
                 <form
@@ -1172,9 +1174,9 @@ export function TechnicianFloorShell({
                     name="work_order_id"
                     value={surface.work_order_id}
                   />
-                  <SignOffPad label="Final inspection signature" />
+                  <SignOffPad label="Safety check signature" />
                   <button type="submit" className="pit-go" disabled={passSafetyPending}>
-                    Pass final inspection ✓
+                    Pass safety check ✓
                   </button>
                 </form>
                 {passSafetyState?.error ? (

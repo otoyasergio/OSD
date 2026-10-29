@@ -23,7 +23,7 @@ export const TimelineEventType = {
   PRIMARY_TECHNICIAN_CHANGED: "Primary Technician Changed",
   TECHNICIAN_NOTE_ADDED: "Technician Note Added",
   SERVICE_INFORMATION_UPDATED: "Service Information Updated",
-  QUALITY_CHECK_COMPLETED: "Quality Check Completed",
+  QUALITY_CHECK_COMPLETED: "Final Inspection Completed",
   SAFETY_CHECK_PASSED: "Safety Check Passed",
   SAFETY_CHECK_FAILED: "Safety Check Failed",
   READY_FOR_PICKUP: "Ready For Pickup",

@@ -261,7 +261,7 @@ describe("pitBoard", () => {
         },
         {
           job_checklist_item_id: "c3",
-          title: "Area clean / ready for QC",
+          title: "Area clean / ready for final inspection",
           checked_at: null,
         },
       ],
@@ -311,7 +311,7 @@ describe("pitBoard", () => {
         },
         {
           job_checklist_item_id: "c3",
-          title: "Area clean / ready for QC",
+          title: "Area clean / ready for final inspection",
           checked_at: "2026-07-17T12:02:00Z",
         },
       ],

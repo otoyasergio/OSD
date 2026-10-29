@@ -65,7 +65,7 @@ describe("getWorkOrderNextAction", () => {
       hasAssignedTech: true,
       inspectionCompleted: true,
     });
-    expect(next?.title).toMatch(/Final inspection/i);
+    expect(next?.title).toMatch(/Safety check/i);
   });
 
   const afterQcSafety = {

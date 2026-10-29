@@ -445,7 +445,7 @@ export const DASHBOARD_CARDS: Array<{
   { key: "waiting_parts", label: "Waiting parts" },
   { key: "ready_for_technician", label: "Ready for tech" },
   { key: "in_progress", label: "In progress" },
-  { key: "quality_check", label: "Quality check" },
+  { key: "quality_check", label: "Final inspection" },
   { key: "safety_check", label: "Safety" },
   { key: "ready_for_pickup", label: "Ready pickup" },
   { key: "overdue", label: "Overdue" },

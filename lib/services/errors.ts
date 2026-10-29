@@ -41,10 +41,10 @@ const MESSAGES: Record<string, string> = {
   JOB_PROOF_REQUIRED: "Add an after photo or skip with a reason.",
   QC_CANDIDATE_WORKED_ON_VISIT:
     "That technician worked on this bike — pick someone who didn't touch it.",
-  QC_CANNOT_CHECK_OWN_WORK: "You cannot quality-check work you performed.",
-  SAFETY_REQUIRES_QC_PASS: "Pass the quality check before running the safety check.",
+  QC_CANNOT_CHECK_OWN_WORK: "You cannot inspect work you performed.",
+  SAFETY_REQUIRES_QC_PASS: "Pass the final inspection before running the safety check.",
   SAFETY_REQUIRED_BEFORE_PICKUP:
-    "Head tech final inspection is required before the bike can leave.",
+    "Head tech safety check is required before the bike can leave.",
   INSPECTION_REQUIRED_BEFORE_PICKUP:
     "Complete the arrival inspection report before the bike can leave.",
   INVALID_PARK_REASON: "Choose a valid park reason.",
@@ -68,12 +68,12 @@ const MESSAGES: Record<string, string> = {
   CHECKLIST_INCOMPLETE: "Check all checklist items before completing.",
   PARTS_NOT_INSTALLED: "Install or clear all parts before completing.",
   PROOF_REQUIRED: "Add an after photo or skip with a reason.",
-  QC_NOT_ASSIGNED_TO_YOU: "This quality check is assigned to another technician.",
-  CANNOT_QC_OWN_WORK: "You cannot quality-check work you performed.",
-  QC_FAIL_REASON_REQUIRED: "Enter a reason when failing quality check.",
-  QC_ASSIGNEE_REQUIRED: "Choose who should check your work.",
+  QC_NOT_ASSIGNED_TO_YOU: "This final inspection is assigned to another technician.",
+  CANNOT_QC_OWN_WORK: "You cannot inspect work you performed.",
+  QC_FAIL_REASON_REQUIRED: "Enter a reason when failing final inspection.",
+  QC_ASSIGNEE_REQUIRED: "Choose who should inspect your work.",
   QC_ASSIGNEE_NOT_AVAILABLE:
-    "That technician isn't available for peer QC. Pick someone who didn't work this bike.",
+    "That technician isn't available for final inspection. Pick someone who didn't work this bike.",
   INVALID_FLAG_REASON: "Choose a valid flag reason.",
   ADMIN_FLAG_NOT_FOUND: "That admin flag no longer exists.",
   ADMIN_FLAG_ALREADY_CLEARED: "That admin flag was already cleared.",
@@ -133,11 +133,11 @@ const MESSAGES: Record<string, string> = {
   NO_ACTIVE_JOBS: "Add and complete at least one active job before continuing.",
   NO_JOBS_TO_ASSIGN: "This work order has no active jobs to assign. Add a job first.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
-  QC_REQUIRED: "Complete the quality check before the bike can leave.",
+  QC_REQUIRED: "Complete the final inspection before the bike can leave.",
   CHECKOUT_EVIDENCE_REQUIRED:
     "Add the five checkout photos, or have an owner or manager record an emergency override, before the bike can leave.",
   CHECKOUT_EVIDENCE_NOT_READY:
-    "Finish every active job and complete the quality check before taking checkout photos.",
+    "Finish every active job and complete the final inspection before taking checkout photos.",
   CHECKOUT_EVIDENCE_OVERRIDE_FORBIDDEN:
     "You do not have permission to perform this action.",
   OVERRIDE_REASON_TOO_LONG: "Keep the override reason to 500 characters or fewer.",

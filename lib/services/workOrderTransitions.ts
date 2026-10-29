@@ -232,7 +232,7 @@ export async function moveWorkOrderOnBoard(
       waiveQualityCheck &&
       !workOrder.quality_checked_at &&
       !workOrder.quality_checked_by_user_id
-        ? `Owner moved the bike to ${targetColumnId} without a quality check`
+        ? `Owner moved the bike to ${targetColumnId} without a final inspection`
         : `Board move to ${targetColumnId} (${targetStatus})`,
     old_value: { status: workOrder.status },
     new_value: { status: targetStatus, column: targetColumnId },

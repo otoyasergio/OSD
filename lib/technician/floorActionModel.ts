@@ -69,7 +69,7 @@ export function waitOwnerDisplayLabel(owner: FloorWaitOwnerKind): string {
     case "parts":
       return "Parts";
     case "qc":
-      return "QC";
+      return "Final inspection";
   }
 }
 
@@ -185,7 +185,7 @@ export function deriveFloorWorkState(input: FloorWorkStateInput): FloorWorkState
     return {
       board: "done",
       stateLabel: "Work complete",
-      waitReason: "With QC, then safety, then pickup",
+      waitReason: "With final inspection, then safety, then pickup",
       waitOwner: "qc",
       resumable: false,
     };
@@ -267,7 +267,7 @@ export function deriveFloorWorkState(input: FloorWorkStateInput): FloorWorkState
     return {
       board,
       stateLabel: "Work complete",
-      waitReason: "With QC, then safety, then pickup",
+      waitReason: "With final inspection, then safety, then pickup",
       waitOwner: "qc",
       resumable: false,
     };
@@ -343,12 +343,12 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
         {
           primary: {
             action: "pass_qc",
-            label: "Pass QC — vouch for it ✓",
+            label: "Pass final inspection — vouch for it ✓",
             enabled: checksDone,
             disabledReason: checksDone
               ? undefined
               : "Tick all three judgement checks first",
-            hint: "Sign off, then hands it to final inspection — your clock is not running.",
+            hint: "Sign off, then hands it to the safety check — your clock is not running.",
           },
           secondary: [
             {
@@ -357,7 +357,7 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
               enabled: true,
             },
           ],
-          stateLabel: "Ready for QC",
+          stateLabel: "Ready for final inspection",
           waitReason: checksDone ? null : "Tick all three judgement checks first",
           waitOwner: checksDone ? null : "technician",
         },
@@ -365,10 +365,10 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
       );
     }
     return {
-      primary: nonePrimary("Assigned to another tech for QC"),
+      primary: nonePrimary("Assigned to another tech for final inspection"),
       secondary: [],
-      stateLabel: "With peer QC",
-      waitReason: "Waiting for peer QC",
+      stateLabel: "With final inspection",
+      waitReason: "Waiting for final inspection",
       waitOwner: "qc",
     };
   }
@@ -379,14 +379,14 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
         {
           primary: {
             action: "pass_safety",
-            label: "Pass final inspection ✓",
+            label: "Pass safety check ✓",
             enabled: true,
             hint: "Draw your signature to release the bike toward pickup.",
           },
           secondary: [
-            { action: "fail_safety", label: "Fail final inspection", enabled: true },
+            { action: "fail_safety", label: "Fail safety check", enabled: true },
           ],
-          stateLabel: "Final inspection",
+          stateLabel: "Safety check",
           waitReason: null,
           waitOwner: null,
         },
@@ -396,8 +396,8 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
     return {
       primary: nonePrimary("Head tech makes this call"),
       secondary: [],
-      stateLabel: "Final inspection",
-      waitReason: "Waiting on head-tech final inspection",
+      stateLabel: "Safety check",
+      waitReason: "Waiting on head-tech safety check",
       waitOwner: "qc",
     };
   }

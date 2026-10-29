@@ -40,7 +40,7 @@ describe("getWorkOrderNextAction", () => {
   });
 
   it("returns status-specific hints when no flags", () => {
-    expect(getWorkOrderNextAction("quality_check", [])).toMatch(/QC|quality/i);
+    expect(getWorkOrderNextAction("quality_check", [])).toMatch(/final inspection/i);
     expect(getWorkOrderNextAction("safety_check", [])).toMatch(/safety/i);
     expect(getWorkOrderNextAction("waiting_for_parts", [])).toContain("parts");
     expect(getWorkOrderNextAction("open", [])).toBe("Start inspection");
@@ -87,8 +87,8 @@ describe("GALLERY_BOARD_COLUMNS", () => {
       label: "In bay",
       tone: "orange",
     });
-    expect(getGalleryStageForStatus("quality_check").label).toBe("QC");
-    expect(getGalleryStageForStatus("safety_check").label).toBe("Final");
+    expect(getGalleryStageForStatus("quality_check").label).toBe("Final inspection");
+    expect(getGalleryStageForStatus("safety_check").label).toBe("Safety");
     expect(getGalleryStageForStatus("in_storage")).toEqual({
       label: "Storage",
       tone: "muted",

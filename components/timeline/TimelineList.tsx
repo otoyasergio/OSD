@@ -4,6 +4,34 @@ import { useMemo, useState } from "react";
 import type { TimelineEvent } from "@/lib/services/timeline";
 import { formatDateTime } from "@/lib/datetime/format";
 
+/** Older rows stored the previous names for these two stages. */
+function displayTimelineEventType(eventType: string): string {
+  if (eventType === "Quality Check Completed") return "Final Inspection Completed";
+  return eventType;
+}
+
+function displayTimelineDescription(description: string): string {
+  if (description === "Quality check completed") return "Final inspection completed";
+  if (description === "Final inspection passed") return "Safety check passed";
+  if (description.startsWith("Final inspection passed on ")) {
+    return description.replace("Final inspection passed on ", "Safety check passed on ");
+  }
+  if (description.startsWith("Peer QC assigned to ")) {
+    return description.replace("Peer QC assigned to ", "Final inspection assigned to ");
+  }
+  if (description === "Peer QC auto-assigned") return "Final inspection auto-assigned";
+  if (description === "Peer QC unassigned — admin flag raised") {
+    return "Final inspection unassigned — admin flag raised";
+  }
+  if (description.startsWith("Peer QC failed: ")) {
+    return description.replace("Peer QC failed: ", "Final inspection failed: ");
+  }
+  if (description.startsWith("Peer QC failed on ")) {
+    return description.replace("Peer QC failed on ", "Final inspection failed on ");
+  }
+  return description;
+}
+
 export function TimelineList({ events }: { events: TimelineEvent[] }) {
   const [oldestFirst, setOldestFirst] = useState(false);
 
@@ -49,7 +77,7 @@ export function TimelineList({ events }: { events: TimelineEvent[] }) {
               <div className="rounded border border-[var(--border)] bg-white p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-sm font-semibold text-foreground">
-                    {event.event_type}
+                    {displayTimelineEventType(event.event_type)}
                   </p>
                   <time
                     dateTime={event.created_at}
@@ -58,7 +86,9 @@ export function TimelineList({ events }: { events: TimelineEvent[] }) {
                     {formatDateTime(event.created_at)}
                   </time>
                 </div>
-                <p className="mt-1 text-sm text-foreground">{event.description}</p>
+                <p className="mt-1 text-sm text-foreground">
+                  {displayTimelineDescription(event.description)}
+                </p>
                 <p className="mt-2 text-xs font-medium text-[var(--status-neutral)]">
                   {event.user
                     ? `${event.user.first_name} ${event.user.last_name}`
