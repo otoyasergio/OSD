@@ -37,6 +37,7 @@ import {
   deriveFloorWorkState,
   isTerminalJobStatus,
   isTerminalWorkOrderStatus,
+  workOrderLeftTechDocket,
   type FloorWaitOwnerKind,
 } from "@/lib/technician/floorActionModel";
 import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
@@ -162,14 +163,16 @@ function motorcycleLabel(
   return `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`;
 }
 
-/** Pure filter — assigned job rows on completed/cancelled work orders (or
- * cancelled/declined jobs) never reach the docket. */
+/** Pure filter — assigned job rows leave the docket once the bike is in
+ * safety, ready for pickup, storage, or complete, and cancelled/declined
+ * jobs never reach it. */
 export function filterActiveAssignedJobs(
   jobs: readonly DocketAssignedJobInput[]
 ): DocketAssignedJobInput[] {
   return jobs.filter(
     (job) =>
       !isTerminalWorkOrderStatus(job.work_order_status ?? null) &&
+      !workOrderLeftTechDocket(job.work_order_status ?? null) &&
       !isTerminalJobStatus(job.status)
   );
 }
@@ -621,8 +624,8 @@ export async function getTechnicianDocket(
   for (const row of myJobs) {
     const wo = unwrapWo(row.work_order);
     if (!wo || !allowedLocationIds.includes(wo.location_id)) continue;
-    // Job rows can linger after the WO is closed — keep those off the floor line.
-    if (wo.status === "completed" || wo.status === "cancelled") continue;
+    // Safety, ready, storage, and complete live in their category, not on a tech.
+    if (wo.status === "cancelled" || workOrderLeftTechDocket(wo.status)) continue;
     assignedJobs.push({
       job_id: row.job_id,
       work_order_id: wo.work_order_id,

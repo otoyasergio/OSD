@@ -94,6 +94,40 @@ describe("terminal work orders stay off the floor", () => {
     expect(filtered).toEqual([kept]);
   });
 
+  it("drops a bike from the tech docket once it is in safety, ready, storage, or complete", () => {
+    const kept = assignedJob({ work_order_status: "quality_check" });
+    const filtered = filterActiveAssignedJobs([
+      kept,
+      assignedJob({ job_id: "j-safety", work_order_status: "safety_check" }),
+      assignedJob({ job_id: "j-ready", work_order_status: "ready_for_pickup" }),
+      assignedJob({ job_id: "j-store", work_order_status: "in_storage" }),
+      assignedJob({ job_id: "j-done", work_order_status: "completed" }),
+    ]);
+    expect(filtered).toEqual([kept]);
+
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        assignedJob({
+          job_id: "j-safety",
+          work_order_id: "w-safety",
+          work_order_status: "safety_check",
+        }),
+      ],
+      qcItems: [],
+      safetyItems: [
+        {
+          work_order_id: "w-safety",
+          work_order_number: "WO-S",
+          motorcycle_label: "Yamaha R3",
+          location_code: null,
+        },
+      ],
+      flags: [],
+      includeSafeties: true,
+    });
+    expect(items.map((item) => item.kind)).toEqual(["safety"]);
+  });
+
   it("filters uncleared flags whose work order is closed", () => {
     const kept = flag();
     const filtered = filterActiveDocketFlags([

@@ -7,7 +7,7 @@ import {
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
-import { controlCenterTechnicianId } from "@/lib/control-center/assignment";
+import { controlCenterCardTechnicianId } from "@/lib/control-center/assignment";
 import { isControlCenterAtRisk, latestJobActivityAt } from "@/lib/control-center/atRisk";
 import {
   deriveTechAvailability,
@@ -204,7 +204,11 @@ function toBike(
     status: row.status,
     date_created: row.date_created,
     opened_at: row.opened_at ?? null,
-    technician_id: controlCenterTechnicianId(jobs, row.primary_technician_id),
+    technician_id: controlCenterCardTechnicianId(
+      row.status,
+      jobs,
+      row.primary_technician_id
+    ),
     customer_name,
     bike_title,
     primary_photo_url: primaryPhotoUrl,
