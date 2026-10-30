@@ -154,6 +154,11 @@ export function canCompleteWorkOrder(role: UserRole) {
 export function canCompleteWithoutFinalInspection(role: UserRole) {
   return role === "owner" || role === "manager" || role === "admin";
 }
+
+/** Park a bike in Storage from any active stage. Owner already skips every gate. */
+export function canParkAnyBikeInStorage(role: UserRole) {
+  return role === "service_advisor" || role === "admin";
+}
 export function canUpdateServiceInformation(role: UserRole) {
   return FRONT_OFFICE.includes(role);
 }

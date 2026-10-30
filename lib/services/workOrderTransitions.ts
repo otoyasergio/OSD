@@ -14,7 +14,10 @@ import {
   checkoutPickupGateInput,
   loadCheckoutEvidenceState,
 } from "@/lib/services/checkoutEvidence";
-import { canCompleteWithoutFinalInspection } from "@/lib/permissions";
+import {
+  canCompleteWithoutFinalInspection,
+  canParkAnyBikeInStorage,
+} from "@/lib/permissions";
 import {
   canDropInColumn,
   getTargetStatusForColumn,
@@ -91,8 +94,11 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
  *   is kept. Everyone else still waits for those checks.
  * - Ready / gallery Ready require a finished inspection, final inspection, and
  *   head-tech safety unless the office waived safety.
- * - Storage requires finished jobs, arrival inspection, and final inspection.
- *   Safety and checkout photos do not block storage.
+ * - Storage is a parking spot for the owner, a service advisor, or an admin:
+ *   any active bike can go there. A manager still needs finished jobs, arrival
+ *   inspection, and final inspection. Safety and checkout photos do not block
+ *   storage. A stored bike with new unfinished work can leave Storage the next
+ *   time its status is recalculated.
  * - complete uses the same leave gates as Overview (`completeWorkOrder`).
  *   Manager and admin may file a bike that already left without a final
  *   inspection or safety check. Billing is collected on the Billing tab.
@@ -120,6 +126,9 @@ export async function moveWorkOrderOnBoard(
 
   const ownerMove = user.role === "owner";
   const waiveQualityCheck = ownerMove && !isQcBoardColumn(targetColumnId);
+  const parkInStorage =
+    isStorageBoardColumn(targetColumnId) &&
+    (ownerMove || canParkAnyBikeInStorage(user.role));
 
   if (isQcBoardColumn(targetColumnId) && !ownerMove) {
     await assertAllActiveJobsCompleted(supabase, workOrderId);
@@ -131,7 +140,10 @@ export async function moveWorkOrderOnBoard(
     overridden: boolean;
   } | null = null;
 
-  if (isPickupBoardColumn(targetColumnId) || isStorageBoardColumn(targetColumnId)) {
+  if (
+    isPickupBoardColumn(targetColumnId) ||
+    (isStorageBoardColumn(targetColumnId) && !parkInStorage)
+  ) {
     const [
       { data: safetyJobs, error: safetyJobsError },
       { data: inspection, error: inspectionError },
@@ -260,7 +272,9 @@ export async function moveWorkOrderOnBoard(
     entity_id: workOrderId,
     description: ownerMove
       ? `Owner moved the bike to ${targetColumnId} and skipped the usual checks`
-      : `Board move to ${targetColumnId} (${targetStatus})`,
+      : parkInStorage
+        ? "Parked the bike in storage and skipped the usual checks"
+        : `Board move to ${targetColumnId} (${targetStatus})`,
     old_value: { status: workOrder.status },
     new_value: { status: targetStatus, column: targetColumnId },
   });

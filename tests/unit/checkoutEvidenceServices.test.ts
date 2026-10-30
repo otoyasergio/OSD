@@ -450,6 +450,55 @@ describe("pickup service gates query committed checkout photos", () => {
     );
   });
 
+  it("lets a service advisor or admin park any bike in storage", async () => {
+    const parkedBike = {
+      status: "in_progress",
+      quality_checked_at: null,
+      quality_checked_by_user_id: null,
+      ready_for_pickup_at: null,
+      safety_checked_at: null,
+      safety_checked_by_user_id: null,
+      safety_required: null,
+      safety_waived: false,
+      checkout_evidence_required: true,
+    };
+    const openJobs = [
+      { job_id: "j1", status: "in_progress", service_name_snapshot: "Oil" },
+    ];
+
+    for (const role of ["service_advisor", "admin"] as const) {
+      requireUser.mockResolvedValue({ ...owner, role });
+      const client = makeClient({
+        workOrder: parkedBike,
+        jobs: openJobs,
+        inspection: null,
+        photos: [],
+      });
+      createClient.mockResolvedValue(client);
+      await moveWorkOrderOnBoard(WO, "gallery_storage");
+      const stored = client.updates.find((row) => row.payload.status === "in_storage");
+      expect(stored?.payload.stored_at).toEqual(expect.any(String));
+      expect(stored?.payload.safety_waived).toBeUndefined();
+    }
+  });
+
+  it("still requires finished jobs before a manager parks a bike in storage", async () => {
+    requireUser.mockResolvedValue({ ...owner, role: "manager" });
+    const client = makeClient({
+      workOrder: {
+        status: "in_progress",
+        quality_checked_at: null,
+        quality_checked_by_user_id: null,
+      },
+      jobs: [{ job_id: "j1", status: "in_progress", service_name_snapshot: "Oil" }],
+      inspection: null,
+    });
+    createClient.mockResolvedValue(client);
+    await expect(moveWorkOrderOnBoard(WO, "storage")).rejects.toThrow(
+      "JOBS_NOT_COMPLETE"
+    );
+  });
+
   it("still requires arrival inspection and checkout photos when a manager files complete", async () => {
     requireUser.mockResolvedValue({ ...owner, role: "manager" });
     const noInspection = makeClient({

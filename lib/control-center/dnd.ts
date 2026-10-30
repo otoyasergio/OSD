@@ -137,11 +137,11 @@ export function canDragCcBike(
   status: WorkOrderStatus,
   options: { mode: "assign" | "stage"; canAssign: boolean }
 ): boolean {
+  if (role === "admin") {
+    return status !== "completed" && status !== "cancelled";
+  }
   if (options.mode === "assign") {
     return options.canAssign;
-  }
-  if (role === "admin") {
-    return status !== "completed" && status !== "cancelled" && status !== "on_hold";
   }
   return canDragWorkOrderOnBoard(role, status, false);
 }

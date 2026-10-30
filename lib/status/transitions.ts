@@ -3,6 +3,7 @@ import {
   canCompleteWorkOrder,
   canEditWorkOrder,
   canOverrideWorkOrderStatus,
+  canParkAnyBikeInStorage,
 } from "@/lib/permissions";
 import type { GALLERY_BOARD_COLUMNS, SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
 
@@ -94,6 +95,12 @@ export function canDropInColumn(
   if (target === null) return false;
   if (target === currentStatus) return false;
 
+  // Storage is a parking spot. Advisors and admins may drop any active bike
+  // there, including one that is on hold.
+  if (isStorageBoardColumn(columnId) && canParkAnyBikeInStorage(role)) {
+    return true;
+  }
+
   // on_hold cards: only managers/owners can move them off hold via board
   // (resume-style). Dropping *into* on_hold is rejected above (null target).
   if (currentStatus === "on_hold" && !canOverrideWorkOrderStatus(role)) {
@@ -126,6 +133,9 @@ export function canDragWorkOrderOnBoard(
 ): boolean {
   if (isForeignLocation) return false;
   if (!isBoardDraggableStatus(status)) return false;
-  if (status === "on_hold") return canOverrideWorkOrderStatus(role);
+  if (status === "on_hold") {
+    return canOverrideWorkOrderStatus(role) || canParkAnyBikeInStorage(role);
+  }
+  if (role === "admin") return true;
   return canEditWorkOrder(role) || canOverrideWorkOrderStatus(role);
 }
