@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDashboardBikeListItem,
   GALLERY_BOARD_COLUMNS,
   getGalleryStageForStatus,
   getPipelineStageIndex,
@@ -102,6 +103,38 @@ describe("GALLERY_BOARD_COLUMNS", () => {
     expect(getGalleryStageForStatus("completed")).toEqual({
       label: "Complete",
       tone: "muted",
+    });
+  });
+
+  it("formats dashboard list items with bike, customer, stage, and next move", () => {
+    const item = buildDashboardBikeListItem({
+      work_order_id: "wo-3885",
+      work_order_number: "3885",
+      status: "in_progress",
+      flags: ["Incomplete inspection"],
+      motorcycle: {
+        year: 2025,
+        make: "HONDA",
+        model: "Monkey",
+        customer: {
+          first_name: "Dominik",
+          last_name: "Szymanski",
+        },
+      },
+      primary_technician: {
+        first_name: "Stefano",
+        last_name: "Franco",
+      },
+    });
+
+    expect(item).toEqual({
+      workOrderId: "wo-3885",
+      href: "/work_orders/wo-3885",
+      bikeTitle: "2025 HONDA Monkey",
+      subtitle: "Dominik Szymanski · 3885 · Stefano Franco",
+      nextMove: "Complete inspection checklist",
+      stageLabel: "In bay",
+      stageTone: "orange",
     });
   });
 });

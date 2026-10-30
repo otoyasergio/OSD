@@ -1,3 +1,4 @@
+import { clientDisplayName } from "@/lib/customers/displayName";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
 /** Operational visit stages shown on the work-order pipeline (Shopmonkey / Fullbay style). */
@@ -240,4 +241,53 @@ export function getWorkOrderNextAction(status: WorkOrderStatus, flags: string[])
     default:
       return "Review work order details";
   }
+}
+
+export type DashboardBikeListItem = {
+  workOrderId: string;
+  href: string;
+  bikeTitle: string;
+  subtitle: string;
+  nextMove: string;
+  stageLabel: string;
+  stageTone: "teal" | "orange" | "muted" | "danger";
+};
+
+export function buildDashboardBikeListItem(row: {
+  work_order_id: string;
+  work_order_number: string;
+  status: WorkOrderStatus;
+  flags: string[];
+  motorcycle: {
+    year: number;
+    make: string;
+    model: string;
+    customer?: {
+      first_name: string;
+      last_name: string;
+    } | null;
+  } | null;
+  primary_technician?: {
+    first_name: string;
+    last_name: string;
+  } | null;
+}): DashboardBikeListItem {
+  const bike = row.motorcycle;
+  const bikeTitle = bike ? `${bike.year} ${bike.make} ${bike.model}` : "Unknown bike";
+  const customerName = clientDisplayName(bike?.customer);
+  const techName = row.primary_technician
+    ? `${row.primary_technician.first_name} ${row.primary_technician.last_name}`.trim()
+    : null;
+  const subtitleParts = [customerName, row.work_order_number, techName].filter(Boolean);
+  const stage = getGalleryStageForStatus(row.status);
+
+  return {
+    workOrderId: row.work_order_id,
+    href: `/work_orders/${row.work_order_id}`,
+    bikeTitle,
+    subtitle: subtitleParts.join(" · "),
+    nextMove: getWorkOrderNextAction(row.status, row.flags),
+    stageLabel: stage.label,
+    stageTone: stage.tone,
+  };
 }
