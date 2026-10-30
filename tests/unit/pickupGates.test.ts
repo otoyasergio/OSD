@@ -122,6 +122,29 @@ describe("pickupLeaveBlockReason", () => {
     ).toBeNull();
   });
 
+  it("lets the owner skip every leave gate", () => {
+    expect(
+      pickupLeaveBlockReason({
+        inspectionComplete: false,
+        qualityChecked: false,
+        safetyRequired: true,
+        safetyChecked: false,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+        skipAllGates: true,
+      })
+    ).toBeNull();
+    expect(
+      storageLeaveBlockReason({
+        inspectionComplete: false,
+        qualityChecked: false,
+        safetyRequired: true,
+        safetyChecked: false,
+        skipAllGates: true,
+      })
+    ).toBeNull();
+  });
+
   it("skips final inspection when waived", () => {
     expect(
       pickupLeaveBlockReason({

@@ -5,6 +5,7 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import {
+  OWNER_SKIP_CHECKS_REASON,
   pickupLeaveBlockReason,
   storageLeaveBlockReason,
 } from "@/lib/status/pickupGates";
@@ -85,16 +86,16 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
  * Hold/cancel must use detail-page actions, not the board.
  *
  * Gates:
- * - Ready / gallery Ready require a finished inspection, QC pass, and
- *   head-tech safety unless office waived it. The owner may place a bike
- *   without the quality check; that placement is kept.
- * - Storage requires finished jobs, arrival inspection, and final inspection
- *   (the owner may waive final inspection). Safety and checkout photos do not.
+ * - The owner skips every gate on a board drop: unfinished jobs, arrival
+ *   inspection, final inspection, safety, and checkout photos. The placement
+ *   is kept. Everyone else still waits for those checks.
+ * - Ready / gallery Ready require a finished inspection, final inspection, and
+ *   head-tech safety unless the office waived safety.
+ * - Storage requires finished jobs, arrival inspection, and final inspection.
+ *   Safety and checkout photos do not block storage.
  * - complete uses the same leave gates as Overview (`completeWorkOrder`).
- *   Owner, manager, and admin may file a bike that already left without a
- *   final inspection or safety check. Arrival inspection and checkout photos
- *   still apply. Billing is collected on the Billing tab; rejecting an unpaid
- *   drop here snapped the card back with no way to enter an override reason.
+ *   Manager and admin may file a bike that already left without a final
+ *   inspection or safety check. Billing is collected on the Billing tab.
  */
 export async function moveWorkOrderOnBoard(
   workOrderId: string,
@@ -120,9 +121,15 @@ export async function moveWorkOrderOnBoard(
   const ownerMove = user.role === "owner";
   const waiveQualityCheck = ownerMove && !isQcBoardColumn(targetColumnId);
 
-  if (isQcBoardColumn(targetColumnId)) {
+  if (isQcBoardColumn(targetColumnId) && !ownerMove) {
     await assertAllActiveJobsCompleted(supabase, workOrderId);
   }
+
+  let ownerCheckoutSkip: {
+    required: boolean;
+    complete: boolean;
+    overridden: boolean;
+  } | null = null;
 
   if (isPickupBoardColumn(targetColumnId) || isStorageBoardColumn(targetColumnId)) {
     const [
@@ -147,6 +154,7 @@ export async function moveWorkOrderOnBoard(
         workOrder.quality_checked_at || workOrder.quality_checked_by_user_id
       ),
       waiveQualityCheck,
+      skipAllGates: ownerMove,
       safetyRequired: isSafetyRequired({
         safety_required: workOrder.safety_required,
         safety_waived: workOrder.safety_waived,
@@ -157,11 +165,12 @@ export async function moveWorkOrderOnBoard(
       ),
     };
     if (isStorageBoardColumn(targetColumnId)) {
-      await assertAllActiveJobsCompleted(supabase, workOrderId);
+      if (!ownerMove) await assertAllActiveJobsCompleted(supabase, workOrderId);
       const blocked = storageLeaveBlockReason(leaveInput);
       if (blocked) throw new Error(blocked);
     } else {
       const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
+      if (ownerMove) ownerCheckoutSkip = checkout;
       const blocked = pickupLeaveBlockReason({
         ...leaveInput,
         ...checkoutPickupGateInput(checkout),
@@ -176,6 +185,7 @@ export async function moveWorkOrderOnBoard(
     await completeWorkOrder(workOrderId, null, {
       waiveQualityCheck: fileWithoutFinalInspection,
       waiveSafetyCheck: fileWithoutFinalInspection,
+      ownerSkip: ownerMove,
     });
     return;
   }
@@ -194,8 +204,21 @@ export async function moveWorkOrderOnBoard(
   };
   if (ownerMove) {
     movePatch.quality_check_waived = waiveQualityCheck;
+    if (isPickupBoardColumn(targetColumnId) || isStorageBoardColumn(targetColumnId)) {
+      movePatch.safety_waived = true;
+    }
   }
-  const optionalColumns = ["stored_at", "quality_check_waived"] as const;
+  if (
+    ownerCheckoutSkip &&
+    ownerCheckoutSkip.required &&
+    !ownerCheckoutSkip.complete &&
+    !ownerCheckoutSkip.overridden
+  ) {
+    movePatch.checkout_evidence_override_reason = OWNER_SKIP_CHECKS_REASON;
+    movePatch.checkout_evidence_override_at = now;
+    movePatch.checkout_evidence_override_by_user_id = user.user_id;
+  }
+  const optionalColumns = ["stored_at", "quality_check_waived", "safety_waived"] as const;
   let { error } = await supabase
     .from("work_order")
     .update(movePatch)
@@ -235,12 +258,9 @@ export async function moveWorkOrderOnBoard(
     action: "work_order_board_move",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description:
-      waiveQualityCheck &&
-      !workOrder.quality_checked_at &&
-      !workOrder.quality_checked_by_user_id
-        ? `Owner moved the bike to ${targetColumnId} without a final inspection`
-        : `Board move to ${targetColumnId} (${targetStatus})`,
+    description: ownerMove
+      ? `Owner moved the bike to ${targetColumnId} and skipped the usual checks`
+      : `Board move to ${targetColumnId} (${targetStatus})`,
     old_value: { status: workOrder.status },
     new_value: { status: targetStatus, column: targetColumnId },
   });

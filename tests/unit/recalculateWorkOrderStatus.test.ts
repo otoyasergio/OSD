@@ -123,6 +123,24 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("in_progress");
   });
 
+  it("keeps a ready bike the owner placed when safety and checkout were skipped", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_pickup",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: false,
+        qualityCheckComplete: true,
+        safetyRequired: false,
+        safetyCheckComplete: false,
+        checkoutEvidenceRequired: true,
+        checkoutEvidenceComplete: false,
+        checkoutEvidenceOverridden: true,
+        qualityCheckWaived: true,
+      })
+    ).toBe("ready_for_pickup");
+  });
+
   it("keeps an owner placement when quality check was waived", () => {
     expect(
       deriveWorkOrderStatus({
