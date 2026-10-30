@@ -49,6 +49,9 @@ export type ControlCenterBike = {
   opened_at: string | null;
   technician_id: string | null;
   customer_name: string;
+  customer_phone: string | null;
+  customer_email: string | null;
+  customer_sms_opted_out: boolean;
   bike_title: string;
   primary_photo_url: string | null;
   stage_label: string;
@@ -79,6 +82,7 @@ export type ControlCenterKpi = {
 
 export type ControlCenterData = {
   location_id: string;
+  location_code: string;
   role: UserRole;
   subtitle: string;
   bikes?: ControlCenterBike[];
@@ -109,6 +113,9 @@ type RawRow = {
     customer_id: string;
     first_name: string;
     last_name: string;
+    phone: string | null;
+    email: string | null;
+    sms_opted_out_at: string | null;
   } | null;
   motorcycle: {
     motorcycle_id: string;
@@ -215,6 +222,9 @@ function toBike(
       row.primary_technician_id
     ),
     customer_name,
+    customer_phone: customer?.phone ?? null,
+    customer_email: customer?.email ?? null,
+    customer_sms_opted_out: Boolean(customer?.sms_opted_out_at),
     bike_title,
     primary_photo_url: primaryPhotoUrl,
     stage_label: stage.label,
@@ -395,7 +405,10 @@ export async function getControlCenterData(options?: {
       customer:customer_id (
         customer_id,
         first_name,
-        last_name
+        last_name,
+        phone,
+        email,
+        sms_opted_out_at
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,
@@ -420,7 +433,10 @@ export async function getControlCenterData(options?: {
       customer:customer_id (
         customer_id,
         first_name,
-        last_name
+        last_name,
+        phone,
+        email,
+        sms_opted_out_at
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,
@@ -438,7 +454,7 @@ export async function getControlCenterData(options?: {
   const openedAtSupport = getOptionalColumnSupport(OPTIONAL_COLUMNS.workOrderOpenedAt);
   const woSelect = openedAtSupport === false ? selectWithoutOpened : selectWithOpened;
 
-  const [woResult, membershipResult, clockResult] = await Promise.all([
+  const [woResult, membershipResult, clockResult, locationResult] = await Promise.all([
     supabase
       .from("work_order")
       .select(woSelect)
@@ -453,6 +469,7 @@ export async function getControlCenterData(options?: {
       .eq("location_id", locationId)
       .is("clock_out_at", null)
       .is("voided_at", null),
+    supabase.from("location").select("code").eq("location_id", locationId).maybeSingle(),
   ]);
 
   let rawData: unknown[] | null = woResult.data as unknown[] | null;
@@ -569,6 +586,7 @@ export async function getControlCenterData(options?: {
 
   return {
     location_id: locationId,
+    location_code: (locationResult.data as { code?: string } | null)?.code ?? "",
     role: presentationRole,
     subtitle: subtitleForRole(presentationRole),
     bikes,
@@ -600,7 +618,10 @@ export async function listControlCenterCompletedToday(): Promise<ControlCenterBi
       customer:customer_id (
         customer_id,
         first_name,
-        last_name
+        last_name,
+        phone,
+        email,
+        sms_opted_out_at
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,

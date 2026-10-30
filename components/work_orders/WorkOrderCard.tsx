@@ -22,6 +22,8 @@ export type WorkOrderCardData = {
       first_name: string;
       last_name: string;
       phone?: string | null;
+      email?: string | null;
+      sms_opted_out_at?: string | null;
     } | null;
   } | null;
   primary_technician?: {

@@ -282,6 +282,7 @@ export default async function DashboardPage({
           role={viewRole}
           isForeignLocation={false}
           variant="gallery"
+          locationCode={data.location_code}
         />
       ) : view === "cards" ? (
         <WorkOrderCardsView rows={data.rows} />

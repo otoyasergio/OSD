@@ -51,6 +51,7 @@ export type DashboardRow = {
       last_name: string;
       phone: string | null;
       email: string | null;
+      sms_opted_out_at: string | null;
     } | null;
   } | null;
   primary_technician: {
@@ -65,6 +66,7 @@ export type DashboardRow = {
 
 export type DashboardData = {
   location_id: string;
+  location_code: string;
   counts: DashboardCounts;
   rows: DashboardRow[];
   completedRows: DashboardRow[];
@@ -120,6 +122,8 @@ type RawRow = {
     first_name: string;
     last_name: string;
     phone: string | null;
+    email: string | null;
+    sms_opted_out_at: string | null;
   } | null;
   motorcycle: {
     motorcycle_id: string;
@@ -227,7 +231,8 @@ function toDashboardRow(
                 first_name: row.customer.first_name,
                 last_name: row.customer.last_name,
                 phone: row.customer.phone,
-                email: null,
+                email: row.customer.email,
+                sms_opted_out_at: row.customer.sms_opted_out_at,
               }
             : null,
         }
@@ -273,7 +278,9 @@ export async function getDashboardData(
         customer_id,
         first_name,
         last_name,
-        phone
+        phone,
+        email,
+        sms_opted_out_at
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,
@@ -295,24 +302,31 @@ export async function getDashboardData(
 
   // Lean nested select for board cards — photos resolved via RPC after filter.
   // Exclude completed/cancelled so the 300-row window stays on operational WOs.
-  const [woResult, completedResult, membershipResult] = await Promise.all([
-    supabase
-      .from("work_order")
-      .select(rowSelect)
-      .eq("location_id", locationId)
-      .in("status", ACTIVE_STATUSES)
-      .order("date_created", { ascending: false })
-      .limit(300),
-    supabase
-      .from("work_order")
-      .select(rowSelect)
-      .eq("location_id", locationId)
-      .eq("status", "completed")
-      .gte("completed_at", completedSince.toISOString())
-      .order("completed_at", { ascending: false, nullsFirst: false })
-      .limit(200),
-    supabase.from("user_location").select("user_id").eq("location_id", locationId),
-  ]);
+  const [woResult, completedResult, membershipResult, locationResult] = await Promise.all(
+    [
+      supabase
+        .from("work_order")
+        .select(rowSelect)
+        .eq("location_id", locationId)
+        .in("status", ACTIVE_STATUSES)
+        .order("date_created", { ascending: false })
+        .limit(300),
+      supabase
+        .from("work_order")
+        .select(rowSelect)
+        .eq("location_id", locationId)
+        .eq("status", "completed")
+        .gte("completed_at", completedSince.toISOString())
+        .order("completed_at", { ascending: false, nullsFirst: false })
+        .limit(200),
+      supabase.from("user_location").select("user_id").eq("location_id", locationId),
+      supabase
+        .from("location")
+        .select("code")
+        .eq("location_id", locationId)
+        .maybeSingle(),
+    ]
+  );
 
   if (woResult.error) throw woResult.error;
   if (membershipResult.error) throw membershipResult.error;
@@ -473,6 +487,7 @@ export async function getDashboardData(
 
   return {
     location_id: locationId,
+    location_code: (locationResult.data as { code?: string } | null)?.code ?? "",
     counts,
     rows,
     completedRows,

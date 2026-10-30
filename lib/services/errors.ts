@@ -191,6 +191,9 @@ const MESSAGES: Record<string, string> = {
   EMAIL_NOT_CONFIGURED: "Email is not configured. Add RESEND_API_KEY.",
   CUSTOMER_PHONE_REQUIRED: "Customer needs a phone number to send SMS.",
   CUSTOMER_EMAIL_REQUIRED: "Customer needs an email address to send email.",
+  PICKUP_NOTICE_NOT_READY: "Move the bike to Ready for pickup before sending the notice.",
+  PICKUP_NOTICE_UNAVAILABLE:
+    "Pickup notices could not be recorded. Send from the work order message panel.",
   MESSAGE_TEMPLATE_NOT_FOUND: "That message template does not exist.",
   PORTAL_TOKEN_INVALID: "This link is invalid or has been revoked.",
   PORTAL_TOKEN_EXPIRED: "This link has expired. Ask the shop for a new one.",

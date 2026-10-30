@@ -9,6 +9,7 @@ import { normalizePhoneE164 } from "@/lib/twilio/phone";
 import { sendEmail, isEmailConfigured } from "@/lib/email/send";
 import { portalUrl } from "@/lib/portal/tokens";
 import { createPortalToken } from "@/lib/services/portal";
+import { TORONTO_SHOP } from "@/lib/shop/toronto";
 
 export type CommunicationLogEntry = {
   log_id: string;
@@ -46,12 +47,61 @@ function withSmsOptOut(body: string): string {
   return `${body.trim()} ${SMS_OPT_OUT_FOOTER}`;
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+export type ReadyForPickupMessage = {
+  sms: string;
+  emailSubject: string;
+  emailHtml: string;
+  emailText: string;
+};
+
+/** Shared Ready for pickup copy for the board prompt and the manual panel. */
+export function renderReadyForPickupMessage(ctx: TemplateContext): ReadyForPickupMessage {
+  const name = ctx.customerName.trim() || "there";
+  const workOrderNumber = ctx.workOrderNumber.trim();
+  const payLine = ctx.portalLink ? ` Pay online: ${ctx.portalLink}` : "";
+  const sms = withSmsOptOut(
+    `Hi ${name}, your motorcycle (${workOrderNumber}) is ready for pickup at ${TORONTO_SHOP.tradeName}, ${TORONTO_SHOP.streetAddress}. Hours: ${TORONTO_SHOP.hours}. ${TORONTO_SHOP.sunday}.${payLine}`
+  );
+  const safeName = escapeHtml(name);
+  const safeWorkOrder = escapeHtml(workOrderNumber);
+  const payHtml = ctx.portalLink
+    ? `<p><a href="${escapeHtml(ctx.portalLink)}">Pay online</a></p>`
+    : "";
+  const emailHtml = `<p>Hi ${safeName},</p><p>Your motorcycle (${safeWorkOrder}) is ready for pickup at <strong>${escapeHtml(TORONTO_SHOP.fullAddress)}</strong>.</p><p>Hours: ${escapeHtml(TORONTO_SHOP.hours)}. ${escapeHtml(TORONTO_SHOP.sunday)}.</p><p>Phone: ${escapeHtml(TORONTO_SHOP.phoneDisplay)}</p>${payHtml}<p>— ${escapeHtml(TORONTO_SHOP.legalName)}</p>`;
+  const emailText = [
+    `Hi ${name},`,
+    "",
+    `Your motorcycle (${workOrderNumber}) is ready for pickup at ${TORONTO_SHOP.fullAddress}.`,
+    `Hours: ${TORONTO_SHOP.hours}. ${TORONTO_SHOP.sunday}.`,
+    `Phone: ${TORONTO_SHOP.phoneDisplay}`,
+    ...(ctx.portalLink ? [`Pay online: ${ctx.portalLink}`] : []),
+    "",
+    TORONTO_SHOP.legalName,
+  ].join("\n");
+
+  return {
+    sms,
+    emailSubject: `Ready for pickup — ${workOrderNumber}`,
+    emailHtml,
+    emailText,
+  };
+}
+
 const TEMPLATES: Record<
   string,
   {
     sms: (ctx: TemplateContext) => string;
     emailSubject: (ctx: TemplateContext) => string;
     emailHtml: (ctx: TemplateContext) => string;
+    emailText?: (ctx: TemplateContext) => string;
   }
 > = {
   approval_request: {
@@ -64,13 +114,10 @@ const TEMPLATES: Record<
       `<p>Hi ${ctx.customerName},</p><p>We need your approval for recommended work on <strong>${ctx.workOrderNumber}</strong>.</p><p><a href="${ctx.portalLink}">Review and approve online</a></p><p>— Toronto Moto</p>`,
   },
   ready_for_pickup: {
-    sms: (ctx) =>
-      withSmsOptOut(
-        `${ctx.workOrderNumber} is ready for pickup at Toronto Moto. Pay online: ${ctx.portalLink ?? "call us to arrange pickup"}`
-      ),
-    emailSubject: (ctx) => `Ready for pickup — ${ctx.workOrderNumber}`,
-    emailHtml: (ctx) =>
-      `<p>Hi ${ctx.customerName},</p><p>Your motorcycle (${ctx.workOrderNumber}) is ready for pickup.</p><p><a href="${ctx.portalLink}">Pay online</a></p><p>— Toronto Moto</p>`,
+    sms: (ctx) => renderReadyForPickupMessage(ctx).sms,
+    emailSubject: (ctx) => renderReadyForPickupMessage(ctx).emailSubject,
+    emailHtml: (ctx) => renderReadyForPickupMessage(ctx).emailHtml,
+    emailText: (ctx) => renderReadyForPickupMessage(ctx).emailText,
   },
   contract_link: {
     sms: (ctx) =>
@@ -187,7 +234,7 @@ export async function sendWorkOrderMessage(input: {
         to: toAddress,
         subject: template.emailSubject(ctx),
         html: body,
-        text: template.sms(ctx),
+        text: template.emailText?.(ctx) ?? template.sms(ctx),
       });
       externalId = result.id;
     }

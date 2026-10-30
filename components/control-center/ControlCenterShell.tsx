@@ -25,6 +25,12 @@ import {
 } from "@/app/(app)/control-center/actions";
 import { deriveTechAvailability } from "@/lib/control-center/availability";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
+import { PickupNoticeDialog } from "@/components/communications/PickupNoticeDialog";
+import {
+  pickupNoticeFromBoardBike,
+  shouldPromptPickupNotice,
+  type PickupNoticeContact,
+} from "@/lib/communications/pickupNotice";
 import { canParkAnyBikeInStorage, canRearrangeControlCenter } from "@/lib/permissions";
 import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
 import { createClient } from "@/lib/database/supabase-browser";
@@ -106,6 +112,9 @@ function toStageBike(
     work_order_number: cc.work_order_number,
     motorcycle_label: cc.bike_title,
     customer_name: cc.customer_name,
+    customer_phone: cc.customer_phone,
+    customer_email: cc.customer_email,
+    customer_sms_opted_out: cc.customer_sms_opted_out,
     ready_since: new Date().toISOString(),
     ready_since_inferred: true,
     primary_photo_url: cc.primary_photo_url,
@@ -457,6 +466,7 @@ export function ControlCenterShell({
   const [completeQueue, setCompleteQueue] = useState(recentlyCompleted);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pickupNotice, setPickupNotice] = useState<PickupNoticeContact | null>(null);
   const [isPending, startTransition] = useTransition();
   const [pendingMoves, setPendingMoves] = useState<CcPendingMove[]>([]);
   const activeIdRef = useRef<string | null>(null);
@@ -925,6 +935,9 @@ export function ControlCenterShell({
       opened_at: null,
       technician_id: technicianId,
       customer_name: source.customer_name ?? "",
+      customer_phone: source.customer_phone ?? null,
+      customer_email: source.customer_email ?? null,
+      customer_sms_opted_out: Boolean(source.customer_sms_opted_out),
       bike_title: source.motorcycle_label,
       primary_photo_url: source.primary_photo_url,
       stage_label: stage.label,
@@ -1176,6 +1189,8 @@ export function ControlCenterShell({
       // Dropping discards stale refreshes queued during drag; they would overwrite
       // optimistic placement with pre-drop server props (snap-back).
       cancelRefresh();
+      const noticeBike =
+        allBikes.get(workOrderId) ?? stageBikeMap.get(workOrderId) ?? null;
       const previous = applyOptimisticStatusMove(workOrderId, targetId);
       if (!previous) {
         flushRefresh();
@@ -1187,6 +1202,10 @@ export function ControlCenterShell({
         if (result.error) {
           restoreBoard(previous, workOrderId);
           setErrorMessage(result.error);
+        } else if (
+          shouldPromptPickupNotice({ targetColumnId: targetId, moveSucceeded: true })
+        ) {
+          setPickupNotice(pickupNoticeFromBoardBike(noticeBike, workOrderId));
         }
         scheduleRefresh();
       });
@@ -1607,6 +1626,13 @@ export function ControlCenterShell({
           ) : null}
         </DragOverlay>
       </DndContext>
+      {pickupNotice ? (
+        <PickupNoticeDialog
+          contact={pickupNotice}
+          locationCode={data.location_code}
+          onClose={() => setPickupNotice(null)}
+        />
+      ) : null}
     </div>
   );
 }
