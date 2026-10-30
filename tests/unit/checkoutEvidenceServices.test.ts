@@ -340,6 +340,60 @@ describe("pickup service gates query committed checkout photos", () => {
     expect(client.updates.some((row) => row.payload.status === "completed")).toBe(false);
   });
 
+  it("lets the owner and admin move a filed bike back to another category", async () => {
+    for (const role of ["owner", "admin"] as const) {
+      requireUser.mockResolvedValue({ ...owner, role });
+      const client = makeClient({
+        workOrder: {
+          status: "completed",
+          quality_checked_at: "2026-10-01T12:00:00.000Z",
+          quality_checked_by_user_id: USER,
+          checkout_evidence_required: true,
+          safety_required: true,
+          safety_waived: false,
+        },
+        jobs: [{ job_id: "j1", status: "completed", service_name_snapshot: "Oil" }],
+        photos: [],
+      });
+      createClient.mockResolvedValue(client);
+      await moveWorkOrderOnBoard(WO, "qc");
+      const moved = client.updates.find((row) => row.payload.status === "quality_check");
+      expect(moved?.payload.quality_check_waived).toBe(true);
+      expect(moved?.payload.completed_at).toBeNull();
+    }
+  });
+
+  it("does not let a manager pull a filed bike back onto the board", async () => {
+    requireUser.mockResolvedValue({ ...owner, role: "manager" });
+    const client = makeClient({
+      workOrder: { status: "completed" },
+    });
+    createClient.mockResolvedValue(client);
+    await expect(moveWorkOrderOnBoard(WO, "qc")).rejects.toThrow("FORBIDDEN");
+  });
+
+  it("lets the owner and admin park a finished bike on a category without snapping it forward", async () => {
+    for (const role of ["owner", "admin"] as const) {
+      requireUser.mockResolvedValue({ ...owner, role });
+      const client = makeClient({
+        workOrder: {
+          status: "ready_for_pickup",
+          quality_checked_at: "2026-10-01T12:00:00.000Z",
+          quality_checked_by_user_id: USER,
+          checkout_evidence_required: false,
+          safety_waived: true,
+        },
+        jobs: [{ job_id: "j1", status: "completed", service_name_snapshot: "Oil" }],
+      });
+      createClient.mockResolvedValue(client);
+      await moveWorkOrderOnBoard(WO, "parts");
+      const moved = client.updates.find(
+        (row) => row.payload.status === "waiting_for_parts"
+      );
+      expect(moved?.payload.quality_check_waived).toBe(true);
+    }
+  });
+
   it("lets the owner move a bike to pickup without a quality check", async () => {
     requireUser.mockResolvedValue(owner);
     const client = makeClient({

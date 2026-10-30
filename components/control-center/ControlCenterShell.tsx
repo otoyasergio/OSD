@@ -25,7 +25,7 @@ import {
 } from "@/app/(app)/control-center/actions";
 import { deriveTechAvailability } from "@/lib/control-center/availability";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
-import { canParkAnyBikeInStorage } from "@/lib/permissions";
+import { canParkAnyBikeInStorage, canRearrangeControlCenter } from "@/lib/permissions";
 import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
 import { createClient } from "@/lib/database/supabase-browser";
 import type { WorkOrderStatus } from "@/lib/database/types";
@@ -41,6 +41,7 @@ import {
   type ControlCenterPendingMove,
 } from "@/lib/control-center/boardSync";
 import {
+  allowsControlCenterDrop,
   assignBoardColumnForTarget,
   canDragCcBike,
   isCcStageDropEnabledForRole,
@@ -61,7 +62,6 @@ import type {
 } from "@/lib/services/controlCenter";
 import type { ReadyForPickupItem, WaitingStageBike } from "@/lib/services/readyForPickup";
 import { getGalleryStageForStatus } from "@/lib/status/pipeline";
-import { canDropInColumn } from "@/lib/status/transitions";
 import {
   CompleteCarousel,
   ReadyForPickupCarousel,
@@ -313,6 +313,7 @@ function TechOldestMeta({ bikes }: { bikes: ControlCenterBike[] }) {
 const TechCard = memo(function TechCard({
   tech,
   canAssign,
+  canReceiveDrops = canAssign,
   canDragBikes = canAssign,
   canClockStaff,
   clockPending,
@@ -323,6 +324,7 @@ const TechCard = memo(function TechCard({
 }: {
   tech: ControlCenterTech;
   canAssign: boolean;
+  canReceiveDrops?: boolean;
   canDragBikes?: boolean;
   canClockStaff: boolean;
   clockPending: boolean;
@@ -333,7 +335,7 @@ const TechCard = memo(function TechCard({
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: tech.user_id,
-    disabled: !canAssign,
+    disabled: !canReceiveDrops,
   });
   const signedIn = tech.availability !== "off";
 
@@ -343,7 +345,7 @@ const TechCard = memo(function TechCard({
       className={[
         "cc-tech-card",
         `cc-tech-card--${tech.availability}`,
-        isOver && canAssign ? "cc-tech-card--over" : "",
+        isOver && canReceiveDrops ? "cc-tech-card--over" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -611,9 +613,11 @@ export function ControlCenterShell({
 
   const sensors = useBoardDragSensors(6);
 
+  const canRearrange = canRearrangeControlCenter(data.role);
+  const canPlaceOnTech = canAssign || canRearrange;
   const { setNodeRef: setPoolRef, isOver: poolOver } = useDroppable({
     id: POOL_ID,
-    disabled: !canAssign,
+    disabled: !canPlaceOnTech,
   });
 
   const stageQueues = useMemo(
@@ -968,8 +972,16 @@ export function ControlCenterShell({
       return;
     }
 
+    const dropAllowed = allowsControlCenterDrop({
+      role: data.role,
+      currentStatus,
+      targetId,
+      poolId: POOL_ID,
+      techIds,
+    });
+
     if (isCcStageDropId(targetId)) {
-      if (!canDropInColumn(data.role, targetId, currentStatus)) {
+      if (!dropAllowed) {
         setErrorMessage("You do not have permission to move this bike there.");
         flushRefresh();
         return;
@@ -995,7 +1007,7 @@ export function ControlCenterShell({
       return;
     }
 
-    if (!canAssign) {
+    if (!dropAllowed) {
       setErrorMessage("You do not have permission to assign technicians.");
       flushRefresh();
       return;
@@ -1003,11 +1015,6 @@ export function ControlCenterShell({
 
     if (fromStage && !fromAssign) {
       const columnId = assignBoardColumnForTarget(targetId, POOL_ID);
-      if (!canDropInColumn(data.role, columnId, currentStatus)) {
-        setErrorMessage("You do not have permission to move this bike there.");
-        flushRefresh();
-        return;
-      }
 
       cancelRefresh();
       const previous = applyOptimisticStageToAssign(workOrderId, targetId);
@@ -1152,7 +1159,11 @@ export function ControlCenterShell({
     mode: "stage",
     canAssign,
   });
-  const canDragDispatchBike = canAssign || canParkAnyBikeInStorage(data.role);
+  const canDragCompleted = canDragCcBike(data.role, "completed", {
+    mode: "stage",
+    canAssign,
+  });
+  const canDragDispatchBike = canPlaceOnTech || canParkAnyBikeInStorage(data.role);
   const stageDndBase = {
     dragEnabled: canDragStages,
     draggingId: activeId,
@@ -1234,7 +1245,7 @@ export function ControlCenterShell({
       >
         <section
           ref={setPoolRef}
-          className={["cc-pool", poolOver && canAssign ? "cc-pool--over" : ""]
+          className={["cc-pool", poolOver && canPlaceOnTech ? "cc-pool--over" : ""]
             .filter(Boolean)
             .join(" ")}
         >
@@ -1245,9 +1256,11 @@ export function ControlCenterShell({
               <span className="cc-pool-caption">
                 {canAssign
                   ? "Unassigned — drag onto a tech to dispatch"
-                  : canDragDispatchBike
-                    ? "Drag a bike to Storage"
-                    : "Unassigned bikes (view only — you cannot assign)"}
+                  : canRearrange
+                    ? "Drag a bike onto a tech or into a category"
+                    : canDragDispatchBike
+                      ? "Drag a bike to Storage"
+                      : "Unassigned bikes (view only — you cannot assign)"}
               </span>
             </div>
             <div style={{ display: "flex", gap: "0.4rem" }}>
@@ -1299,6 +1312,7 @@ export function ControlCenterShell({
                 ),
               }}
               canAssign={canAssign}
+              canReceiveDrops={canPlaceOnTech}
               canDragBikes={canDragDispatchBike}
               canClockStaff={canClockStaff}
               clockPending={isPending}
@@ -1355,7 +1369,7 @@ export function ControlCenterShell({
             items={completeQueue}
             dnd={{
               ...stageDndBase,
-              dragEnabled: false,
+              dragEnabled: canDragCompleted,
               droppableId: "complete",
               dropDisabled: !isCcStageDropEnabledForRole(data.role, "complete"),
             }}

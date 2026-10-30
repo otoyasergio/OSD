@@ -188,6 +188,7 @@ export async function passSafetyCheck(
           safety_checked_by_user_id: user.user_id,
           safety_checked_at: now,
           safety_check_notes: trimmedNotes,
+          quality_check_waived: false,
           updated_at: now,
         })
         .eq("work_order_id", workOrderId);

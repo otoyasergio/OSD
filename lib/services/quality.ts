@@ -203,6 +203,7 @@ export async function completeQualityCheck(
         quality_checked_by_user_id: user.user_id,
         quality_checked_at: now,
         quality_check_notes: trimmedNotes,
+        quality_check_waived: false,
         updated_at: now,
       })
       .eq("work_order_id", workOrderId);
@@ -334,7 +335,7 @@ export async function completeWorkOrder(
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canCompleteWorkOrder(user.role)) throw new Error("FORBIDDEN");
 
-  const ownerSkip = user.role === "owner";
+  const ownerSkip = user.role === "owner" || options.ownerSkip === true;
   const fileWithoutFinalInspection =
     ownerSkip ||
     (Boolean(options.waiveQualityCheck) && canCompleteWithoutFinalInspection(user.role));

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   assignBoardColumnForTarget,
+  allowsControlCenterDrop,
   canDragCcBike,
   isCcStageDropEnabledForRole,
   isCcStageDropId,
@@ -96,7 +97,10 @@ describe("control center dnd helpers", () => {
     expect(isCcStageDropEnabledForRole("manager", "safety")).toBe(true);
     expect(isCcStageDropEnabledForRole("service_advisor", "parts")).toBe(true);
     expect(isCcStageDropEnabledForRole("service_advisor", "qc")).toBe(false);
-    expect(isCcStageDropEnabledForRole("admin", "pickup")).toBe(false);
+    expect(isCcStageDropEnabledForRole("admin", "parts")).toBe(true);
+    expect(isCcStageDropEnabledForRole("admin", "qc")).toBe(true);
+    expect(isCcStageDropEnabledForRole("admin", "safety")).toBe(true);
+    expect(isCcStageDropEnabledForRole("admin", "pickup")).toBe(true);
     expect(isCcStageDropEnabledForRole("owner", "complete")).toBe(true);
     expect(isCcStageDropEnabledForRole("manager", "complete")).toBe(true);
     expect(isCcStageDropEnabledForRole("service_advisor", "storage")).toBe(true);
@@ -187,6 +191,109 @@ describe("control center dnd helpers", () => {
       canDragCcBike("admin", "quality_check", {
         mode: "stage",
         canAssign: false,
+      })
+    ).toBe(true);
+    expect(
+      canDragCcBike("owner", "completed", {
+        mode: "stage",
+        canAssign: true,
+      })
+    ).toBe(true);
+    expect(
+      canDragCcBike("admin", "completed", {
+        mode: "assign",
+        canAssign: false,
+      })
+    ).toBe(true);
+    expect(
+      canDragCcBike("manager", "completed", {
+        mode: "stage",
+        canAssign: true,
+      })
+    ).toBe(false);
+    expect(
+      canDragCcBike("admin", "cancelled", {
+        mode: "stage",
+        canAssign: false,
+      })
+    ).toBe(false);
+  });
+
+  it("lets the owner and admin drop a card on any category or tech", () => {
+    const techs = ["tech-a", "tech-b"];
+    for (const role of ["owner", "admin"] as const) {
+      expect(
+        allowsControlCenterDrop({
+          role,
+          currentStatus: "completed",
+          targetId: "qc",
+          poolId: "pool",
+          techIds: techs,
+        })
+      ).toBe(true);
+      expect(
+        allowsControlCenterDrop({
+          role,
+          currentStatus: "ready_for_pickup",
+          targetId: "parts",
+          poolId: "pool",
+          techIds: techs,
+        })
+      ).toBe(true);
+      expect(
+        allowsControlCenterDrop({
+          role,
+          currentStatus: "quality_check",
+          targetId: "tech-b",
+          poolId: "pool",
+          techIds: techs,
+        })
+      ).toBe(true);
+      expect(
+        allowsControlCenterDrop({
+          role,
+          currentStatus: "in_progress",
+          targetId: "pool",
+          poolId: "pool",
+          techIds: techs,
+        })
+      ).toBe(true);
+      expect(
+        allowsControlCenterDrop({
+          role,
+          currentStatus: "cancelled",
+          targetId: "storage",
+          poolId: "pool",
+          techIds: techs,
+        })
+      ).toBe(false);
+    }
+
+    expect(
+      allowsControlCenterDrop({
+        role: "manager",
+        currentStatus: "completed",
+        targetId: "qc",
+        poolId: "pool",
+        techIds: techs,
+      })
+    ).toBe(false);
+    expect(
+      allowsControlCenterDrop({
+        role: "service_advisor",
+        currentStatus: "ready_for_pickup",
+        targetId: "qc",
+        poolId: "pool",
+        techIds: techs,
+      })
+    ).toBe(false);
+    expect(
+      allowsControlCenterDrop({
+        role: "manager",
+        currentStatus: "in_progress",
+        targetId: "tech-a",
+        poolId: "pool",
+        techIds: techs,
       })
     ).toBe(true);
   });

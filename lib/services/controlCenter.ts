@@ -7,6 +7,7 @@ import {
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
+import { controlCenterTechnicianId } from "@/lib/control-center/assignment";
 import { isControlCenterAtRisk, latestJobActivityAt } from "@/lib/control-center/atRisk";
 import {
   deriveTechAvailability,
@@ -35,10 +36,6 @@ const ACTIVE_STATUSES: WorkOrderStatus[] = [
   "in_storage",
   "on_hold",
 ];
-
-function isActiveJob(status: string) {
-  return status !== "cancelled" && status !== "declined" && status !== "completed";
-}
 
 export type ControlCenterBike = {
   work_order_id: string;
@@ -100,6 +97,7 @@ type RawRow = {
   work_order_number: string;
   status: WorkOrderStatus;
   date_created: string;
+  primary_technician_id?: string | null;
   estimated_completion: string | null;
   opened_at?: string | null;
   customer: {
@@ -154,15 +152,6 @@ function statusDotFor(bike: {
   return "green";
 }
 
-function assignedTechnicianId(jobs: RawJob[]): string | null {
-  for (const job of jobs) {
-    if (isActiveJob(job.status) && job.assigned_technician_id) {
-      return job.assigned_technician_id;
-    }
-  }
-  return null;
-}
-
 function toBike(
   row: RawRow,
   now: Date,
@@ -215,7 +204,7 @@ function toBike(
     status: row.status,
     date_created: row.date_created,
     opened_at: row.opened_at ?? null,
-    technician_id: assignedTechnicianId(jobs),
+    technician_id: controlCenterTechnicianId(jobs, row.primary_technician_id),
     customer_name,
     bike_title,
     primary_photo_url: primaryPhotoUrl,
@@ -390,6 +379,7 @@ export async function getControlCenterData(options?: {
       work_order_number,
       status,
       date_created,
+      primary_technician_id,
       estimated_completion,
       opened_at,
       customer:customer_id (
@@ -415,6 +405,7 @@ export async function getControlCenterData(options?: {
       work_order_number,
       status,
       date_created,
+      primary_technician_id,
       estimated_completion,
       customer:customer_id (
         customer_id,

@@ -210,6 +210,56 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("open");
   });
 
+  it("keeps an office placement after final inspection is already stamped", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "quality_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: true,
+        safetyCheckComplete: true,
+        qualityCheckWaived: true,
+      })
+    ).toBe("quality_check");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        qualityCheckWaived: true,
+      })
+    ).toBe("in_progress");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "waiting_for_parts",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        qualityCheckWaived: true,
+      })
+    ).toBe("waiting_for_parts");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: true,
+        safetyRequired: true,
+        safetyCheckComplete: true,
+        qualityCheckWaived: true,
+      })
+    ).toBe("safety_check");
+  });
+
   it("sets ready_for_pickup when QC complete and not completed", () => {
     expect(
       deriveWorkOrderStatus({

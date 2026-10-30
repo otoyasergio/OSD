@@ -1,4 +1,5 @@
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
+import { canRearrangeControlCenter } from "@/lib/permissions";
 import {
   canDragWorkOrderOnBoard,
   canDropInColumn,
@@ -119,12 +120,14 @@ export function removeWorkOrderFromControlCenterLists<
 
 /**
  * Whether a stage lane should accept drops for this role.
- * QC / safety stay owner/manager-only via canDropInColumn.
+ * Owner and admin can drop on every category. Everyone else still follows
+ * the shop-board column gates.
  */
 export function isCcStageDropEnabledForRole(
   role: UserRole,
   stageId: CcStageDropId
 ): boolean {
+  if (canRearrangeControlCenter(role)) return true;
   // Complete accepts ready-for-pickup bikes; probe that status for advisors.
   const probeStatus: WorkOrderStatus =
     stageId === "complete" || stageId === "storage" ? "ready_for_pickup" : "in_progress";
@@ -137,13 +140,48 @@ export function canDragCcBike(
   status: WorkOrderStatus,
   options: { mode: "assign" | "stage"; canAssign: boolean }
 ): boolean {
-  if (role === "admin") {
-    return status !== "completed" && status !== "cancelled";
+  if (canRearrangeControlCenter(role)) {
+    return status !== "cancelled";
   }
   if (options.mode === "assign") {
     return options.canAssign;
   }
   return canDragWorkOrderOnBoard(role, status, false);
+}
+
+/**
+ * Control Center drop permission. Owner and admin may move any active or
+ * filed card onto another category, the waiting pool, or a technician.
+ */
+export function allowsControlCenterDrop(input: {
+  role: UserRole;
+  currentStatus: WorkOrderStatus;
+  targetId: string;
+  poolId: string;
+  techIds: readonly string[];
+}): boolean {
+  const { role, currentStatus, targetId, poolId, techIds } = input;
+  if (currentStatus === "cancelled") return false;
+
+  if (isCcStageDropId(targetId)) {
+    if (statusForCcStage(targetId) === currentStatus) return false;
+    if (canRearrangeControlCenter(role)) return true;
+    return canDropInColumn(role, targetId, currentStatus);
+  }
+
+  const isAssignTarget = targetId === poolId || techIds.includes(targetId);
+  if (!isAssignTarget) return false;
+  if (canRearrangeControlCenter(role)) return true;
+
+  const fromStage = stageDropIdForStatus(currentStatus);
+  if (fromStage) {
+    return canDropInColumn(
+      role,
+      assignBoardColumnForTarget(targetId, poolId),
+      currentStatus
+    );
+  }
+  return canDragWorkOrderOnBoard(role, currentStatus, false);
 }
 
 /**

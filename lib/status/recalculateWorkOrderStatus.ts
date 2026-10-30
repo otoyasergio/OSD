@@ -132,6 +132,11 @@ export function deriveWorkOrderStatus(
     if (currentStatus === "in_storage") {
       return "in_storage";
     }
+    // Owner or admin put the card in this category or on a tech. Leave it
+    // there even when final inspection is already stamped.
+    if (qualityCheckWaived) {
+      return currentStatus as WorkOrderStatus;
+    }
     if (safetyRequired && !safetyCheckComplete) {
       return "safety_check";
     }
