@@ -52,7 +52,11 @@ import {
   statusForCcStage,
   type CcStageDropId,
 } from "@/lib/control-center/dnd";
-import { formatElapsedTimer, timeInShopTone } from "@/lib/control-center/formatTimer";
+import {
+  calculateAverageDaysInShop,
+  formatElapsedTimer,
+  timeInShopTone,
+} from "@/lib/control-center/formatTimer";
 import type {
   ControlCenterBike,
   ControlCenterData,
@@ -488,6 +492,16 @@ export function ControlCenterShell({
     });
   }
 
+  const dateCreatedByWo = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of data.bikes ?? []) map.set(b.work_order_id, b.date_created);
+    for (const b of data.pool) map.set(b.work_order_id, b.date_created);
+    for (const t of data.techs) {
+      for (const b of t.assigned_bikes) map.set(b.work_order_id, b.date_created);
+    }
+    return map;
+  }, [data.bikes, data.pool, data.techs]);
+
   function deriveOptimisticSummaryAndKpis(input: {
     pool: ControlCenterBike[];
     techs: ControlCenterTech[];
@@ -518,11 +532,37 @@ export function ControlCenterShell({
     const waitingApprovalCount = [...dispatchPool, ...dispatchTechBikes].filter(
       (b) => b.status === "waiting_for_customer_approval"
     ).length;
+    const avgDays = calculateAverageDaysInShop([
+      ...dispatchPool.map((b) => ({ status: b.status, date_created: b.date_created })),
+      ...dispatchTechBikes.map((b) => ({
+        status: b.status,
+        date_created: b.date_created,
+      })),
+      ...input.stages.parts.map((b) => ({
+        status: "waiting_for_parts",
+        date_created: dateCreatedByWo.get(b.work_order_id) ?? b.ready_since,
+      })),
+      ...input.stages.qc.map((b) => ({
+        status: "quality_check",
+        date_created: dateCreatedByWo.get(b.work_order_id) ?? b.ready_since,
+      })),
+      ...input.stages.safety.map((b) => ({
+        status: "safety_check",
+        date_created: dateCreatedByWo.get(b.work_order_id) ?? b.ready_since,
+      })),
+      ...input.stages.pickup.map((b) => ({
+        status: "ready_for_pickup",
+        date_created: dateCreatedByWo.get(b.work_order_id) ?? b.ready_since,
+      })),
+    ]);
     const completedDelta = input.completedDelta ?? 0;
 
     const nextKpis = input.baseKpis.map((kpi) => {
       if (kpi.label === "In shop now" || kpi.label === "In shop") {
         return { ...kpi, value: String(activeBikeCount) };
+      }
+      if (kpi.label === "Avg days in shop") {
+        return { ...kpi, value: avgDays == null ? "—" : String(avgDays) };
       }
       if (kpi.label === "In bay") {
         return { ...kpi, value: String(inBayCount) };

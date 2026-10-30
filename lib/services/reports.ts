@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth/session";
+import { calculateAverageDaysInShop } from "@/lib/control-center/formatTimer";
 import { createClient } from "@/lib/database/supabase-server";
 import { canViewReports } from "@/lib/permissions";
 import type { WorkOrderStatus } from "@/lib/database/types";
@@ -51,7 +52,7 @@ export async function getShopReportSummary(
       .gte("completed_at", since),
     supabase
       .from("work_order")
-      .select("status")
+      .select("status, date_created, created_at")
       .eq("location_id", locationId)
       .not("status", "in", '("completed","cancelled")'),
     supabase
@@ -92,16 +93,7 @@ export async function getShopReportSummary(
     revenue += Number(row.billing_collected_cents ?? 0);
   }
 
-  const cycleDays: number[] = [];
-  for (const row of completed) {
-    if (!row.created_at || !row.completed_at) continue;
-    const ms = new Date(row.completed_at).getTime() - new Date(row.created_at).getTime();
-    if (ms >= 0) cycleDays.push(ms / (1000 * 60 * 60 * 24));
-  }
-  const avgDays =
-    cycleDays.length > 0
-      ? Math.round((cycleDays.reduce((a, b) => a + b, 0) / cycleDays.length) * 10) / 10
-      : null;
+  const avgDays = calculateAverageDaysInShop(openRes.data ?? []);
 
   let techHours = 0;
   for (const entry of clockRes.data ?? []) {
