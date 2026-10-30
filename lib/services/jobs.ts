@@ -17,6 +17,10 @@ import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderSta
 import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
 import { seedDefaultJobChecklist } from "@/lib/services/jobChecklist";
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
+import {
+  isTerminalWorkOrderStatus,
+  workOrderLeftTechDocket,
+} from "@/lib/technician/floorActionModel";
 import { nextDocketPosition } from "@/lib/technician/docketOrder";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import {
@@ -509,6 +513,15 @@ export async function openWorkOrderForControlCenter(
   return { opened_at };
 }
 
+function isJobOnActiveBenchWorkOrder(rawWo: unknown): boolean {
+  if (!rawWo) return true;
+  const wo = (Array.isArray(rawWo) ? rawWo[0] : rawWo) as {
+    status?: string | null;
+  } | null;
+  if (!wo?.status) return true;
+  return !isTerminalWorkOrderStatus(wo.status) && !workOrderLeftTechDocket(wo.status);
+}
+
 export async function pullJob(
   jobId: string,
   options: { andStart?: boolean } = {}
@@ -550,12 +563,17 @@ export async function pullJob(
   if (options.andStart) {
     const { data: otherActive, error: activeError } = await supabase
       .from("job")
-      .select("job_id")
+      .select("job_id, work_order:work_order_id ( status )")
       .eq("assigned_technician_id", user.user_id)
-      .eq("status", "in_progress")
-      .limit(1);
+      .eq("status", "in_progress");
     if (activeError) throw activeError;
-    if ((otherActive ?? []).length > 0) {
+    const blocking = (
+      (otherActive ?? []) as unknown as Array<{
+        job_id: string;
+        work_order?: unknown;
+      }>
+    ).filter((row) => isJobOnActiveBenchWorkOrder(row.work_order));
+    if (blocking.length > 0) {
       throw new Error("OTHER_JOB_IN_PROGRESS");
     }
   }
@@ -658,7 +676,10 @@ export async function updateJobStatus(
 
   if (nextStatus === "in_progress") {
     const floorSupport = getOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck);
-    const activeSelect = floorSupport === false ? "job_id" : "job_id, floor_parked_at";
+    const activeSelect =
+      floorSupport === false
+        ? "job_id, work_order:work_order_id ( status )"
+        : "job_id, floor_parked_at, work_order:work_order_id ( status )";
     const { data: otherActive, error: activeError } = await supabase
       .from("job")
       .select(activeSelect)
@@ -673,13 +694,18 @@ export async function updateJobStatus(
       setOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck, false);
       const retry = await supabase
         .from("job")
-        .select("job_id")
+        .select("job_id, work_order:work_order_id ( status )")
         .eq("assigned_technician_id", user.user_id)
         .eq("status", "in_progress")
-        .neq("job_id", jobId)
-        .limit(1);
+        .neq("job_id", jobId);
       if (retry.error) throw retry.error;
-      if ((retry.data ?? []).length > 0) {
+      const blockingRetry = (
+        (retry.data ?? []) as unknown as Array<{
+          job_id: string;
+          work_order?: unknown;
+        }>
+      ).filter((row) => isJobOnActiveBenchWorkOrder(row.work_order));
+      if (blockingRetry.length > 0) {
         throw new Error("OTHER_JOB_IN_PROGRESS");
       }
     } else if (activeError) {
@@ -692,8 +718,11 @@ export async function updateJobStatus(
         (otherActive ?? []) as unknown as Array<{
           job_id: string;
           floor_parked_at?: string | null;
+          work_order?: unknown;
         }>
-      ).filter((row) => !row.floor_parked_at);
+      ).filter(
+        (row) => !row.floor_parked_at && isJobOnActiveBenchWorkOrder(row.work_order)
+      );
       if (blocking.length > 0) {
         throw new Error("OTHER_JOB_IN_PROGRESS");
       }

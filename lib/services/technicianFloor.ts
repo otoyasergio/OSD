@@ -564,8 +564,10 @@ export async function getTechnicianFloorOs(input: {
     for (const flag of flagRows) {
       const wo = byId.get(flag.work_order_id);
       if (!wo) continue;
-      // Uncleared flags on completed/cancelled work orders are stale — skip.
-      if (isTerminalWorkOrderStatus(wo.status)) continue;
+      // Uncleared flags on closed or post-bay work orders are stale — skip.
+      if (isTerminalWorkOrderStatus(wo.status) || workOrderLeftTechDocket(wo.status)) {
+        continue;
+      }
       const moto = Array.isArray(wo.motorcycle) ? wo.motorcycle[0] : wo.motorcycle;
       const customerRaw = moto?.customer;
       const customer = Array.isArray(customerRaw) ? customerRaw[0] : customerRaw;
@@ -1053,6 +1055,10 @@ export async function getTechnicianFloorOs(input: {
       wo &&
       canAccessWoLocation(wo.location_id) &&
       !isTerminalWorkOrderStatus(wo.status) &&
+      !(
+        workOrderLeftTechDocket(wo.status) &&
+        !(wo.status === "safety_check" && canPerformSafetyCheck(subject.role))
+      ) &&
       canViewerAccessWorkOrder(
         {
           primary_technician_id: wo.primary_technician_id,

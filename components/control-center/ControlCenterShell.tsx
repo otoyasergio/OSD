@@ -1084,7 +1084,9 @@ export function ControlCenterShell({
           ...tech,
           availability: deriveTechAvailability({
             clockedIn: signedIn,
-            activeAssignedJobCount: tech.assigned_bikes.length,
+            activeAssignedJobCount: tech.assigned_bikes.filter((bike) =>
+              isControlCenterDispatchStatus(bike.status)
+            ).length,
           }),
         };
       })

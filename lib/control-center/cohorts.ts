@@ -1,4 +1,5 @@
 import type { ControlCenterBike } from "@/lib/services/controlCenter";
+import { isControlCenterDispatchStatus } from "@/lib/control-center/dnd";
 
 export const CONTROL_CENTER_COHORTS = {
   completed_today: {
@@ -55,10 +56,14 @@ export function controlCenterCohortHref(cohort: ControlCenterCohortKey): string 
 }
 
 export function flattenControlCenterBikes(input: {
+  bikes?: ControlCenterBike[];
   pool: ControlCenterBike[];
   techs: Array<{ assigned_bikes: ControlCenterBike[] }>;
 }): ControlCenterBike[] {
   const map = new Map<string, ControlCenterBike>();
+  for (const bike of input.bikes ?? []) {
+    map.set(bike.work_order_id, bike);
+  }
   for (const bike of input.pool) {
     map.set(bike.work_order_id, bike);
   }
@@ -85,7 +90,9 @@ export function filterControlCenterCohort(
     case "in_bay":
       return bikes.filter((bike) => bike.status === "in_progress");
     case "unassigned":
-      return bikes.filter((bike) => !bike.technician_id);
+      return bikes.filter(
+        (bike) => !bike.technician_id && isControlCenterDispatchStatus(bike.status)
+      );
     case "waiting_approval":
       return bikes.filter((bike) => bike.status === "waiting_for_customer_approval");
     case "ready_for_pickup":

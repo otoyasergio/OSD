@@ -26,5 +26,6 @@ export async function moveWorkOrderOnBoardAction(
   revalidatePath("/work_orders");
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath("/technician");
+  revalidatePath("/technician/docket");
   return { error: null };
 }

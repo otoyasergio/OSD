@@ -128,12 +128,15 @@ describe("terminal work orders stay off the floor", () => {
     expect(items.map((item) => item.kind)).toEqual(["safety"]);
   });
 
-  it("filters uncleared flags whose work order is closed", () => {
+  it("filters uncleared flags whose work order is closed or left the bay", () => {
     const kept = flag();
     const filtered = filterActiveDocketFlags([
       kept,
       flag({ admin_flag_id: "f2", work_order_status: "cancelled" }),
       flag({ admin_flag_id: "f3", work_order_status: "completed" }),
+      flag({ admin_flag_id: "f4", work_order_status: "safety_check" }),
+      flag({ admin_flag_id: "f5", work_order_status: "ready_for_pickup" }),
+      flag({ admin_flag_id: "f6", work_order_status: "in_storage" }),
     ]);
     expect(filtered).toEqual([kept]);
     // Held bikes keep their flags — a hold is not terminal.
@@ -184,9 +187,21 @@ describe("terminal work orders stay off the floor", () => {
         staff_notification_id: "n3",
         workOrderStatus: "completed",
       }),
+      notificationRow({
+        staff_notification_id: "n-store",
+        workOrderStatus: "in_storage",
+      }),
+      notificationRow({
+        staff_notification_id: "n-ready",
+        kind: "ready_for_pickup",
+        workOrderStatus: "ready_for_pickup",
+      }),
       notificationRow({ staff_notification_id: "n4", work_order: null }),
     ]);
-    expect(mapped.map((notification) => notification.notification_id)).toEqual(["n1"]);
+    expect(mapped.map((notification) => notification.notification_id)).toEqual([
+      "n1",
+      "n-ready",
+    ]);
     expect(mapped[0]).toMatchObject({
       work_order_number: "WO-1042",
       motorcycle_label: "2024 Honda CB650R",

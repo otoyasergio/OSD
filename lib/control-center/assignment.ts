@@ -1,19 +1,24 @@
-import { workOrderLeftTechDocket } from "@/lib/technician/floorActionModel";
+import type { WorkOrderStatus } from "@/lib/database/types";
+import { isControlCenterDispatchStatus } from "@/lib/control-center/dnd";
 
 /** Active job assignee, or the tech a finished bike was dropped onto. */
 export function controlCenterTechnicianId(
   jobs: ReadonlyArray<{ status: string; assigned_technician_id: string | null }>,
   primaryTechnicianId?: string | null
 ): string | null {
-  for (const job of jobs) {
-    if (
+  const activeJobs = jobs.filter(
+    (job) =>
       job.status !== "cancelled" &&
       job.status !== "declined" &&
-      job.status !== "completed" &&
-      job.assigned_technician_id
-    ) {
-      return job.assigned_technician_id;
+      job.status !== "completed"
+  );
+  if (activeJobs.length > 0) {
+    for (const job of activeJobs) {
+      if (job.assigned_technician_id) {
+        return job.assigned_technician_id;
+      }
     }
+    return null;
   }
   return primaryTechnicianId || null;
 }
@@ -24,6 +29,9 @@ export function controlCenterCardTechnicianId(
   jobs: ReadonlyArray<{ status: string; assigned_technician_id: string | null }>,
   primaryTechnicianId?: string | null
 ): string | null {
-  if (workOrderLeftTechDocket(status)) return null;
+  if (!isControlCenterDispatchStatus(status as WorkOrderStatus)) return null;
+  if (status === "ready_for_technician") {
+    return controlCenterTechnicianId(jobs, null);
+  }
   return controlCenterTechnicianId(jobs, primaryTechnicianId);
 }

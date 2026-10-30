@@ -177,12 +177,14 @@ export function filterActiveAssignedJobs(
   );
 }
 
-/** Pure filter — flags whose work order is completed/cancelled are stale. */
+/** Pure filter — flags whose work order is closed or left the bay are stale. */
 export function filterActiveDocketFlags(
   flags: readonly DocketFlagInput[]
 ): DocketFlagInput[] {
   return flags.filter(
-    (flag) => !isTerminalWorkOrderStatus(flag.work_order_status ?? null)
+    (flag) =>
+      !isTerminalWorkOrderStatus(flag.work_order_status ?? null) &&
+      !workOrderLeftTechDocket(flag.work_order_status ?? null)
   );
 }
 
@@ -760,7 +762,7 @@ export async function moveJobInDocket(
   const { data: rows, error } = await supabase
     .from("job")
     .select(
-      "job_id, docket_position, created_at, work_order:work_order_id ( location_id )"
+      "job_id, docket_position, created_at, work_order:work_order_id ( location_id, status )"
     )
     .eq("assigned_technician_id", jobRow.assigned_technician_id)
     .not("status", "in", '("completed","cancelled","declined")')
@@ -775,8 +777,13 @@ export async function moveJobInDocket(
     .filter((row) => {
       const wo = (Array.isArray(row.work_order) ? row.work_order[0] : row.work_order) as {
         location_id: string;
+        status?: WorkOrderStatus | null;
       } | null;
-      return wo?.location_id === locationId;
+      if (wo?.location_id !== locationId) return false;
+      if (isTerminalWorkOrderStatus(wo.status) || workOrderLeftTechDocket(wo.status)) {
+        return false;
+      }
+      return true;
     })
     .map((row) => ({
       job_id: row.job_id as string,

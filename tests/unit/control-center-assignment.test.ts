@@ -24,10 +24,13 @@ describe("control center assignment shape", () => {
 
   it("treats all-unassigned active jobs as pool", () => {
     expect(
-      assignedTechnicianId([
-        { status: "approved", assigned_technician_id: null },
-        { status: "ready_to_start", assigned_technician_id: null },
-      ])
+      assignedTechnicianId(
+        [
+          { status: "approved", assigned_technician_id: null },
+          { status: "ready_to_start", assigned_technician_id: null },
+        ],
+        "tech-primary"
+      )
     ).toBe(null);
   });
 
@@ -40,9 +43,11 @@ describe("control center assignment shape", () => {
     ).toBe("tech-b");
   });
 
-  it("takes the card off the tech once it is in safety, ready, storage, or complete", () => {
+  it("takes the card off the tech once it is in a stage lane or the waiting pool", () => {
     const jobs = [{ status: "in_progress", assigned_technician_id: "tech-a" }];
     for (const status of [
+      "waiting_for_parts",
+      "quality_check",
       "safety_check",
       "ready_for_pickup",
       "in_storage",
@@ -51,6 +56,12 @@ describe("control center assignment shape", () => {
       expect(controlCenterCardTechnicianId(status, jobs, "tech-a")).toBeNull();
     }
     expect(controlCenterCardTechnicianId("in_progress", jobs, "tech-a")).toBe("tech-a");
-    expect(controlCenterCardTechnicianId("quality_check", jobs, null)).toBe("tech-a");
+    expect(
+      controlCenterCardTechnicianId(
+        "ready_for_technician",
+        [{ status: "completed", assigned_technician_id: "tech-a" }],
+        "tech-a"
+      )
+    ).toBeNull();
   });
 });

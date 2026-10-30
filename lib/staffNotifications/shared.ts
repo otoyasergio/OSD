@@ -1,4 +1,7 @@
-import { isTerminalWorkOrderStatus } from "@/lib/technician/floorActionModel";
+import {
+  isTerminalWorkOrderStatus,
+  workOrderLeftTechDocket,
+} from "@/lib/technician/floorActionModel";
 
 type NestedWorkOrder = {
   work_order_id: string;
@@ -87,6 +90,12 @@ export function mapUnreadStaffNotifications(
     const workOrder = unwrapOne(row.work_order);
     if (!workOrder) return [];
     if (isTerminalWorkOrderStatus(workOrder.status ?? null)) return [];
+    if (
+      row.kind === "work_order_assigned" &&
+      workOrderLeftTechDocket(workOrder.status ?? null)
+    ) {
+      return [];
+    }
     const motorcycle = unwrapOne(workOrder.motorcycle);
     const actor = unwrapOne(row.actor);
 

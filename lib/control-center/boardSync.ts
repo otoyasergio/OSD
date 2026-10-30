@@ -35,14 +35,29 @@ export function snapshotHasPendingPlacement<
 }): boolean {
   const { pending, pool, techs, stages, poolId } = input;
   const { workOrderId, containerId } = pending;
+  const inAnyStage = Object.values(stages).some((list) =>
+    list.some((bike) => bike.work_order_id === workOrderId)
+  );
+  const inPool = pool.some((bike) => bike.work_order_id === workOrderId);
+  const inAnyTech = techs.some((tech) =>
+    tech.assigned_bikes.some((bike) => bike.work_order_id === workOrderId)
+  );
   if (isCcStageDropId(containerId)) {
-    return stages[containerId].some((bike) => bike.work_order_id === workOrderId);
+    return (
+      stages[containerId].some((bike) => bike.work_order_id === workOrderId) &&
+      !inPool &&
+      !inAnyTech
+    );
   }
   if (containerId === poolId) {
-    return pool.some((bike) => bike.work_order_id === workOrderId);
+    return inPool && !inAnyStage && !inAnyTech;
   }
   const tech = techs.find((row) => row.user_id === containerId);
-  return Boolean(tech?.assigned_bikes.some((bike) => bike.work_order_id === workOrderId));
+  return (
+    Boolean(tech?.assigned_bikes.some((bike) => bike.work_order_id === workOrderId)) &&
+    !inAnyStage &&
+    !inPool
+  );
 }
 
 export function overlayPendingControlCenterMove<
