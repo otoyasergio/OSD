@@ -6,8 +6,15 @@ describe("formatElapsedTimer", () => {
     expect(formatElapsedTimer(65_000)).toBe("1:05");
   });
 
-  it("formats hours unbounded as H:MM:SS", () => {
-    expect(formatElapsedTimer(52 * 3600 * 1000 + 70_000)).toBe("52:01:10");
+  it("formats up to 24 hours as H:MM:SS", () => {
+    expect(formatElapsedTimer(5 * 3600 * 1000 + 70_000)).toBe("5:01:10");
+    expect(formatElapsedTimer(24 * 3600 * 1000 - 1000)).toBe("23:59:59");
+  });
+
+  it("counts whole days from 24 hours on", () => {
+    expect(formatElapsedTimer(24 * 3600 * 1000)).toBe("1 day");
+    expect(formatElapsedTimer(25 * 3600 * 1000)).toBe("1 day");
+    expect(formatElapsedTimer(52 * 3600 * 1000 + 70_000)).toBe("2 days");
   });
 
   it("clamps negative to zero", () => {
