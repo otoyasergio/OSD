@@ -117,10 +117,10 @@ export function deriveWorkOrderStatus(
   // original-job complete or peer QC. Only jobs waiting_for_approval freeze WO.
 
   if (allActiveCompleted && !qualityCheckComplete) {
+    // Storage is not a departure. An outstanding final inspection must not
+    // pull the bike back out after it was placed there.
+    if (currentStatus === "in_storage") return "in_storage";
     if (qualityCheckWaived && currentStatus !== "quality_check") {
-      // Storage is not a departure. An outstanding final inspection must not
-      // pull the bike back out after it was placed there.
-      if (currentStatus === "in_storage") return "in_storage";
       return currentStatus as WorkOrderStatus;
     }
     return "quality_check";

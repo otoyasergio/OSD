@@ -386,6 +386,17 @@ describe("deriveWorkOrderStatus", () => {
         safetyCheckComplete: false,
       })
     ).toBe("in_storage");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_storage",
+        jobs: [{ status: "completed" }],
+        parts: [],
+        inspectionComplete: false,
+        qualityCheckComplete: false,
+        qualityCheckWaived: false,
+      })
+    ).toBe("in_storage");
   });
 
   it("keeps a stored bike in storage while every active job stays complete", () => {

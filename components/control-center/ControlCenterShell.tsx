@@ -25,6 +25,7 @@ import {
 } from "@/app/(app)/control-center/actions";
 import { deriveTechAvailability } from "@/lib/control-center/availability";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
+import { canParkAnyBikeInStorage } from "@/lib/permissions";
 import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
 import { createClient } from "@/lib/database/supabase-browser";
 import type { WorkOrderStatus } from "@/lib/database/types";
@@ -311,6 +312,7 @@ function TechOldestMeta({ bikes }: { bikes: ControlCenterBike[] }) {
 const TechCard = memo(function TechCard({
   tech,
   canAssign,
+  canDragBikes = canAssign,
   canClockStaff,
   clockPending,
   onToggleSignedIn,
@@ -320,6 +322,7 @@ const TechCard = memo(function TechCard({
 }: {
   tech: ControlCenterTech;
   canAssign: boolean;
+  canDragBikes?: boolean;
   canClockStaff: boolean;
   clockPending: boolean;
   onToggleSignedIn: (techUserId: string, signedIn: boolean) => void;
@@ -401,7 +404,7 @@ const TechCard = memo(function TechCard({
               key={bike.work_order_id}
               bike={bike}
               canOpen={canAssign}
-              canDrag={canAssign}
+              canDrag={canDragBikes}
               onStartWork={onStartWork}
               onOpenWork={onOpenWork}
               dragging={activeId === bike.work_order_id}
@@ -1148,6 +1151,7 @@ export function ControlCenterShell({
     mode: "stage",
     canAssign,
   });
+  const canDragDispatchBike = canAssign || canParkAnyBikeInStorage(data.role);
   const stageDndBase = {
     dragEnabled: canDragStages,
     draggingId: activeId,
@@ -1240,7 +1244,9 @@ export function ControlCenterShell({
               <span className="cc-pool-caption">
                 {canAssign
                   ? "Unassigned — drag onto a tech to dispatch"
-                  : "Unassigned bikes (view only — you cannot assign)"}
+                  : canDragDispatchBike
+                    ? "Drag a bike to Storage"
+                    : "Unassigned bikes (view only — you cannot assign)"}
               </span>
             </div>
             <div style={{ display: "flex", gap: "0.4rem" }}>
@@ -1272,7 +1278,7 @@ export function ControlCenterShell({
                 <PoolBikeCard
                   key={bike.work_order_id}
                   bike={bike}
-                  canDrag={canAssign}
+                  canDrag={canDragDispatchBike}
                   dragging={activeId === bike.work_order_id}
                   onOpenWork={handleOpenWork}
                 />
@@ -1292,6 +1298,7 @@ export function ControlCenterShell({
                 ),
               }}
               canAssign={canAssign}
+              canDragBikes={canDragDispatchBike}
               canClockStaff={canClockStaff}
               clockPending={isPending}
               onToggleSignedIn={handleToggleStaffSignedIn}

@@ -31,7 +31,7 @@ describe("board transitions", () => {
     expect(canDropInColumn("service_advisor", "complete", "completed")).toBe(false);
     expect(canDropInColumn("admin", "complete", "quality_check")).toBe(true);
     expect(canDropInColumn("admin", "pickup", "quality_check")).toBe(false);
-    expect(canDropInColumn("admin", "storage", "quality_check")).toBe(false);
+    expect(canDropInColumn("admin", "storage", "quality_check")).toBe(true);
   });
 
   it("resolves a drop onto another card to that card's column", () => {
@@ -90,6 +90,32 @@ describe("board transitions", () => {
     expect(canDragWorkOrderOnBoard("service_advisor", "in_storage", false)).toBe(true);
     expect(canDragWorkOrderOnBoard("technician", "in_storage", false)).toBe(false);
     expect(canDragWorkOrderOnBoard("service_advisor", "completed", false)).toBe(false);
+  });
+
+  it("lets a service advisor or admin park any active bike in storage", () => {
+    for (const role of ["service_advisor", "admin"] as const) {
+      for (const status of [
+        "open",
+        "inspection_in_progress",
+        "waiting_for_customer_approval",
+        "waiting_for_parts",
+        "in_progress",
+        "quality_check",
+        "safety_check",
+        "ready_for_pickup",
+        "on_hold",
+      ] as const) {
+        expect(canDropInColumn(role, "storage", status)).toBe(true);
+        expect(canDropInColumn(role, "gallery_storage", status)).toBe(true);
+        expect(canDragWorkOrderOnBoard(role, status, false)).toBe(true);
+      }
+    }
+
+    expect(canDropInColumn("admin", "gallery_in_bay", "open")).toBe(false);
+    expect(canDropInColumn("technician", "storage", "in_progress")).toBe(false);
+    expect(canDropInColumn("service_advisor", "storage", "completed")).toBe(false);
+    expect(canDropInColumn("admin", "storage", "cancelled")).toBe(false);
+    expect(canDragWorkOrderOnBoard("admin", "completed", false)).toBe(false);
   });
 
   it("maps storage onto its own gallery column", () => {
