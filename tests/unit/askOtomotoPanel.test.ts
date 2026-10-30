@@ -629,6 +629,93 @@ describe("AskOtomotoPanel", () => {
       ).toBe(true);
       expect(buttonNamed(/copy ai draft/i)).toBeDefined();
       expect(buttonNamed(/review and save as note/i)).toBeDefined();
+      expect(buttonNamed(/^MAX Thinking$/)?.disabled).toBe(true);
+    });
+  });
+
+  describe("MAX Thinking", () => {
+    const composer = () =>
+      container
+        .querySelector<HTMLTextAreaElement>("textarea[id^='turn-text']")
+        ?.closest("form");
+    const thinking = () => buttonNamed(/^MAX Thinking$/);
+    const thinkingFlag = () =>
+      composer()?.querySelector<HTMLInputElement>("input[name='max_thinking']");
+
+    it("keeps medium reasoning until the button is turned on, then resets after a successful send", async () => {
+      const sent: Array<FormDataEntryValue | null> = [];
+      submitAssistantTurnAction.mockImplementation(
+        async (_workOrderId: string, _previous: unknown, formData: FormData) => {
+          sent.push(formData.get("max_thinking"));
+          return { status: "success", error: null };
+        }
+      );
+      await render(withThread(workspace({ status: "ready" }, [])));
+
+      expect(thinking()?.getAttribute("aria-pressed")).toBe("false");
+      expect(thinking()?.disabled).toBe(false);
+      expect(container.textContent).toContain("Medium reasoning is used for this send.");
+      expect(thinkingFlag()?.value).toBe("0");
+
+      await click(thinking());
+      expect(thinking()?.getAttribute("aria-pressed")).toBe("true");
+      expect(container.textContent).toContain(
+        "MAX Thinking is on for the next send and uses more credit."
+      );
+      expect(thinkingFlag()?.value).toBe("1");
+      expect(submitAssistantTurnAction).not.toHaveBeenCalled();
+
+      await setValue(composer()!.querySelector("textarea")!, "Measure charging voltage");
+      await act(async () => composer()!.requestSubmit());
+
+      expect(sent).toEqual(["1"]);
+      expect(thinking()?.getAttribute("aria-pressed")).toBe("false");
+      expect(thinkingFlag()?.value).toBe("0");
+    });
+
+    it("leaves MAX Thinking on when the send fails so the same choice can be retried", async () => {
+      submitAssistantTurnAction.mockResolvedValue({
+        status: "error",
+        error:
+          "Ask OTOMOTO cannot draft because the OpenAI account is out of credit. Shop records were not changed.",
+      });
+      retryAssistantTurnAction.mockImplementation(
+        async (_workOrderId: string, _previous: unknown, formData: FormData) => {
+          return {
+            status: "error",
+            error: `retry:${formData.get("max_thinking")}`,
+          };
+        }
+      );
+      await render(
+        withThread(
+          workspace({ status: "failed" }, [
+            assistantMessage({
+              generationStatus: "failed",
+              body: null,
+              safeErrorCode: "DIAGNOSTICS_AI_PROVIDER_QUOTA_EXCEEDED",
+            }),
+          ])
+        )
+      );
+
+      await click(thinking());
+      const retryForm = buttonNamed(/^Retry$/)?.closest("form");
+      expect(
+        retryForm?.querySelector<HTMLInputElement>("input[name='max_thinking']")?.value
+      ).toBe("1");
+      await act(async () => retryForm!.requestSubmit());
+      expect(alerts().join(" ")).toContain("retry:1");
+      expect(thinking()?.getAttribute("aria-pressed")).toBe("true");
+    });
+
+    it("disables MAX Thinking on a read-only work order", async () => {
+      await render(
+        withThread(workspace(), {
+          capabilities: { ...FULL_CAPS, readOnly: true, canMutate: false },
+        })
+      );
+      expect(thinking()?.disabled).toBe(true);
     });
   });
 

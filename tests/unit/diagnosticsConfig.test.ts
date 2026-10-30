@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_DIAGNOSTICS_ECONOMY_MODEL,
   DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS,
   DEFAULT_DIAGNOSTICS_MODEL,
   DEFAULT_DIAGNOSTICS_TIMEOUT_MS,
@@ -13,9 +14,11 @@ describe("diagnostics AI configuration", () => {
     expect(getDiagnosticsConfig({ OPENAI_API_KEY: " test-key " })).toEqual({
       apiKey: "test-key",
       model: DEFAULT_DIAGNOSTICS_MODEL,
+      economyModel: DEFAULT_DIAGNOSTICS_ECONOMY_MODEL,
       timeoutMs: DEFAULT_DIAGNOSTICS_TIMEOUT_MS,
       maxOutputTokens: DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS,
     });
+    expect(DEFAULT_DIAGNOSTICS_ECONOMY_MODEL).toBe("gpt-6.1-sol");
     expect(DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS).toBe(28_000);
     expect(DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS).toBeGreaterThanOrEqual(24_000);
     expect(DEFAULT_DIAGNOSTICS_MAX_OUTPUT_TOKENS).toBeLessThanOrEqual(32_768);
@@ -26,11 +29,13 @@ describe("diagnostics AI configuration", () => {
       getDiagnosticsConfig({
         OPENAI_API_KEY: "key",
         OTOMOTO_DIAGNOSTICS_MODEL: "gpt-6-sol",
+        OTOMOTO_DIAGNOSTICS_ECONOMY_MODEL: "gpt-6-luna",
         OTOMOTO_DIAGNOSTICS_TIMEOUT_MS: "30000",
         OTOMOTO_DIAGNOSTICS_MAX_OUTPUT_TOKENS: "2048",
       })
     ).toMatchObject({
       model: "gpt-6-sol",
+      economyModel: "gpt-6-luna",
       timeoutMs: 30_000,
       maxOutputTokens: 2_048,
     });
@@ -54,6 +59,12 @@ describe("diagnostics AI configuration", () => {
       getDiagnosticsConfig({
         OPENAI_API_KEY: "key",
         OTOMOTO_DIAGNOSTICS_MODEL: "not a model",
+      })
+    ).toThrow("DIAGNOSTICS_AI_MODEL_INVALID");
+    expect(() =>
+      getDiagnosticsConfig({
+        OPENAI_API_KEY: "key",
+        OTOMOTO_DIAGNOSTICS_ECONOMY_MODEL: "also bad",
       })
     ).toThrow("DIAGNOSTICS_AI_MODEL_INVALID");
 

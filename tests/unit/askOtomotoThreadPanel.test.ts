@@ -471,19 +471,29 @@ describe("AskOtomotoThreadPanel", () => {
       expect(hidden("photos")?.value).toBe("[]");
 
       await act(async () => {
-        container.querySelector<HTMLButtonElement>("button[aria-pressed]")!.click();
+        container
+          .querySelector<HTMLButtonElement>(
+            'button[aria-label^="Select"], button[aria-label^="Deselect"]'
+          )!
+          .click();
       });
 
       const parsed = JSON.parse(hidden("photos")!.value);
       expect(parsed).toEqual([{ photoId: PHOTO, purpose: "Work photo for analysis" }]);
       expect(hidden("photos")!.value).not.toMatch(/https?:|blob:|storage|thumb/);
-      expect(container.querySelectorAll("button[aria-pressed]")).toHaveLength(1);
+      expect(
+        container.querySelectorAll(
+          'button[aria-label^="Select"], button[aria-label^="Deselect"]'
+        )
+      ).toHaveLength(1);
+      expect(hidden("max_thinking")?.value).toBe("0");
     });
 
     it("allows local selection of existing evidence without provider configuration", async () => {
       await renderThread(jobWorkspace(), { configured: false });
-      const photoButton =
-        container.querySelector<HTMLButtonElement>("button[aria-pressed]")!;
+      const photoButton = container.querySelector<HTMLButtonElement>(
+        'button[aria-label^="Select"], button[aria-label^="Deselect"]'
+      )!;
       expect(photoButton.disabled).toBe(false);
 
       await act(async () => photoButton.click());
@@ -506,7 +516,11 @@ describe("AskOtomotoThreadPanel", () => {
       await renderThread(jobWorkspace());
       await type("What does this show?");
       await act(async () => {
-        container.querySelector<HTMLButtonElement>("button[aria-pressed]")!.click();
+        container
+          .querySelector<HTMLButtonElement>(
+            'button[aria-label^="Select"], button[aria-label^="Deselect"]'
+          )!
+          .click();
       });
       expect(sendButton().disabled).toBe(false);
 
@@ -533,7 +547,11 @@ describe("AskOtomotoThreadPanel", () => {
       await renderThread(jobWorkspace());
       await type("Battery reads 12.1 V");
       await act(async () => {
-        container.querySelector<HTMLButtonElement>("button[aria-pressed]")!.click();
+        container
+          .querySelector<HTMLButtonElement>(
+            'button[aria-label^="Select"], button[aria-label^="Deselect"]'
+          )!
+          .click();
       });
 
       await act(async () => {
@@ -551,6 +569,7 @@ describe("AskOtomotoThreadPanel", () => {
       expect(form.get("job_id")).toBe(JOB);
       expect(form.get("mode")).toBe("shop");
       expect(form.get("text")).toBe("Battery reads 12.1 V");
+      expect(form.get("max_thinking")).toBe("0");
       expect(JSON.parse(String(form.get("photos")))).toEqual([
         { photoId: PHOTO, purpose: "Work photo for analysis" },
       ]);
@@ -599,7 +618,11 @@ describe("AskOtomotoThreadPanel", () => {
       expect(container.textContent).toContain("Photograph the left caliper piston");
 
       await act(async () => {
-        container.querySelector<HTMLButtonElement>("button[aria-pressed]")!.click();
+        container
+          .querySelector<HTMLButtonElement>(
+            'button[aria-label^="Select"], button[aria-label^="Deselect"]'
+          )!
+          .click();
       });
       expect(container.querySelector<HTMLInputElement>('input[type="text"]')!.value).toBe(
         "Photograph the left caliper piston"

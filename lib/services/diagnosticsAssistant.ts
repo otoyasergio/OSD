@@ -41,11 +41,13 @@ import {
 } from "@/lib/diagnostics/images";
 import {
   generateDiagnosticsDraft,
+  DIAGNOSTICS_DEFAULT_REASONING_EFFORT,
   DIAGNOSTICS_MAX_HISTORY_CHARS,
   DIAGNOSTICS_MAX_HISTORY_MESSAGES,
   DIAGNOSTICS_MAX_MESSAGE_CHARS,
   DIAGNOSTICS_PROVIDER_MAX_RETRIES,
   type DiagnosticsGenerationRequest,
+  type DiagnosticsReasoningEffort,
   type DiagnosticsGenerationResult,
   type DiagnosticsHistoryMessage,
 } from "@/lib/diagnostics/openai";
@@ -481,6 +483,7 @@ export const submitDiagnosticsTurnSchema = z
     mode: modeSchema,
     text: z.string().trim().min(1).max(ASK_OTOMOTO_MAX_TEXT_CHARS),
     photos: z.array(photoSelectionSchema).max(ASK_OTOMOTO_MAX_PHOTOS).default([]),
+    maxThinking: z.boolean().optional().default(false),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -498,8 +501,13 @@ export const retryDiagnosticsTurnSchema = z
   .object({
     workOrderId: uuidSchema,
     threadId: uuidSchema,
+    maxThinking: z.boolean().optional().default(false),
   })
   .strict();
+
+function diagnosticsReasoningEffort(maxThinking: boolean): DiagnosticsReasoningEffort {
+  return maxThinking ? "max" : DIAGNOSTICS_DEFAULT_REASONING_EFFORT;
+}
 
 export type DiagnosticsAccessKind = "read" | "write";
 
@@ -2256,6 +2264,7 @@ export function createDiagnosticsAssistantService(
     thread: DiagnosticsThreadSummary;
     generation: GenerationInput;
     requiredPhase?: DiagnosticsGenerationRequest["requiredPhase"];
+    reasoningEffort?: DiagnosticsReasoningEffort;
   }): Promise<DiagnosticsMessageView> {
     const contextAsOf = now().toISOString();
     let renderedBody: string;
@@ -2310,6 +2319,7 @@ export function createDiagnosticsAssistantService(
         userMessage: safeUserMessage,
         history: safeHistory,
         images: prepared.images,
+        reasoningEffort: input.reasoningEffort ?? DIAGNOSTICS_DEFAULT_REASONING_EFFORT,
       });
       renderedBody = renderDiagnosticsDraft(response.response);
       await input.repository.completeGeneration({
@@ -2692,6 +2702,7 @@ export function createDiagnosticsAssistantService(
         scope: workOrder,
         thread: workspace.thread,
         generation,
+        reasoningEffort: diagnosticsReasoningEffort(input.maxThinking),
       });
     },
 
@@ -2734,6 +2745,7 @@ export function createDiagnosticsAssistantService(
         thread: workspace.thread,
         generation,
         requiredPhase: requiredPhaseForRetry(workspace.thread, generation),
+        reasoningEffort: diagnosticsReasoningEffort(input.maxThinking),
       });
     },
 

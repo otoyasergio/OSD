@@ -1633,7 +1633,10 @@ describe("Ask OTOMOTO generation lifecycle", () => {
     });
 
     expect(generateDraft).toHaveBeenCalledWith(
-      expect.objectContaining({ requiredPhase: "closure_report" })
+      expect.objectContaining({
+        requiredPhase: "closure_report",
+        reasoningEffort: "medium",
+      })
     );
   });
 
@@ -1671,6 +1674,36 @@ describe("Ask OTOMOTO generation lifecycle", () => {
     expect(
       JSON.stringify(vi.mocked(repo.recordModelChangeAudit).mock.calls)
     ).not.toContain("Generated answer");
+  });
+
+  it("uses medium reasoning unless the staff member turns on MAX Thinking", async () => {
+    const { repo, thread } = generationRepository();
+    const generateDraft = vi.fn().mockResolvedValue(generationResult());
+    const service = createDiagnosticsAssistantService({
+      repository: repo,
+      requireUser: async () => actor("technician"),
+      generateDraft,
+      prepareImages: async () => ({ images: [], photoMetadata: [] }),
+      consumeRateLimit: () => ({ success: true, remaining: 1, resetAt: 1 }),
+    });
+    const turn = {
+      workOrderId: scope().workOrderId,
+      threadId: thread.threadId,
+      jobId: thread.jobId,
+      mode: "shop" as const,
+      text: "Help diagnose it",
+      photos: [],
+    };
+
+    await service.submitTurn(turn);
+    expect(generateDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reasoningEffort: "medium" })
+    );
+
+    await service.submitTurn({ ...turn, maxThinking: true });
+    expect(generateDraft).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reasoningEffort: "max" })
+    );
   });
 
   it("does not fail or overwrite a completed response when audit logging fails", async () => {
@@ -2183,7 +2216,9 @@ describe("Ask OTOMOTO internal inspection-completion generation", () => {
       expect.objectContaining({ selections: [] }),
       repo
     );
-    expect(generateDraft).toHaveBeenCalledWith(expect.objectContaining({ images: [] }));
+    expect(generateDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ images: [], reasoningEffort: "medium" })
+    );
   });
 
   it.each(["ready", "generating"] as const)(

@@ -52,6 +52,12 @@ const DIAGNOSTICS_SDK_MAX_RETRIES = 0;
 const OUTPUT_TOKEN_RETRY_FLOOR = 1_024;
 const OUTPUT_TOKEN_RETRY_MARGIN = 512;
 const RATE_LIMIT_LOG_LABEL = "Ask OTOMOTO provider rate limit";
+const QUOTA_LOG_LABEL = "Ask OTOMOTO provider quota";
+
+export const DIAGNOSTICS_REASONING_EFFORTS = ["medium", "max"] as const;
+export type DiagnosticsReasoningEffort = (typeof DIAGNOSTICS_REASONING_EFFORTS)[number];
+/** Default effort. Maximum reasoning is opt-in so routine drafts do not spend it. */
+export const DIAGNOSTICS_DEFAULT_REASONING_EFFORT: DiagnosticsReasoningEffort = "medium";
 
 export type DiagnosticsRateLimitClass = "token_reservation" | "short_window" | "unknown";
 
@@ -160,6 +166,26 @@ function logDiagnosticsRateLimit(assessment: DiagnosticsRateLimitAssessment): vo
   });
 }
 
+function logDiagnosticsQuotaDowngrade(fromModel: string, toModel: string): void {
+  console.error(QUOTA_LOG_LABEL, {
+    quota_class: "model_downgrade",
+    from_model: fromModel,
+    to_model: toModel,
+    reasoning_effort: DIAGNOSTICS_DEFAULT_REASONING_EFFORT,
+  });
+}
+
+function reasoningEffortFor(effort: unknown): DiagnosticsReasoningEffort {
+  if (effort === undefined) return DIAGNOSTICS_DEFAULT_REASONING_EFFORT;
+  if (
+    typeof effort === "string" &&
+    (DIAGNOSTICS_REASONING_EFFORTS as readonly string[]).includes(effort)
+  ) {
+    return effort as DiagnosticsReasoningEffort;
+  }
+  throw new Error("DIAGNOSTICS_AI_REASONING_INVALID");
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -194,6 +220,8 @@ export type DiagnosticsGenerationRequest = {
   userMessage: string;
   history?: DiagnosticsHistoryMessage[];
   images?: DiagnosticsImageInput[];
+  /** Omitted requests use medium reasoning. `max` is the MAX Thinking opt-in. */
+  reasoningEffort?: DiagnosticsReasoningEffort;
 };
 
 export type DiagnosticsGenerationResult = {
@@ -451,13 +479,16 @@ export async function generateDiagnosticsDraft(
   );
   const input = requestInput(request, contextBlock);
   let outputBudget = config.maxOutputTokens;
+  let model = config.model;
+  let reasoningEffort = reasoningEffortFor(request.reasoningEffort);
   let rateLimitRetried = false;
+  let quotaDowngraded = false;
 
   for (;;) {
     try {
       const providerResponse = await client.responses.parse(
         {
-          model: config.model,
+          model,
           instructions,
           input,
           text: {
@@ -470,7 +501,7 @@ export async function generateDiagnosticsDraft(
               }
             ),
           },
-          reasoning: { effort: "high" },
+          reasoning: { effort: reasoningEffort },
           max_output_tokens: outputBudget,
           safety_identifier: diagnosticsSafetyIdentifier(request.staffUserId),
           store: false,
@@ -513,7 +544,7 @@ export async function generateDiagnosticsDraft(
       return {
         response: parsed.data,
         responseId: providerResponse.id,
-        requestedModel: config.model,
+        requestedModel: model,
         resolvedModel: providerResponse.model,
         promptVersion: DIAGNOSTICS_PROMPT_VERSION,
         contextHash,
@@ -524,6 +555,18 @@ export async function generateDiagnosticsDraft(
         },
       };
     } catch (error) {
+      if (
+        error instanceof RateLimitError &&
+        isInsufficientQuota(error) &&
+        !quotaDowngraded &&
+        config.economyModel !== model
+      ) {
+        logDiagnosticsQuotaDowngrade(model, config.economyModel);
+        model = config.economyModel;
+        reasoningEffort = DIAGNOSTICS_DEFAULT_REASONING_EFFORT;
+        quotaDowngraded = true;
+        continue;
+      }
       if (error instanceof RateLimitError && !isInsufficientQuota(error)) {
         const assessment = assessDiagnosticsRateLimit(error.message, outputBudget);
         if (!rateLimitRetried && assessment.nextOutputBudget !== null) {

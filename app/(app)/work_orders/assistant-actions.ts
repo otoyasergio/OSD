@@ -65,6 +65,11 @@ function parseUploadPurpose(value: FormDataEntryValue | null): string {
   return redacted.slice(0, DIAGNOSTICS_PHOTO_PURPOSE_MAX);
 }
 
+/** Only the composer and retry control send this exact flag. Anything else stays medium. */
+function readMaxThinking(formData: FormData): boolean {
+  return formData.get("max_thinking") === "1";
+}
+
 function success(data?: unknown): AssistantActionState {
   return { status: "success", error: null, ...(data === undefined ? {} : { data }) };
 }
@@ -146,6 +151,7 @@ export async function submitAssistantTurnAction(
       mode: String(formData.get("mode") ?? ""),
       text: String(formData.get("text") ?? ""),
       photos,
+      maxThinking: readMaxThinking(formData),
     });
     const message = await service.submitTurn(input);
     revalidateAssistant(workOrderId);
@@ -165,6 +171,7 @@ export async function retryAssistantTurnAction(
     const input = retryDiagnosticsTurnSchema.parse({
       workOrderId,
       threadId: String(formData.get("thread_id") ?? ""),
+      maxThinking: readMaxThinking(formData),
     });
     const message = await service.retryLatestFailed(input);
     revalidateAssistant(workOrderId);
@@ -185,7 +192,10 @@ export async function runAutomaticAssistantReviewAction(
       workOrderId,
       threadId: String(formData.get("thread_id") ?? ""),
     });
-    const recovery = await service.authorizeAutomaticTriggerRecovery(input);
+    const recovery = await service.authorizeAutomaticTriggerRecovery({
+      workOrderId: input.workOrderId,
+      threadId: input.threadId,
+    });
     after(async () => {
       try {
         await generateDiagnosticsTriggerResponseInternal(

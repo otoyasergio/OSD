@@ -54,6 +54,8 @@ const DIAGNOSTICS_ERROR_MESSAGES: Readonly<Record<string, string>> = {
     "Ask OTOMOTO is not configured. Add OPENAI_API_KEY on the server.",
   DIAGNOSTICS_AI_MODEL_INVALID:
     "Ask OTOMOTO has an invalid model setting. Check the server configuration.",
+  DIAGNOSTICS_AI_REASONING_INVALID:
+    "Ask OTOMOTO could not use that reasoning setting. Try the send again.",
   DIAGNOSTICS_AI_TIMEOUT_INVALID:
     "Ask OTOMOTO has an invalid timeout setting. Check the server configuration.",
   DIAGNOSTICS_AI_OUTPUT_LIMIT_INVALID:

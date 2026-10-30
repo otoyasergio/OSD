@@ -36,6 +36,19 @@ describe("getAskOtomotoPublicConfig", () => {
     });
   });
 
+  it("treats an invalid economy-model alias as an invalid server setting", () => {
+    expect(
+      getAskOtomotoPublicConfig({
+        OPENAI_API_KEY: "sk-x",
+        OTOMOTO_DIAGNOSTICS_ECONOMY_MODEL: "bad model",
+      })
+    ).toEqual({
+      configured: false,
+      modelLabel: "gpt-6-astra",
+      reason: "model_invalid",
+    });
+  });
+
   it("hides an invalid model alias and treats it as not configured", () => {
     expect(
       getAskOtomotoPublicConfig({

@@ -32,7 +32,19 @@ Review those actual resolved values; an alias name alone is not an audit. Any
 alias, resolved-model, prompt, schema, or policy change requires the full
 live-model acceptance suite and qualified shop review again before release.
 
-High-reasoning requests default to a bounded 28,000 output-token ceiling
+Routine drafts use medium reasoning effort so a normal question does not spend
+maximum reasoning tokens. Staff can turn on **MAX Thinking** for the next send
+or retry when a draft needs it; that request uses maximum reasoning effort.
+Automatic inspection and job reviews stay on medium reasoning.
+
+If OpenAI reports that the account is out of credit, that same request is tried
+once on the lower-cost alias `gpt-6.1-sol` at medium reasoning.
+`OTOMOTO_DIAGNOSTICS_ECONOMY_MODEL` overrides the fallback alias. A second
+out-of-credit response stops the draft and leaves shop records unchanged. A
+successful fallback stores the economy alias as the requested model and follows
+the existing resolved-model audit.
+
+Drafts keep a bounded 28,000 output-token ceiling
 (`OTOMOTO_DIAGNOSTICS_MAX_OUTPUT_TOKENS`, hard cap 32,768). This is a ceiling,
 not expected usage, but raising it can materially increase a request's provider
 cost. Review actual token usage and current provider pricing before changing it.

@@ -115,6 +115,9 @@ function TurnComposer({
   retryPending,
   onBusyChange,
   photoHeadingLevel,
+  maxThinking,
+  maxThinkingDisabled,
+  onMaxThinkingChange,
 }: {
   workspace: AskOtomotoWorkspaceView;
   photos: DiagnosticsPhotoSourceRow[];
@@ -126,6 +129,9 @@ function TurnComposer({
   retryPending: boolean;
   onBusyChange: (busy: boolean) => void;
   photoHeadingLevel: 4 | 5;
+  maxThinking: boolean;
+  maxThinkingDisabled: boolean;
+  onMaxThinkingChange: (enabled: boolean) => void;
 }) {
   const router = useRouter();
   const { thread, messages } = workspace;
@@ -145,6 +151,7 @@ function TurnComposer({
       if (result.status === "success") {
         setText("");
         setSelections([]);
+        onMaxThinkingChange(false);
         router.refresh();
       }
       return result;
@@ -216,6 +223,7 @@ function TurnComposer({
       <input type="hidden" name="job_id" value={thread.jobId ?? ""} />
       <input type="hidden" name="mode" value={thread.mode} />
       <input type="hidden" name="photos" value={photosJson} />
+      <input type="hidden" name="max_thinking" value={maxThinking ? "1" : "0"} />
 
       <div className="flex flex-col gap-1">
         <label htmlFor={`turn-text-${thread.threadId}`} className="text-sm font-medium">
@@ -270,10 +278,30 @@ function TurnComposer({
         </p>
       ) : null}
 
-      <div>
-        <button type="submit" className="btn btn-primary" disabled={!canSend}>
-          {pending ? "Sending…" : "Send to Ask OTOMOTO"}
-        </button>
+      <div className="flex flex-col gap-1">
+        <div className="flex flex-wrap gap-2">
+          <button type="submit" className="btn btn-primary" disabled={!canSend}>
+            {pending ? "Sending…" : "Send to Ask OTOMOTO"}
+          </button>
+          <button
+            type="button"
+            className={maxThinking ? "btn btn-primary" : "btn btn-secondary"}
+            aria-pressed={maxThinking}
+            aria-describedby={`max-thinking-note-${thread.threadId}`}
+            disabled={maxThinkingDisabled || pending}
+            onClick={() => onMaxThinkingChange(!maxThinking)}
+          >
+            MAX Thinking
+          </button>
+        </div>
+        <p
+          id={`max-thinking-note-${thread.threadId}`}
+          className="text-xs text-[var(--status-neutral)]"
+        >
+          {maxThinking
+            ? "MAX Thinking is on for the next send and uses more credit."
+            : "Medium reasoning is used for this send."}
+        </p>
       </div>
     </form>
   );
@@ -310,6 +338,7 @@ export function AskOtomotoThreadPanel({
   const Heading = headingLevel === 4 ? "h4" : "h3";
   const { thread, messages } = workspace;
   const [sendBusy, setSendBusy] = useState(false);
+  const [maxThinking, setMaxThinking] = useState(false);
   const [recoveryScheduled, setRecoveryScheduled] = useState(false);
   const [retryState, retryAction, retryPending] = useActionState(
     async (previous: AssistantActionState, formData: FormData) => {
@@ -318,7 +347,10 @@ export function AskOtomotoThreadPanel({
         previous,
         formData
       );
-      if (result.status === "success") router.refresh();
+      if (result.status === "success") {
+        setMaxThinking(false);
+        router.refresh();
+      }
       return result;
     },
     INITIAL_ACTION_STATE
@@ -361,6 +393,14 @@ export function AskOtomotoThreadPanel({
     (thread.status === "failed" || generatingRetryDue === true) &&
     !nonRecoverableHistoryFailure;
   const canRetry = retryAvailable && !retryPending && !sendBusy;
+  const maxThinkingDisabled =
+    !mutationAllowed ||
+    !configured ||
+    thread.status === "archived" ||
+    sendBusy ||
+    retryPending ||
+    (thread.status === "pending" && thread.triggerType !== null) ||
+    (thread.status === "generating" && generatingRetryDue !== true);
   const automaticLabel = thread.triggerType
     ? ASSISTANT_TRIGGER_LABELS[thread.triggerType]
     : null;
@@ -509,6 +549,9 @@ export function AskOtomotoThreadPanel({
         retryPending={retryPending}
         onBusyChange={setSendBusy}
         photoHeadingLevel={headingLevel === 4 ? 5 : 4}
+        maxThinking={maxThinking}
+        maxThinkingDisabled={maxThinkingDisabled}
+        onMaxThinkingChange={setMaxThinking}
       />
 
       <div className="flex flex-wrap gap-2">
@@ -549,6 +592,7 @@ export function AskOtomotoThreadPanel({
             }}
           >
             <input type="hidden" name="thread_id" value={thread.threadId} />
+            <input type="hidden" name="max_thinking" value={maxThinking ? "1" : "0"} />
             <button type="submit" className="btn btn-primary" disabled={!canRetry}>
               {retryPending ? "Retrying…" : "Retry"}
             </button>

@@ -15,6 +15,7 @@ import type { DiagnosticsResponse } from "@/lib/diagnostics/responseSchema";
 const config: DiagnosticsConfig = {
   apiKey: "test-key",
   model: "gpt-6-astra",
+  economyModel: "gpt-6.1-sol",
   timeoutMs: 30_000,
   maxOutputTokens: 4_000,
 };
@@ -210,7 +211,7 @@ describe("OpenAI diagnostics provider", () => {
       model: "gpt-6-astra",
       store: false,
       max_output_tokens: 4_000,
-      reasoning: { effort: "high" },
+      reasoning: { effort: "medium" },
     });
     expect(body).not.toHaveProperty("conversation");
     expect(body).not.toHaveProperty("previous_response_id");
@@ -658,19 +659,119 @@ describe("OpenAI diagnostics provider", () => {
     });
     errorSpy.mockClear();
 
+    const quotaMessage =
+      "You exceeded your current quota, please check your plan and billing details.";
     const quotaParse = vi
       .fn()
-      .mockRejectedValue(
-        rateLimitError(
-          "insufficient_quota",
-          "You exceeded your current quota, please check your plan and billing details."
-        )
-      );
+      .mockRejectedValue(rateLimitError("insufficient_quota", quotaMessage));
     const quotaClient = { responses: { parse: quotaParse } } as unknown as OpenAI;
     await expect(
       generateDiagnosticsDraft(request(), { client: quotaClient, config })
     ).rejects.toThrow("DIAGNOSTICS_AI_PROVIDER_QUOTA_EXCEEDED");
-    expect(quotaParse).toHaveBeenCalledOnce();
+    expect(quotaParse).toHaveBeenCalledTimes(2);
+    expect(quotaParse.mock.calls[0]?.[0]).toMatchObject({
+      model: "gpt-6-astra",
+      reasoning: { effort: "medium" },
+    });
+    expect(quotaParse.mock.calls[1]?.[0]).toMatchObject({
+      model: "gpt-6.1-sol",
+      reasoning: { effort: "medium" },
+    });
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(errorSpy).toHaveBeenCalledWith("Ask OTOMOTO provider quota", {
+      quota_class: "model_downgrade",
+      from_model: "gpt-6-astra",
+      to_model: "gpt-6.1-sol",
+      reasoning_effort: "medium",
+    });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toMatch(
+      /exceeded your current quota|org_/
+    );
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("rate limit");
+    errorSpy.mockRestore();
+  });
+
+  it("uses maximum reasoning only when the staff member turns it on", async () => {
+    const parse = vi.fn().mockResolvedValue(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    await generateDiagnosticsDraft(
+      { ...request(), reasoningEffort: "max" },
+      { client, config }
+    );
+
+    expect(parse.mock.calls[0]?.[0]).toMatchObject({
+      model: "gpt-6-astra",
+      reasoning: { effort: "max" },
+    });
+  });
+
+  it("rejects a reasoning effort outside medium and max before calling the provider", async () => {
+    const parse = vi.fn();
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    await expect(
+      generateDiagnosticsDraft(
+        { ...request(), reasoningEffort: "high" as "medium" },
+        { client, config }
+      )
+    ).rejects.toThrow("DIAGNOSTICS_AI_REASONING_INVALID");
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it("retries an out-of-credit draft once on the economy model at medium reasoning", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const parse = vi
+      .fn()
+      .mockRejectedValueOnce(
+        rateLimitError(
+          "insufficient_quota",
+          "You exceeded your current quota in organization org_secret."
+        )
+      )
+      .mockResolvedValueOnce({
+        ...providerResult(),
+        model: "gpt-6.1-sol-2026-10-01",
+      });
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    const result = await generateDiagnosticsDraft(
+      { ...request(), reasoningEffort: "max" },
+      { client, config }
+    );
+
+    expect(result).toMatchObject({
+      requestedModel: "gpt-6.1-sol",
+      resolvedModel: "gpt-6.1-sol-2026-10-01",
+    });
+    expect(parse.mock.calls[0]?.[0]).toMatchObject({
+      model: "gpt-6-astra",
+      reasoning: { effort: "max" },
+    });
+    expect(parse.mock.calls[1]?.[0]).toMatchObject({
+      model: "gpt-6.1-sol",
+      reasoning: { effort: "medium" },
+    });
+    expect(JSON.stringify(errorSpy.mock.calls)).not.toMatch(/org_secret|exceeded your/);
+    errorSpy.mockRestore();
+  });
+
+  it("does not loop when the economy model is already the requested model", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const parse = vi
+      .fn()
+      .mockRejectedValue(
+        rateLimitError("insufficient_quota", "You exceeded your current quota.")
+      );
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    await expect(
+      generateDiagnosticsDraft(request(), {
+        client,
+        config: { ...config, economyModel: "gpt-6-astra" },
+      })
+    ).rejects.toThrow("DIAGNOSTICS_AI_PROVIDER_QUOTA_EXCEEDED");
+    expect(parse).toHaveBeenCalledOnce();
     expect(errorSpy).not.toHaveBeenCalled();
     errorSpy.mockRestore();
   });
