@@ -17,6 +17,7 @@ import {
 import {
   canCompleteWithoutFinalInspection,
   canParkAnyBikeInStorage,
+  canRearrangeControlCenter,
 } from "@/lib/permissions";
 import {
   canDropInColumn,
@@ -91,7 +92,8 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
  * Gates:
  * - The owner skips every gate on a board drop: unfinished jobs, arrival
  *   inspection, final inspection, safety, and checkout photos. The placement
- *   is kept. Everyone else still waits for those checks.
+ *   is kept. Admin does the same, so a Control Center card can move backward
+ *   onto another category or a tech. Everyone else still waits for those checks.
  * - Ready / gallery Ready require a finished inspection, final inspection, and
  *   head-tech safety unless the office waived safety.
  * - Storage is a parking spot for the owner, a service advisor, or an admin:
@@ -120,12 +122,16 @@ export async function moveWorkOrderOnBoard(
     throw new Error("BOARD_MANUAL_STATUS_REQUIRED");
   }
 
-  if (!canDropInColumn(user.role, targetColumnId, workOrder.status)) {
+  if (workOrder.status === "cancelled") {
+    throw new Error("FORBIDDEN");
+  }
+  const officeRearrange = canRearrangeControlCenter(user.role);
+  if (!officeRearrange && !canDropInColumn(user.role, targetColumnId, workOrder.status)) {
     throw new Error("FORBIDDEN");
   }
 
-  const ownerMove = user.role === "owner";
-  const waiveQualityCheck = ownerMove && !isQcBoardColumn(targetColumnId);
+  const ownerMove = officeRearrange;
+  const waiveQualityCheck = officeRearrange;
   const parkInStorage =
     isStorageBoardColumn(targetColumnId) &&
     (ownerMove || canParkAnyBikeInStorage(user.role));
@@ -197,7 +203,7 @@ export async function moveWorkOrderOnBoard(
     await completeWorkOrder(workOrderId, null, {
       waiveQualityCheck: fileWithoutFinalInspection,
       waiveSafetyCheck: fileWithoutFinalInspection,
-      ownerSkip: ownerMove,
+      ownerSkip: officeRearrange,
     });
     return;
   }
@@ -213,10 +219,14 @@ export async function moveWorkOrderOnBoard(
     ...(workOrder.status === "in_storage" && !isStorageBoardColumn(targetColumnId)
       ? { stored_at: null }
       : {}),
+    ...(workOrder.status === "completed" ? { completed_at: null } : {}),
   };
   if (ownerMove) {
-    movePatch.quality_check_waived = waiveQualityCheck;
-    if (isPickupBoardColumn(targetColumnId) || isStorageBoardColumn(targetColumnId)) {
+    movePatch.quality_check_waived = true;
+    if (
+      user.role === "owner" &&
+      (isPickupBoardColumn(targetColumnId) || isStorageBoardColumn(targetColumnId))
+    ) {
       movePatch.safety_waived = true;
     }
   }
@@ -230,7 +240,12 @@ export async function moveWorkOrderOnBoard(
     movePatch.checkout_evidence_override_at = now;
     movePatch.checkout_evidence_override_by_user_id = user.user_id;
   }
-  const optionalColumns = ["stored_at", "quality_check_waived", "safety_waived"] as const;
+  const optionalColumns = [
+    "stored_at",
+    "quality_check_waived",
+    "safety_waived",
+    "completed_at",
+  ] as const;
   let { error } = await supabase
     .from("work_order")
     .update(movePatch)
@@ -271,7 +286,7 @@ export async function moveWorkOrderOnBoard(
     entity_type: "work_order",
     entity_id: workOrderId,
     description: ownerMove
-      ? `Owner moved the bike to ${targetColumnId} and skipped the usual checks`
+      ? `${user.role === "admin" ? "Admin" : "Owner"} moved the bike to ${targetColumnId} and skipped the usual checks`
       : parkInStorage
         ? "Parked the bike in storage and skipped the usual checks"
         : `Board move to ${targetColumnId} (${targetStatus})`,

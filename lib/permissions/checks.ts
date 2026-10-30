@@ -159,6 +159,14 @@ export function canCompleteWithoutFinalInspection(role: UserRole) {
 export function canParkAnyBikeInStorage(role: UserRole) {
   return role === "service_advisor" || role === "admin";
 }
+
+/**
+ * Control Center only: move a card forward or back between categories, and
+ * onto any technician. Manager and advisor keep the usual gates.
+ */
+export function canRearrangeControlCenter(role: UserRole) {
+  return role === "owner" || role === "admin";
+}
 export function canUpdateServiceInformation(role: UserRole) {
   return FRONT_OFFICE.includes(role);
 }

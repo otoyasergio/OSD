@@ -269,15 +269,13 @@ export async function assignAllActiveJobsOnWorkOrderToTechnician(
     .order("created_at", { ascending: true });
   if (error) throw error;
 
-  if (!jobs?.length) {
-    throw new Error("NO_JOBS_TO_ASSIGN");
-  }
-
   let assigned_count = 0;
-  for (const row of jobs) {
+  for (const row of jobs ?? []) {
     await assignTechnicianToJob(row.job_id as string, technicianId);
     assigned_count += 1;
   }
+
+  await setWorkOrderPrimaryTechnician(supabase, workOrderId, technicianId);
   return { assigned_count };
 }
 
@@ -439,7 +437,24 @@ export async function unassignAllActiveJobsOnWorkOrder(
     unassigned_count += 1;
   }
 
+  await setWorkOrderPrimaryTechnician(supabase, workOrderId, null);
   return { unassigned_count };
+}
+
+async function setWorkOrderPrimaryTechnician(
+  supabase: DbClient,
+  workOrderId: string,
+  technicianId: string | null
+) {
+  const { error } = await supabase
+    .from("work_order")
+    .update({
+      primary_technician_id: technicianId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("work_order_id", workOrderId);
+  if (error && isUndefinedColumnError(error, "primary_technician_id")) return;
+  if (error) throw error;
 }
 
 /** Sets work_order.opened_at once (idempotent if already set). */

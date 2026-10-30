@@ -1,23 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { controlCenterTechnicianId } from "@/lib/control-center/assignment";
 
-/**
- * Pure mirror of Control Center pool vs assigned rule used by the UI/service:
- * a bike is assigned when any active job has an assignee.
- */
 function assignedTechnicianId(
-  jobs: Array<{ status: string; assigned_technician_id: string | null }>
+  jobs: Array<{ status: string; assigned_technician_id: string | null }>,
+  primaryTechnicianId?: string | null
 ): string | null {
-  for (const job of jobs) {
-    if (
-      job.status !== "cancelled" &&
-      job.status !== "declined" &&
-      job.status !== "completed" &&
-      job.assigned_technician_id
-    ) {
-      return job.assigned_technician_id;
-    }
-  }
-  return null;
+  return controlCenterTechnicianId(jobs, primaryTechnicianId);
 }
 
 describe("control center assignment shape", () => {
@@ -38,5 +26,14 @@ describe("control center assignment shape", () => {
         { status: "ready_to_start", assigned_technician_id: null },
       ])
     ).toBe(null);
+  });
+
+  it("keeps a finished bike on the tech it was dropped onto", () => {
+    expect(
+      assignedTechnicianId(
+        [{ status: "completed", assigned_technician_id: "old" }],
+        "tech-b"
+      )
+    ).toBe("tech-b");
   });
 });
