@@ -5,6 +5,7 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canManageContractTemplate, canSignContract } from "@/lib/permissions";
+import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { fileDropOffAgreementDocument } from "@/lib/services/customerDocuments";
 import {
   dropOffAgreementSchema,
@@ -329,6 +330,8 @@ export async function signDropOffAgreement(
     uploaded_by_user_id: user.user_id,
   });
 
+  await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+
   const { data: signed } = await supabase.storage
     .from(BUCKET)
     .createSignedUrl(storagePath, 3600);
@@ -412,6 +415,8 @@ export async function markDropOffAgreementSignedOnPaper(
     description: `Paper drop-off agreement recorded on ${workOrder.work_order_number}`,
     new_value: { signature_method: "paper" },
   });
+
+  await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
 
   return {
     ...(data as DropOffAgreement),

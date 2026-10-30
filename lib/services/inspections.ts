@@ -779,6 +779,10 @@ export async function completeInspection(
   }
 
   await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+  const woTable = supabase.from("work_order");
+  if ("update" in woTable && typeof woTable.update === "function") {
+    await woTable.update({ updated_at: now }).eq("work_order_id", workOrderId);
+  }
   return {
     inspectionId: inspection.inspection_id,
     completedAt: now,

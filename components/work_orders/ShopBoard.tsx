@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -12,13 +12,16 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { useBoardDragSensors } from "@/lib/client/useBoardDragSensors";
+import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
 import { SHOP_BOARD_COLUMNS, GALLERY_BOARD_COLUMNS } from "@/lib/status/pipeline";
 import {
+  allowsShopBoardDrop,
   boardColumnIdForStatus,
-  canDragWorkOrderOnBoard,
-  canDropInColumn,
+  buildShopBoardRowsKey,
+  canDragShopBoardCard,
   getTargetStatusForColumn,
+  overlayShopBoardPendingMoves,
   resolveShopBoardDropColumnId,
 } from "@/lib/status/transitions";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
@@ -61,6 +64,7 @@ function BoardColumn({
 
   return (
     <section
+      ref={setNodeRef}
       className={`shop-board-column${isOver && !dropDisabled ? " shop-board-column--drop-target" : ""}`}
       aria-label={label}
     >
@@ -69,7 +73,6 @@ function BoardColumn({
         <span className="shop-board-column-count">{cards.length}</span>
       </header>
       <VirtualColumnList
-        scrollRef={setNodeRef}
         className="shop-board-column-body"
         items={cards}
         estimateSize={compact ? 88 : 140}
@@ -80,7 +83,7 @@ function BoardColumn({
           <DraggableWorkOrderCard
             workOrder={wo}
             compact={compact}
-            disabled={!canDragWorkOrderOnBoard(role, wo.status, isForeignLocation)}
+            disabled={!canDragShopBoardCard(role, wo.status, isForeignLocation)}
           />
         )}
       />
@@ -109,17 +112,33 @@ export function ShopBoard({
   const columns = variant === "gallery" ? GALLERY_BOARD_COLUMNS : SHOP_BOARD_COLUMNS;
   const hiddenSet = useMemo(() => new Set(hiddenColumnIds), [hiddenColumnIds]);
   const [boardRows, setBoardRows] = useState(rows);
+  const [pendingMoves, setPendingMoves] = useState<Record<string, WorkOrderStatus>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const suppressClickRef = useRef(false);
+  const activeIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
 
-  // Sync when server revalidates with new props
-  const rowsKey = rows.map((r) => `${r.work_order_id}:${r.status}`).join("|");
+  const {
+    schedule: scheduleRefresh,
+    flush: flushRefresh,
+    cancel: cancelRefresh,
+  } = useDebouncedRouterRefresh({
+    delayMs: 800,
+    isPaused: () => activeIdRef.current !== null,
+  });
+
+  // Sync when server revalidates with new props (status, flags, photo, tech, customer)
+  const rowsKey = useMemo(() => buildShopBoardRowsKey(rows), [rows]);
   const [prevRowsKey, setPrevRowsKey] = useState(rowsKey);
-  if (rowsKey !== prevRowsKey) {
+  if (rowsKey !== prevRowsKey && activeId === null) {
     setPrevRowsKey(rowsKey);
-    setBoardRows(rows);
+    const reconciled = overlayShopBoardPendingMoves(rows, pendingMoves);
+    setPendingMoves(reconciled.remainingPending);
+    setBoardRows(reconciled.rows);
   }
 
   const sensors = useBoardDragSensors(8);
@@ -143,6 +162,12 @@ export function ShopBoard({
     ),
   }));
   const activeColumns = columnCounts.filter((column) => column.count > 0).length;
+  const activeWorkOrderCount = useMemo(
+    () =>
+      boardRows.filter((row) => row.status !== "completed" && row.status !== "cancelled")
+        .length,
+    [boardRows]
+  );
 
   const activeCard = activeId
     ? (boardRows.find((row) => row.work_order_id === activeId) ?? null)
@@ -151,16 +176,22 @@ export function ShopBoard({
   function handleDragStart(event: DragStartEvent) {
     suppressClickRef.current = true;
     setErrorMessage(null);
-    setActiveId(String(event.active.id));
+    const nextId = String(event.active.id);
+    activeIdRef.current = nextId;
+    setActiveId(nextId);
   }
 
   function handleDragEnd(event: DragEndEvent) {
+    activeIdRef.current = null;
     setActiveId(null);
     window.setTimeout(() => {
       suppressClickRef.current = false;
     }, 50);
     const { active, over } = event;
-    if (!over) return;
+    if (!over) {
+      flushRefresh();
+      return;
+    }
 
     const workOrderId = String(active.id);
     const columnIds = new Set(visibleColumns.map((column) => column.id));
@@ -172,28 +203,44 @@ export function ShopBoard({
         return row ? boardColumnIdForStatus(row.status, columns) : null;
       },
     });
-    if (!targetColumnId) return;
+    if (!targetColumnId) {
+      flushRefresh();
+      return;
+    }
 
     const card = boardRows.find((row) => row.work_order_id === workOrderId);
-    if (!card) return;
+    if (!card) {
+      flushRefresh();
+      return;
+    }
 
     const sourceColumnId = boardColumnIdForStatus(card.status, columns);
-    if (sourceColumnId === targetColumnId) return;
+    if (sourceColumnId === targetColumnId) {
+      flushRefresh();
+      return;
+    }
 
     const targetStatus = getTargetStatusForColumn(targetColumnId);
     if (targetStatus === null) {
       setErrorMessage("Use the work order detail page to place on hold or cancel.");
+      flushRefresh();
       return;
     }
 
-    if (!canDropInColumn(role, targetColumnId, card.status)) {
+    if (!allowsShopBoardDrop(role, targetColumnId, card.status)) {
       setErrorMessage("You do not have permission to move this work order there.");
+      flushRefresh();
       return;
     }
 
-    if (targetStatus === card.status) return;
+    if (targetStatus === card.status) {
+      flushRefresh();
+      return;
+    }
 
-    const previousRows = boardRows;
+    cancelRefresh();
+    const previousStatus = card.status;
+    setPendingMoves((current) => ({ ...current, [workOrderId]: targetStatus }));
     setBoardRows((current) =>
       current.map((row) =>
         row.work_order_id === workOrderId ? { ...row, status: targetStatus } : row
@@ -204,14 +251,26 @@ export function ShopBoard({
     startTransition(async () => {
       const result = await moveWorkOrderOnBoardAction(workOrderId, targetColumnId);
       if (result.error) {
-        setBoardRows(previousRows);
+        setPendingMoves((current) => {
+          const next = { ...current };
+          delete next[workOrderId];
+          return next;
+        });
+        setBoardRows((current) =>
+          current.map((row) =>
+            row.work_order_id === workOrderId ? { ...row, status: previousStatus } : row
+          )
+        );
         setErrorMessage(result.error);
       }
+      scheduleRefresh();
     });
   }
 
   function handleDragCancel() {
+    activeIdRef.current = null;
     setActiveId(null);
+    flushRefresh();
     window.setTimeout(() => {
       suppressClickRef.current = false;
     }, 50);
@@ -229,7 +288,7 @@ export function ShopBoard({
       <p className="shop-board-summary" aria-live="polite">
         {boardRows.length === 0
           ? "No work orders on the board"
-          : `${boardRows.length} work order${boardRows.length === 1 ? "" : "s"} across ${activeColumns} column${activeColumns === 1 ? "" : "s"}`}
+          : `${activeWorkOrderCount} active work order${activeWorkOrderCount === 1 ? "" : "s"} across ${activeColumns} column${activeColumns === 1 ? "" : "s"}`}
         {isPending ? " · Saving…" : ""}
       </p>
       {errorMessage ? (

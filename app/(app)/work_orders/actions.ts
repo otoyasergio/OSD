@@ -149,6 +149,9 @@ export async function createWorkOrderOnlyAction(
     const result = await createWorkOrderFromFormData(formData);
     revalidatePath("/work_orders");
     revalidatePath("/dashboard");
+    revalidatePath("/control-center");
+    revalidatePath("/technician");
+    revalidatePath("/technician/docket");
     revalidatePath(`/work_orders/${result.work_order_id}`);
     return {
       error: null,
@@ -192,6 +195,9 @@ export async function createWorkOrderWithIntakePhotosAction(
     const failed = await uploadIntakeBatch(workOrderId, files);
     revalidatePath("/work_orders");
     revalidatePath("/dashboard");
+    revalidatePath("/control-center");
+    revalidatePath("/technician");
+    revalidatePath("/technician/docket");
 
     if (failed.length > 0) {
       revalidatePath(`/work_orders/${workOrderId}`);
@@ -257,6 +263,7 @@ export async function completeIntakePhotosAction(
     const failed = await uploadIntakeBatch(workOrderId, files);
     revalidatePath("/work_orders");
     revalidatePath("/dashboard");
+    revalidatePath("/control-center");
     revalidatePath(`/work_orders/${workOrderId}`);
 
     if (failed.length > 0) {
@@ -298,6 +305,8 @@ export async function assignTechnicianAction(
   }
 
   revalidatePath(`/work_orders/${workOrderId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/control-center");
   revalidatePath("/technician");
   revalidatePath("/technician/docket");
   return { error: null };
@@ -316,6 +325,8 @@ export async function setPrimaryTechnicianAction(
   }
 
   revalidatePath(`/work_orders/${workOrderId}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/control-center");
   revalidatePath("/technician");
   revalidatePath("/technician/docket");
   return { error: null };

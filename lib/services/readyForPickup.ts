@@ -295,7 +295,7 @@ export async function listRecentlyCompleted(): Promise<WaitingStageBike[]> {
     .eq("status", "completed")
     .gte("completed_at", since.toISOString())
     .order("completed_at", { ascending: false, nullsFirst: false })
-    .limit(24);
+    .limit(200);
 
   if (error) throw error;
 

@@ -1,13 +1,17 @@
 import { describe, it, expect } from "vitest";
 import { GALLERY_BOARD_COLUMNS } from "@/lib/status/pipeline";
 import {
+  allowsShopBoardDrop,
   boardColumnIdForStatus,
+  buildShopBoardRowsKey,
+  canDragShopBoardCard,
   canDragWorkOrderOnBoard,
   canDropInColumn,
   getTargetStatusForColumn,
   isPickupBoardColumn,
   isQcBoardColumn,
   isStorageBoardColumn,
+  overlayShopBoardPendingMoves,
   resolveShopBoardDropColumnId,
 } from "@/lib/status/transitions";
 
@@ -128,5 +132,81 @@ describe("board transitions", () => {
     expect(isQcBoardColumn("qc")).toBe(true);
     expect(isQcBoardColumn("gallery_qc")).toBe(true);
     expect(isQcBoardColumn("gallery_ready")).toBe(false);
+  });
+
+  it("changes the shop board sync key when flags, photo, tech, or customer change", () => {
+    const base = {
+      work_order_id: "wo-1",
+      work_order_number: "3885",
+      status: "in_progress" as const,
+      flags: ["Incomplete inspection"],
+      primary_photo_url: null,
+      primary_technician: { first_name: "Stefano", last_name: "Franco" },
+      motorcycle: {
+        year: 2025,
+        make: "HONDA",
+        model: "Monkey",
+        customer: { first_name: "Dominik", last_name: "Szymanski" },
+      },
+    };
+    const afterInspection = {
+      ...base,
+      flags: [],
+      primary_photo_url: "https://example.com/photo.jpg",
+    };
+    expect(buildShopBoardRowsKey([base])).not.toBe(
+      buildShopBoardRowsKey([afterInspection])
+    );
+  });
+
+  it("overlays in-flight shop board moves until the server snapshot confirms them", () => {
+    const rows = [
+      {
+        work_order_id: "wo-1",
+        work_order_number: "3885",
+        status: "open" as const,
+        flags: [],
+        motorcycle: null,
+      },
+      {
+        work_order_id: "wo-2",
+        work_order_number: "3884",
+        status: "waiting_for_parts" as const,
+        flags: [],
+        motorcycle: null,
+      },
+    ];
+    const reconciled = overlayShopBoardPendingMoves(rows, {
+      "wo-1": "in_progress",
+      "wo-2": "completed",
+    });
+    expect(reconciled.rows.map((r) => `${r.work_order_id}:${r.status}`)).toEqual([
+      "wo-1:in_progress",
+      "wo-2:completed",
+    ]);
+    expect(reconciled.remainingPending).toEqual({
+      "wo-1": "in_progress",
+      "wo-2": "completed",
+    });
+
+    const confirmed = overlayShopBoardPendingMoves(
+      [
+        { ...rows[0], status: "in_progress" as const },
+        { ...rows[1], status: "completed" as const },
+      ],
+      reconciled.remainingPending
+    );
+    expect(confirmed.remainingPending).toEqual({});
+  });
+
+  it("lets owner and admin move cards forward or back on the shop board, including out of Complete", () => {
+    for (const role of ["owner", "admin"] as const) {
+      expect(canDragShopBoardCard(role, "completed", false)).toBe(true);
+      expect(allowsShopBoardDrop(role, "gallery_qc", "completed")).toBe(true);
+      expect(allowsShopBoardDrop(role, "gallery_in_bay", "ready_for_pickup")).toBe(true);
+      expect(canDragShopBoardCard(role, "cancelled", false)).toBe(false);
+    }
+    expect(canDragShopBoardCard("manager", "completed", false)).toBe(false);
+    expect(allowsShopBoardDrop("manager", "gallery_qc", "completed")).toBe(false);
   });
 });

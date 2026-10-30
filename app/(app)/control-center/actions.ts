@@ -57,6 +57,7 @@ export async function openWorkOrderAction(
   try {
     const result = await openWorkOrderForControlCenter(workOrderId);
     revalidatePath("/control-center");
+    revalidatePath("/dashboard");
     return { error: null, opened_at: result.opened_at };
   } catch (error) {
     return {
@@ -79,6 +80,7 @@ export async function setStaffSignedInAction(
       await clockStaffOut(staffUserId);
     }
     revalidatePath("/control-center");
+    revalidatePath("/dashboard");
     revalidatePath("/technician");
     revalidatePath("/settings/timesheets");
     return { error: null };

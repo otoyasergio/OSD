@@ -59,7 +59,9 @@ function revalidateEstimate(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath("/work_orders");
   revalidatePath("/dashboard");
+  revalidatePath("/control-center");
   revalidatePath("/technician");
+  revalidatePath("/technician/docket");
   revalidatePath("/billing");
 }
 

@@ -59,5 +59,7 @@ export async function uploadPaperAgreementCopyAction(
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath(`/work_orders/${workOrderId}/contract`);
   revalidatePath("/work_orders");
+  revalidatePath("/dashboard");
+  revalidatePath("/control-center");
   return { error: null };
 }

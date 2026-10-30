@@ -64,8 +64,10 @@ export type DashboardRow = {
 };
 
 export type DashboardData = {
+  location_id: string;
   counts: DashboardCounts;
   rows: DashboardRow[];
+  completedRows: DashboardRow[];
   filters: DashboardFilters;
   technicians: Array<{
     user_id: string;
@@ -255,13 +257,10 @@ export async function getDashboardData(
   const now = new Date();
   const locationId = user.active_location_id!;
 
-  // Lean nested select for board cards — photos resolved via RPC after filter.
-  // Exclude completed/cancelled so the 300-row window stays on operational WOs.
-  const [woResult, membershipResult] = await Promise.all([
-    supabase
-      .from("work_order")
-      .select(
-        `
+  const completedSince = new Date(now);
+  completedSince.setUTCDate(completedSince.getUTCDate() - 7);
+
+  const rowSelect = `
       work_order_id,
       work_order_number,
       external_invoice_number,
@@ -292,12 +291,26 @@ export async function getDashboardData(
       recommendation ( severity, status ),
       inspection ( completed_at ),
       drop_off_agreement ( agreement_id )
-    `
-      )
+    `;
+
+  // Lean nested select for board cards — photos resolved via RPC after filter.
+  // Exclude completed/cancelled so the 300-row window stays on operational WOs.
+  const [woResult, completedResult, membershipResult] = await Promise.all([
+    supabase
+      .from("work_order")
+      .select(rowSelect)
       .eq("location_id", locationId)
       .in("status", ACTIVE_STATUSES)
       .order("date_created", { ascending: false })
       .limit(300),
+    supabase
+      .from("work_order")
+      .select(rowSelect)
+      .eq("location_id", locationId)
+      .eq("status", "completed")
+      .gte("completed_at", completedSince.toISOString())
+      .order("completed_at", { ascending: false, nullsFirst: false })
+      .limit(200),
     supabase.from("user_location").select("user_id").eq("location_id", locationId),
   ]);
 
@@ -312,6 +325,17 @@ export async function getDashboardData(
     user.role,
     user.user_id
   ) as unknown as RawRow[];
+
+  const rawCompletedRows = completedResult.error
+    ? []
+    : (scopeWorkOrdersForViewer(
+        ((completedResult.data ?? []) as unknown as RawRow[]).map((row) => ({
+          ...row,
+          jobs: row.job,
+        })),
+        user.role,
+        user.user_id
+      ) as unknown as RawRow[]);
 
   const counts = emptyCounts();
 
@@ -346,7 +370,7 @@ export async function getDashboardData(
   const query = filters.q?.trim().toLowerCase() || "";
   const card = (filters.card?.trim() || "") as DashboardCardKey | "";
 
-  let filtered = rawRows;
+  let filtered = statusFilter === "completed" ? rawCompletedRows : rawRows;
 
   if (card) {
     filtered = filtered.filter((row) => matchesCard(row, card, now));
@@ -362,11 +386,48 @@ export async function getDashboardData(
     );
   }
 
-  const filteredIds = filtered.map((row) => row.work_order_id);
+  let filteredCompleted =
+    card || (statusFilter && statusFilter !== "completed") ? [] : rawCompletedRows;
+  if (technicianId) {
+    filteredCompleted = filteredCompleted.filter(
+      (row) =>
+        row.primary_technician_id === technicianId ||
+        (row.job ?? []).some((job) => job.assigned_technician_id === technicianId)
+    );
+  }
+
+  const allIdsForPhotos = [
+    ...new Set([
+      ...filtered.map((row) => row.work_order_id),
+      ...filteredCompleted.map((row) => row.work_order_id),
+    ]),
+  ];
   const [{ urls: primaryPhotoUrls, counts: photoCounts }, openFlags] = await Promise.all([
-    resolveBoardPrimaryPhotos(supabase, filteredIds),
-    listOpenAdminFlagsForWorkOrders(supabase, filteredIds),
+    resolveBoardPrimaryPhotos(supabase, allIdsForPhotos),
+    listOpenAdminFlagsForWorkOrders(supabase, allIdsForPhotos),
   ]);
+
+  const matchesTextAndFlag = (row: DashboardRow) => {
+    if (flagFilter && !row.flags.includes(flagFilter)) return false;
+    if (!query) return true;
+    const customer = row.motorcycle?.customer;
+    const haystack = [
+      row.work_order_number,
+      row.external_invoice_number,
+      customer?.first_name,
+      customer?.last_name,
+      customer?.phone,
+      row.motorcycle?.make,
+      row.motorcycle?.model,
+      row.motorcycle?.vin,
+      row.primary_technician?.first_name,
+      row.primary_technician?.last_name,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(query);
+  };
 
   const rows = filtered
     .map((row) =>
@@ -378,27 +439,19 @@ export async function getDashboardData(
         (openFlags.get(row.work_order_id) ?? []).length > 0
       )
     )
-    .filter((row) => {
-      if (flagFilter && !row.flags.includes(flagFilter)) return false;
-      if (!query) return true;
-      const customer = row.motorcycle?.customer;
-      const haystack = [
-        row.work_order_number,
-        row.external_invoice_number,
-        customer?.first_name,
-        customer?.last_name,
-        customer?.phone,
-        row.motorcycle?.make,
-        row.motorcycle?.model,
-        row.motorcycle?.vin,
-        row.primary_technician?.first_name,
-        row.primary_technician?.last_name,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(query);
-    });
+    .filter(matchesTextAndFlag);
+
+  const completedRows = filteredCompleted
+    .map((row) =>
+      toDashboardRow(
+        row,
+        now,
+        primaryPhotoUrls.get(row.work_order_id) ?? null,
+        photoCounts.get(row.work_order_id) ?? 0,
+        (openFlags.get(row.work_order_id) ?? []).length > 0
+      )
+    )
+    .filter(matchesTextAndFlag);
 
   const userIds = (membershipResult.data ?? []).map(
     (row: { user_id: string }) => row.user_id
@@ -419,8 +472,10 @@ export async function getDashboardData(
   }
 
   return {
+    location_id: locationId,
     counts,
     rows,
+    completedRows,
     filters: {
       status: statusFilter as WorkOrderStatus | "",
       technician_id: technicianId,
