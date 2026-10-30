@@ -294,6 +294,27 @@ describe("pickup service gates query committed checkout photos", () => {
     requireUser.mockResolvedValue(advisor);
   });
 
+  it("lets the owner mark ready without checkout photos", async () => {
+    requireUser.mockResolvedValue(owner);
+    const client = makeClient({
+      workOrder: {
+        status: "quality_check",
+        quality_checked_at: null,
+        quality_checked_by_user_id: null,
+        safety_waived: false,
+        checkout_evidence_required: true,
+      },
+      photos: [],
+      inspection: null,
+    });
+    createClient.mockResolvedValue(client);
+    await markReadyForPickup(WO);
+    expect(client.updates.some((row) => row.payload.status === "ready_for_pickup")).toBe(
+      true
+    );
+    expect(client.updates.some((row) => row.payload.safety_waived === true)).toBe(true);
+  });
+
   it("markReadyForPickup rejects missing committed checkout evidence", async () => {
     const client = makeClient({ photos: [{ category: "front" }] });
     createClient.mockResolvedValue(client);
@@ -365,8 +386,72 @@ describe("pickup service gates query committed checkout photos", () => {
     }
   });
 
-  it("still requires arrival inspection and checkout photos when the office files complete", async () => {
+  it("lets the owner skip inspection, safety, checkout photos, and open jobs", async () => {
     requireUser.mockResolvedValue(owner);
+    const blockedBike = {
+      status: "in_progress",
+      quality_checked_at: null,
+      quality_checked_by_user_id: null,
+      ready_for_pickup_at: null,
+      safety_checked_at: null,
+      safety_checked_by_user_id: null,
+      safety_required: null,
+      safety_waived: false,
+      checkout_evidence_required: true,
+      checkout_evidence_override_at: null,
+    };
+    const openJobs = [
+      { job_id: "j1", status: "in_progress", service_name_snapshot: "Oil" },
+    ];
+
+    const toReady = makeClient({
+      workOrder: blockedBike,
+      jobs: openJobs,
+      inspection: null,
+      photos: [],
+    });
+    createClient.mockResolvedValue(toReady);
+    await moveWorkOrderOnBoard(WO, "pickup");
+    const readyUpdate = toReady.updates.find(
+      (row) => row.payload.status === "ready_for_pickup"
+    );
+    expect(readyUpdate?.payload.quality_check_waived).toBe(true);
+    expect(readyUpdate?.payload.safety_waived).toBe(true);
+    expect(readyUpdate?.payload.checkout_evidence_override_reason).toMatch(
+      /owner skipped/i
+    );
+
+    const toStore = makeClient({
+      workOrder: blockedBike,
+      jobs: openJobs,
+      inspection: null,
+      photos: [],
+    });
+    createClient.mockResolvedValue(toStore);
+    await moveWorkOrderOnBoard(WO, "storage");
+    const stored = toStore.updates.find((row) => row.payload.status === "in_storage");
+    expect(stored?.payload.safety_waived).toBe(true);
+
+    const toComplete = makeClient({
+      workOrder: blockedBike,
+      jobs: openJobs,
+      inspection: null,
+      photos: [],
+    });
+    createClient.mockResolvedValue(toComplete);
+    await moveWorkOrderOnBoard(WO, "complete");
+    const completed = toComplete.updates.find(
+      (row) => row.payload.status === "completed"
+    );
+    expect(completed?.payload.quality_check_waived).toBe(true);
+    expect(completed?.payload.safety_waived).toBe(true);
+    expect(completed?.payload.checkout_evidence_override_reason).toMatch(
+      /owner skipped/i
+    );
+  });
+
+  it("still requires arrival inspection and checkout photos when a manager files complete", async () => {
+    requireUser.mockResolvedValue({ ...owner, role: "manager" });
     const noInspection = makeClient({
       workOrder: {
         status: "quality_check",

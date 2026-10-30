@@ -10,7 +10,11 @@ export type PickupLeaveGateInput = {
   waiveQualityCheck?: boolean;
   /** Complete drop for a bike that already left may skip the safety check. */
   waiveSafetyCheck?: boolean;
+  /** Owner board moves ignore every leave gate. */
+  skipAllGates?: boolean;
 };
+
+export const OWNER_SKIP_CHECKS_REASON = "Owner skipped the usual checks.";
 
 export type PickupLeaveBlockReason =
   | "INSPECTION_REQUIRED_BEFORE_PICKUP"
@@ -26,6 +30,7 @@ export type PickupLeaveBlockReason =
 export function pickupLeaveBlockReason(
   input: PickupLeaveGateInput
 ): PickupLeaveBlockReason | null {
+  if (input.skipAllGates) return null;
   if (!input.inspectionComplete) return "INSPECTION_REQUIRED_BEFORE_PICKUP";
   if (!input.qualityChecked && !input.waiveQualityCheck) return "QC_REQUIRED";
   if (input.safetyRequired && !input.safetyChecked && !input.waiveSafetyCheck) {
@@ -53,6 +58,7 @@ export function storageLeaveBlockReason(
     "checkoutEvidenceRequired" | "checkoutEvidenceComplete" | "checkoutEvidenceOverridden"
   >
 ): PickupLeaveBlockReason | null {
+  if (input.skipAllGates) return null;
   if (!input.inspectionComplete) return "INSPECTION_REQUIRED_BEFORE_PICKUP";
   if (!input.qualityChecked && !input.waiveQualityCheck) return "QC_REQUIRED";
   return null;

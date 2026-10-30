@@ -15,7 +15,10 @@ import {
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
-import { pickupLeaveBlockReason } from "@/lib/status/pickupGates";
+import {
+  OWNER_SKIP_CHECKS_REASON,
+  pickupLeaveBlockReason,
+} from "@/lib/status/pickupGates";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import {
   checkoutPickupGateInput,
@@ -97,7 +100,11 @@ async function assertPickupLeaveGates(
     | "checkout_evidence_override_by_user_id"
     | "checkout_evidence_override_reason"
   >,
-  options: { waiveQualityCheck?: boolean; waiveSafetyCheck?: boolean } = {}
+  options: {
+    waiveQualityCheck?: boolean;
+    waiveSafetyCheck?: boolean;
+    skipAllGates?: boolean;
+  } = {}
 ) {
   const [
     { data: safetyRow, error: safetyError },
@@ -133,6 +140,7 @@ async function assertPickupLeaveGates(
     ),
     waiveQualityCheck: options.waiveQualityCheck,
     waiveSafetyCheck: options.waiveSafetyCheck,
+    skipAllGates: options.skipAllGates,
     safetyRequired: isSafetyRequired({
       safety_required: (safetyRow?.safety_required as boolean | null) ?? null,
       safety_waived: Boolean(safetyRow?.safety_waived),
@@ -247,16 +255,31 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canMarkReadyForPickup(user.role)) throw new Error("FORBIDDEN");
 
-  await assertAllActiveJobsCompleted(supabase, workOrderId);
-  await assertPickupLeaveGates(supabase, workOrderId, workOrder);
+  const ownerSkip = user.role === "owner";
+  if (!ownerSkip) {
+    await assertAllActiveJobsCompleted(supabase, workOrderId);
+    await assertPickupLeaveGates(supabase, workOrderId, workOrder);
+  }
 
   const now = new Date().toISOString();
+  const checkout = ownerSkip
+    ? await loadCheckoutEvidenceState(supabase, workOrderId, workOrder)
+    : null;
   const readyPatch: Record<string, unknown> = {
     ready_for_pickup_at: now,
     stored_at: null,
     status: "ready_for_pickup",
     updated_at: now,
   };
+  if (ownerSkip) {
+    readyPatch.quality_check_waived = true;
+    readyPatch.safety_waived = true;
+    if (checkout && checkout.required && !checkout.complete && !checkout.overridden) {
+      readyPatch.checkout_evidence_override_reason = OWNER_SKIP_CHECKS_REASON;
+      readyPatch.checkout_evidence_override_at = now;
+      readyPatch.checkout_evidence_override_by_user_id = user.user_id;
+    }
+  }
   let { error } = await supabase
     .from("work_order")
     .update(readyPatch)
@@ -302,13 +325,19 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
 export async function completeWorkOrder(
   workOrderId: string,
   pickupNotes?: string | null,
-  options: { waiveQualityCheck?: boolean; waiveSafetyCheck?: boolean } = {}
+  options: {
+    waiveQualityCheck?: boolean;
+    waiveSafetyCheck?: boolean;
+    ownerSkip?: boolean;
+  } = {}
 ): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canCompleteWorkOrder(user.role)) throw new Error("FORBIDDEN");
 
+  const ownerSkip = user.role === "owner";
   const fileWithoutFinalInspection =
-    Boolean(options.waiveQualityCheck) && canCompleteWithoutFinalInspection(user.role);
+    ownerSkip ||
+    (Boolean(options.waiveQualityCheck) && canCompleteWithoutFinalInspection(user.role));
   const canOverride = canOverrideWorkOrderStatus(user.role) || fileWithoutFinalInspection;
   if (
     workOrder.status !== "ready_for_pickup" &&
@@ -319,9 +348,12 @@ export async function completeWorkOrder(
     throw new Error("NOT_READY_FOR_PICKUP");
   }
 
+  const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
   await assertPickupLeaveGates(supabase, workOrderId, workOrder, {
     waiveQualityCheck: fileWithoutFinalInspection,
-    waiveSafetyCheck: fileWithoutFinalInspection && Boolean(options.waiveSafetyCheck),
+    waiveSafetyCheck:
+      ownerSkip || (fileWithoutFinalInspection && Boolean(options.waiveSafetyCheck)),
+    skipAllGates: ownerSkip,
   });
 
   const now = new Date().toISOString();
@@ -340,7 +372,15 @@ export async function completeWorkOrder(
     !workOrder.quality_checked_at &&
     !workOrder.quality_checked_by_user_id;
   if (skippedFinalInspection) completionPatch.quality_check_waived = true;
-  const optionalColumns = ["stored_at", "quality_check_waived"] as const;
+  if (ownerSkip) {
+    completionPatch.safety_waived = true;
+    if (checkout.required && !checkout.complete && !checkout.overridden) {
+      completionPatch.checkout_evidence_override_reason = OWNER_SKIP_CHECKS_REASON;
+      completionPatch.checkout_evidence_override_at = now;
+      completionPatch.checkout_evidence_override_by_user_id = user.user_id;
+    }
+  }
+  const optionalColumns = ["stored_at", "quality_check_waived", "safety_waived"] as const;
   let { error } = await supabase
     .from("work_order")
     .update(completionPatch)
@@ -369,9 +409,11 @@ export async function completeWorkOrder(
     event_type: TimelineEventType.WORK_ORDER_COMPLETED,
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: skippedFinalInspection
-      ? "Completed without a final inspection — the bike had already left"
-      : "Work order completed / released",
+    description: ownerSkip
+      ? "Owner completed the bike and skipped the usual checks"
+      : skippedFinalInspection
+        ? "Completed without a final inspection — the bike had already left"
+        : "Work order completed / released",
     old_value: { status: workOrder.status },
     new_value: {
       status: "completed",
@@ -387,9 +429,11 @@ export async function completeWorkOrder(
     action: "work_order_completed",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: skippedFinalInspection
-      ? "Completed without a final inspection — the bike had already left"
-      : "Work order completed / released",
+    description: ownerSkip
+      ? "Owner completed the bike and skipped the usual checks"
+      : skippedFinalInspection
+        ? "Completed without a final inspection — the bike had already left"
+        : "Work order completed / released",
     old_value: { status: workOrder.status },
     new_value: {
       status: "completed",
