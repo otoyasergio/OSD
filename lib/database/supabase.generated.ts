@@ -542,6 +542,43 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["phone_call"]["Insert"]>;
       };
+      communication_log: {
+        Row: {
+          log_id: string;
+          work_order_id: string | null;
+          customer_id: string | null;
+          channel: string;
+          direction: string;
+          template_key: string | null;
+          to_address: string;
+          from_address: string | null;
+          body: string;
+          status: string;
+          external_id: string | null;
+          error_message: string | null;
+          sent_by_user_id: string | null;
+          dedupe_key: string | null;
+          created_at: string;
+        };
+        Insert: {
+          log_id?: string;
+          work_order_id?: string | null;
+          customer_id?: string | null;
+          channel: string;
+          direction: string;
+          template_key?: string | null;
+          to_address: string;
+          from_address?: string | null;
+          body: string;
+          status?: string;
+          external_id?: string | null;
+          error_message?: string | null;
+          sent_by_user_id?: string | null;
+          dedupe_key?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["communication_log"]["Insert"]>;
+      };
     };
     Views: Record<string, never>;
     Functions: {

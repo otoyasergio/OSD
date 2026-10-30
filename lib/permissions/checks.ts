@@ -143,6 +143,10 @@ export function canOverrideSafetyRequirement(role: UserRole) {
 export function canMarkReadyForPickup(role: UserRole) {
   return FRONT_OFFICE.includes(role);
 }
+/** Board prompt that texts and emails a customer when a card is placed in Ready. */
+export function canSendReadyForPickupNotice(role: UserRole) {
+  return FRONT_OFFICE.includes(role) || role === "admin";
+}
 export function canCompleteWorkOrder(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "admin";
 }

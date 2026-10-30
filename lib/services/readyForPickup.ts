@@ -12,6 +12,9 @@ export type WaitingStageBike = {
   motorcycle_label: string;
   /** Office boards only. The tech floor leaves this unset so client names stay off that screen. */
   customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_email?: string | null;
+  customer_sms_opted_out?: boolean;
   /** When the bike entered this waiting stage; may fall back to updated_at. */
   ready_since: string;
   /** True when the preferred stamp was null and we used updated_at. */
@@ -32,6 +35,9 @@ type NestedMotorcycle = {
 type NestedCustomer = {
   first_name: string;
   last_name: string;
+  phone?: string | null;
+  email?: string | null;
+  sms_opted_out_at?: string | null;
 } | null;
 
 type StageRow = {
@@ -63,13 +69,25 @@ const STAGE_BIKE_SELECT_WITH_CUSTOMER = `
       motorcycle:motorcycle_id ( year, make, model ),
       customer:customer_id (
         first_name,
-        last_name
+        last_name,
+        phone,
+        email,
+        sms_opted_out_at
       )
     `;
 
 function asOne<T>(value: T | T[] | null | undefined): T | null {
   if (value == null) return null;
   return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+function customerContact(customer: StageRow["customer"]) {
+  const row = asOne(customer);
+  return {
+    customer_phone: row?.phone ?? null,
+    customer_email: row?.email ?? null,
+    customer_sms_opted_out: Boolean(row?.sms_opted_out_at),
+  };
 }
 
 async function listWaitingStageBikes(input: {
@@ -114,6 +132,7 @@ async function listWaitingStageBikes(input: {
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : "—",
       customer_name: input.includeCustomer ? clientDisplayName(row.customer) : null,
+      ...(input.includeCustomer ? customerContact(row.customer) : {}),
       ready_since: at ?? inferredFallback,
       ready_since_inferred: !at,
       primary_photo_url: urls.get(row.work_order_id) ?? null,
@@ -215,7 +234,10 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
       motorcycle:motorcycle_id ( year, make, model ),
       customer:customer_id (
         first_name,
-        last_name
+        last_name,
+        phone,
+        email,
+        sms_opted_out_at
       )
     `;
   const { data, error } = await supabase
@@ -251,6 +273,7 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : "—",
       customer_name: clientDisplayName(row.customer),
+      ...customerContact(row.customer),
       ready_since: row.stored_at ?? row.updated_at,
       ready_since_inferred: !row.stored_at,
       primary_photo_url: urls.get(row.work_order_id) ?? null,
@@ -287,7 +310,10 @@ export async function listRecentlyCompleted(): Promise<WaitingStageBike[]> {
       ),
       customer:customer_id (
         first_name,
-        last_name
+        last_name,
+        phone,
+        email,
+        sms_opted_out_at
       )
     `
     )
@@ -316,6 +342,7 @@ export async function listRecentlyCompleted(): Promise<WaitingStageBike[]> {
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : "—",
       customer_name: clientDisplayName(row.customer),
+      ...customerContact(row.customer),
       ready_since: completedAt,
       ready_since_inferred: !row.completed_at,
       primary_photo_url: urls.get(row.work_order_id) ?? null,

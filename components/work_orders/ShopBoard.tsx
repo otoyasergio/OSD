@@ -25,6 +25,12 @@ import {
   resolveShopBoardDropColumnId,
 } from "@/lib/status/transitions";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
+import { PickupNoticeDialog } from "@/components/communications/PickupNoticeDialog";
+import {
+  pickupNoticeFromShopCard,
+  shouldPromptPickupNotice,
+  type PickupNoticeContact,
+} from "@/lib/communications/pickupNotice";
 import { DraggableWorkOrderCard } from "@/components/work_orders/DraggableWorkOrderCard";
 import {
   WorkOrderCard,
@@ -99,6 +105,7 @@ export function ShopBoard({
   role,
   isForeignLocation = false,
   variant = "gallery",
+  locationCode,
 }: {
   rows: WorkOrderCardData[];
   hideEmpty?: boolean;
@@ -108,6 +115,7 @@ export function ShopBoard({
   isForeignLocation?: boolean;
   /** gallery = Track Day 4-wide stages; detailed = classic many columns */
   variant?: "gallery" | "detailed";
+  locationCode: string;
 }) {
   const columns = variant === "gallery" ? GALLERY_BOARD_COLUMNS : SHOP_BOARD_COLUMNS;
   const hiddenSet = useMemo(() => new Set(hiddenColumnIds), [hiddenColumnIds]);
@@ -115,6 +123,7 @@ export function ShopBoard({
   const [pendingMoves, setPendingMoves] = useState<Record<string, WorkOrderStatus>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [pickupNotice, setPickupNotice] = useState<PickupNoticeContact | null>(null);
   const [isPending, startTransition] = useTransition();
   const suppressClickRef = useRef(false);
   const activeIdRef = useRef<string | null>(null);
@@ -262,6 +271,8 @@ export function ShopBoard({
           )
         );
         setErrorMessage(result.error);
+      } else if (shouldPromptPickupNotice({ targetColumnId, moveSucceeded: true })) {
+        setPickupNotice(pickupNoticeFromShopCard(card));
       }
       scheduleRefresh();
     });
@@ -341,6 +352,13 @@ export function ShopBoard({
           ) : null}
         </DragOverlay>
       </DndContext>
+      {pickupNotice ? (
+        <PickupNoticeDialog
+          contact={pickupNotice}
+          locationCode={locationCode}
+          onClose={() => setPickupNotice(null)}
+        />
+      ) : null}
     </div>
   );
 }
