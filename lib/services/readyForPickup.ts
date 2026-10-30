@@ -61,7 +61,10 @@ const STAGE_BIKE_SELECT_WITH_CUSTOMER = `
       quality_checked_at,
       updated_at,
       motorcycle:motorcycle_id ( year, make, model ),
-      customer:customer_id ( first_name, last_name )
+      customer:customer_id (
+        first_name,
+        last_name
+      )
     `;
 
 function asOne<T>(value: T | T[] | null | undefined): T | null {
@@ -95,7 +98,7 @@ async function listWaitingStageBikes(input: {
 
   if (error) throw error;
 
-  const rows = (data ?? []) as StageRow[];
+  const rows = (data ?? []) as unknown as StageRow[];
   const { urls } = await resolveBoardPrimaryPhotos(
     supabase,
     rows.map((row) => row.work_order_id)
@@ -210,7 +213,10 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
       stored_at,
       updated_at,
       motorcycle:motorcycle_id ( year, make, model ),
-      customer:customer_id ( first_name, last_name )
+      customer:customer_id (
+        first_name,
+        last_name
+      )
     `;
   const { data, error } = await supabase
     .from("work_order")
@@ -274,8 +280,15 @@ export async function listRecentlyCompleted(): Promise<WaitingStageBike[]> {
       quality_checked_at,
       updated_at,
       completed_at,
-      motorcycle:motorcycle_id ( year, make, model ),
-      customer:customer_id ( first_name, last_name )
+      motorcycle:motorcycle_id (
+        year,
+        make,
+        model
+      ),
+      customer:customer_id (
+        first_name,
+        last_name
+      )
     `
     )
     .eq("location_id", locationId)

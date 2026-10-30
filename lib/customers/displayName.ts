@@ -5,9 +5,11 @@ type NamedClient = {
 
 /** First and last name for a board card. Empty names are treated as missing. */
 export function clientDisplayName(
-  customer: NamedClient | NamedClient[] | null | undefined
+  customer: NamedClient | Array<NamedClient | null> | null | undefined
 ): string | null {
-  const row = Array.isArray(customer) ? customer[0] : customer;
+  const row = Array.isArray(customer)
+    ? (customer.find((item) => item != null) ?? null)
+    : customer;
   if (!row) return null;
   const name = `${row.first_name ?? ""} ${row.last_name ?? ""}`
     .replace(/\s+/g, " ")
