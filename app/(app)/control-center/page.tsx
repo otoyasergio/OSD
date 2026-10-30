@@ -65,7 +65,7 @@ export default async function ControlCenterPage({
     listWaitingForParts().catch(() => []),
     listReadyForQc().catch(() => []),
     listReadyForSafetyInspection().catch(() => []),
-    listReadyForPickup().catch(() => []),
+    listReadyForPickup({ includeCustomer: true }).catch(() => []),
     listInStorage().catch(() => []),
     listRecentlyCompleted().catch(() => []),
   ]);

@@ -1,4 +1,5 @@
 import { PhotoActionCard } from "@/components/ui/PhotoActionCard";
+import { clientDisplayName } from "@/lib/customers/displayName";
 import type { WorkOrderStatus } from "@/lib/database/types";
 import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import { getAgreementFollowUpLabel } from "@/lib/status/agreementFollowUp";
@@ -43,7 +44,7 @@ export function WorkOrderCard({
   const customer = workOrder.motorcycle?.customer;
   const bike = workOrder.motorcycle;
   const bikeLabel = bike ? `${bike.year} ${bike.make} ${bike.model}` : "No motorcycle";
-  const customerName = customer ? `${customer.first_name} ${customer.last_name}` : null;
+  const customerName = clientDisplayName(customer);
   const stage = getGalleryStageForStatus(workOrder.status);
   const flagged = workOrder.flags.length > 0;
   const agreementBadge = getAgreementFollowUpLabel(workOrder.agreement_follow_up);
@@ -53,11 +54,8 @@ export function WorkOrderCard({
       href={`/work_orders/${workOrder.work_order_id}`}
       photoUrl={workOrder.primary_photo_url}
       title={bikeLabel}
-      subtitle={
-        customerName
-          ? `${customerName} · ${workOrder.work_order_number}`
-          : workOrder.work_order_number
-      }
+      customerName={customerName}
+      subtitle={workOrder.work_order_number}
       stageLabel={stage.label}
       stageTone={stage.tone}
       primaryLabel="Open"

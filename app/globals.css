@@ -4968,6 +4968,14 @@ label.photo-source-sheet-action {
   line-height: 1.25;
 }
 
+.photo-action-card-customer {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
 .photo-action-card-subtitle {
   margin: 0;
   font-size: 0.8125rem;

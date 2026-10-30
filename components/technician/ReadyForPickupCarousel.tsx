@@ -109,6 +109,9 @@ function CardBody({
       </div>
       <div className={styles.body}>
         <p className={styles.bike}>{item.motorcycle_label}</p>
+        {item.customer_name ? (
+          <p className={styles.customer}>{item.customer_name}</p>
+        ) : null}
         <p className={styles.wo}>{item.work_order_number}</p>
         <p className={styles.caption}>
           {item.ready_since_inferred ? approxCaption : readyCaption}
@@ -207,7 +210,7 @@ function DraggableBikeCard({
       ]
         .filter(Boolean)
         .join(" ")}
-      aria-label={`Open work order ${item.work_order_number} for ${item.motorcycle_label}`}
+      aria-label={`Open work order ${item.work_order_number} for ${item.motorcycle_label}${item.customer_name ? `, ${item.customer_name}` : ""}`}
       {...listeners}
       {...attributes}
       onClick={() => onOpenWork(item.work_order_id, item.overview_href)}

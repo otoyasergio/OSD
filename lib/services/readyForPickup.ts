@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth/session";
+import { clientDisplayName } from "@/lib/customers/displayName";
 import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 import { createClient } from "@/lib/database/supabase-server";
 import type { WorkOrderStatus } from "@/lib/database/types";
@@ -9,6 +10,8 @@ export type WaitingStageBike = {
   work_order_id: string;
   work_order_number: string;
   motorcycle_label: string;
+  /** Office boards only. The tech floor leaves this unset so client names stay off that screen. */
+  customer_name?: string | null;
   /** When the bike entered this waiting stage; may fall back to updated_at. */
   ready_since: string;
   /** True when the preferred stamp was null and we used updated_at. */
@@ -26,6 +29,11 @@ type NestedMotorcycle = {
   model: string;
 } | null;
 
+type NestedCustomer = {
+  first_name: string;
+  last_name: string;
+} | null;
+
 type StageRow = {
   work_order_id: string;
   work_order_number: string;
@@ -34,7 +42,27 @@ type StageRow = {
   stored_at?: string | null;
   updated_at: string;
   motorcycle: NestedMotorcycle | NestedMotorcycle[];
+  customer?: NestedCustomer | NestedCustomer[] | null;
 };
+
+const STAGE_BIKE_SELECT = `
+      work_order_id,
+      work_order_number,
+      ready_for_pickup_at,
+      quality_checked_at,
+      updated_at,
+      motorcycle:motorcycle_id ( year, make, model )
+    `;
+
+const STAGE_BIKE_SELECT_WITH_CUSTOMER = `
+      work_order_id,
+      work_order_number,
+      ready_for_pickup_at,
+      quality_checked_at,
+      updated_at,
+      motorcycle:motorcycle_id ( year, make, model ),
+      customer:customer_id ( first_name, last_name )
+    `;
 
 function asOne<T>(value: T | T[] | null | undefined): T | null {
   if (value == null) return null;
@@ -47,6 +75,8 @@ async function listWaitingStageBikes(input: {
   orderColumn: "ready_for_pickup_at" | "quality_checked_at" | "updated_at";
   /** Defaults to work-order overview. */
   hrefFor?: (workOrderId: string) => string;
+  /** Control Center shows the client. The tech floor must not. */
+  includeCustomer?: boolean;
 }): Promise<WaitingStageBike[]> {
   const user = await requireUser();
   const supabase = await createClient();
@@ -55,16 +85,7 @@ async function listWaitingStageBikes(input: {
 
   const { data, error } = await supabase
     .from("work_order")
-    .select(
-      `
-      work_order_id,
-      work_order_number,
-      ready_for_pickup_at,
-      quality_checked_at,
-      updated_at,
-      motorcycle:motorcycle_id ( year, make, model )
-    `
-    )
+    .select(input.includeCustomer ? STAGE_BIKE_SELECT_WITH_CUSTOMER : STAGE_BIKE_SELECT)
     .eq("location_id", locationId)
     .eq("status", input.status)
     .order(input.orderColumn, { ascending: true, nullsFirst: false })
@@ -89,6 +110,7 @@ async function listWaitingStageBikes(input: {
       motorcycle_label: motorcycle
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : "—",
+      customer_name: input.includeCustomer ? clientDisplayName(row.customer) : null,
       ready_since: at ?? inferredFallback,
       ready_since_inferred: !at,
       primary_photo_url: urls.get(row.work_order_id) ?? null,
@@ -105,6 +127,8 @@ async function listWaitingStageBikes(input: {
 export async function listReadyForPickup(input?: {
   /** Defaults to work-order overview (Control Center / office). */
   hrefFor?: (workOrderId: string) => string;
+  /** Control Center shows the client. The tech floor must not. */
+  includeCustomer?: boolean;
 }): Promise<WaitingStageBike[]> {
   return listWaitingStageBikes({
     status: "ready_for_pickup",
@@ -114,6 +138,7 @@ export async function listReadyForPickup(input?: {
       inferredFallback: row.updated_at,
     }),
     hrefFor: input?.hrefFor,
+    includeCustomer: input?.includeCustomer,
   });
 }
 
@@ -132,6 +157,7 @@ export async function listWaitingForParts(): Promise<WaitingStageBike[]> {
       inferredFallback: row.updated_at,
     }),
     hrefFor: (workOrderId) => `/work_orders/${workOrderId}?tab=parts`,
+    includeCustomer: true,
   });
 }
 
@@ -148,6 +174,7 @@ export async function listReadyForQc(): Promise<WaitingStageBike[]> {
       at: null,
       inferredFallback: row.updated_at,
     }),
+    includeCustomer: true,
   });
 }
 
@@ -164,6 +191,7 @@ export async function listReadyForSafetyInspection(): Promise<WaitingStageBike[]
       at: row.quality_checked_at,
       inferredFallback: row.updated_at,
     }),
+    includeCustomer: true,
   });
 }
 
@@ -181,7 +209,8 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
       work_order_number,
       stored_at,
       updated_at,
-      motorcycle:motorcycle_id ( year, make, model )
+      motorcycle:motorcycle_id ( year, make, model ),
+      customer:customer_id ( first_name, last_name )
     `;
   const { data, error } = await supabase
     .from("work_order")
@@ -196,6 +225,7 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
       status: "in_storage",
       orderColumn: "updated_at",
       since: (row) => ({ at: null, inferredFallback: row.updated_at }),
+      includeCustomer: true,
     });
   }
   if (error) throw error;
@@ -214,6 +244,7 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
       motorcycle_label: motorcycle
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : "—",
+      customer_name: clientDisplayName(row.customer),
       ready_since: row.stored_at ?? row.updated_at,
       ready_since_inferred: !row.stored_at,
       primary_photo_url: urls.get(row.work_order_id) ?? null,
@@ -243,7 +274,8 @@ export async function listRecentlyCompleted(): Promise<WaitingStageBike[]> {
       quality_checked_at,
       updated_at,
       completed_at,
-      motorcycle:motorcycle_id ( year, make, model )
+      motorcycle:motorcycle_id ( year, make, model ),
+      customer:customer_id ( first_name, last_name )
     `
     )
     .eq("location_id", locationId)
@@ -270,6 +302,7 @@ export async function listRecentlyCompleted(): Promise<WaitingStageBike[]> {
       motorcycle_label: motorcycle
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : "—",
+      customer_name: clientDisplayName(row.customer),
       ready_since: completedAt,
       ready_since_inferred: !row.completed_at,
       primary_photo_url: urls.get(row.work_order_id) ?? null,

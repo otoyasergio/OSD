@@ -7,6 +7,7 @@ export function PhotoActionCard({
   href,
   photoUrl,
   title,
+  customerName,
   subtitle,
   stageLabel,
   stageTone = "teal",
@@ -18,6 +19,8 @@ export function PhotoActionCard({
   href: string;
   photoUrl?: string | null;
   title: string;
+  /** Client name, on its own line under the bike. */
+  customerName?: string | null;
   subtitle: string;
   stageLabel: string;
   stageTone?: StageChipTone;
@@ -66,6 +69,9 @@ export function PhotoActionCard({
           <p className="photo-action-card-title">{title}</p>
           <StageChip label={stageLabel} tone={stageTone} />
         </div>
+        {customerName ? (
+          <p className="photo-action-card-customer">{customerName}</p>
+        ) : null}
         <p className="photo-action-card-subtitle">{subtitle}</p>
         {badges.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">

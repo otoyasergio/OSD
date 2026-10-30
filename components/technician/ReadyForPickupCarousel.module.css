@@ -229,6 +229,14 @@
   color: var(--foreground);
 }
 
+.customer {
+  margin: 0.12rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
 .wo {
   margin: 0.15rem 0 0;
   font-size: 0.75rem;
