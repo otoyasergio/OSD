@@ -59,6 +59,42 @@ describe("control center board sync", () => {
     ).toBe(true);
   });
 
+  it("treats a stage-to-tech drop as still pending while the stage lane still holds the bike", () => {
+    const pending: ControlCenterPendingMove<Bike, Bike> = {
+      workOrderId: "wo-1",
+      containerId: "tech-a",
+      dispatchBike: { work_order_id: "wo-1" },
+      stageBike: null,
+    };
+    expect(
+      snapshotHasPendingPlacement({
+        pending,
+        pool: [],
+        techs: [{ user_id: "tech-a", assigned_bikes: [{ work_order_id: "wo-1" }] }],
+        stages: { ...emptyStages(), parts: [{ work_order_id: "wo-1" }] },
+        poolId: "pool",
+      })
+    ).toBe(false);
+  });
+
+  it("treats a tech-to-stage drop as still pending while the tech card still holds the bike", () => {
+    const pending: ControlCenterPendingMove<Bike, Bike> = {
+      workOrderId: "wo-1",
+      containerId: "storage",
+      dispatchBike: null,
+      stageBike: { work_order_id: "wo-1" },
+    };
+    expect(
+      snapshotHasPendingPlacement({
+        pending,
+        pool: [],
+        techs: [{ user_id: "tech-a", assigned_bikes: [{ work_order_id: "wo-1" }] }],
+        stages: { ...emptyStages(), storage: [{ work_order_id: "wo-1" }] },
+        poolId: "pool",
+      })
+    ).toBe(false);
+  });
+
   it("keeps a complete drop on top of a stale server snapshot that still has pickup", () => {
     const pending: ControlCenterPendingMove<Bike, Bike> = {
       workOrderId: "wo-1",

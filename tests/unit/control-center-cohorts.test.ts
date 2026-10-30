@@ -88,12 +88,17 @@ describe("filterControlCenterCohort", () => {
     bike({
       work_order_id: "wo-pickup",
       status: "ready_for_pickup",
-      technician_id: "tech-2",
+      technician_id: null,
+    }),
+    bike({
+      work_order_id: "wo-storage",
+      status: "in_storage",
+      technician_id: null,
     }),
   ];
 
   it("returns all bikes for in_shop", () => {
-    expect(filterControlCenterCohort(bikes, "in_shop")).toHaveLength(4);
+    expect(filterControlCenterCohort(bikes, "in_shop")).toHaveLength(5);
   });
 
   it("filters at_risk / in_bay / unassigned / waiting / pickup", () => {

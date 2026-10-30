@@ -11,6 +11,10 @@ import {
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
 import { toRpcErrorCode } from "@/lib/services/errors";
+import {
+  isTerminalWorkOrderStatus,
+  workOrderLeftTechDocket,
+} from "@/lib/technician/floorActionModel";
 import { waitOwnerForParkReason } from "@/lib/technician/pitBoard";
 import { pauseJobTime, switchJobTime } from "@/lib/services/jobTimeClock";
 import { updateJobStatus } from "@/lib/services/jobs";
@@ -267,7 +271,11 @@ async function autoParkBenchSibling(exceptJobId: string): Promise<string | null>
 
   const query = supabase
     .from("job")
-    .select(support === false ? "job_id, status" : "job_id, status, floor_parked_at")
+    .select(
+      support === false
+        ? "job_id, status, work_order:work_order_id ( status )"
+        : "job_id, status, floor_parked_at, work_order:work_order_id ( status )"
+    )
     .eq("assigned_technician_id", user.user_id)
     .eq("status", "in_progress")
     .neq("job_id", exceptJobId);
@@ -285,9 +293,22 @@ async function autoParkBenchSibling(exceptJobId: string): Promise<string | null>
     job_id: string;
     status: string;
     floor_parked_at?: string | null;
+    work_order?: unknown;
   }>;
 
-  const active = siblings.find((j) => !j.floor_parked_at);
+  const active = siblings.find((j) => {
+    if (j.floor_parked_at) return false;
+    const wo = (Array.isArray(j.work_order) ? j.work_order[0] : j.work_order) as {
+      status?: string | null;
+    } | null;
+    if (
+      wo?.status &&
+      (isTerminalWorkOrderStatus(wo.status) || workOrderLeftTechDocket(wo.status))
+    ) {
+      return false;
+    }
+    return true;
+  });
   if (!active) return null;
 
   await parkJob(active.job_id, "swapped");

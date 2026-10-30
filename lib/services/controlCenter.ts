@@ -8,6 +8,10 @@ import {
 } from "@/lib/database/schemaCompat";
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
 import { controlCenterCardTechnicianId } from "@/lib/control-center/assignment";
+import {
+  isControlCenterDispatchStatus,
+  partitionControlCenterDispatchBikes,
+} from "@/lib/control-center/dnd";
 import { isControlCenterAtRisk, latestJobActivityAt } from "@/lib/control-center/atRisk";
 import {
   deriveTechAvailability,
@@ -77,6 +81,7 @@ export type ControlCenterData = {
   location_id: string;
   role: UserRole;
   subtitle: string;
+  bikes?: ControlCenterBike[];
   pool: ControlCenterBike[];
   techs: ControlCenterTech[];
   kpis: ControlCenterKpi[];
@@ -291,7 +296,7 @@ export function buildKpis(input: {
   const inShop = input.bikes.length;
   const atRisk = input.bikes.filter((b) => b.at_risk).length;
   const unassigned = input.bikes.filter(
-    (b) => !b.technician_id && b.status !== "in_storage"
+    (b) => !b.technician_id && isControlCenterDispatchStatus(b.status)
   ).length;
   const inBay = input.bikes.filter((b) => b.status === "in_progress").length;
   const waitingApproval = input.bikes.filter(
@@ -521,17 +526,10 @@ export async function getControlCenterData(options?: {
     techRows = (data ?? []) as typeof techRows;
   }
 
-  const assignedByTech = new Map<string, ControlCenterBike[]>();
-  const pool: ControlCenterBike[] = [];
-  for (const bike of bikes) {
-    if (bike.technician_id) {
-      const list = assignedByTech.get(bike.technician_id) ?? [];
-      list.push(bike);
-      assignedByTech.set(bike.technician_id, list);
-    } else {
-      pool.push(bike);
-    }
-  }
+  const { pool, assignedByTech } = partitionControlCenterDispatchBikes(
+    bikes,
+    new Set(techRows.map((tech) => tech.user_id))
+  );
 
   const techs: ControlCenterTech[] = techRows.map((tech) => {
     const assigned_bikes = assignedByTech.get(tech.user_id) ?? [];
@@ -547,14 +545,6 @@ export async function getControlCenterData(options?: {
       assigned_bikes,
     };
   });
-
-  // Bikes assigned to a tech not in the location list still show under a ghost? Prefer pool.
-  for (const [techId, orphanBikes] of assignedByTech) {
-    if (techs.some((t) => t.user_id === techId)) continue;
-    for (const bike of orphanBikes) {
-      pool.push({ ...bike, technician_id: null });
-    }
-  }
 
   const canMoney = canViewReports(presentationRole) && !isFloorTech(presentationRole);
   const ownerMetrics =
@@ -580,6 +570,7 @@ export async function getControlCenterData(options?: {
     location_id: locationId,
     role: presentationRole,
     subtitle: subtitleForRole(presentationRole),
+    bikes,
     pool,
     techs,
     kpis,
