@@ -103,6 +103,7 @@ function toStageBike(
     work_order_id: cc.work_order_id,
     work_order_number: cc.work_order_number,
     motorcycle_label: cc.bike_title,
+    customer_name: cc.customer_name,
     ready_since: new Date().toISOString(),
     ready_since_inferred: true,
     primary_photo_url: cc.primary_photo_url,
@@ -767,7 +768,7 @@ export function ControlCenterShell({
       date_created: source.ready_since,
       opened_at: null,
       technician_id: technicianId,
-      customer_name: "",
+      customer_name: source.customer_name ?? "",
       bike_title: source.motorcycle_label,
       primary_photo_url: source.primary_photo_url,
       stage_label: stage.label,
@@ -1394,7 +1395,11 @@ export function ControlCenterShell({
               </div>
               <div className="cc-bike-body">
                 <p className="cc-bike-title">{activeStageBike.motorcycle_label}</p>
-                <p className="cc-bike-subtitle">{activeStageBike.work_order_number}</p>
+                <p className="cc-bike-subtitle">
+                  {activeStageBike.customer_name
+                    ? `${activeStageBike.customer_name} · ${activeStageBike.work_order_number}`
+                    : activeStageBike.work_order_number}
+                </p>
               </div>
             </div>
           ) : null}
