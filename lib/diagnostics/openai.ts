@@ -38,38 +38,132 @@ export const DIAGNOSTICS_MAX_HISTORY_CHARS = 64_000;
 export const DIAGNOSTICS_MAX_MESSAGE_CHARS = 8_000;
 export const DIAGNOSTICS_MAX_IMAGES = 3;
 export const DIAGNOSTICS_MAX_IMAGE_DATA_URL_CHARS = 7_000_000;
+/**
+ * Extra provider attempt after one rate-limit rejection. Stale-generation
+ * timing includes this attempt. The SDK itself must not repeat the same body.
+ */
 export const DIAGNOSTICS_PROVIDER_MAX_RETRIES = 1;
-/** Smallest output budget worth a second provider call after a token-limit rejection. */
-const OUTPUT_TOKEN_RETRY_FLOOR = 4_096;
+/** SDK retries would resend an oversized token reservation and fail the same way. */
+const DIAGNOSTICS_SDK_MAX_RETRIES = 0;
+/**
+ * Smallest output ceiling the config allows. A reservation retry may use this
+ * when a larger ceiling cannot fit the account token limit.
+ */
+const OUTPUT_TOKEN_RETRY_FLOOR = 1_024;
 const OUTPUT_TOKEN_RETRY_MARGIN = 512;
+const RATE_LIMIT_LOG_LABEL = "Ask OTOMOTO provider rate limit";
+
+export type DiagnosticsRateLimitClass = "token_reservation" | "short_window" | "unknown";
+
+export type DiagnosticsRateLimitAssessment = {
+  classification: DiagnosticsRateLimitClass;
+  limit: number | null;
+  requested: number | null;
+  retryAfterMs: number | null;
+  nextOutputBudget: number | null;
+};
+
+function parseGroupedInteger(message: string, label: string): number | null {
+  const match = new RegExp(`\\b${label}:?\\s+([\\d,]+)`, "i").exec(message);
+  if (!match?.[1]) return null;
+  const digits = match[1].replace(/,/g, "");
+  if (!/^\d+$/.test(digits)) return null;
+  const value = Number(digits);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+function parseRetryAfterMs(message: string): number | null {
+  const match =
+    /\btry again in\s+(\d+(?:\.\d+)?)\s*(milliseconds|millisecond|ms|seconds|second|secs|sec|s|minutes|minute|mins|min|m)\b/i.exec(
+      message
+    );
+  if (!match?.[1] || !match[2]) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  const unit = match[2].toLowerCase();
+  const ms =
+    unit === "ms" || unit.startsWith("millisecond")
+      ? amount
+      : unit === "m" || unit.startsWith("min")
+        ? amount * 60_000
+        : amount * 1_000;
+  const rounded = Math.round(ms);
+  return Number.isSafeInteger(rounded) ? rounded : null;
+}
 
 /**
- * When the provider rejects a call because the reserved token count is above
- * the account's per-minute limit, shrink this call's output ceiling by the
- * overage. A smaller ceiling is the only change that can succeed: retrying
- * the same reservation is rejected again. Returns null when the message is a
- * short-window rate limit, or when even the input no longer fits.
+ * Classify a provider 429 without retaining the raw message. A token-reservation
+ * rejection names a limit and a requested count; the next ceiling is the
+ * largest output budget that fits under that limit, down to 1,024 tokens.
+ * Reserved input is treated as requested minus the current output ceiling.
  */
+export function assessDiagnosticsRateLimit(
+  message: string,
+  currentBudget: number
+): DiagnosticsRateLimitAssessment {
+  const limit = parseGroupedInteger(message, "Limit");
+  const requested = parseGroupedInteger(message, "Requested");
+  const retryAfterMs = parseRetryAfterMs(message);
+  const reservation =
+    limit !== null && requested !== null && limit > 0 && requested > limit;
+  let nextOutputBudget: number | null = null;
+  if (
+    reservation &&
+    Number.isSafeInteger(currentBudget) &&
+    currentBudget > OUTPUT_TOKEN_RETRY_FLOOR
+  ) {
+    const reservedInput = Math.max(0, requested - currentBudget);
+    const next = limit - reservedInput - OUTPUT_TOKEN_RETRY_MARGIN;
+    if (
+      Number.isSafeInteger(next) &&
+      next >= OUTPUT_TOKEN_RETRY_FLOOR &&
+      next < currentBudget
+    ) {
+      nextOutputBudget = next;
+    }
+  }
+  return {
+    classification: reservation
+      ? "token_reservation"
+      : retryAfterMs !== null
+        ? "short_window"
+        : "unknown",
+    limit,
+    requested,
+    retryAfterMs,
+    nextOutputBudget,
+  };
+}
+
 export function outputTokenBudgetForRateLimit(
   message: string,
   currentBudget: number
 ): number | null {
-  if (!Number.isSafeInteger(currentBudget) || currentBudget <= OUTPUT_TOKEN_RETRY_FLOOR) {
-    return null;
-  }
-  const limit = Number(/Limit\s+(\d+)/i.exec(message)?.[1]);
-  const requested = Number(/Requested\s+(\d+)/i.exec(message)?.[1]);
-  if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(requested)) return null;
-  if (limit <= 0 || requested <= limit) return null;
-  const next = currentBudget - (requested - limit) - OUTPUT_TOKEN_RETRY_MARGIN;
-  if (
-    !Number.isSafeInteger(next) ||
-    next < OUTPUT_TOKEN_RETRY_FLOOR ||
-    next >= currentBudget
-  ) {
-    return null;
-  }
-  return next;
+  return assessDiagnosticsRateLimit(message, currentBudget).nextOutputBudget;
+}
+
+/** Wait no longer than one provider attempt. A non-positive delay retries immediately. */
+export function diagnosticsRateLimitWaitMs(
+  retryAfterMs: number,
+  timeoutMs: number
+): number {
+  if (!Number.isSafeInteger(retryAfterMs) || retryAfterMs <= 0) return 0;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) return 0;
+  return Math.min(retryAfterMs, timeoutMs);
+}
+
+function logDiagnosticsRateLimit(assessment: DiagnosticsRateLimitAssessment): void {
+  console.error(RATE_LIMIT_LOG_LABEL, {
+    rate_limit_class: assessment.classification,
+    limit: assessment.limit,
+    requested: assessment.requested,
+  });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function isInsufficientQuota(error: RateLimitError): boolean {
@@ -327,6 +421,7 @@ export async function generateDiagnosticsDraft(
   dependencies: {
     client?: OpenAI;
     config?: DiagnosticsConfig;
+    sleep?: (ms: number) => Promise<void>;
   } = {}
 ): Promise<DiagnosticsGenerationResult> {
   assertRequestBounds(request);
@@ -345,9 +440,10 @@ export async function generateDiagnosticsDraft(
     dependencies.client ??
     new OpenAI({
       apiKey: config.apiKey,
-      maxRetries: DIAGNOSTICS_PROVIDER_MAX_RETRIES,
+      maxRetries: DIAGNOSTICS_SDK_MAX_RETRIES,
       timeout: config.timeoutMs,
     });
+  const sleep = dependencies.sleep ?? delay;
 
   const instructions = buildDiagnosticsInstructions(
     request.mode,
@@ -355,7 +451,7 @@ export async function generateDiagnosticsDraft(
   );
   const input = requestInput(request, contextBlock);
   let outputBudget = config.maxOutputTokens;
-  let tokenBudgetShrunk = false;
+  let rateLimitRetried = false;
 
   for (;;) {
     try {
@@ -381,7 +477,7 @@ export async function generateDiagnosticsDraft(
         },
         {
           timeout: config.timeoutMs,
-          maxRetries: DIAGNOSTICS_PROVIDER_MAX_RETRIES,
+          maxRetries: DIAGNOSTICS_SDK_MAX_RETRIES,
         }
       );
 
@@ -428,13 +524,27 @@ export async function generateDiagnosticsDraft(
         },
       };
     } catch (error) {
-      if (!tokenBudgetShrunk && error instanceof RateLimitError) {
-        const nextBudget = outputTokenBudgetForRateLimit(error.message, outputBudget);
-        if (nextBudget !== null) {
-          outputBudget = nextBudget;
-          tokenBudgetShrunk = true;
+      if (error instanceof RateLimitError && !isInsufficientQuota(error)) {
+        const assessment = assessDiagnosticsRateLimit(error.message, outputBudget);
+        if (!rateLimitRetried && assessment.nextOutputBudget !== null) {
+          outputBudget = assessment.nextOutputBudget;
+          rateLimitRetried = true;
           continue;
         }
+        if (
+          !rateLimitRetried &&
+          assessment.classification === "short_window" &&
+          assessment.retryAfterMs !== null
+        ) {
+          rateLimitRetried = true;
+          const waitMs = diagnosticsRateLimitWaitMs(
+            assessment.retryAfterMs,
+            config.timeoutMs
+          );
+          if (waitMs > 0) await sleep(waitMs);
+          continue;
+        }
+        logDiagnosticsRateLimit(assessment);
       }
       throw providerError(error);
     }
