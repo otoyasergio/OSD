@@ -13,6 +13,7 @@ import {
 } from "@/lib/services/userPreferences";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { DashboardCardBikesList } from "@/components/work_orders/DashboardCardBikesList";
 import { DashboardRealtimeSync } from "@/components/work_orders/DashboardRealtimeSync";
 import { ShopBoard } from "@/components/work_orders/ShopBoard";
 import { WorkOrderListView } from "@/components/work_orders/WorkOrderListView";
@@ -110,6 +111,14 @@ export default async function DashboardPage({
     card: data.filters.card || undefined,
   };
 
+  const selectedCard = data.filters.card
+    ? (DASHBOARD_CARDS.find((c) => c.key === data.filters.card) ?? null)
+    : null;
+  const clearCardHref = buildHref({ ...filterBase, card: undefined });
+  const glanceHref = buildHref({
+    ...filterBase,
+    card: data.filters.card === "open" ? undefined : "open",
+  });
   const boardRows =
     data.filters.status === "completed"
       ? data.rows
@@ -121,6 +130,7 @@ export default async function DashboardPage({
       <PageHeader
         title="Dashboard"
         subtitle="Shop floor at a glance — bike, stage, next move."
+        subtitleHref={glanceHref}
         actions={
           canCreate ? (
             <Link href="/work_orders/new" className="btn btn-primary">
@@ -248,7 +258,15 @@ export default async function DashboardPage({
         />
       </DashboardMorePanel>
 
-      {(view === "board" ? boardRows.length === 0 : data.rows.length === 0) ? (
+      {selectedCard ? (
+        <DashboardCardBikesList
+          title={
+            selectedCard.key === "open" ? "Shop floor at a glance" : selectedCard.label
+          }
+          rows={data.rows}
+          backHref={clearCardHref}
+        />
+      ) : (view === "board" ? boardRows.length === 0 : data.rows.length === 0) ? (
         <EmptyState
           variant="work-orders"
           title="No work orders"
