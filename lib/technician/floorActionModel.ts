@@ -64,6 +64,7 @@ export function workOrderLeftTechDocket(
     status === "safety_check" ||
     status === "ready_for_pickup" ||
     status === "in_storage" ||
+    status === "insurance" ||
     status === "completed"
   );
 }

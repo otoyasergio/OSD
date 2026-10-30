@@ -18,7 +18,12 @@ export type WorkOrderFlagInput = {
 const TERMINAL: WorkOrderStatus[] = ["completed", "cancelled"];
 
 /** Sitting in storage is expected for months — a past ETA is not overdue. */
-const NOT_OVERDUE: WorkOrderStatus[] = ["completed", "cancelled", "in_storage"];
+const NOT_OVERDUE: WorkOrderStatus[] = [
+  "completed",
+  "cancelled",
+  "in_storage",
+  "insurance",
+];
 
 export function isOverdue(
   estimatedCompletion: string | null | undefined,

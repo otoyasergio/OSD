@@ -43,12 +43,13 @@ describe("timeInShopTone", () => {
 describe("calculateAverageDaysInShop", () => {
   const now = new Date("2026-10-30T12:00:00.000Z");
 
-  it("excludes completed, in_storage, and cancelled bikes from the average", () => {
+  it("excludes completed, in_storage, insurance, and cancelled bikes from the average", () => {
     const avg = calculateAverageDaysInShop(
       [
         { status: "in_progress", date_created: "2026-10-28T12:00:00.000Z" }, // 2 days
         { status: "waiting_for_parts", date_created: "2026-10-26T12:00:00.000Z" }, // 4 days
         { status: "in_storage", date_created: "2026-08-01T12:00:00.000Z" }, // 90 days (ignored)
+        { status: "insurance", date_created: "2026-01-01T12:00:00.000Z" }, // ignored
         { status: "completed", date_created: "2026-07-01T12:00:00.000Z" }, // 121 days (ignored)
         { status: "cancelled", date_created: "2026-07-01T12:00:00.000Z" }, // ignored
       ],

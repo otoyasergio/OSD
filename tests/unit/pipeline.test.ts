@@ -24,6 +24,7 @@ describe("getPipelineStageIndex", () => {
   it("returns -1 for cancelled and -2 for on hold", () => {
     expect(getPipelineStageIndex("cancelled")).toBe(-1);
     expect(getPipelineStageIndex("on_hold")).toBe(-2);
+    expect(getPipelineStageIndex("insurance")).toBe(-3);
   });
 });
 
@@ -44,6 +45,7 @@ describe("getWorkOrderNextAction", () => {
     expect(getWorkOrderNextAction("quality_check", [])).toMatch(/final inspection/i);
     expect(getWorkOrderNextAction("safety_check", [])).toMatch(/safety/i);
     expect(getWorkOrderNextAction("waiting_for_parts", [])).toContain("parts");
+    expect(getWorkOrderNextAction("insurance", [])).toMatch(/insurance/i);
     expect(getWorkOrderNextAction("open", [])).toBe("Start inspection");
     expect(getWorkOrderNextAction("open", ["No intake photos"])).toBe(
       "Capture intake photos"
@@ -59,7 +61,7 @@ describe("VISIT_PIPELINE_STAGES", () => {
 
 describe("GALLERY_BOARD_COLUMNS", () => {
   it("uses Track Day stages covering operational statuses", () => {
-    expect(GALLERY_BOARD_COLUMNS).toHaveLength(7);
+    expect(GALLERY_BOARD_COLUMNS).toHaveLength(8);
     expect(
       GALLERY_BOARD_COLUMNS.find((column) => column.id === "gallery_ready")?.statuses
     ).toEqual(["ready_for_pickup"]);
@@ -83,6 +85,7 @@ describe("GALLERY_BOARD_COLUMNS", () => {
       "ready_for_pickup",
       "in_storage",
       "completed",
+      "insurance",
     ];
     for (const status of required) {
       expect(covered.has(status)).toBe(true);
@@ -102,6 +105,10 @@ describe("GALLERY_BOARD_COLUMNS", () => {
     });
     expect(getGalleryStageForStatus("completed")).toEqual({
       label: "Complete",
+      tone: "muted",
+    });
+    expect(getGalleryStageForStatus("insurance")).toEqual({
+      label: "Insurance bikes",
       tone: "muted",
     });
   });

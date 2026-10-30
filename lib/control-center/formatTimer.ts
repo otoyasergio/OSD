@@ -27,8 +27,8 @@ export function timeInShopTone(elapsedMs: number): "fresh" | "aging" | "stale" {
 
 /**
  * Average time in shop (in days, rounded to 1 decimal place) across active shop
- * bikes. Bikes in Complete (`completed`), Storage (`in_storage`), or Cancelled
- * (`cancelled`) do not count toward the average.
+ * bikes. Bikes in Complete (`completed`), Storage (`in_storage`), Insurance
+ * (`insurance`), or Cancelled (`cancelled`) do not count toward the average.
  */
 export function calculateAverageDaysInShop(
   rows: ReadonlyArray<{
@@ -44,6 +44,7 @@ export function calculateAverageDaysInShop(
     if (
       row.status === "completed" ||
       row.status === "in_storage" ||
+      row.status === "insurance" ||
       row.status === "cancelled"
     ) {
       continue;

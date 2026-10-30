@@ -118,6 +118,11 @@ export const SHOP_BOARD_COLUMNS = [
     label: "On hold",
     statuses: ["on_hold"] as WorkOrderStatus[],
   },
+  {
+    id: "insurance",
+    label: "Insurance bikes",
+    statuses: ["insurance"] as WorkOrderStatus[],
+  },
 ] as const;
 
 /** Calm Track Day gallery — fewer wide stage columns (default board). */
@@ -167,6 +172,11 @@ export const GALLERY_BOARD_COLUMNS = [
     label: "Complete",
     statuses: ["completed"] as WorkOrderStatus[],
   },
+  {
+    id: "insurance",
+    label: "Insurance bikes",
+    statuses: ["insurance"] as WorkOrderStatus[],
+  },
 ] as const;
 
 export function getGalleryStageForStatus(status: WorkOrderStatus): {
@@ -185,6 +195,7 @@ export function getGalleryStageForStatus(status: WorkOrderStatus): {
       if (column.id === "gallery_ready") return { label: column.label, tone: "muted" };
       if (column.id === "gallery_storage") return { label: column.label, tone: "muted" };
       if (column.id === "complete") return { label: column.label, tone: "muted" };
+      if (column.id === "insurance") return { label: column.label, tone: "muted" };
       return { label: column.label, tone: "teal" };
     }
   }
@@ -194,6 +205,7 @@ export function getGalleryStageForStatus(status: WorkOrderStatus): {
 export function getPipelineStageIndex(status: WorkOrderStatus): number {
   if (status === "cancelled") return -1;
   if (status === "on_hold") return -2;
+  if (status === "insurance") return -3;
 
   const index = VISIT_PIPELINE_STAGES.findIndex((stage) =>
     stage.statuses.includes(status)
@@ -207,6 +219,9 @@ export function getWorkOrderNextAction(status: WorkOrderStatus, flags: string[])
   if (status === "completed") return "Vehicle picked up — archive when done";
   if (status === "in_storage") {
     return "Bike is in storage — drag the card to Ready when the customer wants it";
+  }
+  if (status === "insurance") {
+    return "Insurance bike — drag the card back when the shop should work it";
   }
 
   if (flags.includes("Admin flag")) return "Clear admin flag and unblock technician";

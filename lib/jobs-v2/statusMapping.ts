@@ -126,6 +126,7 @@ export function mapLegacyWorkOrderStatus(
     case "on_hold":
       return "on_hold";
     case "in_storage":
+    case "insurance":
       return "active";
     default:
       return "active";

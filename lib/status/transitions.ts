@@ -26,6 +26,7 @@ const COLUMN_TARGET_STATUS: Record<ShopBoardColumnId, WorkOrderStatus | null> = 
   pickup: "ready_for_pickup",
   storage: "in_storage",
   complete: "completed",
+  insurance: "insurance",
   on_hold: null,
   gallery_intake: "open",
   gallery_in_bay: "in_progress",
@@ -48,6 +49,11 @@ export function isPickupBoardColumn(columnId: string): boolean {
 /** Shop-floor Storage and gallery Storage — finished bike stays in the building. */
 export function isStorageBoardColumn(columnId: string): boolean {
   return columnId === "storage" || columnId === "gallery_storage";
+}
+
+/** Control Center and shop-board Insurance bikes row. */
+export function isInsuranceBoardColumn(columnId: string): boolean {
+  return columnId === "insurance";
 }
 
 export function isQcBoardColumn(columnId: string): boolean {
@@ -99,6 +105,11 @@ export function canDropInColumn(
   // Storage is a parking spot. Advisors and admins may drop any active bike
   // there, including one that is on hold.
   if (isStorageBoardColumn(columnId) && canParkAnyBikeInStorage(role)) {
+    return true;
+  }
+
+  // Insurance is a parking spot, same roles as Storage.
+  if (isInsuranceBoardColumn(columnId) && canParkAnyBikeInStorage(role)) {
     return true;
   }
 

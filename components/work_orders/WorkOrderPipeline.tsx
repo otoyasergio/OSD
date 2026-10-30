@@ -1,24 +1,19 @@
 import type { WorkOrderStatus } from "@/lib/database/types";
-import {
-  VISIT_PIPELINE_STAGES,
-  getPipelineStageIndex,
-} from "@/lib/status/pipeline";
+import { VISIT_PIPELINE_STAGES, getPipelineStageIndex } from "@/lib/status/pipeline";
 
 export function WorkOrderPipeline({ status }: { status: WorkOrderStatus }) {
   const activeIndex = getPipelineStageIndex(status);
   const isCancelled = status === "cancelled";
   const isOnHold = status === "on_hold";
+  const isInsurance = status === "insurance";
 
   return (
-    <nav
-      className="wo-pipeline"
-      aria-label="Visit progress"
-    >
+    <nav className="wo-pipeline" aria-label="Visit progress">
       <ol className="wo-pipeline-track">
         {VISIT_PIPELINE_STAGES.map((stage, index) => {
           let state: "complete" | "current" | "upcoming" | "muted" = "upcoming";
 
-          if (isCancelled || isOnHold) {
+          if (isCancelled || isOnHold || isInsurance) {
             state = "muted";
           } else if (index < activeIndex) {
             state = "complete";
@@ -38,8 +33,9 @@ export function WorkOrderPipeline({ status }: { status: WorkOrderStatus }) {
           );
         })}
       </ol>
-      {isOnHold ? (
-        <p className="wo-pipeline-note">On hold — pipeline paused</p>
+      {isOnHold ? <p className="wo-pipeline-note">On hold — pipeline paused</p> : null}
+      {isInsurance ? (
+        <p className="wo-pipeline-note">Insurance bike — parked until dragged back</p>
       ) : null}
       {isCancelled ? (
         <p className="wo-pipeline-note wo-pipeline-note-danger">Cancelled</p>

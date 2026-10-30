@@ -8,6 +8,7 @@ import {
   canDragWorkOrderOnBoard,
   canDropInColumn,
   getTargetStatusForColumn,
+  isInsuranceBoardColumn,
   isPickupBoardColumn,
   isQcBoardColumn,
   isStorageBoardColumn,
@@ -65,6 +66,7 @@ describe("board transitions", () => {
       "gallery_ready"
     );
     expect(boardColumnIdForStatus("completed", GALLERY_BOARD_COLUMNS)).toBe("complete");
+    expect(boardColumnIdForStatus("insurance", GALLERY_BOARD_COLUMNS)).toBe("insurance");
     expect(getTargetStatusForColumn("complete")).toBe("completed");
     expect(canDropInColumn("owner", "complete", "quality_check")).toBe(true);
   });
@@ -120,6 +122,21 @@ describe("board transitions", () => {
     expect(canDropInColumn("service_advisor", "storage", "completed")).toBe(false);
     expect(canDropInColumn("admin", "storage", "cancelled")).toBe(false);
     expect(canDragWorkOrderOnBoard("admin", "completed", false)).toBe(false);
+  });
+
+  it("lets a service advisor or admin park any active bike as insurance", () => {
+    expect(getTargetStatusForColumn("insurance")).toBe("insurance");
+    expect(isInsuranceBoardColumn("insurance")).toBe(true);
+    expect(isInsuranceBoardColumn("storage")).toBe(false);
+
+    for (const role of ["service_advisor", "admin"] as const) {
+      expect(canDropInColumn(role, "insurance", "in_progress")).toBe(true);
+      expect(canDropInColumn(role, "insurance", "on_hold")).toBe(true);
+      expect(canDragWorkOrderOnBoard(role, "insurance", false)).toBe(true);
+    }
+    expect(canDropInColumn("technician", "insurance", "in_progress")).toBe(false);
+    expect(canDropInColumn("service_advisor", "insurance", "insurance")).toBe(false);
+    expect(canDropInColumn("service_advisor", "insurance", "completed")).toBe(false);
   });
 
   it("maps storage onto its own gallery column", () => {

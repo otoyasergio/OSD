@@ -24,6 +24,7 @@ export type WorkOrderStatus =
   | "safety_check"
   | "ready_for_pickup"
   | "in_storage"
+  | "insurance"
   | "completed"
   | "cancelled"
   | "on_hold";

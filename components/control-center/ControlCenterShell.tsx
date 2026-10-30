@@ -72,10 +72,12 @@ import type { ReadyForPickupItem, WaitingStageBike } from "@/lib/services/readyF
 import { getGalleryStageForStatus } from "@/lib/status/pipeline";
 import {
   CompleteCarousel,
+  InsuranceBikesCarousel,
   ReadyForPickupCarousel,
   StorageCarousel,
   ReadyForQcCarousel,
   ReadyForSafetyInspectionCarousel,
+  WaitingForApprovalCarousel,
   WaitingForPartsCarousel,
 } from "@/components/technician/ReadyForPickupCarousel";
 import { StageChip } from "@/components/ui/StageChip";
@@ -434,22 +436,26 @@ export function ControlCenterShell({
   data,
   canAssign,
   canClockStaff = false,
+  waitingForApproval = [],
   waitingForParts = [],
   readyForQc = [],
   readyForSafety = [],
   readyForPickup = [],
   inStorage = [],
   recentlyCompleted = [],
+  insuranceBikes = [],
 }: {
   data: ControlCenterData;
   canAssign: boolean;
   canClockStaff?: boolean;
+  waitingForApproval?: ReadyForPickupItem[];
   waitingForParts?: ReadyForPickupItem[];
   readyForQc?: ReadyForPickupItem[];
   readyForSafety?: ReadyForPickupItem[];
   readyForPickup?: ReadyForPickupItem[];
   inStorage?: ReadyForPickupItem[];
   recentlyCompleted?: ReadyForPickupItem[];
+  insuranceBikes?: ReadyForPickupItem[];
 }) {
   const router = useRouter();
   const carouselRef = useRef<HTMLDivElement>(null);
@@ -458,12 +464,14 @@ export function ControlCenterShell({
   const [techs, setTechs] = useState(data.techs);
   const [kpis, setKpis] = useState(data.kpis);
   const [liveSummary, setLiveSummary] = useState(data.live_summary);
+  const [approvalQueue, setApprovalQueue] = useState(waitingForApproval);
   const [partsQueue, setPartsQueue] = useState(waitingForParts);
   const [qcQueue, setQcQueue] = useState(readyForQc);
   const [safetyQueue, setSafetyQueue] = useState(readyForSafety);
   const [pickupQueue, setPickupQueue] = useState(readyForPickup);
   const [storageQueue, setStorageQueue] = useState(inStorage);
   const [completeQueue, setCompleteQueue] = useState(recentlyCompleted);
+  const [insuranceQueue, setInsuranceQueue] = useState(insuranceBikes);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pickupNotice, setPickupNotice] = useState<PickupNoticeContact | null>(null);
@@ -528,25 +536,29 @@ export function ControlCenterShell({
     const activeBikeCount =
       dispatchPool.length +
       dispatchTechBikes.length +
+      input.stages.approval.length +
       input.stages.parts.length +
       input.stages.qc.length +
       input.stages.safety.length +
       input.stages.pickup.length +
-      input.stages.storage.length;
+      input.stages.storage.length +
+      input.stages.insurance.length;
     const availableCount = input.techs.filter(
       (t) => t.availability === "available"
     ).length;
     const inBayCount = [...dispatchPool, ...dispatchTechBikes].filter(
       (b) => b.status === "in_progress"
     ).length;
-    const waitingApprovalCount = [...dispatchPool, ...dispatchTechBikes].filter(
-      (b) => b.status === "waiting_for_customer_approval"
-    ).length;
+    const waitingApprovalCount = input.stages.approval.length;
     const avgDays = calculateAverageDaysInShop([
       ...dispatchPool.map((b) => ({ status: b.status, date_created: b.date_created })),
       ...dispatchTechBikes.map((b) => ({
         status: b.status,
         date_created: b.date_created,
+      })),
+      ...input.stages.approval.map((b) => ({
+        status: "waiting_for_customer_approval",
+        date_created: dateCreatedByWo.get(b.work_order_id) ?? b.ready_since,
       })),
       ...input.stages.parts.map((b) => ({
         status: "waiting_for_parts",
@@ -617,24 +629,28 @@ export function ControlCenterShell({
               .join(",")}`
         ),
         stages: {
+          approval: waitingForApproval.map((b) => b.work_order_id),
           parts: waitingForParts.map((b) => b.work_order_id),
           qc: readyForQc.map((b) => b.work_order_id),
           safety: readyForSafety.map((b) => b.work_order_id),
           pickup: readyForPickup.map((b) => b.work_order_id),
           storage: inStorage.map((b) => b.work_order_id),
           complete: recentlyCompleted.map((b) => b.work_order_id),
+          insurance: insuranceBikes.map((b) => b.work_order_id),
         },
         kpis: data.kpis,
         live: data.live_summary,
       }),
     [
       data,
+      waitingForApproval,
       waitingForParts,
       readyForQc,
       readyForSafety,
       readyForPickup,
       inStorage,
       recentlyCompleted,
+      insuranceBikes,
     ]
   );
   const [prevSyncKey, setPrevSyncKey] = useState(syncKey);
@@ -647,12 +663,14 @@ export function ControlCenterShell({
       pool: data.pool,
       techs: data.techs,
       stages: {
+        approval: waitingForApproval,
         parts: waitingForParts,
         qc: readyForQc,
         safety: readyForSafety,
         pickup: readyForPickup,
         storage: inStorage,
         complete: recentlyCompleted,
+        insurance: insuranceBikes,
       } as Record<CcStageDropId, WaitingStageBike[]>,
     };
     const reconciled =
@@ -685,12 +703,14 @@ export function ControlCenterShell({
       setKpis(data.kpis);
       setLiveSummary(data.live_summary);
     }
+    setApprovalQueue(reconciled.stages.approval);
     setPartsQueue(reconciled.stages.parts);
     setQcQueue(reconciled.stages.qc);
     setSafetyQueue(reconciled.stages.safety);
     setPickupQueue(reconciled.stages.pickup);
     setStorageQueue(reconciled.stages.storage);
     setCompleteQueue(reconciled.stages.complete);
+    setInsuranceQueue(reconciled.stages.insurance);
   }
 
   useEffect(() => {
@@ -765,14 +785,25 @@ export function ControlCenterShell({
   const stageQueues = useMemo(
     () =>
       ({
+        approval: approvalQueue,
         parts: partsQueue,
         qc: qcQueue,
         safety: safetyQueue,
         pickup: pickupQueue,
         storage: storageQueue,
         complete: completeQueue,
+        insurance: insuranceQueue,
       }) as Record<CcStageDropId, WaitingStageBike[]>,
-    [partsQueue, qcQueue, safetyQueue, pickupQueue, storageQueue, completeQueue]
+    [
+      approvalQueue,
+      partsQueue,
+      qcQueue,
+      safetyQueue,
+      pickupQueue,
+      storageQueue,
+      completeQueue,
+      insuranceQueue,
+    ]
   );
   const knownWorkOrderIds = useMemo(
     () =>
@@ -858,11 +889,13 @@ export function ControlCenterShell({
   }
 
   function setStageQueue(stageId: CcStageDropId, items: WaitingStageBike[]) {
-    if (stageId === "parts") setPartsQueue(items);
+    if (stageId === "approval") setApprovalQueue(items);
+    else if (stageId === "parts") setPartsQueue(items);
     else if (stageId === "qc") setQcQueue(items);
     else if (stageId === "safety") setSafetyQueue(items);
     else if (stageId === "pickup") setPickupQueue(items);
     else if (stageId === "storage") setStorageQueue(items);
+    else if (stageId === "insurance") setInsuranceQueue(items);
     else setCompleteQueue(items);
   }
 
@@ -872,12 +905,14 @@ export function ControlCenterShell({
       techs,
       kpis,
       liveSummary,
+      approvalQueue,
       partsQueue,
       qcQueue,
       safetyQueue,
       pickupQueue,
       storageQueue,
       completeQueue,
+      insuranceQueue,
     };
   }
 
@@ -896,12 +931,14 @@ export function ControlCenterShell({
     setTechs(previous.techs);
     setKpis(previous.kpis);
     setLiveSummary(previous.liveSummary);
+    setApprovalQueue(previous.approvalQueue);
     setPartsQueue(previous.partsQueue);
     setQcQueue(previous.qcQueue);
     setSafetyQueue(previous.safetyQueue);
     setPickupQueue(previous.pickupQueue);
     setStorageQueue(previous.storageQueue);
     setCompleteQueue(previous.completeQueue);
+    setInsuranceQueue(previous.insuranceQueue);
   }
 
   function upsertPendingMove(nextMove: CcPendingMove) {
@@ -984,12 +1021,14 @@ export function ControlCenterShell({
     setTechs(nextTechs);
     setKpis(derived.kpis);
     setLiveSummary(derived.liveSummary);
+    setApprovalQueue(lists.stages.approval);
     setPartsQueue(lists.stages.parts);
     setQcQueue(lists.stages.qc);
     setSafetyQueue(lists.stages.safety);
     setPickupQueue(lists.stages.pickup);
     setStorageQueue(lists.stages.storage);
     setCompleteQueue(lists.stages.complete);
+    setInsuranceQueue(lists.stages.insurance);
     upsertPendingMove({
       workOrderId,
       containerId: targetId,
@@ -1081,12 +1120,14 @@ export function ControlCenterShell({
       baseKpis: kpis,
       completedDelta: wasInComplete ? -1 : 0,
     });
+    setApprovalQueue(lists.stages.approval);
     setPartsQueue(lists.stages.parts);
     setQcQueue(lists.stages.qc);
     setSafetyQueue(lists.stages.safety);
     setPickupQueue(lists.stages.pickup);
     setStorageQueue(lists.stages.storage);
     setCompleteQueue(lists.stages.complete);
+    setInsuranceQueue(lists.stages.insurance);
     setPool(nextPool);
     setTechs(nextTechs);
     setKpis(derived.kpis);
@@ -1532,6 +1573,14 @@ export function ControlCenterShell({
         </div>
 
         <div className="cc-stage-queues">
+          <WaitingForApprovalCarousel
+            items={approvalQueue}
+            dnd={{
+              ...stageDndBase,
+              droppableId: "approval",
+              dropDisabled: !isCcStageDropEnabledForRole(data.role, "approval"),
+            }}
+          />
           <WaitingForPartsCarousel
             items={partsQueue}
             dnd={{
@@ -1579,6 +1628,14 @@ export function ControlCenterShell({
               dragEnabled: canDragCompleted,
               droppableId: "complete",
               dropDisabled: !isCcStageDropEnabledForRole(data.role, "complete"),
+            }}
+          />
+          <InsuranceBikesCarousel
+            items={insuranceQueue}
+            dnd={{
+              ...stageDndBase,
+              droppableId: "insurance",
+              dropDisabled: !isCcStageDropEnabledForRole(data.role, "insurance"),
             }}
           />
         </div>

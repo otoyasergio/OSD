@@ -94,16 +94,27 @@ describe("terminal work orders stay off the floor", () => {
     expect(filtered).toEqual([kept]);
   });
 
-  it("drops a bike from the tech docket once it is in safety, ready, storage, or complete", () => {
+  it("drops a bike from the tech docket once it is in safety, ready, storage, insurance, or complete", () => {
     const kept = assignedJob({ work_order_status: "quality_check" });
+    const waitingApproval = assignedJob({
+      job_id: "j-approval",
+      work_order_status: "waiting_for_customer_approval",
+    });
+    const waitingParts = assignedJob({
+      job_id: "j-parts",
+      work_order_status: "waiting_for_parts",
+    });
     const filtered = filterActiveAssignedJobs([
       kept,
+      waitingApproval,
+      waitingParts,
       assignedJob({ job_id: "j-safety", work_order_status: "safety_check" }),
       assignedJob({ job_id: "j-ready", work_order_status: "ready_for_pickup" }),
       assignedJob({ job_id: "j-store", work_order_status: "in_storage" }),
+      assignedJob({ job_id: "j-insurance", work_order_status: "insurance" }),
       assignedJob({ job_id: "j-done", work_order_status: "completed" }),
     ]);
-    expect(filtered).toEqual([kept]);
+    expect(filtered).toEqual([kept, waitingApproval, waitingParts]);
 
     const items = buildTechnicianDocketItems({
       assignedJobs: [
@@ -137,6 +148,7 @@ describe("terminal work orders stay off the floor", () => {
       flag({ admin_flag_id: "f4", work_order_status: "safety_check" }),
       flag({ admin_flag_id: "f5", work_order_status: "ready_for_pickup" }),
       flag({ admin_flag_id: "f6", work_order_status: "in_storage" }),
+      flag({ admin_flag_id: "f7", work_order_status: "insurance" }),
     ]);
     expect(filtered).toEqual([kept]);
     // Held bikes keep their flags — a hold is not terminal.

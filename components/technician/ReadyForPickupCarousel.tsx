@@ -350,6 +350,25 @@ export function ReadyForPickupCarousel({ items, dnd }: StageCarouselProps) {
   );
 }
 
+/** Control Center — bikes in `waiting_for_customer_approval` (above parts). */
+export function WaitingForApprovalCarousel({ items, dnd }: StageCarouselProps) {
+  return (
+    <WaitingBikeCarousel
+      items={items}
+      title="Waiting for approval"
+      subtitle={
+        dnd ? "Drop to set waiting for approval" : "Customer has not approved yet"
+      }
+      emptyMessage="No bikes waiting for approval."
+      readyCaption="Waiting"
+      approxCaption="Waiting (approx)"
+      warnAfterMs={PICKUP_YELLOW_MS}
+      lateAfterMs={PICKUP_RED_MS}
+      dnd={dnd}
+    />
+  );
+}
+
 /** Control Center — bikes in `waiting_for_parts` (above QC). */
 export function WaitingForPartsCarousel({ items, dnd }: StageCarouselProps) {
   return (
@@ -430,6 +449,25 @@ export function CompleteCarousel({ items, dnd }: StageCarouselProps) {
       approxCaption="Completed (approx)"
       warnAfterMs={PICKUP_YELLOW_MS}
       lateAfterMs={PICKUP_RED_MS}
+      dnd={dnd}
+    />
+  );
+}
+
+/** Control Center — bikes parked as insurance claims (below Complete). */
+export function InsuranceBikesCarousel({ items, dnd }: StageCarouselProps) {
+  return (
+    <WaitingBikeCarousel
+      items={items}
+      title="Insurance bikes"
+      subtitle={
+        dnd ? "Drop to file as an insurance bike" : "Insurance claims parked here"
+      }
+      emptyMessage="No insurance bikes."
+      readyCaption="Parked"
+      approxCaption="Parked (approx)"
+      warnAfterMs={STORAGE_YELLOW_MS}
+      lateAfterMs={STORAGE_RED_MS}
       dnd={dnd}
     />
   );
