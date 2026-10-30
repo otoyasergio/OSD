@@ -36,7 +36,9 @@ export type FloorActionState = {
 
 function revalidateFloor(workOrderId?: string) {
   revalidatePath("/technician");
+  revalidatePath("/technician/docket");
   revalidatePath("/dashboard");
+  revalidatePath("/control-center");
   if (workOrderId) {
     revalidatePath(`/work_orders/${workOrderId}`);
   }

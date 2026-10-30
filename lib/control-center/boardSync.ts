@@ -111,6 +111,55 @@ export function overlayPendingControlCenterMove<
   };
 }
 
+export function reconcilePendingControlCenterMoves<
+  TBike extends { work_order_id: string },
+  TStage extends { work_order_id: string },
+  TTech extends { user_id: string; assigned_bikes: TBike[] },
+>(input: {
+  pendingMoves: ReadonlyArray<ControlCenterPendingMove<TBike, TStage>>;
+  pool: TBike[];
+  techs: TTech[];
+  stages: Record<CcStageDropId, TStage[]>;
+  poolId: string;
+}): {
+  pool: TBike[];
+  techs: TTech[];
+  stages: Record<CcStageDropId, TStage[]>;
+  remainingMoves: ControlCenterPendingMove<TBike, TStage>[];
+} {
+  let pool = input.pool;
+  let techs = input.techs;
+  let stages = input.stages;
+  const remainingMoves: ControlCenterPendingMove<TBike, TStage>[] = [];
+
+  for (const pending of input.pendingMoves) {
+    if (
+      snapshotHasPendingPlacement({
+        pending,
+        pool: input.pool,
+        techs: input.techs,
+        stages: input.stages,
+        poolId: input.poolId,
+      })
+    ) {
+      continue;
+    }
+    remainingMoves.push(pending);
+    const next = overlayPendingControlCenterMove({
+      pending,
+      pool,
+      techs,
+      stages,
+      poolId: input.poolId,
+    });
+    pool = next.pool;
+    techs = next.techs;
+    stages = next.stages;
+  }
+
+  return { pool, techs, stages, remainingMoves };
+}
+
 export function collectControlCenterWorkOrderIds<
   TBike extends { work_order_id: string },
   TStage extends { work_order_id: string },

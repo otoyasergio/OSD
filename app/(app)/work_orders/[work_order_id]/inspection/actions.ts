@@ -32,7 +32,10 @@ function revalidateInspection(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath(`/work_orders/${workOrderId}/inspection`);
   revalidatePath("/work_orders");
+  revalidatePath("/dashboard");
+  revalidatePath("/control-center");
   revalidatePath("/technician");
+  revalidatePath("/technician/docket");
 }
 
 export async function saveInspectionResultAction(

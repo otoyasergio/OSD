@@ -18,6 +18,7 @@ function revalidatePhotos(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}/inspection`);
   revalidatePath("/work_orders");
   revalidatePath("/dashboard");
+  revalidatePath("/control-center");
   revalidatePath("/technician");
   revalidatePath("/gallery");
 }

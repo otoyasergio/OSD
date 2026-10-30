@@ -17,6 +17,10 @@ function revalidateParts(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
   revalidatePath("/work_orders");
   revalidatePath("/parts");
+  revalidatePath("/dashboard");
+  revalidatePath("/control-center");
+  revalidatePath("/technician");
+  revalidatePath("/technician/docket");
 }
 
 function parseOptionalMoney(raw: FormDataEntryValue | null): number | null {
@@ -73,10 +77,7 @@ export async function updatePartStatusAction(
   formData: FormData
 ): Promise<PartFormState> {
   try {
-    await updatePartStatus(
-      partId,
-      String(formData.get("status") ?? "") as PartStatus
-    );
+    await updatePartStatus(partId, String(formData.get("status") ?? "") as PartStatus);
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
@@ -92,10 +93,7 @@ export async function updatePartPriceAction(
   formData: FormData
 ): Promise<PartFormState> {
   try {
-    await updatePartUnitPrice(
-      partId,
-      parseOptionalMoney(formData.get("unit_price"))
-    );
+    await updatePartUnitPrice(partId, parseOptionalMoney(formData.get("unit_price")));
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

@@ -33,10 +33,8 @@ import { controlCenterCohortHref } from "@/lib/control-center/cohorts";
 import {
   canAutoScrollControlCenter,
   collectControlCenterWorkOrderIds,
-  overlayPendingControlCenterMove,
+  reconcilePendingControlCenterMoves,
   shouldDeferControlCenterServerSnapshot,
-  shouldRefreshControlCenterForJobChange,
-  snapshotHasPendingPlacement,
   workOrderIdFromJobRealtimePayload,
   type ControlCenterPendingMove,
 } from "@/lib/control-center/boardSync";
@@ -456,7 +454,7 @@ export function ControlCenterShell({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [pendingMove, setPendingMove] = useState<CcPendingMove | null>(null);
+  const [pendingMoves, setPendingMoves] = useState<CcPendingMove[]>([]);
   const activeIdRef = useRef<string | null>(null);
   const knownWorkOrderIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -469,9 +467,92 @@ export function ControlCenterShell({
   } = useDebouncedRouterRefresh({
     delayMs: 1500,
     // Pause while dragging so a flush cannot remount droppables mid-gesture.
-    // In-flight refreshes still apply via props; pendingMove overlays those.
+    // In-flight refreshes still apply via props; pendingMoves overlays those.
     isPaused: () => activeIdRef.current !== null,
   });
+
+  function withDerivedTechAvailability(
+    nextTechs: ControlCenterTech[]
+  ): ControlCenterTech[] {
+    return nextTechs.map((tech) => {
+      const activeAssignedJobCount = tech.assigned_bikes.filter((bike) =>
+        isControlCenterDispatchStatus(bike.status)
+      ).length;
+      return {
+        ...tech,
+        availability: deriveTechAvailability({
+          clockedIn: tech.availability !== "off",
+          activeAssignedJobCount,
+        }),
+      };
+    });
+  }
+
+  function deriveOptimisticSummaryAndKpis(input: {
+    pool: ControlCenterBike[];
+    techs: ControlCenterTech[];
+    stages: Record<CcStageDropId, WaitingStageBike[]>;
+    baseKpis: ControlCenterData["kpis"];
+    completedDelta?: number;
+  }) {
+    const dispatchPool = input.pool.filter((b) =>
+      isControlCenterDispatchStatus(b.status)
+    );
+    const dispatchTechBikes = input.techs.flatMap((t) =>
+      t.assigned_bikes.filter((b) => isControlCenterDispatchStatus(b.status))
+    );
+    const activeBikeCount =
+      dispatchPool.length +
+      dispatchTechBikes.length +
+      input.stages.parts.length +
+      input.stages.qc.length +
+      input.stages.safety.length +
+      input.stages.pickup.length +
+      input.stages.storage.length;
+    const availableCount = input.techs.filter(
+      (t) => t.availability === "available"
+    ).length;
+    const inBayCount = [...dispatchPool, ...dispatchTechBikes].filter(
+      (b) => b.status === "in_progress"
+    ).length;
+    const waitingApprovalCount = [...dispatchPool, ...dispatchTechBikes].filter(
+      (b) => b.status === "waiting_for_customer_approval"
+    ).length;
+    const completedDelta = input.completedDelta ?? 0;
+
+    const nextKpis = input.baseKpis.map((kpi) => {
+      if (kpi.label === "In shop now" || kpi.label === "In shop") {
+        return { ...kpi, value: String(activeBikeCount) };
+      }
+      if (kpi.label === "In bay") {
+        return { ...kpi, value: String(inBayCount) };
+      }
+      if (kpi.label === "Unassigned") {
+        return { ...kpi, value: String(dispatchPool.length) };
+      }
+      if (kpi.label === "Techs available") {
+        return { ...kpi, value: `${availableCount}/${input.techs.length}` };
+      }
+      if (kpi.label === "Ready for pickup") {
+        return { ...kpi, value: String(input.stages.pickup.length) };
+      }
+      if (kpi.label === "Waiting approval") {
+        return { ...kpi, value: String(waitingApprovalCount) };
+      }
+      if (kpi.label === "Completed today" && completedDelta !== 0) {
+        const current = Number.parseInt(kpi.value, 10);
+        if (Number.isFinite(current)) {
+          return { ...kpi, value: String(Math.max(0, current + completedDelta)) };
+        }
+      }
+      return kpi;
+    });
+
+    return {
+      kpis: nextKpis,
+      liveSummary: `${activeBikeCount} bikes · ${availableCount}/${input.techs.length} techs`,
+    };
+  }
 
   const syncKey = useMemo(
     () =>
@@ -524,40 +605,46 @@ export function ControlCenterShell({
         complete: recentlyCompleted,
       } as Record<CcStageDropId, WaitingStageBike[]>,
     };
-    const pending = pendingMove;
-    const next =
-      pending &&
-      !snapshotHasPendingPlacement({
-        pending,
-        ...snapshot,
-        poolId: POOL_ID,
-      })
-        ? overlayPendingControlCenterMove({
-            pending,
+    const reconciled =
+      pendingMoves.length > 0
+        ? reconcilePendingControlCenterMoves({
+            pendingMoves,
             ...snapshot,
             poolId: POOL_ID,
           })
-        : snapshot;
-    if (pending && next === snapshot) {
-      setPendingMove(null);
+        : { ...snapshot, remainingMoves: [] as CcPendingMove[] };
+    const nextTechs =
+      reconciled.remainingMoves.length > 0
+        ? withDerivedTechAvailability(reconciled.techs)
+        : reconciled.techs;
+    if (reconciled.remainingMoves.length !== pendingMoves.length) {
+      setPendingMoves(reconciled.remainingMoves);
     }
-    setPool(next.pool);
-    setTechs(next.techs);
-    setKpis(data.kpis);
-    setLiveSummary(data.live_summary);
-    setPartsQueue(next.stages.parts);
-    setQcQueue(next.stages.qc);
-    setSafetyQueue(next.stages.safety);
-    setPickupQueue(next.stages.pickup);
-    setStorageQueue(next.stages.storage);
-    setCompleteQueue(next.stages.complete);
+    setPool(reconciled.pool);
+    setTechs(nextTechs);
+    if (reconciled.remainingMoves.length > 0) {
+      const derived = deriveOptimisticSummaryAndKpis({
+        pool: reconciled.pool,
+        techs: nextTechs,
+        stages: reconciled.stages,
+        baseKpis: data.kpis,
+      });
+      setKpis(derived.kpis);
+      setLiveSummary(derived.liveSummary);
+    } else {
+      setKpis(data.kpis);
+      setLiveSummary(data.live_summary);
+    }
+    setPartsQueue(reconciled.stages.parts);
+    setQcQueue(reconciled.stages.qc);
+    setSafetyQueue(reconciled.stages.safety);
+    setPickupQueue(reconciled.stages.pickup);
+    setStorageQueue(reconciled.stages.storage);
+    setCompleteQueue(reconciled.stages.complete);
   }
 
   useEffect(() => {
     const supabase = createClient();
-    // work_order and time_clock_entry are filtered to this location server-side
-    // so other locations' writes don't re-render the heaviest page in the app.
-    // job has no location column; ignore rows that are not on this board.
     const channel = supabase
       .channel(`control-center:${data.location_id}`)
       .on(
@@ -582,12 +669,7 @@ export function ControlCenterShell({
               old?: Record<string, unknown> | null;
             }
           );
-          if (
-            shouldRefreshControlCenterForJobChange(
-              workOrderId,
-              knownWorkOrderIdsRef.current
-            )
-          ) {
+          if (workOrderId) {
             scheduleRefresh();
           }
         }
@@ -606,7 +688,17 @@ export function ControlCenterShell({
       )
       .subscribe();
 
+    function handleFocusOrVisible() {
+      if (document.visibilityState === "hidden") return;
+      scheduleRefresh();
+    }
+
+    window.addEventListener("focus", handleFocusOrVisible);
+    document.addEventListener("visibilitychange", handleFocusOrVisible);
+
     return () => {
+      window.removeEventListener("focus", handleFocusOrVisible);
+      document.removeEventListener("visibilitychange", handleFocusOrVisible);
       void supabase.removeChannel(channel);
     };
   }, [data.location_id, scheduleRefresh]);
@@ -638,9 +730,9 @@ export function ControlCenterShell({
         pool,
         techs,
         stages: stageQueues,
-        pendingWorkOrderId: pendingMove?.workOrderId ?? null,
+        pendingWorkOrderId: pendingMoves[pendingMoves.length - 1]?.workOrderId ?? null,
       }),
-    [pool, techs, stageQueues, pendingMove]
+    [pool, techs, stageQueues, pendingMoves]
   );
   useEffect(() => {
     knownWorkOrderIdsRef.current = knownWorkOrderIds;
@@ -728,6 +820,8 @@ export function ControlCenterShell({
     return {
       pool,
       techs,
+      kpis,
+      liveSummary,
       partsQueue,
       qcQueue,
       safetyQueue,
@@ -737,16 +831,34 @@ export function ControlCenterShell({
     };
   }
 
-  function restoreBoard(previous: ReturnType<typeof snapshotBoard>) {
-    setPendingMove(null);
+  function restoreBoard(
+    previous: ReturnType<typeof snapshotBoard>,
+    failedWorkOrderId?: string
+  ) {
+    if (failedWorkOrderId) {
+      setPendingMoves((current) =>
+        current.filter((item) => item.workOrderId !== failedWorkOrderId)
+      );
+    } else {
+      setPendingMoves([]);
+    }
     setPool(previous.pool);
     setTechs(previous.techs);
+    setKpis(previous.kpis);
+    setLiveSummary(previous.liveSummary);
     setPartsQueue(previous.partsQueue);
     setQcQueue(previous.qcQueue);
     setSafetyQueue(previous.safetyQueue);
     setPickupQueue(previous.pickupQueue);
     setStorageQueue(previous.storageQueue);
     setCompleteQueue(previous.completeQueue);
+  }
+
+  function upsertPendingMove(nextMove: CcPendingMove) {
+    setPendingMoves((current) => [
+      ...current.filter((item) => item.workOrderId !== nextMove.workOrderId),
+      nextMove,
+    ]);
   }
 
   function toDispatchBike(
@@ -799,26 +911,33 @@ export function ControlCenterShell({
       ...bike,
       technician_id: targetId === POOL_ID ? null : targetId,
     };
-    if (targetId === POOL_ID) {
-      setPool([moved, ...lists.pool]);
-      setTechs(lists.techs);
-    } else {
-      setPool(lists.pool);
-      setTechs(
-        lists.techs.map((tech) =>
-          tech.user_id === targetId
-            ? { ...tech, assigned_bikes: [...tech.assigned_bikes, moved] }
-            : tech
-        )
-      );
-    }
+    const nextPool = targetId === POOL_ID ? [moved, ...lists.pool] : lists.pool;
+    const nextTechs = withDerivedTechAvailability(
+      targetId === POOL_ID
+        ? lists.techs
+        : lists.techs.map((tech) =>
+            tech.user_id === targetId
+              ? { ...tech, assigned_bikes: [...tech.assigned_bikes, moved] }
+              : tech
+          )
+    );
+    const derived = deriveOptimisticSummaryAndKpis({
+      pool: nextPool,
+      techs: nextTechs,
+      stages: lists.stages,
+      baseKpis: kpis,
+    });
+    setPool(nextPool);
+    setTechs(nextTechs);
+    setKpis(derived.kpis);
+    setLiveSummary(derived.liveSummary);
     setPartsQueue(lists.stages.parts);
     setQcQueue(lists.stages.qc);
     setSafetyQueue(lists.stages.safety);
     setPickupQueue(lists.stages.pickup);
     setStorageQueue(lists.stages.storage);
     setCompleteQueue(lists.stages.complete);
-    setPendingMove({
+    upsertPendingMove({
       workOrderId,
       containerId: targetId,
       dispatchBike: moved,
@@ -831,6 +950,7 @@ export function ControlCenterShell({
     const previous = snapshotBoard();
     const source = allBikes.get(workOrderId) ?? stageBikeMap.get(workOrderId) ?? null;
     if (!source) return null;
+    const wasInComplete = completeQueue.some((b) => b.work_order_id === workOrderId);
 
     const lists = removeWorkOrderFromControlCenterLists({
       workOrderId,
@@ -839,15 +959,32 @@ export function ControlCenterShell({
       stages: stageQueues,
     });
     const nextItem = toStageBike(source, stageId);
+    const nextStages = {
+      ...lists.stages,
+      [stageId]: [nextItem, ...lists.stages[stageId]],
+    };
+    const nextTechs = withDerivedTechAvailability(lists.techs);
+    const completedDelta =
+      stageId === "complete" && !wasInComplete
+        ? 1
+        : stageId !== "complete" && wasInComplete
+          ? -1
+          : 0;
+    const derived = deriveOptimisticSummaryAndKpis({
+      pool: lists.pool,
+      techs: nextTechs,
+      stages: nextStages,
+      baseKpis: kpis,
+      completedDelta,
+    });
     setPool(lists.pool);
-    setTechs(lists.techs);
-    for (const id of Object.keys(lists.stages) as CcStageDropId[]) {
-      setStageQueue(
-        id,
-        id === stageId ? [nextItem, ...lists.stages[id]] : lists.stages[id]
-      );
+    setTechs(nextTechs);
+    setKpis(derived.kpis);
+    setLiveSummary(derived.liveSummary);
+    for (const id of Object.keys(nextStages) as CcStageDropId[]) {
+      setStageQueue(id, nextStages[id]);
     }
-    setPendingMove({
+    upsertPendingMove({
       workOrderId,
       containerId: stageId,
       dispatchBike: allBikes.get(workOrderId) ?? null,
@@ -860,6 +997,7 @@ export function ControlCenterShell({
     const source = allBikes.get(workOrderId) ?? stageBikeMap.get(workOrderId) ?? null;
     if (!source) return null;
     const previous = snapshotBoard();
+    const wasInComplete = completeQueue.some((b) => b.work_order_id === workOrderId);
     const lists = removeWorkOrderFromControlCenterLists({
       workOrderId,
       pool,
@@ -873,26 +1011,34 @@ export function ControlCenterShell({
       nextStatus,
       targetId === POOL_ID ? null : targetId
     );
+    const nextPool = targetId === POOL_ID ? [moved, ...lists.pool] : lists.pool;
+    const nextTechs = withDerivedTechAvailability(
+      targetId === POOL_ID
+        ? lists.techs
+        : lists.techs.map((tech) =>
+            tech.user_id === targetId
+              ? { ...tech, assigned_bikes: [...tech.assigned_bikes, moved] }
+              : tech
+          )
+    );
+    const derived = deriveOptimisticSummaryAndKpis({
+      pool: nextPool,
+      techs: nextTechs,
+      stages: lists.stages,
+      baseKpis: kpis,
+      completedDelta: wasInComplete ? -1 : 0,
+    });
     setPartsQueue(lists.stages.parts);
     setQcQueue(lists.stages.qc);
     setSafetyQueue(lists.stages.safety);
     setPickupQueue(lists.stages.pickup);
     setStorageQueue(lists.stages.storage);
     setCompleteQueue(lists.stages.complete);
-    if (targetId === POOL_ID) {
-      setPool([moved, ...lists.pool]);
-      setTechs(lists.techs);
-    } else {
-      setPool(lists.pool);
-      setTechs(
-        lists.techs.map((tech) =>
-          tech.user_id === targetId
-            ? { ...tech, assigned_bikes: [...tech.assigned_bikes, moved] }
-            : tech
-        )
-      );
-    }
-    setPendingMove({
+    setPool(nextPool);
+    setTechs(nextTechs);
+    setKpis(derived.kpis);
+    setLiveSummary(derived.liveSummary);
+    upsertPendingMove({
       workOrderId,
       containerId: targetId,
       dispatchBike: moved,
@@ -999,7 +1145,7 @@ export function ControlCenterShell({
       startTransition(async () => {
         const result = await moveWorkOrderOnBoardAction(workOrderId, targetId);
         if (result.error) {
-          restoreBoard(previous);
+          restoreBoard(previous, workOrderId);
           setErrorMessage(result.error);
         }
         scheduleRefresh();
@@ -1026,7 +1172,7 @@ export function ControlCenterShell({
       startTransition(async () => {
         const statusResult = await moveWorkOrderOnBoardAction(workOrderId, columnId);
         if (statusResult.error) {
-          restoreBoard(previous);
+          restoreBoard(previous, workOrderId);
           setErrorMessage(statusResult.error);
           scheduleRefresh();
           return;
@@ -1036,7 +1182,7 @@ export function ControlCenterShell({
             ? await unassignWorkOrderJobsAction(workOrderId)
             : await dispatchWorkOrderToTechnicianAction(workOrderId, targetId);
         if (assignResult.error) {
-          restoreBoard(previous);
+          restoreBoard(previous, workOrderId);
           setErrorMessage(assignResult.error);
         }
         scheduleRefresh();
@@ -1063,7 +1209,7 @@ export function ControlCenterShell({
           ? await unassignWorkOrderJobsAction(workOrderId)
           : await dispatchWorkOrderToTechnicianAction(workOrderId, targetId);
       if (result.error) {
-        restoreBoard(previous);
+        restoreBoard(previous, workOrderId);
         setErrorMessage(result.error);
       }
       scheduleRefresh();

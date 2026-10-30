@@ -4,6 +4,7 @@ import {
   canEditWorkOrder,
   canOverrideWorkOrderStatus,
   canParkAnyBikeInStorage,
+  canRearrangeControlCenter,
 } from "@/lib/permissions";
 import type { GALLERY_BOARD_COLUMNS, SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
 
@@ -138,4 +139,111 @@ export function canDragWorkOrderOnBoard(
   }
   if (role === "admin") return true;
   return canEditWorkOrder(role) || canOverrideWorkOrderStatus(role);
+}
+
+/**
+ * Shop Board card drag check. Owner and admin can also drag a completed card
+ * back out of Complete if a mistake was made.
+ */
+export function canDragShopBoardCard(
+  role: UserRole,
+  status: WorkOrderStatus,
+  isForeignLocation: boolean
+): boolean {
+  if (isForeignLocation) return false;
+  if (status === "cancelled") return false;
+  if (canRearrangeControlCenter(role)) return true;
+  return canDragWorkOrderOnBoard(role, status, isForeignLocation);
+}
+
+/**
+ * Shop Board column drop check. Owner and admin can move a card forward or
+ * backward into any real column, matching Control Center.
+ */
+export function allowsShopBoardDrop(
+  role: UserRole,
+  columnId: string,
+  currentStatus: WorkOrderStatus
+): boolean {
+  if (currentStatus === "cancelled") return false;
+  const target = getTargetStatusForColumn(columnId);
+  if (target === null) return false;
+  if (target === currentStatus) return false;
+  if (canRearrangeControlCenter(role)) return true;
+  return canDropInColumn(role, columnId, currentStatus);
+}
+
+export type ShopBoardKeyRow = {
+  work_order_id: string;
+  work_order_number: string;
+  status: WorkOrderStatus;
+  flags: readonly string[];
+  primary_photo_url?: string | null;
+  primary_technician?: {
+    first_name: string;
+    last_name: string;
+  } | null;
+  motorcycle?: {
+    year: number;
+    make: string;
+    model: string;
+    customer?: {
+      first_name: string;
+      last_name: string;
+    } | null;
+  } | null;
+};
+
+/**
+ * Fingerprint of the rows rendered on ShopBoard so changes to flags, photos,
+ * technician, customer, or status immediately update the client state.
+ */
+export function buildShopBoardRowsKey(rows: readonly ShopBoardKeyRow[]): string {
+  return rows
+    .map((row) => {
+      const tech = row.primary_technician
+        ? `${row.primary_technician.first_name} ${row.primary_technician.last_name}`
+        : "";
+      const bike = row.motorcycle
+        ? `${row.motorcycle.year} ${row.motorcycle.make} ${row.motorcycle.model}`
+        : "";
+      const customer = row.motorcycle?.customer
+        ? `${row.motorcycle.customer.first_name} ${row.motorcycle.customer.last_name}`
+        : "";
+      return [
+        row.work_order_id,
+        row.work_order_number,
+        row.status,
+        row.flags.join(","),
+        row.primary_photo_url ?? "",
+        tech,
+        bike,
+        customer,
+      ].join(":");
+    })
+    .join("|");
+}
+
+/**
+ * Keep in-flight ShopBoard drops in their target column until the server
+ * snapshot reflects the new status.
+ */
+export function overlayShopBoardPendingMoves<
+  TRow extends { work_order_id: string; status: WorkOrderStatus },
+>(
+  rows: readonly TRow[],
+  pendingMoves: Readonly<Record<string, WorkOrderStatus>>
+): {
+  rows: TRow[];
+  remainingPending: Record<string, WorkOrderStatus>;
+} {
+  const remainingPending: Record<string, WorkOrderStatus> = {};
+  const nextRows = rows.map((row) => {
+    const targetStatus = pendingMoves[row.work_order_id];
+    if (!targetStatus) return row;
+    if (row.status === targetStatus) return row;
+    remainingPending[row.work_order_id] = targetStatus;
+    return { ...row, status: targetStatus };
+  });
+  return { rows: nextRows, remainingPending };
 }

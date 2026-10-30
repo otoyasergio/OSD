@@ -27,7 +27,9 @@ function revalidateRecommendations(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}/inspection`);
   revalidatePath("/work_orders");
   revalidatePath("/technician");
+  revalidatePath("/technician/docket");
   revalidatePath("/dashboard");
+  revalidatePath("/control-center");
 }
 
 export async function createRecommendationAction(

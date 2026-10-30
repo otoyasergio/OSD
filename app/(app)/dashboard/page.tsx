@@ -13,6 +13,7 @@ import {
 } from "@/lib/services/userPreferences";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { DashboardRealtimeSync } from "@/components/work_orders/DashboardRealtimeSync";
 import { ShopBoard } from "@/components/work_orders/ShopBoard";
 import { WorkOrderListView } from "@/components/work_orders/WorkOrderListView";
 import { WorkOrderCardsView } from "@/components/work_orders/WorkOrderCardsView";
@@ -109,8 +110,14 @@ export default async function DashboardPage({
     card: data.filters.card || undefined,
   };
 
+  const boardRows =
+    data.filters.status === "completed"
+      ? data.rows
+      : [...data.rows, ...(data.completedRows ?? [])];
+
   return (
     <div className="page-stack page-stack--wide">
+      <DashboardRealtimeSync locationId={data.location_id} />
       <PageHeader
         title="Dashboard"
         subtitle="Shop floor at a glance — bike, stage, next move."
@@ -241,7 +248,7 @@ export default async function DashboardPage({
         />
       </DashboardMorePanel>
 
-      {data.rows.length === 0 ? (
+      {(view === "board" ? boardRows.length === 0 : data.rows.length === 0) ? (
         <EmptyState
           variant="work-orders"
           title="No work orders"
@@ -250,7 +257,7 @@ export default async function DashboardPage({
         />
       ) : view === "board" ? (
         <ShopBoard
-          rows={data.rows}
+          rows={boardRows}
           hideEmpty={hideEmpty}
           compact={density === "compact"}
           hiddenColumnIds={hiddenColumnIds}

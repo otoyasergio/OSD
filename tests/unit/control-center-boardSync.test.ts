@@ -3,6 +3,7 @@ import {
   collectControlCenterWorkOrderIds,
   isHorizontalOnlyScrollContainer,
   overlayPendingControlCenterMove,
+  reconcilePendingControlCenterMoves,
   shouldDeferControlCenterServerSnapshot,
   shouldRefreshControlCenterForJobChange,
   snapshotHasPendingPlacement,
@@ -93,6 +94,39 @@ describe("control center board sync", () => {
         poolId: "pool",
       })
     ).toBe(false);
+  });
+
+  it("keeps a second rapid drop in place when the first drop's server snapshot arrives", () => {
+    const move1: ControlCenterPendingMove<Bike, Bike> = {
+      workOrderId: "wo-1",
+      containerId: "complete",
+      dispatchBike: null,
+      stageBike: { work_order_id: "wo-1" },
+    };
+    const move2: ControlCenterPendingMove<Bike, Bike> = {
+      workOrderId: "wo-2",
+      containerId: "complete",
+      dispatchBike: null,
+      stageBike: { work_order_id: "wo-2" },
+    };
+    const reconciled = reconcilePendingControlCenterMoves({
+      pendingMoves: [move1, move2],
+      pool: [],
+      techs: [],
+      stages: {
+        ...emptyStages(),
+        parts: [{ work_order_id: "wo-2" }],
+        complete: [{ work_order_id: "wo-1" }],
+      },
+      poolId: "pool",
+    });
+
+    expect(reconciled.remainingMoves.map((m) => m.workOrderId)).toEqual(["wo-2"]);
+    expect(reconciled.stages.parts).toEqual([]);
+    expect(reconciled.stages.complete.map((b) => b.work_order_id)).toEqual([
+      "wo-2",
+      "wo-1",
+    ]);
   });
 
   it("keeps a complete drop on top of a stale server snapshot that still has pickup", () => {
