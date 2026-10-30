@@ -13,6 +13,7 @@ import {
   partitionControlCenterDispatchBikes,
 } from "@/lib/control-center/dnd";
 import { isControlCenterAtRisk, latestJobActivityAt } from "@/lib/control-center/atRisk";
+import { calculateAverageDaysInShop } from "@/lib/control-center/formatTimer";
 import {
   deriveTechAvailability,
   type TechAvailability,
@@ -21,7 +22,6 @@ import type { ControlCenterCohortKey } from "@/lib/control-center/cohorts";
 import { canViewReports, isFloorTech } from "@/lib/permissions";
 import { listOpenAdminFlagsForWorkOrders } from "@/lib/services/adminFlags";
 import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
-import { getShopReportSummary } from "@/lib/services/reports";
 import { buildWorkOrderFlags, isOverdue } from "@/lib/status/flags";
 import { getGalleryStageForStatus } from "@/lib/status/pipeline";
 import { scopeWorkOrdersForViewer } from "@/lib/workOrders/assignmentVisibility";
@@ -246,22 +246,23 @@ function startOfTodayIso(): string {
   return start.toISOString();
 }
 
-async function loadOwnerTodayMetrics(locationId: string): Promise<{
+async function loadOwnerTodayMetrics(
+  locationId: string,
+  bikes: ReadonlyArray<{ status: WorkOrderStatus; date_created: string }>,
+  now: Date
+): Promise<{
   revenueTodayCents: number;
   completedToday: number;
   avgDaysInShop: number | null;
 }> {
   const supabase = await createClient();
   const since = startOfTodayIso();
-  const [{ data, error }, report] = await Promise.all([
-    supabase
-      .from("work_order")
-      .select("billing_collected_cents, completed_at")
-      .eq("location_id", locationId)
-      .eq("status", "completed")
-      .gte("completed_at", since),
-    getShopReportSummary("7d").catch(() => null),
-  ]);
+  const { data, error } = await supabase
+    .from("work_order")
+    .select("billing_collected_cents, completed_at")
+    .eq("location_id", locationId)
+    .eq("status", "completed")
+    .gte("completed_at", since);
   if (error) throw error;
   let revenueTodayCents = 0;
   for (const row of data ?? []) {
@@ -270,7 +271,7 @@ async function loadOwnerTodayMetrics(locationId: string): Promise<{
   return {
     revenueTodayCents,
     completedToday: (data ?? []).length,
-    avgDaysInShop: report?.avg_days_in_shop ?? null,
+    avgDaysInShop: calculateAverageDaysInShop(bikes, now),
   };
 }
 
@@ -549,7 +550,7 @@ export async function getControlCenterData(options?: {
   const canMoney = canViewReports(presentationRole) && !isFloorTech(presentationRole);
   const ownerMetrics =
     presentationRole === "owner" && canMoney
-      ? await loadOwnerTodayMetrics(locationId)
+      ? await loadOwnerTodayMetrics(locationId, bikes, now)
       : null;
 
   // Owners without report access still get manager KPI strip.
