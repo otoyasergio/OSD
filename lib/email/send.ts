@@ -1,36 +1,51 @@
-import { getEmailConfig, isEmailConfigured } from "@/lib/email/config";
+import { getGmailOAuthConfig, isGmailOAuthConfigured } from "@/lib/email/config";
+import { sendGmailApiMessage } from "@/lib/email/gmail";
+import {
+  getShopMailbox,
+  getShopMailboxAddress,
+  isCustomerEmailLocation,
+  updateShopMailboxRefreshToken,
+} from "@/lib/email/mailbox";
+import { TORONTO_SHOP } from "@/lib/shop/toronto";
+
+export async function isEmailConfigured(locationId: string): Promise<boolean> {
+  if (!isGmailOAuthConfigured()) return false;
+  if (!(await isCustomerEmailLocation(locationId))) return false;
+  return Boolean(await getShopMailboxAddress(locationId));
+}
 
 export async function sendEmail(input: {
   to: string;
   subject: string;
   html: string;
   text?: string;
+  locationId: string;
 }): Promise<{ id: string }> {
-  if (!isEmailConfigured()) throw new Error("EMAIL_NOT_CONFIGURED");
+  if (!isGmailOAuthConfigured()) throw new Error("EMAIL_NOT_CONFIGURED");
+  if (!(await isCustomerEmailLocation(input.locationId))) {
+    throw new Error("EMAIL_NOT_CONFIGURED");
+  }
+  const mailbox = await getShopMailbox(input.locationId);
+  if (!mailbox) throw new Error("EMAIL_NOT_CONFIGURED");
 
-  const config = getEmailConfig();
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: `${config.fromName} <${config.fromAddress}>`,
-      to: [input.to],
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-    }),
-    signal: AbortSignal.timeout(15_000),
+  const config = getGmailOAuthConfig();
+  const result = await sendGmailApiMessage({
+    refreshToken: mailbox.refreshToken,
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    fromAddress: mailbox.emailAddress,
+    fromName: TORONTO_SHOP.legalName,
+    to: input.to,
+    subject: input.subject,
+    html: input.html,
+    text: input.text ?? "",
   });
 
-  const data = (await response.json()) as { id?: string; message?: string };
-  if (!response.ok) {
-    throw new Error(`EMAIL_SEND_FAILED: ${data.message ?? response.statusText}`);
+  if (result.refreshToken && result.refreshToken !== mailbox.refreshToken) {
+    await updateShopMailboxRefreshToken(input.locationId, result.refreshToken);
   }
 
-  return { id: data.id ?? "" };
+  return { id: result.id };
 }
 
-export { isEmailConfigured };
+export { isGmailOAuthConfigured };

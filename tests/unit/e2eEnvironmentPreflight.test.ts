@@ -23,6 +23,7 @@ function response(
     openAIConfigured: boolean;
     twilioConfigured: boolean;
     resendConfigured: boolean;
+    gmailConfigured: boolean;
   }> = {}
 ): Response {
   return Response.json({
@@ -30,6 +31,7 @@ function response(
     openAIConfigured: false,
     twilioConfigured: false,
     resendConfigured: false,
+    gmailConfigured: false,
     ...overrides,
   });
 }
@@ -65,6 +67,7 @@ describe("stateful E2E app environment preflight", () => {
     ["OpenAI", { openAIConfigured: true }],
     ["Twilio", { twilioConfigured: true }],
     ["Resend", { resendConfigured: true }],
+    ["Gmail", { gmailConfigured: true }],
   ] as const)("fails when %s is configured on the app", async (provider, flags) => {
     await expect(
       assertAppEnvironmentFingerprint({

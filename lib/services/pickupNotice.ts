@@ -172,12 +172,15 @@ export async function sendReadyForPickupNotice(
     body: message.emailHtml,
     dedupeKey,
     send: async () => {
-      if (!isEmailConfigured()) throw new Error("EMAIL_NOT_CONFIGURED");
+      if (!(await isEmailConfigured(workOrder.location_id))) {
+        throw new Error("EMAIL_NOT_CONFIGURED");
+      }
       const result = await sendEmail({
         to: email,
         subject: message.emailSubject,
         html: message.emailHtml,
         text: message.emailText,
+        locationId: workOrder.location_id,
       });
       return result.id;
     },

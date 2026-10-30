@@ -6,6 +6,7 @@ import {
   E2E_ENV_GUARD_HEADER,
   fingerprintSupabaseTarget,
 } from "@/lib/e2e/environmentFingerprintCore";
+import { isGmailOAuthConfigured } from "@/lib/email/config";
 
 function secretMatches(actual: string | null, expected: string): boolean {
   if (!actual) return false;
@@ -51,6 +52,7 @@ export async function GET(request: Request): Promise<Response> {
         process.env.TWILIO_TWIML_APP_SID
       ),
       resendConfigured: configured(process.env.RESEND_API_KEY),
+      gmailConfigured: isGmailOAuthConfigured(),
     },
     { headers: { "Cache-Control": "no-store" } }
   );

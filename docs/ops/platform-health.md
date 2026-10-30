@@ -35,7 +35,8 @@ Required core names:
 
 Ask OTOMOTO additionally requires server-only `OPENAI_API_KEY`. Optional
 `OTOMOTO_DIAGNOSTICS_*` settings must pass the same validation as production
-generation. Keep Square, Twilio, Wix, Parts Canada, Resend, Sentry, and
+generation. Keep Square, Twilio, Wix, Parts Canada, the Google mailbox
+(`GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET`), Sentry, and
 `CRON_SECRET` scoped to the environments that actually use them.
 
 Never expose `SUPABASE_SERVICE_ROLE_KEY` or `OPENAI_API_KEY` through a

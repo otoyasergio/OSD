@@ -8,6 +8,7 @@ type FingerprintResponse = {
   openAIConfigured: boolean;
   twilioConfigured: boolean;
   resendConfigured: boolean;
+  gmailConfigured: boolean;
 };
 
 function isFingerprintResponse(value: unknown): value is FingerprintResponse {
@@ -18,7 +19,8 @@ function isFingerprintResponse(value: unknown): value is FingerprintResponse {
     /^[a-f0-9]{64}$/.test(record.supabaseTargetFingerprint) &&
     typeof record.openAIConfigured === "boolean" &&
     typeof record.twilioConfigured === "boolean" &&
-    typeof record.resendConfigured === "boolean"
+    typeof record.resendConfigured === "boolean" &&
+    typeof record.gmailConfigured === "boolean"
   );
 }
 
@@ -76,6 +78,7 @@ export async function assertAppEnvironmentFingerprint(
     payload.openAIConfigured ? "OpenAI" : null,
     payload.twilioConfigured ? "Twilio" : null,
     payload.resendConfigured ? "Resend" : null,
+    payload.gmailConfigured ? "Gmail" : null,
   ].filter((name): name is string => name !== null);
   if (configuredProviders.length > 0) {
     throw new Error(

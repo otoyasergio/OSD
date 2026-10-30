@@ -188,7 +188,12 @@ const MESSAGES: Record<string, string> = {
   TWILIO_NOT_CONFIGURED: "Twilio is not configured for SMS.",
   SMS_OPTED_OUT: "This customer has opted out of SMS. Use email or clear the opt-out.",
   INVALID_PHONE: "Customer phone number is not a valid mobile number.",
-  EMAIL_NOT_CONFIGURED: "Email is not configured. Add RESEND_API_KEY.",
+  EMAIL_NOT_CONFIGURED:
+    "Customer email is not connected. An owner needs to connect the shop Google mailbox in Settings.",
+  GMAIL_RECONNECT_REQUIRED:
+    "The shop Google mailbox needs to be connected again in Settings.",
+  EMAIL_SEND_FAILED: "Google could not send that email. Try again.",
+  EMAIL_ADDRESS_INVALID: "That email address cannot be used.",
   CUSTOMER_PHONE_REQUIRED: "Customer needs a phone number to send SMS.",
   CUSTOMER_EMAIL_REQUIRED: "Customer needs an email address to send email.",
   PICKUP_NOTICE_NOT_READY: "Move the bike to Ready for pickup before sending the notice.",

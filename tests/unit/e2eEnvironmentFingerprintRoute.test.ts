@@ -51,6 +51,8 @@ describe("E2E environment fingerprint route", () => {
     vi.stubEnv("OPENAI_API_KEY", "synthetic-openai-secret");
     vi.stubEnv("TWILIO_AUTH_TOKEN", "synthetic-twilio-secret");
     vi.stubEnv("RESEND_API_KEY", "synthetic-resend-secret");
+    vi.stubEnv("GMAIL_CLIENT_ID", "synthetic-gmail-client");
+    vi.stubEnv("GMAIL_CLIENT_SECRET", "synthetic-gmail-secret");
 
     const response = await GET(request(SECRET));
     const body = await response.json();
@@ -62,6 +64,7 @@ describe("E2E environment fingerprint route", () => {
       openAIConfigured: true,
       twilioConfigured: true,
       resendConfigured: true,
+      gmailConfigured: true,
     });
     expect(JSON.stringify(body)).not.toMatch(
       /qa-project|supabase\.co|synthetic-|guard-secret|auth|header|key/i

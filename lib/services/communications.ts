@@ -226,7 +226,8 @@ export async function sendWorkOrderMessage(input: {
       const result = await sendSms({ to: toAddress, body });
       externalId = result.sid;
     } else {
-      if (!isEmailConfigured()) throw new Error("EMAIL_NOT_CONFIGURED");
+      if (!(await isEmailConfigured(wo.location_id)))
+        throw new Error("EMAIL_NOT_CONFIGURED");
       if (!customer.email?.trim()) throw new Error("CUSTOMER_EMAIL_REQUIRED");
       toAddress = customer.email.trim();
       body = template.emailHtml(ctx);
@@ -235,6 +236,7 @@ export async function sendWorkOrderMessage(input: {
         subject: template.emailSubject(ctx),
         html: body,
         text: template.emailText?.(ctx) ?? template.sms(ctx),
+        locationId: wo.location_id,
       });
       externalId = result.id;
     }
