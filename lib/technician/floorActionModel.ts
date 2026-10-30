@@ -53,6 +53,21 @@ export function isTerminalWorkOrderStatus(
   return status === "completed" || status === "cancelled";
 }
 
+/**
+ * The bike has left the bay. It stays in its category and comes off the
+ * technician's docket and Control Center tech card.
+ */
+export function workOrderLeftTechDocket(
+  status: WorkOrderStatus | string | null | undefined
+): boolean {
+  return (
+    status === "safety_check" ||
+    status === "ready_for_pickup" ||
+    status === "in_storage" ||
+    status === "completed"
+  );
+}
+
 /** Closed jobs — cancelled/declined rows must not linger on the floor. */
 export function isTerminalJobStatus(
   status: JobStatus | string | null | undefined

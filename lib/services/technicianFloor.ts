@@ -48,7 +48,10 @@ import {
   type PitBoardStamp,
   type PitBoardStep,
 } from "@/lib/technician/pitBoard";
-import { isTerminalWorkOrderStatus } from "@/lib/technician/floorActionModel";
+import {
+  isTerminalWorkOrderStatus,
+  workOrderLeftTechDocket,
+} from "@/lib/technician/floorActionModel";
 import { loadCommittedCheckoutPhotos } from "@/lib/services/checkoutEvidence";
 import type { CommittedCheckoutPhoto } from "@/lib/services/checkoutEvidence";
 import { checkoutCapturePreconditions } from "@/lib/status/checkoutEvidence";
@@ -438,7 +441,7 @@ export async function getTechnicianFloorOs(input: {
   const assignedJobs = orderedMyJobs.flatMap((row) => {
     const wo = unwrapWo(row.work_order);
     if (!wo || !allowedLocationIds.includes(wo.location_id)) return [];
-    if (wo.status === "completed" || wo.status === "cancelled") return [];
+    if (wo.status === "cancelled" || workOrderLeftTechDocket(wo.status)) return [];
     return [{ ...row, work_order_id: wo.work_order_id, work_order: wo }];
   });
 
@@ -695,6 +698,7 @@ export async function getTechnicianFloorOs(input: {
       wo &&
       canAccessWoLocation(wo.location_id) &&
       !isTerminalWorkOrderStatus(wo.status) &&
+      !workOrderLeftTechDocket(wo.status) &&
       job.assigned_technician_id === subject.userId
     ) {
       const labels = bikeCustomerLabel(unwrapMoto(wo));

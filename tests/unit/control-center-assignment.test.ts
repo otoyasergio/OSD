@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { controlCenterTechnicianId } from "@/lib/control-center/assignment";
+import {
+  controlCenterCardTechnicianId,
+  controlCenterTechnicianId,
+} from "@/lib/control-center/assignment";
 
 function assignedTechnicianId(
   jobs: Array<{ status: string; assigned_technician_id: string | null }>,
@@ -35,5 +38,19 @@ describe("control center assignment shape", () => {
         "tech-b"
       )
     ).toBe("tech-b");
+  });
+
+  it("takes the card off the tech once it is in safety, ready, storage, or complete", () => {
+    const jobs = [{ status: "in_progress", assigned_technician_id: "tech-a" }];
+    for (const status of [
+      "safety_check",
+      "ready_for_pickup",
+      "in_storage",
+      "completed",
+    ] as const) {
+      expect(controlCenterCardTechnicianId(status, jobs, "tech-a")).toBeNull();
+    }
+    expect(controlCenterCardTechnicianId("in_progress", jobs, "tech-a")).toBe("tech-a");
+    expect(controlCenterCardTechnicianId("quality_check", jobs, null)).toBe("tech-a");
   });
 });
