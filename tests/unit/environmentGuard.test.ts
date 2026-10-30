@@ -229,6 +229,11 @@ describe("checkMutationEnvironment", () => {
       expect(reasons).toEqual([expect.stringContaining("RESEND_API_KEY")]);
     });
 
+    it("rejects Gmail secrets that could send real email", () => {
+      const reasons = reasonsFor(safeEnv({ GMAIL_CLIENT_SECRET: "secret" }));
+      expect(reasons).toEqual([expect.stringContaining("GMAIL_CLIENT_SECRET")]);
+    });
+
     it("rejects OPENAI_API_KEY so stateful E2E cannot call a live model", () => {
       const reasons = reasonsFor(safeEnv({ OPENAI_API_KEY: "sk-live-provider" }));
       expect(reasons).toEqual([expect.stringContaining("OPENAI_API_KEY")]);
@@ -324,6 +329,8 @@ describe("stateful E2E web server environment", () => {
       TWILIO_MESSAGING_SERVICE_SID: "messaging",
       TWILIO_FROM_NUMBER: "+14165550000",
       RESEND_API_KEY: "email",
+      GMAIL_CLIENT_SECRET: "gmail-secret",
+      GMAIL_REFRESH_TOKEN: "gmail-refresh",
       TEST_SUPABASE_URL: "http://127.0.0.1:54321",
       UNDEFINED_VALUE: undefined,
     });
@@ -337,6 +344,8 @@ describe("stateful E2E web server environment", () => {
       TWILIO_MESSAGING_SERVICE_SID: "",
       TWILIO_FROM_NUMBER: "",
       RESEND_API_KEY: "",
+      GMAIL_CLIENT_SECRET: "",
+      GMAIL_REFRESH_TOKEN: "",
       TEST_SUPABASE_URL: "http://127.0.0.1:54321",
     });
     expect(env).not.toHaveProperty("UNDEFINED_VALUE");

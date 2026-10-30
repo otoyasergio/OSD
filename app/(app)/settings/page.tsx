@@ -8,6 +8,7 @@ import {
   canManageServiceCatalogue,
   canManageShopClosures,
   canManageTimesheets,
+  canConnectShopMailbox,
   canManageUsers,
   canViewAuditLog,
 } from "@/lib/permissions";
@@ -27,6 +28,12 @@ export default async function SettingsPage() {
       label: "My account",
       description: "Manage your profile photo and password.",
       visible: true,
+    },
+    {
+      href: "/settings/email",
+      label: "Customer email",
+      description: "Connect the Google mailbox that sends customer email.",
+      visible: canConnectShopMailbox(viewRole),
     },
     {
       href: "/settings/timesheets",

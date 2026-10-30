@@ -22,6 +22,8 @@ const STATEFUL_E2E_OUTBOUND_KEYS = [
   "TWILIO_FROM_NUMBER",
   "TWILIO_TWIML_APP_SID",
   "RESEND_API_KEY",
+  "GMAIL_CLIENT_SECRET",
+  "GMAIL_REFRESH_TOKEN",
 ] as const;
 
 export type MutationEnvironmentCheck = {
@@ -152,6 +154,12 @@ export function checkMutationEnvironment(
 
   if (env.RESEND_API_KEY) {
     reasons.push("RESEND_API_KEY must be unset so tests cannot send real email.");
+  }
+
+  if (env.GMAIL_CLIENT_SECRET || env.GMAIL_REFRESH_TOKEN) {
+    reasons.push(
+      "GMAIL_CLIENT_SECRET and GMAIL_REFRESH_TOKEN must be unset so tests cannot send real email."
+    );
   }
 
   if (env.OPENAI_API_KEY) {

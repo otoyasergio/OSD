@@ -193,6 +193,10 @@ export function canManageShopClosures(role: UserRole) {
 export function canManageUsers(role: UserRole) {
   return OWNERS.includes(role);
 }
+/** Connect or replace the Google mailbox that sends customer email. */
+export function canConnectShopMailbox(role: UserRole) {
+  return OWNERS.includes(role);
+}
 export function canManageLocations(role: UserRole) {
   return OWNERS.includes(role);
 }

@@ -331,6 +331,23 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["shop_closure"]["Insert"]>;
       };
+      shop_mailbox: {
+        Row: {
+          location_id: string;
+          email_address: string;
+          refresh_token: string;
+          connected_by_user_id: string | null;
+          connected_at: string;
+        };
+        Insert: {
+          location_id: string;
+          email_address: string;
+          refresh_token: string;
+          connected_by_user_id?: string | null;
+          connected_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["shop_mailbox"]["Insert"]>;
+      };
       staff_notification: {
         Row: {
           staff_notification_id: string;
