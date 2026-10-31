@@ -265,14 +265,6 @@ export function WaitingBikeCarousel({
     .filter(Boolean)
     .join(" ");
 
-  const titleRow = (
-    <div className={styles.titleRow}>
-      <h2 className={styles.title}>{title}</h2>
-      <span className="shop-board-column-count">{items.length}</span>
-      {subtitle ? <span className={styles.subtitle}>{subtitle}</span> : null}
-    </div>
-  );
-
   return (
     <section
       ref={dnd ? setNodeRef : undefined}
@@ -284,25 +276,35 @@ export function WaitingBikeCarousel({
           .filter(Boolean)
           .join(" ")}
       >
-        {collapsible ? (
-          <button
-            type="button"
-            className={styles.collapseToggle}
-            aria-expanded={!collapsed}
-            aria-controls={sectionId ? `cc-section-${sectionId}` : undefined}
-            onClick={toggle}
-          >
-            <ChevronDown
-              size={18}
-              strokeWidth={2.25}
-              aria-hidden
-              className={collapsed ? styles.chevronCollapsed : styles.chevron}
-            />
-            {titleRow}
-          </button>
-        ) : (
-          titleRow
-        )}
+        <div className={styles.titleRow}>
+          <h2 className={styles.title}>
+            {collapsible ? (
+              <button
+                type="button"
+                className="cc-collapse-toggle"
+                aria-expanded={!collapsed}
+                aria-controls={sectionId ? `cc-section-${sectionId}` : undefined}
+                onClick={toggle}
+              >
+                <ChevronDown
+                  size={18}
+                  strokeWidth={2.25}
+                  aria-hidden
+                  className={
+                    collapsed
+                      ? "cc-collapse-chevron cc-collapse-chevron--collapsed"
+                      : "cc-collapse-chevron"
+                  }
+                />
+                {title}
+              </button>
+            ) : (
+              title
+            )}
+          </h2>
+          <span className="shop-board-column-count">{items.length}</span>
+          {subtitle ? <span className={styles.subtitle}>{subtitle}</span> : null}
+        </div>
         {!collapsed && items.length > 2 ? (
           <div className={styles.scrollBtns}>
             <button

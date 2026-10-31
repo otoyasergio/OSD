@@ -23,7 +23,14 @@ function emitCollapsedSections() {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Choices made after the browser refused to store them (Safari with cookies
+ * blocked throws on `localStorage`). They last for this page load only.
+ */
+let unstoredSections: Record<string, boolean> | null = null;
+
 export function readCollapsedSections(): Record<string, boolean> {
+  if (unstoredSections) return { ...unstoredSections };
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(CONTROL_CENTER_COLLAPSED_STORAGE_KEY);
@@ -44,10 +51,14 @@ export function writeCollapsedSection(sectionId: string, collapsed: boolean) {
   const sections = readCollapsedSections();
   if (collapsed) sections[sectionId] = true;
   else delete sections[sectionId];
-  window.localStorage.setItem(
-    CONTROL_CENTER_COLLAPSED_STORAGE_KEY,
-    JSON.stringify(sections)
-  );
+  try {
+    window.localStorage.setItem(
+      CONTROL_CENTER_COLLAPSED_STORAGE_KEY,
+      JSON.stringify(sections)
+    );
+  } catch {
+    unstoredSections = sections;
+  }
   emitCollapsedSections();
 }
 

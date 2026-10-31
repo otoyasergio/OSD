@@ -385,7 +385,7 @@ const TechCard = memo(function TechCard({
                 : "cc-collapse-chevron"
             }
           />
-          <span className="cc-tech-avatar">
+          <span className="cc-tech-avatar" aria-hidden>
             {initials(tech.first_name, tech.last_name)}
             <span
               className={`cc-tech-avail-dot cc-tech-avail-dot--${tech.availability}`}
@@ -1534,37 +1534,39 @@ export function ControlCenterShell({
               .filter(Boolean)
               .join(" ")}
           >
-            <button
-              type="button"
-              className="cc-collapse-toggle"
-              aria-expanded={!poolCollapsed}
-              aria-controls="cc-section-pool"
-              onClick={togglePool}
-            >
-              <ChevronDown
-                size={18}
-                strokeWidth={2.25}
-                aria-hidden
-                className={
-                  poolCollapsed
-                    ? "cc-collapse-chevron cc-collapse-chevron--collapsed"
-                    : "cc-collapse-chevron"
-                }
-              />
-              <div className="cc-pool-title-row">
-                <h2 className="cc-pool-title">Waiting for tech</h2>
-                <span className="shop-board-column-count">{visiblePool.length}</span>
-                <span className="cc-pool-caption">
-                  {canAssign
-                    ? "Unassigned — drag onto a tech to dispatch"
-                    : canRearrange
-                      ? "Drag a bike onto a tech or into a category"
-                      : canDragDispatchBike
-                        ? "Drag a bike to Storage"
-                        : "Unassigned bikes (view only — you cannot assign)"}
-                </span>
-              </div>
-            </button>
+            <div className="cc-pool-title-row">
+              <h2 className="cc-pool-title">
+                <button
+                  type="button"
+                  className="cc-collapse-toggle"
+                  aria-expanded={!poolCollapsed}
+                  aria-controls="cc-section-pool"
+                  onClick={togglePool}
+                >
+                  <ChevronDown
+                    size={18}
+                    strokeWidth={2.25}
+                    aria-hidden
+                    className={
+                      poolCollapsed
+                        ? "cc-collapse-chevron cc-collapse-chevron--collapsed"
+                        : "cc-collapse-chevron"
+                    }
+                  />
+                  Waiting for tech
+                </button>
+              </h2>
+              <span className="shop-board-column-count">{visiblePool.length}</span>
+              <span className="cc-pool-caption">
+                {canAssign
+                  ? "Unassigned — drag onto a tech to dispatch"
+                  : canRearrange
+                    ? "Drag a bike onto a tech or into a category"
+                    : canDragDispatchBike
+                      ? "Drag a bike to Storage"
+                      : "Unassigned bikes (view only — you cannot assign)"}
+              </span>
+            </div>
             {poolCollapsed ? null : (
               <div style={{ display: "flex", gap: "0.4rem" }}>
                 <button

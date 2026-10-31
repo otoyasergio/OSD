@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ControlCenterBike, ControlCenterData } from "@/lib/services/controlCenter";
+import { CONTROL_CENTER_COLLAPSED_STORAGE_KEY } from "@/lib/control-center/collapsedSections";
 import { ReadyForPickupCarousel } from "@/components/technician/ReadyForPickupCarousel";
 
 vi.mock("next/navigation", () => ({
@@ -139,6 +139,18 @@ describe("control center collapsible sections", () => {
     expect(container.textContent).toContain("Ninja 400");
     expect(container.textContent).toContain("No insurance bikes.");
 
+    expect(sectionToggle(container, "Waiting for tech").textContent?.trim()).toBe(
+      "Waiting for tech"
+    );
+    expect(sectionToggle(container, "Waiting for approval").textContent?.trim()).toBe(
+      "Waiting for approval"
+    );
+    expect(
+      sectionToggle(container, "Alex Rivera")
+        .querySelector(".cc-tech-avatar")
+        ?.getAttribute("aria-hidden")
+    ).toBe("true");
+
     await act(async () => {
       sectionToggle(container, "Insurance bikes").click();
     });
@@ -149,9 +161,9 @@ describe("control center collapsible sections", () => {
     expect(container.textContent).not.toContain("No insurance bikes.");
     expect(container.textContent).toContain("No bikes waiting for approval.");
     expect(container.textContent).toContain("Ninja 400");
-    expect(
-      window.localStorage.getItem("otomoto.controlCenter.collapsedSections")
-    ).toContain("insurance");
+    expect(window.localStorage.getItem(CONTROL_CENTER_COLLAPSED_STORAGE_KEY)).toContain(
+      "insurance"
+    );
 
     await act(async () => {
       sectionToggle(container, "Alex Rivera").click();
@@ -175,7 +187,7 @@ describe("control center collapsible sections", () => {
 
   it("restores collapsed sections after a reload", async () => {
     window.localStorage.setItem(
-      "otomoto.controlCenter.collapsedSections",
+      CONTROL_CENTER_COLLAPSED_STORAGE_KEY,
       JSON.stringify({ insurance: true, "tech:tech-1": true })
     );
     await renderBoard();
@@ -196,5 +208,30 @@ describe("control center collapsible sections", () => {
     });
     expect(container.querySelector("button[aria-expanded]")).toBeNull();
     expect(container.textContent).toContain("No bikes waiting for pickup.");
+  });
+
+  // Last on purpose: a refused write leaves the module on its in-memory
+  // fallback for the rest of this page load.
+  it("still collapses when the browser refuses to store the choice", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("The operation is insecure.", "SecurityError");
+    });
+    try {
+      await renderBoard();
+
+      await act(async () => {
+        sectionToggle(container, "Storage").click();
+      });
+
+      expect(sectionToggle(container, "Storage").getAttribute("aria-expanded")).toBe(
+        "false"
+      );
+      expect(container.textContent).not.toContain("No bikes in storage.");
+      expect(
+        window.localStorage.getItem(CONTROL_CENTER_COLLAPSED_STORAGE_KEY)
+      ).toBeNull();
+    } finally {
+      setItem.mockRestore();
+    }
   });
 });
