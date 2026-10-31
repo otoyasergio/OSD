@@ -358,7 +358,7 @@ BEGIN
   RETURN QUERY
   SELECT
     v_source,
-    encode(digest(v_source::text, 'sha256'), 'hex');
+    encode(extensions.digest(v_source::text, 'sha256'), 'hex');
 END;
 $$;
 
@@ -523,7 +523,8 @@ BEGIN
     p_motorcycle_id,
     v_location_ids
   );
-  v_source_sha256 := encode(digest(v_source::text, 'sha256'), 'hex');
+  v_source_sha256 :=
+    encode(extensions.digest(v_source::text, 'sha256'), 'hex');
   IF v_source_sha256 <> p_source_sha256 THEN
     RAISE EXCEPTION 'PASSPORT_SOURCE_CHANGED';
   END IF;

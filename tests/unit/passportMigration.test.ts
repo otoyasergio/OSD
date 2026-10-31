@@ -71,6 +71,8 @@ describe("vehicle passport migration", () => {
     expect(sql).toContain("ARRAY(SELECT public.user_location_ids())");
     expect(sql).toContain("FROM public.user_location");
     expect(sql).toContain("SELECT motorcycle.customer_id");
+    expect(sql.match(/extensions\.digest\(v_source::text/g)).toHaveLength(2);
+    expect(sql).not.toContain("encode(digest(v_source::text");
     expect(sql).toContain("unnest(p_work_order_ids)");
     expect(sql).toContain("status = 'completed'");
     expect(sql).toContain("v_issued_at := (p_payload ->> 'issued_at')::timestamptz");
