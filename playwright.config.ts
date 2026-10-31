@@ -13,6 +13,7 @@ const STATEFUL_SPECS = [
   "**/technician-workflow.spec.ts",
   "**/jobs-estimate.spec.ts",
   "**/portal-estimate.spec.ts",
+  "**/passport-share.spec.ts",
   "**/permissions.spec.ts",
   "**/owner-role-preview.spec.ts",
   "**/realtime-races.spec.ts",
