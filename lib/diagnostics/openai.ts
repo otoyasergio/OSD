@@ -69,13 +69,119 @@ export type DiagnosticsRateLimitAssessment = {
   nextOutputBudget: number | null;
 };
 
-function parseGroupedInteger(message: string, label: string): number | null {
-  const match = new RegExp(`\\b${label}:?\\s+([\\d,]+)`, "i").exec(message);
-  if (!match?.[1]) return null;
-  const digits = match[1].replace(/,/g, "");
+function parseIntegerToken(raw: string): number | null {
+  const digits = raw.trim().replace(/,/g, "");
   if (!/^\d+$/.test(digits)) return null;
   const value = Number(digits);
   return Number.isSafeInteger(value) ? value : null;
+}
+
+function parseGroupedInteger(message: string, label: string): number | null {
+  const match = new RegExp(`\\b${label}:?\\s+([\\d,]+)`, "i").exec(message);
+  if (match?.[1]) {
+    const value = parseIntegerToken(match[1]);
+    if (value !== null) return value;
+  }
+  const json = new RegExp(`"${label}"\\s*:\\s*"?([\\d,]+)`, "i").exec(message);
+  return json?.[1] ? parseIntegerToken(json[1]) : null;
+}
+
+/** Retry-After seconds, or a reset header such as 6m0s, 1s, or 100ms. */
+function parseResetDurationMs(raw: string | null): number | null {
+  if (!raw) return null;
+  const value = raw.trim();
+  if (!value) return null;
+  if (/^\d+$/.test(value)) {
+    const seconds = Number(value);
+    return Number.isSafeInteger(seconds) ? seconds * 1_000 : null;
+  }
+  const milliseconds = /^(\d+(?:\.\d+)?)ms$/i.exec(value);
+  if (milliseconds?.[1]) {
+    const ms = Math.round(Number(milliseconds[1]));
+    return Number.isSafeInteger(ms) ? ms : null;
+  }
+  const clock = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$/i.exec(value);
+  if (!clock?.[1] && !clock?.[2] && !clock?.[3]) return null;
+  const ms = Math.round(
+    (Number(clock[1] ?? 0) * 3_600 + Number(clock[2] ?? 0) * 60 + Number(clock[3] ?? 0)) *
+      1_000
+  );
+  return Number.isSafeInteger(ms) ? ms : null;
+}
+
+function headerInteger(headers: Headers, name: string): number | null {
+  const raw = headers.get(name);
+  return raw === null ? null : parseIntegerToken(raw);
+}
+
+function headerRetryAfterMs(headers: Headers): number | null {
+  const retryAfter = parseResetDurationMs(headers.get("retry-after"));
+  if (retryAfter !== null) return retryAfter;
+
+  const tokenReset = parseResetDurationMs(headers.get("x-ratelimit-reset-tokens"));
+  const projectReset = parseResetDurationMs(
+    headers.get("x-ratelimit-reset-project-tokens")
+  );
+  const requestReset = parseResetDurationMs(headers.get("x-ratelimit-reset-requests"));
+  const exhausted: number[] = [];
+  if (
+    headerInteger(headers, "x-ratelimit-remaining-tokens") === 0 &&
+    tokenReset !== null
+  ) {
+    exhausted.push(tokenReset);
+  }
+  if (
+    headerInteger(headers, "x-ratelimit-remaining-project-tokens") === 0 &&
+    projectReset !== null
+  ) {
+    exhausted.push(projectReset);
+  }
+  if (
+    headerInteger(headers, "x-ratelimit-remaining-requests") === 0 &&
+    requestReset !== null
+  ) {
+    exhausted.push(requestReset);
+  }
+  if (exhausted.length > 0) return Math.min(...exhausted);
+
+  const hinted = [tokenReset, projectReset, requestReset].filter(
+    (value): value is number => value !== null
+  );
+  return hinted.length > 0 ? Math.min(...hinted) : null;
+}
+
+function outputBudgetFromTokenHeaders(
+  headers: Headers,
+  currentBudget: number
+): { limit: number | null; nextOutputBudget: number | null } {
+  const limit =
+    headerInteger(headers, "x-ratelimit-limit-tokens") ??
+    headerInteger(headers, "x-ratelimit-limit-project-tokens");
+  const remaining =
+    headerInteger(headers, "x-ratelimit-remaining-tokens") ??
+    headerInteger(headers, "x-ratelimit-remaining-project-tokens");
+  const room =
+    remaining !== null
+      ? remaining
+      : limit !== null && limit < currentBudget
+        ? limit
+        : null;
+  if (
+    room === null ||
+    !Number.isSafeInteger(currentBudget) ||
+    currentBudget <= OUTPUT_TOKEN_RETRY_FLOOR
+  ) {
+    return { limit, nextOutputBudget: null };
+  }
+  const next = room - OUTPUT_TOKEN_RETRY_MARGIN;
+  if (
+    Number.isSafeInteger(next) &&
+    next >= OUTPUT_TOKEN_RETRY_FLOOR &&
+    next < currentBudget
+  ) {
+    return { limit, nextOutputBudget: next };
+  }
+  return { limit, nextOutputBudget: null };
 }
 
 function parseRetryAfterMs(message: string): number | null {
@@ -99,19 +205,32 @@ function parseRetryAfterMs(message: string): number | null {
 
 /**
  * Classify a provider 429 without retaining the raw message. A token-reservation
- * rejection names a limit and a requested count; the next ceiling is the
- * largest output budget that fits under that limit, down to 1,024 tokens.
- * Reserved input is treated as requested minus the current output ceiling.
+ * rejection names a limit and a requested count. Tokens already used in the
+ * window count too: Used plus Requested can overflow while Requested alone
+ * stays under Limit. The next ceiling is the largest output budget that fits
+ * under the remaining room, down to 1,024 tokens. Reserved input is treated
+ * as requested minus the current output ceiling. Headers supply the same
+ * numbers when the body does not.
  */
 export function assessDiagnosticsRateLimit(
   message: string,
-  currentBudget: number
+  currentBudget: number,
+  headers?: Headers | null
 ): DiagnosticsRateLimitAssessment {
-  const limit = parseGroupedInteger(message, "Limit");
+  const limitFromMessage = parseGroupedInteger(message, "Limit");
   const requested = parseGroupedInteger(message, "Requested");
-  const retryAfterMs = parseRetryAfterMs(message);
+  const used = parseGroupedInteger(message, "Used");
+  const headerBudget = headers
+    ? outputBudgetFromTokenHeaders(headers, currentBudget)
+    : { limit: null, nextOutputBudget: null };
+  const limit = limitFromMessage ?? headerBudget.limit;
+  const retryAfterMs =
+    parseRetryAfterMs(message) ?? (headers ? headerRetryAfterMs(headers) : null);
   const reservation =
-    limit !== null && requested !== null && limit > 0 && requested > limit;
+    limit !== null &&
+    requested !== null &&
+    limit > 0 &&
+    (requested > limit || (used !== null && used + requested > limit));
   let nextOutputBudget: number | null = null;
   if (
     reservation &&
@@ -119,7 +238,7 @@ export function assessDiagnosticsRateLimit(
     currentBudget > OUTPUT_TOKEN_RETRY_FLOOR
   ) {
     const reservedInput = Math.max(0, requested - currentBudget);
-    const next = limit - reservedInput - OUTPUT_TOKEN_RETRY_MARGIN;
+    const next = limit - (used ?? 0) - reservedInput - OUTPUT_TOKEN_RETRY_MARGIN;
     if (
       Number.isSafeInteger(next) &&
       next >= OUTPUT_TOKEN_RETRY_FLOOR &&
@@ -128,12 +247,14 @@ export function assessDiagnosticsRateLimit(
       nextOutputBudget = next;
     }
   }
+  if (nextOutputBudget === null) nextOutputBudget = headerBudget.nextOutputBudget;
   return {
-    classification: reservation
-      ? "token_reservation"
-      : retryAfterMs !== null
-        ? "short_window"
-        : "unknown",
+    classification:
+      reservation || nextOutputBudget !== null
+        ? "token_reservation"
+        : retryAfterMs !== null
+          ? "short_window"
+          : "unknown",
     limit,
     requested,
     retryAfterMs,
@@ -568,7 +689,11 @@ export async function generateDiagnosticsDraft(
         continue;
       }
       if (error instanceof RateLimitError && !isInsufficientQuota(error)) {
-        const assessment = assessDiagnosticsRateLimit(error.message, outputBudget);
+        const assessment = assessDiagnosticsRateLimit(
+          error.message,
+          outputBudget,
+          error.headers
+        );
         if (!rateLimitRetried && assessment.nextOutputBudget !== null) {
           outputBudget = assessment.nextOutputBudget;
           rateLimitRetried = true;
@@ -586,6 +711,22 @@ export async function generateDiagnosticsDraft(
           );
           if (waitMs > 0) await sleep(waitMs);
           continue;
+        }
+        // Production 429s often name neither a limit nor a wait. The same
+        // 28,000-token reservation is what keeps failing, so retry once smaller.
+        if (!rateLimitRetried && assessment.classification === "unknown") {
+          const halved = Math.floor(outputBudget / 2);
+          const fallback =
+            halved >= OUTPUT_TOKEN_RETRY_FLOOR
+              ? halved
+              : outputBudget > OUTPUT_TOKEN_RETRY_FLOOR
+                ? OUTPUT_TOKEN_RETRY_FLOOR
+                : null;
+          if (fallback !== null && Number.isSafeInteger(outputBudget)) {
+            outputBudget = fallback;
+            rateLimitRetried = true;
+            continue;
+          }
         }
         logDiagnosticsRateLimit(assessment);
       }
