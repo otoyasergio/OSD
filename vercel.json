@@ -8,6 +8,9 @@
     },
     "app/api/cron/parts-canada-sync/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/cron/weekly-shop-report/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -18,6 +21,10 @@
     {
       "path": "/api/cron/wix-contacts-sync",
       "schedule": "*/4 * * * *"
+    },
+    {
+      "path": "/api/cron/weekly-shop-report",
+      "schedule": "0 0,1 * * 6"
     }
   ]
 }

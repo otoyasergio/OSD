@@ -103,7 +103,8 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 - [ ] Twilio TrustHub: Business Profile approved → Brand → Campaign → Messaging Service (see §8)
 - [ ] `TWILIO_*` set on Vercel; inbound + status webhook URLs match `NEXT_PUBLIC_APP_URL`
 - [ ] Migration `037_customer_sms_opt_out` applied
-- [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada every 4 hours + Wix contacts every 4 minutes on **Pro**, both gated to 10:00–23:00 Toronto)
+- [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada every 4 hours + Wix contacts every 4 minutes on **Pro**, both gated to 10:00–23:00 Toronto; weekly shop report at Saturday 00:00 and 01:00 UTC, sends only in the Friday 8:00 p.m. Toronto hour)
+- [ ] Migration `20261031030000_weekly_shop_report_dedupe.sql` applied and the Toronto shop Gmail mailbox connected, so the Friday report to `info@torontomoto.com` can send once per week
 - [ ] Vercel → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**
 - [ ] `npm run smoke:production` passes against https://service.torontomoto.com (set `CRON_SECRET` locally for bearer check)
 - [ ] `GET /api/health` returns `{ ok: true }` with `integrations.supabase: "ok"`
@@ -190,7 +191,7 @@ Brand approval is often fast; Campaign review can take **~10–15 days**. Treat 
 
 1. Apply migration `037_customer_sms_opt_out.sql`.
 2. Set the Twilio env vars on Vercel (Production; Preview if you test SMS there).
-3. `vercel.json` crons: Parts Canada every 4 hours (`0 */4 * * *`, active 10:00–23:00 Toronto); Wix contacts every 4 minutes (`*/4 * * * *`, same window). Apply migration `20260902010000_wix_contacts_sync_lock.sql` so overlapping Wix cron runs skip cleanly.
+3. `vercel.json` crons: Parts Canada every 4 hours (`0 */4 * * *`, active 10:00–23:00 Toronto); Wix contacts every 4 minutes (`*/4 * * * *`, same window); weekly shop report (`0 0,1 * * 6`, only the Friday 8:00 p.m. Toronto slot sends). Apply migration `20260902010000_wix_contacts_sync_lock.sql` so overlapping Wix cron runs skip cleanly, and `20261031030000_weekly_shop_report_dedupe.sql` so a retried report run does not email twice.
 4. Redeploy so webhooks and secrets are live.
 5. **CA:** From a work order, send an SMS template to a Canadian mobile; confirm delivery / status updates in `communication_log`.
 6. **Inbound:** Reply `YES` / `APPROVE` on an approval request when a single job is waiting; confirm job updates. Reply `STOP` — carrier opt-out + `sms_opted_out_at` set.

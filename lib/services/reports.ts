@@ -2,6 +2,11 @@ import { requireUser } from "@/lib/auth/session";
 import { calculateAverageDaysInShop } from "@/lib/control-center/formatTimer";
 import { createClient } from "@/lib/database/supabase-server";
 import { canViewReports } from "@/lib/permissions";
+import {
+  PARTS_WAITING_STATUSES,
+  efficiencyPercent,
+  sumPunchHours,
+} from "@/lib/reports/shopMetrics";
 import type { WorkOrderStatus } from "@/lib/database/types";
 
 export type ShopReportPeriod = "7d" | "30d";
@@ -80,7 +85,7 @@ export async function getShopReportSummary(
       count: "exact",
       head: true,
     })
-    .in("status", ["needed", "ordered", "in_stock"])
+    .in("status", [...PARTS_WAITING_STATUSES])
     .eq("job.work_order.location_id", locationId);
 
   const partsWaiting = partsError ? 0 : (partsWaitingCount ?? 0);
@@ -95,26 +100,22 @@ export async function getShopReportSummary(
 
   const avgDays = calculateAverageDaysInShop(openRes.data ?? []);
 
-  let techHours = 0;
-  for (const entry of clockRes.data ?? []) {
-    if (!entry.clock_in_at) continue;
-    const end = entry.clock_out_at ? new Date(entry.clock_out_at).getTime() : Date.now();
-    const start = new Date(entry.clock_in_at).getTime();
-    if (end > start) techHours += (end - start) / (1000 * 60 * 60);
-  }
-  techHours = Math.round(techHours * 10) / 10;
-
-  let jobHours = 0;
-  for (const entry of jobTimeRes.data ?? []) {
-    if (!entry.started_at) continue;
-    const end = entry.ended_at ? new Date(entry.ended_at).getTime() : Date.now();
-    const start = new Date(entry.started_at).getTime();
-    if (end > start) jobHours += (end - start) / (1000 * 60 * 60);
-  }
-  jobHours = Math.round(jobHours * 10) / 10;
-
-  const efficiency_pct =
-    techHours > 0 ? Math.round((jobHours / techHours) * 1000) / 10 : null;
+  const now = new Date();
+  const techHours = sumPunchHours(
+    (clockRes.data ?? []).map((entry) => ({
+      startedAt: entry.clock_in_at,
+      endedAt: entry.clock_out_at,
+    })),
+    { now }
+  );
+  const jobHours = sumPunchHours(
+    (jobTimeRes.data ?? []).map((entry) => ({
+      startedAt: entry.started_at,
+      endedAt: entry.ended_at,
+    })),
+    { now }
+  );
+  const efficiency_pct = efficiencyPercent(jobHours, techHours);
 
   const statusCounts = new Map<string, number>();
   for (const row of openRes.data ?? []) {

@@ -38,6 +38,7 @@ describe("Vercel compute allocation", () => {
     expect(config.functions).toEqual({
       "app/api/cron/wix-contacts-sync/route.ts": { maxDuration: 300 },
       "app/api/cron/parts-canada-sync/route.ts": { maxDuration: 300 },
+      "app/api/cron/weekly-shop-report/route.ts": { maxDuration: 300 },
     });
   });
 
@@ -45,6 +46,7 @@ describe("Vercel compute allocation", () => {
     expect(config.crons).toEqual([
       { path: "/api/cron/parts-canada-sync", schedule: "0 */4 * * *" },
       { path: "/api/cron/wix-contacts-sync", schedule: "*/4 * * * *" },
+      { path: "/api/cron/weekly-shop-report", schedule: "0 0,1 * * 6" },
     ]);
   });
 });

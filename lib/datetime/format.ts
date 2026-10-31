@@ -166,6 +166,21 @@ export function isWithinWixContactsSyncWindow(now: Date = new Date()): boolean {
   return isWithinShopCronWindow(now);
 }
 
+/** Local hour when the Friday shop report email goes out (8:00 p.m.). */
+export const FRIDAY_SHOP_REPORT_HOUR = 20;
+
+/**
+ * True during the 8:00 p.m. America/Toronto hour on Friday.
+ * Vercel cron is UTC, so the route is scheduled at both Saturday 00:00 UTC
+ * and Saturday 01:00 UTC and this gate keeps a single send across DST.
+ */
+export function isFridayShopReportHour(now: Date = new Date()): boolean {
+  const hour = Math.floor(shopLocalMinutesSinceMidnight(now) / 60);
+  return (
+    shopWeekdayIndex(now) === WEEKDAY_TO_INDEX.Fri && hour === FRIDAY_SHOP_REPORT_HOUR
+  );
+}
+
 /** YYYY-MM-DD calendar date in America/Toronto. */
 export function shopDateKey(value: string | Date | null | undefined): string {
   const date = toDate(value);
@@ -296,6 +311,52 @@ export function getShopWeekRange(anchor: string | Date = new Date()): ShopWeekRa
     startDateKey,
     endDateKey,
     dateKeys,
+  };
+}
+
+export type FridayShopReportSpan = {
+  /** Previous Friday 20:00:00.000 America/Toronto. Exclusive. */
+  startUtc: Date;
+  /** Friday 20:00:00.000 America/Toronto. Inclusive. */
+  endUtc: Date;
+  /** First full calendar day in the span (the Saturday after `startUtc`). */
+  startDateKey: string;
+  /** The Friday the span ends on. */
+  endDateKey: string;
+};
+
+function fridayReportCutoff(fridayKey: string): Date {
+  const cutoff = parseShopLocalDateTimeInput(
+    `${fridayKey}T${String(FRIDAY_SHOP_REPORT_HOUR).padStart(2, "0")}:00:00`
+  );
+  if (!cutoff) throw new Error(`Invalid Friday report cutoff: ${fridayKey}`);
+  return cutoff;
+}
+
+function fridayShopReportSpan(fridayKey: string): FridayShopReportSpan {
+  return {
+    startUtc: fridayReportCutoff(addDaysToDateKey(fridayKey, -7)),
+    endUtc: fridayReportCutoff(fridayKey),
+    startDateKey: addDaysToDateKey(fridayKey, -6),
+    endDateKey: fridayKey,
+  };
+}
+
+/**
+ * The seven days ending Friday 20:00 America/Toronto in the week containing
+ * `anchor`, plus the seven days before that. Adjacent spans share a boundary
+ * instant, so a span excludes its start and includes its end.
+ */
+export function getFridayShopReportWindow(anchor: string | Date = new Date()): {
+  current: FridayShopReportSpan;
+  previous: FridayShopReportSpan;
+} {
+  const date = toDate(anchor) ?? new Date();
+  const week = getShopWeekRange(date);
+  const fridayKey = addDaysToDateKey(week.startDateKey, 4);
+  return {
+    current: fridayShopReportSpan(fridayKey),
+    previous: fridayShopReportSpan(addDaysToDateKey(fridayKey, -7)),
   };
 }
 
