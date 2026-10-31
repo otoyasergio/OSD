@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/database/supabase-admin";
 import { getFridayShopReportWindow } from "@/lib/datetime/format";
 import { getShopMailbox } from "@/lib/email/mailbox";
 import { isEmailConfigured, sendEmail } from "@/lib/email/send";
+import { PARTS_WAITING_STATUSES, type PunchInput } from "@/lib/reports/shopMetrics";
 import {
   WEEKLY_SHOP_REPORT_TEMPLATE,
   WEEKLY_SHOP_REPORT_TO,
@@ -12,12 +13,12 @@ import {
   runWeeklyShopReport,
   weeklyReportDedupeKey,
   type WeeklyJobInput,
-  type WeeklyPunchInput,
   type WeeklyShopReportInput,
   type WeeklyTimelineInput,
   type WeeklyWorkOrderInput,
 } from "@/lib/reports/weeklyShopReport";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
+import { TimelineEventType } from "@/lib/timeline/events";
 
 const LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const ROW_LIMIT = 2000;
@@ -28,7 +29,6 @@ const WORK_ORDER_SELECT = `
   status,
   created_at,
   completed_at,
-  updated_at,
   billing_collected_cents,
   motorcycle:motorcycle_id ( year, make, model ),
   customer:customer_id ( first_name, last_name )
@@ -136,7 +136,7 @@ async function loadWeeklyShopReportInput(
     window.previous.startUtc.getTime() - LOOKBACK_MS
   ).toISOString();
 
-  const [openRows, createdRows, completedRows, cancelledRows] = await Promise.all([
+  const [openRows, createdRows, completedRows, cancelEvents] = await Promise.all([
     queryRows(
       admin
         .from("work_order")
@@ -166,19 +166,22 @@ async function loadWeeklyShopReportInput(
     ),
     queryRows(
       admin
-        .from("work_order")
-        .select(WORK_ORDER_SELECT)
-        .eq("location_id", locationId)
-        .eq("status", "cancelled")
-        .gte("updated_at", previousStart)
-        .lte("updated_at", currentEnd)
+        .from("timeline_event")
+        .select("work_order_id, created_at, work_order!inner(location_id)")
+        .eq("work_order.location_id", locationId)
+        .eq("event_type", TimelineEventType.WORK_ORDER_CANCELLED)
+        .gte("created_at", previousStart)
+        .lte("created_at", currentEnd)
+        .order("created_at", { ascending: true })
         .limit(ROW_LIMIT)
     ),
   ]);
+  const cancelledAt = latestCancellation(cancelEvents);
 
   const jobSelect =
     "job_id, work_order_id, service_name_snapshot, completed_at, approved_by_customer_at, declined_at, work_order!inner(location_id)";
   const [
+    cancelledRows,
     completedJobs,
     approvedJobs,
     declinedJobs,
@@ -188,6 +191,16 @@ async function loadWeeklyShopReportInput(
     parts,
     timeline,
   ] = await Promise.all([
+    cancelledAt.size === 0
+      ? Promise.resolve([] as Row[])
+      : queryRows(
+          admin
+            .from("work_order")
+            .select(WORK_ORDER_SELECT)
+            .eq("location_id", locationId)
+            .in("work_order_id", [...cancelledAt.keys()])
+            .limit(ROW_LIMIT)
+        ),
     queryRows(
       admin
         .from("job")
@@ -247,7 +260,7 @@ async function loadWeeklyShopReportInput(
       admin
         .from("part")
         .select("status, job!inner(work_order!inner(location_id))")
-        .in("status", ["needed", "ordered", "in_stock"])
+        .in("status", [...PARTS_WAITING_STATUSES])
         .eq("job.work_order.location_id", locationId)
         .limit(ROW_LIMIT)
     ),
@@ -268,7 +281,7 @@ async function loadWeeklyShopReportInput(
   return {
     now,
     workOrders: [...openRows, ...createdRows, ...completedRows, ...cancelledRows].map(
-      mapWorkOrder
+      (row) => mapWorkOrder(row, cancelledAt)
     ),
     jobs: mergeJobs([...completedJobs, ...approvedJobs, ...declinedJobs]),
     inspectionCompletedAt: inspections
@@ -299,7 +312,20 @@ function mergeJobs(rows: Row[]): WeeklyJobInput[] {
   return [...byId.values()];
 }
 
-function mapWorkOrder(row: Row): WeeklyWorkOrderInput {
+/** Latest cancellation time per work order; a reopened bike keeps only its newest one. */
+function latestCancellation(events: Row[]): Map<string, string> {
+  const byWorkOrder = new Map<string, string>();
+  for (const event of events) {
+    const workOrderId = stringOf(event.work_order_id);
+    const createdAt = stringOf(event.created_at);
+    if (!workOrderId || !createdAt) continue;
+    const existing = byWorkOrder.get(workOrderId);
+    if (!existing || createdAt > existing) byWorkOrder.set(workOrderId, createdAt);
+  }
+  return byWorkOrder;
+}
+
+function mapWorkOrder(row: Row, cancelledAt: Map<string, string>): WeeklyWorkOrderInput {
   const motorcycle = asOne(row.motorcycle);
   const customer = asOne(row.customer);
   const customerName = [stringOf(customer?.first_name), stringOf(customer?.last_name)]
@@ -313,7 +339,7 @@ function mapWorkOrder(row: Row): WeeklyWorkOrderInput {
     status: String(row.status ?? ""),
     createdAt: String(row.created_at ?? ""),
     completedAt: stringOf(row.completed_at),
-    updatedAt: String(row.updated_at ?? row.created_at ?? ""),
+    cancelledAt: cancelledAt.get(String(row.work_order_id)) ?? null,
     collectedCents: Number(row.billing_collected_cents ?? 0) || 0,
     year: year != null && Number.isFinite(year) ? year : null,
     make: stringOf(motorcycle?.make),
@@ -322,14 +348,14 @@ function mapWorkOrder(row: Row): WeeklyWorkOrderInput {
   };
 }
 
-function mapClock(row: Row): WeeklyPunchInput {
+function mapClock(row: Row): PunchInput {
   return {
     startedAt: String(row.clock_in_at ?? ""),
     endedAt: stringOf(row.clock_out_at),
   };
 }
 
-function mapJobTime(row: Row): WeeklyPunchInput {
+function mapJobTime(row: Row): PunchInput {
   return {
     startedAt: String(row.started_at ?? ""),
     endedAt: stringOf(row.ended_at),

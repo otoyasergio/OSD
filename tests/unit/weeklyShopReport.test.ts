@@ -28,14 +28,14 @@ function emptyInput(
 describe("buildWeeklyShopReport", () => {
   it("renders an empty week without throwing", () => {
     const message = renderWeeklyShopReport(buildWeeklyShopReport(emptyInput()));
-    expect(message.subject).toBe("Weekly shop report · Oct 26–30, 2026");
+    expect(message.subject).toBe("Weekly shop report · Oct 24–30, 2026");
     expect(message.text).toContain("Bikes arrived: 0 (last week 0, 0)");
     expect(message.text).toContain("None.");
     expect(message.text).toContain("Parts still open: 0 needed, 0 ordered, 0 in stock.");
     expect(message.html).toContain("OTOMOTO TORONTO MOTO INC.");
   });
 
-  it("compares this Monday–Friday with the previous one and lists the finished bike", () => {
+  it("compares the week to Friday 8 p.m. with the previous one and lists the bikes", () => {
     const report = buildWeeklyShopReport(
       emptyInput({
         workOrders: [
@@ -45,7 +45,7 @@ describe("buildWeeklyShopReport", () => {
             status: "completed",
             createdAt: "2026-10-26T14:00:00.000Z",
             completedAt: "2026-10-30T18:00:00.000Z",
-            updatedAt: "2026-10-30T18:00:00.000Z",
+            cancelledAt: null,
             collectedCents: 42000,
             year: 2019,
             make: "Honda",
@@ -58,7 +58,7 @@ describe("buildWeeklyShopReport", () => {
             status: "completed",
             createdAt: "2026-10-19T14:00:00.000Z",
             completedAt: "2026-10-23T16:00:00.000Z",
-            updatedAt: "2026-10-23T16:00:00.000Z",
+            cancelledAt: null,
             collectedCents: 10000,
             year: 2018,
             make: "Yamaha",
@@ -71,12 +71,40 @@ describe("buildWeeklyShopReport", () => {
             status: "insurance",
             createdAt: "2026-10-28T15:00:00.000Z",
             completedAt: null,
-            updatedAt: "2026-10-30T17:00:00.000Z",
+            cancelledAt: null,
             collectedCents: 0,
             year: 2020,
             make: "Kawasaki",
             model: "Ninja",
             customerName: "Pat Insurance",
+          },
+          {
+            workOrderId: "wo-cancelled",
+            workOrderNumber: "WO-1101",
+            status: "cancelled",
+            createdAt: "2026-10-27T15:00:00.000Z",
+            completedAt: null,
+            // Cancelled Thursday, then edited Friday; the edit does not move it.
+            cancelledAt: "2026-10-29T15:00:00.000Z",
+            collectedCents: 0,
+            year: 2015,
+            make: "Suzuki",
+            model: "SV650",
+            customerName: "Quinn Cancel",
+          },
+          {
+            workOrderId: "wo-boundary",
+            workOrderNumber: "WO-1050",
+            status: "cancelled",
+            createdAt: "2026-10-20T15:00:00.000Z",
+            completedAt: null,
+            // Exactly Friday Oct 23 8:00 p.m.: belongs to last week, not this one.
+            cancelledAt: "2026-10-24T00:00:00.000Z",
+            collectedCents: 0,
+            year: 2016,
+            make: "Ducati",
+            model: "Monster",
+            customerName: "Bo Boundary",
           },
         ],
         jobs: [
@@ -131,7 +159,11 @@ describe("buildWeeklyShopReport", () => {
       (metric) => metric.label === "Collected on completed bikes"
     );
     const staff = report.comparison.find((metric) => metric.label === "Staff hours");
-    expect(arrived).toMatchObject({ current: 2, previous: 1 });
+    const cancelledMetric = report.comparison.find(
+      (metric) => metric.label === "Bikes cancelled"
+    );
+    expect(arrived).toMatchObject({ current: 3, previous: 2 });
+    expect(cancelledMetric).toMatchObject({ current: 1, previous: 1 });
     expect(completed).toMatchObject({ current: 1, previous: 1 });
     expect(collected).toMatchObject({ current: 42000, previous: 10000 });
     expect(staff).toMatchObject({ current: 1, previous: 2 });
@@ -140,6 +172,8 @@ describe("buildWeeklyShopReport", () => {
     expect(report.finished[0]?.bikeLabel).toBe("2019 Honda CB500");
     expect(report.finished[0]?.jobs).toEqual(["Oil change"]);
     expect(report.finished[0]?.collectedCents).toBe(42000);
+    expect(report.cancelled.map((bike) => bike.workOrderNumber)).toEqual(["WO-1101"]);
+    expect(report.cancelled[0]?.daysInShop).toBe(2);
     expect(report.stillHere.map((group) => group.status)).toEqual(["insurance"]);
     expect(report.stillHere[0]?.bikes[0]?.notes).toEqual([
       "Board move: status changed to insurance",
@@ -152,16 +186,18 @@ describe("buildWeeklyShopReport", () => {
     expect(message.text).toContain("Jobs: Oil change");
     expect(message.html).toContain("Sam &lt;Rider&gt;");
     expect(message.html).not.toContain("Sam <Rider>");
+    expect(message.text).toContain("2015 Suzuki SV650 · WO-1101 · Quinn Cancel");
+    expect(message.text).not.toContain("Bo Boundary");
   });
 });
 
 describe("runWeeklyShopReport", () => {
-  it("does not send twice for the same Monday key", async () => {
+  it("does not send twice for the same week key", async () => {
     const sent: string[] = [];
     const claimed = new Set<string>();
     const prepare = vi.fn(async () => ({
-      dedupeKey: "TOR:2026-10-26",
-      subject: "Weekly shop report · Oct 26–30, 2026",
+      dedupeKey: "TOR:2026-10-24",
+      subject: "Weekly shop report · Oct 24–30, 2026",
       text: "report",
       html: "<p>report</p>",
     }));
@@ -184,7 +220,7 @@ describe("runWeeklyShopReport", () => {
 
     await expect(once()).resolves.toEqual({ ok: true, messageId: "gmail-1" });
     await expect(once()).resolves.toEqual({ ok: true, skipped: "already_sent" });
-    expect(sent).toEqual(["Weekly shop report · Oct 26–30, 2026"]);
+    expect(sent).toEqual(["Weekly shop report · Oct 24–30, 2026"]);
   });
 
   it("releases the claim when sending fails", async () => {
@@ -192,7 +228,7 @@ describe("runWeeklyShopReport", () => {
     await expect(
       runWeeklyShopReport({
         prepare: async () => ({
-          dedupeKey: "TOR:2026-10-26",
+          dedupeKey: "TOR:2026-10-24",
           subject: "Weekly shop report",
           text: "report",
           html: "<p>report</p>",
@@ -207,6 +243,6 @@ describe("runWeeklyShopReport", () => {
         },
       })
     ).rejects.toThrow("EMAIL_NOT_CONFIGURED");
-    expect(released).toEqual(["TOR:2026-10-26"]);
+    expect(released).toEqual(["TOR:2026-10-24"]);
   });
 });

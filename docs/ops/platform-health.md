@@ -68,9 +68,10 @@ vercel crons ls
 vercel ls
 ```
 
-Check names and scopes only; never print secret values. The two current cron
-schedules require a Vercel Pro-or-higher project because Hobby cron jobs may
-run only once per day.
+Check names and scopes only; never print secret values. The three current cron
+schedules (Parts Canada every 4 hours, Wix contacts every 4 minutes, and the
+Friday 8:00 p.m. Toronto weekly shop report at `0 0,1 * * 6` UTC) require a
+Vercel Pro-or-higher project because Hobby cron jobs may run only once per day.
 
 For Supabase:
 
@@ -147,8 +148,8 @@ Do not apply production migrations or deploy production from a feature branch.
 These cannot be changed safely from repository code:
 
 - Grant the deployment operator access to the Vercel `otoya` project scope.
-- Confirm that the Vercel project is Pro or higher for the four-minute and
-  four-hour cron schedules.
+- Confirm that the Vercel project is Pro or higher for the four-minute,
+  four-hour, and twice-weekly cron schedules.
 - Enable Supabase Auth leaked-password protection when available on the
   project's plan.
 - Change Supabase Auth database connections from a fixed count to percentage

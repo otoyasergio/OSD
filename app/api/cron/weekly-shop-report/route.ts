@@ -14,14 +14,6 @@ export const maxDuration = 300;
  * Protect with CRON_SECRET via Authorization: Bearer <secret> only.
  */
 export async function GET(request: Request) {
-  return handleWeeklyShopReportCron(request, new Date());
-}
-
-export async function POST(request: Request) {
-  return GET(request);
-}
-
-export async function handleWeeklyShopReportCron(request: Request, now: Date) {
   const requestId = newRequestId();
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
@@ -34,6 +26,7 @@ export async function handleWeeklyShopReportCron(request: Request, now: Date) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const now = new Date();
   if (!isFridayShopReportHour(now)) {
     logger.info("Weekly shop report cron skipped outside Friday 8 p.m.", { requestId });
     return NextResponse.json({ ok: true, skipped: "outside_window" });
@@ -58,4 +51,8 @@ export async function handleWeeklyShopReportCron(request: Request, now: Date) {
       { status: 500 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  return GET(request);
 }

@@ -175,18 +175,10 @@ export const FRIDAY_SHOP_REPORT_HOUR = 20;
  * and Saturday 01:00 UTC and this gate keeps a single send across DST.
  */
 export function isFridayShopReportHour(now: Date = new Date()): boolean {
-  const weekday = new Intl.DateTimeFormat("en-US", {
-    timeZone: SHOP_TIMEZONE,
-    weekday: "short",
-  }).format(now);
-  const hour = Number(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: SHOP_TIMEZONE,
-      hour: "2-digit",
-      hourCycle: "h23",
-    }).format(now)
+  const hour = Math.floor(shopLocalMinutesSinceMidnight(now) / 60);
+  return (
+    shopWeekdayIndex(now) === WEEKDAY_TO_INDEX.Fri && hour === FRIDAY_SHOP_REPORT_HOUR
   );
-  return weekday === "Fri" && hour === FRIDAY_SHOP_REPORT_HOUR;
 }
 
 /** YYYY-MM-DD calendar date in America/Toronto. */
@@ -323,29 +315,37 @@ export function getShopWeekRange(anchor: string | Date = new Date()): ShopWeekRa
 }
 
 export type FridayShopReportSpan = {
-  /** Monday 00:00:00.000 America/Toronto. Inclusive. */
+  /** Previous Friday 20:00:00.000 America/Toronto. Exclusive. */
   startUtc: Date;
   /** Friday 20:00:00.000 America/Toronto. Inclusive. */
   endUtc: Date;
+  /** First full calendar day in the span (the Saturday after `startUtc`). */
   startDateKey: string;
+  /** The Friday the span ends on. */
   endDateKey: string;
 };
 
-function fridayShopReportSpan(mondayKey: string): FridayShopReportSpan {
-  const fridayKey = addDaysToDateKey(mondayKey, 4);
-  const endUtc = parseShopLocalDateTimeInput(`${fridayKey}T20:00:00`);
-  if (!endUtc) throw new Error(`Invalid Friday report end: ${fridayKey}`);
+function fridayReportCutoff(fridayKey: string): Date {
+  const cutoff = parseShopLocalDateTimeInput(
+    `${fridayKey}T${String(FRIDAY_SHOP_REPORT_HOUR).padStart(2, "0")}:00:00`
+  );
+  if (!cutoff) throw new Error(`Invalid Friday report cutoff: ${fridayKey}`);
+  return cutoff;
+}
+
+function fridayShopReportSpan(fridayKey: string): FridayShopReportSpan {
   return {
-    startUtc: shopMidnightFromDateKey(mondayKey),
-    endUtc,
-    startDateKey: mondayKey,
+    startUtc: fridayReportCutoff(addDaysToDateKey(fridayKey, -7)),
+    endUtc: fridayReportCutoff(fridayKey),
+    startDateKey: addDaysToDateKey(fridayKey, -6),
     endDateKey: fridayKey,
   };
 }
 
 /**
- * Monday 00:00 through Friday 20:00 America/Toronto for the week containing
- * `anchor`, plus the same span seven days earlier.
+ * The seven days ending Friday 20:00 America/Toronto in the week containing
+ * `anchor`, plus the seven days before that. Adjacent spans share a boundary
+ * instant, so a span excludes its start and includes its end.
  */
 export function getFridayShopReportWindow(anchor: string | Date = new Date()): {
   current: FridayShopReportSpan;
@@ -353,9 +353,10 @@ export function getFridayShopReportWindow(anchor: string | Date = new Date()): {
 } {
   const date = toDate(anchor) ?? new Date();
   const week = getShopWeekRange(date);
+  const fridayKey = addDaysToDateKey(week.startDateKey, 4);
   return {
-    current: fridayShopReportSpan(week.startDateKey),
-    previous: fridayShopReportSpan(addDaysToDateKey(week.startDateKey, -7)),
+    current: fridayShopReportSpan(fridayKey),
+    previous: fridayShopReportSpan(addDaysToDateKey(fridayKey, -7)),
   };
 }
 

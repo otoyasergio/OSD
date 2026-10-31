@@ -2,6 +2,12 @@ import {
   getFridayShopReportWindow,
   type FridayShopReportSpan,
 } from "@/lib/datetime/format";
+import {
+  efficiencyPercent,
+  roundTenth,
+  sumPunchHours,
+  type PunchInput,
+} from "@/lib/reports/shopMetrics";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import { TimelineEventType } from "@/lib/timeline/events";
 import type { WorkOrderStatus } from "@/lib/database/types";
@@ -52,7 +58,8 @@ export type WeeklyWorkOrderInput = {
   status: string;
   createdAt: string;
   completedAt: string | null;
-  updatedAt: string;
+  /** Latest cancellation time from the timeline; null when never cancelled. */
+  cancelledAt: string | null;
   collectedCents: number;
   year: number | null;
   make: string | null;
@@ -75,18 +82,13 @@ export type WeeklyTimelineInput = {
   createdAt: string;
 };
 
-export type WeeklyPunchInput = {
-  startedAt: string;
-  endedAt: string | null;
-};
-
 export type WeeklyShopReportInput = {
   now: Date;
   workOrders: WeeklyWorkOrderInput[];
   jobs: WeeklyJobInput[];
   inspectionCompletedAt: string[];
-  clock: WeeklyPunchInput[];
-  jobTime: WeeklyPunchInput[];
+  clock: PunchInput[];
+  jobTime: PunchInput[];
   parts: Array<{ status: string }>;
   timeline: WeeklyTimelineInput[];
 };
@@ -111,7 +113,7 @@ export type WeeklyBikeLine = {
   collectedCents: number | null;
   jobs: string[];
   notes: string[];
-  updatedAt: string | null;
+  cancelledAt: string | null;
 };
 
 export type WeeklyStatusGroup = {
@@ -142,40 +144,11 @@ function inSpan(iso: string | null | undefined, span: FridayShopReportSpan): boo
   if (!iso) return false;
   const time = new Date(iso).getTime();
   if (Number.isNaN(time)) return false;
-  return time >= span.startUtc.getTime() && time <= span.endUtc.getTime();
+  return time > span.startUtc.getTime() && time <= span.endUtc.getTime();
 }
 
-function overlapHours(
-  punch: WeeklyPunchInput,
-  span: FridayShopReportSpan,
-  now: Date
-): number {
-  const start = new Date(punch.startedAt).getTime();
-  if (Number.isNaN(start)) return 0;
-  const rawEnd = punch.endedAt ? new Date(punch.endedAt).getTime() : now.getTime();
-  const end = Number.isNaN(rawEnd) ? now.getTime() : rawEnd;
-  const from = Math.max(start, span.startUtc.getTime());
-  const to = Math.min(end, span.endUtc.getTime());
-  if (to <= from) return 0;
-  return (to - from) / (1000 * 60 * 60);
-}
-
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-function sumHours(
-  punches: WeeklyPunchInput[],
-  span: FridayShopReportSpan,
-  now: Date
-): number {
-  const total = punches.reduce((sum, punch) => sum + overlapHours(punch, span, now), 0);
-  return round1(total);
-}
-
-function efficiency(jobHours: number, techHours: number): number | null {
-  if (techHours <= 0) return null;
-  return Math.round((jobHours / techHours) * 1000) / 10;
+function spanHours(punches: PunchInput[], span: FridayShopReportSpan, now: Date): number {
+  return sumPunchHours(punches, { now, from: span.startUtc, to: span.endUtc });
 }
 
 function statusLabel(status: string): string {
@@ -195,13 +168,15 @@ function bikeLabel(row: WeeklyWorkOrderInput): string {
 function daysBetween(startIso: string, end: Date): number {
   const start = new Date(startIso).getTime();
   if (Number.isNaN(start)) return 0;
-  return round1(Math.max(0, end.getTime() - start) / DAY_MS);
+  return roundTenth(Math.max(0, end.getTime() - start) / DAY_MS);
 }
 
 function bikeLine(
   row: WeeklyWorkOrderInput,
   end: Date,
-  extras: Partial<Pick<WeeklyBikeLine, "collectedCents" | "jobs" | "notes" | "updatedAt">>
+  extras: Partial<
+    Pick<WeeklyBikeLine, "collectedCents" | "jobs" | "notes" | "cancelledAt">
+  >
 ): WeeklyBikeLine {
   return {
     workOrderId: row.workOrderId,
@@ -214,7 +189,7 @@ function bikeLine(
     collectedCents: extras.collectedCents ?? null,
     jobs: extras.jobs ?? [],
     notes: extras.notes ?? [],
-    updatedAt: extras.updatedAt ?? null,
+    cancelledAt: extras.cancelledAt ?? null,
   };
 }
 
@@ -273,18 +248,20 @@ export function buildWeeklyShopReport(input: WeeklyShopReportInput): WeeklyShopR
       (row) => row.status === "completed" && inSpan(row.completedAt, span)
     );
   const cancelled = (span: FridayShopReportSpan) =>
-    workOrders.filter((row) => row.status === "cancelled" && inSpan(row.updatedAt, span));
+    workOrders.filter(
+      (row) => row.status === "cancelled" && inSpan(row.cancelledAt, span)
+    );
 
   const revenue = (span: FridayShopReportSpan) =>
     finished(span).reduce((sum, row) => sum + Math.max(0, row.collectedCents || 0), 0);
 
   const techHours = {
-    current: sumHours(input.clock, current, input.now),
-    previous: sumHours(input.clock, previous, input.now),
+    current: spanHours(input.clock, current, input.now),
+    previous: spanHours(input.clock, previous, input.now),
   };
   const jobHours = {
-    current: sumHours(input.jobTime, current, input.now),
-    previous: sumHours(input.jobTime, previous, input.now),
+    current: spanHours(input.jobTime, current, input.now),
+    previous: spanHours(input.jobTime, previous, input.now),
   };
 
   const comparison: WeeklyMetric[] = [
@@ -368,8 +345,8 @@ export function buildWeeklyShopReport(input: WeeklyShopReportInput): WeeklyShopR
     },
     {
       label: "Efficiency",
-      current: efficiency(jobHours.current, techHours.current),
-      previous: efficiency(jobHours.previous, techHours.previous),
+      current: efficiencyPercent(jobHours.current, techHours.current),
+      previous: efficiencyPercent(jobHours.previous, techHours.previous),
       format: "percent",
     },
   ];
@@ -397,10 +374,10 @@ export function buildWeeklyShopReport(input: WeeklyShopReportInput): WeeklyShopR
 
   const cancelledLines = cancelled(current)
     .slice()
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .sort((a, b) => (b.cancelledAt ?? "").localeCompare(a.cancelledAt ?? ""))
     .map((row) =>
-      bikeLine(row, new Date(row.updatedAt), {
-        updatedAt: row.updatedAt,
+      bikeLine(row, new Date(row.cancelledAt ?? current.endUtc), {
+        cancelledAt: row.cancelledAt,
       })
     );
 
@@ -466,14 +443,14 @@ function formatMoney(cents: number): string {
 function formatValue(value: number | null, format: WeeklyMetricFormat): string {
   if (value == null) return "—";
   if (format === "money") return formatMoney(value);
-  if (format === "hours") return `${round1(value).toFixed(1)} h`;
-  if (format === "percent") return `${round1(value).toFixed(1)}%`;
+  if (format === "hours") return `${roundTenth(value).toFixed(1)} h`;
+  if (format === "percent") return `${roundTenth(value).toFixed(1)}%`;
   return String(value);
 }
 
 function formatDelta(metric: WeeklyMetric): string {
   if (metric.current == null || metric.previous == null) return "—";
-  const diff = round1(metric.current - metric.previous);
+  const diff = roundTenth(metric.current - metric.previous);
   if (diff === 0) return "0";
   const sign = diff > 0 ? "+" : "−";
   const abs = Math.abs(diff);
@@ -501,7 +478,7 @@ function utcDate(dateKey: string): Date {
 }
 
 function formatDays(days: number): string {
-  const rounded = round1(days);
+  const rounded = roundTenth(days);
   const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
   return rounded === 1 ? "1 day" : `${text} days`;
 }
@@ -535,7 +512,7 @@ export function renderWeeklyShopReport(
     report.current.endDateKey
   );
   const subject = `Weekly shop report · ${span}`;
-  const intro = `${span}. Monday 12:00 a.m. through Friday 8:00 p.m. America/Toronto, compared with the previous Monday–Friday.`;
+  const intro = `${span}. The seven days ending Friday 8:00 p.m. America/Toronto, compared with the seven days before.`;
 
   const textLines: string[] = [
     "OTOMOTO TORONTO MOTO INC.",
@@ -566,9 +543,6 @@ export function renderWeeklyShopReport(
   appendBikeSection(textLines, "Arrived this week", report.arrived, false);
   textLines.push("");
   textLines.push("Cancelled this week");
-  textLines.push(
-    "Based on the last update time. A later edit can move a cancellation into another week."
-  );
   if (report.cancelled.length === 0) {
     textLines.push("None.");
   } else {
@@ -675,7 +649,6 @@ function renderHtml(subject: string, intro: string, report: WeeklyShopReport): s
   <h2>Arrived this week</h2>
   ${arrived}
   <h2>Cancelled this week</h2>
-  <p>Based on the last update time. A later edit can move a cancellation into another week.</p>
   ${cancelled}
   <h2>Still here</h2>
   ${still}

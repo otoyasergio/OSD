@@ -49,6 +49,11 @@ await check("cron rejects missing bearer (parts canada)", async () => {
   if (res.status !== 401) throw new Error(`expected 401, got ${res.status}`);
 });
 
+await check("cron rejects missing bearer (weekly shop report)", async () => {
+  const res = await fetch(`${base}/api/cron/weekly-shop-report`);
+  if (res.status !== 401) throw new Error(`expected 401, got ${res.status}`);
+});
+
 await check("wix webhook fails closed without secret", async () => {
   const res = await fetch(`${base}/api/wix/webhooks/contacts`, {
     method: "POST",
