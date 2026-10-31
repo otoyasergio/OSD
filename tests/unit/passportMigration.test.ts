@@ -1,0 +1,52 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const migrationsDirectory = join(process.cwd(), "supabase", "migrations");
+
+function vehiclePassportMigration(): string {
+  const filename = readdirSync(migrationsDirectory).find((entry) =>
+    entry.endsWith("_vehicle_passport.sql")
+  );
+  if (!filename) throw new Error("vehicle passport migration is missing");
+  return readFileSync(join(migrationsDirectory, filename), "utf8");
+}
+
+describe("vehicle passport migration", () => {
+  it("creates the registry, immutable snapshots, sources, and hashed share grants", () => {
+    const sql = vehiclePassportMigration();
+
+    for (const table of [
+      "vehicle_passport",
+      "vehicle_passport_snapshot",
+      "vehicle_passport_snapshot_source",
+      "vehicle_passport_share",
+    ]) {
+      expect(sql).toContain(`CREATE TABLE public.${table}`);
+      expect(sql).toContain(`ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY`);
+    }
+
+    expect(sql).toContain("PASSPORT_SNAPSHOT_IMMUTABLE");
+    expect(sql).toContain("token_hash text NOT NULL UNIQUE");
+    expect(sql).not.toMatch(/token\s+text/i);
+  });
+
+  it("keeps anonymous users off passport tables and grants front-office access explicitly", () => {
+    const sql = vehiclePassportMigration();
+
+    expect(sql).toContain("REVOKE ALL ON TABLE");
+    expect(sql).toContain("FROM anon");
+    expect(sql).toContain("TO authenticated");
+    expect(sql).toContain("'owner', 'manager', 'service_advisor'");
+    expect(sql).not.toMatch(/CREATE POLICY[\s\S]*TO anon/);
+  });
+
+  it("indexes the active token, passport version, motorcycle, and source work order paths", () => {
+    const sql = vehiclePassportMigration();
+
+    expect(sql).toContain("idx_vehicle_passport_motorcycle");
+    expect(sql).toContain("uq_vehicle_passport_snapshot_version");
+    expect(sql).toContain("idx_vehicle_passport_share_active_token");
+    expect(sql).toContain("uq_vehicle_passport_snapshot_source_work_order");
+  });
+});

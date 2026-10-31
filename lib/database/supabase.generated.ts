@@ -596,6 +596,96 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["communication_log"]["Insert"]>;
       };
+      vehicle_passport: {
+        Row: {
+          passport_id: string;
+          motorcycle_id: string;
+          passport_number: string;
+          status: "active" | "suspended";
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          passport_id?: string;
+          motorcycle_id: string;
+          passport_number: string;
+          status?: "active" | "suspended";
+          created_by_user_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["vehicle_passport"]["Insert"]>;
+      };
+      vehicle_passport_snapshot: {
+        Row: {
+          snapshot_id: string;
+          passport_id: string;
+          version: number;
+          payload: Json;
+          payload_sha256: string;
+          coverage_through: string;
+          created_by_user_id: string | null;
+          issued_at: string;
+          superseded_at: string | null;
+          superseded_by_snapshot_id: string | null;
+        };
+        Insert: {
+          snapshot_id?: string;
+          passport_id: string;
+          version: number;
+          payload: Json;
+          payload_sha256: string;
+          coverage_through: string;
+          created_by_user_id?: string | null;
+          issued_at?: string;
+          superseded_at?: string | null;
+          superseded_by_snapshot_id?: string | null;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["vehicle_passport_snapshot"]["Insert"]
+        >;
+      };
+      vehicle_passport_snapshot_source: {
+        Row: {
+          snapshot_source_id: string;
+          snapshot_id: string;
+          work_order_id: string;
+          created_at: string;
+        };
+        Insert: {
+          snapshot_source_id?: string;
+          snapshot_id: string;
+          work_order_id: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["vehicle_passport_snapshot_source"]["Insert"]
+        >;
+      };
+      vehicle_passport_share: {
+        Row: {
+          share_id: string;
+          snapshot_id: string;
+          token_hash: string;
+          expires_at: string;
+          revoked_at: string | null;
+          revoked_by_user_id: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          share_id?: string;
+          snapshot_id: string;
+          token_hash: string;
+          expires_at: string;
+          revoked_at?: string | null;
+          revoked_by_user_id?: string | null;
+          created_by_user_id?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["vehicle_passport_share"]["Insert"]>;
+      };
     };
     Views: Record<string, never>;
     Functions: {
