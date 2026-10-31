@@ -9,6 +9,7 @@ import { PassportPublishForm } from "@/components/passport/PassportPublishForm";
 import { PassportReport } from "@/components/passport/PassportReport";
 import { PassportShareControls } from "@/components/passport/PassportShareControls";
 import { requireUser } from "@/lib/auth/session";
+import { createPassportReview } from "@/lib/passport/review";
 import { canManageVehiclePassport } from "@/lib/permissions";
 import {
   getVehiclePassportManagement,
@@ -56,7 +57,13 @@ export default async function VehiclePassportPage({
   if (!motorcycle) notFound();
 
   const bikeLabel = `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`;
-  const publishAction = publishVehiclePassportAction.bind(null, motorcycle_id);
+  const publishAction = preview.draft
+    ? publishVehiclePassportAction.bind(
+        null,
+        motorcycle_id,
+        createPassportReview(preview.draft)
+      )
+    : null;
   const currentSnapshot = management.currentSnapshot;
 
   return (
@@ -133,7 +140,7 @@ export default async function VehiclePassportPage({
           ) : (
             <>
               <PassportPublishForm
-                action={publishAction}
+                action={publishAction!}
                 reportVersion={preview.draft.reportVersion}
                 replacesPublishedVersion={Boolean(currentSnapshot)}
               />

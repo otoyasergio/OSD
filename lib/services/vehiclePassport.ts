@@ -1,6 +1,7 @@
 import "server-only";
 
 import { requireUser } from "@/lib/auth/session";
+import { createPassportAdminClient } from "@/lib/database/supabase-admin";
 import { createClient } from "@/lib/database/supabase-server";
 import type {
   JobStatus,
@@ -16,8 +17,8 @@ import {
 import {
   collectPassportSensitiveValues,
   generatePassportNumber,
-  PASSPORT_WORK_ORDER_SELECT,
 } from "@/lib/passport/source";
+import { assertPassportReviewCurrent, type PassportReview } from "@/lib/passport/review";
 import { canManageVehiclePassport } from "@/lib/permissions";
 import { toRpcErrorCode } from "@/lib/services/errors";
 
@@ -30,21 +31,20 @@ type RawPassportPart = {
 
 type RawPassportJob = {
   job_id: string;
-  service_name_snapshot: string;
+  public_service_name: string;
   status: JobStatus;
-  job_part_requirement: RawPassportPart[] | null;
+  part_requirements: RawPassportPart[];
 };
 
 type RawPassportWorkOrder = {
   work_order_id: string;
-  customer_id: string;
   work_order_number: string;
   status: WorkOrderStatus;
   completed_at: string | null;
   mileage: number | null;
   mileage_unit: MileageUnit;
-  location: { name: string } | null;
-  job: RawPassportJob[] | null;
+  location_name: string;
+  jobs: RawPassportJob[];
 };
 
 type RawPassportCustomer = {
@@ -65,11 +65,24 @@ type RawPassportVersion = {
   version: number;
 };
 
+type RawPassportSource = {
+  motorcycle: {
+    year: number;
+    make: string;
+    model: string;
+    vin: string | null;
+    colour: string | null;
+  };
+  work_orders: RawPassportWorkOrder[];
+  customers: RawPassportCustomer[];
+};
+
 export type VehiclePassportDraft = PassportDraft & {
   motorcycleId: string;
   passportId: string | null;
   passportNumber: string;
   reportVersion: number;
+  sourceSha256: string;
 };
 
 export type PublishedVehiclePassport = {
@@ -82,11 +95,9 @@ export type PublishedVehiclePassport = {
 
 type DraftOptions = {
   issuedAt?: string;
+  passportNumber?: string;
+  reportVersion?: number;
 };
-
-function unique(values: string[]): string[] {
-  return [...new Set(values)];
-}
 
 async function loadVehiclePassportDraft(
   motorcycleId: string,
@@ -96,19 +107,10 @@ async function loadVehiclePassportDraft(
   if (!canManageVehiclePassport(user.role)) throw new Error("FORBIDDEN");
 
   const supabase = await createClient();
-  const [motorcycleResult, workOrdersResult, passportResult] = await Promise.all([
-    supabase
-      .from("motorcycle")
-      .select("motorcycle_id, year, make, model, vin, colour")
-      .eq("motorcycle_id", motorcycleId)
-      .maybeSingle(),
-    supabase
-      .from("work_order")
-      .select(PASSPORT_WORK_ORDER_SELECT)
-      .eq("motorcycle_id", motorcycleId)
-      .eq("status", "completed")
-      .order("completed_at", { ascending: true })
-      .limit(500),
+  const [sourceResult, passportResult] = await Promise.all([
+    supabase.rpc("read_vehicle_passport_source", {
+      p_motorcycle_id: motorcycleId,
+    }),
     supabase
       .from("vehicle_passport")
       .select("passport_id, passport_number, status")
@@ -116,25 +118,17 @@ async function loadVehiclePassportDraft(
       .maybeSingle(),
   ]);
 
-  if (motorcycleResult.error) throw motorcycleResult.error;
-  if (!motorcycleResult.data) throw new Error("MOTORCYCLE_NOT_FOUND");
-  if (workOrdersResult.error) throw workOrdersResult.error;
+  if (sourceResult.error) {
+    throw new Error(toRpcErrorCode(sourceResult.error));
+  }
   if (passportResult.error) throw passportResult.error;
+  const sourceRow = (
+    Array.isArray(sourceResult.data) ? sourceResult.data[0] : sourceResult.data
+  ) as { source: RawPassportSource; source_sha256: string } | null;
+  if (!sourceRow?.source?.motorcycle) throw new Error("MOTORCYCLE_NOT_FOUND");
 
   const passport = passportResult.data as RawPassport | null;
   if (passport?.status === "suspended") throw new Error("PASSPORT_SUSPENDED");
-
-  const workOrders = (workOrdersResult.data ?? []) as unknown as RawPassportWorkOrder[];
-  const customerIds = unique(workOrders.map((row) => row.customer_id));
-  let customers: RawPassportCustomer[] = [];
-  if (customerIds.length > 0) {
-    const customerResult = await supabase
-      .from("customer")
-      .select("first_name, last_name, phone, email, address")
-      .in("customer_id", customerIds);
-    if (customerResult.error) throw customerResult.error;
-    customers = (customerResult.data ?? []) as RawPassportCustomer[];
-  }
 
   let latestVersion = 0;
   if (passport) {
@@ -149,32 +143,43 @@ async function loadVehiclePassportDraft(
     latestVersion = (versionResult.data as RawPassportVersion | null)?.version ?? 0;
   }
 
-  const passportNumber = passport?.passport_number ?? generatePassportNumber();
+  if (
+    passport &&
+    options.passportNumber &&
+    options.passportNumber !== passport.passport_number
+  ) {
+    throw new Error("PASSPORT_PREVIEW_STALE");
+  }
+  const passportNumber =
+    passport?.passport_number ?? options.passportNumber ?? generatePassportNumber();
   const reportVersion = latestVersion + 1;
+  if (options.reportVersion != null && options.reportVersion !== reportVersion) {
+    throw new Error("PASSPORT_PREVIEW_STALE");
+  }
   const source: PassportDraftInput = {
     passportNumber,
     reportVersion,
     issuedAt: options.issuedAt ?? new Date().toISOString(),
     motorcycle: {
-      year: motorcycleResult.data.year,
-      make: motorcycleResult.data.make,
-      model: motorcycleResult.data.model,
-      vin: motorcycleResult.data.vin,
-      colour: motorcycleResult.data.colour,
+      year: sourceRow.source.motorcycle.year,
+      make: sourceRow.source.motorcycle.make,
+      model: sourceRow.source.motorcycle.model,
+      vin: sourceRow.source.motorcycle.vin,
+      colour: sourceRow.source.motorcycle.colour,
     },
-    workOrders: workOrders.map((row) => ({
+    workOrders: sourceRow.source.work_orders.map((row) => ({
       work_order_id: row.work_order_id,
       work_order_number: row.work_order_number,
       status: row.status,
       completed_at: row.completed_at,
       mileage: row.mileage == null ? null : Number(row.mileage),
       mileage_unit: row.mileage_unit,
-      location_name: row.location?.name ?? "Toronto",
-      jobs: (row.job ?? []).map((job) => ({
+      location_name: row.location_name,
+      jobs: row.jobs.map((job) => ({
         job_id: job.job_id,
-        service_name_snapshot: job.service_name_snapshot,
+        public_service_name: job.public_service_name,
         status: job.status,
-        part_requirements: (job.job_part_requirement ?? []).map((part) => ({
+        part_requirements: job.part_requirements.map((part) => ({
           description: part.description,
           part_number: part.part_number,
           quantity_installed: Number(part.quantity_installed),
@@ -182,7 +187,7 @@ async function loadVehiclePassportDraft(
         })),
       })),
     })),
-    sensitiveValues: collectPassportSensitiveValues(customers),
+    sensitiveValues: collectPassportSensitiveValues(sourceRow.source.customers),
   };
   const draft = buildPassportDraft(source);
 
@@ -192,6 +197,7 @@ async function loadVehiclePassportDraft(
     passportId: passport?.passport_id ?? null,
     passportNumber,
     reportVersion,
+    sourceSha256: sourceRow.source_sha256,
   };
 }
 
@@ -202,16 +208,26 @@ export async function previewVehiclePassport(
 }
 
 export async function publishVehiclePassport(
-  motorcycleId: string
+  motorcycleId: string,
+  review: PassportReview
 ): Promise<PublishedVehiclePassport> {
-  const draft = await loadVehiclePassportDraft(motorcycleId);
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("publish_vehicle_passport_snapshot", {
+  const actor = await requireUser();
+  if (!canManageVehiclePassport(actor.role)) throw new Error("FORBIDDEN");
+  const draft = await loadVehiclePassportDraft(motorcycleId, {
+    issuedAt: review.issuedAt,
+    passportNumber: review.passportNumber,
+    reportVersion: review.reportVersion,
+  });
+  assertPassportReviewCurrent(review, draft);
+  const admin = createPassportAdminClient();
+  const { data, error } = await admin.rpc("publish_vehicle_passport_snapshot", {
+    p_actor_user_id: actor.user_id,
     p_motorcycle_id: motorcycleId,
     p_passport_number: draft.passportNumber,
     p_expected_version: draft.reportVersion,
     p_payload: draft.payload,
     p_payload_sha256: draft.payloadSha256,
+    p_source_sha256: draft.sourceSha256,
     p_coverage_through: draft.payload.coverage_through,
     p_work_order_ids: draft.sourceWorkOrderIds,
   });

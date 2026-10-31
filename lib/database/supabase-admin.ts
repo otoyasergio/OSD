@@ -42,5 +42,5 @@ export function createPhotoAdminClient() {
  * frozen snapshot. Public routes must not use it to query operational tables.
  */
 export function createPassportAdminClient() {
-  return createServiceRoleClient("PASSPORT_SHARE_MISCONFIGURED");
+  return createServiceRoleClient("PASSPORT_ADMIN_MISCONFIGURED");
 }

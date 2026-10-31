@@ -5,6 +5,7 @@ import {
   type PassportDraftInput,
 } from "@/lib/passport/buildDraft";
 import { hashPassportPayload } from "@/lib/passport/digest";
+import { assertPassportReviewCurrent, createPassportReview } from "@/lib/passport/review";
 
 function sourceInput(): PassportDraftInput {
   return {
@@ -31,13 +32,13 @@ function sourceInput(): PassportDraftInput {
         jobs: [
           {
             job_id: "00000000-0000-4000-8000-000000000202",
-            service_name_snapshot: "Chain adjustment",
+            public_service_name: "Chain adjustment",
             status: "completed",
             part_requirements: [],
           },
           {
             job_id: "00000000-0000-4000-8000-000000000203",
-            service_name_snapshot: "Declined tire replacement",
+            public_service_name: "Declined tire replacement",
             status: "declined",
             part_requirements: [],
           },
@@ -54,7 +55,7 @@ function sourceInput(): PassportDraftInput {
         jobs: [
           {
             job_id: "00000000-0000-4000-8000-000000000201",
-            service_name_snapshot: "Engine oil and filter service",
+            public_service_name: "Engine oil and filter service",
             status: "completed",
             part_requirements: [
               {
@@ -84,7 +85,7 @@ function sourceInput(): PassportDraftInput {
         jobs: [
           {
             job_id: "00000000-0000-4000-8000-000000000204",
-            service_name_snapshot: "Work still in progress",
+            public_service_name: "Work still in progress",
             status: "in_progress",
             part_requirements: [],
           },
@@ -180,9 +181,38 @@ describe("buildPassportDraft", () => {
 
   it("blocks prior-owner contact values embedded in a completed service name", () => {
     const input = sourceInput();
-    input.workOrders[0].jobs[0].service_name_snapshot =
+    input.workOrders[0].jobs[0].public_service_name =
       "Follow-up for previous-owner@example.com";
 
     expect(() => buildPassportDraft(input)).toThrow("PASSPORT_DISCLOSURE_RISK");
+  });
+
+  it("blocks owner-name components and price language in a public service label", () => {
+    const input = sourceInput();
+    input.sensitiveValues = [...(input.sensitiveValues ?? []), "Jane"];
+    input.workOrders[0].jobs[0].public_service_name =
+      "Jane reports vibration — quote $250";
+
+    expect(() => buildPassportDraft(input)).toThrow("PASSPORT_DISCLOSURE_RISK");
+  });
+
+  it("binds publication to the reviewed digest, version, timestamp, and sources", () => {
+    const reviewedDraft = {
+      ...buildPassportDraft(sourceInput()),
+      sourceSha256: "a".repeat(64),
+    };
+    const review = createPassportReview(reviewedDraft);
+
+    expect(() => assertPassportReviewCurrent(review, reviewedDraft)).not.toThrow();
+
+    const changedInput = sourceInput();
+    changedInput.workOrders[0].jobs[0].public_service_name = "Changed after review";
+    const changedDraft = {
+      ...buildPassportDraft(changedInput),
+      sourceSha256: "b".repeat(64),
+    };
+    expect(() => assertPassportReviewCurrent(review, changedDraft)).toThrow(
+      "PASSPORT_PREVIEW_STALE"
+    );
   });
 });

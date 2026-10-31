@@ -4,7 +4,10 @@ import { useActionState, useState } from "react";
 import type { PassportActionState } from "@/app/(app)/motorcycles/[motorcycle_id]/passport/actions";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
-import { passportShareStatus, type PassportShareStatus } from "@/lib/passport/tokens";
+import {
+  passportShareStatus,
+  type PassportShareStatus,
+} from "@/lib/passport/shareStatus";
 import type { PassportShareSummary } from "@/lib/services/passportShare";
 
 const INITIAL_STATE: PassportActionState = {

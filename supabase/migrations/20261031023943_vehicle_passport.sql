@@ -86,8 +86,8 @@ CREATE TABLE public.vehicle_passport_share (
   created_by_user_id uuid
     REFERENCES public.app_user(user_id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT vehicle_passport_share_expiry_after_creation
-    CHECK (expires_at > created_at),
+  CONSTRAINT vehicle_passport_share_seven_day_expiry
+    CHECK (expires_at = created_at + interval '7 days'),
   CONSTRAINT vehicle_passport_share_revocation_complete CHECK (
     (
       revoked_at IS NULL
@@ -203,15 +203,181 @@ CREATE TRIGGER trg_vehicle_passport_snapshot_source_immutable
   BEFORE UPDATE OR DELETE ON public.vehicle_passport_snapshot_source
   FOR EACH ROW EXECUTE FUNCTION public.vehicle_passport_reject_source_mutation();
 
+-- Build one canonical, private source document. The public snapshot builder
+-- maps this allowlist into an even narrower customer-facing schema.
+CREATE OR REPLACE FUNCTION public.vehicle_passport_build_source(
+  p_motorcycle_id uuid,
+  p_location_ids uuid[]
+)
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT jsonb_build_object(
+    'motorcycle',
+    (
+      SELECT jsonb_build_object(
+        'year', motorcycle.year,
+        'make', motorcycle.make,
+        'model', motorcycle.model,
+        'vin', motorcycle.vin,
+        'colour', motorcycle.colour
+      )
+      FROM public.motorcycle
+      WHERE motorcycle.motorcycle_id = p_motorcycle_id
+    ),
+    'work_orders',
+    COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'work_order_id', work_order.work_order_id,
+            'work_order_number', work_order.work_order_number,
+            'status', work_order.status,
+            'completed_at', work_order.completed_at,
+            'mileage', work_order.mileage,
+            'mileage_unit', work_order.mileage_unit,
+            'location_name', location.name,
+            'jobs',
+            COALESCE(
+              (
+                SELECT jsonb_agg(
+                  jsonb_build_object(
+                    'job_id', job.job_id,
+                    'public_service_name', service.name,
+                    'status', job.status,
+                    'part_requirements',
+                    COALESCE(
+                      (
+                        SELECT jsonb_agg(
+                          jsonb_build_object(
+                            'description', requirement.description,
+                            'part_number', requirement.part_number,
+                            'quantity_installed', requirement.quantity_installed,
+                            'state', requirement.state
+                          )
+                          ORDER BY requirement.requirement_id
+                        )
+                        FROM public.job_part_requirement AS requirement
+                        WHERE requirement.job_id = job.job_id
+                      ),
+                      '[]'::jsonb
+                    )
+                  )
+                  ORDER BY job.job_id
+                )
+                FROM public.job
+                JOIN public.service
+                  ON service.service_id = job.service_id
+                WHERE job.work_order_id = work_order.work_order_id
+              ),
+              '[]'::jsonb
+            )
+          )
+          ORDER BY work_order.completed_at, work_order.work_order_id
+        )
+        FROM public.work_order
+        JOIN public.location
+          ON location.location_id = work_order.location_id
+        WHERE work_order.motorcycle_id = p_motorcycle_id
+          AND work_order.status = 'completed'
+          AND work_order.location_id = ANY(p_location_ids)
+      ),
+      '[]'::jsonb
+    ),
+    'customers',
+    COALESCE(
+      (
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'first_name', customer.first_name,
+            'last_name', customer.last_name,
+            'phone', customer.phone,
+            'email', customer.email,
+            'address', customer.address
+          )
+          ORDER BY customer.customer_id
+        )
+        FROM public.customer
+        WHERE customer.customer_id IN (
+          SELECT motorcycle.customer_id
+          FROM public.motorcycle
+          WHERE motorcycle.motorcycle_id = p_motorcycle_id
+          UNION
+          SELECT DISTINCT work_order.customer_id
+          FROM public.work_order
+          WHERE work_order.motorcycle_id = p_motorcycle_id
+            AND work_order.status = 'completed'
+            AND work_order.location_id = ANY(p_location_ids)
+        )
+      ),
+      '[]'::jsonb
+    )
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.vehicle_passport_build_source(uuid, uuid[])
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.read_vehicle_passport_source(
+  p_motorcycle_id uuid
+)
+RETURNS TABLE (
+  source jsonb,
+  source_sha256 text
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_source jsonb;
+  v_location_ids uuid[];
+BEGIN
+  IF NOT public.is_active_app_user()
+     OR public.current_app_user_role()
+       NOT IN ('owner', 'manager', 'service_advisor') THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  v_location_ids := ARRAY(SELECT public.user_location_ids());
+  IF cardinality(v_location_ids) = 0 THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  v_source := public.vehicle_passport_build_source(
+    p_motorcycle_id,
+    v_location_ids
+  );
+  IF v_source -> 'motorcycle' = 'null'::jsonb THEN
+    RAISE EXCEPTION 'MOTORCYCLE_NOT_FOUND';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    v_source,
+    encode(digest(v_source::text, 'sha256'), 'hex');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.read_vehicle_passport_source(uuid)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.read_vehicle_passport_source(uuid)
+  TO authenticated;
+
 -- Publish the passport, source links, previous-version supersession, and audit
--- record in one transaction. Caller-provided actor ids are deliberately
--- avoided: the authenticated app user is resolved inside the command.
+-- record in one transaction. Only the trusted service role may call this
+-- command; the supplied actor is validated against the active staff registry.
 CREATE OR REPLACE FUNCTION public.publish_vehicle_passport_snapshot(
+  p_actor_user_id uuid,
   p_motorcycle_id uuid,
   p_passport_number text,
   p_expected_version integer,
   p_payload jsonb,
   p_payload_sha256 text,
+  p_source_sha256 text,
   p_coverage_through timestamptz,
   p_work_order_ids uuid[]
 )
@@ -238,12 +404,25 @@ DECLARE
   v_issued_at timestamptz;
   v_requested_source_count integer;
   v_valid_source_count integer;
+  v_source jsonb;
+  v_source_sha256 text;
+  v_location_ids uuid[];
 BEGIN
-  v_actor_user_id := public.current_app_user_id();
-  IF v_actor_user_id IS NULL
-     OR NOT public.is_active_app_user()
-     OR public.current_app_user_role()
-       NOT IN ('owner', 'manager', 'service_advisor') THEN
+  SELECT user_id
+  INTO v_actor_user_id
+  FROM public.app_user
+  WHERE user_id = p_actor_user_id
+    AND status = 'active'
+    AND role IN ('owner', 'manager', 'service_advisor');
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  SELECT COALESCE(array_agg(location_id ORDER BY location_id), ARRAY[]::uuid[])
+  INTO v_location_ids
+  FROM public.user_location
+  WHERE user_id = v_actor_user_id;
+  IF cardinality(v_location_ids) = 0 THEN
     RAISE EXCEPTION 'FORBIDDEN';
   END IF;
 
@@ -265,6 +444,88 @@ BEGIN
   FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'MOTORCYCLE_NOT_FOUND';
+  END IF;
+
+  -- Freeze every row that can affect the source projection. Lock ordering is
+  -- deterministic and starts with motorcycle, matching share creation.
+  PERFORM 1
+  FROM public.work_order
+  WHERE motorcycle_id = p_motorcycle_id
+    AND location_id = ANY(v_location_ids)
+  ORDER BY work_order_id
+  FOR UPDATE;
+
+  PERFORM 1
+  FROM public.job
+  WHERE work_order_id IN (
+    SELECT work_order_id
+    FROM public.work_order
+    WHERE motorcycle_id = p_motorcycle_id
+      AND location_id = ANY(v_location_ids)
+  )
+  ORDER BY job_id
+  FOR UPDATE;
+
+  PERFORM 1
+  FROM public.job_part_requirement
+  WHERE job_id IN (
+    SELECT job.job_id
+    FROM public.job
+    JOIN public.work_order
+      ON work_order.work_order_id = job.work_order_id
+    WHERE work_order.motorcycle_id = p_motorcycle_id
+      AND work_order.location_id = ANY(v_location_ids)
+  )
+  ORDER BY requirement_id
+  FOR UPDATE;
+
+  PERFORM 1
+  FROM public.location
+  WHERE location_id IN (
+    SELECT work_order.location_id
+    FROM public.work_order
+    WHERE work_order.motorcycle_id = p_motorcycle_id
+      AND work_order.location_id = ANY(v_location_ids)
+  )
+  ORDER BY location_id
+  FOR SHARE;
+
+  PERFORM 1
+  FROM public.service
+  WHERE service_id IN (
+    SELECT job.service_id
+    FROM public.job
+    JOIN public.work_order
+      ON work_order.work_order_id = job.work_order_id
+    WHERE work_order.motorcycle_id = p_motorcycle_id
+      AND work_order.location_id = ANY(v_location_ids)
+  )
+  ORDER BY service_id
+  FOR SHARE;
+
+  PERFORM 1
+  FROM public.customer
+  WHERE customer_id IN (
+    SELECT motorcycle.customer_id
+    FROM public.motorcycle
+    WHERE motorcycle.motorcycle_id = p_motorcycle_id
+    UNION
+    SELECT DISTINCT work_order.customer_id
+    FROM public.work_order
+    WHERE work_order.motorcycle_id = p_motorcycle_id
+      AND work_order.status = 'completed'
+      AND work_order.location_id = ANY(v_location_ids)
+  )
+  ORDER BY customer_id
+  FOR SHARE;
+
+  v_source := public.vehicle_passport_build_source(
+    p_motorcycle_id,
+    v_location_ids
+  );
+  v_source_sha256 := encode(digest(v_source::text, 'sha256'), 'hex');
+  IF v_source_sha256 <> p_source_sha256 THEN
+    RAISE EXCEPTION 'PASSPORT_SOURCE_CHANGED';
   END IF;
 
   SELECT
@@ -327,6 +588,7 @@ BEGIN
   FROM public.work_order
   WHERE work_order_id = ANY(p_work_order_ids)
     AND motorcycle_id = p_motorcycle_id
+    AND location_id = ANY(v_location_ids)
     AND status = 'completed'
     AND completed_at IS NOT NULL
     AND completed_at <= p_coverage_through;
@@ -423,16 +685,17 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.publish_vehicle_passport_snapshot(
-  uuid, text, integer, jsonb, text, timestamptz, uuid[]
-) FROM PUBLIC, anon;
+  uuid, uuid, text, integer, jsonb, text, text, timestamptz, uuid[]
+) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.publish_vehicle_passport_snapshot(
-  uuid, text, integer, jsonb, text, timestamptz, uuid[]
-) TO authenticated, service_role;
+  uuid, uuid, text, integer, jsonb, text, text, timestamptz, uuid[]
+) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.create_vehicle_passport_share(
+  p_actor_user_id uuid,
   p_snapshot_id uuid,
-  p_token_hash text,
-  p_expires_at timestamptz
+  p_expected_customer_id uuid,
+  p_token_hash text
 )
 RETURNS TABLE (
   created_share_id uuid,
@@ -445,33 +708,65 @@ AS $$
 DECLARE
   v_actor_user_id uuid;
   v_passport_id uuid;
+  v_motorcycle_id uuid;
+  v_current_customer_id uuid;
   v_share_id uuid;
   v_now timestamptz := now();
+  v_expires_at timestamptz;
 BEGIN
-  v_actor_user_id := public.current_app_user_id();
-  IF v_actor_user_id IS NULL
-     OR NOT public.is_active_app_user()
-     OR public.current_app_user_role()
-       NOT IN ('owner', 'manager', 'service_advisor') THEN
+  SELECT user_id
+  INTO v_actor_user_id
+  FROM public.app_user
+  WHERE user_id = p_actor_user_id
+    AND status = 'active'
+    AND role IN ('owner', 'manager', 'service_advisor');
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'FORBIDDEN';
   END IF;
 
-  IF p_token_hash !~ '^[0-9a-f]{64}$'
-     OR p_expires_at <= v_now
-     OR p_expires_at > v_now + interval '8 days' THEN
+  IF p_token_hash !~ '^[0-9a-f]{64}$' THEN
     RAISE EXCEPTION 'PASSPORT_SHARE_INVALID';
   END IF;
+  v_expires_at := v_now + interval '7 days';
 
-  SELECT passport.passport_id
-  INTO v_passport_id
+  -- Resolve the lock target, then lock in the same motorcycle -> passport ->
+  -- snapshot order as publication. The expected owner check prevents a grant
+  -- requested before transfer from committing afterward.
+  SELECT passport.passport_id, passport.motorcycle_id
+  INTO v_passport_id, v_motorcycle_id
   FROM public.vehicle_passport_snapshot AS snapshot
   JOIN public.vehicle_passport AS passport
     ON passport.passport_id = snapshot.passport_id
   WHERE snapshot.snapshot_id = p_snapshot_id
-    AND snapshot.superseded_at IS NULL
-    AND passport.status = 'active'
-  FOR UPDATE OF snapshot, passport;
+  LIMIT 1;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PASSPORT_SNAPSHOT_NOT_CURRENT';
+  END IF;
 
+  SELECT customer_id
+  INTO v_current_customer_id
+  FROM public.motorcycle
+  WHERE motorcycle_id = v_motorcycle_id
+  FOR UPDATE;
+  IF NOT FOUND OR v_current_customer_id <> p_expected_customer_id THEN
+    RAISE EXCEPTION 'PASSPORT_OWNER_CHANGED';
+  END IF;
+
+  PERFORM 1
+  FROM public.vehicle_passport
+  WHERE passport_id = v_passport_id
+    AND status = 'active'
+  FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PASSPORT_SNAPSHOT_NOT_CURRENT';
+  END IF;
+
+  PERFORM 1
+  FROM public.vehicle_passport_snapshot
+  WHERE snapshot_id = p_snapshot_id
+    AND passport_id = v_passport_id
+    AND superseded_at IS NULL
+  FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'PASSPORT_SNAPSHOT_NOT_CURRENT';
   END IF;
@@ -488,13 +783,15 @@ BEGIN
     snapshot_id,
     token_hash,
     expires_at,
-    created_by_user_id
+    created_by_user_id,
+    created_at
   )
   VALUES (
     p_snapshot_id,
     p_token_hash,
-    p_expires_at,
-    v_actor_user_id
+    v_expires_at,
+    v_actor_user_id,
+    v_now
   )
   RETURNING share_id INTO v_share_id;
 
@@ -515,22 +812,23 @@ BEGIN
     jsonb_build_object(
       'passport_id', v_passport_id,
       'snapshot_id', p_snapshot_id,
-      'expires_at', p_expires_at
+      'expires_at', v_expires_at
     )
   );
 
-  RETURN QUERY SELECT v_share_id, p_expires_at;
+  RETURN QUERY SELECT v_share_id, v_expires_at;
 END;
 $$;
 
 REVOKE ALL ON FUNCTION public.create_vehicle_passport_share(
-  uuid, text, timestamptz
-) FROM PUBLIC, anon;
+  uuid, uuid, uuid, text
+) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_vehicle_passport_share(
-  uuid, text, timestamptz
-) TO authenticated, service_role;
+  uuid, uuid, uuid, text
+) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.revoke_vehicle_passport_share(
+  p_actor_user_id uuid,
   p_share_id uuid
 )
 RETURNS boolean
@@ -544,11 +842,13 @@ DECLARE
   v_snapshot_id uuid;
   v_revoked_at timestamptz;
 BEGIN
-  v_actor_user_id := public.current_app_user_id();
-  IF v_actor_user_id IS NULL
-     OR NOT public.is_active_app_user()
-     OR public.current_app_user_role()
-       NOT IN ('owner', 'manager', 'service_advisor') THEN
+  SELECT user_id
+  INTO v_actor_user_id
+  FROM public.app_user
+  WHERE user_id = p_actor_user_id
+    AND status = 'active'
+    AND role IN ('owner', 'manager', 'service_advisor');
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'FORBIDDEN';
   END IF;
 
@@ -605,10 +905,10 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.revoke_vehicle_passport_share(uuid)
-  FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.revoke_vehicle_passport_share(uuid)
-  TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.revoke_vehicle_passport_share(uuid, uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.revoke_vehicle_passport_share(uuid, uuid)
+  TO service_role;
 
 ALTER TABLE public.vehicle_passport ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vehicle_passport_snapshot ENABLE ROW LEVEL SECURITY;

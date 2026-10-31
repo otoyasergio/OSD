@@ -2,32 +2,6 @@ import { randomBytes } from "node:crypto";
 
 const PASSPORT_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
 
-/**
- * Explicit service-fact allowlist for passport publication. Customer identity
- * is resolved separately for leak detection and is never part of the payload.
- */
-export const PASSPORT_WORK_ORDER_SELECT = `
-  work_order_id,
-  customer_id,
-  work_order_number,
-  status,
-  completed_at,
-  mileage,
-  mileage_unit,
-  location:location_id ( name ),
-  job (
-    job_id,
-    service_name_snapshot,
-    status,
-    job_part_requirement (
-      description,
-      part_number,
-      quantity_installed,
-      state
-    )
-  )
-`;
-
 type PassportCustomerContact = {
   first_name: string;
   last_name: string;
@@ -52,8 +26,12 @@ export function collectPassportSensitiveValues(
   const seen = new Set<string>();
 
   for (const customer of customers) {
+    const firstName = customer.first_name.trim();
+    const lastName = customer.last_name.trim();
     const candidates = [
-      `${customer.first_name.trim()} ${customer.last_name.trim()}`.trim(),
+      `${firstName} ${lastName}`.trim(),
+      firstName,
+      lastName,
       customer.phone?.trim(),
       customer.email?.trim(),
       customer.address?.trim(),

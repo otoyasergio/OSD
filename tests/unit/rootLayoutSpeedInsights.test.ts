@@ -4,10 +4,17 @@ import { join } from "node:path";
 
 describe("root layout", () => {
   it("records page views and real-user timing", () => {
-    const source = readFileSync(join(process.cwd(), "app", "layout.tsx"), "utf8");
-    expect(source).toContain('import { Analytics } from "@vercel/analytics/next"');
-    expect(source).toContain("<Analytics");
-    expect(source).toContain("@vercel/speed-insights/next");
-    expect(source).toContain("<SpeedInsights");
+    const layout = readFileSync(join(process.cwd(), "app", "layout.tsx"), "utf8");
+    const telemetry = readFileSync(
+      join(process.cwd(), "components", "analytics", "AppTelemetry.tsx"),
+      "utf8"
+    );
+    expect(layout).toContain("<AppTelemetry");
+    expect(telemetry).toContain("@vercel/analytics/next");
+    expect(telemetry).toContain("<Analytics");
+    expect(telemetry).toContain("@vercel/speed-insights/next");
+    expect(telemetry).toContain("<SpeedInsights");
+    expect(telemetry).toContain("shouldCollectPublicMetrics");
+    expect(telemetry).toContain("beforeSend=");
   });
 });

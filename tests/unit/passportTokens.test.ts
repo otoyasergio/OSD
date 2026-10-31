@@ -3,9 +3,9 @@ import {
   generatePassportShareToken,
   hashPassportShareToken,
   passportShareExpiry,
-  passportShareStatus,
   passportShareUrl,
 } from "@/lib/passport/tokens";
+import { passportShareStatus } from "@/lib/passport/shareStatus";
 
 describe("passport share tokens", () => {
   it("generates an opaque token and stores a deterministic SHA-256 hash", () => {

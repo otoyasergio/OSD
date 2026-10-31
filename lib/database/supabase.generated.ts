@@ -699,11 +699,13 @@ export type Database = {
       };
       publish_vehicle_passport_snapshot: {
         Args: {
+          p_actor_user_id: string;
           p_motorcycle_id: string;
           p_passport_number: string;
           p_expected_version: number;
           p_payload: Json;
           p_payload_sha256: string;
+          p_source_sha256: string;
           p_coverage_through: string;
           p_work_order_ids: string[];
         };
@@ -715,11 +717,19 @@ export type Database = {
           published_at: string;
         }>;
       };
+      read_vehicle_passport_source: {
+        Args: { p_motorcycle_id: string };
+        Returns: Array<{
+          source: Json;
+          source_sha256: string;
+        }>;
+      };
       create_vehicle_passport_share: {
         Args: {
+          p_actor_user_id: string;
           p_snapshot_id: string;
+          p_expected_customer_id: string;
           p_token_hash: string;
-          p_expires_at: string;
         };
         Returns: Array<{
           created_share_id: string;
@@ -727,7 +737,7 @@ export type Database = {
         }>;
       };
       revoke_vehicle_passport_share: {
-        Args: { p_share_id: string };
+        Args: { p_actor_user_id: string; p_share_id: string };
         Returns: boolean;
       };
       current_app_user_id: {

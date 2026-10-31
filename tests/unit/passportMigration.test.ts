@@ -56,13 +56,32 @@ describe("vehicle passport migration", () => {
     expect(sql).toContain(
       "CREATE OR REPLACE FUNCTION public.publish_vehicle_passport_snapshot"
     );
+    expect(sql).toContain("p_actor_user_id uuid");
     expect(sql).toContain("FOR UPDATE");
     expect(sql).toContain("PASSPORT_VERSION_CONFLICT");
+    expect(sql).toContain(
+      "CREATE OR REPLACE FUNCTION public.read_vehicle_passport_source"
+    );
+    expect(sql).toContain("p_source_sha256 text");
+    expect(sql).toContain("PASSPORT_SOURCE_CHANGED");
+    expect(sql).toContain("FROM public.job_part_requirement");
+    expect(sql).toContain("FOR SHARE");
+    expect(sql).toContain("p_location_ids uuid[]");
+    expect(sql).toContain("location_id = ANY(p_location_ids)");
+    expect(sql).toContain("ARRAY(SELECT public.user_location_ids())");
+    expect(sql).toContain("FROM public.user_location");
+    expect(sql).toContain("SELECT motorcycle.customer_id");
     expect(sql).toContain("unnest(p_work_order_ids)");
     expect(sql).toContain("status = 'completed'");
     expect(sql).toContain("v_issued_at := (p_payload ->> 'issued_at')::timestamptz");
     expect(sql).toContain(
       "GRANT EXECUTE ON FUNCTION public.publish_vehicle_passport_snapshot"
+    );
+    expect(sql).toContain(
+      "uuid, uuid, text, integer, jsonb, text, text, timestamptz, uuid[]\n) TO service_role;"
+    );
+    expect(sql).not.toContain(
+      "uuid, uuid, text, integer, jsonb, text, text, timestamptz, uuid[]\n) TO authenticated"
     );
     expect(sql).toContain(
       "GRANT SELECT ON TABLE public.vehicle_passport_snapshot TO authenticated"
@@ -82,13 +101,18 @@ describe("vehicle passport migration", () => {
       "CREATE OR REPLACE FUNCTION public.revoke_vehicle_passport_share"
     );
     expect(sql).toContain("PASSPORT_SNAPSHOT_NOT_CURRENT");
-    expect(sql).toContain("interval '8 days'");
+    expect(sql).toContain("v_expires_at := v_now + interval '7 days'");
+    expect(sql).toContain("expires_at = created_at + interval '7 days'");
+    expect(sql).toContain("p_expected_customer_id uuid");
+    expect(sql).toContain("PASSPORT_OWNER_CHANGED");
     expect(sql).toContain(
       "GRANT EXECUTE ON FUNCTION public.create_vehicle_passport_share"
     );
     expect(sql).toContain(
       "GRANT EXECUTE ON FUNCTION public.revoke_vehicle_passport_share"
     );
+    expect(sql).toContain("uuid, uuid, uuid, text\n) TO service_role;");
+    expect(sql).not.toContain("uuid, uuid, uuid, text\n) TO authenticated");
   });
 
   it("revokes active grants inside every motorcycle owner change transaction", () => {

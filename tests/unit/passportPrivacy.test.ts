@@ -112,4 +112,35 @@ describe("passport privacy validation", () => {
       passportSnapshotSchema.parse(VALID_PAYLOAD)
     );
   });
+
+  it("matches short owner names at word boundaries without flagging substrings", () => {
+    const base = passportSnapshotSchema.parse(VALID_PAYLOAD);
+    const named: PassportSnapshotPayload = {
+      ...base,
+      service_entries: [
+        {
+          ...base.service_entries[0],
+          completed_services: ["Li requested a vibration check"],
+        },
+      ],
+    };
+    expect(() => validatePassportPayload(named, ["Li"])).toThrow(
+      "PASSPORT_DISCLOSURE_RISK"
+    );
+
+    expect(
+      validatePassportPayload(
+        {
+          ...base,
+          service_entries: [
+            {
+              ...base.service_entries[0],
+              completed_services: ["Oil filter service"],
+            },
+          ],
+        },
+        ["Li"]
+      )
+    ).toBeTruthy();
+  });
 });

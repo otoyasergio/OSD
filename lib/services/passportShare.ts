@@ -12,11 +12,10 @@ import {
   type ResolvedPassportShare,
 } from "@/lib/passport/resolveShare";
 import type { PassportSnapshotPayload } from "@/lib/passport/schema";
+import { passportShareStatus } from "@/lib/passport/shareStatus";
 import {
   generatePassportShareToken,
   hashPassportShareToken,
-  passportShareExpiry,
-  passportShareStatus,
   passportShareUrl,
 } from "@/lib/passport/tokens";
 import { toRpcErrorCode } from "@/lib/services/errors";
@@ -114,14 +113,37 @@ export async function getVehiclePassportManagement(
 export async function createPassportShare(
   snapshotId: string
 ): Promise<CreatedPassportShare> {
-  await requirePassportManager();
+  const actor = await requirePassportManager();
   const supabase = await createClient();
+  const snapshotResult = await supabase
+    .from("vehicle_passport_snapshot")
+    .select("passport_id")
+    .eq("snapshot_id", snapshotId)
+    .maybeSingle();
+  if (snapshotResult.error) throw snapshotResult.error;
+  if (!snapshotResult.data) throw new Error("PASSPORT_SNAPSHOT_NOT_CURRENT");
+  const passportResult = await supabase
+    .from("vehicle_passport")
+    .select("motorcycle_id")
+    .eq("passport_id", snapshotResult.data.passport_id)
+    .maybeSingle();
+  if (passportResult.error) throw passportResult.error;
+  if (!passportResult.data) throw new Error("PASSPORT_SNAPSHOT_NOT_CURRENT");
+  const motorcycleResult = await supabase
+    .from("motorcycle")
+    .select("customer_id")
+    .eq("motorcycle_id", passportResult.data.motorcycle_id)
+    .maybeSingle();
+  if (motorcycleResult.error) throw motorcycleResult.error;
+  if (!motorcycleResult.data) throw new Error("MOTORCYCLE_NOT_FOUND");
+
   const { token, hash } = generatePassportShareToken();
-  const expiresAt = passportShareExpiry();
-  const { data, error } = await supabase.rpc("create_vehicle_passport_share", {
+  const admin = createPassportAdminClient();
+  const { data, error } = await admin.rpc("create_vehicle_passport_share", {
+    p_actor_user_id: actor.user_id,
     p_snapshot_id: snapshotId,
+    p_expected_customer_id: motorcycleResult.data.customer_id,
     p_token_hash: hash,
-    p_expires_at: expiresAt,
   });
   if (error) throw new Error(toRpcErrorCode(error));
 
@@ -139,9 +161,10 @@ export async function createPassportShare(
 }
 
 export async function revokePassportShare(shareId: string): Promise<void> {
-  await requirePassportManager();
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("revoke_vehicle_passport_share", {
+  const actor = await requirePassportManager();
+  const admin = createPassportAdminClient();
+  const { error } = await admin.rpc("revoke_vehicle_passport_share", {
+    p_actor_user_id: actor.user_id,
     p_share_id: shareId,
   });
   if (error) throw new Error(toRpcErrorCode(error));

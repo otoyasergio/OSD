@@ -1,7 +1,7 @@
 import { hashPassportPayload } from "@/lib/passport/digest";
 import { validatePassportPayload } from "@/lib/passport/privacy";
 import type { PassportSnapshotPayload } from "@/lib/passport/schema";
-import { passportShareStatus } from "@/lib/passport/tokens";
+import { passportShareStatus } from "@/lib/passport/shareStatus";
 
 export const PASSPORT_PUBLIC_GRANT_COLUMNS =
   "share_id, snapshot_id, expires_at, revoked_at";

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createPassportShare, revokePassportShare } from "@/lib/services/passportShare";
+import type { PassportReview } from "@/lib/passport/review";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { publishVehiclePassport } from "@/lib/services/vehiclePassport";
 
@@ -26,11 +27,12 @@ function revalidatePassport(motorcycleId: string) {
 
 export async function publishVehiclePassportAction(
   motorcycleId: string,
+  review: PassportReview,
   _previousState: PassportActionState,
   _formData: FormData
 ): Promise<PassportActionState> {
   try {
-    const published = await publishVehiclePassport(motorcycleId);
+    const published = await publishVehiclePassport(motorcycleId, review);
     revalidatePassport(motorcycleId);
     return {
       error: null,

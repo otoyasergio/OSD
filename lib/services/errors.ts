@@ -17,6 +17,12 @@ const MESSAGES: Record<string, string> = {
   PASSPORT_PAYLOAD_INVALID: "The passport information could not be prepared safely.",
   PASSPORT_DISCLOSURE_RISK:
     "The passport preview may contain private information. Review the service text before publishing.",
+  PASSPORT_PREVIEW_STALE:
+    "The passport source changed after review. Refresh and review the current preview before publishing.",
+  PASSPORT_OWNER_CHANGED:
+    "The motorcycle owner changed before the share was created. Refresh the passport before sharing.",
+  PASSPORT_ADMIN_MISCONFIGURED:
+    "Vehicle passport publishing is not configured on the server.",
   PASSPORT_VERSION_CONFLICT:
     "The passport changed. Refresh this page before publishing again.",
   PASSPORT_NUMBER_CONFLICT:

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   collectPassportSensitiveValues,
   generatePassportNumber,
-  PASSPORT_WORK_ORDER_SELECT,
 } from "@/lib/passport/source";
 
 describe("generatePassportNumber", () => {
@@ -32,10 +31,13 @@ describe("collectPassportSensitiveValues", () => {
       ])
     ).toEqual([
       "Previous Owner",
+      "Previous",
+      "Owner",
       "647-555-0199",
       "previous-owner@example.com",
       "1 Old Street, Toronto, ON",
       "New Owner",
+      "New",
     ]);
   });
 
@@ -57,16 +59,6 @@ describe("collectPassportSensitiveValues", () => {
           address: null,
         },
       ])
-    ).toEqual(["Alex Rider", "647-555-0199", "ALEX@EXAMPLE.COM"]);
-  });
-});
-
-describe("PASSPORT_WORK_ORDER_SELECT", () => {
-  it("contains only service-source fields and no customer, message, or money joins", () => {
-    expect(PASSPORT_WORK_ORDER_SELECT).toContain("service_name_snapshot");
-    expect(PASSPORT_WORK_ORDER_SELECT).toContain("quantity_installed");
-    expect(PASSPORT_WORK_ORDER_SELECT).not.toMatch(
-      /billing|square|invoice|payment|communication_log|phone|email|address/i
-    );
+    ).toEqual(["Alex Rider", "Alex", "Rider", "647-555-0199", "ALEX@EXAMPLE.COM"]);
   });
 });

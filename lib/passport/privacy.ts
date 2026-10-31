@@ -5,6 +5,8 @@ import {
 
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
 const PHONE_CANDIDATE_PATTERN = /\+?\d[\d().\s-]{8,}\d/g;
+const PRICE_PATTERN =
+  /(?:[$€£]\s*\d|\b(?:CAD|USD)\s*\$?\s*\d|\b\d+(?:\.\d{2})?\s*(?:dollars?|CAD|USD)\b)/i;
 
 type StringValue = {
   path: string;
@@ -39,6 +41,20 @@ function isServiceFacingFreeText(path: string): boolean {
   );
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsSensitiveValue(value: string, sensitive: string): boolean {
+  if (/^[\p{L}\p{M}'’-]+$/u.test(sensitive)) {
+    return new RegExp(
+      `(^|[^\\p{L}\\p{N}])${escapeRegExp(sensitive)}(?=$|[^\\p{L}\\p{N}])`,
+      "iu"
+    ).test(value);
+  }
+  return value.includes(sensitive);
+}
+
 export class PassportPrivacyError extends Error {
   readonly risks: string[];
 
@@ -59,19 +75,24 @@ export function findPassportDisclosureRisks(
   const strings = collectStrings(payload);
   const normalizedSensitiveValues = sensitiveValues
     .map((value) => value.trim().toLocaleLowerCase("en-CA"))
-    .filter((value) => value.length >= 3);
+    .filter(Boolean);
   const risks = new Set<string>();
 
   for (const item of strings) {
     const normalized = item.value.toLocaleLowerCase("en-CA");
 
-    if (normalizedSensitiveValues.some((sensitive) => normalized.includes(sensitive))) {
+    if (
+      normalizedSensitiveValues.some((sensitive) =>
+        containsSensitiveValue(normalized, sensitive)
+      )
+    ) {
       risks.add(`${item.path}:sensitive_value`);
     }
 
     if (!isServiceFacingFreeText(item.path)) continue;
     if (EMAIL_PATTERN.test(item.value)) risks.add(`${item.path}:email`);
     if (containsPhoneNumber(item.value)) risks.add(`${item.path}:phone`);
+    if (PRICE_PATTERN.test(item.value)) risks.add(`${item.path}:price`);
   }
 
   return [...risks].sort();

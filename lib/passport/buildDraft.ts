@@ -18,7 +18,7 @@ type PassportSourcePart = {
 
 type PassportSourceJob = {
   job_id: string;
-  service_name_snapshot: string;
+  public_service_name: string;
   status: JobStatus;
   part_requirements: PassportSourcePart[];
 };
@@ -88,7 +88,7 @@ export function buildPassportDraft(input: PassportDraftInput): PassportDraft {
       if (completedJobs.length === 0) return [];
 
       const completedServices = completedJobs
-        .map((job) => job.service_name_snapshot.trim())
+        .map((job) => job.public_service_name.trim())
         .filter(Boolean)
         .sort(compareText);
       if (completedServices.length === 0) return [];
