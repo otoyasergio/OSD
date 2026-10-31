@@ -92,6 +92,7 @@ const ACTIVE_STATUSES: WorkOrderStatus[] = [
   "safety_check",
   "ready_for_pickup",
   "in_storage",
+  "insurance",
   "on_hold",
 ];
 

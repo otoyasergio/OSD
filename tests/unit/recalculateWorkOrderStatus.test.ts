@@ -26,6 +26,18 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("cancelled");
   });
 
+  it("does not change insurance even when jobs are still moving", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "insurance",
+        jobs: [{ status: "in_progress" }, { status: "waiting_for_approval" }],
+        parts: [{ job_id: "j1", status: "needed" }],
+        inspectionComplete: false,
+        qualityCheckComplete: false,
+      })
+    ).toBe("insurance");
+  });
+
   it("does not change on_hold", () => {
     expect(
       deriveWorkOrderStatus({

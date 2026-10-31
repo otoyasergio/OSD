@@ -14,6 +14,7 @@ const WORK_ORDER_STATUS_STYLES: Record<WorkOrderStatus, string> = {
   safety_check: "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
   ready_for_pickup: "bg-[var(--status-success-bg)] text-[var(--status-success-fg)]",
   in_storage: "bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]",
+  insurance: "bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]",
   completed: "bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]",
   cancelled: "bg-[var(--status-danger-bg)] text-[var(--status-danger-fg)]",
   on_hold: "bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]",

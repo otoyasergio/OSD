@@ -5486,7 +5486,7 @@ a.cc-kpi-link:focus-visible {
   grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
 }
 
-/* Stage queues under technician columns: parts → QC → safety → pickup */
+/* Stage queues under technician columns: approval → parts → QC → safety → pickup → storage → complete → insurance */
 .cc-stage-queues {
   display: flex;
   flex-direction: column;

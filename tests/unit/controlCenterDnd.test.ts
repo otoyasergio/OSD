@@ -15,30 +15,36 @@ import {
 
 describe("control center dnd helpers", () => {
   it("recognizes stage drop ids", () => {
+    expect(isCcStageDropId("approval")).toBe(true);
     expect(isCcStageDropId("parts")).toBe(true);
     expect(isCcStageDropId("qc")).toBe(true);
     expect(isCcStageDropId("safety")).toBe(true);
     expect(isCcStageDropId("pickup")).toBe(true);
     expect(isCcStageDropId("storage")).toBe(true);
     expect(isCcStageDropId("complete")).toBe(true);
+    expect(isCcStageDropId("insurance")).toBe(true);
     expect(isCcStageDropId("pool")).toBe(false);
   });
 
   it("maps stage statuses to drop ids and back", () => {
+    expect(stageDropIdForStatus("waiting_for_customer_approval")).toBe("approval");
     expect(stageDropIdForStatus("waiting_for_parts")).toBe("parts");
     expect(stageDropIdForStatus("quality_check")).toBe("qc");
     expect(stageDropIdForStatus("safety_check")).toBe("safety");
     expect(stageDropIdForStatus("ready_for_pickup")).toBe("pickup");
     expect(stageDropIdForStatus("in_storage")).toBe("storage");
     expect(stageDropIdForStatus("completed")).toBe("complete");
+    expect(stageDropIdForStatus("insurance")).toBe("insurance");
     expect(stageDropIdForStatus("in_progress")).toBeNull();
 
+    expect(statusForCcStage("approval")).toBe("waiting_for_customer_approval");
     expect(statusForCcStage("parts")).toBe("waiting_for_parts");
     expect(statusForCcStage("qc")).toBe("quality_check");
     expect(statusForCcStage("safety")).toBe("safety_check");
     expect(statusForCcStage("pickup")).toBe("ready_for_pickup");
     expect(statusForCcStage("storage")).toBe("in_storage");
     expect(statusForCcStage("complete")).toBe("completed");
+    expect(statusForCcStage("insurance")).toBe("insurance");
   });
 
   it("resolves direct container ids", () => {
@@ -95,7 +101,11 @@ describe("control center dnd helpers", () => {
   it("gates stage drop lanes by role", () => {
     expect(isCcStageDropEnabledForRole("owner", "qc")).toBe(true);
     expect(isCcStageDropEnabledForRole("manager", "safety")).toBe(true);
+    expect(isCcStageDropEnabledForRole("service_advisor", "approval")).toBe(true);
     expect(isCcStageDropEnabledForRole("service_advisor", "parts")).toBe(true);
+    expect(isCcStageDropEnabledForRole("service_advisor", "insurance")).toBe(true);
+    expect(isCcStageDropEnabledForRole("technician", "insurance")).toBe(false);
+    expect(isCcStageDropEnabledForRole("admin", "insurance")).toBe(true);
     expect(isCcStageDropEnabledForRole("service_advisor", "qc")).toBe(false);
     expect(isCcStageDropEnabledForRole("admin", "parts")).toBe(true);
     expect(isCcStageDropEnabledForRole("admin", "qc")).toBe(true);
@@ -115,12 +125,14 @@ describe("control center dnd helpers", () => {
     expect(isControlCenterDispatchStatus("in_progress")).toBe(true);
     expect(isControlCenterDispatchStatus("ready_for_technician")).toBe(true);
     expect(isControlCenterDispatchStatus("open")).toBe(true);
+    expect(isControlCenterDispatchStatus("waiting_for_customer_approval")).toBe(false);
     expect(isControlCenterDispatchStatus("waiting_for_parts")).toBe(false);
     expect(isControlCenterDispatchStatus("quality_check")).toBe(false);
     expect(isControlCenterDispatchStatus("safety_check")).toBe(false);
     expect(isControlCenterDispatchStatus("ready_for_pickup")).toBe(false);
     expect(isControlCenterDispatchStatus("in_storage")).toBe(false);
     expect(isControlCenterDispatchStatus("completed")).toBe(false);
+    expect(isControlCenterDispatchStatus("insurance")).toBe(false);
   });
 
   it("partitions stage-status bikes out of the pool and tech cards", () => {
@@ -128,7 +140,13 @@ describe("control center dnd helpers", () => {
       [
         { work_order_id: "wo-pool", status: "in_progress", technician_id: null },
         { work_order_id: "wo-tech", status: "in_progress", technician_id: "tech-a" },
+        {
+          work_order_id: "wo-approval",
+          status: "waiting_for_customer_approval",
+          technician_id: "tech-a",
+        },
         { work_order_id: "wo-parts", status: "waiting_for_parts", technician_id: null },
+        { work_order_id: "wo-insurance", status: "insurance", technician_id: "tech-a" },
         { work_order_id: "wo-qc", status: "quality_check", technician_id: "tech-a" },
       ],
       new Set(["tech-a"])
@@ -151,12 +169,14 @@ describe("control center dnd helpers", () => {
       pool: [{ work_order_id: "wo-1" }, { work_order_id: "wo-2" }],
       techs: [{ assigned_bikes: [{ work_order_id: "wo-1" }, { work_order_id: "wo-3" }] }],
       stages: {
-        parts: [{ work_order_id: "wo-1" }],
+        approval: [{ work_order_id: "wo-1" }],
+        parts: [],
         qc: [{ work_order_id: "wo-4" }],
         safety: [],
         pickup: [],
         storage: [{ work_order_id: "wo-store" }],
         complete: [],
+        insurance: [],
       },
     });
 
@@ -164,6 +184,7 @@ describe("control center dnd helpers", () => {
     expect(result.techs[0].assigned_bikes.map((bike) => bike.work_order_id)).toEqual([
       "wo-3",
     ]);
+    expect(result.stages.approval).toEqual([]);
     expect(result.stages.parts).toEqual([]);
     expect(result.stages.qc.map((bike) => bike.work_order_id)).toEqual(["wo-4"]);
   });

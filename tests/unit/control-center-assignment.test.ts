@@ -46,11 +46,13 @@ describe("control center assignment shape", () => {
   it("takes the card off the tech once it is in a stage lane or the waiting pool", () => {
     const jobs = [{ status: "in_progress", assigned_technician_id: "tech-a" }];
     for (const status of [
+      "waiting_for_customer_approval",
       "waiting_for_parts",
       "quality_check",
       "safety_check",
       "ready_for_pickup",
       "in_storage",
+      "insurance",
       "completed",
     ] as const) {
       expect(controlCenterCardTechnicianId(status, jobs, "tech-a")).toBeNull();

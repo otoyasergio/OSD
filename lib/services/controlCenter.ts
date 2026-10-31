@@ -38,6 +38,7 @@ const ACTIVE_STATUSES: WorkOrderStatus[] = [
   "safety_check",
   "ready_for_pickup",
   "in_storage",
+  "insurance",
   "on_hold",
 ];
 
@@ -196,7 +197,7 @@ function toBike(
   // Stored bikes sit for months. Idle time and a past ETA are not at-risk;
   // a still-open safety-critical recommendation is.
   const at_risk =
-    row.status === "in_storage"
+    row.status === "in_storage" || row.status === "insurance"
       ? safetyCritical
       : isControlCenterAtRisk({
           overdue,

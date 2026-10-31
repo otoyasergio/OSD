@@ -17,10 +17,12 @@ import {
 } from "@/lib/services/controlCenter";
 import {
   listInStorage,
+  listInsuranceBikes,
   listReadyForPickup,
   listReadyForQc,
   listReadyForSafetyInspection,
   listRecentlyCompleted,
+  listWaitingForApproval,
   listWaitingForParts,
 } from "@/lib/services/readyForPickup";
 import { ControlCenterCohortView } from "@/components/control-center/ControlCenterCohortView";
@@ -54,20 +56,24 @@ export default async function ControlCenterPage({
 
   const [
     data,
+    waitingForApproval,
     waitingForParts,
     readyForQc,
     readyForSafety,
     readyForPickup,
     inStorage,
     recentlyCompleted,
+    insuranceBikes,
   ] = await Promise.all([
     getControlCenterData({ presentationRole: viewRole }),
+    listWaitingForApproval().catch(() => []),
     listWaitingForParts().catch(() => []),
     listReadyForQc().catch(() => []),
     listReadyForSafetyInspection().catch(() => []),
     listReadyForPickup({ includeCustomer: true }).catch(() => []),
     listInStorage().catch(() => []),
     listRecentlyCompleted().catch(() => []),
+    listInsuranceBikes().catch(() => []),
   ]);
 
   return (
@@ -75,12 +81,14 @@ export default async function ControlCenterPage({
       data={data}
       canAssign={canAssignTechnician(viewRole)}
       canClockStaff={canClockStaff(viewRole)}
+      waitingForApproval={waitingForApproval}
       waitingForParts={waitingForParts}
       readyForQc={readyForQc}
       readyForSafety={readyForSafety}
       readyForPickup={readyForPickup}
       inStorage={inStorage}
       recentlyCompleted={recentlyCompleted}
+      insuranceBikes={insuranceBikes}
     />
   );
 }

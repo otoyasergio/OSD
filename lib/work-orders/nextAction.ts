@@ -55,6 +55,13 @@ export function getWorkOrderNextAction(
         "Work is finished and the bike is stored. Drag the card to Ready when the customer wants it.",
     };
   }
+  if (input.status === "insurance") {
+    return {
+      title: "Insurance bike",
+      detail:
+        "Parked as an insurance bike. Drag the card back when the shop should work it.",
+    };
+  }
 
   if (!input.hasAssignedTech) {
     return {

@@ -165,8 +165,26 @@ export async function listReadyForPickup(input?: {
 }
 
 /**
+ * Location-scoped work orders in `waiting_for_customer_approval`.
+ * Control Center stack: under tech columns, above Waiting for parts.
+ * The assigned mechanic keeps the bike on their floor docket.
+ * Wait timer uses updated_at (no dedicated approval-entered stamp).
+ */
+export async function listWaitingForApproval(): Promise<WaitingStageBike[]> {
+  return listWaitingStageBikes({
+    status: "waiting_for_customer_approval",
+    orderColumn: "updated_at",
+    since: (row) => ({
+      at: null,
+      inferredFallback: row.updated_at,
+    }),
+    includeCustomer: true,
+  });
+}
+
+/**
  * Location-scoped work orders in `waiting_for_parts`.
- * Control Center stack: under tech columns, above QC.
+ * Control Center stack: under Waiting for approval, above QC.
  * Links open the work-order Parts tab so staff see what is on order.
  * Wait timer uses updated_at (no dedicated parts-entered stamp).
  */
@@ -279,6 +297,23 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
       primary_photo_url: urls.get(row.work_order_id) ?? null,
       overview_href: `/work_orders/${row.work_order_id}`,
     };
+  });
+}
+
+/**
+ * Location-scoped work orders parked as insurance bikes.
+ * Control Center stack: under Complete. Stays there until dragged out.
+ * Wait timer uses updated_at.
+ */
+export async function listInsuranceBikes(): Promise<WaitingStageBike[]> {
+  return listWaitingStageBikes({
+    status: "insurance",
+    orderColumn: "updated_at",
+    since: (row) => ({
+      at: null,
+      inferredFallback: row.updated_at,
+    }),
+    includeCustomer: true,
   });
 }
 

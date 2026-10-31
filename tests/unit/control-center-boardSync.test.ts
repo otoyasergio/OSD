@@ -15,7 +15,16 @@ import type { CcStageDropId } from "@/lib/control-center/dnd";
 type Bike = { work_order_id: string };
 
 function emptyStages(): Record<CcStageDropId, Bike[]> {
-  return { parts: [], qc: [], safety: [], pickup: [], storage: [], complete: [] };
+  return {
+    approval: [],
+    parts: [],
+    qc: [],
+    safety: [],
+    pickup: [],
+    storage: [],
+    complete: [],
+    insurance: [],
+  };
 }
 
 describe("control center board sync", () => {

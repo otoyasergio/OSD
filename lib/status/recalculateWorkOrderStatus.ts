@@ -88,7 +88,8 @@ export function deriveWorkOrderStatus(
   if (
     currentStatus === "completed" ||
     currentStatus === "cancelled" ||
-    currentStatus === "on_hold"
+    currentStatus === "on_hold" ||
+    currentStatus === "insurance"
   ) {
     return currentStatus;
   }

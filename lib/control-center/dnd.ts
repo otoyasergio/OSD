@@ -8,12 +8,14 @@ import {
 
 /** Droppable ids for Control Center stage carousels (Shop Board column ids). */
 export const CC_STAGE_DROP_IDS = [
+  "approval",
   "parts",
   "qc",
   "safety",
   "pickup",
   "storage",
   "complete",
+  "insurance",
 ] as const;
 
 export type CcStageDropId = (typeof CC_STAGE_DROP_IDS)[number];
@@ -24,6 +26,8 @@ export function isCcStageDropId(id: string): id is CcStageDropId {
 
 export function stageDropIdForStatus(status: WorkOrderStatus): CcStageDropId | null {
   switch (status) {
+    case "waiting_for_customer_approval":
+      return "approval";
     case "waiting_for_parts":
       return "parts";
     case "quality_check":
@@ -36,6 +40,8 @@ export function stageDropIdForStatus(status: WorkOrderStatus): CcStageDropId | n
       return "storage";
     case "completed":
       return "complete";
+    case "insurance":
+      return "insurance";
     default:
       return null;
   }
@@ -106,12 +112,18 @@ export function removeWorkOrderFromControlCenterLists<
       ),
     })),
     stages: {
+      approval: input.stages.approval.filter(
+        (bike) => bike.work_order_id !== workOrderId
+      ),
       parts: input.stages.parts.filter((bike) => bike.work_order_id !== workOrderId),
       qc: input.stages.qc.filter((bike) => bike.work_order_id !== workOrderId),
       safety: input.stages.safety.filter((bike) => bike.work_order_id !== workOrderId),
       pickup: input.stages.pickup.filter((bike) => bike.work_order_id !== workOrderId),
       storage: input.stages.storage.filter((bike) => bike.work_order_id !== workOrderId),
       complete: input.stages.complete.filter(
+        (bike) => bike.work_order_id !== workOrderId
+      ),
+      insurance: input.stages.insurance.filter(
         (bike) => bike.work_order_id !== workOrderId
       ),
     },

@@ -19,6 +19,23 @@ describe("getWorkOrderNextAction", () => {
     expect(next?.detail).toMatch(/Ready/i);
   });
 
+  it("tells the desk an insurance bike stays parked until dragged back", () => {
+    const next = getWorkOrderNextAction({
+      workOrderId: "wo-1",
+      status: "insurance",
+      qualityChecked: false,
+      safetyChecked: false,
+      readyForPickup: false,
+      safety_required: false,
+      safety_waived: false,
+      jobs: [{ status: "in_progress", service_name_snapshot: "Fairing" }],
+      hasAssignedTech: true,
+      inspectionCompleted: true,
+    });
+    expect(next?.title).toMatch(/insurance/i);
+    expect(next?.detail).toMatch(/drag/i);
+  });
+
   it("asks to assign when no tech", () => {
     const next = getWorkOrderNextAction({
       workOrderId: "wo-1",
