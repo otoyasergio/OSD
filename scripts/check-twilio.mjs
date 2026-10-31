@@ -166,28 +166,39 @@ if (!numbers.ok) {
     fail("the account owns no phone numbers — buy one before Voice can work");
   } else {
     pass(`${list.length} phone number${list.length === 1 ? "" : "s"} owned`);
+    const expectedVoice = appUrl ? `${appUrl}/api/twilio/voice/inbound` : "";
+    let hasExpectedVoiceRoute = false;
+
     for (const n of list) {
       console.log(`\n  ${n.phone_number} (${n.friendly_name})`);
       if (voiceReady) {
         // Inbound PSTN calls go to the number's own Voice URL. The TwiML app is
         // a separate path, used only for calls placed from the browser SDK, and
         // Twilio clears voice_url the moment voice_application_sid is set.
-        const expectedVoice = appUrl ? `${appUrl}/api/twilio/voice/inbound` : "";
-        const hint = expectedVoice || "…/api/twilio/voice/inbound";
-        if (n.voice_application_sid) {
-          fail(
-            `voice is routed to TwiML app ${mask(n.voice_application_sid)}; inbound calls need the Voice URL ${hint} instead`
-          );
-        } else if (!n.voice_url) {
-          fail(`voice is not routed anywhere; set the Voice URL to ${hint}`);
-        } else if (expectedVoice && n.voice_url !== expectedVoice) {
-          fail(`voice webhook is ${n.voice_url}; expected ${expectedVoice}`);
-        } else {
+        if (!n.voice_application_sid && expectedVoice && n.voice_url === expectedVoice) {
+          hasExpectedVoiceRoute = true;
           pass(`voice webhook → ${n.voice_url}`);
+        } else if (expectedVoice) {
+          // An account may own numbers for unrelated products. Show their
+          // routing for diagnosis, but only require one number to serve this app.
+          const route = n.voice_application_sid
+            ? `TwiML app ${mask(n.voice_application_sid)}`
+            : n.voice_url || "(empty)";
+          skip(`voice route → ${route} (not this app)`);
+        } else if (n.voice_application_sid) {
+          skip(`voice route → TwiML app ${mask(n.voice_application_sid)}`);
+        } else if (n.voice_url) {
+          pass(`voice webhook → ${n.voice_url}`);
+        } else {
+          skip("voice route → (empty)");
         }
       }
     }
     console.log("");
+
+    if (voiceReady && expectedVoice && !hasExpectedVoiceRoute) {
+      fail(`no owned phone number routes inbound Voice to ${expectedVoice}`);
+    }
   }
 }
 
