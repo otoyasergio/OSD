@@ -99,6 +99,29 @@ describe("toFormErrorMessage", () => {
   });
 
   it.each([
+    "WIX_SMS_PHONE_MISMATCH",
+    "WIX_SMS_PHONE_INVALID",
+    "WIX_SMS_SUBSCRIPTION_REQUIRED",
+    "WIX_SMS_UNDELIVERABLE",
+    "WIX_INBOX_SMS_NOT_CONFIGURED",
+    "WIX_INBOX_TIMEOUT",
+    "WIX_INBOX_API_ERROR",
+    "WIX_INBOX_INVALID_CONTACT_ID",
+    "WIX_INBOX_INVALID_CONVERSATION_ID",
+    "WIX_INBOX_INVALID_MESSAGE_BODY",
+    "WIX_INBOX_INVALID_MESSAGE_ID",
+    "WIX_INBOX_MALFORMED_RESPONSE",
+    "WIX_CONTACT_API_ERROR",
+    "WIX_CONTACT_TIMEOUT",
+    "WIX_CONTACT_INVALID_ID",
+    "WIX_CONTACT_MALFORMED_RESPONSE",
+  ])("maps Wix SMS error %s to stable staff-facing copy", (code) => {
+    const message = toFormErrorMessage(new Error(code));
+    expect(message).not.toBe(code);
+    expect(message).toMatch(/Wix|text|phone|SMS|customer/i);
+  });
+
+  it.each([
     "ASK_OTOMOTO_PARENT_REQUIRES_ASSISTANT",
     "ASK_OTOMOTO_PARENT_USER_INVALID",
     "ASK_OTOMOTO_PARENT_USER_IMMUTABLE",

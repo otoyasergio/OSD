@@ -1,5 +1,5 @@
 import { getTwilioConfig, isTwilioConfigured } from "@/lib/twilio/config";
-import { normalizePhoneE164 } from "@/lib/twilio/phone";
+import { normalizePhoneE164 } from "@/lib/phone/e164";
 
 function statusCallbackUrl(): string | null {
   const base = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "");

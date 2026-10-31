@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizePhoneE164 } from "@/lib/twilio/phone";
+import { normalizePhoneE164 } from "@/lib/phone/e164";
 import { mapTwilioMessageStatus } from "@/lib/twilio/statusMap";
 
 describe("normalizePhoneE164", () => {

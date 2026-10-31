@@ -4,10 +4,10 @@ import { createAdminClient } from "@/lib/database/supabase-admin";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canRecordCustomerApproval } from "@/lib/permissions";
-import { sendSms, isTwilioConfigured } from "@/lib/twilio/client";
-import { normalizePhoneE164 } from "@/lib/twilio/phone";
+import { normalizePhoneE164 } from "@/lib/phone/e164";
 import { sendEmail, isEmailConfigured } from "@/lib/email/send";
 import { portalUrl } from "@/lib/portal/tokens";
+import { sendCustomerSms } from "@/lib/services/customerSms";
 import { createPortalToken } from "@/lib/services/portal";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 
@@ -176,7 +176,7 @@ export async function sendWorkOrderMessage(input: {
       work_order_id,
       work_order_number,
       location_id,
-      customer:customer_id ( customer_id, first_name, last_name, phone, email, sms_opted_out_at )
+      customer:customer_id ( customer_id, first_name, last_name, phone, email, sms_opted_out_at, wix_contact_id )
     `
     )
     .eq("work_order_id", input.work_order_id)
@@ -193,6 +193,7 @@ export async function sendWorkOrderMessage(input: {
     phone: string | null;
     email: string | null;
     sms_opted_out_at: string | null;
+    wix_contact_id: string | null;
   };
 
   const { token } = await createPortalToken({
@@ -216,15 +217,18 @@ export async function sendWorkOrderMessage(input: {
 
   try {
     if (input.channel === "sms") {
-      if (!isTwilioConfigured()) throw new Error("TWILIO_NOT_CONFIGURED");
-      if (customer.sms_opted_out_at) throw new Error("SMS_OPTED_OUT");
       if (!customer.phone?.trim()) throw new Error("CUSTOMER_PHONE_REQUIRED");
       const e164 = normalizePhoneE164(customer.phone);
       if (!e164) throw new Error("INVALID_PHONE");
       toAddress = e164;
       body = template.sms(ctx);
-      const result = await sendSms({ to: toAddress, body });
-      externalId = result.sid;
+      externalId = await sendCustomerSms({
+        customerId: customer.customer_id,
+        wixContactId: customer.wix_contact_id,
+        to: customer.phone,
+        body,
+        localOptedOutAt: customer.sms_opted_out_at,
+      });
     } else {
       if (!(await isEmailConfigured(wo.location_id)))
         throw new Error("EMAIL_NOT_CONFIGURED");
@@ -262,6 +266,7 @@ export async function sendWorkOrderMessage(input: {
       body,
       status,
       external_id: externalId,
+      from_address: input.channel === "sms" ? TORONTO_SHOP.phoneE164 : null,
       error_message: errorMessage,
       sent_by_user_id: user.user_id,
     })

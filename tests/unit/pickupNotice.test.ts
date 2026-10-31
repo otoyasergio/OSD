@@ -14,7 +14,7 @@ const {
   requireUser,
   createClient,
   createAdminClient,
-  sendSms,
+  sendCustomerSms,
   sendEmail,
   createPortalToken,
   addTimelineEvent,
@@ -22,7 +22,7 @@ const {
   requireUser: vi.fn(),
   createClient: vi.fn(),
   createAdminClient: vi.fn(),
-  sendSms: vi.fn(),
+  sendCustomerSms: vi.fn(),
   sendEmail: vi.fn(),
   createPortalToken: vi.fn(),
   addTimelineEvent: vi.fn(),
@@ -31,10 +31,7 @@ const {
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
 vi.mock("@/lib/database/supabase-server", () => ({ createClient }));
 vi.mock("@/lib/database/supabase-admin", () => ({ createAdminClient }));
-vi.mock("@/lib/twilio/client", () => ({
-  sendSms,
-  isTwilioConfigured: () => true,
-}));
+vi.mock("@/lib/services/customerSms", () => ({ sendCustomerSms }));
 vi.mock("@/lib/email/send", () => ({
   sendEmail,
   isEmailConfigured: () => true,
@@ -67,6 +64,7 @@ function workOrder(overrides: Record<string, unknown> = {}) {
       phone: "6475550100",
       email: "ada@example.com",
       sms_opted_out_at: null,
+      wix_contact_id: "11111111-1111-4111-8111-111111111111",
     },
     location: { code: "TOR" },
     ...overrides,
@@ -184,9 +182,7 @@ describe("pickup notice prompt", () => {
     expect(canSendPickupNotice(ready)).toBe(true);
     expect(pickupNoticeBlockers({ ...ready, email: null })).toEqual(["email"]);
     expect(pickupNoticeBlockers({ ...ready, phone: null })).toEqual(["phone"]);
-    expect(pickupNoticeBlockers({ ...ready, smsOptedOut: true })).toEqual([
-      "sms_opt_out",
-    ]);
+    expect(pickupNoticeBlockers({ ...ready, smsOptedOut: true })).toEqual([]);
     expect(pickupNoticeBlockers({ ...ready, locationCode: "OTT" })).toEqual(["location"]);
     expect(canSendPickupNotice({ ...ready, email: " " })).toBe(false);
   });
@@ -250,7 +246,7 @@ describe("sendReadyForPickupNotice", () => {
     });
     createAdminClient.mockReturnValue(adminClient());
     createPortalToken.mockResolvedValue({ token: "token" });
-    sendSms.mockResolvedValue({ sid: "SM1" });
+    sendCustomerSms.mockResolvedValue("wix-message-1");
     sendEmail.mockResolvedValue({ id: "email-1" });
     addTimelineEvent.mockResolvedValue(undefined);
   });
@@ -260,13 +256,23 @@ describe("sendReadyForPickupNotice", () => {
 
     expect(result.sms.status).toBe("sent");
     expect(result.email.status).toBe("sent");
-    expect(sendSms).toHaveBeenCalledOnce();
+    expect(sendCustomerSms).toHaveBeenCalledWith({
+      customerId: "cust-1",
+      wixContactId: "11111111-1111-4111-8111-111111111111",
+      to: "+16475550100",
+      body: expect.stringContaining("99 River Street"),
+      localOptedOutAt: null,
+    });
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(logs.map((row) => row.channel).sort()).toEqual(["email", "sms"]);
     expect(logs.every((row) => row.status === "sent")).toBe(true);
     expect(logs.every((row) => row.dedupe_key === "2026-10-30T18:00:00.000Z")).toBe(true);
     expect(String(logs.find((row) => row.channel === "sms")?.body)).toContain(
       "99 River Street"
+    );
+    expect(logs.find((row) => row.channel === "sms")?.external_id).toBe("wix-message-1");
+    expect(logs.find((row) => row.channel === "sms")?.from_address).toBe(
+      TORONTO_SHOP.phoneE164
     );
   });
 
@@ -294,7 +300,7 @@ describe("sendReadyForPickupNotice", () => {
     });
 
     await expect(sendReadyForPickupNotice("wo-1")).rejects.toThrow(/no email/i);
-    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendCustomerSms).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
     expect(logs).toHaveLength(0);
   });
@@ -303,14 +309,14 @@ describe("sendReadyForPickupNotice", () => {
     await sendReadyForPickupNotice("wo-1");
     const second = await sendReadyForPickupNotice("wo-1");
 
-    expect(sendSms).toHaveBeenCalledOnce();
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(second.sms.detail).toMatch(/Already sent/);
     expect(second.email.detail).toMatch(/Already sent/);
   });
 
   it("still tries email when the text fails", async () => {
-    sendSms.mockRejectedValue(new Error("TWILIO_NOT_CONFIGURED"));
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_API_ERROR"));
 
     const result = await sendReadyForPickupNotice("wo-1");
 
@@ -318,6 +324,41 @@ describe("sendReadyForPickupNotice", () => {
     expect(result.email.status).toBe("sent");
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(logs.find((row) => row.channel === "sms")?.status).toBe("failed");
+  });
+
+  it("lets Wix reconcile a stale local SMS opt-out", async () => {
+    createClient.mockResolvedValue({
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: workOrder({
+                customer: {
+                  customer_id: "cust-1",
+                  first_name: "Ada",
+                  last_name: "Lovelace",
+                  phone: "6475550100",
+                  email: "ada@example.com",
+                  sms_opted_out_at: "2026-10-01T12:00:00.000Z",
+                  wix_contact_id: "11111111-1111-4111-8111-111111111111",
+                },
+              }),
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    });
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("sent");
+    expect(sendCustomerSms).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localOptedOutAt: "2026-10-01T12:00:00.000Z",
+      })
+    );
+    expect(sendEmail).toHaveBeenCalledOnce();
   });
 
   it("rejects a technician before sending", async () => {
@@ -328,6 +369,6 @@ describe("sendReadyForPickupNotice", () => {
     });
 
     await expect(sendReadyForPickupNotice("wo-1")).rejects.toThrow("FORBIDDEN");
-    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendCustomerSms).not.toHaveBeenCalled();
   });
 });

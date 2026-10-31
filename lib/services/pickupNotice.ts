@@ -6,16 +6,16 @@ import {
 import { createAdminClient } from "@/lib/database/supabase-admin";
 import { createClient } from "@/lib/database/supabase-server";
 import { canSendReadyForPickupNotice } from "@/lib/permissions";
+import { normalizePhoneE164 } from "@/lib/phone/e164";
 import { portalUrl } from "@/lib/portal/tokens";
 import { sendEmail, isEmailConfigured } from "@/lib/email/send";
 import { renderReadyForPickupMessage } from "@/lib/services/communications";
+import { sendCustomerSms } from "@/lib/services/customerSms";
 import { createPortalToken } from "@/lib/services/portal";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { sendSms, isTwilioConfigured } from "@/lib/twilio/client";
-import { normalizePhoneE164 } from "@/lib/twilio/phone";
 
 export type PickupNoticeChannelResult = {
   status: "sent" | "failed";
@@ -34,6 +34,7 @@ type CustomerRow = {
   phone: string | null;
   email: string | null;
   sms_opted_out_at: string | null;
+  wix_contact_id: string | null;
 };
 
 type WorkOrderNoticeRow = {
@@ -79,7 +80,8 @@ export async function sendReadyForPickupNotice(
         last_name,
         phone,
         email,
-        sms_opted_out_at
+        sms_opted_out_at,
+        wix_contact_id
       ),
       location:location_id ( code )
     `
@@ -154,11 +156,14 @@ export async function sendReadyForPickupNotice(
     toAddress: phone,
     body: message.sms,
     dedupeKey,
-    send: async () => {
-      if (!isTwilioConfigured()) throw new Error("TWILIO_NOT_CONFIGURED");
-      const result = await sendSms({ to: phone, body: message.sms });
-      return result.sid;
-    },
+    send: () =>
+      sendCustomerSms({
+        customerId: customer.customer_id,
+        wixContactId: customer.wix_contact_id,
+        to: phone,
+        body: message.sms,
+        localOptedOutAt: customer.sms_opted_out_at,
+      }),
   });
 
   const emailResult = await deliverChannel({
@@ -210,6 +215,7 @@ async function deliverChannel(input: {
       direction: "outbound",
       template_key: "ready_for_pickup",
       to_address: input.toAddress,
+      from_address: input.channel === "sms" ? TORONTO_SHOP.phoneE164 : null,
       body: input.body,
       status: "queued",
       dedupe_key: input.dedupeKey,
