@@ -13,6 +13,7 @@ import {
 } from "@/components/recommendations/RecommendationCard";
 import { OutstandingRecommendations } from "@/components/recommendations/OutstandingRecommendations";
 import { RecommendationsSummary } from "@/components/recommendations/RecommendationsSummary";
+import type { AdvisoryReviewPhoto } from "@/lib/recommendations/advisoryReview";
 
 type Action = (
   state: RecommendationFormState,
@@ -42,6 +43,7 @@ export function RecommendationsTab({
   sendEstimateAction,
   fromResultId,
   fromResultDefaults,
+  photos = [],
 }: {
   recommendations: Recommendation[];
   outstandingRecommendations?: OutstandingRecommendation[];
@@ -60,6 +62,7 @@ export function RecommendationsTab({
     description: string;
     severity: string;
   } | null;
+  photos?: AdvisoryReviewPhoto[];
 }) {
   return (
     <div className="flex flex-col gap-6">
@@ -68,6 +71,7 @@ export function RecommendationsTab({
         estimateLines={estimateLines}
         canSendEstimate={!readOnly && canConvert}
         sendEstimateAction={sendEstimateAction}
+        photos={photos}
       />
 
       <OutstandingRecommendations
