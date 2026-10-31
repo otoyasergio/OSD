@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  canAttemptCustomerEmail,
   canAttemptCustomerSms,
   deriveCustomerMessageChannel,
+  WIX_SMS_CHANNEL_GUIDANCE,
   WIX_SMS_LOCAL_OPT_OUT_WARNING,
 } from "@/lib/communications/customerSmsAvailability";
 
@@ -21,8 +23,18 @@ describe("customer SMS attempt availability", () => {
   });
 
   it("directs staff to Wix consent instead of inbound START handling", () => {
-    expect(WIX_SMS_LOCAL_OPT_OUT_WARNING).toMatch(/Wix Inbox|Wix Contacts/i);
+    expect(WIX_SMS_CHANNEL_GUIDANCE).toMatch(/Wix Contacts.*authoritative/i);
+    expect(WIX_SMS_CHANNEL_GUIDANCE).toMatch(/replies.*only.*Wix Inbox/i);
+    expect(WIX_SMS_LOCAL_OPT_OUT_WARNING).toMatch(/Wix Contacts/i);
     expect(WIX_SMS_LOCAL_OPT_OUT_WARNING).not.toMatch(/\bSTART\b/);
+  });
+
+  it("accepts only usable email addresses", () => {
+    expect(canAttemptCustomerEmail("ada@example.com")).toBe(true);
+    expect(canAttemptCustomerEmail(" ada@example.com ")).toBe(true);
+    expect(canAttemptCustomerEmail(null)).toBe(false);
+    expect(canAttemptCustomerEmail("not-an-email")).toBe(false);
+    expect(canAttemptCustomerEmail("ada@")).toBe(false);
   });
 });
 

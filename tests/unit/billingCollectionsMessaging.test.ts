@@ -103,6 +103,65 @@ describe("BillingCollectionsBoard messaging", () => {
     expect(sendMessageAction).not.toHaveBeenCalled();
   });
 
+  it("attempts live Wix SMS for a valid phone despite a stale local opt-out", async () => {
+    await renderAndClick(
+      item("awaiting_approval", {
+        sms_opted_out: true,
+      })
+    );
+
+    expect(sendEstimateApprovalAction).toHaveBeenCalledWith(
+      "wo-awaiting_approval",
+      "sms"
+    );
+  });
+
+  it("uses valid email only when the phone is unusable", async () => {
+    await renderAndClick(
+      item("awaiting_approval", {
+        customer_phone: "5551234",
+        customer_email: "ada@example.com",
+      })
+    );
+
+    expect(sendEstimateApprovalAction).toHaveBeenCalledWith(
+      "wo-awaiting_approval",
+      "email"
+    );
+  });
+
+  it("offers no messaging action when neither address is valid", async () => {
+    await act(async () => {
+      root.render(
+        createElement(BillingCollectionsBoard, {
+          items: [
+            item("awaiting_approval", {
+              customer_phone: "5551234",
+              customer_email: "not-an-email",
+            }),
+          ],
+        })
+      );
+    });
+
+    expect(container.textContent).not.toContain("Request approval");
+    expect(sendEstimateApprovalAction).not.toHaveBeenCalled();
+    expect(sendMessageAction).not.toHaveBeenCalled();
+  });
+
+  it("states Wix consent and reply ownership", async () => {
+    await act(async () => {
+      root.render(
+        createElement(BillingCollectionsBoard, {
+          items: [item("awaiting_approval")],
+        })
+      );
+    });
+
+    expect(container.textContent).toMatch(/Wix Contacts.*authoritative/i);
+    expect(container.textContent).toMatch(/replies.*only.*Wix Inbox/i);
+  });
+
   it.each(["unpaid", "balance_due"] as const)(
     "sends only a payment reminder for %s",
     async (bucket) => {

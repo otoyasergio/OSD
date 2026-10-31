@@ -220,6 +220,8 @@ describe("pickup notice dialog", () => {
     expect(html).toContain("Don&#x27;t send");
     expect(html).toContain("99 River Street");
     expect(html).toContain("ada@example.com");
+    expect(html).toMatch(/Wix Contacts.*authoritative/i);
+    expect(html).toMatch(/replies.*only.*Wix Inbox/i);
   });
 
   it("hides send when a channel is missing", () => {

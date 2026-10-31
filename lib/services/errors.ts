@@ -216,7 +216,8 @@ const MESSAGES: Record<string, string> = {
   SQUARE_CANCEL_NOT_ALLOWED:
     "Cannot cancel a partially paid or paid invoice. Handle the remainder in Square or publish balance.",
   SQUARE_BALANCE_NOT_READY: "Collect a deposit payment before publishing the balance.",
-  SMS_OPTED_OUT: "This customer has opted out of SMS. Use email or clear the opt-out.",
+  SMS_OPTED_OUT:
+    "This customer is opted out of SMS. Manage the subscription in Wix Contacts; replies appear only in Wix Inbox. Use email until Wix Contacts allows SMS.",
   INVALID_PHONE: "Customer phone number is not a valid mobile number.",
   EMAIL_NOT_CONFIGURED:
     "Customer email is not connected. An owner needs to connect the shop Google mailbox in Settings.",

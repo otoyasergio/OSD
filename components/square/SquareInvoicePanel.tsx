@@ -12,9 +12,11 @@ import type { BillingAmountMode, BillingStage } from "@/lib/billing/stages";
 import { HST_PERCENT } from "@/lib/pricing/hst";
 import { FormError } from "@/components/forms/Field";
 import {
+  canAttemptCustomerEmail,
   canAttemptCustomerSms,
   deriveCustomerMessageChannel,
   type CustomerMessageChannel,
+  WIX_SMS_CHANNEL_GUIDANCE,
   WIX_SMS_LOCAL_OPT_OUT_WARNING,
 } from "@/lib/communications/customerSmsAvailability";
 
@@ -64,7 +66,7 @@ export function SquareInvoicePanel({
     phone: customerPhone,
     smsOptedOut,
   });
-  const canAttemptEmail = Boolean(customerEmail?.trim());
+  const canAttemptEmail = canAttemptCustomerEmail(customerEmail);
   const [publicUrl, setPublicUrl] = useState<string | null>(squareInvoicePublicUrl);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<BillingAmountMode>("full");
@@ -226,6 +228,7 @@ export function SquareInvoicePanel({
           </select>
         </label>
       </div>
+      <p className="text-xs text-[var(--status-neutral)]">{WIX_SMS_CHANNEL_GUIDANCE}</p>
       {smsOptedOut ? (
         <p className="text-xs text-[var(--status-neutral)]">
           {WIX_SMS_LOCAL_OPT_OUT_WARNING}

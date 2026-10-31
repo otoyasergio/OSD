@@ -11,6 +11,7 @@ import {
   pickupNoticePromptBody,
   type PickupNoticeContact,
 } from "@/lib/communications/pickupNotice";
+import { WIX_SMS_CHANNEL_GUIDANCE } from "@/lib/communications/customerSmsAvailability";
 
 type Props = {
   contact: PickupNoticeContact;
@@ -86,6 +87,9 @@ export function PickupNoticeDialog({ contact, locationCode, onClose }: Props) {
         </h2>
         <p className="mt-2 text-sm text-foreground">
           {pickupNoticePromptBody(contact.customerName)}
+        </p>
+        <p className="mt-2 text-xs text-[var(--status-neutral)]">
+          {WIX_SMS_CHANNEL_GUIDANCE}
         </p>
         <dl className="mt-3 grid gap-1 text-sm text-foreground">
           <div>

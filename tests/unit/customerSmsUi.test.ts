@@ -30,6 +30,39 @@ function noChannelOption(html: string): string {
 }
 
 describe("staff SMS controls", () => {
+  it("states authoritative consent and Wix-only reply ownership on shared panels", () => {
+    const messagePanel = renderToStaticMarkup(
+      createElement(SendMessagePanel, {
+        workOrderId: "wo-1",
+        logs: [],
+        canSend: true,
+        customerPhone: "(647) 555-0100",
+        customerEmail: "ada@example.com",
+      })
+    );
+    const squarePanel = renderToStaticMarkup(
+      createElement(SquareInvoicePanel, {
+        workOrderId: "wo-1",
+        squareInvoiceId: null,
+        squarePaymentStatus: null,
+        squareInvoicePublicUrl: null,
+        billingStage: "draft",
+        billingCollectedCents: 0,
+        estimateSubtotalCents: 10000,
+        estimateHstCents: 1300,
+        estimateTotalCents: 11300,
+        canManage: true,
+        customerPhone: "(647) 555-0100",
+        customerEmail: "ada@example.com",
+      })
+    );
+
+    for (const html of [messagePanel, squarePanel]) {
+      expect(html).toMatch(/Wix Contacts.*authoritative/i);
+      expect(html).toMatch(/replies.*only.*Wix Inbox/i);
+    }
+  });
+
   it("keeps SendMessagePanel SMS selected and enabled for a valid opted-out phone", () => {
     const html = renderToStaticMarkup(
       createElement(SendMessagePanel, {

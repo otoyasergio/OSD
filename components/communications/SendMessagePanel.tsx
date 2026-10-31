@@ -6,9 +6,11 @@ import type { CommunicationLogEntry } from "@/lib/services/communications";
 import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
 import {
+  canAttemptCustomerEmail,
   canAttemptCustomerSms,
   deriveCustomerMessageChannel,
   type CustomerMessageChannel,
+  WIX_SMS_CHANNEL_GUIDANCE,
   WIX_SMS_LOCAL_OPT_OUT_WARNING,
 } from "@/lib/communications/customerSmsAvailability";
 
@@ -44,7 +46,7 @@ export function SendMessagePanel({
   });
   const [templateKey, setTemplateKey] =
     useState<(typeof TEMPLATES)[number]["key"]>("approval_request");
-  const canAttemptEmail = Boolean(customerEmail?.trim());
+  const canAttemptEmail = canAttemptCustomerEmail(customerEmail);
   const [preferredChannel, setPreferredChannel] = useState<CustomerMessageChannel>("sms");
   const channel = deriveCustomerMessageChannel({
     preferredChannel,
@@ -70,6 +72,9 @@ export function SendMessagePanel({
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
             Send customer message
           </h3>
+          <p className="text-xs text-[var(--status-neutral)]">
+            {WIX_SMS_CHANNEL_GUIDANCE}
+          </p>
           {smsOptedOut ? (
             <p className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-foreground">
               {WIX_SMS_LOCAL_OPT_OUT_WARNING}

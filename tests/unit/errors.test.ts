@@ -130,6 +130,13 @@ describe("toFormErrorMessage", () => {
     expect(message).not.toMatch(/idempoten|delivered/i);
   });
 
+  it("directs SMS opt-out changes to authoritative Wix Contacts", () => {
+    const message = toFormErrorMessage(new Error("SMS_OPTED_OUT"));
+    expect(message).toMatch(/manage.*subscription.*Wix Contacts/i);
+    expect(message).toMatch(/replies.*only.*Wix Inbox/i);
+    expect(message).not.toMatch(/clear.*local|clear.*flag/i);
+  });
+
   it.each([
     "ASK_OTOMOTO_PARENT_REQUIRES_ASSISTANT",
     "ASK_OTOMOTO_PARENT_USER_INVALID",
