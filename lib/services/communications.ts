@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth/session";
+import { createAdminClient } from "@/lib/database/supabase-admin";
 import { createClient } from "@/lib/database/supabase-server";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
@@ -204,8 +205,9 @@ export async function sendWorkOrderMessage(input: {
     if (!toAddress) throw new Error("INVALID_PHONE");
     const body = template.sms(ctx);
     const dedupeKey = `work-order:${input.work_order_id}:sms:${input.template_key}`;
+    const admin = createAdminClient();
 
-    const { data: queuedLog, error: queueError } = await supabase
+    const { data: queuedLog, error: queueError } = await admin
       .from("communication_log")
       .insert({
         work_order_id: input.work_order_id,
@@ -241,16 +243,27 @@ export async function sendWorkOrderMessage(input: {
       phase: "sent" | "failed" | "uncertain"
     ): Promise<boolean> {
       try {
-        const result = await supabase
+        const result = await admin
           .from("communication_log")
           .update(patch)
-          .eq("log_id", queuedLogId);
+          .eq("log_id", queuedLogId)
+          .select("log_id")
+          .maybeSingle();
         if (result.error) {
           logger.warn("Work-order SMS reconciliation failed", {
             logId: queuedLogId,
             workOrderId: input.work_order_id,
             phase,
             error: result.error.message,
+          });
+          return false;
+        }
+        if (!result.data) {
+          logger.warn("Work-order SMS reconciliation failed", {
+            logId: queuedLogId,
+            workOrderId: input.work_order_id,
+            phase,
+            error: "LOG_ROW_NOT_UPDATED",
           });
           return false;
         }

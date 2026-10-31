@@ -4,6 +4,7 @@ import { TORONTO_SHOP } from "@/lib/shop/toronto";
 const {
   requireUser,
   createClient,
+  createAdminClient,
   createPortalToken,
   sendCustomerSms,
   addTimelineEvent,
@@ -13,9 +14,12 @@ const {
   updateOutcomes,
   loggerWarn,
   persistedLogs,
+  missingUpdates,
+  workOrderLocation,
 } = vi.hoisted(() => ({
   requireUser: vi.fn(),
   createClient: vi.fn(),
+  createAdminClient: vi.fn(),
   createPortalToken: vi.fn(),
   sendCustomerSms: vi.fn(),
   addTimelineEvent: vi.fn(),
@@ -25,10 +29,13 @@ const {
   updateOutcomes: [] as Array<{ message: string } | Error | null>,
   loggerWarn: vi.fn(),
   persistedLogs: [] as Array<Record<string, unknown>>,
+  missingUpdates: [] as boolean[],
+  workOrderLocation: { value: "loc-1" },
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
 vi.mock("@/lib/database/supabase-server", () => ({ createClient }));
+vi.mock("@/lib/database/supabase-admin", () => ({ createAdminClient }));
 vi.mock("@/lib/services/portal", () => ({ createPortalToken }));
 vi.mock("@/lib/services/customerSms", () => ({ sendCustomerSms }));
 vi.mock("@/lib/email/send", () => ({
@@ -51,6 +58,8 @@ describe("sendWorkOrderMessage Wix SMS", () => {
     operations.length = 0;
     updateOutcomes.length = 0;
     persistedLogs.length = 0;
+    missingUpdates.length = 0;
+    workOrderLocation.value = "loc-1";
     requireUser.mockResolvedValue({
       user_id: "user-1",
       role: "service_advisor",
@@ -73,7 +82,7 @@ describe("sendWorkOrderMessage Wix SMS", () => {
                   data: {
                     work_order_id: "wo-1",
                     work_order_number: "WO-100",
-                    location_id: "loc-1",
+                    location_id: workOrderLocation.value,
                     customer: {
                       customer_id: "cust-1",
                       first_name: "Ada",
@@ -90,64 +99,80 @@ describe("sendWorkOrderMessage Wix SMS", () => {
             }),
           };
         }
-        if (table === "communication_log") {
-          return {
-            insert(payload: Record<string, unknown>) {
-              operations.push("insert");
-              const dedupeKey =
-                typeof payload.dedupe_key === "string" ? payload.dedupe_key : null;
-              if (
-                dedupeKey &&
-                Array.from(lockedDedupeKeys.values()).includes(dedupeKey)
-              ) {
-                return {
-                  select: () => ({
-                    single: async () => ({
-                      data: null,
-                      error: { code: "23505", message: "duplicate" },
-                    }),
-                  }),
-                };
-              }
-              insertedLogs.push(payload);
-              persistedLogs.push({ ...payload });
-              const logId = `log-${insertedLogs.length}`;
-              if (dedupeKey) lockedDedupeKeys.set(logId, dedupeKey);
+        throw new Error(`user client must not access ${table}`);
+      },
+    });
+    createAdminClient.mockImplementation(() => ({
+      from(table: string) {
+        if (table !== "communication_log") {
+          throw new Error(`unexpected admin table ${table}`);
+        }
+        return {
+          insert(payload: Record<string, unknown>) {
+            operations.push("insert");
+            const dedupeKey =
+              typeof payload.dedupe_key === "string" ? payload.dedupe_key : null;
+            if (dedupeKey && Array.from(lockedDedupeKeys.values()).includes(dedupeKey)) {
               return {
                 select: () => ({
                   single: async () => ({
-                    data: {
-                      ...payload,
-                      log_id: logId,
-                      created_at: "2026-10-31T12:00:00.000Z",
-                    },
-                    error: null,
+                    data: null,
+                    error: { code: "23505", message: "duplicate" },
                   }),
                 }),
               };
-            },
-            update(payload: Record<string, unknown>) {
-              logUpdates.push(payload);
-              operations.push("update");
-              return {
-                eq: async (_column: string, logId: string) => {
-                  const outcome = updateOutcomes.shift() ?? null;
-                  if (outcome instanceof Error) throw outcome;
-                  if (outcome) return { error: outcome };
-                  const row = persistedLogs.find(
-                    (_item, index) => `log-${index + 1}` === logId
-                  );
-                  if (row) Object.assign(row, payload);
-                  if (payload.dedupe_key === null) lockedDedupeKeys.delete(logId);
-                  return { error: null };
-                },
-              };
-            },
-          };
-        }
-        throw new Error(`unexpected table ${table}`);
+            }
+            insertedLogs.push(payload);
+            persistedLogs.push({ ...payload });
+            const logId = `log-${insertedLogs.length}`;
+            if (dedupeKey) lockedDedupeKeys.set(logId, dedupeKey);
+            return {
+              select: () => ({
+                single: async () => ({
+                  data: {
+                    ...payload,
+                    log_id: logId,
+                    created_at: "2026-10-31T12:00:00.000Z",
+                  },
+                  error: null,
+                }),
+              }),
+            };
+          },
+          update(payload: Record<string, unknown>) {
+            logUpdates.push(payload);
+            operations.push("update");
+            return {
+              eq(_column: string, logId: string) {
+                return {
+                  select(selection: string) {
+                    expect(selection).toBe("log_id");
+                    return {
+                      async maybeSingle() {
+                        const outcome = updateOutcomes.shift() ?? null;
+                        if (outcome instanceof Error) throw outcome;
+                        if (outcome) return { data: null, error: outcome };
+                        if (missingUpdates.shift() === true) {
+                          return { data: null, error: null };
+                        }
+                        const row = persistedLogs.find(
+                          (_item, index) => `log-${index + 1}` === logId
+                        );
+                        if (row) Object.assign(row, payload);
+                        if (payload.dedupe_key === null) {
+                          lockedDedupeKeys.delete(logId);
+                        }
+                        return { data: { log_id: logId }, error: null };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          },
+        };
       },
-    });
+    }));
   });
 
   it("sends through Wix and logs the Wix message ID and shop number", async () => {
@@ -164,6 +189,7 @@ describe("sendWorkOrderMessage Wix SMS", () => {
       body: expect.stringContaining("Reply STOP to opt out."),
       localOptedOutAt: null,
     });
+    expect(createAdminClient).toHaveBeenCalledOnce();
     expect(operations).toEqual(["insert", "provider", "update"]);
     expect(insertedLogs).toEqual([
       expect.objectContaining({
@@ -182,6 +208,21 @@ describe("sendWorkOrderMessage Wix SMS", () => {
         dedupe_key: null,
       },
     ]);
+  });
+
+  it("does not create the admin client before location authorization", async () => {
+    workOrderLocation.value = "loc-2";
+
+    await expect(
+      sendWorkOrderMessage({
+        work_order_id: "wo-1",
+        template_key: "approval_request",
+        channel: "sms",
+      })
+    ).rejects.toThrow("FOREIGN_LOCATION");
+
+    expect(createAdminClient).not.toHaveBeenCalled();
+    expect(sendCustomerSms).not.toHaveBeenCalled();
   });
 
   it("marks a definite Wix rejection failed and propagates it", async () => {
@@ -287,6 +328,25 @@ describe("sendWorkOrderMessage Wix SMS", () => {
     expect(loggerWarn).toHaveBeenCalledWith(
       "Work-order SMS reconciliation failed",
       expect.objectContaining({ phase: "sent", error: "sent update failed" })
+    );
+  });
+
+  it("treats an update that matches no log row as reconciliation failure", async () => {
+    missingUpdates.push(true);
+
+    await expect(
+      sendWorkOrderMessage({
+        work_order_id: "wo-1",
+        template_key: "approval_request",
+        channel: "sms",
+      })
+    ).resolves.toEqual(expect.objectContaining({ status: "sent" }));
+
+    expect(persistedLogs[0]?.status).toBe("queued");
+    expect(persistedLogs[0]?.dedupe_key).toBe("work-order:wo-1:sms:approval_request");
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "Work-order SMS reconciliation failed",
+      expect.objectContaining({ phase: "sent", error: "LOG_ROW_NOT_UPDATED" })
     );
   });
 

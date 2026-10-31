@@ -20,6 +20,7 @@ const {
   addTimelineEvent,
   loggerWarn,
   updateErrors,
+  lookupOutcomes,
 } = vi.hoisted(() => ({
   requireUser: vi.fn(),
   createClient: vi.fn(),
@@ -30,6 +31,10 @@ const {
   addTimelineEvent: vi.fn(),
   loggerWarn: vi.fn(),
   updateErrors: [] as Array<{ message: string } | Error | null>,
+  lookupOutcomes: [] as Array<{
+    data: Record<string, unknown> | null;
+    error: { message: string } | null;
+  }>,
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
@@ -55,6 +60,22 @@ import { PickupNoticeDialog } from "@/components/communications/PickupNoticeDial
 type LogRow = Record<string, unknown> & { log_id: string };
 
 const logs: LogRow[] = [];
+
+function seedPickupSms(status: string, errorMessage: string | null = null) {
+  logs.push({
+    log_id: "existing-sms",
+    work_order_id: "wo-1",
+    customer_id: "cust-1",
+    channel: "sms",
+    direction: "outbound",
+    template_key: "ready_for_pickup",
+    to_address: "+16475550100",
+    body: "Ready",
+    status,
+    error_message: errorMessage,
+    dedupe_key: "2026-10-30T18:00:00.000Z",
+  });
+}
 
 function workOrder(overrides: Record<string, unknown> = {}) {
   return {
@@ -126,6 +147,8 @@ function adminClient() {
               return chain;
             },
             async maybeSingle() {
+              const forced = lookupOutcomes.shift();
+              if (forced) return forced;
               const match = logs.find((row) =>
                 filters.every(([column, value]) => row[column] === value)
               );
@@ -242,6 +265,7 @@ describe("sendReadyForPickupNotice", () => {
   beforeEach(() => {
     logs.length = 0;
     updateErrors.length = 0;
+    lookupOutcomes.length = 0;
     vi.clearAllMocks();
     requireUser.mockResolvedValue({
       user_id: "user-1",
@@ -326,6 +350,45 @@ describe("sendReadyForPickupNotice", () => {
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(second.sms.detail).toMatch(/Already sent/);
     expect(second.email.detail).toMatch(/Already sent/);
+  });
+
+  it.each([
+    ["lookup error", { data: null, error: { message: "lookup failed" } }],
+    ["missing lookup row", { data: null, error: null }],
+  ])("reports an uncertain pickup conflict on %s", async (_name, lookup) => {
+    seedPickupSms("sent");
+    lookupOutcomes.push(lookup);
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("uncertain");
+    expect(result.sms.detail).toMatch(/Wix Inbox/i);
+    expect(result.sms.detail).not.toMatch(/Already sent/i);
+    expect(sendCustomerSms).not.toHaveBeenCalled();
+  });
+
+  it.each(["queued", "processing"])(
+    "reports an existing %s pickup row with no error as uncertain",
+    async (status) => {
+      seedPickupSms(status);
+
+      const result = await sendReadyForPickupNotice("wo-1");
+
+      expect(result.sms.status).toBe("uncertain");
+      expect(result.sms.detail).toMatch(/Wix Inbox/i);
+      expect(result.sms.detail).not.toMatch(/Already sent/i);
+      expect(sendCustomerSms).not.toHaveBeenCalled();
+    }
+  );
+
+  it("reports an explicit delivered pickup row as already sent", async () => {
+    seedPickupSms("delivered");
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("sent");
+    expect(result.sms.detail).toMatch(/Already sent/i);
+    expect(sendCustomerSms).not.toHaveBeenCalled();
   });
 
   it("still tries email when the text fails", async () => {

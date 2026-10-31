@@ -235,12 +235,13 @@ async function deliverChannel(input: {
         .eq("template_key", "ready_for_pickup")
         .eq("dedupe_key", input.dedupeKey)
         .maybeSingle();
+      const existingStatus = existing.data?.status;
       const status: PickupNoticeChannelResult["status"] =
-        existing.data?.status === "failed"
-          ? "failed"
-          : existing.data?.status === "queued"
-            ? "uncertain"
-            : "sent";
+        !existing.error && (existingStatus === "sent" || existingStatus === "delivered")
+          ? "sent"
+          : !existing.error && existingStatus === "failed"
+            ? "failed"
+            : "uncertain";
       return {
         status,
         detail:
