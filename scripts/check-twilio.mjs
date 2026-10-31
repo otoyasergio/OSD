@@ -2,15 +2,13 @@
 /**
  * Doctor: report whether Twilio is configured correctly for this app.
  *
- * The app uses Twilio for three independent things, each needing different
- * credentials, so "Twilio works" is never a single yes/no:
- *   SMS    ACCOUNT_SID + AUTH_TOKEN + (MESSAGING_SERVICE_SID | FROM_NUMBER)
+ * The app uses Twilio for Video and Voice:
  *   Video  ACCOUNT_SID + API_KEY_SID + API_KEY_SECRET
- *   Voice  the Video three + TWIML_APP_SID
+ *   Voice  the Video three + TWIML_APP_SID + AUTH_TOKEN for webhook signatures
  *
  * With credentials present it also checks the Twilio account itself — that the
- * sender is owned, the TwiML app exists, and the webhook URLs on each number
- * point back at this deployment rather than at localhost or an old preview.
+ * TwiML app exists, and Voice webhook URLs point back at this deployment
+ * rather than at localhost or an old preview.
  *
  * Usage:
  *   node --env-file=.env.local scripts/check-twilio.mjs
@@ -23,8 +21,6 @@ const env = (name) => process.env[name]?.trim() ?? "";
 
 const accountSid = env("TWILIO_ACCOUNT_SID");
 const authToken = env("TWILIO_AUTH_TOKEN");
-const fromNumber = env("TWILIO_FROM_NUMBER");
-const messagingServiceSid = env("TWILIO_MESSAGING_SERVICE_SID");
 const apiKeySid = env("TWILIO_API_KEY_SID");
 const apiKeySecret = env("TWILIO_API_KEY_SECRET");
 const twimlAppSid = env("TWILIO_TWIML_APP_SID");
@@ -69,44 +65,19 @@ if (apiKeySid && !/^SK[0-9a-f]{32}$/.test(apiKeySid)) {
 if (twimlAppSid && !/^AP[0-9a-f]{32}$/.test(twimlAppSid)) {
   fail(`TWILIO_TWIML_APP_SID is malformed (expected AP + 32 hex): ${mask(twimlAppSid)}`);
 }
-if (messagingServiceSid && !/^MG[0-9a-f]{32}$/.test(messagingServiceSid)) {
-  fail(
-    `TWILIO_MESSAGING_SERVICE_SID is malformed (expected MG + 32 hex): ${mask(messagingServiceSid)}`
-  );
-}
-if (fromNumber && !/^\+[1-9]\d{1,14}$/.test(fromNumber)) {
-  fail(`TWILIO_FROM_NUMBER must be E.164 (e.g. +14165551234), got ${fromNumber}`);
-}
-
 // ------------------------------------------------------------------ subsystems
 
 heading("Subsystems this enables");
 
-const smsReady = Boolean(accountSid && authToken && (messagingServiceSid || fromNumber));
 const videoReady = Boolean(accountSid && apiKeySid && apiKeySecret);
 const voiceReady = videoReady && Boolean(twimlAppSid);
 
-if (smsReady) {
-  pass(`SMS — sending via ${messagingServiceSid ? "Messaging Service" : "From number"}`);
-} else {
-  const missing = [
-    !accountSid && "TWILIO_ACCOUNT_SID",
-    !authToken && "TWILIO_AUTH_TOKEN",
-    !messagingServiceSid &&
-      !fromNumber &&
-      "TWILIO_MESSAGING_SERVICE_SID or TWILIO_FROM_NUMBER",
-  ].filter(Boolean);
-  fail(`SMS — not configured; missing ${missing.join(", ")}`);
-}
-
-// Inbound webhooks are signature-verified with the Auth Token specifically;
+// Voice webhooks are signature-verified with the Auth Token specifically;
 // an API key cannot do it, so this stays a hard requirement.
-if (authToken)
-  pass("Inbound SMS + status webhooks — Auth Token available for signature checks");
-else
-  fail(
-    "Inbound SMS + status webhooks — TWILIO_AUTH_TOKEN missing, so /api/twilio/* returns 503"
-  );
+if (authToken) pass("Voice webhooks — Auth Token available for signature checks");
+else {
+  fail("Voice webhooks — TWILIO_AUTH_TOKEN missing, so /api/twilio/voice/* returns 503");
+}
 
 if (videoReady) pass("Messenger video calls — API key present");
 else
@@ -122,9 +93,7 @@ if (appUrl) {
   if (appUrl.startsWith("https://")) pass(`NEXT_PUBLIC_APP_URL ${appUrl}`);
   else warn(`NEXT_PUBLIC_APP_URL is not https (${appUrl}); Twilio will not call it`);
 } else {
-  warn(
-    "NEXT_PUBLIC_APP_URL is unset — status callbacks and portal links will be skipped"
-  );
+  warn("NEXT_PUBLIC_APP_URL is unset — Voice webhook URL verification will be skipped");
 }
 
 // --------------------------------------------------------------- live account
@@ -185,7 +154,7 @@ if (authToken) {
   skip("account lookup needs the Auth Token (Standard API keys cannot read /Accounts)");
 }
 
-// Numbers owned, and where their webhooks point.
+// Numbers owned, and where their Voice webhooks point.
 const numbers = await api(`${v2010}/IncomingPhoneNumbers.json?PageSize=50`);
 if (!numbers.ok) {
   fail(
@@ -194,21 +163,11 @@ if (!numbers.ok) {
 } else {
   const list = numbers.body.incoming_phone_numbers ?? [];
   if (list.length === 0) {
-    fail("the account owns no phone numbers — buy one before SMS or voice can work");
+    fail("the account owns no phone numbers — buy one before Voice can work");
   } else {
     pass(`${list.length} phone number${list.length === 1 ? "" : "s"} owned`);
-    const expectedSms = appUrl ? `${appUrl}/api/twilio/webhooks` : "";
     for (const n of list) {
       console.log(`\n  ${n.phone_number} (${n.friendly_name})`);
-      if (expectedSms) {
-        if (n.sms_url === expectedSms) pass(`SMS webhook → ${n.sms_url}`);
-        else if (!n.sms_url) fail(`SMS webhook is empty; set it to ${expectedSms}`);
-        else fail(`SMS webhook is ${n.sms_url}; expected ${expectedSms}`);
-      } else {
-        skip(
-          `SMS webhook is ${n.sms_url || "(empty)"} — set NEXT_PUBLIC_APP_URL to verify it`
-        );
-      }
       if (voiceReady) {
         // Inbound PSTN calls go to the number's own Voice URL. The TwiML app is
         // a separate path, used only for calls placed from the browser SDK, and
@@ -229,29 +188,6 @@ if (!numbers.ok) {
       }
     }
     console.log("");
-
-    if (fromNumber && !list.some((n) => n.phone_number === fromNumber)) {
-      fail(`TWILIO_FROM_NUMBER ${fromNumber} is not owned by this account`);
-    }
-  }
-}
-
-// Messaging Service, if that is the chosen sender.
-if (messagingServiceSid) {
-  const svc = await api(
-    `https://messaging.twilio.com/v1/Services/${messagingServiceSid}`
-  );
-  if (!svc.ok) {
-    fail(`Messaging Service ${mask(messagingServiceSid)} not found (${svc.status})`);
-  } else {
-    pass(`Messaging Service "${svc.body.friendly_name}"`);
-    const pool = await api(
-      `https://messaging.twilio.com/v1/Services/${messagingServiceSid}/PhoneNumbers`
-    );
-    const count = pool.ok ? (pool.body.phone_numbers ?? []).length : 0;
-    if (count === 0)
-      fail("the Messaging Service has no senders in its pool, so sends will fail");
-    else pass(`${count} sender${count === 1 ? "" : "s"} in the pool`);
   }
 }
 

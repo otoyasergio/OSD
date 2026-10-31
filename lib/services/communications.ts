@@ -1,6 +1,5 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import { createAdminClient } from "@/lib/database/supabase-admin";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canRecordCustomerApproval } from "@/lib/permissions";
@@ -29,19 +28,8 @@ type TemplateContext = {
   shopName?: string;
 };
 
-/** CASL / A2P campaign alignment — Twilio Advanced Opt-Out still owns carrier STOP. */
+/** CASL / A2P campaign alignment — Wix Inbox owns carrier opt-out replies. */
 const SMS_OPT_OUT_FOOTER = "Reply STOP to opt out.";
-
-const OPT_OUT_KEYWORDS = new Set([
-  "STOP",
-  "STOPALL",
-  "UNSUBSCRIBE",
-  "CANCEL",
-  "END",
-  "QUIT",
-]);
-
-const OPT_IN_KEYWORDS = new Set(["START", "UNSTOP"]);
 
 function withSmsOptOut(body: string): string {
   return `${body.trim()} ${SMS_OPT_OUT_FOOTER}`;
@@ -292,124 +280,4 @@ export async function sendWorkOrderMessage(input: {
   if (status === "failed") throw new Error(errorMessage ?? "SEND_FAILED");
 
   return log as CommunicationLogEntry;
-}
-
-export async function handleInboundSms(input: {
-  from: string;
-  body: string;
-}): Promise<void> {
-  const admin = createAdminClient();
-  const normalizedBody = input.body.trim().toUpperCase();
-
-  const { data: customers } = await admin
-    .from("customer")
-    .select("customer_id, phone, sms_opted_out_at")
-    .not("phone", "is", null);
-
-  const customer = (customers ?? []).find((c) => {
-    const phone = String(c.phone ?? "").replace(/\D/g, "");
-    const from = input.from.replace(/\D/g, "");
-    return phone.endsWith(from.slice(-10)) || from.endsWith(phone.slice(-10));
-  });
-
-  await admin.from("communication_log").insert({
-    customer_id: customer?.customer_id ?? null,
-    channel: "sms",
-    direction: "inbound",
-    to_address: input.from,
-    from_address: input.from,
-    body: input.body,
-    status: "received",
-  });
-
-  if (!customer) return;
-
-  if (OPT_OUT_KEYWORDS.has(normalizedBody)) {
-    await admin
-      .from("customer")
-      .update({ sms_opted_out_at: new Date().toISOString() })
-      .eq("customer_id", customer.customer_id);
-    return;
-  }
-
-  const { data: openJobs } = await admin
-    .from("job")
-    .select("job_id, work_order_id, status")
-    .eq("status", "waiting_for_approval")
-    .in(
-      "work_order_id",
-      (
-        await admin
-          .from("work_order")
-          .select("work_order_id")
-          .eq("customer_id", customer.customer_id)
-      ).data?.map((w) => w.work_order_id) ?? []
-    );
-
-  const hasSingleApprovalJob = openJobs && openJobs.length === 1;
-
-  if (OPT_IN_KEYWORDS.has(normalizedBody)) {
-    await admin
-      .from("customer")
-      .update({ sms_opted_out_at: null })
-      .eq("customer_id", customer.customer_id);
-    return;
-  }
-
-  // YES clears opt-out only when it is not an approval reply.
-  if (normalizedBody === "YES" && !hasSingleApprovalJob) {
-    await admin
-      .from("customer")
-      .update({ sms_opted_out_at: null })
-      .eq("customer_id", customer.customer_id);
-    return;
-  }
-
-  if (!hasSingleApprovalJob) return;
-
-  const job = openJobs[0];
-  if (normalizedBody === "YES" || normalizedBody === "APPROVE") {
-    const approvedAt = new Date().toISOString();
-    await admin
-      .from("job")
-      .update({
-        status: "approved",
-        approval_method: "text",
-        approved_by_customer_at: approvedAt,
-        updated_at: approvedAt,
-      })
-      .eq("job_id", job.job_id);
-
-    await addTimelineEvent(admin, {
-      work_order_id: job.work_order_id,
-      user_id: null,
-      event_type: TimelineEventType.CUSTOMER_APPROVAL_RECORDED,
-      entity_type: "job",
-      entity_id: job.job_id,
-      description: "Customer approved via SMS reply",
-      new_value: { approval_method: "text" },
-    });
-  } else if (normalizedBody === "NO" || normalizedBody === "DECLINE") {
-    const declinedAt = new Date().toISOString();
-    await admin
-      .from("job")
-      .update({
-        status: "declined",
-        approval_method: "text",
-        declined_at: declinedAt,
-        decline_reason: "Declined via SMS",
-        updated_at: declinedAt,
-      })
-      .eq("job_id", job.job_id);
-
-    await addTimelineEvent(admin, {
-      work_order_id: job.work_order_id,
-      user_id: null,
-      event_type: TimelineEventType.CUSTOMER_DECLINE_RECORDED,
-      entity_type: "job",
-      entity_id: job.job_id,
-      description: "Customer declined via SMS reply",
-      new_value: { approval_method: "text" },
-    });
-  }
 }

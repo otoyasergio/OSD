@@ -216,7 +216,6 @@ const MESSAGES: Record<string, string> = {
   SQUARE_CANCEL_NOT_ALLOWED:
     "Cannot cancel a partially paid or paid invoice. Handle the remainder in Square or publish balance.",
   SQUARE_BALANCE_NOT_READY: "Collect a deposit payment before publishing the balance.",
-  TWILIO_NOT_CONFIGURED: "Twilio is not configured for SMS.",
   SMS_OPTED_OUT: "This customer has opted out of SMS. Use email or clear the opt-out.",
   INVALID_PHONE: "Customer phone number is not a valid mobile number.",
   EMAIL_NOT_CONFIGURED:
