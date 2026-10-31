@@ -42,14 +42,33 @@ export async function sendCustomerSms(input: SendCustomerSmsInput): Promise<stri
   if (!recipient) throw new Error("INVALID_PHONE");
 
   let contactId = input.wixContactId?.trim() || null;
-  if (!contactId) contactId = await syncContact(input.customerId);
+  let didSync = false;
+  if (!contactId) {
+    contactId = await syncContact(input.customerId);
+    didSync = true;
+  }
 
-  let contact = await getWixContactV5(contactId);
+  let contact: WixContactV5SmsDetails;
+  try {
+    contact = await getWixContactV5(contactId);
+  } catch (error) {
+    if (
+      didSync ||
+      !(error instanceof Error) ||
+      error.message !== "WIX_CONTACT_NOT_FOUND"
+    ) {
+      throw error;
+    }
+    contactId = await syncContact(input.customerId);
+    didSync = true;
+    contact = await getWixContactV5(contactId);
+  }
   let wixPhone = remotePhone(contact);
   if (!wixPhone) throw new Error("WIX_SMS_PHONE_INVALID");
 
-  if (wixPhone !== recipient) {
+  if (wixPhone !== recipient && !didSync) {
     contactId = await syncContact(input.customerId);
+    didSync = true;
     contact = await getWixContactV5(contactId);
     wixPhone = remotePhone(contact);
   }

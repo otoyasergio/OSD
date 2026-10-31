@@ -350,6 +350,9 @@ describe("sendReadyForPickupNotice", () => {
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(second.sms.detail).toMatch(/Already sent/);
     expect(second.email.detail).toMatch(/Already sent/);
+    expect(logs.find((row) => row.channel === "sms")?.dedupe_key).toBe(
+      "2026-10-30T18:00:00.000Z"
+    );
   });
 
   it.each([
@@ -402,6 +405,25 @@ describe("sendReadyForPickupNotice", () => {
     expect(logs.find((row) => row.channel === "sms")?.status).toBe("failed");
   });
 
+  it("releases a definite failure so the same pickup can retry the provider", async () => {
+    let attempts = 0;
+    sendCustomerSms.mockImplementation(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("WIX_INBOX_API_ERROR");
+      return "wix-message-2";
+    });
+
+    const first = await sendReadyForPickupNotice("wo-1");
+    const second = await sendReadyForPickupNotice("wo-1");
+
+    expect(first.sms.status).toBe("failed");
+    expect(second.sms.status).toBe("sent");
+    expect(sendCustomerSms).toHaveBeenCalledTimes(2);
+    expect(
+      logs.find((row) => row.channel === "sms" && row.status === "failed")?.dedupe_key
+    ).toBeNull();
+  });
+
   it("leaves an uncertain text queued and tells staff to inspect Wix Inbox", async () => {
     sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_SEND_UNCERTAIN"));
 
@@ -415,6 +437,7 @@ describe("sendReadyForPickupNotice", () => {
       expect.objectContaining({
         status: "queued",
         error_message: "WIX_INBOX_SEND_UNCERTAIN",
+        dedupe_key: "2026-10-30T18:00:00.000Z",
       })
     );
   });

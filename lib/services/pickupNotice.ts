@@ -272,6 +272,7 @@ async function deliverChannel(input: {
           .update({
             status: uncertain ? "queued" : "failed",
             error_message: uncertain ? errorCode : detail,
+            ...(uncertain ? {} : { dedupe_key: null }),
           })
           .eq("log_id", logId);
         if (updated.error) {

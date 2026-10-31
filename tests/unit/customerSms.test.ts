@@ -146,6 +146,69 @@ describe("sendCustomerSms", () => {
     });
   });
 
+  it("repairs a stale linked contact ID after Contacts V5 reports it missing", async () => {
+    getWixContactV5
+      .mockRejectedValueOnce(new Error("WIX_CONTACT_NOT_FOUND"))
+      .mockResolvedValueOnce(wixContact());
+    syncCustomerToWix.mockResolvedValue({ wix_contact_id: OTHER_CONTACT_ID });
+
+    await expect(
+      sendCustomerSms({
+        customerId: "cust-1",
+        wixContactId: CONTACT_ID,
+        to: "6475550100",
+        body: "Service update",
+        localOptedOutAt: null,
+      })
+    ).resolves.toBe("wix-message-1");
+
+    expect(syncCustomerToWix).toHaveBeenCalledOnce();
+    expect(getWixContactV5.mock.calls).toEqual([[CONTACT_ID], [OTHER_CONTACT_ID]]);
+    expect(sendWixInboxSms).toHaveBeenCalledWith({
+      contactId: OTHER_CONTACT_ID,
+      body: "Service update",
+    });
+  });
+
+  it("does not sync twice when the repaired contact has a mismatched phone", async () => {
+    getWixContactV5
+      .mockRejectedValueOnce(new Error("WIX_CONTACT_NOT_FOUND"))
+      .mockResolvedValueOnce(wixContact({ e164: "+14165550100" }));
+    syncCustomerToWix.mockResolvedValue({ wix_contact_id: OTHER_CONTACT_ID });
+
+    await expect(
+      sendCustomerSms({
+        customerId: "cust-1",
+        wixContactId: CONTACT_ID,
+        to: "6475550100",
+        body: "Service update",
+        localOptedOutAt: null,
+      })
+    ).rejects.toThrow("WIX_SMS_PHONE_MISMATCH");
+
+    expect(syncCustomerToWix).toHaveBeenCalledOnce();
+    expect(getWixContactV5.mock.calls).toEqual([[CONTACT_ID], [OTHER_CONTACT_ID]]);
+    expect(sendWixInboxSms).not.toHaveBeenCalled();
+  });
+
+  it("fails closed without syncing for Contacts V5 errors other than not found", async () => {
+    getWixContactV5.mockRejectedValue(new Error("WIX_CONTACT_API_ERROR"));
+
+    await expect(
+      sendCustomerSms({
+        customerId: "cust-1",
+        wixContactId: CONTACT_ID,
+        to: "6475550100",
+        body: "Service update",
+        localOptedOutAt: null,
+      })
+    ).rejects.toThrow("WIX_CONTACT_API_ERROR");
+
+    expect(syncCustomerToWix).not.toHaveBeenCalled();
+    expect(getWixContactV5).toHaveBeenCalledOnce();
+    expect(sendWixInboxSms).not.toHaveBeenCalled();
+  });
+
   it("syncs once and re-reads Contacts V5 when the linked phone mismatches", async () => {
     getWixContactV5
       .mockResolvedValueOnce(wixContact({ e164: "+14165550100" }))
