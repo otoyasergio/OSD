@@ -693,6 +693,24 @@ export type Database = {
         Args: { p_location_id: string };
         Returns: string;
       };
+      publish_vehicle_passport_snapshot: {
+        Args: {
+          p_motorcycle_id: string;
+          p_passport_number: string;
+          p_expected_version: number;
+          p_payload: Json;
+          p_payload_sha256: string;
+          p_coverage_through: string;
+          p_work_order_ids: string[];
+        };
+        Returns: Array<{
+          published_snapshot_id: string;
+          published_passport_id: string;
+          published_passport_number: string;
+          published_version: number;
+          published_at: string;
+        }>;
+      };
       current_app_user_id: {
         Args: Record<string, never>;
         Returns: string;

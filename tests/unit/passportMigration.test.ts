@@ -49,4 +49,26 @@ describe("vehicle passport migration", () => {
     expect(sql).toContain("idx_vehicle_passport_share_active_token");
     expect(sql).toContain("uq_vehicle_passport_snapshot_source_work_order");
   });
+
+  it("publishes one validated version and its source links transactionally", () => {
+    const sql = vehiclePassportMigration();
+
+    expect(sql).toContain(
+      "CREATE OR REPLACE FUNCTION public.publish_vehicle_passport_snapshot"
+    );
+    expect(sql).toContain("FOR UPDATE");
+    expect(sql).toContain("PASSPORT_VERSION_CONFLICT");
+    expect(sql).toContain("unnest(p_work_order_ids)");
+    expect(sql).toContain("status = 'completed'");
+    expect(sql).toContain("v_issued_at := (p_payload ->> 'issued_at')::timestamptz");
+    expect(sql).toContain(
+      "GRANT EXECUTE ON FUNCTION public.publish_vehicle_passport_snapshot"
+    );
+    expect(sql).toContain(
+      "GRANT SELECT ON TABLE public.vehicle_passport_snapshot TO authenticated"
+    );
+    expect(sql).not.toContain(
+      "GRANT SELECT, INSERT, UPDATE ON TABLE public.vehicle_passport_snapshot TO authenticated"
+    );
+  });
 });
