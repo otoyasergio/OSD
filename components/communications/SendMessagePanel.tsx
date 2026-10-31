@@ -7,6 +7,8 @@ import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
 import {
   canAttemptCustomerSms,
+  deriveCustomerMessageChannel,
+  type CustomerMessageChannel,
   WIX_SMS_LOCAL_OPT_OUT_WARNING,
 } from "@/lib/communications/customerSmsAvailability";
 
@@ -23,6 +25,7 @@ type Props = {
   canSend: boolean;
   readOnly?: boolean;
   customerPhone?: string | null;
+  customerEmail?: string | null;
   smsOptedOut?: boolean;
 };
 
@@ -32,6 +35,7 @@ export function SendMessagePanel({
   canSend,
   readOnly = false,
   customerPhone = null,
+  customerEmail = null,
   smsOptedOut = false,
 }: Props) {
   const canAttemptSms = canAttemptCustomerSms({
@@ -40,15 +44,18 @@ export function SendMessagePanel({
   });
   const [templateKey, setTemplateKey] =
     useState<(typeof TEMPLATES)[number]["key"]>("approval_request");
-  const [preferredChannel, setPreferredChannel] = useState<"sms" | "email">(() =>
-    canAttemptSms ? "sms" : "email"
-  );
-  const channel =
-    preferredChannel === "sms" && !canAttemptSms ? "email" : preferredChannel;
+  const canAttemptEmail = Boolean(customerEmail?.trim());
+  const [preferredChannel, setPreferredChannel] = useState<CustomerMessageChannel>("sms");
+  const channel = deriveCustomerMessageChannel({
+    preferredChannel,
+    smsAvailable: canAttemptSms,
+    emailAvailable: canAttemptEmail,
+  });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function send() {
+    if (!channel) return;
     setError(null);
     startTransition(async () => {
       const result = await sendMessageAction(workOrderId, templateKey, channel);
@@ -89,20 +96,29 @@ export function SendMessagePanel({
               <span className="field-label">Channel</span>
               <select
                 className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
-                value={channel}
-                onChange={(e) => setPreferredChannel(e.target.value as "sms" | "email")}
+                value={channel ?? ""}
+                onChange={(e) =>
+                  setPreferredChannel(e.target.value as CustomerMessageChannel)
+                }
               >
+                {channel === null ? (
+                  <option value="" disabled>
+                    No channel available
+                  </option>
+                ) : null}
                 <option value="sms" disabled={!canAttemptSms}>
                   SMS
                 </option>
-                <option value="email">Email</option>
+                <option value="email" disabled={!canAttemptEmail}>
+                  Email
+                </option>
               </select>
             </label>
           </div>
           <button
             type="button"
             className="btn btn-primary self-start"
-            disabled={pending || (channel === "sms" && !canAttemptSms)}
+            disabled={pending || channel === null}
             onClick={send}
           >
             {pending ? "Sending…" : "Send"}

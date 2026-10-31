@@ -13,6 +13,8 @@ import { HST_PERCENT } from "@/lib/pricing/hst";
 import { FormError } from "@/components/forms/Field";
 import {
   canAttemptCustomerSms,
+  deriveCustomerMessageChannel,
+  type CustomerMessageChannel,
   WIX_SMS_LOCAL_OPT_OUT_WARNING,
 } from "@/lib/communications/customerSmsAvailability";
 
@@ -62,21 +64,20 @@ export function SquareInvoicePanel({
     phone: customerPhone,
     smsOptedOut,
   });
+  const canAttemptEmail = Boolean(customerEmail?.trim());
   const [publicUrl, setPublicUrl] = useState<string | null>(squareInvoicePublicUrl);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<BillingAmountMode>("full");
   const [depositPercent, setDepositPercent] = useState("50");
   const [customDollars, setCustomDollars] = useState("");
   const [pending, startTransition] = useTransition();
-  const [preferredApprovalChannel, setPreferredApprovalChannel] = useState<
-    "sms" | "email"
-  >(() => (canAttemptSms ? "sms" : "email"));
-  const approvalChannel =
-    preferredApprovalChannel === "sms" && !canAttemptSms
-      ? "email"
-      : preferredApprovalChannel;
-  const canSendApproval =
-    approvalChannel === "sms" ? canAttemptSms : Boolean(customerEmail);
+  const [preferredApprovalChannel, setPreferredApprovalChannel] =
+    useState<CustomerMessageChannel>("sms");
+  const approvalChannel = deriveCustomerMessageChannel({
+    preferredChannel: preferredApprovalChannel,
+    smsAvailable: canAttemptSms,
+    emailAvailable: canAttemptEmail,
+  });
 
   const stage = billingStage || "none";
   const remainingCents = Math.max(0, estimateTotalCents - billingCollectedCents);
@@ -125,6 +126,15 @@ export function SquareInvoicePanel({
         return;
       }
       if (result.publicUrl) setPublicUrl(result.publicUrl);
+    });
+  }
+
+  function sendForApproval() {
+    if (!approvalChannel) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await sendEstimateApprovalAction(workOrderId, approvalChannel);
+      if (result.error) setError(result.error);
     });
   }
 
@@ -188,17 +198,8 @@ export function SquareInvoicePanel({
         <button
           type="button"
           className="btn btn-secondary"
-          disabled={pending || !canSendApproval}
-          onClick={() =>
-            startTransition(async () => {
-              setError(null);
-              const result = await sendEstimateApprovalAction(
-                workOrderId,
-                approvalChannel
-              );
-              if (result.error) setError(result.error);
-            })
-          }
+          disabled={pending || approvalChannel === null}
+          onClick={sendForApproval}
         >
           Send for approval
         </button>
@@ -206,15 +207,20 @@ export function SquareInvoicePanel({
           <span className="text-[var(--status-neutral)]">via</span>
           <select
             className="min-h-11 rounded border border-[var(--border-strong)] px-2"
-            value={approvalChannel}
+            value={approvalChannel ?? ""}
             onChange={(e) =>
-              setPreferredApprovalChannel(e.target.value as "sms" | "email")
+              setPreferredApprovalChannel(e.target.value as CustomerMessageChannel)
             }
           >
+            {approvalChannel === null ? (
+              <option value="" disabled>
+                No channel available
+              </option>
+            ) : null}
             <option value="sms" disabled={!canAttemptSms}>
               SMS
             </option>
-            <option value="email" disabled={!customerEmail}>
+            <option value="email" disabled={!canAttemptEmail}>
               Email
             </option>
           </select>

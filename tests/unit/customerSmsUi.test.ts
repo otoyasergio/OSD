@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -18,6 +19,14 @@ import { SquareInvoicePanel } from "@/components/square/SquareInvoicePanel";
 
 function smsOption(html: string): string {
   return html.match(/<option value="sms"[^>]*>SMS<\/option>/)?.[0] ?? "";
+}
+
+function emailOption(html: string): string {
+  return html.match(/<option value="email"[^>]*>Email<\/option>/)?.[0] ?? "";
+}
+
+function noChannelOption(html: string): string {
+  return html.match(/<option value=""[^>]*>No channel available<\/option>/)?.[0] ?? "";
 }
 
 describe("staff SMS controls", () => {
@@ -89,5 +98,49 @@ describe("staff SMS controls", () => {
 
     const sendButton = html.match(/<button[^>]*>Send for approval<\/button>/)?.[0] ?? "";
     expect(sendButton).toContain("disabled");
+    expect(noChannelOption(html)).toContain('selected=""');
+  });
+
+  it("falls back to email in SendMessagePanel when SMS is initially unavailable", () => {
+    const html = renderToStaticMarkup(
+      createElement(SendMessagePanel, {
+        workOrderId: "wo-1",
+        logs: [],
+        canSend: true,
+        customerPhone: null,
+        customerEmail: "ada@example.com",
+      })
+    );
+
+    expect(smsOption(html)).toContain("disabled");
+    expect(emailOption(html)).toContain('selected=""');
+    const sendButton = html.match(/<button[^>]*>Send<\/button>/)?.[0] ?? "";
+    expect(sendButton).not.toContain("disabled");
+  });
+
+  it("shows no channel and disables SendMessagePanel when no address is available", () => {
+    const html = renderToStaticMarkup(
+      createElement(SendMessagePanel, {
+        workOrderId: "wo-1",
+        logs: [],
+        canSend: true,
+        customerPhone: null,
+        customerEmail: null,
+      })
+    );
+
+    expect(noChannelOption(html)).toContain('selected=""');
+    const sendButton = html.match(/<button[^>]*>Send<\/button>/)?.[0] ?? "";
+    expect(sendButton).toContain("disabled");
+  });
+
+  it("passes the work-order customer email into SendMessagePanel", () => {
+    const pageSource = readFileSync(
+      "app/(app)/work_orders/[work_order_id]/page.tsx",
+      "utf8"
+    );
+    const panel = pageSource.match(/<SendMessagePanel[\s\S]*?\/>/)?.[0] ?? "";
+
+    expect(panel).toContain("customerEmail={detail.customer?.email ?? null}");
   });
 });

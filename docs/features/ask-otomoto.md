@@ -186,25 +186,29 @@ For a local stateful run, use this order:
 
 In the normal local path, the Playwright web-server configuration starts that
 exact build with `npm run start`, maps only the test service-role value into the
-server process, and clears AI, Twilio, and Resend credentials. Do not reuse an
-already-running server in mutation mode.
+server process, and clears `OPENAI_API_KEY`, the Twilio Voice/Video account,
+webhook, API-key, and TwiML credentials, `WIX_INBOX_SMS_ENABLED`,
+`RESEND_API_KEY`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. Do not reuse
+an already-running server in mutation mode.
 
 Before seeding, global setup calls the E2E-only guarded fingerprint endpoint.
 The endpoint exists only in mutation mode with a matching
 `E2E_ENV_GUARD_SECRET`; it returns only a SHA-256 Supabase-target fingerprint
 and provider-configured booleans. Global setup compares that fingerprint with
-`TEST_SUPABASE_URL` and requires all outbound booleans to be false. A mismatch
-means the app must be rebuilt with the isolated values.
+`TEST_SUPABASE_URL` and requires the OpenAI, Twilio Voice/Video, Wix SMS,
+Resend, and Gmail booleans all to be false. A mismatch means the app must be
+rebuilt with the isolated values.
 
 For `PLAYWRIGHT_SKIP_WEBSERVER=1`, the disposable remote QA deployment must use
 `E2E_ALLOW_MUTATION=1` on the server, the same nonempty
 `E2E_ENV_GUARD_SECRET` on runner and server, a dedicated migrated
-non-production Supabase project, and disabled OpenAI/Twilio/Resend credentials.
-The runner must use an HTTPS `PLAYWRIGHT_BASE_URL` whose exact hostname is
-listed in `E2E_ALLOWED_PREVIEW_HOSTS`. Never allow-list or target production;
-the production Toronto Moto host is rejected, and the guarded route always
-returns 404 when `VERCEL_ENV=production`. The same fingerprint preflight runs
-before any remote QA mutation.
+non-production Supabase project, disabled OpenAI, Twilio Voice/Video, Resend,
+and Gmail credentials, and `WIX_INBOX_SMS_ENABLED` unset or empty. The runner
+must use an HTTPS `PLAYWRIGHT_BASE_URL` whose exact hostname is listed in
+`E2E_ALLOWED_PREVIEW_HOSTS`. Never allow-list or target production; the
+production Toronto Moto host is rejected, and the guarded route always returns
+404 when `VERCEL_ENV=production`. The same fingerprint preflight runs before
+any remote QA mutation.
 
 Then run:
 

@@ -55,8 +55,8 @@ Every send re-reads the linked Wix Contact before contacting Inbox. The app:
 4. blocks `UNSUBSCRIBED`;
 5. blocks `NO_SUBSCRIPTION_STATUS`;
 6. allows `NOT_SET` or `PENDING` only when the local record is not opted out;
-7. clears or records the local opt-out timestamp when Wix has a newer,
-   definitive `SUBSCRIBED` or `UNSUBSCRIBED` status; and
+7. clears the local opt-out timestamp for `SUBSCRIBED`, or records one for
+   `UNSUBSCRIBED` when the local record does not already have one; and
 8. blocks a Wix deliverability status of `INVALID`.
 
 Wix owns carrier STOP/START handling. If a customer replies, inspect the
@@ -100,8 +100,17 @@ integration receives no delivery callback.
 
 ## Rollback
 
-1. Set `WIX_INBOX_SMS_ENABLED` to empty in the affected Vercel environment.
-2. Redeploy.
+1. Remove `WIX_INBOX_SMS_ENABLED` or set it to empty in the affected Vercel
+   environment.
+2. Deploy current `main` only with the guarded production command:
+
+   ```bash
+   git checkout main && git pull --ff-only origin main && npm run deploy:production
+   ```
+
+   Never run a bare `vercel --prod`, and never deploy Production from a feature
+   branch.
+
 3. Confirm `GET /api/health` reports `wixSms: "missing"`.
 4. Confirm the app blocks a new SMS attempt with the not-configured message.
 5. Continue handling existing conversations and replies in Wix Inbox.

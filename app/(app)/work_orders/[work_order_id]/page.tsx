@@ -757,6 +757,7 @@ export default async function WorkOrderDetailPage({
           canSend={canApprove}
           readOnly={detail.is_foreign_location}
           customerPhone={detail.customer?.phone ?? null}
+          customerEmail={detail.customer?.email ?? null}
           smsOptedOut={Boolean(detail.customer?.sms_opted_out_at)}
         />
       ) : null}
