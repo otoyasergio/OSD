@@ -3,6 +3,16 @@ const matchingVoiceUrl =
   process.env.TWILIO_TEST_NO_MATCH === "1"
     ? "https://old-preview.example/api/twilio/voice/inbound"
     : `${appUrl}/api/twilio/voice/inbound`;
+const voiceNumber = process.env.TWILIO_TEST_OWNED_NUMBER ?? "+14165550123";
+const matchingStatusUrl = `${appUrl}/api/twilio/voice/status`;
+const numberStatusUrl =
+  process.env.TWILIO_TEST_BAD_NUMBER_STATUS === "1"
+    ? "https://old-preview.example/api/twilio/voice/status"
+    : matchingStatusUrl;
+const appStatusUrl =
+  process.env.TWILIO_TEST_BAD_APP_STATUS === "1"
+    ? "https://old-preview.example/api/twilio/voice/status"
+    : matchingStatusUrl;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -26,10 +36,11 @@ globalThis.fetch = async (input) => {
     return json({
       incoming_phone_numbers: [
         {
-          phone_number: "+16474241088",
-          friendly_name: "Toronto shop",
+          phone_number: voiceNumber,
+          friendly_name: "Toronto Voice",
           voice_application_sid: null,
           voice_url: matchingVoiceUrl,
+          status_callback: numberStatusUrl,
         },
         {
           phone_number: "+18885550199",
@@ -45,7 +56,7 @@ globalThis.fetch = async (input) => {
     return json({
       friendly_name: "Toronto shop browser calling",
       voice_url: `${appUrl}/api/twilio/voice/outbound`,
-      status_callback: `${appUrl}/api/twilio/voice/status`,
+      status_callback: appStatusUrl,
     });
   }
 

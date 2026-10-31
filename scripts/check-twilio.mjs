@@ -25,6 +25,7 @@ const apiKeySid = env("TWILIO_API_KEY_SID");
 const apiKeySecret = env("TWILIO_API_KEY_SECRET");
 const twimlAppSid = env("TWILIO_TWIML_APP_SID");
 const appUrl = env("NEXT_PUBLIC_APP_URL").replace(/\/$/, "");
+const wixSmsNumber = "+16474241088";
 
 let failures = 0;
 let warnings = 0;
@@ -91,9 +92,9 @@ else skip("Shop phone / staff voice — blocked on the video credentials above")
 
 if (appUrl) {
   if (appUrl.startsWith("https://")) pass(`NEXT_PUBLIC_APP_URL ${appUrl}`);
-  else warn(`NEXT_PUBLIC_APP_URL is not https (${appUrl}); Twilio will not call it`);
+  else fail(`NEXT_PUBLIC_APP_URL is not https (${appUrl}); Twilio will not call it`);
 } else {
-  warn("NEXT_PUBLIC_APP_URL is unset — Voice webhook URL verification will be skipped");
+  fail("NEXT_PUBLIC_APP_URL is required to verify exact Voice callback URLs");
 }
 
 // --------------------------------------------------------------- live account
@@ -167,17 +168,34 @@ if (!numbers.ok) {
   } else {
     pass(`${list.length} phone number${list.length === 1 ? "" : "s"} owned`);
     const expectedVoice = appUrl ? `${appUrl}/api/twilio/voice/inbound` : "";
+    const expectedStatus = appUrl ? `${appUrl}/api/twilio/voice/status` : "";
     let hasExpectedVoiceRoute = false;
 
     for (const n of list) {
       console.log(`\n  ${n.phone_number} (${n.friendly_name})`);
+      const isWixSmsNumber = n.phone_number === wixSmsNumber;
+      if (isWixSmsNumber) {
+        fail("647-424-1088 must remain in Wix and must not be owned by Twilio");
+      }
       if (voiceReady) {
         // Inbound PSTN calls go to the number's own Voice URL. The TwiML app is
         // a separate path, used only for calls placed from the browser SDK, and
         // Twilio clears voice_url the moment voice_application_sid is set.
         if (!n.voice_application_sid && expectedVoice && n.voice_url === expectedVoice) {
-          hasExpectedVoiceRoute = true;
           pass(`voice webhook → ${n.voice_url}`);
+          if (expectedStatus && n.status_callback !== expectedStatus) {
+            fail(
+              `number Voice status callback is ${n.status_callback || "(empty)"}; expected ${expectedStatus}`
+            );
+          } else if (expectedStatus) {
+            pass(`status callback → ${n.status_callback}`);
+          }
+          if (
+            !isWixSmsNumber &&
+            (!expectedStatus || n.status_callback === expectedStatus)
+          ) {
+            hasExpectedVoiceRoute = true;
+          }
         } else if (expectedVoice) {
           // An account may own numbers for unrelated products. Show their
           // routing for diagnosis, but only require one number to serve this app.
@@ -216,7 +234,19 @@ if (twimlAppSid) {
     } else pass(`Voice URL → ${app.body.voice_url}`);
 
     if (!app.body.status_callback)
-      warn("TwiML app has no Status Callback URL, so call records may not close out");
+      fail(
+        `TwiML app has no Status Callback URL; expected ${appUrl}/api/twilio/voice/status`
+      );
+    else {
+      const expectedStatus = appUrl ? `${appUrl}/api/twilio/voice/status` : "";
+      if (expectedStatus && app.body.status_callback !== expectedStatus) {
+        fail(
+          `TwiML app Status Callback URL is ${app.body.status_callback}; expected ${expectedStatus}`
+        );
+      } else {
+        pass(`Status Callback URL → ${app.body.status_callback}`);
+      }
+    }
   }
 }
 

@@ -45,6 +45,11 @@ Any other value, including an unset or empty flag, disables sending.
 Wix. Keep the flag empty in CI, local stateful E2E, and any environment that
 must not contact the live channel.
 
+Before Production cutover, remove `TWILIO_MESSAGING_SERVICE_SID` and
+`TWILIO_FROM_NUMBER` from the Vercel Production environment. They are retired
+SMS settings, not Voice/Video settings. Confirm they are absent before enabling
+`WIX_INBOX_SMS_ENABLED=1`.
+
 ## Consent and recipient checks
 
 Every send re-reads the linked Wix Contact before contacting Inbox. The app:
@@ -100,8 +105,12 @@ integration receives no delivery callback.
 
 ## Rollback
 
+For this release, do not roll back to an immutable pre-cutover deployment.
+That would restore retired Twilio SMS code and create conflicting provider
+ownership. Rollback means disabling Wix SMS and deploying current `main`:
+
 1. Remove `WIX_INBOX_SMS_ENABLED` or set it to empty in the affected Vercel
-   environment.
+   environment to disable Wix SMS.
 2. Deploy current `main` only with the guarded production command:
 
    ```bash

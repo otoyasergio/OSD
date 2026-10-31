@@ -82,5 +82,8 @@ describe("production smoke health contract", () => {
     const result = await runSmoke({ wixSms: "ok", twilioVoice: "ok" });
 
     expect(result.code).toBe(0);
+    expect(result.output).toContain("unsigned Voice webhook is rejected");
+    expect(result.output).toContain("logged-out Voice token is rejected");
+    expect(result.output).toContain("logged-out Video token is rejected");
   });
 });

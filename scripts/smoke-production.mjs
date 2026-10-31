@@ -45,6 +45,37 @@ await check("login page", async () => {
   if (!res.ok) throw new Error(`status ${res.status}`);
 });
 
+await check("unsigned Voice webhook is rejected", async () => {
+  const res = await fetch(`${base}/api/twilio/voice/inbound`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      From: "+15551234567",
+      To: "+14165550123",
+      CallSid: "CAproductionSmoke",
+    }),
+  });
+  if (res.status !== 401 && res.status !== 503) {
+    throw new Error(`expected 401/503, got ${res.status}`);
+  }
+});
+
+await check("logged-out Voice token is rejected", async () => {
+  const res = await fetch(`${base}/api/calls/voice-token`, {
+    method: "POST",
+  });
+  if (res.status !== 401) throw new Error(`expected 401, got ${res.status}`);
+});
+
+await check("logged-out Video token is rejected", async () => {
+  const res = await fetch(`${base}/api/calls/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ call_id: "production-smoke" }),
+  });
+  if (res.status !== 401) throw new Error(`expected 401, got ${res.status}`);
+});
+
 await check("cron rejects missing bearer (wix)", async () => {
   const res = await fetch(`${base}/api/cron/wix-contacts-sync`);
   if (res.status !== 401) throw new Error(`expected 401, got ${res.status}`);

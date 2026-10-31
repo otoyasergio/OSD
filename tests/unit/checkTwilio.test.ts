@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const doctorPath = resolve(process.cwd(), "scripts/check-twilio.mjs");
@@ -14,6 +15,11 @@ const configuredEnv = {
 };
 
 describe("Twilio readiness check", () => {
+  it("uses a distinct Voice fixture number from the Wix SMS number", () => {
+    const source = readFileSync(fetchFixture, "utf8");
+    expect(source).not.toContain("+16474241088");
+  });
+
   it("checks Voice and Video without inspecting the retired SMS surface", () => {
     const result = spawnSync(process.execPath, [doctorPath], {
       encoding: "utf8",
@@ -53,6 +59,16 @@ describe("Twilio readiness check", () => {
     expect(output).toContain(
       "voice webhook → https://service.torontomoto.com/api/twilio/voice/inbound"
     );
+    expect(output).toContain(
+      "status callback → https://service.torontomoto.com/api/twilio/voice/status"
+    );
+    expect(output).toContain(
+      "Voice URL → https://service.torontomoto.com/api/twilio/voice/outbound"
+    );
+    expect(output).toContain(
+      "Status Callback URL → https://service.torontomoto.com/api/twilio/voice/status"
+    );
+    expect(output).toContain("+14165550123 (Toronto Voice)");
     expect(output).toContain("+18885550199 (Unrelated toll-free)");
     expect(output).not.toContain("FAIL");
     expect(output).not.toContain("voice is not routed anywhere");
@@ -73,6 +89,56 @@ describe("Twilio readiness check", () => {
     expect(result.status).toBe(1);
     expect(output).toContain(
       "no owned phone number routes inbound Voice to https://service.torontomoto.com/api/twilio/voice/inbound"
+    );
+  });
+
+  it("fails when the production origin is missing because callback URLs cannot be verified", () => {
+    const result = spawnSync(process.execPath, ["--import", fetchFixture, doctorPath], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...configuredEnv,
+        NEXT_PUBLIC_APP_URL: "",
+      },
+    });
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    expect(result.status).toBe(1);
+    expect(output).toMatch(/NEXT_PUBLIC_APP_URL.*required.*Voice callback/i);
+  });
+
+  it("fails if the Wix-owned SMS number appears in the Twilio account", () => {
+    const result = spawnSync(process.execPath, ["--import", fetchFixture, doctorPath], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...configuredEnv,
+        TWILIO_TEST_OWNED_NUMBER: "+16474241088",
+      },
+    });
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    expect(result.status).toBe(1);
+    expect(output).toMatch(/647-424-1088.*must remain in Wix/i);
+  });
+
+  it.each([
+    ["number", "TWILIO_TEST_BAD_NUMBER_STATUS"],
+    ["TwiML app", "TWILIO_TEST_BAD_APP_STATUS"],
+  ])("fails when the %s Voice status callback is not exact", (_name, flag) => {
+    const result = spawnSync(process.execPath, ["--import", fetchFixture, doctorPath], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...configuredEnv,
+        [flag]: "1",
+      },
+    });
+
+    const output = `${result.stdout}\n${result.stderr}`;
+    expect(result.status).toBe(1);
+    expect(output).toContain(
+      "expected https://service.torontomoto.com/api/twilio/voice/status"
     );
   });
 });

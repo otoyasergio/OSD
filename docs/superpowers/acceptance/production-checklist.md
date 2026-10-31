@@ -104,6 +104,9 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 - [ ] Webhook signature keys configured; Wix secret set if bookings used
 - [ ] Wix API key has Contacts read/manage, Bookings read, and Inbox read/manage
 - [ ] 647-424-1088 remains in Wix; staff own all replies in Wix Inbox (see §8)
+- [ ] Before SMS cutover, remove `TWILIO_MESSAGING_SERVICE_SID` and
+      `TWILIO_FROM_NUMBER` from Vercel Production; retain all Twilio Voice/Video
+      credentials
 - [ ] Wix Inbox SMS canary passed before `WIX_INBOX_SMS_ENABLED=1` is set in Production
 - [ ] Twilio Voice/Video variables are set; all Voice webhook URLs match `NEXT_PUBLIC_APP_URL`
 - [ ] Migration `037_customer_sms_opt_out` applied
@@ -135,7 +138,9 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 ## 7. Rollback / incident basics
 
 1. Prefer **forward fixes** (new migration) over rewriting applied SQL.
-2. App rollback: redeploy previous Vercel deployment.
+2. App rollback generally uses a known-good deployment. For this Wix SMS
+   release, do not restore an immutable pre-cutover deployment: disable Wix SMS
+   and deploy current `main` as documented in the Wix operations runbook.
 3. Auth lockout: Supabase Dashboard → Authentication password reset; ensure `app_user.status = 'active'`.
 4. Compromised webhook: rotate secrets; see [`SECURITY.md`](../../../SECURITY.md).
 
@@ -187,7 +192,12 @@ Twilio is retained for Voice and Video. Required server values are
 4. In **Settings → Locations**, set **Shop phone** to that Voice number's E.164.
 5. Smoke unsigned `POST /api/twilio/voice/inbound`: expect **401**, or **503**
    when `TWILIO_AUTH_TOKEN` is absent. Logged-out
-   `POST /api/calls/voice-token` must return **401**.
+   `POST /api/calls/voice-token` and Video `POST /api/calls/token` must return
+   **401**.
+6. Run a controlled manual smoke after automated checks: place an inbound Voice
+   call to the distinct Twilio Voice number, place an outbound Voice call from
+   the browser, and complete a Video call between two authorized staff
+   sessions. Confirm call status records close for both Voice directions.
 
 No call recording or voicemail audio is enabled in v1. Missed inbound calls
 still log and play the configured missed-call prompt.
