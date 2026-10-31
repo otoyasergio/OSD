@@ -166,6 +166,29 @@ export function isWithinWixContactsSyncWindow(now: Date = new Date()): boolean {
   return isWithinShopCronWindow(now);
 }
 
+/** Local hour when the Friday shop report email goes out (8:00 p.m.). */
+export const FRIDAY_SHOP_REPORT_HOUR = 20;
+
+/**
+ * True during the 8:00 p.m. America/Toronto hour on Friday.
+ * Vercel cron is UTC, so the route is scheduled at both Saturday 00:00 UTC
+ * and Saturday 01:00 UTC and this gate keeps a single send across DST.
+ */
+export function isFridayShopReportHour(now: Date = new Date()): boolean {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: SHOP_TIMEZONE,
+    weekday: "short",
+  }).format(now);
+  const hour = Number(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: SHOP_TIMEZONE,
+      hour: "2-digit",
+      hourCycle: "h23",
+    }).format(now)
+  );
+  return weekday === "Fri" && hour === FRIDAY_SHOP_REPORT_HOUR;
+}
+
 /** YYYY-MM-DD calendar date in America/Toronto. */
 export function shopDateKey(value: string | Date | null | undefined): string {
   const date = toDate(value);
@@ -296,6 +319,43 @@ export function getShopWeekRange(anchor: string | Date = new Date()): ShopWeekRa
     startDateKey,
     endDateKey,
     dateKeys,
+  };
+}
+
+export type FridayShopReportSpan = {
+  /** Monday 00:00:00.000 America/Toronto. Inclusive. */
+  startUtc: Date;
+  /** Friday 20:00:00.000 America/Toronto. Inclusive. */
+  endUtc: Date;
+  startDateKey: string;
+  endDateKey: string;
+};
+
+function fridayShopReportSpan(mondayKey: string): FridayShopReportSpan {
+  const fridayKey = addDaysToDateKey(mondayKey, 4);
+  const endUtc = parseShopLocalDateTimeInput(`${fridayKey}T20:00:00`);
+  if (!endUtc) throw new Error(`Invalid Friday report end: ${fridayKey}`);
+  return {
+    startUtc: shopMidnightFromDateKey(mondayKey),
+    endUtc,
+    startDateKey: mondayKey,
+    endDateKey: fridayKey,
+  };
+}
+
+/**
+ * Monday 00:00 through Friday 20:00 America/Toronto for the week containing
+ * `anchor`, plus the same span seven days earlier.
+ */
+export function getFridayShopReportWindow(anchor: string | Date = new Date()): {
+  current: FridayShopReportSpan;
+  previous: FridayShopReportSpan;
+} {
+  const date = toDate(anchor) ?? new Date();
+  const week = getShopWeekRange(date);
+  return {
+    current: fridayShopReportSpan(week.startDateKey),
+    previous: fridayShopReportSpan(addDaysToDateKey(week.startDateKey, -7)),
   };
 }
 

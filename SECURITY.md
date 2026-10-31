@@ -20,6 +20,7 @@ verify signatures / secrets or fail closed.
 | `POST /api/wix/webhooks/contacts`    | `Authorization: Bearer ${WIX_WEBHOOK_SECRET}` — **fail closed** if secret unset                                                 |
 | `GET /api/cron/parts-canada-sync`    | `Authorization: Bearer ${CRON_SECRET}` only (no query-string secret)                                                            |
 | `GET /api/cron/wix-contacts-sync`    | `Authorization: Bearer ${CRON_SECRET}` only (no query-string secret)                                                            |
+| `GET /api/cron/weekly-shop-report`   | `Authorization: Bearer ${CRON_SECRET}` only (no query-string secret). Friday 8:00 p.m. America/Toronto.                         |
 
 Set `NEXT_PUBLIC_APP_URL` to the exact public HTTPS origin registered with Square/Twilio
 so signature URLs match.

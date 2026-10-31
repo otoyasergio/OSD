@@ -120,11 +120,21 @@ test.describe("webhook security", () => {
     expect([401, 500]).toContain(response.status());
   });
 
+  test("weekly shop report cron rejects missing bearer", async ({ request }) => {
+    const response = await request.get("/api/cron/weekly-shop-report");
+    expect([401, 500]).toContain(response.status());
+  });
+
   test("health endpoint reports integration readiness", async ({ request }) => {
     const response = await request.get("/api/health");
     const body = (await response.json()) as {
       ok: boolean;
-      integrations: { supabase: string; cron: string; wix?: string; partsCanada?: string };
+      integrations: {
+        supabase: string;
+        cron: string;
+        wix?: string;
+        partsCanada?: string;
+      };
     };
 
     // CI uses placeholder Supabase + no Wix/Parts Canada/CRON secrets, so the
