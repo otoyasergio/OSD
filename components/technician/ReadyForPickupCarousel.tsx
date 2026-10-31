@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRef } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { useCollapsedSection } from "@/lib/control-center/collapsedSections";
 import type { WaitingStageBike } from "@/lib/services/readyForPickup";
 import { formatElapsedTimer } from "@/lib/control-center/formatTimer";
 import { useNowTick } from "@/lib/client/useNowTick";
@@ -52,6 +53,11 @@ export type WaitingBikeCarouselProps = {
   lateAfterMs?: number;
   /** When set, section is a drop target and cards are draggable. */
   dnd?: WaitingBikeCarouselDnd;
+  /**
+   * Control Center section id. When set, the row can shrink to its title
+   * and that choice is remembered in this browser.
+   */
+  sectionId?: string;
 };
 
 function CardBody({
@@ -237,9 +243,11 @@ export function WaitingBikeCarousel({
   warnAfterMs = PICKUP_YELLOW_MS,
   lateAfterMs = PICKUP_RED_MS,
   dnd,
+  sectionId,
 }: WaitingBikeCarouselProps) {
   const carouselRef = useRef<HTMLDivElement>(null);
-  const now = useNowTick(items.length > 0);
+  const { collapsible, collapsed, toggle } = useCollapsedSection(sectionId);
+  const now = useNowTick(!collapsed && items.length > 0);
   const { setNodeRef, isOver } = useDroppable({
     id: dnd?.droppableId ?? `${title}-disabled-drop`,
     disabled: !dnd || Boolean(dnd.dropDisabled),
@@ -251,10 +259,19 @@ export function WaitingBikeCarousel({
 
   const sectionClass = [
     styles.section,
+    collapsed ? styles.sectionCollapsed : "",
     dnd && isOver && !dnd.dropDisabled ? styles.sectionOver : "",
   ]
     .filter(Boolean)
     .join(" ");
+
+  const titleRow = (
+    <div className={styles.titleRow}>
+      <h2 className={styles.title}>{title}</h2>
+      <span className="shop-board-column-count">{items.length}</span>
+      {subtitle ? <span className={styles.subtitle}>{subtitle}</span> : null}
+    </div>
+  );
 
   return (
     <section
@@ -262,13 +279,31 @@ export function WaitingBikeCarousel({
       className={sectionClass}
       aria-label={title}
     >
-      <div className={styles.header}>
-        <div className={styles.titleRow}>
-          <h2 className={styles.title}>{title}</h2>
-          <span className="shop-board-column-count">{items.length}</span>
-          {subtitle ? <span className={styles.subtitle}>{subtitle}</span> : null}
-        </div>
-        {items.length > 2 ? (
+      <div
+        className={[styles.header, collapsed ? styles.headerCollapsed : ""]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        {collapsible ? (
+          <button
+            type="button"
+            className={styles.collapseToggle}
+            aria-expanded={!collapsed}
+            aria-controls={sectionId ? `cc-section-${sectionId}` : undefined}
+            onClick={toggle}
+          >
+            <ChevronDown
+              size={18}
+              strokeWidth={2.25}
+              aria-hidden
+              className={collapsed ? styles.chevronCollapsed : styles.chevron}
+            />
+            {titleRow}
+          </button>
+        ) : (
+          titleRow
+        )}
+        {!collapsed && items.length > 2 ? (
           <div className={styles.scrollBtns}>
             <button
               type="button"
@@ -289,10 +324,19 @@ export function WaitingBikeCarousel({
           </div>
         ) : null}
       </div>
-      {items.length === 0 ? (
-        <div className={styles.empty}>{emptyMessage}</div>
+      {collapsed ? null : items.length === 0 ? (
+        <div
+          id={sectionId ? `cc-section-${sectionId}` : undefined}
+          className={styles.empty}
+        >
+          {emptyMessage}
+        </div>
       ) : (
-        <div ref={carouselRef} className={styles.carousel}>
+        <div
+          id={sectionId ? `cc-section-${sectionId}` : undefined}
+          ref={carouselRef}
+          className={styles.carousel}
+        >
           {items.map((item) =>
             dnd ? (
               <DraggableBikeCard
@@ -331,13 +375,15 @@ export function WaitingBikeCarousel({
 type StageCarouselProps = {
   items: WaitingStageBike[];
   dnd?: WaitingBikeCarouselDnd;
+  sectionId?: string;
 };
 
 /** Tech-floor / CC pickup queue — thin wrapper over WaitingBikeCarousel. */
-export function ReadyForPickupCarousel({ items, dnd }: StageCarouselProps) {
+export function ReadyForPickupCarousel({ items, dnd, sectionId }: StageCarouselProps) {
   return (
     <WaitingBikeCarousel
       items={items}
+      sectionId={sectionId}
       title="Ready for pickup"
       subtitle={dnd ? "Drop to mark ready · waiting on customer" : "Waiting on customer"}
       emptyMessage="No bikes waiting for pickup."
@@ -351,10 +397,15 @@ export function ReadyForPickupCarousel({ items, dnd }: StageCarouselProps) {
 }
 
 /** Control Center — bikes in `waiting_for_customer_approval` (above parts). */
-export function WaitingForApprovalCarousel({ items, dnd }: StageCarouselProps) {
+export function WaitingForApprovalCarousel({
+  items,
+  dnd,
+  sectionId,
+}: StageCarouselProps) {
   return (
     <WaitingBikeCarousel
       items={items}
+      sectionId={sectionId}
       title="Waiting for approval"
       subtitle={
         dnd ? "Drop to set waiting for approval" : "Customer has not approved yet"
@@ -370,10 +421,11 @@ export function WaitingForApprovalCarousel({ items, dnd }: StageCarouselProps) {
 }
 
 /** Control Center — bikes in `waiting_for_parts` (above QC). */
-export function WaitingForPartsCarousel({ items, dnd }: StageCarouselProps) {
+export function WaitingForPartsCarousel({ items, dnd, sectionId }: StageCarouselProps) {
   return (
     <WaitingBikeCarousel
       items={items}
+      sectionId={sectionId}
       title="Waiting for parts"
       subtitle={dnd ? "Drop to set waiting for parts" : "Parts needed or on order"}
       emptyMessage="No bikes waiting for parts."
@@ -387,10 +439,11 @@ export function WaitingForPartsCarousel({ items, dnd }: StageCarouselProps) {
 }
 
 /** Control Center — bikes in `quality_check` awaiting QC. */
-export function ReadyForQcCarousel({ items, dnd }: StageCarouselProps) {
+export function ReadyForQcCarousel({ items, dnd, sectionId }: StageCarouselProps) {
   return (
     <WaitingBikeCarousel
       items={items}
+      sectionId={sectionId}
       title="Final inspection"
       subtitle={dnd ? "Drop when jobs are complete" : "Waiting on final inspection"}
       emptyMessage="No bikes waiting for final inspection."
@@ -404,10 +457,15 @@ export function ReadyForQcCarousel({ items, dnd }: StageCarouselProps) {
 }
 
 /** Control Center — bikes in `safety_check` awaiting inspection. */
-export function ReadyForSafetyInspectionCarousel({ items, dnd }: StageCarouselProps) {
+export function ReadyForSafetyInspectionCarousel({
+  items,
+  dnd,
+  sectionId,
+}: StageCarouselProps) {
   return (
     <WaitingBikeCarousel
       items={items}
+      sectionId={sectionId}
       title="Ready for safety"
       subtitle={dnd ? "Drop for head-tech safety check" : "Waiting on head tech"}
       emptyMessage="No bikes waiting for safety."
@@ -421,10 +479,11 @@ export function ReadyForSafetyInspectionCarousel({ items, dnd }: StageCarouselPr
 }
 
 /** Control Center — finished bikes stored in the building (drop to store). */
-export function StorageCarousel({ items, dnd }: StageCarouselProps) {
+export function StorageCarousel({ items, dnd, sectionId }: StageCarouselProps) {
   return (
     <WaitingBikeCarousel
       items={items}
+      sectionId={sectionId}
       title="Storage"
       subtitle={dnd ? "Drop when work is finished" : "Bikes in storage"}
       emptyMessage="No bikes in storage."
@@ -438,10 +497,11 @@ export function StorageCarousel({ items, dnd }: StageCarouselProps) {
 }
 
 /** Control Center — recently completed / released bikes (drop to complete). */
-export function CompleteCarousel({ items, dnd }: StageCarouselProps) {
+export function CompleteCarousel({ items, dnd, sectionId }: StageCarouselProps) {
   return (
     <WaitingBikeCarousel
       items={items}
+      sectionId={sectionId}
       title="Complete"
       subtitle={dnd ? "Drop to mark picked up / complete" : "Recently completed"}
       emptyMessage="No recently completed bikes."
@@ -455,10 +515,11 @@ export function CompleteCarousel({ items, dnd }: StageCarouselProps) {
 }
 
 /** Control Center — bikes parked as insurance claims (below Complete). */
-export function InsuranceBikesCarousel({ items, dnd }: StageCarouselProps) {
+export function InsuranceBikesCarousel({ items, dnd, sectionId }: StageCarouselProps) {
   return (
     <WaitingBikeCarousel
       items={items}
+      sectionId={sectionId}
       title="Insurance bikes"
       subtitle={
         dnd ? "Drop to file as an insurance bike" : "Insurance claims parked here"

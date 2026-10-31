@@ -16,7 +16,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { useBoardDragSensors } from "@/lib/client/useBoardDragSensors";
-import { ChevronLeft, ChevronRight, Flag, Play } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Flag, Play } from "lucide-react";
 import {
   dispatchWorkOrderToTechnicianAction,
   openWorkOrderAction,
@@ -35,6 +35,7 @@ import { canParkAnyBikeInStorage, canRearrangeControlCenter } from "@/lib/permis
 import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
 import { createClient } from "@/lib/database/supabase-browser";
 import type { WorkOrderStatus } from "@/lib/database/types";
+import { useCollapsedSection } from "@/lib/control-center/collapsedSections";
 import { controlCenterCohortHref } from "@/lib/control-center/cohorts";
 import {
   canAutoScrollControlCenter,
@@ -351,6 +352,8 @@ const TechCard = memo(function TechCard({
     disabled: !canReceiveDrops,
   });
   const signedIn = tech.availability !== "off";
+  const { collapsed, toggle } = useCollapsedSection(`tech:${tech.user_id}`);
+  const techName = `${tech.first_name} ${tech.last_name}`;
 
   return (
     <section
@@ -358,24 +361,43 @@ const TechCard = memo(function TechCard({
       className={[
         "cc-tech-card",
         `cc-tech-card--${tech.availability}`,
+        collapsed ? "cc-tech-card--collapsed" : "",
         isOver && canReceiveDrops ? "cc-tech-card--over" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
       <div className="cc-tech-header">
-        <div className="cc-tech-avatar">
-          {initials(tech.first_name, tech.last_name)}
-          <span className={`cc-tech-avail-dot cc-tech-avail-dot--${tech.availability}`} />
-        </div>
-        <div className="cc-tech-identity">
-          <p className="cc-tech-name">
-            {tech.first_name} {tech.last_name}
-          </p>
-          <p className="cc-tech-role">
-            {tech.role === "head_tech" ? "Head tech" : "Technician"}
-          </p>
-        </div>
+        <button
+          type="button"
+          className="cc-collapse-toggle"
+          aria-expanded={!collapsed}
+          aria-controls={`cc-section-tech-${tech.user_id}`}
+          onClick={toggle}
+        >
+          <ChevronDown
+            size={18}
+            strokeWidth={2.25}
+            aria-hidden
+            className={
+              collapsed
+                ? "cc-collapse-chevron cc-collapse-chevron--collapsed"
+                : "cc-collapse-chevron"
+            }
+          />
+          <span className="cc-tech-avatar">
+            {initials(tech.first_name, tech.last_name)}
+            <span
+              className={`cc-tech-avail-dot cc-tech-avail-dot--${tech.availability}`}
+            />
+          </span>
+          <span className="cc-tech-identity">
+            <span className="cc-tech-name">{techName}</span>
+            <span className="cc-tech-role">
+              {tech.role === "head_tech" ? "Head tech" : "Technician"}
+            </span>
+          </span>
+        </button>
         {canClockStaff ? (
           <label
             className={`cc-sign-in-toggle cc-sign-in-toggle--header${signedIn ? " is-on" : ""}`}
@@ -411,23 +433,25 @@ const TechCard = memo(function TechCard({
         )}
       </div>
       <TechOldestMeta bikes={tech.assigned_bikes} />
-      <div className="cc-tech-drop">
-        {tech.assigned_bikes.length === 0 ? (
-          <div className="cc-tech-empty">Drop a bike here</div>
-        ) : (
-          tech.assigned_bikes.map((bike) => (
-            <MiniBikeCard
-              key={bike.work_order_id}
-              bike={bike}
-              canOpen={canAssign}
-              canDrag={canDragBikes}
-              onStartWork={onStartWork}
-              onOpenWork={onOpenWork}
-              dragging={activeId === bike.work_order_id}
-            />
-          ))
-        )}
-      </div>
+      {collapsed ? null : (
+        <div id={`cc-section-tech-${tech.user_id}`} className="cc-tech-drop">
+          {tech.assigned_bikes.length === 0 ? (
+            <div className="cc-tech-empty">Drop a bike here</div>
+          ) : (
+            tech.assigned_bikes.map((bike) => (
+              <MiniBikeCard
+                key={bike.work_order_id}
+                bike={bike}
+                canOpen={canAssign}
+                canDrag={canDragBikes}
+                onStartWork={onStartWork}
+                onOpenWork={onOpenWork}
+                dragging={activeId === bike.work_order_id}
+              />
+            ))
+          )}
+        </div>
+      )}
     </section>
   );
 });
@@ -781,6 +805,7 @@ export function ControlCenterShell({
     id: POOL_ID,
     disabled: !canPlaceOnTech,
   });
+  const { collapsed: poolCollapsed, toggle: togglePool } = useCollapsedSection("pool");
 
   const stageQueues = useMemo(
     () =>
@@ -1493,60 +1518,93 @@ export function ControlCenterShell({
       >
         <section
           ref={setPoolRef}
-          className={["cc-pool", poolOver && canPlaceOnTech ? "cc-pool--over" : ""]
+          className={[
+            "cc-pool",
+            poolCollapsed ? "cc-pool--collapsed" : "",
+            poolOver && canPlaceOnTech ? "cc-pool--over" : "",
+          ]
             .filter(Boolean)
             .join(" ")}
         >
-          <div className="cc-pool-header">
-            <div className="cc-pool-title-row">
-              <h2 className="cc-pool-title">Waiting for tech</h2>
-              <span className="shop-board-column-count">{visiblePool.length}</span>
-              <span className="cc-pool-caption">
-                {canAssign
-                  ? "Unassigned — drag onto a tech to dispatch"
-                  : canRearrange
-                    ? "Drag a bike onto a tech or into a category"
-                    : canDragDispatchBike
-                      ? "Drag a bike to Storage"
-                      : "Unassigned bikes (view only — you cannot assign)"}
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: "0.4rem" }}>
-              <button
-                type="button"
-                className="cc-scroll-btn"
-                aria-label="Scroll left"
-                onClick={() => scrollCarousel(-1)}
-              >
-                <ChevronLeft size={18} strokeWidth={2.25} />
-              </button>
-              <button
-                type="button"
-                className="cc-scroll-btn"
-                aria-label="Scroll right"
-                onClick={() => scrollCarousel(1)}
-              >
-                <ChevronRight size={18} strokeWidth={2.25} />
-              </button>
-            </div>
-          </div>
-          <div ref={carouselRef} className="cc-carousel">
-            {visiblePool.length === 0 ? (
-              <div className="cc-pool-empty">
-                All bikes are dispatched. Drag one back here to unassign.
+          <div
+            className={[
+              "cc-pool-header",
+              poolCollapsed ? "cc-pool-header--collapsed" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <button
+              type="button"
+              className="cc-collapse-toggle"
+              aria-expanded={!poolCollapsed}
+              aria-controls="cc-section-pool"
+              onClick={togglePool}
+            >
+              <ChevronDown
+                size={18}
+                strokeWidth={2.25}
+                aria-hidden
+                className={
+                  poolCollapsed
+                    ? "cc-collapse-chevron cc-collapse-chevron--collapsed"
+                    : "cc-collapse-chevron"
+                }
+              />
+              <div className="cc-pool-title-row">
+                <h2 className="cc-pool-title">Waiting for tech</h2>
+                <span className="shop-board-column-count">{visiblePool.length}</span>
+                <span className="cc-pool-caption">
+                  {canAssign
+                    ? "Unassigned — drag onto a tech to dispatch"
+                    : canRearrange
+                      ? "Drag a bike onto a tech or into a category"
+                      : canDragDispatchBike
+                        ? "Drag a bike to Storage"
+                        : "Unassigned bikes (view only — you cannot assign)"}
+                </span>
               </div>
-            ) : (
-              visiblePool.map((bike) => (
-                <PoolBikeCard
-                  key={bike.work_order_id}
-                  bike={bike}
-                  canDrag={canDragDispatchBike}
-                  dragging={activeId === bike.work_order_id}
-                  onOpenWork={handleOpenWork}
-                />
-              ))
+            </button>
+            {poolCollapsed ? null : (
+              <div style={{ display: "flex", gap: "0.4rem" }}>
+                <button
+                  type="button"
+                  className="cc-scroll-btn"
+                  aria-label="Scroll left"
+                  onClick={() => scrollCarousel(-1)}
+                >
+                  <ChevronLeft size={18} strokeWidth={2.25} />
+                </button>
+                <button
+                  type="button"
+                  className="cc-scroll-btn"
+                  aria-label="Scroll right"
+                  onClick={() => scrollCarousel(1)}
+                >
+                  <ChevronRight size={18} strokeWidth={2.25} />
+                </button>
+              </div>
             )}
           </div>
+          {poolCollapsed ? null : (
+            <div id="cc-section-pool" ref={carouselRef} className="cc-carousel">
+              {visiblePool.length === 0 ? (
+                <div className="cc-pool-empty">
+                  All bikes are dispatched. Drag one back here to unassign.
+                </div>
+              ) : (
+                visiblePool.map((bike) => (
+                  <PoolBikeCard
+                    key={bike.work_order_id}
+                    bike={bike}
+                    canDrag={canDragDispatchBike}
+                    dragging={activeId === bike.work_order_id}
+                    onOpenWork={handleOpenWork}
+                  />
+                ))
+              )}
+            </div>
+          )}
         </section>
 
         <div className="cc-tech-grid">
@@ -1575,6 +1633,7 @@ export function ControlCenterShell({
         <div className="cc-stage-queues">
           <WaitingForApprovalCarousel
             items={approvalQueue}
+            sectionId="approval"
             dnd={{
               ...stageDndBase,
               droppableId: "approval",
@@ -1583,6 +1642,7 @@ export function ControlCenterShell({
           />
           <WaitingForPartsCarousel
             items={partsQueue}
+            sectionId="parts"
             dnd={{
               ...stageDndBase,
               droppableId: "parts",
@@ -1591,6 +1651,7 @@ export function ControlCenterShell({
           />
           <ReadyForQcCarousel
             items={qcQueue}
+            sectionId="qc"
             dnd={{
               ...stageDndBase,
               droppableId: "qc",
@@ -1599,6 +1660,7 @@ export function ControlCenterShell({
           />
           <ReadyForSafetyInspectionCarousel
             items={safetyQueue}
+            sectionId="safety"
             dnd={{
               ...stageDndBase,
               droppableId: "safety",
@@ -1607,6 +1669,7 @@ export function ControlCenterShell({
           />
           <ReadyForPickupCarousel
             items={pickupQueue}
+            sectionId="pickup"
             dnd={{
               ...stageDndBase,
               droppableId: "pickup",
@@ -1615,6 +1678,7 @@ export function ControlCenterShell({
           />
           <StorageCarousel
             items={storageQueue}
+            sectionId="storage"
             dnd={{
               ...stageDndBase,
               droppableId: "storage",
@@ -1623,6 +1687,7 @@ export function ControlCenterShell({
           />
           <CompleteCarousel
             items={completeQueue}
+            sectionId="complete"
             dnd={{
               ...stageDndBase,
               dragEnabled: canDragCompleted,
@@ -1632,6 +1697,7 @@ export function ControlCenterShell({
           />
           <InsuranceBikesCarousel
             items={insuranceQueue}
+            sectionId="insurance"
             dnd={{
               ...stageDndBase,
               droppableId: "insurance",
