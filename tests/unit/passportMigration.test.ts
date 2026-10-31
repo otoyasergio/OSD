@@ -90,4 +90,17 @@ describe("vehicle passport migration", () => {
       "GRANT EXECUTE ON FUNCTION public.revoke_vehicle_passport_share"
     );
   });
+
+  it("revokes active grants inside every motorcycle owner change transaction", () => {
+    const sql = vehiclePassportMigration();
+
+    expect(sql).toContain(
+      "CREATE OR REPLACE FUNCTION public.vehicle_passport_revoke_on_owner_change"
+    );
+    expect(sql).toContain("AFTER UPDATE OF customer_id ON public.motorcycle");
+    expect(sql).toContain("revocation_reason = 'ownership_transfer'");
+    expect(sql).toContain(
+      "REVOKE ALL ON FUNCTION public.vehicle_passport_revoke_on_owner_change()"
+    );
+  });
 });

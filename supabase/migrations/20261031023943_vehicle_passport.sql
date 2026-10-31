@@ -73,13 +73,32 @@ CREATE TABLE public.vehicle_passport_share (
   revoked_at timestamptz,
   revoked_by_user_id uuid
     REFERENCES public.app_user(user_id) ON DELETE SET NULL,
+  revocation_reason text
+    CHECK (
+      revocation_reason IS NULL
+      OR revocation_reason IN (
+        'manual',
+        'replaced',
+        'superseded',
+        'ownership_transfer'
+      )
+    ),
   created_by_user_id uuid
     REFERENCES public.app_user(user_id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT vehicle_passport_share_expiry_after_creation
     CHECK (expires_at > created_at),
-  CONSTRAINT vehicle_passport_share_revoker_present CHECK (
-    revoked_at IS NULL OR revoked_by_user_id IS NOT NULL
+  CONSTRAINT vehicle_passport_share_revocation_complete CHECK (
+    (
+      revoked_at IS NULL
+      AND revoked_by_user_id IS NULL
+      AND revocation_reason IS NULL
+    )
+    OR
+    (
+      revoked_at IS NOT NULL
+      AND revocation_reason IS NOT NULL
+    )
   )
 );
 
@@ -88,6 +107,48 @@ CREATE INDEX idx_vehicle_passport_share_active_token
   WHERE revoked_at IS NULL;
 CREATE INDEX idx_vehicle_passport_share_snapshot
   ON public.vehicle_passport_share (snapshot_id, created_at DESC);
+
+-- Ownership is a mutable pointer on motorcycle. Revoke all current share
+-- grants in the same transaction whenever that pointer changes, regardless
+-- of which application path performed the transfer.
+CREATE OR REPLACE FUNCTION public.vehicle_passport_revoke_on_owner_change()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_actor_user_id uuid;
+BEGIN
+  IF OLD.customer_id IS NOT DISTINCT FROM NEW.customer_id THEN
+    RETURN NEW;
+  END IF;
+
+  v_actor_user_id := public.current_app_user_id();
+  UPDATE public.vehicle_passport_share AS share
+  SET
+    revoked_at = now(),
+    revoked_by_user_id = v_actor_user_id,
+    revocation_reason = 'ownership_transfer'
+  FROM public.vehicle_passport_snapshot AS snapshot
+  JOIN public.vehicle_passport AS passport
+    ON passport.passport_id = snapshot.passport_id
+  WHERE share.snapshot_id = snapshot.snapshot_id
+    AND passport.motorcycle_id = NEW.motorcycle_id
+    AND share.revoked_at IS NULL;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.vehicle_passport_revoke_on_owner_change()
+  FROM PUBLIC, anon, authenticated;
+
+CREATE TRIGGER trg_vehicle_passport_revoke_on_owner_change
+  AFTER UPDATE OF customer_id ON public.motorcycle
+  FOR EACH ROW
+  WHEN (OLD.customer_id IS DISTINCT FROM NEW.customer_id)
+  EXECUTE FUNCTION public.vehicle_passport_revoke_on_owner_change();
 
 -- The payload and its evidence links are evidence. A snapshot may only move
 -- once from current to superseded; it can never be rewritten or deleted.
@@ -314,7 +375,8 @@ BEGIN
     UPDATE public.vehicle_passport_share
     SET
       revoked_at = v_issued_at,
-      revoked_by_user_id = v_actor_user_id
+      revoked_by_user_id = v_actor_user_id,
+      revocation_reason = 'superseded'
     WHERE snapshot_id = v_previous_snapshot_id
       AND revoked_at IS NULL;
   END IF;
@@ -417,7 +479,8 @@ BEGIN
   UPDATE public.vehicle_passport_share
   SET
     revoked_at = v_now,
-    revoked_by_user_id = v_actor_user_id
+    revoked_by_user_id = v_actor_user_id,
+    revocation_reason = 'replaced'
   WHERE snapshot_id = p_snapshot_id
     AND revoked_at IS NULL;
 
@@ -513,7 +576,8 @@ BEGIN
     UPDATE public.vehicle_passport_share
     SET
       revoked_at = now(),
-      revoked_by_user_id = v_actor_user_id
+      revoked_by_user_id = v_actor_user_id,
+      revocation_reason = 'manual'
     WHERE share_id = p_share_id;
 
     INSERT INTO public.audit_log (

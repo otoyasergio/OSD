@@ -671,6 +671,8 @@ export type Database = {
           expires_at: string;
           revoked_at: string | null;
           revoked_by_user_id: string | null;
+          revocation_reason:
+            "manual" | "replaced" | "superseded" | "ownership_transfer" | null;
           created_by_user_id: string | null;
           created_at: string;
         };
@@ -681,6 +683,8 @@ export type Database = {
           expires_at: string;
           revoked_at?: string | null;
           revoked_by_user_id?: string | null;
+          revocation_reason?:
+            "manual" | "replaced" | "superseded" | "ownership_transfer" | null;
           created_by_user_id?: string | null;
           created_at?: string;
         };
