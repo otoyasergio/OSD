@@ -146,6 +146,26 @@ describe("sendCustomerSms", () => {
     });
   });
 
+  it("does not sync again when a newly linked contact has a mismatched phone", async () => {
+    getWixContactV5.mockResolvedValue(wixContact({ e164: "+14165550100" }));
+
+    await expect(
+      sendCustomerSms({
+        customerId: "cust-1",
+        wixContactId: null,
+        to: "6475550100",
+        body: "Service update",
+        localOptedOutAt: null,
+      })
+    ).rejects.toThrow("WIX_SMS_PHONE_MISMATCH");
+
+    expect(syncCustomerToWix).toHaveBeenCalledOnce();
+    expect(syncCustomerToWix).toHaveBeenCalledWith("cust-1");
+    expect(getWixContactV5).toHaveBeenCalledOnce();
+    expect(getWixContactV5).toHaveBeenCalledWith(CONTACT_ID);
+    expect(sendWixInboxSms).not.toHaveBeenCalled();
+  });
+
   it("repairs a stale linked contact ID after Contacts V5 reports it missing", async () => {
     getWixContactV5
       .mockRejectedValueOnce(new Error("WIX_CONTACT_NOT_FOUND"))
