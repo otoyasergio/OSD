@@ -99,6 +99,45 @@ describe("toFormErrorMessage", () => {
   });
 
   it.each([
+    "WIX_SMS_PHONE_MISMATCH",
+    "WIX_SMS_PHONE_INVALID",
+    "WIX_SMS_SUBSCRIPTION_REQUIRED",
+    "WIX_SMS_UNDELIVERABLE",
+    "WIX_INBOX_SMS_NOT_CONFIGURED",
+    "WIX_INBOX_TIMEOUT",
+    "WIX_INBOX_API_ERROR",
+    "WIX_INBOX_SEND_UNCERTAIN",
+    "WIX_INBOX_INVALID_CONTACT_ID",
+    "WIX_INBOX_INVALID_CONVERSATION_ID",
+    "WIX_INBOX_INVALID_MESSAGE_BODY",
+    "WIX_INBOX_INVALID_MESSAGE_ID",
+    "WIX_INBOX_MALFORMED_RESPONSE",
+    "WIX_CONTACT_API_ERROR",
+    "WIX_CONTACT_TIMEOUT",
+    "WIX_CONTACT_INVALID_ID",
+    "WIX_CONTACT_MALFORMED_RESPONSE",
+  ])("maps Wix SMS error %s to stable staff-facing copy", (code) => {
+    const message = toFormErrorMessage(new Error(code));
+    expect(message).not.toBe(code);
+    expect(message).toMatch(/Wix|text|phone|SMS|customer/i);
+  });
+
+  it("directs staff to inspect Wix Inbox before retrying an uncertain send", () => {
+    const message = toFormErrorMessage(new Error("WIX_INBOX_SEND_UNCERTAIN"));
+    expect(message).toMatch(/inspect|check/i);
+    expect(message).toMatch(/Wix Inbox/i);
+    expect(message).toMatch(/before.*resend/i);
+    expect(message).not.toMatch(/idempoten|delivered/i);
+  });
+
+  it("directs SMS opt-out changes to authoritative Wix Contacts", () => {
+    const message = toFormErrorMessage(new Error("SMS_OPTED_OUT"));
+    expect(message).toMatch(/manage.*subscription.*Wix Contacts/i);
+    expect(message).toMatch(/replies.*only.*Wix Inbox/i);
+    expect(message).not.toMatch(/clear.*local|clear.*flag/i);
+  });
+
+  it.each([
     "ASK_OTOMOTO_PARENT_REQUIRES_ASSISTANT",
     "ASK_OTOMOTO_PARENT_USER_INVALID",
     "ASK_OTOMOTO_PARENT_USER_IMMUTABLE",

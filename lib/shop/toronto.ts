@@ -9,6 +9,7 @@ export const TORONTO_SHOP = {
   streetAddress: "99 River Street",
   fullAddress: "99 River Street, Toronto, ON M5A 3P4",
   phoneDisplay: "647-424-1088",
+  phoneE164: "+16474241088",
   hours: "Mon–Fri 12:00–19:00, Sat 10:00–16:00",
   sunday: "Sun closed",
 } as const;

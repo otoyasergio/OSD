@@ -3,9 +3,8 @@ import { createAdminClient } from "@/lib/database/supabase-admin";
 import { isPartsCanadaConfigured } from "@/lib/partsCanada/config";
 import { isSquareConfigured } from "@/lib/square/config";
 import { isGmailOAuthConfigured } from "@/lib/email/config";
-import { isTwilioConfigured } from "@/lib/twilio/config";
 import { isTwilioVoiceConfigured } from "@/lib/twilio/voiceConfig";
-import { isWixContactsConfigured } from "@/lib/wix/config";
+import { isWixContactsConfigured, isWixInboxSmsConfigured } from "@/lib/wix/config";
 import { askOtomotoHealthStatus } from "@/lib/diagnostics/health";
 import { summarizeIntegrationHealth } from "@/lib/services/healthStatus";
 
@@ -21,8 +20,8 @@ export async function GET() {
   const integrations: Record<string, IntegrationStatus> = {
     supabase: "missing",
     wix: isWixContactsConfigured() ? "ok" : "missing",
+    wixSms: isWixInboxSmsConfigured() ? "ok" : "missing",
     partsCanada: isPartsCanadaConfigured() ? "ok" : "missing",
-    twilioSms: isTwilioConfigured() ? "ok" : "missing",
     twilioVoice: isTwilioVoiceConfigured() ? "ok" : "missing",
     square: isSquareConfigured() ? "ok" : "missing",
     askOtomoto: askOtomotoHealthStatus(),

@@ -47,10 +47,9 @@ export async function GET(request: Request): Promise<Response> {
         process.env.TWILIO_AUTH_TOKEN,
         process.env.TWILIO_API_KEY_SID,
         process.env.TWILIO_API_KEY_SECRET,
-        process.env.TWILIO_MESSAGING_SERVICE_SID,
-        process.env.TWILIO_FROM_NUMBER,
         process.env.TWILIO_TWIML_APP_SID
       ),
+      wixSmsConfigured: process.env.WIX_INBOX_SMS_ENABLED === "1",
       resendConfigured: configured(process.env.RESEND_API_KEY),
       gmailConfigured: isGmailOAuthConfigured(),
     },

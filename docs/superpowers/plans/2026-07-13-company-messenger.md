@@ -1,5 +1,9 @@
 # Company Messenger Implementation Plan
 
+> **Historical note:** References below to a Twilio customer-SMS stack are
+> superseded. Twilio remains for Voice/Video; current customer SMS uses Wix
+> Inbox. See [`docs/ops/wix-inbox-sms.md`](../../ops/wix-inbox-sms.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship an internal, iMessage-style staff messenger — 1:1 + group chat, read receipts, typing, reply, reactions, photos, voice notes, edit/unsend/delete-for-me, search/mute/pin, and Twilio Video voice/video calls — fully separate from customer SMS.

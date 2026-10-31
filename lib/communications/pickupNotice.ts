@@ -1,7 +1,7 @@
 import { clientDisplayName } from "@/lib/customers/displayName";
+import { canAttemptCustomerSms } from "@/lib/communications/customerSmsAvailability";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import { isPickupBoardColumn } from "@/lib/status/transitions";
-import { normalizePhoneE164 } from "@/lib/twilio/phone";
 
 export type PickupNoticeBlocker = "location" | "sms_opt_out" | "phone" | "email";
 
@@ -37,8 +37,14 @@ export function pickupNoticeBlockers(input: {
   const blockers: PickupNoticeBlocker[] = [];
   const locationCode = input.locationCode?.trim().toUpperCase() ?? "";
   if (locationCode !== TORONTO_SHOP.locationCode) blockers.push("location");
-  if (input.smsOptedOut) blockers.push("sms_opt_out");
-  else if (!normalizePhoneE164(input.phone)) blockers.push("phone");
+  if (
+    !canAttemptCustomerSms({
+      phone: input.phone,
+      smsOptedOut: input.smsOptedOut,
+    })
+  ) {
+    blockers.push("phone");
+  }
   if (!input.email?.trim()) blockers.push("email");
   return blockers;
 }

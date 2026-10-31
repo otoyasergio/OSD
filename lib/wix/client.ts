@@ -2,6 +2,9 @@ import { getWixContactsConfig } from "@/lib/wix/config";
 import type { WixContact, WixContactInfo } from "@/lib/wix/types";
 
 const WIX_API_BASE = "https://www.wixapis.com";
+const WIX_CONTACT_TIMEOUT_MS = 20_000;
+const WIX_GUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type WixErrorBody = {
   message?: string;
@@ -36,6 +39,51 @@ async function readWixError(response: Response): Promise<string> {
     );
   } catch {
     return `WIX_HTTP_${response.status}`;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "TimeoutError" || error.name === "AbortError")
+  );
+}
+
+/**
+ * Contacts V5 is used for live SMS consent checks, so its failures must never
+ * expose provider response bodies. Keep V4 on the existing transport above.
+ */
+async function wixV5Fetch(path: string): Promise<unknown> {
+  const { apiKey, siteId } = getWixContactsConfig();
+  const headers = new Headers();
+  headers.set("Authorization", apiKey);
+  headers.set("wix-site-id", siteId);
+  headers.set("Content-Type", "application/json");
+
+  let response: Response;
+  try {
+    response = await fetch(`${WIX_API_BASE}${path}`, {
+      headers,
+      cache: "no-store",
+      signal: AbortSignal.timeout(WIX_CONTACT_TIMEOUT_MS),
+    });
+  } catch (error) {
+    throw new Error(
+      isTimeoutError(error) ? "WIX_CONTACT_TIMEOUT" : "WIX_CONTACT_API_ERROR"
+    );
+  }
+
+  if (response.status === 404) throw new Error("WIX_CONTACT_NOT_FOUND");
+  if (!response.ok) throw new Error("WIX_CONTACT_API_ERROR");
+
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    throw new Error("WIX_CONTACT_MALFORMED_RESPONSE");
   }
 }
 
@@ -130,6 +178,108 @@ export async function getWixContact(contactId: string): Promise<WixContact> {
   if (!response.ok) throw new Error(await readWixError(response));
   const body = (await response.json()) as { contact: WixContact };
   return body.contact;
+}
+
+export type WixContactV5SubscriptionStatus =
+  "NO_SUBSCRIPTION_STATUS" | "NOT_SET" | "PENDING" | "SUBSCRIBED" | "UNSUBSCRIBED";
+
+export type WixContactV5DeliverabilityStatus =
+  "NO_PHONE_DELIVERABILITY_STATUS" | "NOT_SET" | "VALID" | "INVALID";
+
+export type WixContactV5SmsDetails = {
+  id: string;
+  updatedDate: string | null;
+  phone: {
+    e164: string | null;
+    subscriptionStatus: {
+      status: WixContactV5SubscriptionStatus | null;
+      updatedDate: string | null;
+    };
+    deliverabilityStatus: WixContactV5DeliverabilityStatus | null;
+  } | null;
+};
+
+function requireWixGuid(value: unknown, errorCode: string): string {
+  if (typeof value !== "string") throw new Error(errorCode);
+  const id = value.trim();
+  if (!WIX_GUID_PATTERN.test(id)) throw new Error(errorCode);
+  return id;
+}
+
+function readOptionalString(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value !== "string") throw new Error("WIX_CONTACT_MALFORMED_RESPONSE");
+  return value;
+}
+
+function readSubscriptionStatus(value: unknown): WixContactV5SubscriptionStatus | null {
+  if (value == null) return null;
+  if (
+    value === "NO_SUBSCRIPTION_STATUS" ||
+    value === "NOT_SET" ||
+    value === "PENDING" ||
+    value === "SUBSCRIBED" ||
+    value === "UNSUBSCRIBED"
+  ) {
+    return value;
+  }
+  throw new Error("WIX_CONTACT_MALFORMED_RESPONSE");
+}
+
+function readDeliverabilityStatus(
+  value: unknown
+): WixContactV5DeliverabilityStatus | null {
+  if (value == null) return null;
+  if (
+    value === "NO_PHONE_DELIVERABILITY_STATUS" ||
+    value === "NOT_SET" ||
+    value === "VALID" ||
+    value === "INVALID"
+  ) {
+    return value;
+  }
+  throw new Error("WIX_CONTACT_MALFORMED_RESPONSE");
+}
+
+/** Read the linked contact's main SMS consent and deliverability fields. */
+export async function getWixContactV5(
+  contactId: string
+): Promise<WixContactV5SmsDetails> {
+  const validContactId = requireWixGuid(contactId, "WIX_CONTACT_INVALID_ID");
+  const response = await wixV5Fetch(
+    `/contacts/v5/contacts/${encodeURIComponent(validContactId)}`
+  );
+  if (!isRecord(response) || !isRecord(response.contact)) {
+    throw new Error("WIX_CONTACT_MALFORMED_RESPONSE");
+  }
+
+  const contact = response.contact;
+  const id = requireWixGuid(contact.id, "WIX_CONTACT_MALFORMED_RESPONSE");
+  const updatedDate = readOptionalString(contact.updatedDate);
+
+  if (contact.phone == null) {
+    return { id, updatedDate, phone: null };
+  }
+  if (!isRecord(contact.phone)) throw new Error("WIX_CONTACT_MALFORMED_RESPONSE");
+
+  const phone = contact.phone;
+  if (phone.subscriptionStatus != null && !isRecord(phone.subscriptionStatus)) {
+    throw new Error("WIX_CONTACT_MALFORMED_RESPONSE");
+  }
+  const subscriptionStatus = phone.subscriptionStatus;
+
+  return {
+    id,
+    updatedDate,
+    phone: {
+      e164: readOptionalString(phone.e164),
+      subscriptionStatus: {
+        status: readSubscriptionStatus(subscriptionStatus?.status),
+        updatedDate: readOptionalString(subscriptionStatus?.updatedDate),
+      },
+      deliverabilityStatus: readDeliverabilityStatus(phone.deliverabilityStatus),
+    },
+  };
 }
 
 /**

@@ -1,15 +1,16 @@
 import { requireUser } from "@/lib/auth/session";
-import { createClient } from "@/lib/database/supabase-server";
 import { createAdminClient } from "@/lib/database/supabase-admin";
+import { createClient } from "@/lib/database/supabase-server";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canRecordCustomerApproval } from "@/lib/permissions";
-import { sendSms, isTwilioConfigured } from "@/lib/twilio/client";
-import { normalizePhoneE164 } from "@/lib/twilio/phone";
+import { normalizePhoneE164 } from "@/lib/phone/e164";
 import { sendEmail, isEmailConfigured } from "@/lib/email/send";
 import { portalUrl } from "@/lib/portal/tokens";
+import { sendCustomerSms } from "@/lib/services/customerSms";
 import { createPortalToken } from "@/lib/services/portal";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
+import { logger } from "@/lib/security/logger";
 
 export type CommunicationLogEntry = {
   log_id: string;
@@ -29,19 +30,8 @@ type TemplateContext = {
   shopName?: string;
 };
 
-/** CASL / A2P campaign alignment — Twilio Advanced Opt-Out still owns carrier STOP. */
+/** CASL / A2P campaign alignment — Wix Inbox owns carrier opt-out replies. */
 const SMS_OPT_OUT_FOOTER = "Reply STOP to opt out.";
-
-const OPT_OUT_KEYWORDS = new Set([
-  "STOP",
-  "STOPALL",
-  "UNSUBSCRIBE",
-  "CANCEL",
-  "END",
-  "QUIT",
-]);
-
-const OPT_IN_KEYWORDS = new Set(["START", "UNSTOP"]);
 
 function withSmsOptOut(body: string): string {
   return `${body.trim()} ${SMS_OPT_OUT_FOOTER}`;
@@ -176,7 +166,7 @@ export async function sendWorkOrderMessage(input: {
       work_order_id,
       work_order_number,
       location_id,
-      customer:customer_id ( customer_id, first_name, last_name, phone, email, sms_opted_out_at )
+      customer:customer_id ( customer_id, first_name, last_name, phone, email, sms_opted_out_at, wix_contact_id )
     `
     )
     .eq("work_order_id", input.work_order_id)
@@ -193,6 +183,7 @@ export async function sendWorkOrderMessage(input: {
     phone: string | null;
     email: string | null;
     sms_opted_out_at: string | null;
+    wix_contact_id: string | null;
   };
 
   const { token } = await createPortalToken({
@@ -208,46 +199,169 @@ export async function sendWorkOrderMessage(input: {
     shopName: "Toronto Moto",
   };
 
-  let toAddress = "";
+  if (input.channel === "sms") {
+    if (!customer.phone?.trim()) throw new Error("CUSTOMER_PHONE_REQUIRED");
+    const toAddress = normalizePhoneE164(customer.phone);
+    if (!toAddress) throw new Error("INVALID_PHONE");
+    const body = template.sms(ctx);
+    const dedupeKey = `work-order:${input.work_order_id}:sms:${input.template_key}`;
+    const admin = createAdminClient();
+
+    const { data: queuedLog, error: queueError } = await admin
+      .from("communication_log")
+      .insert({
+        work_order_id: input.work_order_id,
+        customer_id: customer.customer_id,
+        channel: "sms",
+        direction: "outbound",
+        template_key: input.template_key,
+        to_address: toAddress,
+        body,
+        status: "queued",
+        external_id: null,
+        from_address: TORONTO_SHOP.phoneE164,
+        error_message: null,
+        dedupe_key: dedupeKey,
+        sent_by_user_id: user.user_id,
+      })
+      .select(
+        "log_id, channel, direction, to_address, body, status, template_key, created_at"
+      )
+      .single();
+
+    if (queueError) {
+      if (queueError.code === "23505") {
+        throw new Error("WIX_INBOX_SEND_UNCERTAIN");
+      }
+      throw queueError;
+    }
+    if (!queuedLog) throw new Error("SEND_FAILED");
+    const queuedLogId = queuedLog.log_id;
+
+    async function reconcileSmsLog(
+      patch: Record<string, unknown>,
+      phase: "sent" | "failed" | "uncertain"
+    ): Promise<boolean> {
+      try {
+        const result = await admin
+          .from("communication_log")
+          .update(patch)
+          .eq("log_id", queuedLogId)
+          .select("log_id")
+          .maybeSingle();
+        if (result.error) {
+          logger.warn("Work-order SMS reconciliation failed", {
+            logId: queuedLogId,
+            workOrderId: input.work_order_id,
+            phase,
+            error: result.error.message,
+          });
+          return false;
+        }
+        if (!result.data) {
+          logger.warn("Work-order SMS reconciliation failed", {
+            logId: queuedLogId,
+            workOrderId: input.work_order_id,
+            phase,
+            error: "LOG_ROW_NOT_UPDATED",
+          });
+          return false;
+        }
+        return true;
+      } catch (reconciliationError) {
+        logger.warn("Work-order SMS reconciliation failed", {
+          logId: queuedLogId,
+          workOrderId: input.work_order_id,
+          phase,
+          error:
+            reconciliationError instanceof Error
+              ? reconciliationError.message
+              : "LOG_UPDATE_FAILED",
+        });
+        return false;
+      }
+    }
+
+    let externalId: string;
+    try {
+      externalId = await sendCustomerSms({
+        customerId: customer.customer_id,
+        wixContactId: customer.wix_contact_id,
+        to: customer.phone,
+        body,
+        localOptedOutAt: customer.sms_opted_out_at,
+      });
+    } catch (error) {
+      const errorCode = error instanceof Error ? error.message : "SEND_FAILED";
+      const uncertain = errorCode === "WIX_INBOX_SEND_UNCERTAIN";
+      await reconcileSmsLog(
+        {
+          status: uncertain ? "queued" : "failed",
+          external_id: null,
+          error_message: errorCode,
+          ...(uncertain ? {} : { dedupe_key: null }),
+        },
+        uncertain ? "uncertain" : "failed"
+      );
+      throw error;
+    }
+
+    await reconcileSmsLog(
+      {
+        status: "sent",
+        external_id: externalId,
+        error_message: null,
+        dedupe_key: null,
+      },
+      "sent"
+    );
+
+    try {
+      await addTimelineEvent(supabase, {
+        work_order_id: input.work_order_id,
+        user_id: user.user_id,
+        event_type: TimelineEventType.MESSAGE_SENT,
+        entity_type: "communication_log",
+        entity_id: queuedLog.log_id,
+        description: `SMS sent (${input.template_key})`,
+        new_value: { channel: "sms", template_key: input.template_key },
+      });
+    } catch (timelineError) {
+      logger.warn("Work-order SMS reconciliation failed", {
+        logId: queuedLog.log_id,
+        workOrderId: input.work_order_id,
+        phase: "timeline",
+        error: timelineError instanceof Error ? timelineError.message : "TIMELINE_FAILED",
+      });
+    }
+
+    return {
+      ...queuedLog,
+      status: "sent",
+    } as CommunicationLogEntry;
+  }
+
+  const toAddress = customer.email?.trim() ?? "";
   let externalId: string | null = null;
   let status: CommunicationLogEntry["status"] = "sent";
-  let body = "";
+  const body = template.emailHtml(ctx);
   let errorMessage: string | null = null;
 
   try {
-    if (input.channel === "sms") {
-      if (!isTwilioConfigured()) throw new Error("TWILIO_NOT_CONFIGURED");
-      if (customer.sms_opted_out_at) throw new Error("SMS_OPTED_OUT");
-      if (!customer.phone?.trim()) throw new Error("CUSTOMER_PHONE_REQUIRED");
-      const e164 = normalizePhoneE164(customer.phone);
-      if (!e164) throw new Error("INVALID_PHONE");
-      toAddress = e164;
-      body = template.sms(ctx);
-      const result = await sendSms({ to: toAddress, body });
-      externalId = result.sid;
-    } else {
-      if (!(await isEmailConfigured(wo.location_id)))
-        throw new Error("EMAIL_NOT_CONFIGURED");
-      if (!customer.email?.trim()) throw new Error("CUSTOMER_EMAIL_REQUIRED");
-      toAddress = customer.email.trim();
-      body = template.emailHtml(ctx);
-      const result = await sendEmail({
-        to: toAddress,
-        subject: template.emailSubject(ctx),
-        html: body,
-        text: template.emailText?.(ctx) ?? template.sms(ctx),
-        locationId: wo.location_id,
-      });
-      externalId = result.id;
-    }
+    if (!(await isEmailConfigured(wo.location_id)))
+      throw new Error("EMAIL_NOT_CONFIGURED");
+    if (!toAddress) throw new Error("CUSTOMER_EMAIL_REQUIRED");
+    const result = await sendEmail({
+      to: toAddress,
+      subject: template.emailSubject(ctx),
+      html: body,
+      text: template.emailText?.(ctx) ?? template.sms(ctx),
+      locationId: wo.location_id,
+    });
+    externalId = result.id;
   } catch (err) {
     status = "failed";
     errorMessage = err instanceof Error ? err.message : "SEND_FAILED";
-    body = template.sms(ctx);
-    toAddress =
-      input.channel === "sms"
-        ? (normalizePhoneE164(customer.phone) ?? customer.phone ?? "")
-        : (customer.email ?? "");
   }
 
   const { data: log, error: logError } = await supabase
@@ -255,13 +369,14 @@ export async function sendWorkOrderMessage(input: {
     .insert({
       work_order_id: input.work_order_id,
       customer_id: customer.customer_id,
-      channel: input.channel,
+      channel: "email",
       direction: "outbound",
       template_key: input.template_key,
       to_address: toAddress,
       body,
       status,
       external_id: externalId,
+      from_address: null,
       error_message: errorMessage,
       sent_by_user_id: user.user_id,
     })
@@ -287,124 +402,4 @@ export async function sendWorkOrderMessage(input: {
   if (status === "failed") throw new Error(errorMessage ?? "SEND_FAILED");
 
   return log as CommunicationLogEntry;
-}
-
-export async function handleInboundSms(input: {
-  from: string;
-  body: string;
-}): Promise<void> {
-  const admin = createAdminClient();
-  const normalizedBody = input.body.trim().toUpperCase();
-
-  const { data: customers } = await admin
-    .from("customer")
-    .select("customer_id, phone, sms_opted_out_at")
-    .not("phone", "is", null);
-
-  const customer = (customers ?? []).find((c) => {
-    const phone = String(c.phone ?? "").replace(/\D/g, "");
-    const from = input.from.replace(/\D/g, "");
-    return phone.endsWith(from.slice(-10)) || from.endsWith(phone.slice(-10));
-  });
-
-  await admin.from("communication_log").insert({
-    customer_id: customer?.customer_id ?? null,
-    channel: "sms",
-    direction: "inbound",
-    to_address: input.from,
-    from_address: input.from,
-    body: input.body,
-    status: "received",
-  });
-
-  if (!customer) return;
-
-  if (OPT_OUT_KEYWORDS.has(normalizedBody)) {
-    await admin
-      .from("customer")
-      .update({ sms_opted_out_at: new Date().toISOString() })
-      .eq("customer_id", customer.customer_id);
-    return;
-  }
-
-  const { data: openJobs } = await admin
-    .from("job")
-    .select("job_id, work_order_id, status")
-    .eq("status", "waiting_for_approval")
-    .in(
-      "work_order_id",
-      (
-        await admin
-          .from("work_order")
-          .select("work_order_id")
-          .eq("customer_id", customer.customer_id)
-      ).data?.map((w) => w.work_order_id) ?? []
-    );
-
-  const hasSingleApprovalJob = openJobs && openJobs.length === 1;
-
-  if (OPT_IN_KEYWORDS.has(normalizedBody)) {
-    await admin
-      .from("customer")
-      .update({ sms_opted_out_at: null })
-      .eq("customer_id", customer.customer_id);
-    return;
-  }
-
-  // YES clears opt-out only when it is not an approval reply.
-  if (normalizedBody === "YES" && !hasSingleApprovalJob) {
-    await admin
-      .from("customer")
-      .update({ sms_opted_out_at: null })
-      .eq("customer_id", customer.customer_id);
-    return;
-  }
-
-  if (!hasSingleApprovalJob) return;
-
-  const job = openJobs[0];
-  if (normalizedBody === "YES" || normalizedBody === "APPROVE") {
-    const approvedAt = new Date().toISOString();
-    await admin
-      .from("job")
-      .update({
-        status: "approved",
-        approval_method: "text",
-        approved_by_customer_at: approvedAt,
-        updated_at: approvedAt,
-      })
-      .eq("job_id", job.job_id);
-
-    await addTimelineEvent(admin, {
-      work_order_id: job.work_order_id,
-      user_id: null,
-      event_type: TimelineEventType.CUSTOMER_APPROVAL_RECORDED,
-      entity_type: "job",
-      entity_id: job.job_id,
-      description: "Customer approved via SMS reply",
-      new_value: { approval_method: "text" },
-    });
-  } else if (normalizedBody === "NO" || normalizedBody === "DECLINE") {
-    const declinedAt = new Date().toISOString();
-    await admin
-      .from("job")
-      .update({
-        status: "declined",
-        approval_method: "text",
-        declined_at: declinedAt,
-        decline_reason: "Declined via SMS",
-        updated_at: declinedAt,
-      })
-      .eq("job_id", job.job_id);
-
-    await addTimelineEvent(admin, {
-      work_order_id: job.work_order_id,
-      user_id: null,
-      event_type: TimelineEventType.CUSTOMER_DECLINE_RECORDED,
-      entity_type: "job",
-      entity_id: job.job_id,
-      description: "Customer declined via SMS reply",
-      new_value: { approval_method: "text" },
-    });
-  }
 }

@@ -5,6 +5,14 @@ import { sendMessageAction } from "@/app/(app)/work_orders/communication-actions
 import type { CommunicationLogEntry } from "@/lib/services/communications";
 import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
+import {
+  canAttemptCustomerEmail,
+  canAttemptCustomerSms,
+  deriveCustomerMessageChannel,
+  type CustomerMessageChannel,
+  WIX_SMS_CHANNEL_GUIDANCE,
+  WIX_SMS_LOCAL_OPT_OUT_WARNING,
+} from "@/lib/communications/customerSmsAvailability";
 
 const TEMPLATES = [
   { key: "approval_request", label: "Approval request" },
@@ -19,6 +27,7 @@ type Props = {
   canSend: boolean;
   readOnly?: boolean;
   customerPhone?: string | null;
+  customerEmail?: string | null;
   smsOptedOut?: boolean;
 };
 
@@ -28,17 +37,27 @@ export function SendMessagePanel({
   canSend,
   readOnly = false,
   customerPhone = null,
+  customerEmail = null,
   smsOptedOut = false,
 }: Props) {
+  const canAttemptSms = canAttemptCustomerSms({
+    phone: customerPhone,
+    smsOptedOut,
+  });
   const [templateKey, setTemplateKey] =
     useState<(typeof TEMPLATES)[number]["key"]>("approval_request");
-  const [channel, setChannel] = useState<"sms" | "email">(() =>
-    customerPhone && !smsOptedOut ? "sms" : "email"
-  );
+  const canAttemptEmail = canAttemptCustomerEmail(customerEmail);
+  const [preferredChannel, setPreferredChannel] = useState<CustomerMessageChannel>("sms");
+  const channel = deriveCustomerMessageChannel({
+    preferredChannel,
+    smsAvailable: canAttemptSms,
+    emailAvailable: canAttemptEmail,
+  });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   function send() {
+    if (!channel) return;
     setError(null);
     startTransition(async () => {
       const result = await sendMessageAction(workOrderId, templateKey, channel);
@@ -53,10 +72,12 @@ export function SendMessagePanel({
           <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
             Send customer message
           </h3>
+          <p className="text-xs text-[var(--status-neutral)]">
+            {WIX_SMS_CHANNEL_GUIDANCE}
+          </p>
           {smsOptedOut ? (
             <p className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-foreground">
-              This customer opted out of SMS. Use email, or ask them to text START to the
-              shop number.
+              {WIX_SMS_LOCAL_OPT_OUT_WARNING}
             </p>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -80,20 +101,29 @@ export function SendMessagePanel({
               <span className="field-label">Channel</span>
               <select
                 className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
-                value={channel}
-                onChange={(e) => setChannel(e.target.value as "sms" | "email")}
+                value={channel ?? ""}
+                onChange={(e) =>
+                  setPreferredChannel(e.target.value as CustomerMessageChannel)
+                }
               >
-                <option value="sms" disabled={smsOptedOut || !customerPhone}>
+                {channel === null ? (
+                  <option value="" disabled>
+                    No channel available
+                  </option>
+                ) : null}
+                <option value="sms" disabled={!canAttemptSms}>
                   SMS
                 </option>
-                <option value="email">Email</option>
+                <option value="email" disabled={!canAttemptEmail}>
+                  Email
+                </option>
               </select>
             </label>
           </div>
           <button
             type="button"
             className="btn btn-primary self-start"
-            disabled={pending || (channel === "sms" && (smsOptedOut || !customerPhone))}
+            disabled={pending || channel === null}
             onClick={send}
           >
             {pending ? "Sending…" : "Send"}

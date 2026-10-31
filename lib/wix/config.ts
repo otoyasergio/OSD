@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * Shared Wix env helpers for Bookings intake and Contacts CRM sync.
  * Billing stays on Square — this module does not create Wix payment links.
@@ -31,6 +33,18 @@ export function isWixConfigured(): boolean {
 /** Alias used by contact sync — same credentials as Bookings API access. */
 export function isWixContactsConfigured(): boolean {
   return isWixConfigured();
+}
+
+/**
+ * Outbound Inbox SMS is separately gated so credentials alone can never enable it.
+ * This must remain server-only and fail closed unless the explicit flag is set.
+ */
+export function isWixInboxSmsConfigured(): boolean {
+  return Boolean(
+    process.env.WIX_API_KEY?.trim() &&
+    process.env.WIX_SITE_ID?.trim() &&
+    process.env.WIX_INBOX_SMS_ENABLED === "1"
+  );
 }
 
 export function isWixWebhookConfigured(): boolean {

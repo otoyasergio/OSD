@@ -1,6 +1,7 @@
 export function isTwilioVoiceConfigured(): boolean {
   return Boolean(
     process.env.TWILIO_ACCOUNT_SID?.trim() &&
+    process.env.TWILIO_AUTH_TOKEN?.trim() &&
     process.env.TWILIO_API_KEY_SID?.trim() &&
     process.env.TWILIO_API_KEY_SECRET?.trim() &&
     process.env.TWILIO_TWIML_APP_SID?.trim()

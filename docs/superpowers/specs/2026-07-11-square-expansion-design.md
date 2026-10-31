@@ -1,11 +1,16 @@
 # OTOMOTO Square-first expansion (A–F)
 
+> **Historical note:** References below to Twilio customer SMS are superseded.
+> Current customer SMS uses Wix Inbox; see
+> [`docs/ops/wix-inbox-sms.md`](../../ops/wix-inbox-sms.md).
+
 **Date:** 2026-07-11  
 **Status:** Implemented on `feature/square-expansion`  
 **Supersedes:** V1/V2 non-goals for invoicing, customer portal, and SMS
 
 ## Scope
 
+<!-- prettier-ignore -->
 | Phase | Feature |
 |-------|---------|
 | A | Digital drop-off contract + iPad e-sign |

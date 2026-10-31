@@ -216,8 +216,8 @@ const MESSAGES: Record<string, string> = {
   SQUARE_CANCEL_NOT_ALLOWED:
     "Cannot cancel a partially paid or paid invoice. Handle the remainder in Square or publish balance.",
   SQUARE_BALANCE_NOT_READY: "Collect a deposit payment before publishing the balance.",
-  TWILIO_NOT_CONFIGURED: "Twilio is not configured for SMS.",
-  SMS_OPTED_OUT: "This customer has opted out of SMS. Use email or clear the opt-out.",
+  SMS_OPTED_OUT:
+    "This customer is opted out of SMS. Manage the subscription in Wix Contacts; replies appear only in Wix Inbox. Use email until Wix Contacts allows SMS.",
   INVALID_PHONE: "Customer phone number is not a valid mobile number.",
   EMAIL_NOT_CONFIGURED:
     "Customer email is not connected. An owner needs to connect the shop Google mailbox in Settings.",
@@ -227,6 +227,37 @@ const MESSAGES: Record<string, string> = {
   EMAIL_ADDRESS_INVALID: "That email address cannot be used.",
   CUSTOMER_PHONE_REQUIRED: "Customer needs a phone number to send SMS.",
   CUSTOMER_EMAIL_REQUIRED: "Customer needs an email address to send email.",
+  WIX_SMS_PHONE_MISMATCH:
+    "The customer’s Wix phone does not match this phone number. Sync the contact and try again.",
+  WIX_SMS_PHONE_INVALID:
+    "The customer needs a valid phone number in Wix before a text can be sent.",
+  WIX_SMS_SUBSCRIPTION_REQUIRED:
+    "Wix does not have an SMS subscription status for this customer.",
+  WIX_SMS_UNDELIVERABLE:
+    "Wix reports that this customer’s phone cannot receive text messages.",
+  WIX_INBOX_SMS_NOT_CONFIGURED:
+    "Wix SMS is not configured. An owner needs to finish the Wix Inbox setup.",
+  WIX_INBOX_TIMEOUT: "Wix SMS took too long to respond. Try sending the text again.",
+  WIX_INBOX_API_ERROR: "Wix could not send that text message. Try again.",
+  WIX_INBOX_SEND_UNCERTAIN:
+    "Wix may have accepted this text. Inspect the contact’s Wix Inbox conversation before any resend.",
+  WIX_INBOX_INVALID_CONTACT_ID:
+    "The customer’s Wix contact link is invalid. Sync the customer and try again.",
+  WIX_INBOX_INVALID_CONVERSATION_ID:
+    "Wix could not open this customer’s SMS conversation. Try again.",
+  WIX_INBOX_INVALID_MESSAGE_BODY: "Wix could not send an empty text message.",
+  WIX_INBOX_INVALID_MESSAGE_ID:
+    "Wix sent the text but did not return a valid message reference.",
+  WIX_INBOX_MALFORMED_RESPONSE:
+    "Wix returned an invalid SMS response. Try sending the text again.",
+  WIX_CONTACT_API_ERROR:
+    "Wix could not check this customer’s phone and SMS status. Try again.",
+  WIX_CONTACT_TIMEOUT:
+    "Wix took too long to check this customer’s phone and SMS status. Try again.",
+  WIX_CONTACT_INVALID_ID:
+    "The customer’s Wix contact link is invalid. Sync the customer and try again.",
+  WIX_CONTACT_MALFORMED_RESPONSE:
+    "Wix returned invalid customer phone information. Try again.",
   PICKUP_NOTICE_NOT_READY: "Move the bike to Ready for pickup before sending the notice.",
   PICKUP_NOTICE_UNAVAILABLE:
     "Pickup notices could not be recorded. Send from the work order message panel.",
