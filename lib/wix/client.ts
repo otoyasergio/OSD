@@ -132,6 +132,74 @@ export async function getWixContact(contactId: string): Promise<WixContact> {
   return body.contact;
 }
 
+export type WixContactV5SubscriptionStatus =
+  "NO_SUBSCRIPTION_STATUS" | "NOT_SET" | "PENDING" | "SUBSCRIBED" | "UNSUBSCRIBED";
+
+export type WixContactV5DeliverabilityStatus =
+  "NO_PHONE_DELIVERABILITY_STATUS" | "NOT_SET" | "VALID" | "INVALID";
+
+export type WixContactV5SmsDetails = {
+  id: string;
+  updatedDate: string | null;
+  phone: {
+    e164: string | null;
+    subscriptionStatus: {
+      status: WixContactV5SubscriptionStatus | null;
+      updatedDate: string | null;
+    };
+    deliverabilityStatus: WixContactV5DeliverabilityStatus | null;
+  } | null;
+};
+
+type WixContactV5Response = {
+  contact?: {
+    id?: unknown;
+    updatedDate?: string;
+    phone?: {
+      e164?: string;
+      subscriptionStatus?: {
+        status?: WixContactV5SubscriptionStatus;
+        updatedDate?: string;
+      };
+      deliverabilityStatus?: WixContactV5DeliverabilityStatus;
+    };
+  };
+};
+
+/** Read the linked contact's main SMS consent and deliverability fields. */
+export async function getWixContactV5(
+  contactId: string
+): Promise<WixContactV5SmsDetails> {
+  const validContactId = contactId.trim();
+  if (!validContactId) throw new Error("WIX_CONTACT_INVALID_ID");
+
+  const response = await wixFetch(
+    `/contacts/v5/contacts/${encodeURIComponent(validContactId)}`
+  );
+  if (response.status === 404) throw new Error("WIX_CONTACT_NOT_FOUND");
+  if (!response.ok) throw new Error(await readWixError(response));
+
+  const { contact } = (await response.json()) as WixContactV5Response;
+  if (typeof contact?.id !== "string" || !contact.id.trim()) {
+    throw new Error("WIX_CONTACT_MALFORMED_RESPONSE");
+  }
+
+  return {
+    id: contact.id,
+    updatedDate: contact.updatedDate ?? null,
+    phone: contact.phone
+      ? {
+          e164: contact.phone.e164 ?? null,
+          subscriptionStatus: {
+            status: contact.phone.subscriptionStatus?.status ?? null,
+            updatedDate: contact.phone.subscriptionStatus?.updatedDate ?? null,
+          },
+          deliverabilityStatus: contact.phone.deliverabilityStatus ?? null,
+        }
+      : null,
+  };
+}
+
 /**
  * Find an existing Wix contact by exact email, then by phone.
  * Uses Query Contacts (filter).
