@@ -19,7 +19,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const TIMELINE_NOTES_PER_BIKE = 6;
 const TIMELINE_NOTE_MAX = 180;
 
-const NOTEWORTHY_EVENTS = new Set<string>([
+/** Timeline event types worth repeating under a still-here bike. */
+export const WEEKLY_REPORT_NOTE_EVENTS = [
   TimelineEventType.WORK_ORDER_STATUS_CHANGED,
   TimelineEventType.JOB_CREATED,
   TimelineEventType.JOB_STATUS_CHANGED,
@@ -34,7 +35,9 @@ const NOTEWORTHY_EVENTS = new Set<string>([
   TimelineEventType.WORK_ORDER_CANCELLED,
   TimelineEventType.WORK_ORDER_PLACED_ON_HOLD,
   TimelineEventType.PART_STATUS_CHANGED,
-]);
+] as const;
+
+const NOTEWORTHY_EVENTS = new Set<string>(WEEKLY_REPORT_NOTE_EVENTS);
 
 const STILL_HERE_STATUS_ORDER: WorkOrderStatus[] = [
   "waiting_for_customer_approval",

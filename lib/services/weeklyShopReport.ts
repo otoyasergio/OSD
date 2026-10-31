@@ -6,6 +6,7 @@ import { getShopMailbox } from "@/lib/email/mailbox";
 import { isEmailConfigured, sendEmail } from "@/lib/email/send";
 import { PARTS_WAITING_STATUSES, type PunchInput } from "@/lib/reports/shopMetrics";
 import {
+  WEEKLY_REPORT_NOTE_EVENTS,
   WEEKLY_SHOP_REPORT_TEMPLATE,
   WEEKLY_SHOP_REPORT_TO,
   buildWeeklyShopReport,
@@ -172,7 +173,7 @@ async function loadWeeklyShopReportInput(
         .eq("event_type", TimelineEventType.WORK_ORDER_CANCELLED)
         .gte("created_at", previousStart)
         .lte("created_at", currentEnd)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(ROW_LIMIT)
     ),
   ]);
@@ -271,9 +272,10 @@ async function loadWeeklyShopReportInput(
           "work_order_id, event_type, description, created_at, work_order!inner(location_id)"
         )
         .eq("work_order.location_id", locationId)
+        .in("event_type", [...WEEKLY_REPORT_NOTE_EVENTS])
         .gte("created_at", window.current.startUtc.toISOString())
         .lte("created_at", currentEnd)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(ROW_LIMIT)
     ),
   ]);
