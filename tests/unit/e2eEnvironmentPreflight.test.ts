@@ -22,6 +22,7 @@ function response(
     supabaseTargetFingerprint: string;
     openAIConfigured: boolean;
     twilioConfigured: boolean;
+    wixSmsConfigured: boolean;
     resendConfigured: boolean;
     gmailConfigured: boolean;
   }> = {}
@@ -30,6 +31,7 @@ function response(
     supabaseTargetFingerprint: fingerprintSupabaseTarget(TEST_URL),
     openAIConfigured: false,
     twilioConfigured: false,
+    wixSmsConfigured: false,
     resendConfigured: false,
     gmailConfigured: false,
     ...overrides,
@@ -66,6 +68,7 @@ describe("stateful E2E app environment preflight", () => {
   it.each([
     ["OpenAI", { openAIConfigured: true }],
     ["Twilio", { twilioConfigured: true }],
+    ["Wix SMS", { wixSmsConfigured: true }],
     ["Resend", { resendConfigured: true }],
     ["Gmail", { gmailConfigured: true }],
   ] as const)("fails when %s is configured on the app", async (provider, flags) => {

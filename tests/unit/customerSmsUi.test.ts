@@ -68,4 +68,26 @@ describe("staff SMS controls", () => {
     expect(sendButton).toMatch(/^<button/);
     expect(sendButton).not.toContain("disabled");
   });
+
+  it("disables Square approval when neither customer channel is available", () => {
+    const html = renderToStaticMarkup(
+      createElement(SquareInvoicePanel, {
+        workOrderId: "wo-1",
+        squareInvoiceId: null,
+        squarePaymentStatus: null,
+        squareInvoicePublicUrl: null,
+        billingStage: "draft",
+        billingCollectedCents: 0,
+        estimateSubtotalCents: 10000,
+        estimateHstCents: 1300,
+        estimateTotalCents: 11300,
+        canManage: true,
+        customerPhone: null,
+        customerEmail: null,
+      })
+    );
+
+    const sendButton = html.match(/<button[^>]*>Send for approval<\/button>/)?.[0] ?? "";
+    expect(sendButton).toContain("disabled");
+  });
 });

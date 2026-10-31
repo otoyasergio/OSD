@@ -18,9 +18,8 @@ const STATEFUL_E2E_OUTBOUND_KEYS = [
   "TWILIO_AUTH_TOKEN",
   "TWILIO_API_KEY_SID",
   "TWILIO_API_KEY_SECRET",
-  "TWILIO_MESSAGING_SERVICE_SID",
-  "TWILIO_FROM_NUMBER",
   "TWILIO_TWIML_APP_SID",
+  "WIX_INBOX_SMS_ENABLED",
   "RESEND_API_KEY",
   "GMAIL_CLIENT_SECRET",
   "GMAIL_REFRESH_TOKEN",
@@ -149,7 +148,15 @@ export function checkMutationEnvironment(
   }
 
   if (env.TWILIO_AUTH_TOKEN) {
-    reasons.push("TWILIO_AUTH_TOKEN must be unset so tests cannot send real SMS.");
+    reasons.push(
+      "TWILIO_AUTH_TOKEN must be unset so tests cannot make live Twilio calls."
+    );
+  }
+
+  if (env.WIX_INBOX_SMS_ENABLED === "1") {
+    reasons.push(
+      "WIX_INBOX_SMS_ENABLED must be unset so tests cannot send real Wix Inbox SMS."
+    );
   }
 
   if (env.RESEND_API_KEY) {

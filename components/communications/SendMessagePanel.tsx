@@ -40,9 +40,11 @@ export function SendMessagePanel({
   });
   const [templateKey, setTemplateKey] =
     useState<(typeof TEMPLATES)[number]["key"]>("approval_request");
-  const [channel, setChannel] = useState<"sms" | "email">(() =>
+  const [preferredChannel, setPreferredChannel] = useState<"sms" | "email">(() =>
     canAttemptSms ? "sms" : "email"
   );
+  const channel =
+    preferredChannel === "sms" && !canAttemptSms ? "email" : preferredChannel;
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -88,7 +90,7 @@ export function SendMessagePanel({
               <select
                 className="min-h-11 w-full rounded border border-[var(--border-strong)] px-3"
                 value={channel}
-                onChange={(e) => setChannel(e.target.value as "sms" | "email")}
+                onChange={(e) => setPreferredChannel(e.target.value as "sms" | "email")}
               >
                 <option value="sms" disabled={!canAttemptSms}>
                   SMS

@@ -68,9 +68,15 @@ export function SquareInvoicePanel({
   const [depositPercent, setDepositPercent] = useState("50");
   const [customDollars, setCustomDollars] = useState("");
   const [pending, startTransition] = useTransition();
-  const [approvalChannel, setApprovalChannel] = useState<"sms" | "email">(() =>
-    canAttemptSms ? "sms" : "email"
-  );
+  const [preferredApprovalChannel, setPreferredApprovalChannel] = useState<
+    "sms" | "email"
+  >(() => (canAttemptSms ? "sms" : "email"));
+  const approvalChannel =
+    preferredApprovalChannel === "sms" && !canAttemptSms
+      ? "email"
+      : preferredApprovalChannel;
+  const canSendApproval =
+    approvalChannel === "sms" ? canAttemptSms : Boolean(customerEmail);
 
   const stage = billingStage || "none";
   const remainingCents = Math.max(0, estimateTotalCents - billingCollectedCents);
@@ -182,7 +188,7 @@ export function SquareInvoicePanel({
         <button
           type="button"
           className="btn btn-secondary"
-          disabled={pending || (approvalChannel === "sms" && !canAttemptSms)}
+          disabled={pending || !canSendApproval}
           onClick={() =>
             startTransition(async () => {
               setError(null);
@@ -201,7 +207,9 @@ export function SquareInvoicePanel({
           <select
             className="min-h-11 rounded border border-[var(--border-strong)] px-2"
             value={approvalChannel}
-            onChange={(e) => setApprovalChannel(e.target.value as "sms" | "email")}
+            onChange={(e) =>
+              setPreferredApprovalChannel(e.target.value as "sms" | "email")
+            }
           >
             <option value="sms" disabled={!canAttemptSms}>
               SMS

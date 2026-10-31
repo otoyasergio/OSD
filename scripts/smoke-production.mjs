@@ -32,6 +32,12 @@ await check("health endpoint", async () => {
   if (body.integrations?.supabase !== "ok") {
     throw new Error(`supabase integration ${body.integrations?.supabase}`);
   }
+  if (body.integrations?.wixSms !== "ok") {
+    throw new Error(`wixSms integration ${body.integrations?.wixSms}`);
+  }
+  if (body.integrations?.twilioVoice !== "ok") {
+    throw new Error(`twilioVoice integration ${body.integrations?.twilioVoice}`);
+  }
 });
 
 await check("login page", async () => {
