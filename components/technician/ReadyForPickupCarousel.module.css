@@ -6,6 +6,10 @@
   padding: 0.85rem 0.9rem 1rem;
 }
 
+.sectionCollapsed {
+  padding-bottom: 0.85rem;
+}
+
 .sectionOver {
   outline: 2px dashed var(--accent);
   outline-offset: 3px;
@@ -42,11 +46,17 @@
   margin-bottom: 0.7rem;
 }
 
+.headerCollapsed {
+  margin-bottom: 0;
+}
+
 .titleRow {
   display: flex;
   align-items: baseline;
   gap: 0.55rem;
   flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .title {
