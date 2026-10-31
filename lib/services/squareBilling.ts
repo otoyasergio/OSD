@@ -37,7 +37,6 @@ import {
   squareInvoiceTransactionId,
   v2PaymentStatusForMapped,
 } from "@/lib/square/webhookDecisions";
-import { createPortalToken } from "@/lib/services/portal";
 import { sendWorkOrderMessage } from "@/lib/services/communications";
 
 export type CustomerCredit = {
@@ -463,22 +462,11 @@ export async function sendWorkOrderEstimateApproval(
   const detail = await loadBillingWorkOrder(workOrderId);
   const supabase = await createClient();
 
-  let sent = false;
-  try {
-    await sendWorkOrderMessage({
-      work_order_id: workOrderId,
-      channel,
-      template_key: "approval_request",
-    });
-    sent = true;
-  } catch {
-    // Messaging may be unconfigured in alpha — still mark estimate sent for staff portal use
-    await createPortalToken({
-      workOrderId,
-      purpose: "estimate",
-      expiresInDays: 14,
-    });
-  }
+  await sendWorkOrderMessage({
+    work_order_id: workOrderId,
+    channel,
+    template_key: "approval_request",
+  });
 
   await supabase
     .from("work_order")
@@ -495,10 +483,10 @@ export async function sendWorkOrderEstimateApproval(
     entity_type: "work_order",
     entity_id: workOrderId,
     description: `Estimate approval sent for ${detail.work_order_number}`,
-    new_value: { channel, message_sent: sent },
+    new_value: { channel, message_sent: true },
   });
 
-  return { sent };
+  return { sent: true };
 }
 
 export async function publishWorkOrderSquareInvoice(

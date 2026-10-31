@@ -168,7 +168,7 @@ describe("Wix Inbox SMS", () => {
     vi.stubGlobal("fetch", missingMessage);
     await expect(
       sendWixInboxSms({ contactId: CONTACT_ID, body: "Service update" })
-    ).rejects.toThrow("WIX_INBOX_INVALID_MESSAGE_ID");
+    ).rejects.toThrow("WIX_INBOX_SEND_UNCERTAIN");
   });
 
   it("maps provider failures without exposing credentials or message text", async () => {
@@ -195,7 +195,7 @@ describe("Wix Inbox SMS", () => {
     expect((error as Error).message).not.toContain(secretBody);
   });
 
-  it("maps request timeouts to a stable sanitized error", async () => {
+  it("keeps conversation request timeouts as definite pre-send failures", async () => {
     configureWixInboxSms();
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
     vi.stubGlobal(
@@ -209,6 +209,65 @@ describe("Wix Inbox SMS", () => {
       sendWixInboxSms({ contactId: CONTACT_ID, body: "private body" })
     ).rejects.toThrow("WIX_INBOX_TIMEOUT");
     expect(timeoutSpy).toHaveBeenCalledWith(20_000);
+  });
+
+  it.each([
+    [
+      "a network failure",
+      () => Promise.reject(new Error("network included private provider data")),
+    ],
+    [
+      "a timeout",
+      () => Promise.reject(new DOMException("provider timed out", "AbortError")),
+    ],
+    [
+      "malformed JSON",
+      () =>
+        Promise.resolve({
+          ok: true,
+          json: async () => {
+            throw new SyntaxError("response included private provider data");
+          },
+        }),
+    ],
+    [
+      "a missing message ID",
+      () => Promise.resolve({ ok: true, json: async () => ({ message: {} }) }),
+    ],
+  ])("reports %s after posting the message as uncertain", async (_, messageResponse) => {
+    configureWixInboxSms();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ conversation: { id: CONVERSATION_ID } }),
+        })
+        .mockImplementationOnce(messageResponse)
+    );
+
+    await expect(
+      sendWixInboxSms({ contactId: CONTACT_ID, body: "Service update" })
+    ).rejects.toThrow("WIX_INBOX_SEND_UNCERTAIN");
+  });
+
+  it("keeps a non-2xx message response as a definite rejection", async () => {
+    configureWixInboxSms();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ conversation: { id: CONVERSATION_ID } }),
+        })
+        .mockResolvedValueOnce({ ok: false, status: 500 })
+    );
+
+    await expect(
+      sendWixInboxSms({ contactId: CONTACT_ID, body: "Service update" })
+    ).rejects.toThrow("WIX_INBOX_API_ERROR");
   });
 
   it.each([
@@ -238,29 +297,32 @@ describe("Wix Inbox SMS", () => {
   );
 
   it.each([
-    ["null", null, "WIX_INBOX_MALFORMED_RESPONSE"],
-    ["an array", [], "WIX_INBOX_MALFORMED_RESPONSE"],
-    ["a missing message", {}, "WIX_INBOX_MALFORMED_RESPONSE"],
-    ["a null message", { message: null }, "WIX_INBOX_MALFORMED_RESPONSE"],
-    ["a wrong message ID type", { message: { id: 42 } }, "WIX_INBOX_INVALID_MESSAGE_ID"],
-  ])("sanitizes a successful message response containing %s", async (_, body, code) => {
-    configureWixInboxSms();
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ conversation: { id: CONVERSATION_ID } }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => body,
-      });
-    vi.stubGlobal("fetch", fetchMock);
+    ["null", null],
+    ["an array", []],
+    ["a missing message", {}],
+    ["a null message", { message: null }],
+    ["a wrong message ID type", { message: { id: 42 } }],
+  ])(
+    "marks a successful message response containing %s as uncertain",
+    async (_, body) => {
+      configureWixInboxSms();
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ conversation: { id: CONVERSATION_ID } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => body,
+        });
+      vi.stubGlobal("fetch", fetchMock);
 
-    await expect(
-      sendWixInboxSms({ contactId: CONTACT_ID, body: "Service update" })
-    ).rejects.toThrow(code);
-  });
+      await expect(
+        sendWixInboxSms({ contactId: CONTACT_ID, body: "Service update" })
+      ).rejects.toThrow("WIX_INBOX_SEND_UNCERTAIN");
+    }
+  );
 
   it("maps malformed successful JSON to a stable sanitized error", async () => {
     configureWixInboxSms();

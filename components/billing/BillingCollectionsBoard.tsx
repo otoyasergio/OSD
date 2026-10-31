@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import type { BillingBoardItem } from "@/lib/services/billingBoard";
 import { BILLING_BUCKET_LABELS } from "@/lib/billing/buckets";
 import {
@@ -12,6 +12,7 @@ import {
 } from "@/app/(app)/work_orders/square-actions";
 import { sendMessageAction } from "@/app/(app)/work_orders/communication-actions";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FormError } from "@/components/forms/Field";
 
 function money(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
@@ -30,7 +31,14 @@ function BillingCard({
   showQuickActions: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const [messageError, setMessageError] = useState<string | null>(null);
   const channel = preferredChannel(item);
+  const messageKind =
+    item.bucket === "awaiting_approval"
+      ? "approval_request"
+      : item.bucket === "unpaid" || item.bucket === "balance_due"
+        ? "payment_reminder"
+        : null;
 
   return (
     <article className="td-board-card">
@@ -64,30 +72,32 @@ function BillingCard({
         <Link href={item.href} className="btn btn-primary">
           Open
         </Link>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={pending}
-          title={
-            item.sms_opted_out
-              ? "SMS opted out — will use email"
-              : `Remind via ${channel.toUpperCase()}`
-          }
-          onClick={() =>
-            startTransition(async () => {
-              const reminder = await sendMessageAction(
-                item.work_order_id,
-                "payment_reminder",
-                channel
-              );
-              if (reminder.error) {
-                await sendEstimateApprovalAction(item.work_order_id, channel);
-              }
-            })
-          }
-        >
-          Remind / approve
-        </button>
+        {messageKind ? (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={pending}
+            title={`Send via ${channel.toUpperCase()}`}
+            onClick={() => {
+              setMessageError(null);
+              startTransition(async () => {
+                const result =
+                  messageKind === "approval_request"
+                    ? await sendEstimateApprovalAction(item.work_order_id, channel)
+                    : await sendMessageAction(
+                        item.work_order_id,
+                        "payment_reminder",
+                        channel
+                      );
+                setMessageError(result.error);
+              });
+            }}
+          >
+            {messageKind === "approval_request"
+              ? "Request approval"
+              : "Send payment reminder"}
+          </button>
+        ) : null}
         {showQuickActions ? (
           <>
             <button
@@ -135,6 +145,7 @@ function BillingCard({
           </>
         ) : null}
       </div>
+      {messageError ? <FormError message={messageError} /> : null}
     </article>
   );
 }

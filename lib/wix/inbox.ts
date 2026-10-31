@@ -35,7 +35,11 @@ function isTimeoutError(error: unknown): boolean {
   );
 }
 
-async function wixInboxFetch(path: string, body: unknown): Promise<unknown> {
+async function wixInboxFetch(
+  path: string,
+  body: unknown,
+  options: { uncertainAfterRequest?: boolean } = {}
+): Promise<unknown> {
   if (!isWixInboxSmsConfigured()) {
     throw new Error("WIX_INBOX_SMS_NOT_CONFIGURED");
   }
@@ -56,6 +60,9 @@ async function wixInboxFetch(path: string, body: unknown): Promise<unknown> {
       signal: AbortSignal.timeout(WIX_INBOX_TIMEOUT_MS),
     });
   } catch (error) {
+    if (options.uncertainAfterRequest) {
+      throw new Error("WIX_INBOX_SEND_UNCERTAIN");
+    }
     throw new Error(isTimeoutError(error) ? "WIX_INBOX_TIMEOUT" : "WIX_INBOX_API_ERROR");
   }
 
@@ -67,6 +74,9 @@ async function wixInboxFetch(path: string, body: unknown): Promise<unknown> {
   try {
     return (await response.json()) as unknown;
   } catch {
+    if (options.uncertainAfterRequest) {
+      throw new Error("WIX_INBOX_SEND_UNCERTAIN");
+    }
     throw new Error("WIX_INBOX_MALFORMED_RESPONSE");
   }
 }
@@ -100,24 +110,32 @@ async function sendWixInboxMessage(input: {
   );
   if (!input.body) throw new Error("WIX_INBOX_INVALID_MESSAGE_BODY");
 
-  const response = await wixInboxFetch("/inbox/v2/messages", {
-    conversationId,
-    sendAs: "CALLER",
-    message: {
-      direction: "BUSINESS_TO_PARTICIPANT",
-      visibility: "BUSINESS_AND_PARTICIPANT",
-      targetChannels: ["SMS"],
-      content: {
-        previewText: input.body.slice(0, PREVIEW_TEXT_MAX_LENGTH),
-        basic: { items: [{ text: input.body }] },
+  const response = await wixInboxFetch(
+    "/inbox/v2/messages",
+    {
+      conversationId,
+      sendAs: "CALLER",
+      message: {
+        direction: "BUSINESS_TO_PARTICIPANT",
+        visibility: "BUSINESS_AND_PARTICIPANT",
+        targetChannels: ["SMS"],
+        content: {
+          previewText: input.body.slice(0, PREVIEW_TEXT_MAX_LENGTH),
+          basic: { items: [{ text: input.body }] },
+        },
       },
     },
-  });
+    { uncertainAfterRequest: true }
+  );
   if (!isRecord(response) || !isRecord(response.message)) {
-    throw new Error("WIX_INBOX_MALFORMED_RESPONSE");
+    throw new Error("WIX_INBOX_SEND_UNCERTAIN");
   }
 
-  return requireTrimmedId(response.message.id, "WIX_INBOX_INVALID_MESSAGE_ID");
+  try {
+    return requireTrimmedId(response.message.id, "WIX_INBOX_INVALID_MESSAGE_ID");
+  } catch {
+    throw new Error("WIX_INBOX_SEND_UNCERTAIN");
+  }
 }
 
 export async function sendWixInboxSms(input: {

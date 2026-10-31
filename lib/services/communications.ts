@@ -197,19 +197,37 @@ export async function sendWorkOrderMessage(input: {
     shopName: "Toronto Moto",
   };
 
-  let toAddress = "";
-  let externalId: string | null = null;
-  let status: CommunicationLogEntry["status"] = "sent";
-  let body = "";
-  let errorMessage: string | null = null;
+  if (input.channel === "sms") {
+    if (!customer.phone?.trim()) throw new Error("CUSTOMER_PHONE_REQUIRED");
+    const toAddress = normalizePhoneE164(customer.phone);
+    if (!toAddress) throw new Error("INVALID_PHONE");
+    const body = template.sms(ctx);
 
-  try {
-    if (input.channel === "sms") {
-      if (!customer.phone?.trim()) throw new Error("CUSTOMER_PHONE_REQUIRED");
-      const e164 = normalizePhoneE164(customer.phone);
-      if (!e164) throw new Error("INVALID_PHONE");
-      toAddress = e164;
-      body = template.sms(ctx);
+    const { data: queuedLog, error: queueError } = await supabase
+      .from("communication_log")
+      .insert({
+        work_order_id: input.work_order_id,
+        customer_id: customer.customer_id,
+        channel: "sms",
+        direction: "outbound",
+        template_key: input.template_key,
+        to_address: toAddress,
+        body,
+        status: "queued",
+        external_id: null,
+        from_address: TORONTO_SHOP.phoneE164,
+        error_message: null,
+        sent_by_user_id: user.user_id,
+      })
+      .select(
+        "log_id, channel, direction, to_address, body, status, template_key, created_at"
+      )
+      .single();
+
+    if (queueError) throw queueError;
+
+    let externalId: string;
+    try {
       externalId = await sendCustomerSms({
         customerId: customer.customer_id,
         wixContactId: customer.wix_contact_id,
@@ -217,29 +235,71 @@ export async function sendWorkOrderMessage(input: {
         body,
         localOptedOutAt: customer.sms_opted_out_at,
       });
-    } else {
-      if (!(await isEmailConfigured(wo.location_id)))
-        throw new Error("EMAIL_NOT_CONFIGURED");
-      if (!customer.email?.trim()) throw new Error("CUSTOMER_EMAIL_REQUIRED");
-      toAddress = customer.email.trim();
-      body = template.emailHtml(ctx);
-      const result = await sendEmail({
-        to: toAddress,
-        subject: template.emailSubject(ctx),
-        html: body,
-        text: template.emailText?.(ctx) ?? template.sms(ctx),
-        locationId: wo.location_id,
-      });
-      externalId = result.id;
+    } catch (error) {
+      const errorCode = error instanceof Error ? error.message : "SEND_FAILED";
+      const uncertain = errorCode === "WIX_INBOX_SEND_UNCERTAIN";
+      try {
+        await supabase
+          .from("communication_log")
+          .update({
+            status: uncertain ? "queued" : "failed",
+            external_id: null,
+            error_message: errorCode,
+          })
+          .eq("log_id", queuedLog.log_id);
+      } catch {
+        // Preserve the provider outcome when log reconciliation itself fails.
+      }
+      throw error;
     }
+
+    const { error: sentUpdateError } = await supabase
+      .from("communication_log")
+      .update({
+        status: "sent",
+        external_id: externalId,
+        error_message: null,
+      })
+      .eq("log_id", queuedLog.log_id);
+    if (sentUpdateError) throw sentUpdateError;
+
+    await addTimelineEvent(supabase, {
+      work_order_id: input.work_order_id,
+      user_id: user.user_id,
+      event_type: TimelineEventType.MESSAGE_SENT,
+      entity_type: "communication_log",
+      entity_id: queuedLog.log_id,
+      description: `SMS sent (${input.template_key})`,
+      new_value: { channel: "sms", template_key: input.template_key },
+    });
+
+    return {
+      ...queuedLog,
+      status: "sent",
+    } as CommunicationLogEntry;
+  }
+
+  const toAddress = customer.email?.trim() ?? "";
+  let externalId: string | null = null;
+  let status: CommunicationLogEntry["status"] = "sent";
+  const body = template.emailHtml(ctx);
+  let errorMessage: string | null = null;
+
+  try {
+    if (!(await isEmailConfigured(wo.location_id)))
+      throw new Error("EMAIL_NOT_CONFIGURED");
+    if (!toAddress) throw new Error("CUSTOMER_EMAIL_REQUIRED");
+    const result = await sendEmail({
+      to: toAddress,
+      subject: template.emailSubject(ctx),
+      html: body,
+      text: template.emailText?.(ctx) ?? template.sms(ctx),
+      locationId: wo.location_id,
+    });
+    externalId = result.id;
   } catch (err) {
     status = "failed";
     errorMessage = err instanceof Error ? err.message : "SEND_FAILED";
-    body = template.sms(ctx);
-    toAddress =
-      input.channel === "sms"
-        ? (normalizePhoneE164(customer.phone) ?? customer.phone ?? "")
-        : (customer.email ?? "");
   }
 
   const { data: log, error: logError } = await supabase
@@ -247,14 +307,14 @@ export async function sendWorkOrderMessage(input: {
     .insert({
       work_order_id: input.work_order_id,
       customer_id: customer.customer_id,
-      channel: input.channel,
+      channel: "email",
       direction: "outbound",
       template_key: input.template_key,
       to_address: toAddress,
       body,
       status,
       external_id: externalId,
-      from_address: input.channel === "sms" ? TORONTO_SHOP.phoneE164 : null,
+      from_address: null,
       error_message: errorMessage,
       sent_by_user_id: user.user_id,
     })

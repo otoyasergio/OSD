@@ -8,6 +8,8 @@ const {
   sendCustomerSms,
   addTimelineEvent,
   insertedLogs,
+  logUpdates,
+  operations,
 } = vi.hoisted(() => ({
   requireUser: vi.fn(),
   createClient: vi.fn(),
@@ -15,6 +17,8 @@ const {
   sendCustomerSms: vi.fn(),
   addTimelineEvent: vi.fn(),
   insertedLogs: [] as Array<Record<string, unknown>>,
+  logUpdates: [] as Array<Record<string, unknown>>,
+  operations: [] as string[],
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
@@ -36,13 +40,18 @@ describe("sendWorkOrderMessage Wix SMS", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     insertedLogs.length = 0;
+    logUpdates.length = 0;
+    operations.length = 0;
     requireUser.mockResolvedValue({
       user_id: "user-1",
       role: "service_advisor",
       active_location_id: "loc-1",
     });
     createPortalToken.mockResolvedValue({ token: "portal-token" });
-    sendCustomerSms.mockResolvedValue("wix-message-1");
+    sendCustomerSms.mockImplementation(async () => {
+      operations.push("provider");
+      return "wix-message-1";
+    });
     addTimelineEvent.mockResolvedValue(undefined);
     createClient.mockResolvedValue({
       from(table: string) {
@@ -75,6 +84,7 @@ describe("sendWorkOrderMessage Wix SMS", () => {
           return {
             insert(payload: Record<string, unknown>) {
               insertedLogs.push(payload);
+              operations.push("insert");
               return {
                 select: () => ({
                   single: async () => ({
@@ -86,6 +96,13 @@ describe("sendWorkOrderMessage Wix SMS", () => {
                     error: null,
                   }),
                 }),
+              };
+            },
+            update(payload: Record<string, unknown>) {
+              logUpdates.push(payload);
+              operations.push("update");
+              return {
+                eq: async () => ({ error: null }),
               };
             },
           };
@@ -109,13 +126,74 @@ describe("sendWorkOrderMessage Wix SMS", () => {
       body: expect.stringContaining("Reply STOP to opt out."),
       localOptedOutAt: null,
     });
+    expect(operations).toEqual(["insert", "provider", "update"]);
     expect(insertedLogs).toEqual([
       expect.objectContaining({
         channel: "sms",
-        status: "sent",
-        external_id: "wix-message-1",
+        status: "queued",
+        external_id: null,
         from_address: TORONTO_SHOP.phoneE164,
       }),
     ]);
+    expect(logUpdates).toEqual([
+      {
+        status: "sent",
+        external_id: "wix-message-1",
+        error_message: null,
+      },
+    ]);
+  });
+
+  it("marks a definite Wix rejection failed and propagates it", async () => {
+    sendCustomerSms.mockImplementation(async () => {
+      operations.push("provider");
+      throw new Error("WIX_INBOX_API_ERROR");
+    });
+
+    await expect(
+      sendWorkOrderMessage({
+        work_order_id: "wo-1",
+        template_key: "approval_request",
+        channel: "sms",
+      })
+    ).rejects.toThrow("WIX_INBOX_API_ERROR");
+
+    expect(operations).toEqual(["insert", "provider", "update"]);
+    expect(insertedLogs[0]).toEqual(
+      expect.objectContaining({ status: "queued", error_message: null })
+    );
+    expect(logUpdates).toEqual([
+      {
+        status: "failed",
+        external_id: null,
+        error_message: "WIX_INBOX_API_ERROR",
+      },
+    ]);
+    expect(addTimelineEvent).not.toHaveBeenCalled();
+  });
+
+  it("leaves an uncertain Wix send queued and propagates it", async () => {
+    sendCustomerSms.mockImplementation(async () => {
+      operations.push("provider");
+      throw new Error("WIX_INBOX_SEND_UNCERTAIN");
+    });
+
+    await expect(
+      sendWorkOrderMessage({
+        work_order_id: "wo-1",
+        template_key: "approval_request",
+        channel: "sms",
+      })
+    ).rejects.toThrow("WIX_INBOX_SEND_UNCERTAIN");
+
+    expect(operations).toEqual(["insert", "provider", "update"]);
+    expect(logUpdates).toEqual([
+      {
+        status: "queued",
+        external_id: null,
+        error_message: "WIX_INBOX_SEND_UNCERTAIN",
+      },
+    ]);
+    expect(addTimelineEvent).not.toHaveBeenCalled();
   });
 });

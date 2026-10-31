@@ -25,6 +25,9 @@ function channelLine(
   if (!result) return null;
   if (result.status === "sent" && !result.detail) return `${label} sent.`;
   if (result.status === "sent") return `${label}: ${result.detail}`;
+  if (result.status === "uncertain") {
+    return `${label} outcome uncertain. ${result.detail ?? ""}`.trim();
+  }
   return `${label} could not be sent. ${result.detail ?? ""}`.trim();
 }
 

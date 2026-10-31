@@ -238,6 +238,8 @@ const MESSAGES: Record<string, string> = {
     "Wix SMS is not configured. An owner needs to finish the Wix Inbox setup.",
   WIX_INBOX_TIMEOUT: "Wix SMS took too long to respond. Try sending the text again.",
   WIX_INBOX_API_ERROR: "Wix could not send that text message. Try again.",
+  WIX_INBOX_SEND_UNCERTAIN:
+    "Wix may have accepted this text. Inspect the contact’s Wix Inbox conversation before any resend.",
   WIX_INBOX_INVALID_CONTACT_ID:
     "The customer’s Wix contact link is invalid. Sync the customer and try again.",
   WIX_INBOX_INVALID_CONVERSATION_ID:

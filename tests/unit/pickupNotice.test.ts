@@ -337,6 +337,34 @@ describe("sendReadyForPickupNotice", () => {
     expect(logs.find((row) => row.channel === "sms")?.status).toBe("failed");
   });
 
+  it("leaves an uncertain text queued and tells staff to inspect Wix Inbox", async () => {
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_SEND_UNCERTAIN"));
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("uncertain");
+    expect(result.sms.detail).toMatch(/Wix Inbox/i);
+    expect(result.sms.detail).toMatch(/before.*resend/i);
+    expect(result.email.status).toBe("sent");
+    expect(logs.find((row) => row.channel === "sms")).toEqual(
+      expect.objectContaining({
+        status: "queued",
+        error_message: "WIX_INBOX_SEND_UNCERTAIN",
+      })
+    );
+  });
+
+  it("blocks a pickup resend while a prior Wix outcome is uncertain", async () => {
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_SEND_UNCERTAIN"));
+
+    await sendReadyForPickupNotice("wo-1");
+    const second = await sendReadyForPickupNotice("wo-1");
+
+    expect(second.sms.status).toBe("uncertain");
+    expect(second.sms.detail).toMatch(/Wix Inbox/i);
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
+  });
+
   it("keeps an accepted SMS sent and warns when its log update fails", async () => {
     updateErrors.push({ message: "sent update failed" }, null);
 

@@ -19,7 +19,7 @@ import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 
 export type PickupNoticeChannelResult = {
-  status: "sent" | "failed";
+  status: "sent" | "failed" | "uncertain";
   detail: string | null;
 };
 
@@ -235,13 +235,21 @@ async function deliverChannel(input: {
         .eq("template_key", "ready_for_pickup")
         .eq("dedupe_key", input.dedupeKey)
         .maybeSingle();
-      const status = existing.data?.status === "failed" ? "failed" : "sent";
+      const status: PickupNoticeChannelResult["status"] =
+        existing.data?.status === "failed"
+          ? "failed"
+          : existing.data?.status === "queued" &&
+              existing.data?.error_message === "WIX_INBOX_SEND_UNCERTAIN"
+            ? "uncertain"
+            : "sent";
       return {
         status,
         detail:
-          status === "failed"
-            ? (existing.data?.error_message ?? "SEND_FAILED")
-            : "Already sent for this pickup.",
+          status === "sent"
+            ? "Already sent for this pickup."
+            : toFormErrorMessage(
+                new Error(existing.data?.error_message ?? "SEND_FAILED")
+              ),
       };
     }
     return { status: "failed", detail: inserted.error.message };
@@ -252,12 +260,17 @@ async function deliverChannel(input: {
   try {
     externalId = await input.send();
   } catch (error) {
+    const errorCode = error instanceof Error ? error.message : "SEND_FAILED";
+    const uncertain = input.channel === "sms" && errorCode === "WIX_INBOX_SEND_UNCERTAIN";
     const detail = toFormErrorMessage(error);
     if (logId) {
       try {
         const updated = await input.admin
           .from("communication_log")
-          .update({ status: "failed", error_message: detail })
+          .update({
+            status: uncertain ? "queued" : "failed",
+            error_message: uncertain ? errorCode : detail,
+          })
           .eq("log_id", logId);
         if (updated.error) {
           logger.warn("Pickup notice communication log reconciliation failed", {
@@ -276,7 +289,7 @@ async function deliverChannel(input: {
         });
       }
     }
-    return { status: "failed", detail };
+    return { status: uncertain ? "uncertain" : "failed", detail };
   }
 
   let reconciliationDetail: string | null = null;

@@ -106,6 +106,7 @@ describe("toFormErrorMessage", () => {
     "WIX_INBOX_SMS_NOT_CONFIGURED",
     "WIX_INBOX_TIMEOUT",
     "WIX_INBOX_API_ERROR",
+    "WIX_INBOX_SEND_UNCERTAIN",
     "WIX_INBOX_INVALID_CONTACT_ID",
     "WIX_INBOX_INVALID_CONVERSATION_ID",
     "WIX_INBOX_INVALID_MESSAGE_BODY",
@@ -119,6 +120,14 @@ describe("toFormErrorMessage", () => {
     const message = toFormErrorMessage(new Error(code));
     expect(message).not.toBe(code);
     expect(message).toMatch(/Wix|text|phone|SMS|customer/i);
+  });
+
+  it("directs staff to inspect Wix Inbox before retrying an uncertain send", () => {
+    const message = toFormErrorMessage(new Error("WIX_INBOX_SEND_UNCERTAIN"));
+    expect(message).toMatch(/inspect|check/i);
+    expect(message).toMatch(/Wix Inbox/i);
+    expect(message).toMatch(/before.*resend/i);
+    expect(message).not.toMatch(/idempoten|delivered/i);
   });
 
   it.each([
