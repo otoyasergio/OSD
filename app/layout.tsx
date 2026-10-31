@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
+import { AppTelemetry } from "@/components/analytics/AppTelemetry";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -54,8 +53,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         {children}
-        <Analytics />
-        <SpeedInsights />
+        <AppTelemetry />
       </body>
     </html>
   );

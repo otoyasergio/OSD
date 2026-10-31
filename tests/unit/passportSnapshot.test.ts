@@ -4,6 +4,7 @@ import {
   buildPassportDraft,
   type PassportDraftInput,
 } from "@/lib/passport/buildDraft";
+import { hashPassportPayload } from "@/lib/passport/digest";
 
 function sourceInput(): PassportDraftInput {
   return {
@@ -129,6 +130,31 @@ describe("buildPassportDraft", () => {
     expect(second.payload).toEqual(first.payload);
     expect(second.payloadSha256).toBe(first.payloadSha256);
     expect(first.payloadSha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("hashes equivalent JSON identically even when object keys are reordered", () => {
+    const payload = buildPassportDraft(sourceInput()).payload;
+    const reordered = {
+      limitations: payload.limitations,
+      service_entries: payload.service_entries.map((entry) => ({
+        installed_parts: entry.installed_parts,
+        completed_services: entry.completed_services,
+        source_label: entry.source_label,
+        location: entry.location,
+        mileage: entry.mileage,
+        work_order_reference: entry.work_order_reference,
+        service_date: entry.service_date,
+      })),
+      vehicle: payload.vehicle,
+      issuer: payload.issuer,
+      coverage_through: payload.coverage_through,
+      issued_at: payload.issued_at,
+      report_version: payload.report_version,
+      passport_number: payload.passport_number,
+      schema_version: payload.schema_version,
+    };
+
+    expect(hashPassportPayload(reordered)).toBe(hashPassportPayload(payload));
   });
 
   it("preserves each observed mileage unit without conversion", () => {

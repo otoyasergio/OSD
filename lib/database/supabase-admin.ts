@@ -36,3 +36,11 @@ export function createDiagnosticsAdminClient() {
 export function createPhotoAdminClient() {
   return createServiceRoleClient("PHOTO_ADMIN_MISCONFIGURED");
 }
+
+/**
+ * Server-only client for resolving a hashed vehicle-passport grant to its
+ * frozen snapshot. Public routes must not use it to query operational tables.
+ */
+export function createPassportAdminClient() {
+  return createServiceRoleClient("PASSPORT_SHARE_MISCONFIGURED");
+}

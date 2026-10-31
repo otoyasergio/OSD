@@ -1,13 +1,22 @@
 import "server-only";
 
 import { requireUser } from "@/lib/auth/session";
+import { createPassportAdminClient } from "@/lib/database/supabase-admin";
 import { createClient } from "@/lib/database/supabase-server";
 import { canManageVehiclePassport } from "@/lib/permissions";
 import { validatePassportPayload } from "@/lib/passport/privacy";
+import {
+  PASSPORT_PUBLIC_GRANT_COLUMNS,
+  PASSPORT_PUBLIC_SNAPSHOT_COLUMNS,
+  resolvePassportShareRecord,
+  type ResolvedPassportShare,
+} from "@/lib/passport/resolveShare";
 import type { PassportSnapshotPayload } from "@/lib/passport/schema";
 import {
   generatePassportShareToken,
+  hashPassportShareToken,
   passportShareExpiry,
+  passportShareStatus,
   passportShareUrl,
 } from "@/lib/passport/tokens";
 import { toRpcErrorCode } from "@/lib/services/errors";
@@ -136,4 +145,50 @@ export async function revokePassportShare(shareId: string): Promise<void> {
     p_share_id: shareId,
   });
   if (error) throw new Error(toRpcErrorCode(error));
+}
+
+export async function resolvePublicPassportShare(
+  token: string
+): Promise<ResolvedPassportShare | null> {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+
+  const admin = createPassportAdminClient();
+  const grantResult = await admin
+    .from("vehicle_passport_share")
+    .select(PASSPORT_PUBLIC_GRANT_COLUMNS)
+    .eq("token_hash", hashPassportShareToken(token))
+    .maybeSingle();
+  if (grantResult.error) throw grantResult.error;
+  if (!grantResult.data || passportShareStatus(grantResult.data) !== "active") {
+    return null;
+  }
+
+  const snapshotResult = await admin
+    .from("vehicle_passport_snapshot")
+    .select(PASSPORT_PUBLIC_SNAPSHOT_COLUMNS)
+    .eq("snapshot_id", grantResult.data.snapshot_id)
+    .maybeSingle();
+  if (snapshotResult.error) throw snapshotResult.error;
+  if (!snapshotResult.data) return null;
+
+  const passportResult = await admin
+    .from("vehicle_passport")
+    .select("status")
+    .eq("passport_id", snapshotResult.data.passport_id)
+    .maybeSingle();
+  if (passportResult.error) throw passportResult.error;
+  if (!passportResult.data) return null;
+
+  return resolvePassportShareRecord({
+    share_id: grantResult.data.share_id,
+    expires_at: grantResult.data.expires_at,
+    revoked_at: grantResult.data.revoked_at,
+    snapshot: {
+      snapshot_id: snapshotResult.data.snapshot_id,
+      payload: snapshotResult.data.payload,
+      payload_sha256: snapshotResult.data.payload_sha256,
+      superseded_at: snapshotResult.data.superseded_at,
+      passport_status: passportResult.data.status,
+    },
+  });
 }

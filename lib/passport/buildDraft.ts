@@ -1,10 +1,10 @@
-import { createHash } from "node:crypto";
 import type {
   JobStatus,
   PartRequirementState,
   WorkOrderStatus,
 } from "@/lib/database/types";
 import type { MileageUnit } from "@/lib/mileage/format";
+import { hashPassportPayload } from "@/lib/passport/digest";
 import { validatePassportPayload } from "@/lib/passport/privacy";
 import type { PassportSnapshotPayload } from "@/lib/passport/schema";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
@@ -69,10 +69,6 @@ function compareText(left: string, right: string): number {
 function cleanOptional(value: string | null): string | null {
   const cleaned = value?.trim();
   return cleaned ? cleaned : null;
-}
-
-function hashPayload(payload: PassportSnapshotPayload): string {
-  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
 export function buildPassportDraft(input: PassportDraftInput): PassportDraft {
@@ -179,7 +175,7 @@ export function buildPassportDraft(input: PassportDraftInput): PassportDraft {
 
   return {
     payload,
-    payloadSha256: hashPayload(payload),
+    payloadSha256: hashPassportPayload(payload),
     sourceWorkOrderIds: entries.map((entry) => entry.workOrderId),
   };
 }

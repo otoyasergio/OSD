@@ -90,7 +90,7 @@ export default async function VehiclePassportPage({
                 Review published record
               </summary>
               <div className="mt-3">
-                <PassportReport payload={currentSnapshot.payload} />
+                <PassportReport payload={currentSnapshot.payload} titleLevel={2} />
               </div>
             </details>
           </section>
@@ -137,7 +137,7 @@ export default async function VehiclePassportPage({
                 reportVersion={preview.draft.reportVersion}
                 replacesPublishedVersion={Boolean(currentSnapshot)}
               />
-              <PassportReport payload={preview.draft.payload} />
+              <PassportReport payload={preview.draft.payload} titleLevel={2} />
             </>
           )}
         </div>

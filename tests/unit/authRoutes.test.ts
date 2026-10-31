@@ -5,6 +5,7 @@ describe("auth route helpers", () => {
   it("only marks intentional anonymous routes as public", () => {
     expect(isPublicAppPath("/login")).toBe(true);
     expect(isPublicAppPath("/c/customer-token")).toBe(true);
+    expect(isPublicAppPath("/p/passport-token")).toBe(true);
     expect(isPublicAppPath("/api/twilio/webhooks")).toBe(true);
     expect(isPublicAppPath("/dashboard")).toBe(false);
     expect(isPublicAppPath("/control-center")).toBe(false);

@@ -3,6 +3,7 @@ import type { PassportSnapshotPayload } from "@/lib/passport/schema";
 type Props = {
   payload: PassportSnapshotPayload;
   showDownloadNotice?: boolean;
+  titleLevel?: 1 | 2;
 };
 
 function formatDate(value: string): string {
@@ -18,8 +19,13 @@ function formatQuantity(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
-export function PassportReport({ payload, showDownloadNotice = false }: Props) {
+export function PassportReport({
+  payload,
+  showDownloadNotice = false,
+  titleLevel = 1,
+}: Props) {
   const vehicleLabel = `${payload.vehicle.year} ${payload.vehicle.make} ${payload.vehicle.model}`;
+  const Title = titleLevel === 1 ? "h1" : "h2";
 
   return (
     <article className="passport-report rounded-lg border border-[var(--border-strong)] bg-white p-5 text-foreground shadow-sm print:border-0 print:p-0 print:shadow-none">
@@ -27,9 +33,9 @@ export function PassportReport({ payload, showDownloadNotice = false }: Props) {
         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--status-neutral)]">
           {payload.issuer.legal_name}
         </p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+        <Title className="mt-2 text-2xl font-semibold tracking-tight">
           Vehicle service passport
-        </h1>
+        </Title>
         <p className="mt-1 text-sm text-[var(--status-neutral)]">
           {payload.passport_number} · Version {payload.report_version} · Issued{" "}
           {formatDate(payload.issued_at)}
@@ -81,8 +87,8 @@ export function PassportReport({ payload, showDownloadNotice = false }: Props) {
                   : null}
               </p>
               <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
-                {entry.completed_services.map((service) => (
-                  <li key={service}>{service}</li>
+                {entry.completed_services.map((service, index) => (
+                  <li key={`${service}-${index}`}>{service}</li>
                 ))}
               </ul>
               {entry.installed_parts.length > 0 ? (
@@ -108,8 +114,8 @@ export function PassportReport({ payload, showDownloadNotice = false }: Props) {
       <footer className="border-t border-[var(--border)] pt-5">
         <h2 className="text-sm font-semibold">Coverage limits</h2>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[var(--status-neutral)]">
-          {payload.limitations.map((limitation) => (
-            <li key={limitation}>{limitation}</li>
+          {payload.limitations.map((limitation, index) => (
+            <li key={`${limitation}-${index}`}>{limitation}</li>
           ))}
         </ul>
         {showDownloadNotice ? (

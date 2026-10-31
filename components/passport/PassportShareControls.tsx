@@ -21,8 +21,13 @@ type Action = (
 
 function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("en-CA", {
-    dateStyle: "medium",
-    timeStyle: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/Toronto",
+    timeZoneName: "short",
   }).format(new Date(value));
 }
 
@@ -62,12 +67,12 @@ export function PassportShareControls({
   shares: PassportShareSummary[];
 }) {
   const [state, formAction] = useActionState(createAction, INITIAL_STATE);
-  const [copied, setCopied] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
   async function copyLink() {
     if (!state.shareUrl) return;
     await navigator.clipboard.writeText(state.shareUrl);
-    setCopied(true);
+    setCopiedUrl(state.shareUrl);
   }
 
   return (
@@ -111,7 +116,7 @@ export function PassportShareControls({
               value={state.shareUrl}
             />
             <button type="button" onClick={copyLink} className="btn btn-secondary">
-              {copied ? "Copied" : "Copy"}
+              {copiedUrl === state.shareUrl ? "Copied" : "Copy"}
             </button>
           </div>
           {state.shareExpiresAt ? (
