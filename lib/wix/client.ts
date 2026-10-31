@@ -58,12 +58,11 @@ function isTimeoutError(error: unknown): boolean {
  * expose provider response bodies. Keep V4 on the existing transport above.
  */
 async function wixV5Fetch(path: string): Promise<unknown> {
-  const { apiKey, siteId, accountId } = getWixContactsConfig();
+  const { apiKey, siteId } = getWixContactsConfig();
   const headers = new Headers();
   headers.set("Authorization", apiKey);
   headers.set("wix-site-id", siteId);
   headers.set("Content-Type", "application/json");
-  if (accountId) headers.set("wix-account-id", accountId);
 
   let response: Response;
   try {

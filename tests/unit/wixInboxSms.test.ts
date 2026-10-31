@@ -4,7 +4,12 @@ import { isWixInboxSmsConfigured } from "@/lib/wix/config";
 import { getOrCreateWixInboxConversation, sendWixInboxSms } from "@/lib/wix/inbox";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 
-const WIX_ENV_KEYS = ["WIX_API_KEY", "WIX_SITE_ID", "WIX_INBOX_SMS_ENABLED"] as const;
+const WIX_ENV_KEYS = [
+  "WIX_API_KEY",
+  "WIX_SITE_ID",
+  "WIX_ACCOUNT_ID",
+  "WIX_INBOX_SMS_ENABLED",
+] as const;
 const CONTACT_ID = "11111111-1111-4111-8111-111111111111";
 const CONVERSATION_ID = "22222222-2222-4222-8222-222222222222";
 const MESSAGE_ID = "1234567890";
@@ -314,6 +319,25 @@ describe("getWixContactV5", () => {
       `https://www.wixapis.com/contacts/v5/contacts/${CONTACT_ID}`,
       expect.objectContaining({ cache: "no-store" })
     );
+  });
+
+  it("omits the account header from site-level Contacts V5 requests", async () => {
+    configureWixInboxSms();
+    process.env.WIX_ACCOUNT_ID = "configured-account-id";
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ contact: { id: CONTACT_ID } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getWixContactV5(CONTACT_ID);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get("Authorization")).toBe("test-api-key");
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(headers.get("wix-site-id")).toBe("test-site-id");
+    expect(headers.has("wix-account-id")).toBe(false);
   });
 
   it("maps HTTP failures without exposing the provider response", async () => {
