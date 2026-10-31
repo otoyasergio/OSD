@@ -71,4 +71,23 @@ describe("vehicle passport migration", () => {
       "GRANT SELECT, INSERT, UPDATE ON TABLE public.vehicle_passport_snapshot TO authenticated"
     );
   });
+
+  it("creates and revokes one current seven-day share through guarded commands", () => {
+    const sql = vehiclePassportMigration();
+
+    expect(sql).toContain(
+      "CREATE OR REPLACE FUNCTION public.create_vehicle_passport_share"
+    );
+    expect(sql).toContain(
+      "CREATE OR REPLACE FUNCTION public.revoke_vehicle_passport_share"
+    );
+    expect(sql).toContain("PASSPORT_SNAPSHOT_NOT_CURRENT");
+    expect(sql).toContain("interval '8 days'");
+    expect(sql).toContain(
+      "GRANT EXECUTE ON FUNCTION public.create_vehicle_passport_share"
+    );
+    expect(sql).toContain(
+      "GRANT EXECUTE ON FUNCTION public.revoke_vehicle_passport_share"
+    );
+  });
 });

@@ -227,6 +227,11 @@ export function canViewClients(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "admin";
 }
 
+/** Publish and revoke externally shared vehicle-passport snapshots. */
+export function canManageVehiclePassport(role: UserRole) {
+  return FRONT_OFFICE.includes(role);
+}
+
 /** View customer profile documents (owner/manager/admin/service advisor). */
 export function canViewCustomerDocuments(role: UserRole) {
   return canViewClients(role);

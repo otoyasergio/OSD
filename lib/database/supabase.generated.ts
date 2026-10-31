@@ -711,6 +711,21 @@ export type Database = {
           published_at: string;
         }>;
       };
+      create_vehicle_passport_share: {
+        Args: {
+          p_snapshot_id: string;
+          p_token_hash: string;
+          p_expires_at: string;
+        };
+        Returns: Array<{
+          created_share_id: string;
+          created_expires_at: string;
+        }>;
+      };
+      revoke_vehicle_passport_share: {
+        Args: { p_share_id: string };
+        Returns: boolean;
+      };
       current_app_user_id: {
         Args: Record<string, never>;
         Returns: string;

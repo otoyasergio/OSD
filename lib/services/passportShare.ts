@@ -1,0 +1,139 @@
+import "server-only";
+
+import { requireUser } from "@/lib/auth/session";
+import { createClient } from "@/lib/database/supabase-server";
+import { canManageVehiclePassport } from "@/lib/permissions";
+import { validatePassportPayload } from "@/lib/passport/privacy";
+import type { PassportSnapshotPayload } from "@/lib/passport/schema";
+import {
+  generatePassportShareToken,
+  passportShareExpiry,
+  passportShareUrl,
+} from "@/lib/passport/tokens";
+import { toRpcErrorCode } from "@/lib/services/errors";
+
+export type PassportShareSummary = {
+  share_id: string;
+  expires_at: string;
+  revoked_at: string | null;
+  created_at: string;
+};
+
+export type PassportSnapshotSummary = {
+  snapshot_id: string;
+  version: number;
+  payload: PassportSnapshotPayload;
+  payload_sha256: string;
+  coverage_through: string;
+  issued_at: string;
+};
+
+export type VehiclePassportManagement = {
+  passport: {
+    passport_id: string;
+    passport_number: string;
+    status: "active" | "suspended";
+  } | null;
+  currentSnapshot: PassportSnapshotSummary | null;
+  shares: PassportShareSummary[];
+};
+
+export type CreatedPassportShare = {
+  shareId: string;
+  url: string;
+  expiresAt: string;
+};
+
+async function requirePassportManager() {
+  const user = await requireUser();
+  if (!canManageVehiclePassport(user.role)) throw new Error("FORBIDDEN");
+  return user;
+}
+
+export async function getVehiclePassportManagement(
+  motorcycleId: string
+): Promise<VehiclePassportManagement> {
+  await requirePassportManager();
+  const supabase = await createClient();
+  const passportResult = await supabase
+    .from("vehicle_passport")
+    .select("passport_id, passport_number, status")
+    .eq("motorcycle_id", motorcycleId)
+    .maybeSingle();
+  if (passportResult.error) throw passportResult.error;
+  if (!passportResult.data) {
+    return { passport: null, currentSnapshot: null, shares: [] };
+  }
+
+  const passport = passportResult.data as VehiclePassportManagement["passport"];
+  const snapshotResult = await supabase
+    .from("vehicle_passport_snapshot")
+    .select("snapshot_id, version, payload, payload_sha256, coverage_through, issued_at")
+    .eq("passport_id", passport!.passport_id)
+    .is("superseded_at", null)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (snapshotResult.error) throw snapshotResult.error;
+  if (!snapshotResult.data) {
+    return { passport, currentSnapshot: null, shares: [] };
+  }
+
+  const currentSnapshot: PassportSnapshotSummary = {
+    snapshot_id: snapshotResult.data.snapshot_id,
+    version: Number(snapshotResult.data.version),
+    payload: validatePassportPayload(snapshotResult.data.payload),
+    payload_sha256: snapshotResult.data.payload_sha256,
+    coverage_through: snapshotResult.data.coverage_through,
+    issued_at: snapshotResult.data.issued_at,
+  };
+  const sharesResult = await supabase
+    .from("vehicle_passport_share")
+    .select("share_id, expires_at, revoked_at, created_at")
+    .eq("snapshot_id", currentSnapshot.snapshot_id)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (sharesResult.error) throw sharesResult.error;
+
+  return {
+    passport,
+    currentSnapshot,
+    shares: (sharesResult.data ?? []) as PassportShareSummary[],
+  };
+}
+
+export async function createPassportShare(
+  snapshotId: string
+): Promise<CreatedPassportShare> {
+  await requirePassportManager();
+  const supabase = await createClient();
+  const { token, hash } = generatePassportShareToken();
+  const expiresAt = passportShareExpiry();
+  const { data, error } = await supabase.rpc("create_vehicle_passport_share", {
+    p_snapshot_id: snapshotId,
+    p_token_hash: hash,
+    p_expires_at: expiresAt,
+  });
+  if (error) throw new Error(toRpcErrorCode(error));
+
+  const result = (Array.isArray(data) ? data[0] : data) as {
+    created_share_id: string;
+    created_expires_at: string;
+  } | null;
+  if (!result) throw new Error("PASSPORT_SHARE_CREATE_FAILED");
+
+  return {
+    shareId: result.created_share_id,
+    url: passportShareUrl(token),
+    expiresAt: result.created_expires_at,
+  };
+}
+
+export async function revokePassportShare(shareId: string): Promise<void> {
+  await requirePassportManager();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("revoke_vehicle_passport_share", {
+    p_share_id: shareId,
+  });
+  if (error) throw new Error(toRpcErrorCode(error));
+}

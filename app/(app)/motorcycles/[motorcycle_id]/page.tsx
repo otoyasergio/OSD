@@ -11,6 +11,7 @@ import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canDeleteMotorcycleDocuments,
   canEditWorkOrder,
+  canManageVehiclePassport,
   canUpdateServiceInformation,
   canUploadMotorcycleDocuments,
   canViewBillingArea,
@@ -86,6 +87,7 @@ export default async function MotorcycleDetailPage({
   );
   const canEditServiceInfo = canUpdateServiceInformation(viewRole);
   const canTransfer = canEditWorkOrder(viewRole);
+  const canManagePassport = canManageVehiclePassport(viewRole);
   const showMoney = canViewBillingArea(viewRole);
   const canUploadDocs = canUploadMotorcycleDocuments(viewRole);
   const canDeleteDocs = canDeleteMotorcycleDocuments(viewRole);
@@ -127,6 +129,17 @@ export default async function MotorcycleDetailPage({
           {motorcycle.colour ? ` · ${motorcycle.colour}` : null}
           {motorcycle.plate_number ? ` · Plate ${motorcycle.plate_number}` : null}
           {motorcycle.vin ? ` · VIN ${motorcycle.vin}` : null}
+          {canManagePassport ? (
+            <>
+              {" · "}
+              <Link
+                href={`/motorcycles/${motorcycle_id}/passport`}
+                className="font-semibold text-foreground underline-offset-2 hover:underline"
+              >
+                Passport
+              </Link>
+            </>
+          ) : null}
           {canTransfer ? (
             <>
               {" · "}

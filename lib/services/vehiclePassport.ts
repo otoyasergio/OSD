@@ -18,7 +18,8 @@ import {
   generatePassportNumber,
   PASSPORT_WORK_ORDER_SELECT,
 } from "@/lib/passport/source";
-import { canEditWorkOrder } from "@/lib/permissions";
+import { canManageVehiclePassport } from "@/lib/permissions";
+import { toRpcErrorCode } from "@/lib/services/errors";
 
 type RawPassportPart = {
   description: string;
@@ -92,7 +93,7 @@ async function loadVehiclePassportDraft(
   options: DraftOptions = {}
 ): Promise<VehiclePassportDraft> {
   const user = await requireUser();
-  if (!canEditWorkOrder(user.role)) throw new Error("FORBIDDEN");
+  if (!canManageVehiclePassport(user.role)) throw new Error("FORBIDDEN");
 
   const supabase = await createClient();
   const [motorcycleResult, workOrdersResult, passportResult] = await Promise.all([
@@ -214,7 +215,7 @@ export async function publishVehiclePassport(
     p_coverage_through: draft.payload.coverage_through,
     p_work_order_ids: draft.sourceWorkOrderIds,
   });
-  if (error) throw error;
+  if (error) throw new Error(toRpcErrorCode(error));
 
   const result = (Array.isArray(data) ? data[0] : data) as {
     published_snapshot_id: string;

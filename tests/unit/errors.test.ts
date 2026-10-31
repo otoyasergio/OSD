@@ -71,6 +71,18 @@ describe("toFormErrorMessage", () => {
     );
   });
 
+  it.each([
+    "PASSPORT_NO_COMPLETED_SERVICE",
+    "PASSPORT_DISCLOSURE_RISK",
+    "PASSPORT_VERSION_CONFLICT",
+    "PASSPORT_SNAPSHOT_NOT_CURRENT",
+    "PASSPORT_SHARE_NOT_FOUND",
+  ])("maps passport error %s to safe staff-facing copy", (code) => {
+    const message = toFormErrorMessage(new Error(code));
+    expect(message).not.toBe(code);
+    expect(message).toMatch(/passport|service|share|information|refresh/i);
+  });
+
   it("maps password change validation errors", () => {
     expect(toFormErrorMessage(new Error("CURRENT_PASSWORD_INVALID"))).toBe(
       "Current password is incorrect."

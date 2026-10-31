@@ -367,6 +367,185 @@ GRANT EXECUTE ON FUNCTION public.publish_vehicle_passport_snapshot(
   uuid, text, integer, jsonb, text, timestamptz, uuid[]
 ) TO authenticated, service_role;
 
+CREATE OR REPLACE FUNCTION public.create_vehicle_passport_share(
+  p_snapshot_id uuid,
+  p_token_hash text,
+  p_expires_at timestamptz
+)
+RETURNS TABLE (
+  created_share_id uuid,
+  created_expires_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_actor_user_id uuid;
+  v_passport_id uuid;
+  v_share_id uuid;
+  v_now timestamptz := now();
+BEGIN
+  v_actor_user_id := public.current_app_user_id();
+  IF v_actor_user_id IS NULL
+     OR NOT public.is_active_app_user()
+     OR public.current_app_user_role()
+       NOT IN ('owner', 'manager', 'service_advisor') THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  IF p_token_hash !~ '^[0-9a-f]{64}$'
+     OR p_expires_at <= v_now
+     OR p_expires_at > v_now + interval '8 days' THEN
+    RAISE EXCEPTION 'PASSPORT_SHARE_INVALID';
+  END IF;
+
+  SELECT passport.passport_id
+  INTO v_passport_id
+  FROM public.vehicle_passport_snapshot AS snapshot
+  JOIN public.vehicle_passport AS passport
+    ON passport.passport_id = snapshot.passport_id
+  WHERE snapshot.snapshot_id = p_snapshot_id
+    AND snapshot.superseded_at IS NULL
+    AND passport.status = 'active'
+  FOR UPDATE OF snapshot, passport;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PASSPORT_SNAPSHOT_NOT_CURRENT';
+  END IF;
+
+  UPDATE public.vehicle_passport_share
+  SET
+    revoked_at = v_now,
+    revoked_by_user_id = v_actor_user_id
+  WHERE snapshot_id = p_snapshot_id
+    AND revoked_at IS NULL;
+
+  INSERT INTO public.vehicle_passport_share (
+    snapshot_id,
+    token_hash,
+    expires_at,
+    created_by_user_id
+  )
+  VALUES (
+    p_snapshot_id,
+    p_token_hash,
+    p_expires_at,
+    v_actor_user_id
+  )
+  RETURNING share_id INTO v_share_id;
+
+  INSERT INTO public.audit_log (
+    actor_user_id,
+    action,
+    entity_type,
+    entity_id,
+    description,
+    new_value
+  )
+  VALUES (
+    v_actor_user_id,
+    'vehicle_passport_share_created',
+    'vehicle_passport_share',
+    v_share_id,
+    'A seven-day vehicle passport share was created',
+    jsonb_build_object(
+      'passport_id', v_passport_id,
+      'snapshot_id', p_snapshot_id,
+      'expires_at', p_expires_at
+    )
+  );
+
+  RETURN QUERY SELECT v_share_id, p_expires_at;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.create_vehicle_passport_share(
+  uuid, text, timestamptz
+) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.create_vehicle_passport_share(
+  uuid, text, timestamptz
+) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.revoke_vehicle_passport_share(
+  p_share_id uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_actor_user_id uuid;
+  v_passport_id uuid;
+  v_snapshot_id uuid;
+  v_revoked_at timestamptz;
+BEGIN
+  v_actor_user_id := public.current_app_user_id();
+  IF v_actor_user_id IS NULL
+     OR NOT public.is_active_app_user()
+     OR public.current_app_user_role()
+       NOT IN ('owner', 'manager', 'service_advisor') THEN
+    RAISE EXCEPTION 'FORBIDDEN';
+  END IF;
+
+  SELECT
+    passport.passport_id,
+    share.snapshot_id,
+    share.revoked_at
+  INTO
+    v_passport_id,
+    v_snapshot_id,
+    v_revoked_at
+  FROM public.vehicle_passport_share AS share
+  JOIN public.vehicle_passport_snapshot AS snapshot
+    ON snapshot.snapshot_id = share.snapshot_id
+  JOIN public.vehicle_passport AS passport
+    ON passport.passport_id = snapshot.passport_id
+  WHERE share.share_id = p_share_id
+  FOR UPDATE OF share;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PASSPORT_SHARE_NOT_FOUND';
+  END IF;
+
+  IF v_revoked_at IS NULL THEN
+    UPDATE public.vehicle_passport_share
+    SET
+      revoked_at = now(),
+      revoked_by_user_id = v_actor_user_id
+    WHERE share_id = p_share_id;
+
+    INSERT INTO public.audit_log (
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      description,
+      new_value
+    )
+    VALUES (
+      v_actor_user_id,
+      'vehicle_passport_share_revoked',
+      'vehicle_passport_share',
+      p_share_id,
+      'Vehicle passport share revoked',
+      jsonb_build_object(
+        'passport_id', v_passport_id,
+        'snapshot_id', v_snapshot_id
+      )
+    );
+  END IF;
+
+  RETURN true;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.revoke_vehicle_passport_share(uuid)
+  FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.revoke_vehicle_passport_share(uuid)
+  TO authenticated, service_role;
+
 ALTER TABLE public.vehicle_passport ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vehicle_passport_snapshot ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vehicle_passport_snapshot_source ENABLE ROW LEVEL SECURITY;
@@ -494,5 +673,5 @@ GRANT ALL ON TABLE public.vehicle_passport_snapshot_source TO service_role;
 REVOKE ALL ON TABLE public.vehicle_passport_share FROM PUBLIC;
 REVOKE ALL ON TABLE public.vehicle_passport_share FROM anon;
 REVOKE ALL ON TABLE public.vehicle_passport_share FROM authenticated;
-GRANT SELECT, INSERT, UPDATE ON TABLE public.vehicle_passport_share TO authenticated;
+GRANT SELECT ON TABLE public.vehicle_passport_share TO authenticated;
 GRANT ALL ON TABLE public.vehicle_passport_share TO service_role;
