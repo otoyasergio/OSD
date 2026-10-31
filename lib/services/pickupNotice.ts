@@ -238,8 +238,7 @@ async function deliverChannel(input: {
       const status: PickupNoticeChannelResult["status"] =
         existing.data?.status === "failed"
           ? "failed"
-          : existing.data?.status === "queued" &&
-              existing.data?.error_message === "WIX_INBOX_SEND_UNCERTAIN"
+          : existing.data?.status === "queued"
             ? "uncertain"
             : "sent";
       return {
@@ -247,9 +246,11 @@ async function deliverChannel(input: {
         detail:
           status === "sent"
             ? "Already sent for this pickup."
-            : toFormErrorMessage(
-                new Error(existing.data?.error_message ?? "SEND_FAILED")
-              ),
+            : status === "uncertain"
+              ? toFormErrorMessage(new Error("WIX_INBOX_SEND_UNCERTAIN"))
+              : toFormErrorMessage(
+                  new Error(existing.data?.error_message ?? "SEND_FAILED")
+                ),
       };
     }
     return { status: "failed", detail: inserted.error.message };

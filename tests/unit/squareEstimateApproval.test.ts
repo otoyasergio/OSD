@@ -7,6 +7,8 @@ const {
   createPortalToken,
   addTimelineEvent,
   updates,
+  updateOutcomes,
+  loggerWarn,
 } = vi.hoisted(() => ({
   requireUser: vi.fn(),
   createClient: vi.fn(),
@@ -14,6 +16,8 @@ const {
   createPortalToken: vi.fn(),
   addTimelineEvent: vi.fn(),
   updates: [] as Array<Record<string, unknown>>,
+  updateOutcomes: [] as Array<{ message: string } | Error | null>,
+  loggerWarn: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
@@ -21,6 +25,7 @@ vi.mock("@/lib/database/supabase-server", () => ({ createClient }));
 vi.mock("@/lib/services/communications", () => ({ sendWorkOrderMessage }));
 vi.mock("@/lib/services/portal", () => ({ createPortalToken }));
 vi.mock("@/lib/timeline/addTimelineEvent", () => ({ addTimelineEvent }));
+vi.mock("@/lib/security/logger", () => ({ logger: { warn: loggerWarn } }));
 
 import { sendWorkOrderEstimateApproval } from "@/lib/services/squareBilling";
 
@@ -28,6 +33,7 @@ describe("sendWorkOrderEstimateApproval", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     updates.length = 0;
+    updateOutcomes.length = 0;
     requireUser.mockResolvedValue({
       user_id: "user-1",
       role: "service_advisor",
@@ -67,7 +73,13 @@ describe("sendWorkOrderEstimateApproval", () => {
           }),
           update(payload: Record<string, unknown>) {
             updates.push(payload);
-            return { eq: async () => ({ error: null }) };
+            return {
+              eq: async () => {
+                const outcome = updateOutcomes.shift() ?? null;
+                if (outcome instanceof Error) throw outcome;
+                return { error: outcome };
+              },
+            };
           },
         };
       },
@@ -106,6 +118,35 @@ describe("sendWorkOrderEstimateApproval", () => {
         description: "Estimate approval sent for WO-100",
         new_value: { channel: "sms", message_sent: true },
       })
+    );
+  });
+
+  it("returns sent and logs when the estimate stage update fails", async () => {
+    sendWorkOrderMessage.mockResolvedValue({ log_id: "log-1" });
+    updateOutcomes.push({ message: "stage update failed" });
+
+    await expect(sendWorkOrderEstimateApproval("wo-1", "sms")).resolves.toEqual({
+      sent: true,
+    });
+
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "Estimate approval reconciliation failed",
+      expect.objectContaining({ phase: "stage", error: "stage update failed" })
+    );
+    expect(addTimelineEvent).toHaveBeenCalledOnce();
+  });
+
+  it("returns sent and logs when the estimate timeline write fails", async () => {
+    sendWorkOrderMessage.mockResolvedValue({ log_id: "log-1" });
+    addTimelineEvent.mockRejectedValue(new Error("timeline failed"));
+
+    await expect(sendWorkOrderEstimateApproval("wo-1", "sms")).resolves.toEqual({
+      sent: true,
+    });
+
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "Estimate approval reconciliation failed",
+      expect.objectContaining({ phase: "timeline", error: "timeline failed" })
     );
   });
 });

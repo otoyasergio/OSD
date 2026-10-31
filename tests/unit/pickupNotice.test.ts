@@ -367,7 +367,7 @@ describe("sendReadyForPickupNotice", () => {
     expect(sendCustomerSms).toHaveBeenCalledOnce();
   });
 
-  it("keeps an accepted SMS sent and warns when its log update fails", async () => {
+  it("treats a queued row with no error code as uncertain on the next attempt", async () => {
     updateErrors.push({ message: "sent update failed" }, null);
 
     const first = await sendReadyForPickupNotice("wo-1");
@@ -386,8 +386,9 @@ describe("sendReadyForPickupNotice", () => {
     );
 
     const second = await sendReadyForPickupNotice("wo-1");
-    expect(second.sms.status).toBe("sent");
-    expect(second.sms.detail).toMatch(/Already sent/);
+    expect(second.sms.status).toBe("uncertain");
+    expect(second.sms.detail).toMatch(/reconciliation|Wix Inbox/i);
+    expect(second.sms.detail).not.toMatch(/Already sent/i);
     expect(sendCustomerSms).toHaveBeenCalledOnce();
   });
 
