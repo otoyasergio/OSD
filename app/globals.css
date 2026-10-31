@@ -5264,10 +5264,6 @@ a.cc-kpi-link:focus-visible {
   padding-bottom: 0.9rem;
 }
 
-.cc-pool-header--collapsed {
-  margin-bottom: 0;
-}
-
 .cc-collapse-toggle {
   display: flex;
   align-items: center;
@@ -5305,6 +5301,10 @@ a.cc-kpi-link:focus-visible {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
+}
+
+.cc-pool-header--collapsed {
+  margin-bottom: 0;
 }
 
 .cc-pool-title-row {
@@ -5534,10 +5534,6 @@ a.cc-kpi-link:focus-visible {
   min-width: 0;
 }
 
-.cc-tech-card--collapsed {
-  min-height: 0;
-}
-
 .cc-tech-name,
 .cc-tech-role {
   display: block;
@@ -5553,6 +5549,10 @@ a.cc-kpi-link:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
+}
+
+.cc-tech-card--collapsed {
+  min-height: 0;
 }
 
 .cc-tech-card--available {

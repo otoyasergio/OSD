@@ -16,10 +16,6 @@
   background: #fff7ed;
 }
 
-.headerCollapsed {
-  margin-bottom: 0;
-}
-
 .cardButton {
   display: block;
   width: 12.5rem;
@@ -48,6 +44,10 @@
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.7rem;
+}
+
+.headerCollapsed {
+  margin-bottom: 0;
 }
 
 .titleRow {
