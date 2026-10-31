@@ -5,16 +5,19 @@ const {
   getWixContactV5,
   sendWixInboxSms,
   syncCustomerToWix,
+  isWixInboxSmsConfigured,
   customerUpdates,
 } = vi.hoisted(() => ({
   createClient: vi.fn(),
   getWixContactV5: vi.fn(),
   sendWixInboxSms: vi.fn(),
   syncCustomerToWix: vi.fn(),
+  isWixInboxSmsConfigured: vi.fn(),
   customerUpdates: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/lib/database/supabase-server", () => ({ createClient }));
+vi.mock("@/lib/wix/config", () => ({ isWixInboxSmsConfigured }));
 vi.mock("@/lib/wix/client", () => ({ getWixContactV5 }));
 vi.mock("@/lib/wix/inbox", () => ({ sendWixInboxSms }));
 vi.mock("@/lib/services/wixContacts", () => ({ syncCustomerToWix }));
@@ -64,8 +67,9 @@ function wixContact(
 
 describe("sendCustomerSms", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     customerUpdates.length = 0;
+    isWixInboxSmsConfigured.mockReturnValue(true);
     createClient.mockResolvedValue({
       from: (table: string) => {
         expect(table).toBe("customer");
@@ -85,6 +89,25 @@ describe("sendCustomerSms", () => {
       conversationId: "wix-conversation-1",
     });
     syncCustomerToWix.mockResolvedValue({ wix_contact_id: CONTACT_ID });
+  });
+
+  it("fails closed before sync or mutation when Wix SMS is disabled", async () => {
+    isWixInboxSmsConfigured.mockReturnValue(false);
+
+    await expect(
+      sendCustomerSms({
+        customerId: "cust-1",
+        wixContactId: null,
+        to: "6475550100",
+        body: "Service update",
+        localOptedOutAt: null,
+      })
+    ).rejects.toThrow("WIX_INBOX_SMS_NOT_CONFIGURED");
+
+    expect(syncCustomerToWix).not.toHaveBeenCalled();
+    expect(getWixContactV5).not.toHaveBeenCalled();
+    expect(createClient).not.toHaveBeenCalled();
+    expect(sendWixInboxSms).not.toHaveBeenCalled();
   });
 
   it("normalizes the recipient, checks Wix consent, and returns the Wix message ID", async () => {
@@ -145,7 +168,7 @@ describe("sendCustomerSms", () => {
     });
   });
 
-  it("blocks an invalid or still-mismatched Wix phone after one sync", async () => {
+  it("blocks a still-mismatched Wix phone after one sync", async () => {
     getWixContactV5.mockResolvedValue(wixContact({ e164: "+14165550100" }));
 
     await expect(
@@ -160,10 +183,12 @@ describe("sendCustomerSms", () => {
 
     expect(syncCustomerToWix).toHaveBeenCalledOnce();
     expect(sendWixInboxSms).not.toHaveBeenCalled();
+  });
 
-    vi.clearAllMocks();
-    getWixContactV5.mockResolvedValue(wixContact({ e164: null }));
-    syncCustomerToWix.mockResolvedValue({ wix_contact_id: CONTACT_ID });
+  it("blocks an invalid first Wix phone without attempting a sync or second read", async () => {
+    getWixContactV5
+      .mockResolvedValueOnce(wixContact({ e164: null }))
+      .mockResolvedValueOnce(wixContact());
 
     await expect(
       sendCustomerSms({
@@ -174,6 +199,11 @@ describe("sendCustomerSms", () => {
         localOptedOutAt: null,
       })
     ).rejects.toThrow("WIX_SMS_PHONE_INVALID");
+
+    expect(getWixContactV5).toHaveBeenCalledOnce();
+    expect(syncCustomerToWix).not.toHaveBeenCalled();
+    expect(createClient).not.toHaveBeenCalled();
+    expect(sendWixInboxSms).not.toHaveBeenCalled();
   });
 
   it("reconciles a Wix unsubscribe locally and blocks the send", async () => {

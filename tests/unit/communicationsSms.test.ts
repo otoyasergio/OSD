@@ -6,7 +6,6 @@ const {
   createClient,
   createPortalToken,
   sendCustomerSms,
-  sendSms,
   addTimelineEvent,
   insertedLogs,
 } = vi.hoisted(() => ({
@@ -14,7 +13,6 @@ const {
   createClient: vi.fn(),
   createPortalToken: vi.fn(),
   sendCustomerSms: vi.fn(),
-  sendSms: vi.fn(),
   addTimelineEvent: vi.fn(),
   insertedLogs: [] as Array<Record<string, unknown>>,
 }));
@@ -23,10 +21,6 @@ vi.mock("@/lib/auth/session", () => ({ requireUser }));
 vi.mock("@/lib/database/supabase-server", () => ({ createClient }));
 vi.mock("@/lib/services/portal", () => ({ createPortalToken }));
 vi.mock("@/lib/services/customerSms", () => ({ sendCustomerSms }));
-vi.mock("@/lib/twilio/client", () => ({
-  sendSms,
-  isTwilioConfigured: () => true,
-}));
 vi.mock("@/lib/email/send", () => ({
   sendEmail: vi.fn(),
   isEmailConfigured: () => true,
@@ -49,7 +43,6 @@ describe("sendWorkOrderMessage Wix SMS", () => {
     });
     createPortalToken.mockResolvedValue({ token: "portal-token" });
     sendCustomerSms.mockResolvedValue("wix-message-1");
-    sendSms.mockResolvedValue({ sid: "SM-legacy" });
     addTimelineEvent.mockResolvedValue(undefined);
     createClient.mockResolvedValue({
       from(table: string) {
@@ -116,7 +109,6 @@ describe("sendWorkOrderMessage Wix SMS", () => {
       body: expect.stringContaining("Reply STOP to opt out."),
       localOptedOutAt: null,
     });
-    expect(sendSms).not.toHaveBeenCalled();
     expect(insertedLogs).toEqual([
       expect.objectContaining({
         channel: "sms",

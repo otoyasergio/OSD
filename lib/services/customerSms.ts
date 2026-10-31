@@ -2,6 +2,7 @@ import { createClient } from "@/lib/database/supabase-server";
 import { normalizePhoneE164 } from "@/lib/phone/e164";
 import { syncCustomerToWix } from "@/lib/services/wixContacts";
 import { getWixContactV5, type WixContactV5SmsDetails } from "@/lib/wix/client";
+import { isWixInboxSmsConfigured } from "@/lib/wix/config";
 import { sendWixInboxSms } from "@/lib/wix/inbox";
 
 export type SendCustomerSmsInput = {
@@ -35,6 +36,8 @@ function remotePhone(contact: WixContactV5SmsDetails): string | null {
 }
 
 export async function sendCustomerSms(input: SendCustomerSmsInput): Promise<string> {
+  if (!isWixInboxSmsConfigured()) throw new Error("WIX_INBOX_SMS_NOT_CONFIGURED");
+
   const recipient = normalizePhoneE164(input.to);
   if (!recipient) throw new Error("INVALID_PHONE");
 
@@ -42,12 +45,15 @@ export async function sendCustomerSms(input: SendCustomerSmsInput): Promise<stri
   if (!contactId) contactId = await syncContact(input.customerId);
 
   let contact = await getWixContactV5(contactId);
-  if (remotePhone(contact) !== recipient) {
+  let wixPhone = remotePhone(contact);
+  if (!wixPhone) throw new Error("WIX_SMS_PHONE_INVALID");
+
+  if (wixPhone !== recipient) {
     contactId = await syncContact(input.customerId);
     contact = await getWixContactV5(contactId);
+    wixPhone = remotePhone(contact);
   }
 
-  const wixPhone = remotePhone(contact);
   if (!wixPhone) throw new Error("WIX_SMS_PHONE_INVALID");
   if (wixPhone !== recipient) throw new Error("WIX_SMS_PHONE_MISMATCH");
 

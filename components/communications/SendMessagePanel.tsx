@@ -5,6 +5,10 @@ import { sendMessageAction } from "@/app/(app)/work_orders/communication-actions
 import type { CommunicationLogEntry } from "@/lib/services/communications";
 import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
+import {
+  canAttemptCustomerSms,
+  WIX_SMS_LOCAL_OPT_OUT_WARNING,
+} from "@/lib/communications/customerSmsAvailability";
 
 const TEMPLATES = [
   { key: "approval_request", label: "Approval request" },
@@ -30,10 +34,14 @@ export function SendMessagePanel({
   customerPhone = null,
   smsOptedOut = false,
 }: Props) {
+  const canAttemptSms = canAttemptCustomerSms({
+    phone: customerPhone,
+    smsOptedOut,
+  });
   const [templateKey, setTemplateKey] =
     useState<(typeof TEMPLATES)[number]["key"]>("approval_request");
   const [channel, setChannel] = useState<"sms" | "email">(() =>
-    customerPhone && !smsOptedOut ? "sms" : "email"
+    canAttemptSms ? "sms" : "email"
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -55,8 +63,7 @@ export function SendMessagePanel({
           </h3>
           {smsOptedOut ? (
             <p className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-foreground">
-              This customer opted out of SMS. Use email, or ask them to text START to the
-              shop number.
+              {WIX_SMS_LOCAL_OPT_OUT_WARNING}
             </p>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -83,7 +90,7 @@ export function SendMessagePanel({
                 value={channel}
                 onChange={(e) => setChannel(e.target.value as "sms" | "email")}
               >
-                <option value="sms" disabled={smsOptedOut || !customerPhone}>
+                <option value="sms" disabled={!canAttemptSms}>
                   SMS
                 </option>
                 <option value="email">Email</option>
@@ -93,7 +100,7 @@ export function SendMessagePanel({
           <button
             type="button"
             className="btn btn-primary self-start"
-            disabled={pending || (channel === "sms" && (smsOptedOut || !customerPhone))}
+            disabled={pending || (channel === "sms" && !canAttemptSms)}
             onClick={send}
           >
             {pending ? "Sending…" : "Send"}

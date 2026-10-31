@@ -1,5 +1,5 @@
 import { clientDisplayName } from "@/lib/customers/displayName";
-import { normalizePhoneE164 } from "@/lib/phone/e164";
+import { canAttemptCustomerSms } from "@/lib/communications/customerSmsAvailability";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import { isPickupBoardColumn } from "@/lib/status/transitions";
 
@@ -37,7 +37,14 @@ export function pickupNoticeBlockers(input: {
   const blockers: PickupNoticeBlocker[] = [];
   const locationCode = input.locationCode?.trim().toUpperCase() ?? "";
   if (locationCode !== TORONTO_SHOP.locationCode) blockers.push("location");
-  if (!normalizePhoneE164(input.phone)) blockers.push("phone");
+  if (
+    !canAttemptCustomerSms({
+      phone: input.phone,
+      smsOptedOut: input.smsOptedOut,
+    })
+  ) {
+    blockers.push("phone");
+  }
   if (!input.email?.trim()) blockers.push("email");
   return blockers;
 }

@@ -14,6 +14,7 @@ import { sendCustomerSms } from "@/lib/services/customerSms";
 import { createPortalToken } from "@/lib/services/portal";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { logger } from "@/lib/security/logger";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 
@@ -247,10 +248,41 @@ async function deliverChannel(input: {
   }
 
   const logId = inserted.data?.log_id as string | undefined;
+  let externalId: string;
   try {
-    const externalId = await input.send();
+    externalId = await input.send();
+  } catch (error) {
+    const detail = toFormErrorMessage(error);
     if (logId) {
-      await input.admin
+      try {
+        const updated = await input.admin
+          .from("communication_log")
+          .update({ status: "failed", error_message: detail })
+          .eq("log_id", logId);
+        if (updated.error) {
+          logger.warn("Pickup notice communication log reconciliation failed", {
+            logId,
+            channel: input.channel,
+            phase: "failed",
+            error: updated.error.message,
+          });
+        }
+      } catch (updateError) {
+        logger.warn("Pickup notice communication log reconciliation failed", {
+          logId,
+          channel: input.channel,
+          phase: "failed",
+          error: updateError instanceof Error ? updateError.message : "LOG_UPDATE_FAILED",
+        });
+      }
+    }
+    return { status: "failed", detail };
+  }
+
+  let reconciliationDetail: string | null = null;
+  if (logId) {
+    try {
+      const updated = await input.admin
         .from("communication_log")
         .update({
           status: "sent",
@@ -258,29 +290,39 @@ async function deliverChannel(input: {
           error_message: null,
         })
         .eq("log_id", logId);
-    }
-    try {
-      await addTimelineEvent(input.supabase, {
-        work_order_id: input.workOrderId,
-        user_id: input.userId,
-        event_type: TimelineEventType.MESSAGE_SENT,
-        entity_type: "communication_log",
-        entity_id: logId ?? null,
-        description: `${input.channel.toUpperCase()} sent (ready_for_pickup)`,
-        new_value: { channel: input.channel, template_key: "ready_for_pickup" },
+      if (updated.error) {
+        reconciliationDetail =
+          "Message sent, but its delivery record needs reconciliation.";
+        logger.warn("Pickup notice communication log reconciliation failed", {
+          logId,
+          channel: input.channel,
+          phase: "sent",
+          error: updated.error.message,
+        });
+      }
+    } catch (updateError) {
+      reconciliationDetail =
+        "Message sent, but its delivery record needs reconciliation.";
+      logger.warn("Pickup notice communication log reconciliation failed", {
+        logId,
+        channel: input.channel,
+        phase: "sent",
+        error: updateError instanceof Error ? updateError.message : "LOG_UPDATE_FAILED",
       });
-    } catch {
-      // The customer message already left. A timeline write must not hide that.
     }
-    return { status: "sent", detail: null };
-  } catch (error) {
-    const detail = toFormErrorMessage(error);
-    if (logId) {
-      await input.admin
-        .from("communication_log")
-        .update({ status: "failed", error_message: detail })
-        .eq("log_id", logId);
-    }
-    return { status: "failed", detail };
   }
+  try {
+    await addTimelineEvent(input.supabase, {
+      work_order_id: input.workOrderId,
+      user_id: input.userId,
+      event_type: TimelineEventType.MESSAGE_SENT,
+      entity_type: "communication_log",
+      entity_id: logId ?? null,
+      description: `${input.channel.toUpperCase()} sent (ready_for_pickup)`,
+      new_value: { channel: input.channel, template_key: "ready_for_pickup" },
+    });
+  } catch {
+    // The customer message already left. A timeline write must not hide that.
+  }
+  return { status: "sent", detail: reconciliationDetail };
 }

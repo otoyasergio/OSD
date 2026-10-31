@@ -18,6 +18,8 @@ const {
   sendEmail,
   createPortalToken,
   addTimelineEvent,
+  loggerWarn,
+  updateErrors,
 } = vi.hoisted(() => ({
   requireUser: vi.fn(),
   createClient: vi.fn(),
@@ -26,6 +28,8 @@ const {
   sendEmail: vi.fn(),
   createPortalToken: vi.fn(),
   addTimelineEvent: vi.fn(),
+  loggerWarn: vi.fn(),
+  updateErrors: [] as Array<{ message: string } | Error | null>,
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
@@ -38,6 +42,9 @@ vi.mock("@/lib/email/send", () => ({
 }));
 vi.mock("@/lib/services/portal", () => ({ createPortalToken }));
 vi.mock("@/lib/timeline/addTimelineEvent", () => ({ addTimelineEvent }));
+vi.mock("@/lib/security/logger", () => ({
+  logger: { warn: loggerWarn },
+}));
 vi.mock("@/lib/portal/tokens", () => ({
   portalUrl: (token: string) => `https://service.torontomoto.com/c/${token}`,
 }));
@@ -102,9 +109,12 @@ function adminClient() {
         update(patch: Record<string, unknown>) {
           return {
             eq(_column: string, id: string) {
+              const outcome = updateErrors.shift() ?? null;
+              if (outcome instanceof Error) return Promise.reject(outcome);
+              const error = outcome;
               const row = logs.find((item) => item.log_id === id);
-              if (row) Object.assign(row, patch);
-              return Promise.resolve({ error: null });
+              if (row && !error) Object.assign(row, patch);
+              return Promise.resolve({ error });
             },
           };
         },
@@ -229,6 +239,7 @@ describe("pickup notice dialog", () => {
 describe("sendReadyForPickupNotice", () => {
   beforeEach(() => {
     logs.length = 0;
+    updateErrors.length = 0;
     vi.clearAllMocks();
     requireUser.mockResolvedValue({
       user_id: "user-1",
@@ -324,6 +335,75 @@ describe("sendReadyForPickupNotice", () => {
     expect(result.email.status).toBe("sent");
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(logs.find((row) => row.channel === "sms")?.status).toBe("failed");
+  });
+
+  it("keeps an accepted SMS sent and warns when its log update fails", async () => {
+    updateErrors.push({ message: "sent update failed" }, null);
+
+    const first = await sendReadyForPickupNotice("wo-1");
+
+    expect(first.sms.status).toBe("sent");
+    expect(first.sms.detail).toMatch(/reconciliation/i);
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
+    expect(logs.find((row) => row.channel === "sms")?.status).toBe("queued");
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "Pickup notice communication log reconciliation failed",
+      expect.objectContaining({
+        channel: "sms",
+        phase: "sent",
+        error: "sent update failed",
+      })
+    );
+
+    const second = await sendReadyForPickupNotice("wo-1");
+    expect(second.sms.status).toBe("sent");
+    expect(second.sms.detail).toMatch(/Already sent/);
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
+  });
+
+  it("retains the provider failure when recording that failure also fails", async () => {
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_API_ERROR"));
+    updateErrors.push({ message: "failed update failed" }, null);
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms).toEqual({
+      status: "failed",
+      detail: "Wix could not send that text message. Try again.",
+    });
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "Pickup notice communication log reconciliation failed",
+      expect.objectContaining({
+        channel: "sms",
+        phase: "failed",
+        error: "failed update failed",
+      })
+    );
+  });
+
+  it("does not reclassify an accepted SMS when the log update throws", async () => {
+    updateErrors.push(new Error("sent update threw"), null);
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("sent");
+    expect(result.sms.detail).toMatch(/reconciliation/i);
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
+    expect(sendEmail).toHaveBeenCalledOnce();
+  });
+
+  it("retains the provider failure when the failure-log update throws", async () => {
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_API_ERROR"));
+    updateErrors.push(new Error("failed update threw"), null);
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms).toEqual({
+      status: "failed",
+      detail: "Wix could not send that text message. Try again.",
+    });
+    expect(sendEmail).toHaveBeenCalledOnce();
   });
 
   it("lets Wix reconcile a stale local SMS opt-out", async () => {

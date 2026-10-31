@@ -11,6 +11,10 @@ import {
 import type { BillingAmountMode, BillingStage } from "@/lib/billing/stages";
 import { HST_PERCENT } from "@/lib/pricing/hst";
 import { FormError } from "@/components/forms/Field";
+import {
+  canAttemptCustomerSms,
+  WIX_SMS_LOCAL_OPT_OUT_WARNING,
+} from "@/lib/communications/customerSmsAvailability";
 
 type Props = {
   workOrderId: string;
@@ -54,6 +58,10 @@ export function SquareInvoicePanel({
   customerEmail = null,
   smsOptedOut = false,
 }: Props) {
+  const canAttemptSms = canAttemptCustomerSms({
+    phone: customerPhone,
+    smsOptedOut,
+  });
   const [publicUrl, setPublicUrl] = useState<string | null>(squareInvoicePublicUrl);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<BillingAmountMode>("full");
@@ -61,7 +69,7 @@ export function SquareInvoicePanel({
   const [customDollars, setCustomDollars] = useState("");
   const [pending, startTransition] = useTransition();
   const [approvalChannel, setApprovalChannel] = useState<"sms" | "email">(() =>
-    customerPhone && !smsOptedOut ? "sms" : "email"
+    canAttemptSms ? "sms" : "email"
   );
 
   const stage = billingStage || "none";
@@ -174,7 +182,7 @@ export function SquareInvoicePanel({
         <button
           type="button"
           className="btn btn-secondary"
-          disabled={pending}
+          disabled={pending || (approvalChannel === "sms" && !canAttemptSms)}
           onClick={() =>
             startTransition(async () => {
               setError(null);
@@ -195,7 +203,7 @@ export function SquareInvoicePanel({
             value={approvalChannel}
             onChange={(e) => setApprovalChannel(e.target.value as "sms" | "email")}
           >
-            <option value="sms" disabled={smsOptedOut || !customerPhone}>
+            <option value="sms" disabled={!canAttemptSms}>
               SMS
             </option>
             <option value="email" disabled={!customerEmail}>
@@ -206,7 +214,7 @@ export function SquareInvoicePanel({
       </div>
       {smsOptedOut ? (
         <p className="text-xs text-[var(--status-neutral)]">
-          Customer opted out of SMS — approval sends use email when available.
+          {WIX_SMS_LOCAL_OPT_OUT_WARNING}
         </p>
       ) : null}
 
