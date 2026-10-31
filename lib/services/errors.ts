@@ -10,6 +10,37 @@ const MESSAGES: Record<string, string> = {
   VIN_ALREADY_EXISTS:
     "That VIN is already on another motorcycle. Transfer it or use a different VIN.",
   MOTORCYCLE_NOT_FOUND: "That motorcycle no longer exists.",
+  PASSPORT_NO_COMPLETED_SERVICE:
+    "Complete at least one service before publishing a vehicle passport.",
+  PASSPORT_COMPLETION_DATE_REQUIRED:
+    "A completed service is missing its completion date. Correct it before publishing.",
+  PASSPORT_PAYLOAD_INVALID: "The passport information could not be prepared safely.",
+  PASSPORT_DISCLOSURE_RISK:
+    "The passport preview may contain private information. Review the service text before publishing.",
+  PASSPORT_PREVIEW_STALE:
+    "The passport source changed after review. Refresh and review the current preview before publishing.",
+  PASSPORT_OWNER_CHANGED:
+    "The motorcycle owner changed before the share was created. Refresh the passport before sharing.",
+  PASSPORT_ADMIN_MISCONFIGURED:
+    "Vehicle passport publishing is not configured on the server.",
+  PASSPORT_VERSION_CONFLICT:
+    "The passport changed. Refresh this page before publishing again.",
+  PASSPORT_NUMBER_CONFLICT:
+    "The passport reference changed. Refresh this page and try again.",
+  PASSPORT_SOURCE_REQUIRED: "The passport needs at least one completed service.",
+  PASSPORT_SOURCE_INVALID:
+    "One of the selected passport services is no longer eligible. Refresh and review the history.",
+  PASSPORT_TIMESTAMP_INVALID:
+    "The passport preview expired. Refresh it before publishing.",
+  PASSPORT_SUSPENDED: "This vehicle passport is suspended.",
+  PASSPORT_SNAPSHOT_NOT_CURRENT:
+    "That passport version is no longer current. Refresh before sharing.",
+  PASSPORT_SHARE_INVALID:
+    "The passport share could not be created safely. Refresh and try again.",
+  PASSPORT_SHARE_NOT_FOUND: "That passport share no longer exists.",
+  PASSPORT_PUBLISH_FAILED: "The passport could not be published. Refresh and try again.",
+  PASSPORT_SHARE_CREATE_FAILED:
+    "The passport share could not be created. Refresh and try again.",
   SERVICE_NOT_FOUND: "That service no longer exists.",
   SERVICE_PRICE_REQUIRED:
     "Enter a price for every selected service before creating the work order.",

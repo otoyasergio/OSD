@@ -596,12 +596,149 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["communication_log"]["Insert"]>;
       };
+      vehicle_passport: {
+        Row: {
+          passport_id: string;
+          motorcycle_id: string;
+          passport_number: string;
+          status: "active" | "suspended";
+          created_by_user_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          passport_id?: string;
+          motorcycle_id: string;
+          passport_number: string;
+          status?: "active" | "suspended";
+          created_by_user_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["vehicle_passport"]["Insert"]>;
+      };
+      vehicle_passport_snapshot: {
+        Row: {
+          snapshot_id: string;
+          passport_id: string;
+          version: number;
+          payload: Json;
+          payload_sha256: string;
+          coverage_through: string;
+          created_by_user_id: string | null;
+          issued_at: string;
+          superseded_at: string | null;
+          superseded_by_snapshot_id: string | null;
+        };
+        Insert: {
+          snapshot_id?: string;
+          passport_id: string;
+          version: number;
+          payload: Json;
+          payload_sha256: string;
+          coverage_through: string;
+          created_by_user_id?: string | null;
+          issued_at?: string;
+          superseded_at?: string | null;
+          superseded_by_snapshot_id?: string | null;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["vehicle_passport_snapshot"]["Insert"]
+        >;
+      };
+      vehicle_passport_snapshot_source: {
+        Row: {
+          snapshot_source_id: string;
+          snapshot_id: string;
+          work_order_id: string;
+          created_at: string;
+        };
+        Insert: {
+          snapshot_source_id?: string;
+          snapshot_id: string;
+          work_order_id: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Database["public"]["Tables"]["vehicle_passport_snapshot_source"]["Insert"]
+        >;
+      };
+      vehicle_passport_share: {
+        Row: {
+          share_id: string;
+          snapshot_id: string;
+          token_hash: string;
+          expires_at: string;
+          revoked_at: string | null;
+          revoked_by_user_id: string | null;
+          revocation_reason:
+            "manual" | "replaced" | "superseded" | "ownership_transfer" | null;
+          created_by_user_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          share_id?: string;
+          snapshot_id: string;
+          token_hash: string;
+          expires_at: string;
+          revoked_at?: string | null;
+          revoked_by_user_id?: string | null;
+          revocation_reason?:
+            "manual" | "replaced" | "superseded" | "ownership_transfer" | null;
+          created_by_user_id?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["vehicle_passport_share"]["Insert"]>;
+      };
     };
     Views: Record<string, never>;
     Functions: {
       mint_work_order_number: {
         Args: { p_location_id: string };
         Returns: string;
+      };
+      publish_vehicle_passport_snapshot: {
+        Args: {
+          p_actor_user_id: string;
+          p_motorcycle_id: string;
+          p_passport_number: string;
+          p_expected_version: number;
+          p_payload: Json;
+          p_payload_sha256: string;
+          p_source_sha256: string;
+          p_coverage_through: string;
+          p_work_order_ids: string[];
+        };
+        Returns: Array<{
+          published_snapshot_id: string;
+          published_passport_id: string;
+          published_passport_number: string;
+          published_version: number;
+          published_at: string;
+        }>;
+      };
+      read_vehicle_passport_source: {
+        Args: { p_motorcycle_id: string };
+        Returns: Array<{
+          source: Json;
+          source_sha256: string;
+        }>;
+      };
+      create_vehicle_passport_share: {
+        Args: {
+          p_actor_user_id: string;
+          p_snapshot_id: string;
+          p_expected_customer_id: string;
+          p_token_hash: string;
+        };
+        Returns: Array<{
+          created_share_id: string;
+          created_expires_at: string;
+        }>;
+      };
+      revoke_vehicle_passport_share: {
+        Args: { p_actor_user_id: string; p_share_id: string };
+        Returns: boolean;
       };
       current_app_user_id: {
         Args: Record<string, never>;

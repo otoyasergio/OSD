@@ -557,6 +557,7 @@ export async function updateMotorcycle(
  * Move a motorcycle to another customer's garage. Same motorcycle_id / VIN /
  * service info / WO history stay; only motorcycle.customer_id changes.
  * Past work orders keep their visit customer via work_order.customer_id.
+ * The database owner-change trigger revokes active passport links atomically.
  */
 export async function transferMotorcycle(
   input: TransferMotorcycleInput

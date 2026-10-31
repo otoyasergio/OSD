@@ -44,6 +44,7 @@ import {
   canCompleteJob,
   canCreateRecommendation,
   canViewTechnicianDocket,
+  canManageVehiclePassport,
 } from "@/lib/permissions/checks";
 
 describe("permissions", () => {
@@ -207,6 +208,15 @@ describe("permissions", () => {
     expect(canUpdateServiceInformation("service_advisor")).toBe(true);
     expect(canUpdateServiceInformation("technician")).toBe(false);
     expect(canUpdateServiceInformation("admin")).toBe(false);
+  });
+
+  it("only front office can publish and share a vehicle passport", () => {
+    expect(canManageVehiclePassport("owner")).toBe(true);
+    expect(canManageVehiclePassport("manager")).toBe(true);
+    expect(canManageVehiclePassport("service_advisor")).toBe(true);
+    expect(canManageVehiclePassport("technician")).toBe(false);
+    expect(canManageVehiclePassport("head_tech")).toBe(false);
+    expect(canManageVehiclePassport("admin")).toBe(false);
   });
 
   it("owner and manager can delete intake photos, not advisors or technicians", () => {

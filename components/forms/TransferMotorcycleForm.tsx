@@ -44,7 +44,8 @@ export function TransferMotorcycleForm({
       <p className="text-sm text-[var(--status-neutral)]">
         Move this motorcycle to another customer&apos;s garage. The bike keeps the same
         ID, VIN, service information, and work-order history. Past work orders stay with
-        the visit customer who owned the bike at the time.
+        the visit customer who owned the bike at the time. Active passport links are
+        revoked automatically.
       </p>
 
       <label className="block">
@@ -97,7 +98,8 @@ export function TransferMotorcycleForm({
           <span>
             Transfer <strong>{bikeLabel}</strong> from{" "}
             <strong>{currentCustomerName}</strong> to <strong>{selectedName}</strong>?
-            Past work orders stay with the visit history.
+            Past work orders stay with the visit history, and existing passport links stop
+            working.
           </span>
         </label>
       ) : null}
