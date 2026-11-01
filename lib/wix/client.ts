@@ -179,7 +179,14 @@ type WixContactsQueryResponse = {
  * Wix Contacts Query requires filter/paging under `query`.
  * Top-level `paging` is ignored (always page 0), which would infinite-loop a reconcile.
  */
-async function queryWixContactsPage(
+function isTransientWixQueryError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return /GOAWAY|deadline exceeded|ECONNRESET|socket hang up|fetch failed|UND_ERR/i.test(
+    message
+  );
+}
+
+async function queryWixContactsPageOnce(
   query: Record<string, unknown>
 ): Promise<WixContactsQueryResponse> {
   const response = await wixFetch("/contacts/v4/contacts/query", {
@@ -188,6 +195,21 @@ async function queryWixContactsPage(
   });
   if (!response.ok) throw new Error(await readWixError(response));
   return (await response.json()) as WixContactsQueryResponse;
+}
+
+/**
+ * Contact listing is a read. One retry covers the HTTP/2 GOAWAY and deadline
+ * drops Wix returns. Creates and updates are not retried.
+ */
+async function queryWixContactsPage(
+  query: Record<string, unknown>
+): Promise<WixContactsQueryResponse> {
+  try {
+    return await queryWixContactsPageOnce(query);
+  } catch (error) {
+    if (!isTransientWixQueryError(error)) throw error;
+    return queryWixContactsPageOnce(query);
+  }
 }
 
 async function queryWixContacts(query: Record<string, unknown>): Promise<WixContact[]> {

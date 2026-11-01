@@ -186,8 +186,12 @@ function closureRequest() {
   };
 }
 
-function rateLimitError(code: string, message: string): RateLimitError {
-  return new RateLimitError(429, { code, message }, undefined, new Headers());
+function rateLimitError(
+  code: string,
+  message: string,
+  headers?: Headers
+): RateLimitError {
+  return new RateLimitError(429, { code, message }, undefined, headers ?? new Headers());
 }
 
 describe("OpenAI diagnostics provider", () => {
@@ -803,6 +807,142 @@ describe("OpenAI diagnostics provider", () => {
     });
     expect(diagnosticsRateLimitWaitMs(500_000, 30_000)).toBe(30_000);
     expect(diagnosticsRateLimitWaitMs(0, 30_000)).toBe(0);
+
+    const usedMessage =
+      "Rate limit reached for gpt-6-astra in organization org_secret on tokens per min (TPM): Limit 30000, Used 18271, Requested 16921. Please try again in 10.384s.";
+    expect(assessDiagnosticsRateLimit(usedMessage, 28_000)).toMatchObject({
+      classification: "token_reservation",
+      limit: 30_000,
+      requested: 16_921,
+      nextOutputBudget: 11_217,
+    });
+    expect(
+      outputTokenBudgetForRateLimit('429 {"limit":30000,"requested":42000}', 28_000)
+    ).toBe(15_488);
+    expect(
+      assessDiagnosticsRateLimit(
+        "Rate limit exceeded",
+        28_000,
+        new Headers({ "retry-after": "2" })
+      )
+    ).toMatchObject({
+      classification: "short_window",
+      limit: null,
+      requested: null,
+      retryAfterMs: 2_000,
+      nextOutputBudget: null,
+    });
+    expect(
+      assessDiagnosticsRateLimit(
+        "Rate limit exceeded",
+        28_000,
+        new Headers({
+          "x-ratelimit-remaining-requests": "0",
+          "x-ratelimit-reset-requests": "6m0s",
+        })
+      )
+    ).toMatchObject({
+      classification: "short_window",
+      retryAfterMs: 360_000,
+      nextOutputBudget: null,
+    });
+    expect(
+      assessDiagnosticsRateLimit(
+        "Rate limit exceeded",
+        28_000,
+        new Headers({
+          "x-ratelimit-limit-tokens": "30000",
+          "x-ratelimit-remaining-tokens": "5000",
+        })
+      )
+    ).toMatchObject({
+      classification: "token_reservation",
+      limit: 30_000,
+      requested: null,
+      nextOutputBudget: 4_488,
+    });
+  });
+
+  it("retries an opaque rate limit once with half the output budget", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const parse = vi
+      .fn()
+      .mockRejectedValueOnce(rateLimitError("rate_limit_exceeded", "Rate limit exceeded"))
+      .mockResolvedValueOnce(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    await expect(
+      generateDiagnosticsDraft(request(), {
+        client,
+        config: { ...config, maxOutputTokens: 28_000 },
+      })
+    ).resolves.toMatchObject({ responseId: "resp_test" });
+
+    expect(parse).toHaveBeenCalledTimes(2);
+    expect(
+      (parse.mock.calls[0]?.[0] as { max_output_tokens: number }).max_output_tokens
+    ).toBe(28_000);
+    expect(
+      (parse.mock.calls[1]?.[0] as { max_output_tokens: number }).max_output_tokens
+    ).toBe(14_000);
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("waits on a header retry delay and keeps the same output budget", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const parse = vi
+      .fn()
+      .mockRejectedValueOnce(
+        rateLimitError(
+          "rate_limit_exceeded",
+          "Rate limit exceeded",
+          new Headers({ "retry-after": "2" })
+        )
+      )
+      .mockResolvedValueOnce(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    await expect(
+      generateDiagnosticsDraft(request(), {
+        client,
+        config: { ...config, maxOutputTokens: 28_000, timeoutMs: 30_000 },
+        sleep,
+      })
+    ).resolves.toMatchObject({ responseId: "resp_test" });
+
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(2_000);
+    expect(
+      (parse.mock.calls[1]?.[0] as { max_output_tokens: number }).max_output_tokens
+    ).toBe(28_000);
+  });
+
+  it("shrinks a used-plus-requested overflow before waiting", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const parse = vi
+      .fn()
+      .mockRejectedValueOnce(
+        rateLimitError(
+          "rate_limit_exceeded",
+          "Limit 30000, Used 18271, Requested 16921. Please try again in 10.384s."
+        )
+      )
+      .mockResolvedValueOnce(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    await expect(
+      generateDiagnosticsDraft(request(), {
+        client,
+        config: { ...config, maxOutputTokens: 28_000 },
+        sleep,
+      })
+    ).resolves.toMatchObject({ responseId: "resp_test" });
+
+    expect(sleep).not.toHaveBeenCalled();
+    expect(
+      (parse.mock.calls[1]?.[0] as { max_output_tokens: number }).max_output_tokens
+    ).toBe(11_217);
   });
 
   it("lists only references actually missing from the bounded context", async () => {
