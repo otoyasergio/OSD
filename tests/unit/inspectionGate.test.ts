@@ -125,6 +125,41 @@ describe("countIncompleteInspectionResults", () => {
       ])
     ).toBe(2);
   });
+
+  it("keeps an attention item open until it has a description", () => {
+    const item = {
+      status: "immediate_attention" as const,
+      category_snapshot: "Battery",
+      item_name_snapshot: "Check Condition of Battery",
+    };
+    expect(
+      countIncompleteInspectionResults([{ ...item, notes: "   " }])
+    ).toBe(1);
+    expect(
+      countIncompleteInspectionResults([
+        { ...item, notes: "Cell is swollen and will not hold a charge." },
+      ])
+    ).toBe(0);
+  });
+
+  it("does not require a description for OK or not applicable", () => {
+    expect(
+      countIncompleteInspectionResults([
+        {
+          status: "ok",
+          notes: null,
+          category_snapshot: "Battery",
+          item_name_snapshot: "Battery Terminal / Cables / Mountings",
+        },
+        {
+          status: "not_applicable",
+          notes: "",
+          category_snapshot: "Battery",
+          item_name_snapshot: "Check Condition of Battery",
+        },
+      ])
+    ).toBe(0);
+  });
 });
 
 describe("inspection photo requirements", () => {

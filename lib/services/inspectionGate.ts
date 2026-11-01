@@ -45,11 +45,23 @@ function isForksItem(category: string, itemName: string): boolean {
  * Incomplete checklist items, honoring the paper-form skip for Brakes & Tires
  * when "Brake Inspection Not Performed This Visit" is marked OK.
  */
+/** Yellow/red findings stay open until the tech describes them. */
+export function attentionItemNeedsDescription(result: {
+  status: string | null;
+  notes?: string | null;
+}): boolean {
+  if (result.status !== "future_attention" && result.status !== "immediate_attention") {
+    return false;
+  }
+  return !result.notes?.trim();
+}
+
 export function countIncompleteInspectionResults(
   results: Array<{
     status: string | null;
     category_snapshot: string;
     item_name_snapshot: string;
+    notes?: string | null;
   }>
 ): number {
   const skip = results.find(
@@ -58,7 +70,7 @@ export function countIncompleteInspectionResults(
   const brakeSkipped = skip?.status === "ok";
 
   return results.filter((r) => {
-    if (r.status != null) return false;
+    if (r.status != null) return attentionItemNeedsDescription(r);
     if (
       brakeSkipped &&
       isBrakeSectionItem(r.category_snapshot, r.item_name_snapshot) &&

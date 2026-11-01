@@ -2787,6 +2787,23 @@ button.board-control-link {
   margin-top: 0.5rem;
 }
 
+.inspection-notes-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.inspection-notes-required {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #71717a;
+}
+
 .inspection-notes-input {
   min-height: 2.75rem;
   width: 100%;
@@ -7050,6 +7067,11 @@ button.pit-current-card {
   font-weight: 700;
 }
 
+.pit-current-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .pit-current-action-secondary {
   min-height: 3.25rem;
   width: 100%;
@@ -7327,6 +7349,11 @@ button.pit-current-card {
   cursor: pointer;
 }
 
+.pit-sheet-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .pit-sheet-btn-sub {
   font-size: 0.75rem;
   font-weight: 500;
@@ -7454,6 +7481,36 @@ button.pit-current-card {
   margin: 0;
   font-size: 0.75rem;
   color: #991b1b;
+}
+
+.pit-journal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #e4e4e7;
+}
+
+.pit-journal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pit-journal-count {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #0a0a0a;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.pit-journal-note {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .pit-sheet-close {

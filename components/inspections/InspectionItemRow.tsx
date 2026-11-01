@@ -380,11 +380,18 @@ export function InspectionItemRow({
 
           {!compact || notes || needsAttention || isSkip ? (
             <label className="inspection-notes">
-              <span className="sr-only">Notes</span>
+              <span className={needsAttention ? "inspection-notes-label" : "sr-only"}>
+                {needsAttention ? "Describe the issue" : "Notes"}
+                {needsAttention ? (
+                  <span className="inspection-notes-required">Required</span>
+                ) : null}
+              </span>
               <textarea
                 className="inspection-notes-input"
-                rows={compact ? 1 : 2}
+                rows={needsAttention ? 2 : compact ? 1 : 2}
                 value={notes}
+                required={needsAttention}
+                aria-required={needsAttention || undefined}
                 placeholder={
                   isSkip
                     ? "Optional note"

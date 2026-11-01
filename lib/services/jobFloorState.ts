@@ -18,6 +18,8 @@ import {
 import { waitOwnerForParkReason } from "@/lib/technician/pitBoard";
 import { pauseJobTime, switchJobTime } from "@/lib/services/jobTimeClock";
 import { updateJobStatus } from "@/lib/services/jobs";
+import { addTechnicianNote } from "@/lib/services/notes";
+import { parkNoteForReason } from "@/lib/status/workDocumentation";
 
 const FLOOR_COLUMNS =
   "job_id, status, assigned_technician_id, floor_acknowledged_at, floor_acknowledged_by, floor_parked_at, floor_park_reason, floor_wait_owner, work_order_id";
@@ -164,25 +166,39 @@ export async function acknowledgeDocketJob(jobId: string): Promise<JobFloorRow> 
   return data as JobFloorRow;
 }
 
+async function recordFloorLine(jobId: string, note: string): Promise<void> {
+  const job = await loadJob(jobId);
+  await addTechnicianNote(job.work_order_id, {
+    note,
+    note_type: "general",
+    job_id: jobId,
+  });
+}
+
 export async function parkJob(
   jobId: string,
-  reason: FloorParkReason
+  reason: FloorParkReason,
+  note?: string | null
 ): Promise<JobFloorRow> {
   const user = await requireUser();
+  const line = parkNoteForReason(reason, note);
 
   // V2: one transaction stops the timer, parks the job, and records the
   // blocker + domain event — no partial states on retry.
   if (v2WritesEnabled(readWorkflowV2Flags())) {
-    await callFloorCommand("workflow_v2_park_job", {
+    const result = await callFloorCommand("workflow_v2_park_job", {
       p_job_id: jobId,
       p_actor_user_id: user.user_id,
       p_reason: reason,
       p_owner: waitOwnerForParkReason(reason),
-      p_note: null,
+      p_note: line,
       p_idempotency_key: floorIdempotencyKey("park", jobId, user.user_id, {
-        extra: reason,
+        extra: `${reason}:${line}`,
       }),
     });
+    if (result.replayed !== true) {
+      await recordFloorLine(jobId, line);
+    }
     return loadJob(jobId);
   }
 
@@ -234,9 +250,11 @@ export async function parkJob(
     action: "job_floor_park",
     entity_type: "job",
     entity_id: jobId,
-    description: `${user.first_name} ${user.last_name} parked job (${reason})`,
-    new_value: { reason, wait_owner: waitOwner },
+    description: `${user.first_name} ${user.last_name} parked job (${reason}): ${line}`,
+    new_value: { reason, wait_owner: waitOwner, note: line },
   });
+
+  await recordFloorLine(jobId, line);
 
   return data as JobFloorRow;
 }
@@ -329,6 +347,10 @@ export async function pullOntoBench(jobId: string): Promise<{
       p_actor_user_id: user.user_id,
       p_idempotency_key: floorIdempotencyKey("pull", jobId, user.user_id),
     });
+    const parkedJobId = (result.parked_job_id as string | null) ?? null;
+    if (parkedJobId && result.replayed !== true) {
+      await recordFloorLine(parkedJobId, parkNoteForReason("swapped", null));
+    }
     let job = await loadJob(jobId);
     if (!job.floor_acknowledged_at) {
       job = await acknowledgeDocketJob(jobId);

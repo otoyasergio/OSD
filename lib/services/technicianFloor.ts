@@ -167,6 +167,11 @@ export type FloorOsSurface = {
       created_at: string;
       author_name: string | null;
     }>;
+    /** In-progress photos for this job. Proof photos stay on proof_count. */
+    work_photos: Array<{
+      photo_id: string;
+      notes: string | null;
+    }>;
   } | null;
   /** Findings still waiting on the client before they become Perform work. */
   pending_recommendations: Array<{
@@ -715,6 +720,7 @@ export async function getTechnicianFloorOs(input: {
         recommendationResult,
         pendingRecommendationsResult,
         technicianNotesResult,
+        workPhotosResult,
         peerQcCandidates,
         checkoutPhotos,
       ] = await Promise.all([
@@ -778,6 +784,12 @@ export async function getTechnicianFloorOs(input: {
           .eq("job_id", job.job_id)
           .order("created_at", { ascending: false })
           .limit(20),
+        supabase
+          .from("intake_photo")
+          .select("photo_id, notes")
+          .eq("job_id", job.job_id)
+          .eq("category", "job_work")
+          .order("created_at", { ascending: false }),
         listPeerQcPickerOptions(subject.userId, wo.work_order_id).catch(() => []),
         loadCommittedCheckoutPhotos(supabase, wo.work_order_id),
       ]);
@@ -795,6 +807,16 @@ export async function getTechnicianFloorOs(input: {
         description: string;
         severity: string;
       }>;
+      if (workPhotosResult.error) throw workPhotosResult.error;
+      const workPhotos = (
+        (workPhotosResult.data ?? []) as Array<{
+          photo_id: string;
+          notes: string | null;
+        }>
+      ).map((row) => ({
+        photo_id: row.photo_id,
+        notes: row.notes,
+      }));
       const technicianNotes = (technicianNotesResult.data ?? []).map((row) => {
         const createdByRaw = row.created_by as
           | { first_name: string; last_name: string }
@@ -1022,6 +1044,7 @@ export async function getTechnicianFloorOs(input: {
           estimated_labour: job.estimated_labour_snapshot as number | null,
           parts: woOpenParts,
           technician_notes: technicianNotes,
+          work_photos: workPhotos,
         },
         pending_recommendations: pendingRecommendations,
         checkout_evidence_required: Boolean(wo.checkout_evidence_required),
