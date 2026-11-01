@@ -1,5 +1,9 @@
 # Company Messenger — Design Spec
 
+> **Historical note:** References below to a Twilio customer-SMS stack are
+> superseded. Twilio remains for Voice/Video; current customer SMS uses Wix
+> Inbox. See [`docs/ops/wix-inbox-sms.md`](../../ops/wix-inbox-sms.md).
+
 **Date:** 2026-07-13
 **Status:** Approved design — pending implementation plan
 **Related:** [docs/superpowers/specs/2026-07-13-twilio-messaging-compliance-design.md](2026-07-13-twilio-messaging-compliance-design.md) (customer SMS stays separate); existing Twilio send/status/inbound stack (`lib/twilio/`)

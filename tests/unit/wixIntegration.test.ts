@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { buildWixContactInfo } from "@/lib/wix/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildWixContactInfo, listAllWixContacts } from "@/lib/wix/client";
 import {
   extractWixContactFields,
   findMatchingCustomer,
@@ -36,6 +36,51 @@ describe("buildWixContactInfo", () => {
     ).toEqual({
       name: { first: "Ada", last: "Lovelace" },
     });
+  });
+});
+
+describe("listAllWixContacts", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("retries one contacts page when Wix closes the connection", async () => {
+    vi.stubEnv("WIX_API_KEY", "test-key");
+    vi.stubEnv("WIX_SITE_ID", "site-1");
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error("Connection closed after GOAWAY. HTTP/2 error code: INTERNAL_ERROR")
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            contacts: [{ id: "c1" }],
+            pagingMetadata: { hasNext: false, total: 1 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      );
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await expect(listAllWixContacts()).resolves.toEqual([{ id: "c1" }]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a contacts query Wix rejected", async () => {
+    vi.stubEnv("WIX_API_KEY", "test-key");
+    vi.stubEnv("WIX_SITE_ID", "site-1");
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: "bad filter" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchImpl);
+
+    await expect(listAllWixContacts()).rejects.toThrow(/bad filter|WIX_HTTP_400/);
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 });
 

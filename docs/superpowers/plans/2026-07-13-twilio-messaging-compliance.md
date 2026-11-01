@@ -1,5 +1,10 @@
 # Twilio Messaging Compliance Implementation Plan
 
+> **Superseded:** Preserve this file as historical planning only. Customer SMS
+> now uses Wix Inbox; 647-424-1088 and all replies remain in Wix. Current
+> operations are in
+> [`docs/ops/wix-inbox-sms.md`](../../ops/wix-inbox-sms.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship dual SMS consent (transactional + marketing), public `/sms` opt-in, staff/portal consent UI, HELP/STOP auto-replies, consent audit log, and Wix/Twilio paste-pack docs so Toronto Moto can pass A2P / toll-free verification without freezing legacy transactional texts.

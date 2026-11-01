@@ -4,9 +4,9 @@ import { createAdminClient } from "@/lib/database/supabase-admin";
 import { createClient } from "@/lib/database/supabase-server";
 import { buildPhoneLookupVariants } from "@/lib/customers/duplicates";
 import { canUseMessenger, canUseShopPhone } from "@/lib/permissions";
+import { normalizePhoneE164 } from "@/lib/phone/e164";
 import { selectInboundRingTargets } from "@/lib/twilio/inboundRing";
 import { authorizeOutboundVoice } from "@/lib/twilio/outboundVoice";
-import { normalizePhoneE164 } from "@/lib/twilio/phone";
 import { isPresenceFresh } from "@/lib/twilio/presenceFresh";
 import { encodeVoiceIdentity, decodeVoiceIdentity } from "@/lib/twilio/voiceIdentity";
 import {

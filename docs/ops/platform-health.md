@@ -35,7 +35,7 @@ Required core names:
 
 Ask OTOMOTO additionally requires server-only `OPENAI_API_KEY`. Optional
 `OTOMOTO_DIAGNOSTICS_*` settings must pass the same validation as production
-generation. Keep Square, Twilio, Wix, Parts Canada, the Google mailbox
+generation. Keep Square, Twilio Voice/Video, Wix, Parts Canada, the Google mailbox
 (`GMAIL_CLIENT_ID` and `GMAIL_CLIENT_SECRET`), Sentry, and
 `CRON_SECRET` scoped to the environments that actually use them.
 
@@ -54,8 +54,11 @@ curl -i https://service.torontomoto.com/login
 Expected:
 
 - `/api/health` returns `200` with every configured production integration
-  marked `ok`, `degraded: false`, and `region: "pdx1"` after the regional
-  deployment ships.
+  marked `ok`, including `integrations.wixSms: "ok"` and
+  `integrations.twilioVoice: "ok"`, with `degraded: false` and
+  `region: "pdx1"` after the regional deployment ships. These two readiness
+  fields inspect configuration only; the health request does not contact Wix
+  or Twilio.
 - `/` redirects to `/login` with `private, no-store`.
 - TLS is valid and HSTS is enabled.
 
@@ -134,6 +137,11 @@ only from `main`.
     production from a feature branch.
 11. Re-run health, logs, advisors, smoke checks, and a read-only
     reconciliation report.
+
+For customer messaging rollout and rollback, follow
+[`wix-inbox-sms.md`](wix-inbox-sms.md). The production smoke script requires
+both Wix SMS and Twilio Voice readiness; they are independent configuration
+checks.
 
 Isolated CI (`npm run test:integration` plus stateful Safari) is required.
 Those jobs export `TEST_SUPABASE_*` from the disposable stack and **failures

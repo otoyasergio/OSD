@@ -7,6 +7,7 @@ type FingerprintResponse = {
   supabaseTargetFingerprint: string;
   openAIConfigured: boolean;
   twilioConfigured: boolean;
+  wixSmsConfigured: boolean;
   resendConfigured: boolean;
   gmailConfigured: boolean;
 };
@@ -19,6 +20,7 @@ function isFingerprintResponse(value: unknown): value is FingerprintResponse {
     /^[a-f0-9]{64}$/.test(record.supabaseTargetFingerprint) &&
     typeof record.openAIConfigured === "boolean" &&
     typeof record.twilioConfigured === "boolean" &&
+    typeof record.wixSmsConfigured === "boolean" &&
     typeof record.resendConfigured === "boolean" &&
     typeof record.gmailConfigured === "boolean"
   );
@@ -77,13 +79,14 @@ export async function assertAppEnvironmentFingerprint(
   const configuredProviders = [
     payload.openAIConfigured ? "OpenAI" : null,
     payload.twilioConfigured ? "Twilio" : null,
+    payload.wixSmsConfigured ? "Wix SMS" : null,
     payload.resendConfigured ? "Resend" : null,
     payload.gmailConfigured ? "Gmail" : null,
   ].filter((name): name is string => name !== null);
   if (configuredProviders.length > 0) {
     throw new Error(
       `[e2e] Environment fingerprint preflight found outbound providers configured: ` +
-        `${configuredProviders.join(", ")}. Disable AI/SMS/email credentials before ` +
+        `${configuredProviders.join(", ")}. Disable AI/Wix SMS/Twilio/email before ` +
         "stateful E2E; no fixture mutations were attempted."
     );
   }

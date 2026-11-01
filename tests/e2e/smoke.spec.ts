@@ -66,20 +66,6 @@ test.describe("webhook security", () => {
     expect([401, 503]).toContain(response.status());
   });
 
-  test("Twilio webhook rejects missing signature", async ({ request }) => {
-    const response = await request.post("/api/twilio/webhooks", {
-      form: { From: "+15551234567", Body: "YES" },
-    });
-    expect([401, 503]).toContain(response.status());
-  });
-
-  test("Twilio status webhook rejects missing signature", async ({ request }) => {
-    const response = await request.post("/api/twilio/status", {
-      form: { MessageSid: "SMtest", MessageStatus: "delivered" },
-    });
-    expect([401, 404, 503]).toContain(response.status());
-  });
-
   test("Twilio inbound voice webhook rejects missing signature", async ({ request }) => {
     const response = await request.post("/api/twilio/voice/inbound", {
       form: { From: "+15551234567", To: "+14165551212", CallSid: "CAtest" },
@@ -133,6 +119,8 @@ test.describe("webhook security", () => {
         supabase: string;
         cron: string;
         wix?: string;
+        wixSms: string;
+        twilioVoice: string;
         partsCanada?: string;
       };
     };
@@ -145,6 +133,8 @@ test.describe("webhook security", () => {
       expect.objectContaining({
         supabase: expect.stringMatching(/^(ok|missing|error)$/),
         cron: expect.stringMatching(/^(ok|missing|error)$/),
+        wixSms: expect.stringMatching(/^(ok|missing|error)$/),
+        twilioVoice: expect.stringMatching(/^(ok|missing|error)$/),
       })
     );
 
@@ -154,6 +144,8 @@ test.describe("webhook security", () => {
       expect(body.ok).toBe(true);
       expect(body.integrations.supabase).toBe("ok");
       expect(body.integrations.cron).toBe("ok");
+      expect(body.integrations.wixSms).toBe("ok");
+      expect(body.integrations.twilioVoice).toBe("ok");
     }
   });
 });

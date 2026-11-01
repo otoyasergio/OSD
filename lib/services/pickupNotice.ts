@@ -6,19 +6,20 @@ import {
 import { createAdminClient } from "@/lib/database/supabase-admin";
 import { createClient } from "@/lib/database/supabase-server";
 import { canSendReadyForPickupNotice } from "@/lib/permissions";
+import { normalizePhoneE164 } from "@/lib/phone/e164";
 import { portalUrl } from "@/lib/portal/tokens";
 import { sendEmail, isEmailConfigured } from "@/lib/email/send";
 import { renderReadyForPickupMessage } from "@/lib/services/communications";
+import { sendCustomerSms } from "@/lib/services/customerSms";
 import { createPortalToken } from "@/lib/services/portal";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { logger } from "@/lib/security/logger";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
-import { sendSms, isTwilioConfigured } from "@/lib/twilio/client";
-import { normalizePhoneE164 } from "@/lib/twilio/phone";
 
 export type PickupNoticeChannelResult = {
-  status: "sent" | "failed";
+  status: "sent" | "failed" | "uncertain";
   detail: string | null;
 };
 
@@ -34,6 +35,7 @@ type CustomerRow = {
   phone: string | null;
   email: string | null;
   sms_opted_out_at: string | null;
+  wix_contact_id: string | null;
 };
 
 type WorkOrderNoticeRow = {
@@ -79,7 +81,8 @@ export async function sendReadyForPickupNotice(
         last_name,
         phone,
         email,
-        sms_opted_out_at
+        sms_opted_out_at,
+        wix_contact_id
       ),
       location:location_id ( code )
     `
@@ -154,11 +157,14 @@ export async function sendReadyForPickupNotice(
     toAddress: phone,
     body: message.sms,
     dedupeKey,
-    send: async () => {
-      if (!isTwilioConfigured()) throw new Error("TWILIO_NOT_CONFIGURED");
-      const result = await sendSms({ to: phone, body: message.sms });
-      return result.sid;
-    },
+    send: () =>
+      sendCustomerSms({
+        customerId: customer.customer_id,
+        wixContactId: customer.wix_contact_id,
+        to: phone,
+        body: message.sms,
+        localOptedOutAt: customer.sms_opted_out_at,
+      }),
   });
 
   const emailResult = await deliverChannel({
@@ -210,6 +216,7 @@ async function deliverChannel(input: {
       direction: "outbound",
       template_key: "ready_for_pickup",
       to_address: input.toAddress,
+      from_address: input.channel === "sms" ? TORONTO_SHOP.phoneE164 : null,
       body: input.body,
       status: "queued",
       dedupe_key: input.dedupeKey,
@@ -228,23 +235,70 @@ async function deliverChannel(input: {
         .eq("template_key", "ready_for_pickup")
         .eq("dedupe_key", input.dedupeKey)
         .maybeSingle();
-      const status = existing.data?.status === "failed" ? "failed" : "sent";
+      const existingStatus = existing.data?.status;
+      const status: PickupNoticeChannelResult["status"] =
+        !existing.error && (existingStatus === "sent" || existingStatus === "delivered")
+          ? "sent"
+          : !existing.error && existingStatus === "failed"
+            ? "failed"
+            : "uncertain";
       return {
         status,
         detail:
-          status === "failed"
-            ? (existing.data?.error_message ?? "SEND_FAILED")
-            : "Already sent for this pickup.",
+          status === "sent"
+            ? "Already sent for this pickup."
+            : status === "uncertain"
+              ? toFormErrorMessage(new Error("WIX_INBOX_SEND_UNCERTAIN"))
+              : toFormErrorMessage(
+                  new Error(existing.data?.error_message ?? "SEND_FAILED")
+                ),
       };
     }
     return { status: "failed", detail: inserted.error.message };
   }
 
   const logId = inserted.data?.log_id as string | undefined;
+  let externalId: string;
   try {
-    const externalId = await input.send();
+    externalId = await input.send();
+  } catch (error) {
+    const errorCode = error instanceof Error ? error.message : "SEND_FAILED";
+    const uncertain = input.channel === "sms" && errorCode === "WIX_INBOX_SEND_UNCERTAIN";
+    const detail = toFormErrorMessage(error);
     if (logId) {
-      await input.admin
+      try {
+        const updated = await input.admin
+          .from("communication_log")
+          .update({
+            status: uncertain ? "queued" : "failed",
+            error_message: uncertain ? errorCode : detail,
+            ...(uncertain ? {} : { dedupe_key: null }),
+          })
+          .eq("log_id", logId);
+        if (updated.error) {
+          logger.warn("Pickup notice communication log reconciliation failed", {
+            logId,
+            channel: input.channel,
+            phase: "failed",
+            error: updated.error.message,
+          });
+        }
+      } catch (updateError) {
+        logger.warn("Pickup notice communication log reconciliation failed", {
+          logId,
+          channel: input.channel,
+          phase: "failed",
+          error: updateError instanceof Error ? updateError.message : "LOG_UPDATE_FAILED",
+        });
+      }
+    }
+    return { status: uncertain ? "uncertain" : "failed", detail };
+  }
+
+  let reconciliationDetail: string | null = null;
+  if (logId) {
+    try {
+      const updated = await input.admin
         .from("communication_log")
         .update({
           status: "sent",
@@ -252,29 +306,39 @@ async function deliverChannel(input: {
           error_message: null,
         })
         .eq("log_id", logId);
-    }
-    try {
-      await addTimelineEvent(input.supabase, {
-        work_order_id: input.workOrderId,
-        user_id: input.userId,
-        event_type: TimelineEventType.MESSAGE_SENT,
-        entity_type: "communication_log",
-        entity_id: logId ?? null,
-        description: `${input.channel.toUpperCase()} sent (ready_for_pickup)`,
-        new_value: { channel: input.channel, template_key: "ready_for_pickup" },
+      if (updated.error) {
+        reconciliationDetail =
+          "Message sent, but its delivery record needs reconciliation.";
+        logger.warn("Pickup notice communication log reconciliation failed", {
+          logId,
+          channel: input.channel,
+          phase: "sent",
+          error: updated.error.message,
+        });
+      }
+    } catch (updateError) {
+      reconciliationDetail =
+        "Message sent, but its delivery record needs reconciliation.";
+      logger.warn("Pickup notice communication log reconciliation failed", {
+        logId,
+        channel: input.channel,
+        phase: "sent",
+        error: updateError instanceof Error ? updateError.message : "LOG_UPDATE_FAILED",
       });
-    } catch {
-      // The customer message already left. A timeline write must not hide that.
     }
-    return { status: "sent", detail: null };
-  } catch (error) {
-    const detail = toFormErrorMessage(error);
-    if (logId) {
-      await input.admin
-        .from("communication_log")
-        .update({ status: "failed", error_message: detail })
-        .eq("log_id", logId);
-    }
-    return { status: "failed", detail };
   }
+  try {
+    await addTimelineEvent(input.supabase, {
+      work_order_id: input.workOrderId,
+      user_id: input.userId,
+      event_type: TimelineEventType.MESSAGE_SENT,
+      entity_type: "communication_log",
+      entity_id: logId ?? null,
+      description: `${input.channel.toUpperCase()} sent (ready_for_pickup)`,
+      new_value: { channel: input.channel, template_key: "ready_for_pickup" },
+    });
+  } catch {
+    // The customer message already left. A timeline write must not hide that.
+  }
+  return { status: "sent", detail: reconciliationDetail };
 }

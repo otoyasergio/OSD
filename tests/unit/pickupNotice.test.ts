@@ -14,33 +14,42 @@ const {
   requireUser,
   createClient,
   createAdminClient,
-  sendSms,
+  sendCustomerSms,
   sendEmail,
   createPortalToken,
   addTimelineEvent,
+  loggerWarn,
+  updateErrors,
+  lookupOutcomes,
 } = vi.hoisted(() => ({
   requireUser: vi.fn(),
   createClient: vi.fn(),
   createAdminClient: vi.fn(),
-  sendSms: vi.fn(),
+  sendCustomerSms: vi.fn(),
   sendEmail: vi.fn(),
   createPortalToken: vi.fn(),
   addTimelineEvent: vi.fn(),
+  loggerWarn: vi.fn(),
+  updateErrors: [] as Array<{ message: string } | Error | null>,
+  lookupOutcomes: [] as Array<{
+    data: Record<string, unknown> | null;
+    error: { message: string } | null;
+  }>,
 }));
 
 vi.mock("@/lib/auth/session", () => ({ requireUser }));
 vi.mock("@/lib/database/supabase-server", () => ({ createClient }));
 vi.mock("@/lib/database/supabase-admin", () => ({ createAdminClient }));
-vi.mock("@/lib/twilio/client", () => ({
-  sendSms,
-  isTwilioConfigured: () => true,
-}));
+vi.mock("@/lib/services/customerSms", () => ({ sendCustomerSms }));
 vi.mock("@/lib/email/send", () => ({
   sendEmail,
   isEmailConfigured: () => true,
 }));
 vi.mock("@/lib/services/portal", () => ({ createPortalToken }));
 vi.mock("@/lib/timeline/addTimelineEvent", () => ({ addTimelineEvent }));
+vi.mock("@/lib/security/logger", () => ({
+  logger: { warn: loggerWarn },
+}));
 vi.mock("@/lib/portal/tokens", () => ({
   portalUrl: (token: string) => `https://service.torontomoto.com/c/${token}`,
 }));
@@ -51,6 +60,22 @@ import { PickupNoticeDialog } from "@/components/communications/PickupNoticeDial
 type LogRow = Record<string, unknown> & { log_id: string };
 
 const logs: LogRow[] = [];
+
+function seedPickupSms(status: string, errorMessage: string | null = null) {
+  logs.push({
+    log_id: "existing-sms",
+    work_order_id: "wo-1",
+    customer_id: "cust-1",
+    channel: "sms",
+    direction: "outbound",
+    template_key: "ready_for_pickup",
+    to_address: "+16475550100",
+    body: "Ready",
+    status,
+    error_message: errorMessage,
+    dedupe_key: "2026-10-30T18:00:00.000Z",
+  });
+}
 
 function workOrder(overrides: Record<string, unknown> = {}) {
   return {
@@ -67,6 +92,7 @@ function workOrder(overrides: Record<string, unknown> = {}) {
       phone: "6475550100",
       email: "ada@example.com",
       sms_opted_out_at: null,
+      wix_contact_id: "11111111-1111-4111-8111-111111111111",
     },
     location: { code: "TOR" },
     ...overrides,
@@ -104,9 +130,12 @@ function adminClient() {
         update(patch: Record<string, unknown>) {
           return {
             eq(_column: string, id: string) {
+              const outcome = updateErrors.shift() ?? null;
+              if (outcome instanceof Error) return Promise.reject(outcome);
+              const error = outcome;
               const row = logs.find((item) => item.log_id === id);
-              if (row) Object.assign(row, patch);
-              return Promise.resolve({ error: null });
+              if (row && !error) Object.assign(row, patch);
+              return Promise.resolve({ error });
             },
           };
         },
@@ -118,6 +147,8 @@ function adminClient() {
               return chain;
             },
             async maybeSingle() {
+              const forced = lookupOutcomes.shift();
+              if (forced) return forced;
               const match = logs.find((row) =>
                 filters.every(([column, value]) => row[column] === value)
               );
@@ -184,9 +215,7 @@ describe("pickup notice prompt", () => {
     expect(canSendPickupNotice(ready)).toBe(true);
     expect(pickupNoticeBlockers({ ...ready, email: null })).toEqual(["email"]);
     expect(pickupNoticeBlockers({ ...ready, phone: null })).toEqual(["phone"]);
-    expect(pickupNoticeBlockers({ ...ready, smsOptedOut: true })).toEqual([
-      "sms_opt_out",
-    ]);
+    expect(pickupNoticeBlockers({ ...ready, smsOptedOut: true })).toEqual([]);
     expect(pickupNoticeBlockers({ ...ready, locationCode: "OTT" })).toEqual(["location"]);
     expect(canSendPickupNotice({ ...ready, email: " " })).toBe(false);
   });
@@ -214,6 +243,8 @@ describe("pickup notice dialog", () => {
     expect(html).toContain("Don&#x27;t send");
     expect(html).toContain("99 River Street");
     expect(html).toContain("ada@example.com");
+    expect(html).toMatch(/Wix Contacts.*authoritative/i);
+    expect(html).toMatch(/replies.*only.*Wix Inbox/i);
   });
 
   it("hides send when a channel is missing", () => {
@@ -233,6 +264,8 @@ describe("pickup notice dialog", () => {
 describe("sendReadyForPickupNotice", () => {
   beforeEach(() => {
     logs.length = 0;
+    updateErrors.length = 0;
+    lookupOutcomes.length = 0;
     vi.clearAllMocks();
     requireUser.mockResolvedValue({
       user_id: "user-1",
@@ -250,7 +283,7 @@ describe("sendReadyForPickupNotice", () => {
     });
     createAdminClient.mockReturnValue(adminClient());
     createPortalToken.mockResolvedValue({ token: "token" });
-    sendSms.mockResolvedValue({ sid: "SM1" });
+    sendCustomerSms.mockResolvedValue("wix-message-1");
     sendEmail.mockResolvedValue({ id: "email-1" });
     addTimelineEvent.mockResolvedValue(undefined);
   });
@@ -260,13 +293,23 @@ describe("sendReadyForPickupNotice", () => {
 
     expect(result.sms.status).toBe("sent");
     expect(result.email.status).toBe("sent");
-    expect(sendSms).toHaveBeenCalledOnce();
+    expect(sendCustomerSms).toHaveBeenCalledWith({
+      customerId: "cust-1",
+      wixContactId: "11111111-1111-4111-8111-111111111111",
+      to: "+16475550100",
+      body: expect.stringContaining("99 River Street"),
+      localOptedOutAt: null,
+    });
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(logs.map((row) => row.channel).sort()).toEqual(["email", "sms"]);
     expect(logs.every((row) => row.status === "sent")).toBe(true);
     expect(logs.every((row) => row.dedupe_key === "2026-10-30T18:00:00.000Z")).toBe(true);
     expect(String(logs.find((row) => row.channel === "sms")?.body)).toContain(
       "99 River Street"
+    );
+    expect(logs.find((row) => row.channel === "sms")?.external_id).toBe("wix-message-1");
+    expect(logs.find((row) => row.channel === "sms")?.from_address).toBe(
+      TORONTO_SHOP.phoneE164
     );
   });
 
@@ -294,7 +337,7 @@ describe("sendReadyForPickupNotice", () => {
     });
 
     await expect(sendReadyForPickupNotice("wo-1")).rejects.toThrow(/no email/i);
-    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendCustomerSms).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
     expect(logs).toHaveLength(0);
   });
@@ -303,14 +346,56 @@ describe("sendReadyForPickupNotice", () => {
     await sendReadyForPickupNotice("wo-1");
     const second = await sendReadyForPickupNotice("wo-1");
 
-    expect(sendSms).toHaveBeenCalledOnce();
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(second.sms.detail).toMatch(/Already sent/);
     expect(second.email.detail).toMatch(/Already sent/);
+    expect(logs.find((row) => row.channel === "sms")?.dedupe_key).toBe(
+      "2026-10-30T18:00:00.000Z"
+    );
+  });
+
+  it.each([
+    ["lookup error", { data: null, error: { message: "lookup failed" } }],
+    ["missing lookup row", { data: null, error: null }],
+  ])("reports an uncertain pickup conflict on %s", async (_name, lookup) => {
+    seedPickupSms("sent");
+    lookupOutcomes.push(lookup);
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("uncertain");
+    expect(result.sms.detail).toMatch(/Wix Inbox/i);
+    expect(result.sms.detail).not.toMatch(/Already sent/i);
+    expect(sendCustomerSms).not.toHaveBeenCalled();
+  });
+
+  it.each(["queued", "processing"])(
+    "reports an existing %s pickup row with no error as uncertain",
+    async (status) => {
+      seedPickupSms(status);
+
+      const result = await sendReadyForPickupNotice("wo-1");
+
+      expect(result.sms.status).toBe("uncertain");
+      expect(result.sms.detail).toMatch(/Wix Inbox/i);
+      expect(result.sms.detail).not.toMatch(/Already sent/i);
+      expect(sendCustomerSms).not.toHaveBeenCalled();
+    }
+  );
+
+  it("reports an explicit delivered pickup row as already sent", async () => {
+    seedPickupSms("delivered");
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("sent");
+    expect(result.sms.detail).toMatch(/Already sent/i);
+    expect(sendCustomerSms).not.toHaveBeenCalled();
   });
 
   it("still tries email when the text fails", async () => {
-    sendSms.mockRejectedValue(new Error("TWILIO_NOT_CONFIGURED"));
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_API_ERROR"));
 
     const result = await sendReadyForPickupNotice("wo-1");
 
@@ -318,6 +403,159 @@ describe("sendReadyForPickupNotice", () => {
     expect(result.email.status).toBe("sent");
     expect(sendEmail).toHaveBeenCalledOnce();
     expect(logs.find((row) => row.channel === "sms")?.status).toBe("failed");
+  });
+
+  it("releases a definite failure so the same pickup can retry the provider", async () => {
+    let attempts = 0;
+    sendCustomerSms.mockImplementation(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("WIX_INBOX_API_ERROR");
+      return "wix-message-2";
+    });
+
+    const first = await sendReadyForPickupNotice("wo-1");
+    const second = await sendReadyForPickupNotice("wo-1");
+
+    expect(first.sms.status).toBe("failed");
+    expect(second.sms.status).toBe("sent");
+    expect(sendCustomerSms).toHaveBeenCalledTimes(2);
+    expect(
+      logs.find((row) => row.channel === "sms" && row.status === "failed")?.dedupe_key
+    ).toBeNull();
+  });
+
+  it("leaves an uncertain text queued and tells staff to inspect Wix Inbox", async () => {
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_SEND_UNCERTAIN"));
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("uncertain");
+    expect(result.sms.detail).toMatch(/Wix Inbox/i);
+    expect(result.sms.detail).toMatch(/before.*resend/i);
+    expect(result.email.status).toBe("sent");
+    expect(logs.find((row) => row.channel === "sms")).toEqual(
+      expect.objectContaining({
+        status: "queued",
+        error_message: "WIX_INBOX_SEND_UNCERTAIN",
+        dedupe_key: "2026-10-30T18:00:00.000Z",
+      })
+    );
+  });
+
+  it("blocks a pickup resend while a prior Wix outcome is uncertain", async () => {
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_SEND_UNCERTAIN"));
+
+    await sendReadyForPickupNotice("wo-1");
+    const second = await sendReadyForPickupNotice("wo-1");
+
+    expect(second.sms.status).toBe("uncertain");
+    expect(second.sms.detail).toMatch(/Wix Inbox/i);
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
+  });
+
+  it("treats a queued row with no error code as uncertain on the next attempt", async () => {
+    updateErrors.push({ message: "sent update failed" }, null);
+
+    const first = await sendReadyForPickupNotice("wo-1");
+
+    expect(first.sms.status).toBe("sent");
+    expect(first.sms.detail).toMatch(/reconciliation/i);
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
+    expect(logs.find((row) => row.channel === "sms")?.status).toBe("queued");
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "Pickup notice communication log reconciliation failed",
+      expect.objectContaining({
+        channel: "sms",
+        phase: "sent",
+        error: "sent update failed",
+      })
+    );
+
+    const second = await sendReadyForPickupNotice("wo-1");
+    expect(second.sms.status).toBe("uncertain");
+    expect(second.sms.detail).toMatch(/reconciliation|Wix Inbox/i);
+    expect(second.sms.detail).not.toMatch(/Already sent/i);
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
+  });
+
+  it("retains the provider failure when recording that failure also fails", async () => {
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_API_ERROR"));
+    updateErrors.push({ message: "failed update failed" }, null);
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms).toEqual({
+      status: "failed",
+      detail: "Wix could not send that text message. Try again.",
+    });
+    expect(sendEmail).toHaveBeenCalledOnce();
+    expect(loggerWarn).toHaveBeenCalledWith(
+      "Pickup notice communication log reconciliation failed",
+      expect.objectContaining({
+        channel: "sms",
+        phase: "failed",
+        error: "failed update failed",
+      })
+    );
+  });
+
+  it("does not reclassify an accepted SMS when the log update throws", async () => {
+    updateErrors.push(new Error("sent update threw"), null);
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("sent");
+    expect(result.sms.detail).toMatch(/reconciliation/i);
+    expect(sendCustomerSms).toHaveBeenCalledOnce();
+    expect(sendEmail).toHaveBeenCalledOnce();
+  });
+
+  it("retains the provider failure when the failure-log update throws", async () => {
+    sendCustomerSms.mockRejectedValue(new Error("WIX_INBOX_API_ERROR"));
+    updateErrors.push(new Error("failed update threw"), null);
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms).toEqual({
+      status: "failed",
+      detail: "Wix could not send that text message. Try again.",
+    });
+    expect(sendEmail).toHaveBeenCalledOnce();
+  });
+
+  it("lets Wix reconcile a stale local SMS opt-out", async () => {
+    createClient.mockResolvedValue({
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: workOrder({
+                customer: {
+                  customer_id: "cust-1",
+                  first_name: "Ada",
+                  last_name: "Lovelace",
+                  phone: "6475550100",
+                  email: "ada@example.com",
+                  sms_opted_out_at: "2026-10-01T12:00:00.000Z",
+                  wix_contact_id: "11111111-1111-4111-8111-111111111111",
+                },
+              }),
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    });
+
+    const result = await sendReadyForPickupNotice("wo-1");
+
+    expect(result.sms.status).toBe("sent");
+    expect(sendCustomerSms).toHaveBeenCalledWith(
+      expect.objectContaining({
+        localOptedOutAt: "2026-10-01T12:00:00.000Z",
+      })
+    );
+    expect(sendEmail).toHaveBeenCalledOnce();
   });
 
   it("rejects a technician before sending", async () => {
@@ -328,6 +566,6 @@ describe("sendReadyForPickupNotice", () => {
     });
 
     await expect(sendReadyForPickupNotice("wo-1")).rejects.toThrow("FORBIDDEN");
-    expect(sendSms).not.toHaveBeenCalled();
+    expect(sendCustomerSms).not.toHaveBeenCalled();
   });
 });

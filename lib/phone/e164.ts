@@ -1,5 +1,5 @@
 /**
- * Normalize North American (and already-E.164) phone strings for Twilio.
+ * Normalize North American (and already-E.164) phone strings.
  * Returns null when the number cannot be normalized.
  */
 export function normalizePhoneE164(raw: string | null | undefined): string | null {

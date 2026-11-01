@@ -1,5 +1,9 @@
 # Twilio messaging compliance (toll-free / A2P ready)
 
+> **Superseded:** This historical design is not the current customer-SMS
+> architecture. Customer SMS now uses Wix Inbox; 647-424-1088 and all replies
+> remain in Wix. See [`docs/ops/wix-inbox-sms.md`](../../ops/wix-inbox-sms.md).
+
 **Date:** 2026-07-13  
 **Status:** Approved design — pending implementation plan  
 **Related:** Existing Twilio send/status/inbound stack; `docs/superpowers/acceptance/production-checklist.md` §8

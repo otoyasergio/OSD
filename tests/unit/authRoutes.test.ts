@@ -6,7 +6,7 @@ describe("auth route helpers", () => {
     expect(isPublicAppPath("/login")).toBe(true);
     expect(isPublicAppPath("/c/customer-token")).toBe(true);
     expect(isPublicAppPath("/p/passport-token")).toBe(true);
-    expect(isPublicAppPath("/api/twilio/webhooks")).toBe(true);
+    expect(isPublicAppPath("/api/twilio/voice/inbound")).toBe(true);
     expect(isPublicAppPath("/dashboard")).toBe(false);
     expect(isPublicAppPath("/control-center")).toBe(false);
     expect(isPublicAppPath("/new-staff-route")).toBe(false);
