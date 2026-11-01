@@ -1,6 +1,6 @@
 # Private client details design
 
-**Date:** 2026-10-31  
+**Date:** 2026-10-31
 **Status:** Approved
 
 ## Goal
