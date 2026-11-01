@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type {
   Recommendation,
   RecommendationEstimateLine,
@@ -10,6 +10,13 @@ import { RECOMMENDATION_SEVERITY_LABELS } from "@/lib/status/labels";
 import { estimateTotalsWithHst, HST_PERCENT } from "@/lib/pricing/hst";
 import { FormError } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
+import { AdvisoryReviewDialog } from "@/components/recommendations/AdvisoryReviewDialog";
+import {
+  advisoriesInBucket,
+  type AdvisoryReviewBucket,
+  type AdvisoryReviewItem,
+  type AdvisoryReviewPhoto,
+} from "@/lib/recommendations/advisoryReview";
 
 type Action = (
   state: RecommendationFormState,
@@ -27,31 +34,74 @@ function moneyCents(cents: number): string {
   return money(cents / 100);
 }
 
-const OPEN_STATUSES = new Set(["pending", "deferred"]);
+function reviewItems(recommendations: Recommendation[]): AdvisoryReviewItem[] {
+  return recommendations.map((recommendation) => ({
+    recommendation_id: recommendation.recommendation_id,
+    inspection_result_id: recommendation.inspection_result_id,
+    description: recommendation.description,
+    severity: recommendation.severity,
+    status: recommendation.status,
+    notes: recommendation.notes,
+    inspection_item_name: recommendation.inspection_result?.item_name_snapshot ?? null,
+  }));
+}
+
+function CountButton({
+  label,
+  count,
+  boxClass,
+  labelClass,
+  countClass,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  boxClass: string;
+  labelClass: string;
+  countClass: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-haspopup="dialog"
+      aria-label={`Open photos and advisories — ${label}, ${count}`}
+      onClick={onClick}
+      className={`w-full cursor-pointer rounded border px-3 py-2 text-left ${boxClass}`}
+    >
+      <span className={`block text-xs font-medium uppercase tracking-wide ${labelClass}`}>
+        {label}
+      </span>
+      <span className={`block text-xl font-bold ${countClass}`}>{count}</span>
+    </button>
+  );
+}
 
 export function RecommendationsSummary({
   recommendations,
   estimateLines,
   canSendEstimate,
   sendEstimateAction,
+  photos = [],
 }: {
   recommendations: Recommendation[];
   estimateLines: RecommendationEstimateLine[];
   canSendEstimate: boolean;
   sendEstimateAction: Action;
+  photos?: AdvisoryReviewPhoto[];
 }) {
   const [sendState, sendFormAction] = useActionState(sendEstimateAction, {
     error: null,
   });
+  const [reviewBucket, setReviewBucket] = useState<AdvisoryReviewBucket | null>(null);
+  const items = reviewItems(recommendations);
 
-  const open = recommendations.filter((r) => OPEN_STATUSES.has(r.status));
-  const immediate = open.filter(
-    (r) => r.severity === "immediate_attention" || r.severity === "safety_critical"
-  ).length;
-  const future = open.filter((r) => r.severity === "future_attention").length;
-  const declined = recommendations.filter((r) => r.status === "declined").length;
-  const converted = recommendations.filter(
-    (r) => r.status === "converted_to_job" || r.status === "approved"
+  const immediate = advisoriesInBucket(items, "immediate").length;
+  const future = advisoriesInBucket(items, "future").length;
+  const declined = advisoriesInBucket(items, "declined").length;
+  const converted = advisoriesInBucket(items, "approved").length;
+  const openCount = items.filter(
+    (item) => item.status === "pending" || item.status === "deferred"
   ).length;
 
   const estimateSubtotal = estimateLines.reduce((sum, line) => sum + line.line_total, 0);
@@ -65,37 +115,60 @@ export function RecommendationsSummary({
       aria-label="Recommendation summary"
       className="rounded border border-[var(--border)] bg-white p-4"
     >
-      <h2 className="text-base font-semibold text-foreground">Client advisories</h2>
-      <p className="mt-1 text-sm text-[var(--status-neutral)]">
-        Everything the techs flagged on this bike, in one place.
-      </p>
+      <h2 className="text-base font-semibold text-foreground">
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-label="Open photos and advisories"
+          onClick={() => setReviewBucket("all")}
+          className="w-full cursor-pointer rounded text-left font-semibold"
+        >
+          <span className="block text-base font-semibold text-foreground">
+            Client advisories
+          </span>
+          <span className="mt-1 block text-sm text-[var(--status-neutral)]">
+            Everything the techs flagged on this bike, in one place.
+          </span>
+          <span className="mt-2 inline-flex text-sm font-semibold text-foreground underline">
+            Open photos and advisories
+          </span>
+        </button>
+      </h2>
 
-      <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded border border-red-200 bg-red-50 px-3 py-2">
-          <dt className="text-xs font-medium uppercase tracking-wide text-red-800">
-            {RECOMMENDATION_SEVERITY_LABELS.immediate_attention}
-          </dt>
-          <dd className="text-xl font-bold text-red-900">{immediate}</dd>
-        </div>
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2">
-          <dt className="text-xs font-medium uppercase tracking-wide text-amber-800">
-            {RECOMMENDATION_SEVERITY_LABELS.future_attention}
-          </dt>
-          <dd className="text-xl font-bold text-amber-900">{future}</dd>
-        </div>
-        <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-          <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-            On estimate / approved
-          </dt>
-          <dd className="text-xl font-bold text-foreground">{converted}</dd>
-        </div>
-        <div className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2">
-          <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-            Declined
-          </dt>
-          <dd className="text-xl font-bold text-foreground">{declined}</dd>
-        </div>
-      </dl>
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <CountButton
+          label={RECOMMENDATION_SEVERITY_LABELS.immediate_attention}
+          count={immediate}
+          boxClass="border-red-200 bg-red-50"
+          labelClass="text-red-800"
+          countClass="text-red-900"
+          onClick={() => setReviewBucket("immediate")}
+        />
+        <CountButton
+          label={RECOMMENDATION_SEVERITY_LABELS.future_attention}
+          count={future}
+          boxClass="border-amber-200 bg-amber-50"
+          labelClass="text-amber-800"
+          countClass="text-amber-900"
+          onClick={() => setReviewBucket("future")}
+        />
+        <CountButton
+          label="On estimate / approved"
+          count={converted}
+          boxClass="border-[var(--border)] bg-[var(--surface-muted)]"
+          labelClass="text-[var(--status-neutral)]"
+          countClass="text-foreground"
+          onClick={() => setReviewBucket("approved")}
+        />
+        <CountButton
+          label="Declined"
+          count={declined}
+          boxClass="border-[var(--border)] bg-[var(--surface-muted)]"
+          labelClass="text-[var(--status-neutral)]"
+          countClass="text-foreground"
+          onClick={() => setReviewBucket("declined")}
+        />
+      </div>
 
       {estimateLines.length > 0 ? (
         <div className="mt-4 rounded border border-[var(--border)] bg-[var(--surface-muted)] p-3">
@@ -181,10 +254,20 @@ export function RecommendationsSummary({
             </form>
           ) : null}
         </div>
-      ) : open.length > 0 ? (
+      ) : openCount > 0 ? (
         <p className="mt-3 text-sm text-[var(--status-neutral)]">
           Convert a pending advisory below to start building the client estimate.
         </p>
+      ) : null}
+
+      {reviewBucket ? (
+        <AdvisoryReviewDialog
+          items={items}
+          photos={photos}
+          bucket={reviewBucket}
+          onBucketChange={setReviewBucket}
+          onClose={() => setReviewBucket(null)}
+        />
       ) : null}
     </section>
   );

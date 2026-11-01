@@ -436,6 +436,7 @@ export default async function WorkOrderDetailPage({
       )}
       fromResultId={fromResultId ?? null}
       fromResultDefaults={fromResultDefaults}
+      photos={photos}
     />
   );
 
