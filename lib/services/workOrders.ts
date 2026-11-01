@@ -404,6 +404,7 @@ export type WorkOrderDetail = WorkOrder & {
     model: string;
     vin: string | null;
     colour: string | null;
+    plate_number: string | null;
     customer_id: string;
   } | null;
   primary_technician: {
@@ -477,6 +478,7 @@ export async function getWorkOrderDetail(
         model,
         vin,
         colour,
+        plate_number,
         customer_id
       ),
       primary_technician:primary_technician_id (
