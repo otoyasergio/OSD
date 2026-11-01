@@ -37,8 +37,8 @@ import {
   squareInvoiceTransactionId,
   v2PaymentStatusForMapped,
 } from "@/lib/square/webhookDecisions";
-import { createPortalToken } from "@/lib/services/portal";
 import { sendWorkOrderMessage } from "@/lib/services/communications";
+import { logger } from "@/lib/security/logger";
 
 export type CustomerCredit = {
   credit_id: string;
@@ -463,42 +463,54 @@ export async function sendWorkOrderEstimateApproval(
   const detail = await loadBillingWorkOrder(workOrderId);
   const supabase = await createClient();
 
-  let sent = false;
+  await sendWorkOrderMessage({
+    work_order_id: workOrderId,
+    channel,
+    template_key: "approval_request",
+  });
+
   try {
-    await sendWorkOrderMessage({
-      work_order_id: workOrderId,
-      channel,
-      template_key: "approval_request",
-    });
-    sent = true;
-  } catch {
-    // Messaging may be unconfigured in alpha — still mark estimate sent for staff portal use
-    await createPortalToken({
+    const stageUpdate = await supabase
+      .from("work_order")
+      .update({
+        billing_stage: "awaiting_approval",
+        estimate_sent_at: new Date().toISOString(),
+      })
+      .eq("work_order_id", workOrderId);
+    if (stageUpdate.error) {
+      logger.warn("Estimate approval reconciliation failed", {
+        workOrderId,
+        phase: "stage",
+        error: stageUpdate.error.message,
+      });
+    }
+  } catch (stageError) {
+    logger.warn("Estimate approval reconciliation failed", {
       workOrderId,
-      purpose: "estimate",
-      expiresInDays: 14,
+      phase: "stage",
+      error: stageError instanceof Error ? stageError.message : "STAGE_UPDATE_FAILED",
     });
   }
 
-  await supabase
-    .from("work_order")
-    .update({
-      billing_stage: "awaiting_approval",
-      estimate_sent_at: new Date().toISOString(),
-    })
-    .eq("work_order_id", workOrderId);
+  try {
+    await addTimelineEvent(supabase, {
+      work_order_id: workOrderId,
+      user_id: user.user_id,
+      event_type: TimelineEventType.ESTIMATE_SENT,
+      entity_type: "work_order",
+      entity_id: workOrderId,
+      description: `Estimate approval sent for ${detail.work_order_number}`,
+      new_value: { channel, message_sent: true },
+    });
+  } catch (timelineError) {
+    logger.warn("Estimate approval reconciliation failed", {
+      workOrderId,
+      phase: "timeline",
+      error: timelineError instanceof Error ? timelineError.message : "TIMELINE_FAILED",
+    });
+  }
 
-  await addTimelineEvent(supabase, {
-    work_order_id: workOrderId,
-    user_id: user.user_id,
-    event_type: TimelineEventType.ESTIMATE_SENT,
-    entity_type: "work_order",
-    entity_id: workOrderId,
-    description: `Estimate approval sent for ${detail.work_order_number}`,
-    new_value: { channel, message_sent: sent },
-  });
-
-  return { sent };
+  return { sent: true };
 }
 
 export async function publishWorkOrderSquareInvoice(

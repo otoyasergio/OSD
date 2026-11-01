@@ -26,11 +26,10 @@ the Toronto address for it. Historical Ottawa work was folded into Toronto.
 
 ## Where this matters
 
-- **Twilio:** use the legal entity name and Toronto address for regulatory
-  address records, toll-free verification, and Trust Hub business profiles.
-  Canadian carriers reject mismatches against the registered business name.
-- **647-424-1088 is the number customers already text.** The public site tells
-  them to text before dropping a bike off, so prefer porting it into Twilio over
-  buying a new number, otherwise the shop silently loses that thread.
+- **Twilio Voice/Video:** use the legal entity name and Toronto address for any
+  required regulatory records. Customer SMS is not sent through Twilio.
+- **647-424-1088 stays in Wix.** Wix Inbox owns outbound customer SMS and all
+  replies for the existing customer thread. Do not port or move this number
+  without a new, explicit owner decision.
 - Contracts, invoices, and customer-facing documents should use the legal entity
   name, not the "Toronto Moto" trade name.

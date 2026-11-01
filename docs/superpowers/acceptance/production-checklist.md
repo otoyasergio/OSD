@@ -19,10 +19,12 @@ Copy from [`.env.local.example`](../../../.env.local.example). Do not commit `.e
 | `SUPABASE_SERVICE_ROLE_KEY`             | **Server only**       | Portal, webhooks, cron (bypasses RLS)                   |
 | `NEXT_PUBLIC_APP_URL`                   | Vercel                | Exact public origin for magic links + webhook HMAC URLs |
 | `SQUARE_*`                              | Vercel                | Billing + webhook signature key                         |
-| `TWILIO_ACCOUNT_SID`                    | Vercel                | Twilio account                                          |
-| `TWILIO_AUTH_TOKEN`                     | Vercel                | SMS API + inbound webhook signature                     |
-| `TWILIO_MESSAGING_SERVICE_SID`          | Vercel                | **Preferred** A2P sender pool (omit `From` when set)    |
-| `TWILIO_FROM_NUMBER`                    | Vercel                | Fallback if Messaging Service SID is not set            |
+| `TWILIO_ACCOUNT_SID`                    | Vercel                | Twilio Voice/Video account                              |
+| `TWILIO_AUTH_TOKEN`                     | Vercel                | Twilio Voice webhook signatures                         |
+| `TWILIO_API_KEY_SID` / `*_SECRET`       | Vercel                | Twilio Voice/Video access tokens                        |
+| `TWILIO_TWIML_APP_SID`                  | Vercel                | Twilio outbound Voice TwiML App                         |
+| `WIX_API_KEY` / `WIX_SITE_ID`           | Vercel                | Contacts/Bookings plus Inbox read/manage                |
+| `WIX_INBOX_SMS_ENABLED`                 | Vercel                | Exact `1` enables outbound Wix Inbox SMS                |
 | `WIX_WEBHOOK_SECRET`                    | Vercel                | **Required** if Wix bookings enabled (fail-closed)      |
 | `CRON_SECRET`                           | Vercel                | Bearer for Parts Canada cron                            |
 | `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Vercel                | Optional error tracking                                 |
@@ -100,14 +102,19 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 - [ ] Storage buckets present and private
 - [ ] Owner `app_user` linked + assigned to a location
 - [ ] Webhook signature keys configured; Wix secret set if bookings used
-- [ ] Twilio TrustHub: Business Profile approved → Brand → Campaign → Messaging Service (see §8)
-- [ ] `TWILIO_*` set on Vercel; inbound + status webhook URLs match `NEXT_PUBLIC_APP_URL`
+- [ ] Wix API key has Contacts read/manage, Bookings read, and Inbox read/manage
+- [ ] 647-424-1088 remains in Wix; staff own all replies in Wix Inbox (see §8)
+- [ ] Before SMS cutover, remove `TWILIO_MESSAGING_SERVICE_SID` and
+      `TWILIO_FROM_NUMBER` from Vercel Production; retain all Twilio Voice/Video
+      credentials
+- [ ] Wix Inbox SMS canary passed before `WIX_INBOX_SMS_ENABLED=1` is set in Production
+- [ ] Twilio Voice/Video variables are set; all Voice webhook URLs match `NEXT_PUBLIC_APP_URL`
 - [ ] Migration `037_customer_sms_opt_out` applied
 - [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada every 4 hours + Wix contacts every 4 minutes on **Pro**, both gated to 10:00–23:00 Toronto; weekly shop report at Saturday 00:00 and 01:00 UTC, sends only in the Friday 8:00 p.m. Toronto hour)
 - [ ] Migration `20261031030000_weekly_shop_report_dedupe.sql` applied and the Toronto shop Gmail mailbox connected, so the Friday report to `info@torontomoto.com` can send once per week
 - [ ] Vercel → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**
 - [ ] `npm run smoke:production` passes against https://service.torontomoto.com (set `CRON_SECRET` locally for bearer check)
-- [ ] `GET /api/health` returns `{ ok: true }` with `integrations.supabase: "ok"`
+- [ ] `GET /api/health` returns `{ ok: true }` with `integrations.supabase`, `integrations.wixSms`, and `integrations.twilioVoice` all `"ok"`
 - [ ] `npm test` and `npm run build` green
 - [ ] Playwright smoke (`npm run test:e2e`) against staging when available
 - [ ] Supabase **leaked password protection** enabled
@@ -122,7 +129,7 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 
 - **Authorization:** `lib/permissions` + services are the source of truth; RLS is defense in depth (location-scoped for WO tables as of `034`).
 - **Audit log:** Owner-only UI at Settings → Audit.
-- **Billing / portal:** Square estimates/invoices, customer portal at `/c/[token]`, Twilio/Resend messaging are in scope for V2+.
+- **Billing / portal:** Square estimates/invoices, customer portal at `/c/[token]`, Wix Inbox SMS, and email are in scope for V2+.
 - **Reports:** Owners/managers → Settings → Reports.
 - **Work order numbers:** Per-location via `mint_work_order_number`.
 
@@ -131,99 +138,66 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 ## 7. Rollback / incident basics
 
 1. Prefer **forward fixes** (new migration) over rewriting applied SQL.
-2. App rollback: redeploy previous Vercel deployment.
+2. App rollback generally uses a known-good deployment. For this Wix SMS
+   release, do not restore an immutable pre-cutover deployment: disable Wix SMS
+   and deploy current `main` as documented in the Wix operations runbook.
 3. Auth lockout: Supabase Dashboard → Authentication password reset; ensure `app_user.status = 'active'`.
 4. Compromised webhook: rotate secrets; see [`SECURITY.md`](../../../SECURITY.md).
 
 ---
 
-## 8. Twilio / TrustHub (CA-primary + occasional US)
+## 8. Wix Inbox SMS and Twilio Voice/Video
 
-**Strategy:** One Canadian local 10DLC (prefer GTA area code) in a Messaging Service, with US A2P Brand + Campaign attached so the same pool reaches CA daily and US when needed. Do **not** commit Bundle SID or Auth Token to git.
+### Customer SMS (Wix Inbox)
 
-### Console steps
+647-424-1088 stays in Wix. Do not port or move it without a new, explicit owner
+decision. The app sends outbound SMS through Wix Inbox; staff read and answer
+every reply in Wix Inbox. There is no app inbound-message webhook and no carrier
+delivery callback.
 
-1. **Geo permissions** — Enable SMS to **Canada** and **United States**.
-2. **Business Profile** — Must be approved in Trust Hub (already done when Twilio emails approval).
-3. **A2P Brand** — Trust Hub → A2P. Prefer Low-Volume Standard (or Standard if volume will grow). Legal name + Canadian Business Number must match the approved profile.
-4. **A2P Campaign** (after Brand approval) — include all four message-flow elements reviewers expect:
-   - Use case: **Customer Care** / account notifications (transactional work-order messages, not marketing).
-   - Description: Toronto Moto notifies customers about approvals, pickup readiness, contracts, and payment links for their service.
-   - Opt-in method: phone collected at intake / Wix booking / in-app customer create (no pre-checked marketing box).
-   - Frequency: e.g. “Up to several transactional msgs per active work order.”
-   - Disclosure: “Message and data rates may apply.”
-   - STOP / HELP language + privacy policy URL (public).
-   - Sample messages: app templates (`approval_request`, `ready_for_pickup`, `contract_link`, `payment_reminder`) ending with `Reply STOP to opt out.`
-   - Embedded links: **yes** (customer portal URLs).
-5. **Number + Messaging Service**
-   - Buy or assign a **Canadian local** 10DLC.
-   - Create a Messaging Service; add the number to the sender pool; link the approved Campaign.
-   - Enable **Advanced Opt-Out** + compliance toolkit.
-6. **Webhooks** (Messaging Service preferred):
-   - Incoming: `https://service.torontomoto.com/api/twilio/webhooks`
-   - Status callbacks are also set per-send to `https://service.torontomoto.com/api/twilio/status`
-   - Origin must match `NEXT_PUBLIC_APP_URL` exactly (signature verification is fail-closed).
-7. **Record for Vercel (not git):** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_MESSAGING_SERVICE_SID` (preferred). Optionally keep `TWILIO_FROM_NUMBER` as documentation of the pool number.
+1. Give the Wix API key Contacts read/manage, Bookings read, and Inbox
+   read/manage permissions for the Toronto site.
+2. Configure `WIX_API_KEY` and `WIX_SITE_ID` with
+   `WIX_INBOX_SMS_ENABLED` empty.
+3. Confirm health reports `wix: "ok"` and `wixSms: "missing"`.
+4. Follow the Preview canary in
+   [`docs/ops/wix-inbox-sms.md`](../../ops/wix-inbox-sms.md), including a
+   blocked unsubscribed contact and a handset reply visible only in Wix Inbox.
+5. After owner acceptance, set `WIX_INBOX_SMS_ENABLED=1` in Production,
+   redeploy current `main`, and repeat one message.
+6. Run `npm run smoke:production`; it requires `wixSms: "ok"` and independent
+   `twilioVoice: "ok"` health.
 
-Brand approval is often fast; Campaign review can take **~10–15 days**. Treat **US** sends as blocked until the Campaign is approved and the number shows `REGISTERED`. CA traffic may work earlier depending on carrier filtering.
+Consent is checked against the current Wix Contact before every send. Do not
+override an unsubscribed, missing-subscription, mismatched-phone, or invalid
+deliverability result. A `sent` app log means Wix accepted the request; it does
+not prove carrier delivery. Troubleshooting and flag-only rollback are in the
+Wix operations runbook.
 
-### App env
+### Shop phone (Twilio Voice/Video)
 
-| Variable                       | Required    | Notes                                                     |
-| ------------------------------ | ----------- | --------------------------------------------------------- |
-| `TWILIO_ACCOUNT_SID`           | Yes         |                                                           |
-| `TWILIO_AUTH_TOKEN`            | Yes         | Also verifies `X-Twilio-Signature` on inbound + status    |
-| `TWILIO_MESSAGING_SERVICE_SID` | Preferred   | When set, sends use `MessagingServiceSid` (no `From`)     |
-| `TWILIO_FROM_NUMBER`           | Fallback    | Required only if Messaging Service SID is unset           |
-| `TWILIO_API_KEY_SID`           | Voice/Video | API key for access tokens                                 |
-| `TWILIO_API_KEY_SECRET`        | Voice/Video | API key secret                                            |
-| `TWILIO_TWIML_APP_SID`         | Voice       | TwiML App whose Voice URL is `/api/twilio/voice/outbound` |
-| `NEXT_PUBLIC_APP_URL`          | Yes         | Used for signature URL + StatusCallback                   |
+Twilio is retained for Voice and Video. Required server values are
+`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_API_KEY_SID`,
+`TWILIO_API_KEY_SECRET`, and `TWILIO_TWIML_APP_SID`.
 
-### App behaviour (shipped)
+1. Set the TwiML App Voice request URL to
+   `https://service.torontomoto.com/api/twilio/voice/outbound` (HTTP POST) and
+   status callback to
+   `https://service.torontomoto.com/api/twilio/voice/status`.
+2. For each shop Voice number, set its webhook to
+   `https://service.torontomoto.com/api/twilio/voice/inbound` and status
+   callback to `https://service.torontomoto.com/api/twilio/voice/status`.
+3. Keep `NEXT_PUBLIC_APP_URL=https://service.torontomoto.com` so Twilio
+   signature URLs match exactly.
+4. In **Settings → Locations**, set **Shop phone** to that Voice number's E.164.
+5. Smoke unsigned `POST /api/twilio/voice/inbound`: expect **401**, or **503**
+   when `TWILIO_AUTH_TOKEN` is absent. Logged-out
+   `POST /api/calls/voice-token` and Video `POST /api/calls/token` must return
+   **401**.
+6. Run a controlled manual smoke after automated checks: place an inbound Voice
+   call to the distinct Twilio Voice number, place an outbound Voice call from
+   the browser, and complete a Video call between two authorized staff
+   sessions. Confirm call status records close for both Voice directions.
 
-- Prefer Messaging Service SID when sending; append STOP footer; E.164 normalize (`+1` for 10-digit NA).
-- `customer.sms_opted_out_at` set on STOP keywords; cleared on START/UNSTOP (and YES when not an approval reply). Outbound SMS is blocked when opted out.
-- Status callbacks update `communication_log.status` (`queued` / `sent` / `delivered` / `failed`).
-- Work-order Messages, Square “Send for approval”, and billing Remind prefer SMS when phone is present and not opted out.
-
-### Deploy + smoke
-
-1. Apply migration `037_customer_sms_opt_out.sql`.
-2. Set the Twilio env vars on Vercel (Production; Preview if you test SMS there).
-3. `vercel.json` crons: Parts Canada every 4 hours (`0 */4 * * *`, active 10:00–23:00 Toronto); Wix contacts every 4 minutes (`*/4 * * * *`, same window); weekly shop report (`0 0,1 * * 6`, only the Friday 8:00 p.m. Toronto slot sends). Apply migration `20260902010000_wix_contacts_sync_lock.sql` so overlapping Wix cron runs skip cleanly, and `20261031030000_weekly_shop_report_dedupe.sql` so a retried report run does not email twice.
-4. Redeploy so webhooks and secrets are live.
-5. **CA:** From a work order, send an SMS template to a Canadian mobile; confirm delivery / status updates in `communication_log`.
-6. **Inbound:** Reply `YES` / `APPROVE` on an approval request when a single job is waiting; confirm job updates. Reply `STOP` — carrier opt-out + `sms_opted_out_at` set.
-7. **Webhook security:**
-   - `NEXT_PUBLIC_APP_URL=https://service.torontomoto.com node scripts/smoke-twilio-webhook.mjs` → **401**
-   - Unsigned `POST /api/twilio/status` → **401** (or **503** if Twilio still incomplete)
-8. **US:** After Campaign approval + number `REGISTERED`, send one SMS to a US mobile.
-
-**Vercel gap:** `NEXT_PUBLIC_APP_URL` and `TWILIO_ACCOUNT_SID` are set. You still must add (do not commit):
-
-```bash
-npx vercel env add TWILIO_AUTH_TOKEN production --sensitive --yes
-npx vercel env add TWILIO_AUTH_TOKEN preview --sensitive --yes
-# After Messaging Service exists in Console:
-npx vercel env add TWILIO_MESSAGING_SERVICE_SID production --sensitive --yes
-npx vercel env add TWILIO_MESSAGING_SERVICE_SID preview --sensitive --yes
-```
-
-Then `npx vercel --prod` and re-run the smoke script (expect **401**).
-
-### Shop phone (Twilio Voice)
-
-Required for PSTN inbound/outbound. Staff audio uses the same Device.
-
-1. Create a **TwiML App** in Twilio Console. Voice request URL: `https://service.torontomoto.com/api/twilio/voice/outbound` (HTTP POST). Status callback: `https://service.torontomoto.com/api/twilio/voice/status`.
-2. Put the TwiML App SID in `TWILIO_TWIML_APP_SID` (plus existing `TWILIO_API_KEY_SID` / `TWILIO_API_KEY_SECRET` for Voice + Video grants).
-3. For each shop number, set Voice webhook to `https://service.torontomoto.com/api/twilio/voice/inbound` and status callback to `/api/twilio/voice/status`.
-4. In **Settings → Locations**, set **Shop phone** to that number’s E.164 (one number per location).
-5. Smoke: unsigned `POST /api/twilio/voice/inbound` → **401** (or **503** if `TWILIO_AUTH_TOKEN` is missing). Logged-out `POST /api/calls/voice-token` → **401**.
-
-No call recording or voicemail audio in v1 (Canadian consent). Missed inbound still logs and plays a short “we missed you” prompt.
-
-### CASL reminder
-
-Transactional service messages still need consent / implied consent under CASL. Keep opt-out language on outbound SMS; do not use this channel for unsolicited marketing.
+No call recording or voicemail audio is enabled in v1. Missed inbound calls
+still log and play the configured missed-call prompt.

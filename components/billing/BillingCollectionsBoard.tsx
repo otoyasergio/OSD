@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import type { BillingBoardItem } from "@/lib/services/billingBoard";
 import { BILLING_BUCKET_LABELS } from "@/lib/billing/buckets";
 import {
@@ -12,14 +12,27 @@ import {
 } from "@/app/(app)/work_orders/square-actions";
 import { sendMessageAction } from "@/app/(app)/work_orders/communication-actions";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FormError } from "@/components/forms/Field";
+import {
+  canAttemptCustomerEmail,
+  canAttemptCustomerSms,
+  deriveCustomerMessageChannel,
+  WIX_SMS_CHANNEL_GUIDANCE,
+} from "@/lib/communications/customerSmsAvailability";
 
 function money(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-function preferredChannel(item: BillingBoardItem): "sms" | "email" {
-  if (item.customer_phone && !item.sms_opted_out) return "sms";
-  return "email";
+function preferredChannel(item: BillingBoardItem): "sms" | "email" | null {
+  return deriveCustomerMessageChannel({
+    preferredChannel: "sms",
+    smsAvailable: canAttemptCustomerSms({
+      phone: item.customer_phone,
+      smsOptedOut: item.sms_opted_out,
+    }),
+    emailAvailable: canAttemptCustomerEmail(item.customer_email),
+  });
 }
 
 function BillingCard({
@@ -30,7 +43,15 @@ function BillingCard({
   showQuickActions: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const [messageError, setMessageError] = useState<string | null>(null);
   const channel = preferredChannel(item);
+  const messageKind = channel
+    ? item.bucket === "awaiting_approval"
+      ? "approval_request"
+      : item.bucket === "unpaid" || item.bucket === "balance_due"
+        ? "payment_reminder"
+        : null
+    : null;
 
   return (
     <article className="td-board-card">
@@ -64,30 +85,38 @@ function BillingCard({
         <Link href={item.href} className="btn btn-primary">
           Open
         </Link>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={pending}
-          title={
-            item.sms_opted_out
-              ? "SMS opted out — will use email"
-              : `Remind via ${channel.toUpperCase()}`
-          }
-          onClick={() =>
-            startTransition(async () => {
-              const reminder = await sendMessageAction(
-                item.work_order_id,
-                "payment_reminder",
-                channel
-              );
-              if (reminder.error) {
-                await sendEstimateApprovalAction(item.work_order_id, channel);
-              }
-            })
-          }
-        >
-          Remind / approve
-        </button>
+        {messageKind ? (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={pending}
+            title={`Send via ${channel?.toUpperCase()}`}
+            onClick={() => {
+              if (!channel || !messageKind) return;
+              const selectedChannel = channel;
+              const selectedMessageKind = messageKind;
+              setMessageError(null);
+              startTransition(async () => {
+                const result =
+                  selectedMessageKind === "approval_request"
+                    ? await sendEstimateApprovalAction(
+                        item.work_order_id,
+                        selectedChannel
+                      )
+                    : await sendMessageAction(
+                        item.work_order_id,
+                        "payment_reminder",
+                        selectedChannel
+                      );
+                setMessageError(result.error);
+              });
+            }}
+          >
+            {messageKind === "approval_request"
+              ? "Request approval"
+              : "Send payment reminder"}
+          </button>
+        ) : null}
         {showQuickActions ? (
           <>
             <button
@@ -135,6 +164,7 @@ function BillingCard({
           </>
         ) : null}
       </div>
+      {messageError ? <FormError message={messageError} /> : null}
     </article>
   );
 }
@@ -168,31 +198,36 @@ export function BillingCollectionsBoard({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-      {COLLECTION_BUCKETS.map((bucket) => {
-        const column = actionable.filter((i) => i.bucket === bucket);
-        return (
-          <section key={bucket} className="shop-board-column" aria-label={bucket}>
-            <header className="shop-board-column-header">
-              <h2 className="shop-board-column-title">{BILLING_BUCKET_LABELS[bucket]}</h2>
-              <span className="shop-board-column-count">{column.length}</span>
-            </header>
-            <div className="shop-board-column-body flex flex-col gap-3">
-              {column.length === 0 ? (
-                <EmptyState description="None" />
-              ) : (
-                column.map((item) => (
-                  <BillingCard
-                    key={item.work_order_id}
-                    item={item}
-                    showQuickActions={showQuickActions}
-                  />
-                ))
-              )}
-            </div>
-          </section>
-        );
-      })}
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-[var(--status-neutral)]">{WIX_SMS_CHANNEL_GUIDANCE}</p>
+      <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        {COLLECTION_BUCKETS.map((bucket) => {
+          const column = actionable.filter((i) => i.bucket === bucket);
+          return (
+            <section key={bucket} className="shop-board-column" aria-label={bucket}>
+              <header className="shop-board-column-header">
+                <h2 className="shop-board-column-title">
+                  {BILLING_BUCKET_LABELS[bucket]}
+                </h2>
+                <span className="shop-board-column-count">{column.length}</span>
+              </header>
+              <div className="shop-board-column-body flex flex-col gap-3">
+                {column.length === 0 ? (
+                  <EmptyState description="None" />
+                ) : (
+                  column.map((item) => (
+                    <BillingCard
+                      key={item.work_order_id}
+                      item={item}
+                      showQuickActions={showQuickActions}
+                    />
+                  ))
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -29,7 +29,11 @@ You need a **live Supabase project**. Do not invent credentials; copy them from 
 cp .env.local.example .env.local
 ```
 
-Fill in `.env.local` from [`.env.local.example`](./.env.local.example) (Supabase, Square, Twilio, Wix, cron, Sentry, Parts Canada).
+Fill in `.env.local` from [`.env.local.example`](./.env.local.example) (Supabase,
+Square, Twilio Voice/Video, Wix, cron, Sentry, Parts Canada). Customer SMS uses
+Wix Inbox and remains disabled unless `WIX_INBOX_SMS_ENABLED=1`; setup, canary,
+reply ownership, and rollback are in
+[`docs/ops/wix-inbox-sms.md`](./docs/ops/wix-inbox-sms.md).
 
 Ask OTOMOTO additionally needs the server-only `OPENAI_API_KEY`; the rolling model
 alias can be overridden with `OTOMOTO_DIAGNOSTICS_MODEL`. Apply its migrations
@@ -135,4 +139,5 @@ See the production runbook: [`docs/superpowers/acceptance/production-checklist.m
 - RLS audit: [`docs/superpowers/acceptance/rls-audit.md`](./docs/superpowers/acceptance/rls-audit.md)
 - Production checklist: [`docs/superpowers/acceptance/production-checklist.md`](./docs/superpowers/acceptance/production-checklist.md)
 - Supabase/Vercel health: [`docs/ops/platform-health.md`](./docs/ops/platform-health.md)
+- Wix Inbox SMS operations: [`docs/ops/wix-inbox-sms.md`](./docs/ops/wix-inbox-sms.md)
 - Ask OTOMOTO setup: [`docs/features/ask-otomoto.md`](./docs/features/ask-otomoto.md)

@@ -56,10 +56,10 @@ describe("verifySquareWebhookSignature", () => {
 
 describe("verifyTwilioWebhookSignature", () => {
   it("accepts a valid Twilio signature", () => {
-    const url = "https://example.com/api/twilio/webhooks";
-    const params = { From: "+15551234567", Body: "YES" };
+    const url = "https://example.com/api/twilio/voice/inbound";
+    const params = { CallSid: "CAtest", From: "+15551234567" };
     const authToken = "twilio-auth-token";
-    const data = url + "BodyYES" + "From+15551234567";
+    const data = url + "CallSidCAtest" + "From+15551234567";
     const signature = createHmac("sha1", authToken).update(data).digest("base64");
 
     expect(
@@ -75,8 +75,8 @@ describe("verifyTwilioWebhookSignature", () => {
   it("rejects forged Twilio signatures", () => {
     expect(
       verifyTwilioWebhookSignature({
-        url: "https://example.com/api/twilio/webhooks",
-        params: { From: "+1", Body: "YES" },
+        url: "https://example.com/api/twilio/voice/inbound",
+        params: { CallSid: "CAtest", From: "+1" },
         signatureHeader: "forged",
         authToken: "token",
       })

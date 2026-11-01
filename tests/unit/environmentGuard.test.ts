@@ -224,6 +224,11 @@ describe("checkMutationEnvironment", () => {
       expect(reasons).toEqual([expect.stringContaining("TWILIO_AUTH_TOKEN")]);
     });
 
+    it("rejects enabled Wix Inbox SMS", () => {
+      const reasons = reasonsFor(safeEnv({ WIX_INBOX_SMS_ENABLED: "1" }));
+      expect(reasons).toEqual([expect.stringContaining("WIX_INBOX_SMS_ENABLED")]);
+    });
+
     it("rejects a set RESEND_API_KEY", () => {
       const reasons = reasonsFor(safeEnv({ RESEND_API_KEY: "re_123" }));
       expect(reasons).toEqual([expect.stringContaining("RESEND_API_KEY")]);
@@ -326,8 +331,8 @@ describe("stateful E2E web server environment", () => {
       TWILIO_AUTH_TOKEN: "auth",
       TWILIO_API_KEY_SID: "api",
       TWILIO_API_KEY_SECRET: "secret",
-      TWILIO_MESSAGING_SERVICE_SID: "messaging",
-      TWILIO_FROM_NUMBER: "+14165550000",
+      TWILIO_TWIML_APP_SID: "twiml-app",
+      WIX_INBOX_SMS_ENABLED: "1",
       RESEND_API_KEY: "email",
       GMAIL_CLIENT_SECRET: "gmail-secret",
       GMAIL_REFRESH_TOKEN: "gmail-refresh",
@@ -341,8 +346,8 @@ describe("stateful E2E web server environment", () => {
       TWILIO_AUTH_TOKEN: "",
       TWILIO_API_KEY_SID: "",
       TWILIO_API_KEY_SECRET: "",
-      TWILIO_MESSAGING_SERVICE_SID: "",
-      TWILIO_FROM_NUMBER: "",
+      TWILIO_TWIML_APP_SID: "",
+      WIX_INBOX_SMS_ENABLED: "",
       RESEND_API_KEY: "",
       GMAIL_CLIENT_SECRET: "",
       GMAIL_REFRESH_TOKEN: "",

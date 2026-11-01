@@ -10,8 +10,6 @@ verify signatures / secrets or fail closed.
 | Endpoint                             | Auth                                                                                                                            |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /api/square/webhooks`          | HMAC-SHA256 (`x-square-hmacsha256-signature`) using `SQUARE_WEBHOOK_SIGNATURE_KEY` over `NEXT_PUBLIC_APP_URL` + path + raw body |
-| `POST /api/twilio/webhooks`          | Twilio `X-Twilio-Signature` using `TWILIO_AUTH_TOKEN`                                                                           |
-| `POST /api/twilio/status`            | Twilio `X-Twilio-Signature` using `TWILIO_AUTH_TOKEN` (delivery status callbacks)                                               |
 | `POST /api/twilio/voice/inbound`     | Twilio `X-Twilio-Signature` using `TWILIO_AUTH_TOKEN` (PSTN inbound TwiML)                                                      |
 | `POST /api/twilio/voice/outbound`    | Twilio `X-Twilio-Signature` using `TWILIO_AUTH_TOKEN` (TwiML App Voice URL)                                                     |
 | `POST /api/twilio/voice/status`      | Twilio `X-Twilio-Signature` using `TWILIO_AUTH_TOKEN` (Voice status callbacks)                                                  |
@@ -24,6 +22,12 @@ verify signatures / secrets or fail closed.
 
 Set `NEXT_PUBLIC_APP_URL` to the exact public HTTPS origin registered with Square/Twilio
 so signature URLs match.
+
+Customer SMS is outbound through Wix Inbox, not a public webhook. The app has
+no Wix inbound-message route: customer replies stay in Wix Inbox. Sending is
+fail-closed unless `WIX_API_KEY`, `WIX_SITE_ID`, and
+`WIX_INBOX_SMS_ENABLED=1` are all present. See
+[`docs/ops/wix-inbox-sms.md`](./docs/ops/wix-inbox-sms.md).
 
 ## Rate limiting
 
@@ -42,6 +46,7 @@ distributed/account-wide limit; every server process has its own counter.
 - Never commit `.env.local`
 - `SUPABASE_SERVICE_ROLE_KEY` is server-only (bypasses RLS)
 - `OPENAI_API_KEY` is server-only; never use a `NEXT_PUBLIC_*` AI key
+- `WIX_API_KEY` is server-only; never print provider responses that may contain it
 - Rotate `CRON_SECRET`, webhook secrets, and demo passwords before production
 - Enable **leaked password protection** in Supabase Auth → Password security
 
