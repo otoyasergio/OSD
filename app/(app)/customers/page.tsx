@@ -11,6 +11,8 @@ import {
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { UserAvatar } from "@/components/ui/UserAvatar";
+import { signCustomerPhotosForViewer } from "@/lib/services/customerPhotos";
 
 const ACCOUNT_FILTERS: Array<CustomerAccountType | ""> = [
   "",
@@ -39,6 +41,9 @@ export default async function CustomersPage({
     }),
     countCustomers(),
   ]);
+  const photoUrls = await signCustomerPhotosForViewer(
+    customers.map((customer) => customer.photo_path)
+  );
 
   return (
     <div className="page-stack">
@@ -134,8 +139,18 @@ export default async function CustomersPage({
                   <td>
                     <Link
                       href={`/customers/${customer.customer_id}`}
-                      className="data-table-link"
+                      className="data-table-link inline-flex items-center gap-2"
                     >
+                      <UserAvatar
+                        firstName={customer.first_name}
+                        lastName={customer.last_name}
+                        photoUrl={
+                          customer.photo_path
+                            ? (photoUrls.get(customer.photo_path) ?? null)
+                            : null
+                        }
+                        size="sm"
+                      />
                       {customer.first_name} {customer.last_name}
                     </Link>
                   </td>

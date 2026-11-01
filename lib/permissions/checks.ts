@@ -227,6 +227,11 @@ export function canViewClients(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "admin";
 }
 
+/** Add, replace, or remove a customer portrait. Same roles as viewing clients. */
+export function canManageCustomerPhotos(role: UserRole) {
+  return canViewClients(role);
+}
+
 /** Publish and revoke externally shared vehicle-passport snapshots. */
 export function canManageVehiclePassport(role: UserRole) {
   return FRONT_OFFICE.includes(role);
