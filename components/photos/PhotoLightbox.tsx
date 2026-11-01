@@ -17,10 +17,13 @@ export function PhotoLightbox({
   photos,
   initialIndex,
   onClose,
+  returnFocusTo = null,
 }: {
   photos: LightboxPhoto[];
   initialIndex: number;
   onClose: () => void;
+  /** Element to focus on close. Captured by the caller before a parent becomes inert. */
+  returnFocusTo?: HTMLElement | null;
 }) {
   const count = photos.length;
   const [index, setIndex] = useState(() =>
@@ -39,8 +42,11 @@ export function PhotoLightbox({
   }, [count]);
 
   // Focus the dialog on open, lock body scroll, restore both on close.
+  // Prefer the caller's opener: setting `inert` on a parent moves focus to
+  // <body> before this effect can read document.activeElement.
   useEffect(() => {
-    restoreFocusTo.current = document.activeElement;
+    restoreFocusTo.current =
+      returnFocusTo instanceof HTMLElement ? returnFocusTo : document.activeElement;
     dialogRef.current?.focus();
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -50,7 +56,7 @@ export function PhotoLightbox({
         restoreFocusTo.current.focus();
       }
     };
-  }, []);
+  }, [returnFocusTo]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

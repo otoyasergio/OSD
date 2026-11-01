@@ -199,6 +199,57 @@ describe("Client advisories opens photos and advisories", () => {
     expect(advisoryDialog.parentElement?.hasAttribute("inert")).toBe(true);
   });
 
+  it("restores focus to the exact thumbnail after its photo viewer closes", async () => {
+    let evacuatedFocus = false;
+    const nativeSetAttribute = Element.prototype.setAttribute;
+    const setAttribute = vi
+      .spyOn(Element.prototype, "setAttribute")
+      .mockImplementation(function (this: Element, name: string, value: string) {
+        nativeSetAttribute.call(this, name, value);
+        if (name !== "inert" || !this.contains(document.activeElement)) return;
+        evacuatedFocus = true;
+        (document.activeElement as HTMLElement).blur();
+      });
+
+    try {
+      await renderSummary();
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(
+            'button[aria-label="Client advisories — open photos and advisories"]'
+          )!
+          .click();
+      });
+
+      const advisoryDialog = reviewDialog() as HTMLElement;
+      const matchingThumbnails = advisoryDialog.querySelectorAll<HTMLButtonElement>(
+        'button[aria-label="Open Inspection — Needs work photo"]'
+      );
+      expect(matchingThumbnails).toHaveLength(2);
+      const opener = matchingThumbnails[1];
+      opener.focus();
+      expect(document.activeElement).toBe(opener);
+
+      await act(async () => {
+        opener.click();
+      });
+      expect(evacuatedFocus).toBe(true);
+
+      await act(async () => {
+        document
+          .querySelector<HTMLButtonElement>(
+            'button[aria-label="Close photo viewer"]'
+          )!
+          .click();
+      });
+
+      expect(advisoryDialog.parentElement?.hasAttribute("inert")).toBe(false);
+      expect(document.activeElement).toBe(opener);
+    } finally {
+      setAttribute.mockRestore();
+    }
+  });
+
   it("loads dialog thumbnails lazily", async () => {
     await renderSummary();
     await act(async () => {

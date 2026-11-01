@@ -34,7 +34,7 @@ function PhotoThumb({
   onOpen,
 }: {
   photo: AdvisoryReviewPhoto;
-  onOpen: (photoId: string) => void;
+  onOpen: (photoId: string, opener: HTMLElement) => void;
 }) {
   const label = photoLabel(photo.category);
   const preview = photoPreviewUrl(photo);
@@ -46,7 +46,7 @@ function PhotoThumb({
           type="button"
           className="block w-full"
           aria-label={`Open ${label} photo`}
-          onClick={() => onOpen(photo.photo_id)}
+          onClick={(event) => onOpen(photo.photo_id, event.currentTarget)}
         >
           <RecoverableSignedImage
             src={preview}
@@ -90,11 +90,23 @@ export function AdvisoryReviewDialog({
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const [lightboxPhotoId, setLightboxPhotoId] = useState<string | null>(null);
+  const [photoReturnFocus, setPhotoReturnFocus] = useState<HTMLElement | null>(null);
   const visible = advisoriesInBucket(items, bucket);
   const lightboxPhotos = useMemo(() => toLightboxPhotos(photos), [photos]);
   const lightboxIndex = lightboxPhotoId
     ? lightboxPhotos.findIndex((photo) => photo.id === lightboxPhotoId)
     : -1;
+
+  function openPhoto(photoId: string, opener: HTMLElement) {
+    setPhotoReturnFocus(opener);
+    setLightboxPhotoId(photoId);
+  }
+
+  // Focus the clicked thumbnail after the viewer closes and `inert` is gone.
+  useEffect(() => {
+    if (lightboxPhotoId) return;
+    photoReturnFocus?.focus();
+  }, [lightboxPhotoId, photoReturnFocus]);
 
   useEffect(() => {
     const previous = document.activeElement;
@@ -216,7 +228,7 @@ export function AdvisoryReviewDialog({
                 <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {photos.map((photo) => (
                     <li key={photo.photo_id}>
-                      <PhotoThumb photo={photo} onOpen={setLightboxPhotoId} />
+                      <PhotoThumb photo={photo} onOpen={openPhoto} />
                     </li>
                   ))}
                 </ul>
@@ -265,7 +277,7 @@ export function AdvisoryReviewDialog({
                           <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                             {linked.map((photo) => (
                               <li key={photo.photo_id}>
-                                <PhotoThumb photo={photo} onOpen={setLightboxPhotoId} />
+                                <PhotoThumb photo={photo} onOpen={openPhoto} />
                               </li>
                             ))}
                           </ul>
@@ -283,6 +295,7 @@ export function AdvisoryReviewDialog({
         <PhotoLightbox
           photos={lightboxPhotos}
           initialIndex={lightboxIndex}
+          returnFocusTo={photoReturnFocus}
           onClose={() => setLightboxPhotoId(null)}
         />
       ) : null}
