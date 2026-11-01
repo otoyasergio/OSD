@@ -226,14 +226,21 @@ export function assessDiagnosticsRateLimit(
   const limit = limitFromMessage ?? headerBudget.limit;
   const retryAfterMs =
     parseRetryAfterMs(message) ?? (headers ? headerRetryAfterMs(headers) : null);
-  const reservation =
+  const requestExceedsLimit =
     limit !== null &&
     requested !== null &&
     limit > 0 &&
-    (requested > limit || (used !== null && used + requested > limit));
+    requested > limit;
+  const usedWindowOverflow =
+    limit !== null &&
+    requested !== null &&
+    limit > 0 &&
+    used !== null &&
+    used + requested > limit;
+  const tokenOverflow = requestExceedsLimit || usedWindowOverflow;
   let nextOutputBudget: number | null = null;
   if (
-    reservation &&
+    tokenOverflow &&
     Number.isSafeInteger(currentBudget) &&
     currentBudget > OUTPUT_TOKEN_RETRY_FLOOR
   ) {
@@ -248,6 +255,11 @@ export function assessDiagnosticsRateLimit(
     }
   }
   if (nextOutputBudget === null) nextOutputBudget = headerBudget.nextOutputBudget;
+  // A Used+Requested-only overflow can clear after the supplied reset delay.
+  // Requested>Limit is intrinsic and must not spend the one retry waiting.
+  const reservation =
+    requestExceedsLimit ||
+    (usedWindowOverflow && (nextOutputBudget !== null || retryAfterMs === null));
   return {
     classification:
       reservation || nextOutputBudget !== null

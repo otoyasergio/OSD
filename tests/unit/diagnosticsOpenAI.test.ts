@@ -945,6 +945,62 @@ describe("OpenAI diagnostics provider", () => {
     ).toBe(11_217);
   });
 
+  it("waits and retries when a used-plus-requested overflow cannot shrink", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const parse = vi
+      .fn()
+      .mockRejectedValueOnce(
+        rateLimitError(
+          "rate_limit_exceeded",
+          "Limit 30000, Used 29400, Requested 1000. Please try again in 2s."
+        )
+      )
+      .mockResolvedValueOnce(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    await expect(
+      generateDiagnosticsDraft(request(), {
+        client,
+        config: { ...config, maxOutputTokens: 28_000, timeoutMs: 30_000 },
+        sleep,
+      })
+    ).resolves.toMatchObject({ responseId: "resp_test" });
+
+    expect(sleep).toHaveBeenCalledOnce();
+    expect(sleep).toHaveBeenCalledWith(2_000);
+    expect(parse).toHaveBeenCalledTimes(2);
+    expect(
+      (parse.mock.calls[1]?.[0] as { max_output_tokens: number }).max_output_tokens
+    ).toBe(28_000);
+  });
+
+  it("skips cooldown when a permanently oversized request cannot shrink", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const parse = vi
+      .fn()
+      .mockRejectedValueOnce(
+        rateLimitError(
+          "rate_limit_exceeded",
+          "Limit 8000, Used 0, Requested 50000. Please try again in 2s."
+        )
+      )
+      .mockResolvedValueOnce(providerResult());
+    const client = { responses: { parse } } as unknown as OpenAI;
+
+    await expect(
+      generateDiagnosticsDraft(request(), {
+        client,
+        config: { ...config, maxOutputTokens: 28_000, timeoutMs: 30_000 },
+        sleep,
+      })
+    ).rejects.toThrow("DIAGNOSTICS_AI_PROVIDER_RATE_LIMITED");
+
+    expect(sleep).not.toHaveBeenCalled();
+    expect(parse).toHaveBeenCalledOnce();
+    errorSpy.mockRestore();
+  });
+
   it("lists only references actually missing from the bounded context", async () => {
     const parse = vi.fn().mockResolvedValue(providerResult());
     const client = { responses: { parse } } as unknown as OpenAI;
