@@ -7,7 +7,7 @@ import type { AccountabilityFormState } from "@/app/(app)/work_orders/accountabi
 import type { AccountabilitySnapshot } from "@/lib/services/workOrderAccountability";
 import type { AdvisorOption } from "@/lib/services/advisorDesk";
 import type { TechnicianOption } from "@/lib/services/workOrders";
-import { torontoDatetimeLocal } from "@/lib/accountability/torontoTime";
+import { toShopDatetimeLocalValue } from "@/lib/datetime/format";
 
 type Action = (
   state: AccountabilityFormState,
@@ -45,7 +45,6 @@ function StaffSelect({
 }
 
 export function AccountabilityPanel({
-  workOrderId,
   snapshot,
   advisors,
   technicians,
@@ -56,7 +55,6 @@ export function AccountabilityPanel({
   finalCheck,
   acknowledge,
 }: {
-  workOrderId: string;
   snapshot: AccountabilitySnapshot;
   advisors: AdvisorOption[];
   technicians: TechnicianOption[];
@@ -148,7 +146,7 @@ export function AccountabilityPanel({
           label="Promise date"
           name="promise_date"
           type="datetime-local"
-          defaultValue={torontoDatetimeLocal(snapshot.estimatedCompletion)}
+          defaultValue={toShopDatetimeLocalValue(snapshot.estimatedCompletion)}
           hint="Toronto shop time. A short purchase-order line blocks a promise that assumes the whole bike is ready."
         />
         <SubmitButton label="Save promise" pendingLabel="Saving…" />
@@ -262,7 +260,6 @@ export function AccountabilityPanel({
           <SubmitButton label="Record acknowledgment" pendingLabel="Saving…" />
         </form>
       ) : null}
-      <span className="sr-only">Work order {workOrderId}</span>
     </section>
   );
 }

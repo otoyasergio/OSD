@@ -10,6 +10,16 @@ export function requirementStateAfterReceipt(input: {
   return "received";
 }
 
+/** A purchase order is received only when every line has its full quantity. */
+export function purchaseOrderStatusAfterReceipt(
+  lines: Array<{ ordered: number; received: number }>
+): "partially_received" | "received" {
+  if (lines.length === 0) return "partially_received";
+  return lines.every((line) => line.received >= line.ordered)
+    ? "received"
+    : "partially_received";
+}
+
 export function promiseAssumesFullDelivery(input: {
   hasPromise: boolean;
   lines: Array<{ ordered: number; received: number }>;

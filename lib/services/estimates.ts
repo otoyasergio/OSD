@@ -220,8 +220,9 @@ export async function presentEstimate(
   });
 
   const estimateVersionId = (data as { estimate_version_id: string }).estimate_version_id;
-  const { stampPresentedEstimateVersion } = await import("@/lib/services/legalParameters");
-  await stampPresentedEstimateVersion(estimateVersionId);
+  const { stampPresentedEstimateVersion } =
+    await import("@/lib/services/legalParameters");
+  await stampPresentedEstimateVersion(admin, estimateVersionId);
 
   return {
     estimateVersionId,
@@ -323,8 +324,11 @@ export async function confirmEstimate(
   const workOrderId = (est as unknown as { estimate: { work_order_id: string } } | null)
     ?.estimate?.work_order_id;
   if (workOrderId) {
-    const { applyLegalParameterToWorkOrder } = await import("@/lib/services/legalParameters");
-    await applyLegalParameterToWorkOrder(workOrderId);
+    const { applyLegalParameterToWorkOrder } =
+      await import("@/lib/services/legalParameters");
+    await applyLegalParameterToWorkOrder(admin, workOrderId, {
+      estimateVersionId: input.estimateVersionId,
+    });
     await recalculateWorkOrderStatus(admin, workOrderId, actorUserId);
   }
 

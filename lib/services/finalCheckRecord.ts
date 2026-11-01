@@ -19,7 +19,9 @@ export type FinalCheckView = {
   recorded_at: string;
 };
 
-export async function loadFinalCheck(workOrderId: string): Promise<FinalCheckView | null> {
+export async function loadFinalCheck(
+  workOrderId: string
+): Promise<FinalCheckView | null> {
   await requireUser();
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -65,20 +67,17 @@ export async function saveFinalCheck(
     .maybeSingle();
   if (woError) throw woError;
   if (!workOrder) throw new Error("WORK_ORDER_NOT_FOUND");
-  if (workOrder.location_id !== user.active_location_id) throw new Error("FOREIGN_LOCATION");
+  if (workOrder.location_id !== user.active_location_id)
+    throw new Error("FOREIGN_LOCATION");
 
   const { data: clocks, error: clockError } = await supabase
     .from("job_time_entry")
-    .select("user_id, job:job_id ( work_order_id )")
-    .eq("user_id", input.verifierUserId);
+    .select("job_time_entry_id, job:job_id!inner ( work_order_id )")
+    .eq("user_id", input.verifierUserId)
+    .eq("job.work_order_id", workOrderId)
+    .limit(1);
   if (clockError) throw clockError;
-  const verifierWorked = ((clocks ?? []) as Array<{ job?: { work_order_id?: string } | { work_order_id?: string }[] }>).some(
-    (row) => {
-      const job = Array.isArray(row.job) ? row.job[0] : row.job;
-      return job?.work_order_id === workOrderId;
-    }
-  );
-  if (verifierWorked) throw new Error("VERIFIER_WORKED_THE_JOB");
+  if ((clocks ?? []).length > 0) throw new Error("VERIFIER_WORKED_THE_JOB");
 
   const record = {
     work_order_id: workOrderId,
@@ -102,7 +101,8 @@ export async function saveFinalCheck(
     action: "final_check_recorded",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: "Final check recorded separately from the arrival inspection and safety check",
+    description:
+      "Final check recorded separately from the arrival inspection and safety check",
     new_value: {
       technician_user_id: input.technicianUserId,
       verifier_user_id: input.verifierUserId,
@@ -118,14 +118,18 @@ export async function declinedSafetyItems(workOrderId: string): Promise<string[]
     .select("description, severity, status")
     .eq("work_order_id", workOrderId);
   if (error) throw error;
-  return ((data ?? []) as Array<{ description: string; severity: string; status: string }>)
+  return (
+    (data ?? []) as Array<{ description: string; severity: string; status: string }>
+  )
     .filter((row) => row.severity === "safety_critical" && row.status === "declined")
     .map((row) => row.description.trim())
     .filter(Boolean)
     .sort();
 }
 
-export async function assertDeclinedSafetyAcknowledged(workOrderId: string): Promise<void> {
+export async function assertDeclinedSafetyAcknowledged(
+  workOrderId: string
+): Promise<void> {
   const items = await declinedSafetyItems(workOrderId);
   const supabase = await createClient();
   const { data, error } = await supabase

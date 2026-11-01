@@ -7,6 +7,7 @@ import { toFormErrorMessage } from "@/lib/services/errors";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import { PageHeader } from "@/components/ui/PageHeader";
 import type { AdvisorQueueKind } from "@/lib/accountability/stageContract";
+import { formatDateTime } from "@/lib/datetime/format";
 
 export const dynamic = "force-dynamic";
 
@@ -17,19 +18,6 @@ const KIND_LABEL: Record<AdvisorQueueKind, string> = {
   missed_promise: "Promise missed",
   customer_update: "Customer update",
 };
-
-function shopWhen(iso: string | null): string | null {
-  if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Toronto",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
 
 export default async function AdvisorDeskPage() {
   const preview = await getRolePreviewContext();
@@ -92,8 +80,8 @@ export default async function AdvisorDeskPage() {
                     ? `Missing: ${row.contract.evidenceMissing}. `
                     : ""}
                   Next: {row.contract.nextAction}.
-                  {shopWhen(row.contract.deadline)
-                    ? ` Due ${shopWhen(row.contract.deadline)} Toronto.`
+                  {row.contract.deadline
+                    ? ` Due ${formatDateTime(row.contract.deadline)} Toronto.`
                     : ""}
                 </p>
               </Link>

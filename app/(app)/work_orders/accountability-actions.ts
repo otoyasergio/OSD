@@ -13,15 +13,10 @@ import {
   saveFinalCheck,
 } from "@/lib/services/finalCheckRecord";
 import type { RoadTestResult } from "@/lib/quality/finalCheck";
-import { torontoWallClockToIso } from "@/lib/accountability/torontoTime";
+import { parseShopLocalDateTimeInput } from "@/lib/datetime/format";
+import { parseDollarsToCents } from "@/lib/billing/stages";
 
 export type AccountabilityFormState = { error: string | null; saved: boolean };
-
-function dollarsToCents(raw: string): number {
-  const amount = Number(raw);
-  if (!Number.isFinite(amount) || amount < 0) return -1;
-  return Math.round(amount * 100);
-}
 
 export async function assignAdvisorAction(
   workOrderId: string,
@@ -44,7 +39,8 @@ export async function maximumAuthorizationAction(
   formData: FormData
 ): Promise<AccountabilityFormState> {
   try {
-    const cents = dollarsToCents(String(formData.get("maximum_dollars") ?? ""));
+    const cents = parseDollarsToCents(String(formData.get("maximum_dollars") ?? ""));
+    if (cents == null) throw new Error("MAXIMUM_AUTHORIZATION_INVALID");
     await recordMaximumAuthorization(workOrderId, cents);
   } catch (error) {
     return { error: toFormErrorMessage(error), saved: false };
@@ -59,14 +55,9 @@ export async function promiseDateAction(
   formData: FormData
 ): Promise<AccountabilityFormState> {
   try {
-    const raw = String(formData.get("promise_date") ?? "");
-    const iso = torontoWallClockToIso(raw);
-    if (!iso)
-      return {
-        error: toFormErrorMessage(new Error("PROMISE_DATE_INVALID")),
-        saved: false,
-      };
-    await recordPromiseDate(workOrderId, iso);
+    const when = parseShopLocalDateTimeInput(String(formData.get("promise_date") ?? ""));
+    if (!when) throw new Error("PROMISE_DATE_INVALID");
+    await recordPromiseDate(workOrderId, when.toISOString());
   } catch (error) {
     return { error: toFormErrorMessage(error), saved: false };
   }

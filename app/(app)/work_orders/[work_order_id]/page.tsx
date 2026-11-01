@@ -506,7 +506,6 @@ export default async function WorkOrderDetailPage({
         <>
           {showAccountability && accountability ? (
             <AccountabilityPanel
-              workOrderId={detail.work_order_id}
               snapshot={accountability}
               advisors={advisors}
               technicians={technicians}

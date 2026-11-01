@@ -22,10 +22,13 @@ import {
   stageAfterJobApprovals,
   sumLines,
 } from "@/lib/billing/stages";
-import { appendHstLine } from "@/lib/pricing/hst";
+import { appendHstLine, HST_LINE_NAME } from "@/lib/pricing/hst";
 import { linesFromConfirmedAgreement } from "@/lib/billing/agreementLines";
 import { estimateFeeCents } from "@/lib/accountability/ontarioAuthorization";
-import { buildSquareLinesFromConfirmedScope } from "@/lib/square/lineBuilderV2";
+import {
+  approvedJobIds,
+  buildSquareLinesFromConfirmedScope,
+} from "@/lib/square/lineBuilderV2";
 import {
   cancelSquareInvoice,
   createSquareInvoiceDraft,
@@ -190,10 +193,13 @@ export async function addCustomerCredit(input: {
   return data as CustomerCredit;
 }
 
+type BillingClient = Awaited<ReturnType<typeof createClient>>;
+
 async function confirmedAgreementLines(
-  workOrderId: string
+  supabase: BillingClient,
+  workOrderId: string,
+  mode: "draft" | "publish"
 ): Promise<BillableLine[] | null> {
-  const supabase = await createClient();
   let estimateResult = await supabase
     .from("estimate")
     .select("current_version_id, status, estimate_fee_cents, estimate_fee_disclosed_at")
@@ -262,31 +268,39 @@ async function confirmedAgreementLines(
       decision: String(decision.decision),
     })),
   });
-  const repairProceeding = (decisionsRes.data ?? []).some(
-    (decision) => decision.decision === "approved"
+  const approved = approvedJobIds(
+    (decisionsRes.data ?? []).map((decision) => ({
+      job_id: String(decision.job_id),
+      decision: String(decision.decision),
+    }))
   );
+  // Jobs that started after confirmation under a recorded maximum are not on
+  // the version; they bill from their live price.
+  const addedWorkPreTax = await liveJobLines(supabase, workOrderId, mode, approved);
   return linesFromConfirmedAgreement({
-    confirmedLines: built.lineItems.map((line) => ({
-      name: line.name,
-      amountCents: line.amountCents,
-    })),
+    confirmed: {
+      preTaxLines: built.lineItems
+        .filter((line) => line.name !== HST_LINE_NAME)
+        .map((line) => ({ name: line.name, amountCents: line.amountCents })),
+      hstCents: built.hstCents,
+    },
+    addedWorkPreTax,
     estimateFeeCents: estimateFeeCents({
       feeCents: Number(estimate.estimate_fee_cents ?? 0),
       disclosed: Boolean(estimate.estimate_fee_disclosed_at),
-      repairProceeding,
+      repairProceeding: approved.size > 0 || addedWorkPreTax.length > 0,
     }),
     legacyPreTax: [],
   });
 }
 
-async function buildLines(
+/** Pre-tax lines for live jobs (and their parts) in the mode's statuses. */
+async function liveJobLines(
+  supabase: BillingClient,
   workOrderId: string,
-  mode: "draft" | "publish"
+  mode: "draft" | "publish",
+  excludeJobIds: ReadonlySet<string>
 ): Promise<BillableLine[]> {
-  const agreed = await confirmedAgreementLines(workOrderId);
-  if (agreed) return agreed;
-
-  const supabase = await createClient();
   const statuses =
     mode === "draft" ? [...DRAFT_JOB_STATUSES] : [...PUBLISHABLE_JOB_STATUSES];
 
@@ -298,7 +312,8 @@ async function buildLines(
 
   if (jobsError) throw jobsError;
 
-  const jobIds = (jobs ?? []).map((j) => j.job_id);
+  const billableJobs = (jobs ?? []).filter((j) => !excludeJobIds.has(j.job_id));
+  const jobIds = billableJobs.map((j) => j.job_id);
   let parts: { part_name: string; quantity: number; unit_price: number | null }[] = [];
 
   if (jobIds.length > 0) {
@@ -318,7 +333,7 @@ async function buildLines(
 
   const lines: BillableLine[] = [];
 
-  for (const job of jobs ?? []) {
+  for (const job of billableJobs) {
     const price = Number(job.standard_price_snapshot ?? 0);
     if (price > 0) {
       lines.push({ name: job.service_name_snapshot, amount: price });
@@ -335,6 +350,18 @@ async function buildLines(
     }
   }
 
+  return lines;
+}
+
+async function buildLines(
+  workOrderId: string,
+  mode: "draft" | "publish"
+): Promise<BillableLine[]> {
+  const supabase = await createClient();
+  const agreed = await confirmedAgreementLines(supabase, workOrderId, mode);
+  if (agreed) return agreed;
+
+  const lines = await liveJobLines(supabase, workOrderId, mode, new Set());
   // Ontario HST on merchandise (jobs + parts); credits applied after tax.
   return appendHstLine(lines) as BillableLine[];
 }

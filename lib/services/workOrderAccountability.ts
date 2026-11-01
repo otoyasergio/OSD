@@ -9,6 +9,7 @@ import {
   type FinalCheckView,
 } from "@/lib/services/finalCheckRecord";
 import { REQUIRED_PHOTO_CATEGORIES } from "@/lib/status/labels";
+import { personName } from "@/lib/accountability/personName";
 import {
   CHECKOUT_PHOTO_CATEGORIES,
   checkoutCoverageFromPhotos,
@@ -29,17 +30,6 @@ export type AccountabilitySnapshot = {
   finalCheck: FinalCheckView | null;
   contract: StageContract;
 };
-
-function personName(
-  row:
-    | { first_name?: string; last_name?: string }
-    | { first_name?: string; last_name?: string }[]
-    | null
-): string | null {
-  const person = Array.isArray(row) ? (row[0] ?? null) : row;
-  if (!person?.first_name && !person?.last_name) return null;
-  return `${person.first_name ?? ""} ${person.last_name ?? ""}`.trim();
-}
 
 export async function getWorkOrderAccountability(
   workOrderId: string
@@ -105,10 +95,10 @@ export async function getWorkOrderAccountability(
         `
           quantity_ordered,
           purchase_order:purchase_order_id ( expected_at ),
-          requirement:requirement_id ( quantity_received, job:job_id ( work_order_id ) )
+          requirement:requirement_id!inner ( quantity_received, job:job_id!inner ( work_order_id ) )
         `
       )
-      .limit(200),
+      .eq("requirement.job.work_order_id", workOrderId),
     supabase
       .from("job")
       .select("updated_at, started_at, created_at")
@@ -140,7 +130,6 @@ export async function getWorkOrderAccountability(
       quantity_received?: number | null;
       job?: { work_order_id?: string } | null;
     } | null;
-    if (requirement?.job?.work_order_id !== workOrderId) continue;
     const ordered = Number(line.quantity_ordered ?? 0);
     const received = Number(requirement?.quantity_received ?? 0);
     if (received < ordered) partsShort = true;

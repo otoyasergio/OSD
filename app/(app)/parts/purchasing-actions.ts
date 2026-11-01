@@ -6,23 +6,27 @@ import {
   confirmPartFitment,
   createPurchaseOrder,
   receivePurchaseLine,
+  recordSupplierCreditRecovered,
   recordSupplierInvoice,
   recordSupplierReturn,
+  type PurchaseOrderLineInput,
 } from "@/lib/services/purchasing";
-import { torontoWallClockToIso } from "@/lib/accountability/torontoTime";
+import { parseShopLocalDateTimeInput } from "@/lib/datetime/format";
+import { parseDollarsToCents } from "@/lib/billing/stages";
 
 export type PurchasingFormState = { error: string | null; saved: boolean };
 
 const saved: PurchasingFormState = { error: null, saved: true };
 
-function dollarsToCents(raw: string): number {
-  const amount = Number(raw);
-  if (!Number.isFinite(amount) || amount < 0) return -1;
-  return Math.round(amount * 100);
-}
-
 function fail(error: unknown): PurchasingFormState {
   return { error: toFormErrorMessage(error), saved: false };
+}
+
+/** End of a shop day for a date-only field, or null when the field is blank. */
+function endOfShopDay(raw: string): string | null | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return parseShopLocalDateTimeInput(`${trimmed}T23:59`)?.toISOString();
 }
 
 export async function createPurchaseOrderAction(
@@ -30,23 +34,23 @@ export async function createPurchaseOrderAction(
   formData: FormData
 ): Promise<PurchasingFormState> {
   try {
-    const expectedRaw = String(formData.get("expected_on") ?? "").trim();
-    const expectedAt = expectedRaw ? torontoWallClockToIso(`${expectedRaw}T23:59`) : null;
-    if (expectedRaw && !expectedAt)
+    const expectedAt = endOfShopDay(String(formData.get("expected_on") ?? ""));
+    if (expectedAt === undefined)
       return { error: "Enter a valid expected date.", saved: false };
-    const unitCostCents = dollarsToCents(String(formData.get("unit_cost_dollars") ?? ""));
-    if (unitCostCents < 0)
-      return { error: "Enter the unit cost in dollars.", saved: false };
-    const partIds = formData
-      .getAll("part_id")
-      .map((value) => String(value))
-      .filter(Boolean);
+    const lines: PurchaseOrderLineInput[] = [];
+    for (const value of formData.getAll("part_id")) {
+      const partId = String(value);
+      if (!partId) continue;
+      const costRaw = String(formData.get(`unit_cost_dollars_${partId}`) ?? "").trim();
+      const unitCostCents = costRaw ? parseDollarsToCents(costRaw) : null;
+      if (costRaw && unitCostCents == null) throw new Error("PO_LINE_COST_INVALID");
+      lines.push({ partId, unitCostCents });
+    }
     await createPurchaseOrder({
       supplier: String(formData.get("supplier") ?? ""),
       expectedAt,
       externalPoNumber: String(formData.get("external_po_number") ?? "") || null,
-      partIds,
-      unitCostCents,
+      lines,
     });
   } catch (error) {
     return fail(error);
@@ -69,6 +73,8 @@ export async function receivePurchaseLineAction(
     return fail(error);
   }
   revalidatePath("/parts");
+  revalidatePath("/technician");
+  revalidatePath("/technician/docket");
   return saved;
 }
 
@@ -77,11 +83,13 @@ export async function recordSupplierInvoiceAction(
   formData: FormData
 ): Promise<PurchasingFormState> {
   try {
-    const invoiceTotalCents = dollarsToCents(
+    const invoiceTotalCents = parseDollarsToCents(
       String(formData.get("invoice_total_dollars") ?? "")
     );
-    const freightCents = dollarsToCents(String(formData.get("freight_dollars") ?? "0"));
-    if (invoiceTotalCents < 0 || freightCents < 0) {
+    const freightCents = parseDollarsToCents(
+      String(formData.get("freight_dollars") ?? "0")
+    );
+    if (invoiceTotalCents == null || freightCents == null) {
       return { error: "Enter the invoice total and freight in dollars.", saved: false };
     }
     await recordSupplierInvoice({
@@ -103,19 +111,18 @@ export async function recordSupplierReturnAction(
   formData: FormData
 ): Promise<PurchasingFormState> {
   try {
-    const creditCents = dollarsToCents(String(formData.get("credit_dollars") ?? "0"));
+    const creditCents = parseDollarsToCents(
+      String(formData.get("credit_dollars") ?? "0")
+    );
     const quantity = Number(formData.get("quantity_returned") ?? "");
-    if (creditCents < 0 || !Number.isFinite(quantity) || quantity < 0) {
+    if (creditCents == null || !Number.isFinite(quantity) || quantity < 0) {
       return {
         error: "Enter the returned quantity and the supplier credit.",
         saved: false,
       };
     }
-    const deadlineRaw = String(formData.get("core_deadline") ?? "").trim();
-    const coreDeadline = deadlineRaw
-      ? torontoWallClockToIso(`${deadlineRaw}T23:59`)
-      : null;
-    if (deadlineRaw && !coreDeadline)
+    const coreDeadline = endOfShopDay(String(formData.get("core_deadline") ?? ""));
+    if (coreDeadline === undefined)
       return { error: "Enter a valid core deadline.", saved: false };
     await recordSupplierReturn({
       poLineId: String(formData.get("po_line_id") ?? ""),
@@ -123,6 +130,20 @@ export async function recordSupplierReturnAction(
       supplierCreditCents: creditCents,
       coreDeadline,
     });
+  } catch (error) {
+    return fail(error);
+  }
+  revalidatePath("/parts");
+  revalidatePath("/settings/reports");
+  return saved;
+}
+
+export async function recordSupplierCreditRecoveredAction(
+  _previous: PurchasingFormState,
+  formData: FormData
+): Promise<PurchasingFormState> {
+  try {
+    await recordSupplierCreditRecovered(String(formData.get("po_line_id") ?? ""));
   } catch (error) {
     return fail(error);
   }

@@ -7,6 +7,7 @@ import {
   isUndefinedColumnError,
   isUndefinedTableError,
 } from "@/lib/database/schemaCompat";
+import { dollarsToCents } from "@/lib/billing/stages";
 
 const LEGACY_APPROVED = new Set([
   "approved",
@@ -15,9 +16,9 @@ const LEGACY_APPROVED = new Set([
   "in_progress",
 ]);
 
-function dollarsToCents(amount: number | null | undefined): number {
+function snapshotCents(amount: number | null | undefined): number {
   if (amount == null || !Number.isFinite(Number(amount))) return 0;
-  return Math.round(Number(amount) * 100);
+  return dollarsToCents(Number(amount));
 }
 
 /**
@@ -37,7 +38,7 @@ export async function assertChargeableJobMayStart(
   if (jobError) throw jobError;
   if (!job) throw new Error("JOB_NOT_FOUND");
 
-  const priceCents = dollarsToCents(job.standard_price_snapshot as number | null);
+  const priceCents = snapshotCents(job.standard_price_snapshot as number | null);
   if (priceCents <= 0) return;
 
   const { data: workOrder, error: woError } = await supabase
@@ -83,7 +84,8 @@ export async function assertChargeableJobMayStart(
       .select("ceiling_bps")
       .eq("estimate_version_id", confirmed.current_version_id)
       .maybeSingle();
-    if (versionError && !isUndefinedColumnError(versionError, "ceiling_bps")) throw versionError;
+    if (versionError && !isUndefinedColumnError(versionError, "ceiling_bps"))
+      throw versionError;
     if (version?.ceiling_bps != null) ceilingBps = Number(version.ceiling_bps);
   }
 
@@ -96,7 +98,7 @@ export async function assertChargeableJobMayStart(
   const alreadyAuthorizedSpendCents = (siblings ?? [])
     .filter((row) => row.job_id !== jobId)
     .reduce(
-      (sum, row) => sum + dollarsToCents(row.standard_price_snapshot as number | null),
+      (sum, row) => sum + snapshotCents(row.standard_price_snapshot as number | null),
       0
     );
 

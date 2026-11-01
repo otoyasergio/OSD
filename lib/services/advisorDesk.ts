@@ -17,6 +17,7 @@ import {
 } from "@/lib/accountability/stageContract";
 import { promiseAssumesFullDelivery } from "@/lib/purchasing/controls";
 import { applyLegalParameterToWorkOrder } from "@/lib/services/legalParameters";
+import { personName } from "@/lib/accountability/personName";
 import {
   isUndefinedColumnError,
   isUndefinedTableError,
@@ -39,13 +40,6 @@ export type AdvisorQueueRow = {
 };
 
 const OPEN_EXCLUDE = '("completed","cancelled")';
-
-function personName(
-  row: { first_name?: string; last_name?: string } | null
-): string | null {
-  if (!row?.first_name && !row?.last_name) return null;
-  return `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim();
-}
 
 export async function listAdvisorsForActiveLocation(): Promise<AdvisorOption[]> {
   const user = await requireUser();
@@ -128,14 +122,15 @@ export async function listAdvisorQueue(): Promise<AdvisorQueueRow[]> {
       .select(
         `
           quantity_ordered,
-          purchase_order:purchase_order_id ( location_id, expected_at ),
-          requirement:requirement_id (
+          purchase_order:purchase_order_id!inner ( location_id, expected_at ),
+          requirement:requirement_id!inner (
             quantity_received,
-            job:job_id ( work_order_id )
+            job:job_id!inner ( work_order_id )
           )
         `
       )
-      .limit(500),
+      .eq("purchase_order.location_id", locationId)
+      .in("requirement.job.work_order_id", ids),
     supabase
       .from("intake_photo")
       .select("work_order_id, category")
@@ -224,7 +219,7 @@ export async function listAdvisorQueue(): Promise<AdvisorQueueRow[]> {
       location_id?: string;
       expected_at?: string | null;
     } | null;
-    if (!po || po.location_id !== locationId) continue;
+    if (!po) continue;
     const requirement = line.requirement as {
       quantity_received?: number | null;
       job?: { work_order_id?: string } | null;
@@ -420,7 +415,7 @@ export async function recordMaximumAuthorization(
     })
     .eq("work_order_id", workOrderId);
   if (error) throw error;
-  await applyLegalParameterToWorkOrder(workOrderId);
+  await applyLegalParameterToWorkOrder(supabase, workOrderId);
   await addAuditLog(supabase, {
     actor_user_id: user.user_id,
     location_id: user.active_location_id,
@@ -444,24 +439,19 @@ export async function recordPromiseDate(
     .select(
       `
       quantity_ordered,
-      requirement:requirement_id ( quantity_received, job:job_id ( work_order_id ) )
+      requirement:requirement_id!inner ( quantity_received, job:job_id!inner ( work_order_id ) )
     `
     )
-    .limit(200);
+    .eq("requirement.job.work_order_id", workOrderId);
   if (lineError && !isUndefinedTableError(lineError, "purchase_order_line"))
     throw lineError;
-  const relevant = ((lines ?? []) as Array<Record<string, unknown>>)
-    .filter((line) => {
-      const requirement = line.requirement as { job?: { work_order_id?: string } } | null;
-      return requirement?.job?.work_order_id === workOrderId;
-    })
-    .map((line) => {
-      const requirement = line.requirement as { quantity_received?: number | null };
-      return {
-        ordered: Number(line.quantity_ordered ?? 0),
-        received: Number(requirement?.quantity_received ?? 0),
-      };
-    });
+  const relevant = ((lines ?? []) as Array<Record<string, unknown>>).map((line) => {
+    const requirement = line.requirement as { quantity_received?: number | null };
+    return {
+      ordered: Number(line.quantity_ordered ?? 0),
+      received: Number(requirement?.quantity_received ?? 0),
+    };
+  });
   if (promiseAssumesFullDelivery({ hasPromise: true, lines: relevant })) {
     throw new Error("PROMISE_ASSUMES_FULL_DELIVERY");
   }

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { addLegalParameter } from "@/lib/services/legalParameters";
-import { torontoWallClockToIso } from "@/lib/accountability/torontoTime";
+import { parseShopLocalDateTimeInput } from "@/lib/datetime/format";
 
 export type LegalFormState = { error: string | null; saved: boolean };
 
@@ -12,9 +12,10 @@ export async function addLegalParameterAction(
   formData: FormData
 ): Promise<LegalFormState> {
   try {
-    const effective = torontoWallClockToIso(
-      `${String(formData.get("effective_on") ?? "").trim()}T00:00`
-    );
+    const effectiveOn = String(formData.get("effective_on") ?? "").trim();
+    const effective = effectiveOn
+      ? parseShopLocalDateTimeInput(`${effectiveOn}T00:00`)?.toISOString()
+      : null;
     if (!effective) {
       return { error: "Enter the date these rules take effect.", saved: false };
     }

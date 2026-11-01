@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
+import type { DbClient } from "@/lib/database/types";
 import { canManageLegalParameters } from "@/lib/permissions";
 import { warrantySnapshotText } from "@/lib/accountability/ontarioAuthorization";
 import {
@@ -35,9 +36,15 @@ export async function listLegalParameters(): Promise<LegalParameter[]> {
   return (data ?? []) as LegalParameter[];
 }
 
-export async function currentLegalParameter(): Promise<LegalParameter | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase
+/**
+ * The rule row in force right now. Callers pass the client that matches
+ * their actor: portal confirmations run without a staff session and must use
+ * the admin client.
+ */
+export async function currentLegalParameter(
+  client: DbClient
+): Promise<LegalParameter | null> {
+  const { data, error } = await client
     .from("legal_parameter")
     .select(COLUMNS)
     .lte("effective_at", new Date().toISOString())
@@ -74,14 +81,14 @@ export async function addLegalParameter(input: {
   if (error) throw error;
 }
 
-/** Copy the rule in force onto a presented estimate version. Failures on an unmigrated database are ignored. */
+/** Copy the rule in force onto a presented estimate version. Unmigrated columns are ignored. */
 export async function stampPresentedEstimateVersion(
+  client: DbClient,
   estimateVersionId: string
 ): Promise<void> {
-  const parameter = await currentLegalParameter();
+  const parameter = await currentLegalParameter(client);
   if (!parameter) return;
-  const supabase = await createClient();
-  const { error } = await supabase
+  const { error } = await client
     .from("estimate_version")
     .update({
       legal_parameter_id: parameter.legal_parameter_id,
@@ -101,13 +108,35 @@ export async function stampPresentedEstimateVersion(
   }
 }
 
-export async function applyLegalParameterToWorkOrder(workOrderId: string): Promise<void> {
-  const parameter = await currentLegalParameter();
-  if (!parameter) return;
-  const supabase = await createClient();
-  const { error } = await supabase
+/**
+ * Record which rule row governs a work order. When the agreement is a
+ * presented estimate version, the row stamped on that version wins, so a rule
+ * added between presenting and confirming does not change the agreement.
+ * Without a version (a recorded maximum), the row in force now applies.
+ */
+export async function applyLegalParameterToWorkOrder(
+  client: DbClient,
+  workOrderId: string,
+  options: { estimateVersionId?: string | null } = {}
+): Promise<void> {
+  let parameterId: string | null = null;
+  if (options.estimateVersionId) {
+    const { data, error } = await client
+      .from("estimate_version")
+      .select("legal_parameter_id")
+      .eq("estimate_version_id", options.estimateVersionId)
+      .maybeSingle();
+    if (error && !isUndefinedColumnError(error, "legal_parameter_id")) throw error;
+    parameterId =
+      (data as { legal_parameter_id?: string | null } | null)?.legal_parameter_id ?? null;
+  }
+  if (!parameterId) {
+    parameterId = (await currentLegalParameter(client))?.legal_parameter_id ?? null;
+  }
+  if (!parameterId) return;
+  const { error } = await client
     .from("work_order")
-    .update({ applied_legal_parameter_id: parameter.legal_parameter_id })
+    .update({ applied_legal_parameter_id: parameterId })
     .eq("work_order_id", workOrderId);
   if (error && !isUndefinedColumnError(error, "applied_legal_parameter_id")) throw error;
 }

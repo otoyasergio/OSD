@@ -4,11 +4,17 @@ import { useActionState } from "react";
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import type { InvoiceCheck } from "@/lib/purchasing/controls";
-import type { OpenPartForOrder, PurchaseOrderView } from "@/lib/services/purchasing";
+import type {
+  OpenPartForOrder,
+  PurchaseOrderLineView,
+  PurchaseOrderView,
+} from "@/lib/services/purchasing";
+import { formatDate } from "@/lib/datetime/format";
 import {
   confirmPartFitmentAction,
   createPurchaseOrderAction,
   receivePurchaseLineAction,
+  recordSupplierCreditRecoveredAction,
   recordSupplierInvoiceAction,
   recordSupplierReturnAction,
   type PurchasingFormState,
@@ -29,22 +35,15 @@ function money(cents: number): string {
   );
 }
 
-function shopDate(iso: string | null): string {
-  if (!iso) return "No expected date";
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Toronto",
-    dateStyle: "medium",
-  }).format(new Date(iso));
-}
-
 function CreateOrderForm({ parts }: { parts: OpenPartForOrder[] }) {
   const [state, action] = useActionState(createPurchaseOrderAction, blank);
   return (
     <form action={action} className="card card-pad space-y-3">
       <h2 className="font-semibold text-foreground">Send a purchase order</h2>
       <p className="text-sm text-[var(--status-neutral)]">
-        Receiving a line creates an install task for the technician. It does not tell the
-        customer the motorcycle is ready.
+        Receiving a line creates an install task on the technician’s docket. It does not
+        tell the customer the motorcycle is ready. Leave a unit cost blank until the
+        supplier confirms the price.
       </p>
       <FormError message={state.error} />
       {state.saved ? <p className="text-sm">Purchase order saved.</p> : null}
@@ -55,7 +54,10 @@ function CreateOrderForm({ parts }: { parts: OpenPartForOrder[] }) {
       ) : (
         <ul className="space-y-2">
           {parts.map((part) => (
-            <li key={part.part_id}>
+            <li
+              key={part.part_id}
+              className="grid gap-2 sm:grid-cols-[1fr_12rem] sm:items-end"
+            >
               <label className="flex items-start gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -68,22 +70,21 @@ function CreateOrderForm({ parts }: { parts: OpenPartForOrder[] }) {
                   {part.status}
                 </span>
               </label>
+              <TextField
+                label="Unit cost (dollars)"
+                name={`unit_cost_dollars_${part.part_id}`}
+                type="number"
+                min="0"
+                step="0.01"
+              />
             </li>
           ))}
         </ul>
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <TextField label="Supplier" name="supplier" required />
         <TextField label="Supplier PO number" name="external_po_number" />
         <TextField label="Expected on" name="expected_on" type="date" />
-        <TextField
-          label="Unit cost (dollars)"
-          name="unit_cost_dollars"
-          type="number"
-          min="0"
-          step="0.01"
-          required
-        />
       </div>
       <SubmitButton label="Create purchase order" pendingLabel="Saving…" />
     </form>
@@ -134,6 +135,29 @@ function ReturnForm({ poLineId }: { poLineId: string }) {
       <div className="sm:col-span-4">
         <FormError message={state.error} />
       </div>
+    </form>
+  );
+}
+
+function CreditRecoveredForm({ line }: { line: PurchaseOrderLineView }) {
+  const [state, action] = useActionState(recordSupplierCreditRecoveredAction, blank);
+  if (line.supplier_credit_cents <= 0) return null;
+  if (line.credit_recovered_at) {
+    return (
+      <p className="text-sm">
+        Credit {money(line.supplier_credit_cents)} recovered{" "}
+        {formatDate(line.credit_recovered_at)}.
+      </p>
+    );
+  }
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="po_line_id" value={line.po_line_id} />
+      <p className="text-sm text-[var(--status-neutral)]">
+        Credit {money(line.supplier_credit_cents)} is waiting on the supplier.
+      </p>
+      <SubmitButton label="Mark credit recovered" pendingLabel="Saving…" />
+      <FormError message={state.error} />
     </form>
   );
 }
@@ -227,7 +251,8 @@ export function PurchasingDesk({
                 {order.external_po_number ? ` · ${order.external_po_number}` : ""}
               </h2>
               <p className="text-sm text-[var(--status-neutral)]">
-                {order.status} · expected {shopDate(order.expected_at)}
+                {order.status} · expected{" "}
+                {order.expected_at ? formatDate(order.expected_at) : "no date"}
               </p>
             </div>
             <InvoiceForm order={order} />
@@ -242,18 +267,16 @@ export function PurchasingDesk({
                     {line.quantity_received} · returned {line.quantity_returned}
                     {line.unit_cost_cents != null
                       ? ` · cost ${money(line.unit_cost_cents)}`
-                      : ""}
-                    {line.supplier_credit_cents > 0
-                      ? ` · credit ${money(line.supplier_credit_cents)}`
-                      : ""}
+                      : " · cost not recorded"}
                   </p>
                   {line.install_task_id ? (
                     <p className="text-sm text-[var(--status-neutral)]">
-                      Install task is on the technician’s list.
+                      Install task is on the technician’s docket.
                     </p>
                   ) : null}
                   <ReceiveForm poLineId={line.po_line_id} />
                   <ReturnForm poLineId={line.po_line_id} />
+                  <CreditRecoveredForm line={line} />
                   {line.requirement_id ? (
                     <FitmentForm
                       requirementId={line.requirement_id}

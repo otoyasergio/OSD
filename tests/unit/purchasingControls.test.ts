@@ -4,6 +4,7 @@ import {
   invoiceCheck,
   partsMarginBps,
   promiseAssumesFullDelivery,
+  purchaseOrderStatusAfterReceipt,
   requirementStateAfterReceipt,
   thinPartsMargin,
 } from "@/lib/purchasing/controls";
@@ -16,6 +17,22 @@ describe("purchasing controls", () => {
     expect(
       requirementStateAfterReceipt({ quantityOrdered: 2, quantityReceived: 2 })
     ).toBe("received");
+  });
+
+  it("keeps a purchase order partially received until every line is complete", () => {
+    expect(
+      purchaseOrderStatusAfterReceipt([
+        { ordered: 2, received: 2 },
+        { ordered: 1, received: 0 },
+      ])
+    ).toBe("partially_received");
+    expect(
+      purchaseOrderStatusAfterReceipt([
+        { ordered: 2, received: 2 },
+        { ordered: 1, received: 1 },
+      ])
+    ).toBe("received");
+    expect(purchaseOrderStatusAfterReceipt([])).toBe("partially_received");
   });
 
   it("blocks a promise date that assumes a full delivery while a line is short", () => {

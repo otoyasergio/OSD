@@ -101,7 +101,9 @@ export function InspectionItemRow({
   const [angleAfterTorque, setAngleAfterTorque] = useState(
     Boolean(result.angle_after_torque)
   );
-  const [replaceFastener, setReplaceFastener] = useState(Boolean(result.replace_fastener));
+  const [replaceFastener, setReplaceFastener] = useState(
+    Boolean(result.replace_fastener)
+  );
   const [notes, setNotes] = useState(result.notes ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -149,7 +151,14 @@ export function InspectionItemRow({
     angleRef.current = angleAfterTorque;
     replaceRef.current = replaceFastener;
     notesRef.current = notes;
-  }, [measurement, measurementUnit, measurementSource, angleAfterTorque, replaceFastener, notes]);
+  }, [
+    measurement,
+    measurementUnit,
+    measurementSource,
+    angleAfterTorque,
+    replaceFastener,
+    notes,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -386,11 +395,15 @@ export function InspectionItemRow({
       ) : (
         <>
           {showMeasurement ? (
-            <label className="inspection-measurement">
-              <span className="inspection-measurement-label">
+            <div className="inspection-measurement">
+              <label
+                htmlFor={`measurement-${result.inspection_result_id}`}
+                className="inspection-measurement-label"
+              >
                 {unit ? `Measurement (${unit})` : "Measurement"}
-              </span>
+              </label>
               <input
+                id={`measurement-${result.inspection_result_id}`}
                 className="inspection-measurement-input"
                 value={measurement}
                 inputMode="decimal"
@@ -403,8 +416,14 @@ export function InspectionItemRow({
                 onFocus={onTextFocus}
                 onBlur={onTextBlur}
               />
-              <span className="inspection-measurement-label">Unit</span>
+              <label
+                htmlFor={`measurement-unit-${result.inspection_result_id}`}
+                className="inspection-measurement-label"
+              >
+                Unit
+              </label>
               <input
+                id={`measurement-unit-${result.inspection_result_id}`}
                 className="inspection-measurement-input"
                 value={measurementUnit}
                 placeholder={unit ?? "Nm, mm, psi"}
@@ -416,8 +435,14 @@ export function InspectionItemRow({
                 onFocus={onTextFocus}
                 onBlur={onTextBlur}
               />
-              <span className="inspection-measurement-label">Source</span>
+              <label
+                htmlFor={`measurement-source-${result.inspection_result_id}`}
+                className="inspection-measurement-label"
+              >
+                Source
+              </label>
               <input
+                id={`measurement-source-${result.inspection_result_id}`}
                 className="inspection-measurement-input"
                 value={measurementSource}
                 placeholder="Manual and page, or not recorded"
@@ -453,7 +478,7 @@ export function InspectionItemRow({
                 />
                 Replace the fastener
               </label>
-            </label>
+            </div>
           ) : null}
 
           {!compact || notes || needsAttention || isSkip ? (

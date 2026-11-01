@@ -417,12 +417,18 @@ const MESSAGES: Record<string, string> = {
   PO_LINES_REQUIRED: "Choose at least one part to order.",
   RECEIPT_QUANTITY_INVALID: "Enter a quantity greater than zero.",
   PO_LINE_NOT_FOUND: "That purchase order line no longer exists.",
+  PO_LINE_COST_INVALID:
+    "Enter each unit cost in dollars, or leave it blank until the invoice arrives.",
+  REQUIREMENT_NOT_FOUND: "That part requirement no longer exists.",
+  RETURN_QUANTITY_INVALID: "Returned quantity cannot exceed the quantity ordered.",
+  SUPPLIER_CREDIT_NONE: "There is no supplier credit on this line to recover.",
   VERIFIER_WORKED_THE_JOB:
     "The verifier clocked time on this visit. Choose someone who did not do the work.",
   VERIFIER_MUST_DIFFER: "The technician and the verifier must be two different accounts.",
   BOTH_ACCOUNTS_REQUIRED: "Choose both the technician and the verifier.",
   FINAL_CHECK_INVALID: "Complete the final-check record before saving.",
-  ACK_SIGNER_REQUIRED: "Enter the name of the person acknowledging the declined safety repairs.",
+  ACK_SIGNER_REQUIRED:
+    "Enter the name of the person acknowledging the declined safety repairs.",
   NO_DECLINED_SAFETY: "There are no declined safety repairs to acknowledge.",
 };
 

@@ -62,19 +62,18 @@ export async function listShopExceptions(): Promise<ShopExceptionRow[]> {
   if (ids.length > 0) {
     const { data: parts, error: partError } = await supabase
       .from("part")
-      .select("unit_price, quantity, job:job_id ( work_order_id )")
-      .limit(1000);
-    if (!partError) {
-      for (const part of (parts ?? []) as Array<Record<string, unknown>>) {
-        const job = part.job as { work_order_id?: string } | null;
-        const workOrderId = job?.work_order_id;
-        if (!workOrderId || !ids.includes(workOrderId)) continue;
-        const slot = costByWo.get(workOrderId) ?? { sell: 0, cost: null };
-        const price = Number(part.unit_price ?? 0);
-        const qty = Number(part.quantity ?? 1);
-        slot.sell += Math.round(price * qty * 100);
-        costByWo.set(workOrderId, slot);
-      }
+      .select("unit_price, quantity, job:job_id!inner ( work_order_id )")
+      .in("job.work_order_id", ids);
+    if (partError) throw partError;
+    for (const part of (parts ?? []) as Array<Record<string, unknown>>) {
+      const job = part.job as { work_order_id?: string } | null;
+      const workOrderId = job?.work_order_id;
+      if (!workOrderId) continue;
+      const slot = costByWo.get(workOrderId) ?? { sell: 0, cost: null };
+      const price = Number(part.unit_price ?? 0);
+      const qty = Number(part.quantity ?? 1);
+      slot.sell += Math.round(price * qty * 100);
+      costByWo.set(workOrderId, slot);
     }
 
     const { data: lines, error: lineError } = await supabase
@@ -82,10 +81,10 @@ export async function listShopExceptions(): Promise<ShopExceptionRow[]> {
       .select(
         `
         unit_cost_cents, quantity_ordered, supplier_credit_cents, credit_recovered_at,
-        requirement:requirement_id ( quantity_received, job:job_id ( work_order_id ) )
+        requirement:requirement_id!inner ( quantity_received, job:job_id!inner ( work_order_id ) )
       `
       )
-      .limit(1000);
+      .in("requirement.job.work_order_id", ids);
     if (
       lineError &&
       !isUndefinedTableError(lineError, "purchase_order_line") &&
@@ -99,7 +98,7 @@ export async function listShopExceptions(): Promise<ShopExceptionRow[]> {
         job?: { work_order_id?: string };
       } | null;
       const workOrderId = requirement?.job?.work_order_id;
-      if (!workOrderId || !ids.includes(workOrderId)) continue;
+      if (!workOrderId) continue;
       if (
         line.credit_recovered_at == null &&
         Number(line.supplier_credit_cents ?? 0) > 0

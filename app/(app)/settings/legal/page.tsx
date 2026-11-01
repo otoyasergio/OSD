@@ -5,15 +5,9 @@ import { canManageLegalParameters } from "@/lib/permissions";
 import { listLegalParameters } from "@/lib/services/legalParameters";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { LegalParameterForm } from "@/components/settings/LegalParameterForm";
+import { formatDate } from "@/lib/datetime/format";
 
 export const dynamic = "force-dynamic";
-
-function shopDate(iso: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Toronto",
-    dateStyle: "medium",
-  }).format(new Date(iso));
-}
 
 export default async function LegalParametersPage() {
   const preview = await getRolePreviewContext();
@@ -43,7 +37,7 @@ export default async function LegalParametersPage() {
           parameters.map((row) => (
             <li key={row.legal_parameter_id} className="card card-pad space-y-2">
               <p className="font-semibold text-foreground">
-                In force {shopDate(row.effective_at)} · ceiling {row.ceiling_bps / 100}%
+                In force {formatDate(row.effective_at)} · ceiling {row.ceiling_bps / 100}%
               </p>
               <p className="text-sm text-[var(--status-neutral)]">
                 {row.source_citation}
