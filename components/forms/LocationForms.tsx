@@ -67,6 +67,18 @@ export function LocationEditForm({
         <TextField label="Name" name="name" required defaultValue={location.name} />
         <TextField label="Code" name="code" required defaultValue={location.code} />
         <TextField
+          label="Shop rate ($/h)"
+          name="hourly_rate"
+          type="number"
+          required
+          defaultValue={location.hourly_rate}
+          inputMode="decimal"
+          min={0.01}
+          max={9999}
+          step={0.01}
+          hint="Hourly labour rate used on intake for this location."
+        />
+        <TextField
           label="Shop phone (E.164)"
           name="voice_e164"
           defaultValue={location.voice_e164 ?? ""}

@@ -1,6 +1,38 @@
 import { describe, expect, it } from "vitest";
 import { locationSchema } from "@/lib/validation/schemas";
 
+describe("locationSchema shop rate", () => {
+  it("accepts a positive hourly shop rate", () => {
+    expect(
+      locationSchema.parse({
+        name: "Toronto",
+        code: "TOR",
+        status: "active",
+        hourly_rate: "156",
+      }).hourly_rate
+    ).toBe(156);
+  });
+
+  it("rejects zero and negative shop rates", () => {
+    expect(() =>
+      locationSchema.parse({
+        name: "Toronto",
+        code: "TOR",
+        status: "active",
+        hourly_rate: "0",
+      })
+    ).toThrow();
+    expect(() =>
+      locationSchema.parse({
+        name: "Toronto",
+        code: "TOR",
+        status: "active",
+        hourly_rate: "-1",
+      })
+    ).toThrow();
+  });
+});
+
 describe("locationSchema shop phone", () => {
   it("accepts a blank shop phone as null", () => {
     const parsed = locationSchema.parse({

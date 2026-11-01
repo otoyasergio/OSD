@@ -287,6 +287,7 @@ export type Database = {
           name: string;
           code: string;
           active: boolean;
+          hourly_rate: number;
           voice_e164: string | null;
         };
         Insert: Record<string, unknown>;

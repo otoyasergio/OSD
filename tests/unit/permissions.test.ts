@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   canRecordCustomerApproval,
   canManageUsers,
+  canManageShopRate,
   canViewAuditLog,
   canOrderPart,
   canViewPartsBoard,
@@ -67,6 +68,13 @@ describe("permissions", () => {
   it("only owner can manage users", () => {
     expect(canManageUsers("owner")).toBe(true);
     expect(canManageUsers("manager")).toBe(false);
+  });
+
+  it("only owner can set the shop hourly rate", () => {
+    expect(canManageShopRate("owner")).toBe(true);
+    expect(canManageShopRate("manager")).toBe(false);
+    expect(canManageShopRate("service_advisor")).toBe(false);
+    expect(canManageShopRate("technician")).toBe(false);
   });
 
   it("owner and manager can manage service catalogue", () => {

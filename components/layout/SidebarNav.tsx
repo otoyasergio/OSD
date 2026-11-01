@@ -12,6 +12,7 @@ import {
   Users,
   Bike,
   Settings,
+  CircleDollarSign,
   MapPin,
   FileCheck,
   ScrollText,
@@ -34,6 +35,7 @@ import {
   canManageInspectionTemplate,
   canManageLocations,
   canManageLegalParameters,
+  canManageShopRate,
   canManageServiceCatalogue,
   canManageTimesheets,
   canManageUsers,
@@ -69,6 +71,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/settings": Settings,
   "/settings/locations": MapPin,
   "/settings/legal": Scale,
+  "/settings/shop_rate": CircleDollarSign,
   "/settings/inspection_template": FileCheck,
   "/settings/contract_template": ScrollText,
   "/settings/services": BookOpen,
@@ -193,6 +196,13 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
       href: "/settings/legal",
       label: "Estimate rules",
       icon: iconFor("/settings/legal"),
+    });
+  }
+  if (canManageShopRate(role)) {
+    shopSettings.push({
+      href: "/settings/shop_rate",
+      label: "Shop rate",
+      icon: iconFor("/settings/shop_rate"),
     });
   }
   if (canManageInspectionTemplate(role)) {

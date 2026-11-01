@@ -75,7 +75,7 @@ import {
 } from "@/lib/forms/serviceLines";
 import { estimateTotalsWithHst, HST_PERCENT } from "@/lib/pricing/hst";
 import {
-  SHOP_HOURLY_RATE,
+  DEFAULT_SHOP_HOURLY_RATE,
   isFlatRateService,
   suggestedPriceFromLabourHours,
 } from "@/lib/pricing/shopRate";
@@ -108,6 +108,7 @@ type Props = {
   initialMotorcycleId?: string;
   closureDates: string[];
   wixAssignsNumber?: boolean;
+  shopHourlyRate: number;
 };
 
 const SELECT_CLASS =
@@ -149,6 +150,7 @@ export function CreateWorkOrderForm({
   initialMotorcycleId = "",
   closureDates,
   wixAssignsNumber = false,
+  shopHourlyRate = DEFAULT_SHOP_HOURLY_RATE,
 }: Props) {
   const router = useRouter();
   const queue = usePhotoUploadQueue();
@@ -1107,7 +1109,7 @@ export function CreateWorkOrderForm({
             </h3>
             <p className="text-sm text-[var(--status-neutral)]">
               Select at least one service for this visit. Labour jobs: enter hours (price
-              defaults to × ${SHOP_HOURLY_RATE}/h). Storage is flat-rate — enter price
+              defaults to × ${shopHourlyRate}/h). Storage is flat-rate — enter price
               only. Notes are optional. All service and parts prices are before HST;
               {` ${HST_PERCENT}% HST`} is added to the invoice.
             </p>
@@ -1211,6 +1213,7 @@ export function CreateWorkOrderForm({
                                           estimatedLabour: service.estimated_labour,
                                           standardPrice: service.standard_price,
                                           fitment: packageFitment,
+                                          shopHourlyRate,
                                         });
                                         if (isSeasonalTuneUp(service.name)) {
                                           autoTuneNotes.current[service.service_id] =
@@ -1236,7 +1239,7 @@ export function CreateWorkOrderForm({
                                         ? "Flat rate — enter price"
                                         : fixedCataloguePrice
                                           ? `$${service.standard_price}`
-                                          : `$${SHOP_HOURLY_RATE}/h — enter hours for this bike`}
+                                          : `$${shopHourlyRate}/h — enter hours for this bike`}
                                     </span>
                                   ) : null}
                                 </span>
@@ -1267,7 +1270,8 @@ export function CreateWorkOrderForm({
                                                 ? {
                                                     price:
                                                       suggestedPriceFromLabourHours(
-                                                        value
+                                                        value,
+                                                        shopHourlyRate
                                                       ),
                                                   }
                                                 : {}),
@@ -1285,7 +1289,7 @@ export function CreateWorkOrderForm({
                                       {useHourlyRate ? (
                                         <span className="font-normal text-[var(--status-neutral)]">
                                           {" "}
-                                          (${SHOP_HOURLY_RATE}/h)
+                                          (${shopHourlyRate}/h)
                                         </span>
                                       ) : null}
                                     </span>

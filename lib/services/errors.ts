@@ -53,6 +53,7 @@ const MESSAGES: Record<string, string> = {
   SERVICE_PRICE_REQUIRED:
     "Enter a price for every selected service before creating the work order.",
   LOCATION_MISMATCH: "Work orders must be created under your active location.",
+  SHOP_RATE_INVALID: "Enter a shop rate greater than 0.",
   TECHNICIAN_NOT_FOUND: "That technician is not available at this location.",
   WORK_ORDER_NOT_FOUND: "That work order no longer exists.",
   WORK_ORDER_NUMBER_FAILED: "Could not mint a work order number. Try again.",

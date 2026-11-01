@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { canManageLocations } from "@/lib/permissions";
+import { DEFAULT_SHOP_HOURLY_RATE, resolveShopHourlyRate } from "@/lib/pricing/shopRate";
 import { locationSchema } from "@/lib/validation/schemas";
 
 export type LocationRecord = {
@@ -9,6 +10,7 @@ export type LocationRecord = {
   name: string;
   code: string;
   status: "active" | "inactive";
+  hourly_rate: number;
   voice_e164: string | null;
   created_at: string;
   updated_at: string;
@@ -37,7 +39,7 @@ export async function listLocations(): Promise<LocationRecord[]> {
 
   const { data: locations, error } = await supabase
     .from("location")
-    .select("location_id, name, code, status, voice_e164, created_at, updated_at")
+    .select("location_id, name, code, status, hourly_rate, voice_e164, created_at, updated_at")
     .order("name");
   if (error) throw error;
 
@@ -60,6 +62,9 @@ export async function listLocations(): Promise<LocationRecord[]> {
     return {
       ...loc,
       status: loc.status as "active" | "inactive",
+      hourly_rate: resolveShopHourlyRate(
+        (loc as { hourly_rate?: number | string | null }).hourly_rate
+      ),
       voice_e164: (loc as { voice_e164?: string | null }).voice_e164 ?? null,
       user_count: assigned.length,
       assigned_user_ids: assigned,
@@ -83,6 +88,7 @@ export async function createLocation(input: {
   name: string;
   code: string;
   status?: "active" | "inactive";
+  hourly_rate?: number;
 }): Promise<{ location_id: string }> {
   const user = await requireOwner();
   const parsed = locationSchema.parse({
@@ -97,6 +103,7 @@ export async function createLocation(input: {
       name: parsed.name.trim(),
       code: parsed.code.trim().toUpperCase(),
       status: parsed.status,
+      hourly_rate: parsed.hourly_rate ?? DEFAULT_SHOP_HOURLY_RATE,
     })
     .select("location_id, name, code, status")
     .single();
@@ -127,6 +134,7 @@ export async function updateLocation(
     name: string;
     code: string;
     status: "active" | "inactive";
+    hourly_rate?: number | string;
     voice_e164?: string | null;
   }
 ): Promise<void> {
@@ -136,7 +144,7 @@ export async function updateLocation(
 
   const { data: existing, error: loadError } = await supabase
     .from("location")
-    .select("location_id, name, code, status, voice_e164")
+    .select("location_id, name, code, status, hourly_rate, voice_e164")
     .eq("location_id", locationId)
     .maybeSingle();
   if (loadError) throw loadError;
@@ -148,11 +156,12 @@ export async function updateLocation(
       name: parsed.name.trim(),
       code: parsed.code.trim().toUpperCase(),
       status: parsed.status,
+      hourly_rate: parsed.hourly_rate ?? resolveShopHourlyRate(existing.hourly_rate),
       voice_e164: parsed.voice_e164,
       updated_at: new Date().toISOString(),
     })
     .eq("location_id", locationId)
-    .select("location_id, name, code, status, voice_e164")
+    .select("location_id, name, code, status, hourly_rate, voice_e164")
     .single();
   if (error) throw error;
 
