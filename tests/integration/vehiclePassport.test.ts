@@ -43,6 +43,7 @@ describePassportIntegration("vehicle passport privacy boundary (isolated db)", (
     const messageMarker = `PRIVATE-MESSAGE-${ids.communication}`;
     const paymentMarker = `sq-private-${ids.payment}`;
     const servicePublicName = `Passport Service ${ids.service.slice(0, 8)}`;
+    const mutatedServiceName = `Mutated ${servicePublicName}`;
     const completedAt = new Date(Date.now() - 86_400_000).toISOString();
 
     const authUser = await admin.auth.admin.createUser({
@@ -425,7 +426,7 @@ describePassportIntegration("vehicle passport privacy boundary (isolated db)", (
       (
         await admin
           .from("service")
-          .update({ name: "MUTATED SOURCE" })
+          .update({ name: mutatedServiceName })
           .eq("service_id", ids.service)
       ).error
     ).toBeNull();
@@ -434,7 +435,7 @@ describePassportIntegration("vehicle passport privacy boundary (isolated db)", (
       .select("payload")
       .eq("snapshot_id", snapshotId)
       .single();
-    expect(JSON.stringify(frozen.data?.payload)).not.toContain("MUTATED SOURCE");
+    expect(JSON.stringify(frozen.data?.payload)).not.toContain(mutatedServiceName);
 
     const mutation = await admin
       .from("vehicle_passport_snapshot")
