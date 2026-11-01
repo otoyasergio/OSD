@@ -67,6 +67,7 @@ function detail(overrides: Partial<WorkOrderDetail> = {}): WorkOrderDetail {
       phone: "+14165550100",
       email: "qa-customer@otomoto.invalid",
       sms_opted_out_at: null,
+      photo_url: null,
     },
     motorcycle: {
       motorcycle_id: "ad000000-0000-4000-8000-000000000001",
