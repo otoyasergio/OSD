@@ -106,11 +106,53 @@ export function WorkOrderHeader({
                 />
               </div>
             ) : null}
-            {bike?.vin ? (
-              <p className="mt-1 font-mono text-xs text-[var(--status-neutral)]">
-                VIN {bike.vin}
-              </p>
-            ) : null}
+            <dl
+              aria-label="Visit vehicle details"
+              className="mt-3 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3"
+            >
+              {customer ? (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
+                    Owner
+                  </dt>
+                  <dd className="mt-0.5 font-semibold text-foreground">
+                    {customer.first_name} {customer.last_name}
+                  </dd>
+                </div>
+              ) : null}
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
+                  Plate
+                </dt>
+                <dd className="mt-0.5 font-semibold text-foreground">
+                  {bike?.plate_number?.trim() || "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
+                  VIN
+                </dt>
+                <dd className="mt-0.5 font-mono text-sm font-semibold text-foreground">
+                  {bike?.vin?.trim() || "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
+                  Mileage
+                </dt>
+                <dd className="mt-0.5 font-semibold tabular-nums text-foreground">
+                  {formatMileage(detail.mileage, detail.mileage_unit)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
+                  Colour
+                </dt>
+                <dd className="mt-0.5 font-semibold text-foreground">
+                  {bike?.colour?.trim() || "—"}
+                </dd>
+              </div>
+            </dl>
           </div>
         ) : null}
 
@@ -137,20 +179,6 @@ export function WorkOrderHeader({
       <WorkOrderJobTodo jobs={detail.jobs} workOrderId={detail.work_order_id} />
 
       <dl className="grid gap-x-6 gap-y-4 px-4 py-4 text-sm sm:grid-cols-2 sm:px-5 lg:grid-cols-3">
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-            Colour
-          </dt>
-          <dd className="mt-0.5 font-semibold text-foreground">{bike?.colour ?? "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-            Mileage
-          </dt>
-          <dd className="mt-0.5 font-semibold tabular-nums text-foreground">
-            {formatMileage(detail.mileage, detail.mileage_unit)}
-          </dd>
-        </div>
         <div>
           <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
             Primary technician

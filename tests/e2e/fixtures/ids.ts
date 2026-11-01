@@ -117,6 +117,7 @@ export const FIXTURE_MOTORCYCLE = Object.freeze({
   model: "MT-07",
   vin: "QA1TESTVIN0000001",
   colour: "Storm Grey",
+  plateNumber: "BAJA 07",
 });
 
 export const FIXTURE_WORK_ORDER = Object.freeze({
@@ -142,6 +143,7 @@ export const ISOLATION_MOTORCYCLE = Object.freeze({
   model: "CB500F",
   vin: "QA1TESTVIN0000002",
   colour: "Blue",
+  plateNumber: "IRIS 21",
 });
 
 export const ISOLATION_WORK_ORDER = Object.freeze({
