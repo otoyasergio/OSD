@@ -57,23 +57,25 @@ test("offline HEIC enqueue survives tab close and resumes after reconnect", asyn
 
   try {
     await page.goto(`/work_orders/${FIXTURE_WORK_ORDER.id}?tab=photos`);
-    // WebKit can keep a hidden copy of this heading in the DOM. Match the visible one.
-    await expect(
-      page
-        .getByRole("heading", { name: "Upload intake photo", exact: true })
-        .locator("visible=true")
-    ).toBeVisible();
+    // WebKit can keep a hidden copy of the upload form in the DOM while a router
+    // refresh streams in. Scope every form locator to the visible copy.
+    const uploadForm = page
+      .locator("form", {
+        has: page.getByRole("heading", { name: "Upload intake photo", exact: true }),
+      })
+      .locator("visible=true");
+    await expect(uploadForm).toBeVisible();
 
-    await page.locator('select[name="category"]').selectOption("other");
-    await page.locator('input[name="notes"]').fill(note);
+    await uploadForm.locator('select[name="category"]').selectOption("other");
+    await uploadForm.locator('input[name="notes"]').fill(note);
 
     await blockRadio(page);
-    const library = page.getByLabel("Photo library");
+    const library = uploadForm.getByLabel("Photo library");
     await library.setInputFiles(HEIC_FIXTURE);
 
-    await expect(page.getByText("Waiting for connection", { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(
+      page.getByText("Waiting for connection", { exact: true }).locator("visible=true")
+    ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(note)).toHaveCount(0);
 
     await page.close();
