@@ -524,6 +524,7 @@ export async function seedSyntheticShop(): Promise<void> {
       model: fixture.model,
       vin: fixture.vin,
       colour: fixture.colour,
+      plate_number: fixture.plateNumber,
     })),
     { onConflict: "motorcycle_id" }
   );
