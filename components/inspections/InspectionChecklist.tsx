@@ -7,6 +7,7 @@ import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlo
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { completeInspectionAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
 import {
+  attentionItemNeedsDescription,
   countIncompleteInspectionResults,
   isInspectionReadOnly,
 } from "@/lib/services/inspectionGate";
@@ -116,6 +117,16 @@ export function InspectionChecklist({
   }, [inspection.results]);
 
   const saving = Object.values(busyIds).some(Boolean);
+  const missingFindingNotes = useMemo(
+    () =>
+      inspection.results.filter((result) =>
+        attentionItemNeedsDescription({
+          status: localStatuses[result.inspection_result_id] ?? result.status,
+          notes: result.notes,
+        })
+      ).length,
+    [inspection.results, localStatuses]
+  );
   const localIncompleteCount = useMemo(
     () =>
       countIncompleteInspectionResults(
@@ -123,6 +134,7 @@ export function InspectionChecklist({
           status: localStatuses[r.inspection_result_id] ?? r.status,
           category_snapshot: r.category_snapshot,
           item_name_snapshot: r.item_name_snapshot,
+          notes: r.notes,
         }))
       ),
     [inspection.results, localStatuses]
@@ -337,6 +349,9 @@ export function InspectionChecklist({
             {localIncompleteCount > 0 && !canForceComplete ? (
               <p className="text-sm text-amber-900">
                 Check all fields ({localIncompleteCount} still open)
+                {missingFindingNotes > 0
+                  ? ` — describe each item marked for attention (${missingFindingNotes})`
+                  : ""}
                 {saving ? " — wait for saves to finish" : ""}.
               </p>
             ) : null}
@@ -387,7 +402,16 @@ export function InspectionChecklist({
                 (r) => r.status != null && /front forks/i.test(r.item_name_snapshot)
               ));
 
-          const sectionChecked = results.filter((r) => r.status != null).length;
+          const sectionChecked =
+            results.length -
+            countIncompleteInspectionResults(
+              results.map((result) => ({
+                status: localStatuses[result.inspection_result_id] ?? result.status,
+                category_snapshot: result.category_snapshot,
+                item_name_snapshot: result.item_name_snapshot,
+                notes: result.notes,
+              }))
+            );
           const sectionImmediate = results.filter(
             (r) => r.status === "immediate_attention"
           ).length;

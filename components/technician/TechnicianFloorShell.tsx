@@ -21,7 +21,7 @@ import {
 import { Images, StickyNote } from "lucide-react";
 import { useBoardDragSensors } from "@/lib/client/useBoardDragSensors";
 import { createClient } from "@/lib/database/supabase-browser";
-import type { TechnicianFloorOs } from "@/lib/services/technicianFloor";
+import type { FloorOsSurface, TechnicianFloorOs } from "@/lib/services/technicianFloor";
 import type { DocketItem } from "@/lib/services/technicianDocket";
 import type { ReadyForPickupItem } from "@/lib/services/readyForPickup";
 import { TechnicianDocketList } from "@/components/technician/TechnicianDocketList";
@@ -29,6 +29,7 @@ import { BenchDropZone } from "@/components/technician/BenchDropZone";
 import { ReadyForPickupCarousel } from "@/components/technician/ReadyForPickupCarousel";
 import { FloorStageSpine } from "@/components/technician/FloorStageSpine";
 import { FloorCurrentStep } from "@/components/technician/FloorCurrentStep";
+import { FloorPhotoField } from "@/components/technician/FloorPhotoField";
 import { CheckoutEvidencePanel } from "@/components/photos/CheckoutEvidencePanel";
 import { FloorDock } from "@/components/technician/FloorDock";
 import { SignOffPad } from "@/components/inspections/SignOffPad";
@@ -72,6 +73,12 @@ import {
   isFloorJobFinished,
   type PitBoardStep,
 } from "@/lib/technician/pitBoard";
+import {
+  evaluatePerformWorkDocumentation,
+  hasWorkPhotoChoice,
+  hasWrittenWorkLine,
+  journalFromWorkBrief,
+} from "@/lib/status/workDocumentation";
 import { presentPeerQcPickerOptions } from "@/lib/jobs-v2/peerQcCompletion";
 import {
   buildFloorActionModel,
@@ -110,6 +117,82 @@ function ActionMessage({ state }: { state: FloorActionState }) {
   );
 }
 
+function WorkDocumentationSheet({
+  surface,
+  itemId,
+  action,
+  pending,
+  error,
+}: {
+  surface: FloorOsSurface;
+  itemId: string;
+  action: (payload: FormData) => void;
+  pending: boolean;
+  error: string | null;
+}) {
+  const documented = journalFromWorkBrief(surface.work_brief);
+  const gate = evaluatePerformWorkDocumentation(documented);
+  const hasLine = hasWrittenWorkLine(documented);
+  const hasPhoto = hasWorkPhotoChoice(documented);
+  if (!surface.job_id) return null;
+
+  return (
+    <>
+      <h3 className="pit-sheet-title">Write it down</h3>
+      <p className="pit-sheet-or">
+        {gate.ok ? "This job already has a line and a photo." : gate.reason}
+      </p>
+      <form action={action} className="pit-sheet-form">
+        <input type="hidden" name="job_id" value={surface.job_id} />
+        <input type="hidden" name="work_order_id" value={surface.work_order_id} />
+        <input type="hidden" name="item_id" value={itemId} />
+        <label className="pit-sheet-label">
+          {hasLine ? "Add another line" : "What did you find or do?"}
+          <textarea
+            name="note"
+            className="pit-sheet-input"
+            rows={3}
+            required={!hasLine}
+            placeholder={
+              hasLine ? "Optional" : "What did you find or do?"
+            }
+          />
+        </label>
+        <FloorPhotoField
+          hint="Camera or photo library"
+          workOrderId={surface.work_order_id}
+          jobId={surface.job_id}
+          category="job_work"
+        />
+        {!hasPhoto ? (
+          <button
+            type="submit"
+            formNoValidate
+            name="nothing_to_photograph"
+            value="true"
+            className="pit-sheet-btn"
+            disabled={pending}
+          >
+            Nothing to photograph
+          </button>
+        ) : null}
+        <button
+          type="submit"
+          className="pit-current-action"
+          disabled={pending || !hasPhoto}
+        >
+          Mark work done
+        </button>
+        {error ? (
+          <p className="pit-photo-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </form>
+    </>
+  );
+}
+
 function JobPacketErrorState({ backHref }: { backHref: string }) {
   return (
     <div className="floor-surface-empty floor-packet-error">
@@ -124,7 +207,15 @@ function JobPacketErrorState({ backHref }: { backHref: string }) {
   );
 }
 
-type Overlay = null | "park" | "fail" | "swap" | "qc_pick" | "sign_qc" | "sign_safety";
+type Overlay =
+  | null
+  | "park"
+  | "fail"
+  | "swap"
+  | "qc_pick"
+  | "sign_qc"
+  | "sign_safety"
+  | "work_doc";
 
 /**
  * Identity-bound floor actions: acknowledgement, bench/timer flows, and QC or
@@ -203,12 +294,14 @@ export function TechnicianFloorShell({
   const activeStage: FloorStage | null =
     stage ?? (surface ? deriveDefaultStage(surface) : null);
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [parkNote, setParkNote] = useState("");
   const [qcQuery, setQcQuery] = useState("");
   const [qcChecks, setQcChecks] = useState<boolean[]>([false, false, false]);
   const [note, setNote] = useState<string | null>(null);
   const [timerSecs, setTimerSecs] = useState(surface?.timer_secs ?? 0);
   const [, startTransition] = useTransition();
   const overlayRef = useRef(overlay);
+  const seenFloorResults = useRef(new Set<FloorActionState>());
   useEffect(() => {
     overlayRef.current = overlay;
   }, [overlay]);
@@ -222,7 +315,17 @@ export function TechnicianFloorShell({
     null
   );
   const [pullState, pullAction, pullPending] = useActionState(pullOntoBenchAction, null);
-  const [parkState, parkAction, parkPending] = useActionState(parkJobAction, null);
+  const [parkState, parkAction, parkPending] = useActionState(
+    async (prev: FloorActionState, formData: FormData) => {
+      const result = await parkJobAction(prev, formData);
+      if (result?.success) {
+        setParkNote("");
+        setOverlay(null);
+      }
+      return result;
+    },
+    null
+  );
   const [resumeState, resumeAction, resumePending] = useActionState(
     resumeParkedJobAction,
     null
@@ -239,7 +342,11 @@ export function TechnicianFloorShell({
   );
   const [skipState, skipAction, skipPending] = useActionState(skipProofAction, null);
   const [workState, workAction, workPending] = useActionState(
-    completePerformWorkAction,
+    async (prev: FloorActionState, formData: FormData) => {
+      const result = await completePerformWorkAction(prev, formData);
+      if (result?.success) setOverlay(null);
+      return result;
+    },
     null
   );
   const [passQcState, passQcAction, passQcPending] = useActionState(
@@ -284,18 +391,17 @@ export function TechnicianFloorShell({
       failQcState,
       passSafetyState,
     ];
-    for (const s of states) {
-      if (s?.success) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect -- close overlays after floor actions succeed
-        setNote(s.success);
-        setOverlay(null);
-        startTransition(() => scheduleRefresh());
-        break;
-      }
-      if (s?.error) {
-        setNote(s.error);
-        break;
-      }
+    const fresh = states.filter(
+      (s): s is NonNullable<FloorActionState> =>
+        Boolean(s && (s.success || s.error) && !seenFloorResults.current.has(s))
+    );
+    if (fresh.length === 0) return;
+    for (const s of fresh) seenFloorResults.current.add(s);
+    const incoming = fresh[fresh.length - 1];
+    setNote(incoming.success ?? incoming.error ?? null);
+    if (incoming.success) {
+      setOverlay(null);
+      startTransition(() => scheduleRefresh());
     }
   }, [
     ackState,
@@ -560,13 +666,7 @@ export function TechnicianFloorShell({
       return;
     }
     if (step.kind === "work") {
-      if (surface.job_id && openPerformWorkItemId) {
-        dispatchFloorAction(workAction, {
-          job_id: surface.job_id,
-          work_order_id: surface.work_order_id,
-          item_id: openPerformWorkItemId,
-        });
-      }
+      requestMarkWorkDone();
       return;
     }
     if (step.kind === "checklist" && step.target_id) {
@@ -597,6 +697,20 @@ export function TechnicianFloorShell({
       setQcQuery("");
       setOverlay("qc_pick");
     }
+  }
+
+  function requestMarkWorkDone() {
+    if (!surface?.job_id || !openPerformWorkItemId) return;
+    const documented = journalFromWorkBrief(surface.work_brief);
+    if (evaluatePerformWorkDocumentation(documented).ok) {
+      dispatchFloorAction(workAction, {
+        job_id: surface.job_id,
+        work_order_id: surface.work_order_id,
+        item_id: openPerformWorkItemId,
+      });
+      return;
+    }
+    setOverlay("work_doc");
   }
 
   function completeWithQcAssignee(assigneeId: string | null) {
@@ -863,15 +977,7 @@ export function TechnicianFloorShell({
                         })
                       }
                       onOpenInspection={() => router.push(surface.inspection_href)}
-                      onCompleteWork={() => {
-                        if (surface.job_id && openPerformWorkItemId) {
-                          dispatchFloorAction(workAction, {
-                            job_id: surface.job_id,
-                            work_order_id: surface.work_order_id,
-                            item_id: openPerformWorkItemId,
-                          });
-                        }
-                      }}
+                      onCompleteWork={requestMarkWorkDone}
                       onToggleChecklist={(itemId, label) => {
                         const fd = new FormData();
                         fd.set("item_id", itemId);
@@ -1008,18 +1114,36 @@ export function TechnicianFloorShell({
             {overlay === "park" && surface?.job_id ? (
               <>
                 <h3 className="pit-sheet-title">Why park?</h3>
+                <label className="pit-sheet-label">
+                  What&apos;s waiting?
+                  <textarea
+                    className="pit-sheet-input"
+                    rows={3}
+                    value={parkNote}
+                    onChange={(event) => setParkNote(event.target.value)}
+                    placeholder="What's waiting?"
+                  />
+                </label>
+                <FloorPhotoField
+                  hint="Optional photo of the problem"
+                  workOrderId={surface.work_order_id}
+                  jobId={surface.job_id}
+                  category="job_work"
+                />
+                <p className="pit-sheet-or">Write one line, then pick why.</p>
                 <div className="pit-sheet-grid">
                   {PARK_REASON_OPTIONS.map((opt) => (
                     <button
                       key={opt.reason}
                       type="button"
                       className="pit-sheet-btn"
-                      disabled={parkPending}
+                      disabled={parkPending || !parkNote.trim()}
                       onClick={() =>
                         dispatchFloorAction(parkAction, {
                           job_id: surface.job_id!,
                           work_order_id: surface.work_order_id,
                           reason: opt.reason,
+                          note: parkNote.trim(),
                         })
                       }
                     >
@@ -1027,7 +1151,22 @@ export function TechnicianFloorShell({
                     </button>
                   ))}
                 </div>
+                {parkState?.error ? (
+                  <p className="pit-photo-error" role="alert">
+                    {parkState.error}
+                  </p>
+                ) : null}
               </>
+            ) : null}
+
+            {overlay === "work_doc" && surface?.job_id && openPerformWorkItemId ? (
+              <WorkDocumentationSheet
+                surface={surface}
+                itemId={openPerformWorkItemId}
+                action={workAction}
+                pending={workPending}
+                error={workState?.error ?? null}
+              />
             ) : null}
 
             {overlay === "qc_pick" && surface?.job_id ? (

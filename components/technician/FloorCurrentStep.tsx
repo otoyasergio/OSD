@@ -1,5 +1,7 @@
 "use client";
 
+import { useActionState, useState } from "react";
+import Link from "next/link";
 import {
   Camera,
   Check,
@@ -8,6 +10,7 @@ import {
   ShieldCheck,
   Wrench,
 } from "lucide-react";
+import { savePerformWorkNoteAction } from "@/app/(app)/technician/floor-actions";
 import type { FloorOsSurface } from "@/lib/services/technicianFloor";
 import type { FloorStage } from "@/lib/technician/floorStage";
 import {
@@ -19,6 +22,67 @@ import {
 import { buildFloorCompletionSummary } from "@/lib/technician/floorCompletionSummary";
 import { FloorPhotoField } from "@/components/technician/FloorPhotoField";
 import { shouldShowFloorAfterPhotoCapture } from "@/lib/technician/floorStage";
+import { journalCounts, journalFromWorkBrief } from "@/lib/status/workDocumentation";
+
+function WorkJournal({ surface }: { surface: FloorOsSurface }) {
+  const counts = journalCounts(journalFromWorkBrief(surface.work_brief));
+  const [noteEpoch, setNoteEpoch] = useState(0);
+  const [state, action, pending] = useActionState(
+    async (prev: { error?: string; success?: string } | null, formData: FormData) => {
+      const result = await savePerformWorkNoteAction(prev, formData);
+      if (result?.success) setNoteEpoch((epoch) => epoch + 1);
+      return result;
+    },
+    null
+  );
+  if (!surface.job_id) return null;
+  const photoWord = counts.photos === 1 ? "photo" : "photos";
+  const noteWord = counts.notes === 1 ? "note" : "notes";
+
+  return (
+    <div className="pit-journal">
+      <div className="pit-journal-head">
+        <p className="pit-current-kicker">Work journal</p>
+        <Link href={surface.overview_href} className="pit-journal-count">
+          {counts.photos} {photoWord} · {counts.notes} {noteWord}
+        </Link>
+      </div>
+      <FloorPhotoField
+        hint="Add a photo while you work"
+        workOrderId={surface.work_order_id}
+        jobId={surface.job_id}
+        category="job_work"
+      />
+      <form key={noteEpoch} action={action} className="pit-journal-note">
+        <input type="hidden" name="work_order_id" value={surface.work_order_id} />
+        <input type="hidden" name="job_id" value={surface.job_id} />
+        <label className="pit-sheet-label">
+          Note for the shop
+          <textarea
+            name="note"
+            className="pit-sheet-input"
+            rows={3}
+            required
+            placeholder="Parts, findings, questions…"
+          />
+        </label>
+        <button type="submit" className="pit-current-action-secondary" disabled={pending}>
+          Add note
+        </button>
+        {state?.error ? (
+          <p className="pit-photo-error" role="alert">
+            {state.error}
+          </p>
+        ) : null}
+        {state?.success ? (
+          <p className="pit-photo-ready" role="status">
+            {state.success}
+          </p>
+        ) : null}
+      </form>
+    </div>
+  );
+}
 
 function Plate({
   kicker,
@@ -282,17 +346,11 @@ export function FloorCurrentStep({
             </p>
           ) : (
             <p className="pit-current-body">
-              Do the work, then tap Next. Photo optional — notes live under the note icon.
+              Do the work. Write what you found, and add a photo when there is
+              something to show.
             </p>
           )}
-          {surface.job_id ? (
-            <FloorPhotoField
-              hint="Optional work photo — this never counts as proof"
-              workOrderId={surface.work_order_id}
-              jobId={surface.job_id}
-              category="job_work"
-            />
-          ) : null}
+          <WorkJournal surface={surface} />
           <button
             type="button"
             className="pit-current-action"

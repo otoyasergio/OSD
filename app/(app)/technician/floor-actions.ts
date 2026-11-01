@@ -13,6 +13,8 @@ import { failPeerQualityCheck, passPeerQualityCheck } from "@/lib/services/peerQ
 import { uploadIntakePhoto } from "@/lib/services/photos";
 import { collectPhotoFiles } from "@/lib/forms/photoFiles";
 import { addTechnicianNote } from "@/lib/services/notes";
+import { assertPerformWorkDocumented } from "@/lib/services/workDocumentation";
+import { NOTHING_TO_PHOTOGRAPH_NOTE } from "@/lib/status/workDocumentation";
 import { updatePartStatus } from "@/lib/services/parts";
 import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
@@ -118,7 +120,8 @@ export async function parkJobAction(
     const jobId = String(formData.get("job_id") ?? "");
     const workOrderId = String(formData.get("work_order_id") ?? "");
     const reason = String(formData.get("reason") ?? "") as FloorParkReason;
-    await parkJob(jobId, reason);
+    const note = String(formData.get("note") ?? "");
+    await parkJob(jobId, reason, note);
     revalidateFloor(workOrderId);
     return { success: "Parked — your spot is saved and the clock is paused." };
   } catch (error) {
@@ -426,7 +429,11 @@ export async function savePerformWorkNoteAction(
   }
 }
 
-/** Mark Perform work done; optional after photo attached in the same tap. */
+/**
+ * Mark Perform work done only after a written line and a work photo
+ * (or an explicit nothing-to-photograph line). Photos themselves travel
+ * through the floor upload queue, not this action.
+ */
 export async function completePerformWorkAction(
   _prev: FloorActionState,
   formData: FormData
@@ -435,14 +442,23 @@ export async function completePerformWorkAction(
     const workOrderId = String(formData.get("work_order_id") ?? "");
     const jobId = String(formData.get("job_id") ?? "");
     const itemId = String(formData.get("item_id") ?? "");
-    const files = collectPhotoFiles(formData);
-    for (const file of files) {
-      await uploadIntakePhoto(workOrderId, {
-        category: "job_proof",
+    const note = String(formData.get("note") ?? "").trim();
+    const nothing = formData.get("nothing_to_photograph") === "true";
+    if (note) {
+      await addTechnicianNote(workOrderId, {
+        note,
+        note_type: "general",
         job_id: jobId,
-        file,
       });
     }
+    if (nothing) {
+      await addTechnicianNote(workOrderId, {
+        note: NOTHING_TO_PHOTOGRAPH_NOTE,
+        note_type: "general",
+        job_id: jobId,
+      });
+    }
+    await assertPerformWorkDocumented(jobId);
     await toggleJobChecklistItem(itemId, true);
     revalidateFloor(workOrderId);
     return { success: "Work marked done." };

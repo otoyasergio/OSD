@@ -257,7 +257,7 @@ export function deriveGoAction(input: {
         return {
           action: "advance_step",
           label: "Perform work ▶",
-          sub: "See what's required — photo optional, then check done.",
+          sub: "Write what you did and add a photo, then check done.",
           enabled: true,
           step: nextStep,
         };

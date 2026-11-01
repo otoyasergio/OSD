@@ -84,6 +84,7 @@ function base(overrides: Partial<FloorOsSurface> = {}): FloorOsSurface {
       estimated_labour: null,
       parts: [],
       technician_notes: [],
+      work_photos: [],
     },
     pending_recommendations: [],
     peer_qc_candidates: [],
