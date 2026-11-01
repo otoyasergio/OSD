@@ -52,6 +52,8 @@ function PhotoThumb({
             src={preview}
             alt={label}
             className="aspect-[4/3] w-full object-cover bg-[var(--surface-muted)]"
+            loading="lazy"
+            decoding="async"
           />
         </button>
       ) : (
@@ -107,10 +109,34 @@ export function AdvisoryReviewDialog({
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.key !== "Escape") return;
       if (lightboxPhotoId) return;
-      event.preventDefault();
-      onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const focusable = dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (!dialog.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && (active === first || active === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -121,11 +147,13 @@ export function AdvisoryReviewDialog({
       <div
         className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
         onClick={onClose}
+        inert={lightboxIndex >= 0 ? true : undefined}
       >
         <div
           ref={dialogRef}
           role="dialog"
-          aria-modal="true"
+          aria-modal={lightboxIndex >= 0 ? undefined : "true"}
+          aria-hidden={lightboxIndex >= 0 ? "true" : undefined}
           aria-label="Photos and advisories"
           tabIndex={-1}
           className="flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white outline-none sm:max-h-[90vh] sm:max-w-3xl sm:rounded sm:border sm:border-[var(--border)]"

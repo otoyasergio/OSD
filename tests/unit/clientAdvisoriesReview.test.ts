@@ -114,10 +114,11 @@ describe("Client advisories opens photos and advisories", () => {
     expect(reviewDialog()).toBeNull();
 
     const open = container.querySelector(
-      'button[aria-label="Open photos and advisories"]'
+      'button[aria-label="Client advisories — open photos and advisories"]'
     ) as HTMLButtonElement;
     expect(open).toBeTruthy();
     expect(open.textContent).toMatch(/Client advisories/);
+    expect(open.getAttribute("aria-label")).toMatch(/Client advisories/);
 
     await act(async () => {
       open.click();
@@ -133,6 +134,87 @@ describe("Client advisories opens photos and advisories", () => {
     expect(dialog?.querySelector('img[alt="Front"]')).toBeTruthy();
     expect(dialog?.querySelector('img[alt="Inspection — Needs work"]')).toBeTruthy();
     expect(dialog?.textContent).toMatch(/Pad photo/);
+  });
+
+  it("keeps keyboard focus inside the advisory dialog", async () => {
+    await renderSummary();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Client advisories — open photos and advisories"]'
+        )!
+        .click();
+    });
+
+    const dialog = reviewDialog() as HTMLElement;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+      )
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    last.focus();
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true })
+    );
+    expect(document.activeElement).toBe(first);
+
+    first.focus();
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+    expect(document.activeElement).toBe(last);
+  });
+
+  it("makes the advisory dialog inert while its photo viewer is open", async () => {
+    await renderSummary();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Client advisories — open photos and advisories"]'
+        )!
+        .click();
+    });
+
+    const advisoryDialog = reviewDialog() as HTMLElement;
+    await act(async () => {
+      advisoryDialog
+        .querySelector<HTMLButtonElement>('button[aria-label="Open Front photo"]')!
+        .click();
+    });
+
+    const modalDialogs = document.querySelectorAll(
+      '[role="dialog"][aria-modal="true"]'
+    );
+    expect(modalDialogs).toHaveLength(1);
+    expect(modalDialogs[0]?.getAttribute("aria-label")).toMatch(/Photo viewer/);
+    expect(advisoryDialog.getAttribute("aria-hidden")).toBe("true");
+    expect(advisoryDialog.parentElement?.hasAttribute("inert")).toBe(true);
+  });
+
+  it("loads dialog thumbnails lazily", async () => {
+    await renderSummary();
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Client advisories — open photos and advisories"]'
+        )!
+        .click();
+    });
+
+    const images = reviewDialog()?.querySelectorAll("img") ?? [];
+    expect(images.length).toBeGreaterThan(0);
+    for (const image of images) {
+      expect(image.getAttribute("loading")).toBe("lazy");
+      expect(image.getAttribute("decoding")).toBe("async");
+    }
   });
 
   it("opens the clicked count with that advisory group and the photos", async () => {
@@ -158,7 +240,7 @@ describe("Client advisories opens photos and advisories", () => {
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>(
-          'button[aria-label="Open photos and advisories"]'
+          'button[aria-label="Client advisories — open photos and advisories"]'
         )!
         .click();
     });

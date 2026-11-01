@@ -119,7 +119,7 @@ export function RecommendationsSummary({
         <button
           type="button"
           aria-haspopup="dialog"
-          aria-label="Open photos and advisories"
+          aria-label="Client advisories — open photos and advisories"
           onClick={() => setReviewBucket("all")}
           className="w-full cursor-pointer rounded text-left font-semibold"
         >
