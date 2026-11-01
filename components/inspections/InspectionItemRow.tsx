@@ -94,6 +94,14 @@ export function InspectionItemRow({
 }) {
   const [status, setStatus] = useState<InspectionResultStatus | null>(result.status);
   const [measurement, setMeasurement] = useState(result.measurement ?? "");
+  const [measurementUnit, setMeasurementUnit] = useState(result.measurement_unit ?? "");
+  const [measurementSource, setMeasurementSource] = useState(
+    result.measurement_source ?? ""
+  );
+  const [angleAfterTorque, setAngleAfterTorque] = useState(
+    Boolean(result.angle_after_torque)
+  );
+  const [replaceFastener, setReplaceFastener] = useState(Boolean(result.replace_fastener));
   const [notes, setNotes] = useState(result.notes ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +110,10 @@ export function InspectionItemRow({
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measurementRef = useRef(measurement);
+  const unitRef = useRef(measurementUnit);
+  const sourceRef = useRef(measurementSource);
+  const angleRef = useRef(angleAfterTorque);
+  const replaceRef = useRef(replaceFastener);
   const notesRef = useRef(notes);
   const statusBeforeSaveRef = useRef<InspectionResultStatus | null>(result.status);
   const saveSeqRef = useRef(0);
@@ -132,14 +144,27 @@ export function InspectionItemRow({
 
   useEffect(() => {
     measurementRef.current = measurement;
+    unitRef.current = measurementUnit;
+    sourceRef.current = measurementSource;
+    angleRef.current = angleAfterTorque;
+    replaceRef.current = replaceFastener;
     notesRef.current = notes;
-  }, [measurement, notes]);
+  }, [measurement, measurementUnit, measurementSource, angleAfterTorque, replaceFastener, notes]);
 
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  function measurementFacts() {
+    return {
+      measurement_unit: unitRef.current.trim() || null,
+      measurement_source: sourceRef.current.trim() || null,
+      angle_after_torque: angleRef.current,
+      replace_fastener: replaceRef.current,
+    };
+  }
 
   function persist(input: {
     status?: InspectionResultStatus | null;
@@ -154,7 +179,10 @@ export function InspectionItemRow({
     startTransition(async () => {
       let response: Awaited<ReturnType<typeof saveInspectionResultAction>>;
       try {
-        response = await saveInspectionResultAction(workOrderId, resultId, input);
+        response = await saveInspectionResultAction(workOrderId, resultId, {
+          ...input,
+          ...measurementFacts(),
+        });
       } catch (error) {
         if (seq !== saveSeqRef.current) return;
         // A thrown action did not write. Keep the draft on screen.
@@ -375,6 +403,56 @@ export function InspectionItemRow({
                 onFocus={onTextFocus}
                 onBlur={onTextBlur}
               />
+              <span className="inspection-measurement-label">Unit</span>
+              <input
+                className="inspection-measurement-input"
+                value={measurementUnit}
+                placeholder={unit ?? "Nm, mm, psi"}
+                onChange={(e) => {
+                  setTextDirty(true);
+                  setMeasurementUnit(e.target.value);
+                  scheduleTextSave();
+                }}
+                onFocus={onTextFocus}
+                onBlur={onTextBlur}
+              />
+              <span className="inspection-measurement-label">Source</span>
+              <input
+                className="inspection-measurement-input"
+                value={measurementSource}
+                placeholder="Manual and page, or not recorded"
+                onChange={(e) => {
+                  setTextDirty(true);
+                  setMeasurementSource(e.target.value);
+                  scheduleTextSave();
+                }}
+                onFocus={onTextFocus}
+                onBlur={onTextBlur}
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={angleAfterTorque}
+                  onChange={(e) => {
+                    setAngleAfterTorque(e.target.checked);
+                    angleRef.current = e.target.checked;
+                    scheduleTextSave();
+                  }}
+                />
+                Angle after torque
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={replaceFastener}
+                  onChange={(e) => {
+                    setReplaceFastener(e.target.checked);
+                    replaceRef.current = e.target.checked;
+                    scheduleTextSave();
+                  }}
+                />
+                Replace the fastener
+              </label>
             </label>
           ) : null}
 

@@ -16,6 +16,11 @@ import {
   canViewerAccessWorkOrderLocation,
 } from "@/lib/workOrders/assignmentVisibility";
 import { saveInspectionResultSchema } from "@/lib/validation/schemas";
+import {
+  getOptionalColumnSupport,
+  isUndefinedColumnError,
+  setOptionalColumnSupport,
+} from "@/lib/database/schemaCompat";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import {
   assertInspectionPhotosComplete,
@@ -36,6 +41,10 @@ export type InspectionResultRow = {
   requires_measurement_snapshot: boolean;
   status: InspectionResultStatus | null;
   measurement: string | null;
+  measurement_unit?: string | null;
+  measurement_source?: string | null;
+  angle_after_torque?: boolean;
+  replace_fastener?: boolean;
   notes: string | null;
   updated_by_user_id: string | null;
   updated_at: string;
@@ -93,8 +102,70 @@ type ResultWithInspection = InspectionResultRow & {
   };
 };
 
-const RESULT_COLUMNS =
+const RESULT_COLUMNS_BASE =
   "inspection_result_id, inspection_id, template_item_id, category_snapshot, item_name_snapshot, display_order_snapshot, requires_measurement_snapshot, status, measurement, notes, updated_by_user_id, updated_at";
+const RESULT_COLUMNS =
+  "inspection_result_id, inspection_id, template_item_id, category_snapshot, item_name_snapshot, display_order_snapshot, requires_measurement_snapshot, status, measurement, measurement_unit, measurement_source, angle_after_torque, replace_fastener, notes, updated_by_user_id, updated_at";
+const MEASUREMENT_FACTS_KEY = "inspection_result.measurement_facts";
+
+function noteMeasurementColumnSupport(
+  error: { code?: string; message?: string } | null | undefined
+): boolean {
+  if (
+    isUndefinedColumnError(error, "measurement_unit") ||
+    isUndefinedColumnError(error, "measurement_source") ||
+    isUndefinedColumnError(error, "angle_after_torque") ||
+    isUndefinedColumnError(error, "replace_fastener")
+  ) {
+    setOptionalColumnSupport(MEASUREMENT_FACTS_KEY, false);
+    return true;
+  }
+  if (!error) setOptionalColumnSupport(MEASUREMENT_FACTS_KEY, true);
+  return false;
+}
+
+function inspectionBundleQuery(supabase: DbClient, workOrderId: string, base: boolean) {
+  return supabase
+    .from("inspection")
+    .select(
+      base
+        ? `
+      inspection_id,
+      work_order_id,
+      started_at,
+      completed_at,
+      completed_by_user_id,
+      signature_storage_path,
+      inspection_result (
+        ${RESULT_COLUMNS_BASE}
+      )
+    `
+        : `
+      inspection_id,
+      work_order_id,
+      started_at,
+      completed_at,
+      completed_by_user_id,
+      signature_storage_path,
+      inspection_result (
+        ${RESULT_COLUMNS}
+      )
+    `
+    )
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+}
+
+async function loadInspectionBundle(supabase: DbClient, workOrderId: string) {
+  if (getOptionalColumnSupport(MEASUREMENT_FACTS_KEY) === false) {
+    return inspectionBundleQuery(supabase, workOrderId, true);
+  }
+  const full = await inspectionBundleQuery(supabase, workOrderId, false);
+  if (noteMeasurementColumnSupport(full.error)) {
+    return inspectionBundleQuery(supabase, workOrderId, true);
+  }
+  return full;
+}
 
 function countIncomplete(results: InspectionResultRow[]): number {
   return countIncompleteInspectionResults(results);
@@ -256,23 +327,7 @@ export async function getInspectionForWorkOrder(
     subject.userId
   );
 
-  const firstLoad = await supabase
-    .from("inspection")
-    .select(
-      `
-      inspection_id,
-      work_order_id,
-      started_at,
-      completed_at,
-      completed_by_user_id,
-      signature_storage_path,
-      inspection_result (
-        ${RESULT_COLUMNS}
-      )
-    `
-    )
-    .eq("work_order_id", workOrderId)
-    .maybeSingle();
+  const firstLoad = await loadInspectionBundle(supabase, workOrderId);
 
   if (firstLoad.error) throw firstLoad.error;
 
@@ -280,23 +335,7 @@ export async function getInspectionForWorkOrder(
 
   if (!inspection) {
     await ensureInspectionSeeded(supabase, workOrderId);
-    const reloaded = await supabase
-      .from("inspection")
-      .select(
-        `
-      inspection_id,
-      work_order_id,
-      started_at,
-      completed_at,
-      completed_by_user_id,
-      signature_storage_path,
-      inspection_result (
-        ${RESULT_COLUMNS}
-      )
-    `
-      )
-      .eq("work_order_id", workOrderId)
-      .maybeSingle();
+    const reloaded = await loadInspectionBundle(supabase, workOrderId);
     if (reloaded.error) throw reloaded.error;
     inspection = reloaded.data;
   }
@@ -452,6 +491,10 @@ export async function saveInspectionResult(
   input: {
     status?: InspectionResultStatus | null;
     measurement?: string | null;
+    measurement_unit?: string | null;
+    measurement_source?: string | null;
+    angle_after_torque?: boolean;
+    replace_fastener?: boolean;
     notes?: string | null;
   }
 ): Promise<InspectionResultRow> {
@@ -461,10 +504,33 @@ export async function saveInspectionResult(
   const parsed = saveInspectionResultSchema.parse(input);
   const supabase = await createClient();
 
-  const { data: existing, error: loadError } = await supabase
-    .from("inspection_result")
-    .select(
-      `
+  const loaded =
+    getOptionalColumnSupport(MEASUREMENT_FACTS_KEY) === false
+      ? await supabase
+          .from("inspection_result")
+          .select(
+            `
+      ${RESULT_COLUMNS_BASE},
+      inspection:inspection_id (
+        inspection_id,
+        work_order_id,
+        started_at,
+        completed_at,
+        work_order:work_order_id (
+          work_order_id,
+          location_id,
+          work_order_number,
+          status
+        )
+      )
+    `
+          )
+          .eq("inspection_result_id", inspectionResultId)
+          .maybeSingle()
+      : await supabase
+          .from("inspection_result")
+          .select(
+            `
       ${RESULT_COLUMNS},
       inspection:inspection_id (
         inspection_id,
@@ -479,9 +545,36 @@ export async function saveInspectionResult(
         )
       )
     `
-    )
-    .eq("inspection_result_id", inspectionResultId)
-    .maybeSingle();
+          )
+          .eq("inspection_result_id", inspectionResultId)
+          .maybeSingle();
+  let existing = loaded.data;
+  let loadError = loaded.error;
+  if (noteMeasurementColumnSupport(loadError)) {
+    const retry = await supabase
+      .from("inspection_result")
+      .select(
+        `
+      ${RESULT_COLUMNS_BASE},
+      inspection:inspection_id (
+        inspection_id,
+        work_order_id,
+        started_at,
+        completed_at,
+        work_order:work_order_id (
+          work_order_id,
+          location_id,
+          work_order_number,
+          status
+        )
+      )
+    `
+      )
+      .eq("inspection_result_id", inspectionResultId)
+      .maybeSingle();
+    existing = retry.data;
+    loadError = retry.error;
+  }
 
   if (loadError) throw loadError;
   if (!existing) throw new Error("INSPECTION_RESULT_NOT_FOUND");
@@ -502,22 +595,57 @@ export async function saveInspectionResult(
   const nextMeasurement =
     parsed.measurement !== undefined ? parsed.measurement : row.measurement;
   const nextNotes = parsed.notes !== undefined ? parsed.notes : row.notes;
+  const nextUnit =
+    parsed.measurement_unit !== undefined
+      ? parsed.measurement_unit
+      : row.measurement_unit;
+  const nextSource =
+    parsed.measurement_source !== undefined
+      ? parsed.measurement_source
+      : row.measurement_source;
 
-  const { data: updated, error } = await supabase
+  const factUpdate = {
+    measurement_unit: nextUnit ?? null,
+    measurement_source: nextSource ?? null,
+    angle_after_torque:
+      parsed.angle_after_torque !== undefined
+        ? parsed.angle_after_torque
+        : Boolean(row.angle_after_torque),
+    replace_fastener:
+      parsed.replace_fastener !== undefined
+        ? parsed.replace_fastener
+        : Boolean(row.replace_fastener),
+  };
+  const baseUpdate = {
+    status: nextStatus,
+    measurement: nextMeasurement,
+    notes: nextNotes,
+    updated_by_user_id: user.user_id,
+    updated_at: new Date().toISOString(),
+  };
+  let updatedResult = await supabase
     .from("inspection_result")
-    .update({
-      status: nextStatus,
-      measurement: nextMeasurement,
-      notes: nextNotes,
-      updated_by_user_id: user.user_id,
-      updated_at: new Date().toISOString(),
-    })
+    .update(
+      getOptionalColumnSupport(MEASUREMENT_FACTS_KEY) === false
+        ? baseUpdate
+        : { ...baseUpdate, ...factUpdate }
+    )
     .eq("inspection_result_id", inspectionResultId)
     .select(RESULT_COLUMNS)
     .single();
+  if (noteMeasurementColumnSupport(updatedResult.error)) {
+    updatedResult = await supabase
+      .from("inspection_result")
+      .update(baseUpdate)
+      .eq("inspection_result_id", inspectionResultId)
+      .select(RESULT_COLUMNS_BASE)
+      .single();
+  }
+  const updated = updatedResult.data;
+  const error = updatedResult.error;
 
   if (error) throw error;
-  const result = updated as InspectionResultRow;
+  const result = updated as unknown as InspectionResultRow;
 
   if (!inspection.started_at) {
     const now = new Date().toISOString();

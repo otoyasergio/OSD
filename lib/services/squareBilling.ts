@@ -23,6 +23,9 @@ import {
   sumLines,
 } from "@/lib/billing/stages";
 import { appendHstLine } from "@/lib/pricing/hst";
+import { linesFromConfirmedAgreement } from "@/lib/billing/agreementLines";
+import { estimateFeeCents } from "@/lib/accountability/ontarioAuthorization";
+import { buildSquareLinesFromConfirmedScope } from "@/lib/square/lineBuilderV2";
 import {
   cancelSquareInvoice,
   createSquareInvoiceDraft,
@@ -187,10 +190,102 @@ export async function addCustomerCredit(input: {
   return data as CustomerCredit;
 }
 
+async function confirmedAgreementLines(
+  workOrderId: string
+): Promise<BillableLine[] | null> {
+  const supabase = await createClient();
+  let estimateResult = await supabase
+    .from("estimate")
+    .select("current_version_id, status, estimate_fee_cents, estimate_fee_disclosed_at")
+    .eq("work_order_id", workOrderId)
+    .eq("status", "confirmed")
+    .maybeSingle();
+  if (
+    estimateResult.error &&
+    isUndefinedColumnError(estimateResult.error, "estimate_fee")
+  ) {
+    estimateResult = await supabase
+      .from("estimate")
+      .select("current_version_id, status")
+      .eq("work_order_id", workOrderId)
+      .eq("status", "confirmed")
+      .maybeSingle();
+  }
+  if (estimateResult.error) {
+    if (isUndefinedTableError(estimateResult.error, "estimate")) return null;
+    throw estimateResult.error;
+  }
+  const estimate = estimateResult.data as {
+    current_version_id?: string | null;
+    estimate_fee_cents?: number | null;
+    estimate_fee_disclosed_at?: string | null;
+  } | null;
+  if (!estimate?.current_version_id) return null;
+
+  const versionId = estimate.current_version_id;
+  const [jobsRes, linesRes, decisionsRes] = await Promise.all([
+    supabase
+      .from("estimate_job")
+      .select("job_id, title_snapshot, total_cents, tax_cents")
+      .eq("estimate_version_id", versionId),
+    supabase
+      .from("estimate_line")
+      .select("job_id, kind, description, extended_amount_cents, position")
+      .eq("estimate_version_id", versionId),
+    supabase
+      .from("estimate_job_decision")
+      .select("job_id, decision")
+      .eq("estimate_version_id", versionId),
+  ]);
+  const relationError = jobsRes.error ?? linesRes.error ?? decisionsRes.error;
+  if (relationError) {
+    if (isUndefinedTableError(relationError)) return null;
+    throw relationError;
+  }
+
+  const built = buildSquareLinesFromConfirmedScope({
+    jobs: (jobsRes.data ?? []).map((job) => ({
+      job_id: String(job.job_id),
+      title_snapshot: String(job.title_snapshot),
+      total_cents: Number(job.total_cents),
+      tax_cents: Number(job.tax_cents),
+    })),
+    lines: (linesRes.data ?? []).map((line) => ({
+      job_id: (line.job_id as string | null) ?? null,
+      kind: String(line.kind),
+      description: String(line.description),
+      extended_amount_cents: Number(line.extended_amount_cents),
+      position: Number(line.position),
+    })),
+    decisions: (decisionsRes.data ?? []).map((decision) => ({
+      job_id: String(decision.job_id),
+      decision: String(decision.decision),
+    })),
+  });
+  const repairProceeding = (decisionsRes.data ?? []).some(
+    (decision) => decision.decision === "approved"
+  );
+  return linesFromConfirmedAgreement({
+    confirmedLines: built.lineItems.map((line) => ({
+      name: line.name,
+      amountCents: line.amountCents,
+    })),
+    estimateFeeCents: estimateFeeCents({
+      feeCents: Number(estimate.estimate_fee_cents ?? 0),
+      disclosed: Boolean(estimate.estimate_fee_disclosed_at),
+      repairProceeding,
+    }),
+    legacyPreTax: [],
+  });
+}
+
 async function buildLines(
   workOrderId: string,
   mode: "draft" | "publish"
 ): Promise<BillableLine[]> {
+  const agreed = await confirmedAgreementLines(workOrderId);
+  if (agreed) return agreed;
+
   const supabase = await createClient();
   const statuses =
     mode === "draft" ? [...DRAFT_JOB_STATUSES] : [...PUBLISHABLE_JOB_STATUSES];

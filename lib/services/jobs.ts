@@ -561,6 +561,8 @@ export async function pullJob(
   }
 
   if (options.andStart) {
+    const { assertChargeableJobMayStart } = await import("@/lib/services/chargeableWork");
+    await assertChargeableJobMayStart(supabase, jobId);
     const { data: otherActive, error: activeError } = await supabase
       .from("job")
       .select("job_id, work_order:work_order_id ( status )")
@@ -780,6 +782,11 @@ export async function updateJobStatus(
     if (!gate.ok) {
       throw new Error(gate.code);
     }
+  }
+
+  if (nextStatus === "in_progress") {
+    const { assertChargeableJobMayStart } = await import("@/lib/services/chargeableWork");
+    await assertChargeableJobMayStart(supabase, jobId);
   }
 
   const updates: Record<string, unknown> = {

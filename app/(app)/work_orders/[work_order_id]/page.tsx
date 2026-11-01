@@ -48,6 +48,17 @@ import {
 import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
 import { listPartsForWorkOrder } from "@/lib/services/parts";
 import { listIntakePhotos } from "@/lib/services/photos";
+import { getWorkOrderAccountability } from "@/lib/services/workOrderAccountability";
+import { listAdvisorsForActiveLocation } from "@/lib/services/advisorDesk";
+import { AccountabilityPanel } from "@/components/work_orders/AccountabilityPanel";
+import {
+  assignAdvisorAction,
+  declinedSafetyAckAction,
+  finalCheckAction,
+  handoverAction,
+  maximumAuthorizationAction,
+  promiseDateAction,
+} from "@/app/(app)/work_orders/accountability-actions";
 import {
   checkoutCoverageFromPhotos,
   checkoutEvidenceOverridden,
@@ -270,6 +281,8 @@ export default async function WorkOrderDetailPage({
   const foreign = detail.is_foreign_location;
   const needsTechs = !foreign && (activeTab === "overview" || isEstimateTab);
   const needsServices = !foreign && isEstimateTab;
+  const showAccountability =
+    !foreign && activeTab === "overview" && canEditWorkOrder(viewRole);
 
   const [
     technicians,
@@ -277,6 +290,8 @@ export default async function WorkOrderDetailPage({
     outstandingRecommendations,
     serviceInformation,
     assistantData,
+    accountability,
+    advisors,
   ] = await Promise.all([
     needsTechs ? listTechniciansForActiveLocation() : Promise.resolve([]),
     needsServices ? listServices({ includeInactive: false }) : Promise.resolve([]),
@@ -298,6 +313,12 @@ export default async function WorkOrderDetailPage({
           ),
         })
       : Promise.resolve(null),
+    showAccountability
+      ? getWorkOrderAccountability(work_order_id)
+      : Promise.resolve(null),
+    showAccountability
+      ? listAdvisorsForActiveLocation().catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   const canAssign = canAssignTechnician(viewRole);
@@ -483,6 +504,20 @@ export default async function WorkOrderDetailPage({
 
       {activeTab === "overview" ? (
         <>
+          {showAccountability && accountability ? (
+            <AccountabilityPanel
+              workOrderId={detail.work_order_id}
+              snapshot={accountability}
+              advisors={advisors}
+              technicians={technicians}
+              assignAction={assignAdvisorAction.bind(null, detail.work_order_id)}
+              maximumAction={maximumAuthorizationAction.bind(null, detail.work_order_id)}
+              promiseAction={promiseDateAction.bind(null, detail.work_order_id)}
+              handover={handoverAction.bind(null, detail.work_order_id)}
+              finalCheck={finalCheckAction.bind(null, detail.work_order_id)}
+              acknowledge={declinedSafetyAckAction.bind(null, detail.work_order_id)}
+            />
+          ) : null}
           <OverviewTab
             detail={detail}
             openRecommendations={recommendations.filter(

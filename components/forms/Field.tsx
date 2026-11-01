@@ -2,9 +2,12 @@ type TextFieldProps = {
   label: string;
   name: string;
   id?: string;
-  type?: "text" | "email" | "tel" | "number" | "date" | "password";
+  type?: "text" | "email" | "tel" | "number" | "date" | "datetime-local" | "password";
   defaultValue?: string | number | null;
   required?: boolean;
+  min?: string | number;
+  max?: string | number;
+  step?: string | number;
   placeholder?: string;
   hint?: string;
   error?: string | null;
@@ -27,6 +30,9 @@ export function TextField({
   type = "text",
   defaultValue,
   required,
+  min,
+  max,
+  step,
   placeholder,
   hint,
   error,
@@ -57,6 +63,9 @@ export function TextField({
         type={type}
         defaultValue={defaultValue ?? undefined}
         required={required}
+        min={min}
+        max={max}
+        step={step}
         placeholder={placeholder}
         autoComplete={autoComplete}
         autoFocus={autoFocus}

@@ -10,6 +10,7 @@ import {
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { HrmsSuggestionsPanel } from "@/components/reports/HrmsSuggestionsPanel";
+import { listShopExceptions, shopExceptionLabel } from "@/lib/services/shopExceptions";
 
 export const dynamic = "force-dynamic";
 
@@ -33,9 +34,10 @@ export default async function ReportsPage({
   const period: ShopReportPeriod = periodParam === "7d" ? "7d" : "30d";
   const attendancePeriod: AttendanceAnalyticsPeriod =
     attendanceParam === "7d" || attendanceParam === "30d" ? attendanceParam : "week";
-  const [report, attendance] = await Promise.all([
+  const [report, attendance, exceptions] = await Promise.all([
     getShopReportSummary(period),
     getAttendanceAnalytics(attendancePeriod),
+    listShopExceptions().catch(() => null),
   ]);
 
   return (
@@ -44,6 +46,38 @@ export default async function ReportsPage({
         title="Shop reports"
         subtitle="Throughput, revenue, cycle time, labour, and Ontario ESA-oriented attendance insights."
       />
+
+      <section className="card card-pad">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
+          Needs an owner
+        </h2>
+        {exceptions == null ? (
+          <p className="mt-3 text-sm text-[var(--status-neutral)]">
+            The exception list could not be loaded.
+          </p>
+        ) : exceptions.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--status-neutral)]">
+            Nothing is stalled, past its promise, finished and unbilled, invoiced and
+            unpaid, thin on parts margin, or waiting on a supplier credit.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-[var(--border)]">
+            {exceptions.map((row) => (
+              <li key={row.work_order_id} className="py-2 text-sm">
+                <Link
+                  href={`/work_orders/${row.work_order_id}`}
+                  className="font-semibold text-foreground underline-offset-2 hover:underline"
+                >
+                  {row.work_order_number} · {row.customer_name}
+                </Link>
+                <p className="text-[var(--status-neutral)]">
+                  {row.kinds.map((kind) => shopExceptionLabel(kind)).join(" · ")}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <div className="flex flex-wrap gap-2">
         <Link

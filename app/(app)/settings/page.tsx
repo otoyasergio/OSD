@@ -5,6 +5,7 @@ import {
   canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
+  canManageLegalParameters,
   canManageServiceCatalogue,
   canManageShopClosures,
   canManageTimesheets,
@@ -70,6 +71,13 @@ export default async function SettingsPage() {
       label: "Locations",
       description: "Create shops and assign staff to them.",
       visible: canManageLocations(viewRole),
+    },
+    {
+      href: "/settings/legal",
+      label: "Estimate rules",
+      description:
+        "Ontario authorization ceiling, estimate fee, and warranty text. New rows only.",
+      visible: canManageLegalParameters(viewRole),
     },
     {
       href: "/settings/users",

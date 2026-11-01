@@ -219,8 +219,12 @@ export async function presentEstimate(
     },
   });
 
+  const estimateVersionId = (data as { estimate_version_id: string }).estimate_version_id;
+  const { stampPresentedEstimateVersion } = await import("@/lib/services/legalParameters");
+  await stampPresentedEstimateVersion(estimateVersionId);
+
   return {
-    estimateVersionId: (data as { estimate_version_id: string }).estimate_version_id,
+    estimateVersionId,
     snapshot,
   };
 }
@@ -319,6 +323,8 @@ export async function confirmEstimate(
   const workOrderId = (est as unknown as { estimate: { work_order_id: string } } | null)
     ?.estimate?.work_order_id;
   if (workOrderId) {
+    const { applyLegalParameterToWorkOrder } = await import("@/lib/services/legalParameters");
+    await applyLegalParameterToWorkOrder(workOrderId);
     await recalculateWorkOrderStatus(admin, workOrderId, actorUserId);
   }
 

@@ -164,6 +164,10 @@ export const saveInspectionResultSchema = z.object({
     .nullable()
     .optional(),
   measurement: z.string().nullable().optional(),
+  measurement_unit: z.string().max(40).nullable().optional(),
+  measurement_source: z.string().max(240).nullable().optional(),
+  angle_after_torque: z.boolean().optional(),
+  replace_fastener: z.boolean().optional(),
   notes: z.string().nullable().optional(),
 });
 
