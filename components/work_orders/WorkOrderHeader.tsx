@@ -10,6 +10,7 @@ import { getGalleryStageForStatus, getWorkOrderNextAction } from "@/lib/status/p
 import { formatDateTime } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
 import { ClickToCallButton } from "@/components/comms/ClickToCallButton";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 
 const INACTIVE_JOB_STATUSES = new Set(["cancelled", "declined", "completed"]);
 
@@ -87,6 +88,12 @@ export function WorkOrderHeader({
             ) : null}
             {customer ? (
               <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--status-neutral-fg)]">
+                <UserAvatar
+                  firstName={customer.first_name}
+                  lastName={customer.last_name}
+                  photoUrl={customer.photo_url}
+                  size="sm"
+                />
                 <p>
                   <Link
                     href={`/customers/${customer.customer_id}`}

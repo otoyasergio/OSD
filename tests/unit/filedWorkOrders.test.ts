@@ -55,6 +55,7 @@ describe("partitionCustomerWorkOrders", () => {
       location_code: "MAIN",
       motorcycle_label: "2020 Honda CBR600",
       jobs: [{ service_name_snapshot: "Oil change", status: "completed" }],
+      billing_collected_cents: 0,
     },
     {
       work_order_id: "b",
@@ -66,6 +67,7 @@ describe("partitionCustomerWorkOrders", () => {
       location_code: "MAIN",
       motorcycle_label: "2020 Honda CBR600",
       jobs: [{ service_name_snapshot: "Brake pads", status: "in_progress" }],
+      billing_collected_cents: 0,
     },
     {
       work_order_id: "c",
@@ -77,6 +79,7 @@ describe("partitionCustomerWorkOrders", () => {
       location_code: "NTH",
       motorcycle_label: "2018 Yamaha R3",
       jobs: [],
+      billing_collected_cents: 0,
     },
   ];
 

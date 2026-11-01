@@ -30,6 +30,7 @@ import {
   canUpdateServiceInformation,
   canDeleteIntakePhoto,
   canViewClients,
+  canManageCustomerPhotos,
   canViewCustomerDocuments,
   canUploadCustomerDocuments,
   canDeleteCustomerDocuments,
@@ -232,6 +233,15 @@ describe("permissions", () => {
       expect(canViewClients(role)).toBe(true);
     }
     expect(canViewClients("technician")).toBe(false);
+  });
+
+  it("front office can add and remove customer photos; floor staff cannot", () => {
+    for (const role of ["owner", "manager", "admin", "service_advisor"] as const) {
+      expect(canManageCustomerPhotos(role)).toBe(true);
+    }
+    expect(canManageCustomerPhotos("technician")).toBe(false);
+    expect(canManageCustomerPhotos("head_tech")).toBe(false);
+    expect(canManageCustomerPhotos("time_clock_kiosk")).toBe(false);
   });
 
   it("owner, manager, admin, and service advisor can view and upload customer documents", () => {

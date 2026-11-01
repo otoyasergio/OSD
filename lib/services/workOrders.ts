@@ -25,6 +25,7 @@ import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 import { withPrimaryPhotoUrls } from "@/lib/workOrders/listPhotos";
 import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
 import { checkoutEvidenceEnabled } from "@/lib/config/features";
+import { createCustomerPhotoSignedUrl } from "@/lib/customers/photoStorage";
 
 export type WorkOrder = {
   work_order_id: string;
@@ -396,6 +397,7 @@ export type WorkOrderDetail = WorkOrder & {
     phone: string | null;
     email: string | null;
     sms_opted_out_at: string | null;
+    photo_url: string | null;
   } | null;
   motorcycle: {
     motorcycle_id: string;
@@ -469,7 +471,8 @@ export async function getWorkOrderDetail(
         last_name,
         phone,
         email,
-        sms_opted_out_at
+        sms_opted_out_at,
+        photo_path
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,
@@ -540,9 +543,23 @@ export async function getWorkOrderDetail(
 
   const row = data as Record<string, unknown>;
   const motorcycle = row.motorcycle as WorkOrderDetail["motorcycle"];
-  const customer = canViewClients(user.role)
-    ? (row.customer as WorkOrderDetail["customer"])
-    : null;
+  const rawCustomer = row.customer as
+    | (Omit<NonNullable<WorkOrderDetail["customer"]>, "photo_url"> & {
+        photo_path: string | null;
+      })
+    | null;
+  const customer =
+    canViewClients(user.role) && rawCustomer
+      ? {
+          customer_id: rawCustomer.customer_id,
+          first_name: rawCustomer.first_name,
+          last_name: rawCustomer.last_name,
+          phone: rawCustomer.phone,
+          email: rawCustomer.email,
+          sms_opted_out_at: rawCustomer.sms_opted_out_at,
+          photo_url: await createCustomerPhotoSignedUrl(supabase, rawCustomer.photo_path),
+        }
+      : null;
   const jobs = ((row.job as WorkOrderJob[] | null) ?? []).map((job) => ({
     ...job,
     origin: job.origin ?? null,

@@ -301,6 +301,7 @@ export type Database = {
           date_of_birth: string | null;
           account_type: string;
           sms_opted_out_at: string | null;
+          photo_path: string | null;
         };
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
