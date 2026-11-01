@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import type { LocationFormState } from "@/app/(app)/settings/locations/actions";
+import { MAX_SHOP_HOURLY_RATE } from "@/lib/pricing/shopRate";
 import type { LocationRecord, LocationUserOption } from "@/lib/services/locations";
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
@@ -74,7 +75,7 @@ export function LocationEditForm({
           defaultValue={location.hourly_rate}
           inputMode="decimal"
           min={0.01}
-          max={9999}
+          max={MAX_SHOP_HOURLY_RATE}
           step={0.01}
           hint="Hourly labour rate used on intake for this location."
         />

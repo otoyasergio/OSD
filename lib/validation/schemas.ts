@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_SHOP_HOURLY_RATE, roundToCents } from "@/lib/pricing/shopRate";
 import { normalizeVin, validateOptionalVin } from "@/lib/vin/validate";
 
 export const customerAccountTypeSchema = z.enum(["retail", "fleet", "commercial"]);
@@ -293,8 +294,8 @@ export const portalAcknowledgementSchema = z.object({
 const shopHourlyRateSchema = z.coerce
   .number({ error: "Shop rate must be a number" })
   .positive("Shop rate must be greater than 0")
-  .max(9999, "Shop rate is too high")
-  .transform((value) => Math.round(value * 100) / 100);
+  .max(MAX_SHOP_HOURLY_RATE, "Shop rate is too high")
+  .transform(roundToCents);
 
 export const locationSchema = z.object({
   name: z.string().min(1, "Location name is required"),

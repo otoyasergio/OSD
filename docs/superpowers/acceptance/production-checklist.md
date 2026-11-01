@@ -112,6 +112,7 @@ Cron routes export `maxDuration = 300` in code and in `vercel.json` `functions` 
 - [ ] Migration `037_customer_sms_opt_out` applied
 - [ ] `CRON_SECRET` set; Vercel cron uses Bearer auth (Parts Canada every 4 hours + Wix contacts every 4 minutes on **Pro**, both gated to 10:00–23:00 Toronto; weekly shop report at Saturday 00:00 and 01:00 UTC, sends only in the Friday 8:00 p.m. Toronto hour)
 - [ ] Migration `20261031030000_weekly_shop_report_dedupe.sql` applied and the Toronto shop Gmail mailbox connected, so the Friday report to `info@torontomoto.com` can send once per week
+- [ ] Migration `20261101150000_location_hourly_rate.sql` applied, then the owner confirms the hourly rate under **Settings → Shop rate** and republishes the drop-off contract so its rate text matches
 - [ ] Vercel → Settings → Functions → Function CPU → **Performance (4 GB / 2 vCPU)**
 - [ ] `npm run smoke:production` passes against https://service.torontomoto.com (set `CRON_SECRET` locally for bearer check)
 - [ ] `GET /api/health` returns `{ ok: true }` with `integrations.supabase`, `integrations.wixSms`, and `integrations.twilioVoice` all `"ok"`

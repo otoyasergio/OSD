@@ -2,10 +2,7 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
 import { canManageShopRate } from "@/lib/permissions";
-import {
-  DEFAULT_SHOP_HOURLY_RATE,
-  resolveShopHourlyRate,
-} from "@/lib/pricing/shopRate";
+import { resolveShopHourlyRate } from "@/lib/pricing/shopRate";
 import { shopRateSchema } from "@/lib/validation/schemas";
 
 export type LocationShopRate = {
@@ -40,12 +37,8 @@ export async function getActiveLocationShopRate(): Promise<LocationShopRate> {
 }
 
 export async function getActiveLocationHourlyRate(): Promise<number> {
-  try {
-    const shop = await getActiveLocationShopRate();
-    return shop.hourly_rate;
-  } catch {
-    return DEFAULT_SHOP_HOURLY_RATE;
-  }
+  const shop = await getActiveLocationShopRate();
+  return shop.hourly_rate;
 }
 
 export async function updateActiveLocationShopRate(input: {

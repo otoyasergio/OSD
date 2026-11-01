@@ -6,7 +6,12 @@ export const DEFAULT_SHOP_HOURLY_RATE = 156;
 
 export const SHOP_MINIMUM_HOURS = 0.25;
 
-const MAX_SHOP_HOURLY_RATE = 9_999;
+export const MAX_SHOP_HOURLY_RATE = 9_999;
+
+/** Round a dollar amount to the cent so display and storage never carry float noise. */
+export function roundToCents(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 
 /** Storage / tires (and similar) are flat-rate — not billed at the hourly shop rate. */
 export function isFlatRateService(service: {
@@ -32,7 +37,7 @@ export function normalizeShopHourlyRate(value: unknown): number | null {
   if (!Number.isFinite(numeric) || numeric <= 0 || numeric > MAX_SHOP_HOURLY_RATE) {
     return null;
   }
-  return Math.round(numeric * 100) / 100;
+  return roundToCents(numeric);
 }
 
 /** Location setting when present, otherwise the current shop default. */
@@ -47,8 +52,7 @@ export function labourPriceFromHours(
 ): number | null {
   if (hours == null || !Number.isFinite(hours) || hours < 0) return null;
   const rate = resolveShopHourlyRate(hourlyRate);
-  // Avoid floating junk like 217.5000000001 for display/storage.
-  return Math.round(hours * rate * 100) / 100;
+  return roundToCents(hours * rate);
 }
 
 /** Format hours input string → suggested price string (empty if unknown). */
