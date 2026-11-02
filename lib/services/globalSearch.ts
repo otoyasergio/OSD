@@ -3,6 +3,11 @@ import type { WorkOrderStatus } from "@/lib/database/types";
 import { searchCustomers } from "@/lib/services/customers";
 import { searchMotorcycles } from "@/lib/services/motorcycles";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
+import {
+  invoiceInteger,
+  invoiceNumbersEqual,
+  isInvoiceIntegerQuery,
+} from "@/lib/wix/invoiceRules";
 
 export type SearchResult =
   | { type: "work_order"; id: string; label: string; href: string; meta: string }
@@ -107,6 +112,12 @@ const WO_SEARCH_SELECT = `
 `;
 
 function rowMatchesQuery(row: SearchWoRow, query: string): boolean {
+  if (isInvoiceIntegerQuery(query)) {
+    return (
+      invoiceNumbersEqual(query, row.work_order_number) ||
+      invoiceNumbersEqual(query, row.external_invoice_number)
+    );
+  }
   if (isWoNumberPrefixMatch(query, row.work_order_number)) return true;
   const q = normalizeQuery(query);
   const customer = row.customer;
@@ -140,15 +151,23 @@ async function searchWorkOrders(
   if (!cleaned) return [];
   const pattern = `%${cleaned}%`;
   const fetchLimit = Math.min(Math.max(limit * 4, 24), 60);
+  const invoiceNumber = isInvoiceIntegerQuery(cleaned) ? invoiceInteger(cleaned) : null;
+
+  const numberQuery = supabase
+    .from("work_order")
+    .select(WO_SEARCH_SELECT)
+    .eq("location_id", locationId)
+    .order("date_created", { ascending: false })
+    .limit(fetchLimit);
+  const scopedNumberQuery =
+    invoiceNumber == null
+      ? numberQuery.or(
+          `work_order_number.ilike.${pattern},external_invoice_number.ilike.${pattern}`
+        )
+      : numberQuery.eq("invoice_number_int", invoiceNumber);
 
   const [numberResult, recentResult] = await Promise.all([
-    supabase
-      .from("work_order")
-      .select(WO_SEARCH_SELECT)
-      .eq("location_id", locationId)
-      .or(`work_order_number.ilike.${pattern},external_invoice_number.ilike.${pattern}`)
-      .order("date_created", { ascending: false })
-      .limit(fetchLimit),
+    scopedNumberQuery,
     supabase
       .from("work_order")
       .select(WO_SEARCH_SELECT)
@@ -157,11 +176,28 @@ async function searchWorkOrders(
       .limit(80),
   ]);
 
-  if (numberResult.error) throw numberResult.error;
   if (recentResult.error) throw recentResult.error;
 
+  let numberRows = (numberResult.data ?? []) as unknown as SearchWoRow[];
+  if (numberResult.error) {
+    if (invoiceNumber == null) throw numberResult.error;
+    const fallback = await supabase
+      .from("work_order")
+      .select(WO_SEARCH_SELECT)
+      .eq("location_id", locationId)
+      .or(`work_order_number.ilike.${pattern},external_invoice_number.ilike.${pattern}`)
+      .order("date_created", { ascending: false })
+      .limit(fetchLimit);
+    if (fallback.error) throw fallback.error;
+    numberRows = ((fallback.data ?? []) as unknown as SearchWoRow[]).filter((row) =>
+      rowMatchesQuery(row, query)
+    );
+  } else if (invoiceNumber != null) {
+    numberRows = numberRows.filter((row) => rowMatchesQuery(row, query));
+  }
+
   const byId = new Map<string, SearchWoRow>();
-  for (const row of (numberResult.data ?? []) as unknown as SearchWoRow[]) {
+  for (const row of numberRows) {
     byId.set(row.work_order_id, row);
   }
   for (const row of (recentResult.data ?? []) as unknown as SearchWoRow[]) {

@@ -47,6 +47,8 @@ export type Database = {
           motorcycle_id: string;
           customer_id: string | null;
           work_order_number: string | null;
+          /** Digits-only work order numbers, leading zeros ignored. Null otherwise. */
+          invoice_number_int: number | null;
           status: string;
           primary_technician_id: string | null;
           mileage: number | null;
@@ -690,6 +692,81 @@ export type Database = {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["vehicle_passport_share"]["Insert"]>;
+      };
+      wix_invoice: {
+        Row: {
+          wix_invoice_id: string;
+          revision: string;
+          display_number: string;
+          invoice_number: number;
+          status: string;
+          status_qualifiers: string[];
+          total_cents: number;
+          paid_cents: number;
+          currency: string;
+          issue_date: string | null;
+          due_date: string | null;
+          customer_id: string | null;
+          motorcycle_id: string | null;
+          vin_snapshot: string | null;
+          work_order_id: string | null;
+          pending_work_order_id: string | null;
+          voided: boolean;
+          title: string | null;
+          contact_id: string | null;
+          pay_url: string | null;
+          exclude_from_square: boolean;
+          credit_applied_cents: number;
+          sync_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      wix_invoice_payment: {
+        Row: {
+          wix_invoice_payment_id: string;
+          wix_payment_id: string;
+          wix_invoice_id: string;
+          amount_cents: number;
+          method: string;
+          kind: "payment" | "refund";
+          square_status: "unasked" | "not_yet" | "squared" | "skipped_void";
+          square_payment_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      invoice_create_acknowledgement: {
+        Row: {
+          acknowledgement_id: string;
+          work_order_id: string | null;
+          customer_id: string;
+          motorcycle_id: string;
+          staff_user_id: string;
+          wix_error_text: string;
+          wix_invoice_id: string | null;
+          pending_work_order_id: string | null;
+          acknowledged_at: string | null;
+          cleared_at: string | null;
+          created_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      customer_private_profile: {
+        Row: {
+          customer_id: string;
+          licence_number: string | null;
+          licence_expiry: string | null;
+          scanned_at: string | null;
+          updated_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
       };
     };
     Views: Record<string, never>;

@@ -6,7 +6,7 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canRecordCustomerApproval } from "@/lib/permissions";
-import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
+import { readWorkflowV2Flags, v2WritesEnabled, wixInvoicesEnabled } from "@/lib/config/features";
 import {
   isUndefinedColumnError,
   isUndefinedTableError,
@@ -963,6 +963,15 @@ export async function processSquareWebhookEvent(payload: {
           .eq("external_id", invoiceId);
       } catch {
         // table may not exist yet
+      }
+
+      if (wixInvoicesEnabled() && mapped === "refunded") {
+        const { noteSquareRefundAsk } = await import("@/lib/services/wixInvoices");
+        await noteSquareRefundAsk({
+          eventId: payload.event_id,
+          amountCents: paidAmount ?? 0,
+          workOrderId: wo.work_order_id as string,
+        });
       }
 
       if (v2WritesEnabled(readWorkflowV2Flags())) {

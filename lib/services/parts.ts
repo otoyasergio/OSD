@@ -208,6 +208,9 @@ export async function addPartToJob(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  await import("@/lib/services/wixInvoices")
+    .then((mod) => mod.pushWorkOrderLinesToWix(job.work_order_id))
+    .catch(() => undefined);
   return part;
 }
 
@@ -266,6 +269,10 @@ export async function updatePartUnitPrice(
     old_value: { unit_price: existing.unit_price },
     new_value: { unit_price: part.unit_price },
   });
+
+  await import("@/lib/services/wixInvoices")
+    .then((mod) => mod.pushWorkOrderLinesToWix(job.work_order_id))
+    .catch(() => undefined);
 
   return part;
 }

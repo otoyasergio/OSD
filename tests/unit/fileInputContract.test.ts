@@ -4,7 +4,12 @@ import { join, relative } from "node:path";
 
 const ROOT = process.cwd();
 
-const NON_PHOTO_EXCEPTIONS = new Map<string, string>();
+const NON_PHOTO_EXCEPTIONS = new Map<string, string>([
+  [
+    "components/customers/LicenceBarcodeScan.tsx",
+    "The still frame is decoded as a PDF417 licence barcode in the browser. It is not a shop photo upload.",
+  ],
+]);
 
 function walk(directory: string, files: string[] = []): string[] {
   for (const entry of readdirSync(directory)) {

@@ -36,6 +36,9 @@ import {
   intakeContractHref,
 } from "@/lib/photos/intakeQueue";
 import { CustomerSearchPicker } from "@/components/forms/CustomerSearchPicker";
+import { LicenceBarcodeScan } from "@/components/customers/LicenceBarcodeScan";
+import { acknowledgeWixInvoiceFailureAction } from "@/app/(app)/work_orders/wix-invoice-actions";
+import { saveLicenceScanAction } from "@/app/(app)/customers/actions";
 import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
 import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
 import { FindMotorcycleByVin } from "@/components/forms/FindMotorcycleByVin";
@@ -86,6 +89,7 @@ type Props = {
   initialCustomerId?: string;
   initialMotorcycleId?: string;
   closureDates: string[];
+  wixAssignsNumber?: boolean;
 };
 
 const SELECT_CLASS =
@@ -126,6 +130,7 @@ export function CreateWorkOrderForm({
   initialCustomerId = "",
   initialMotorcycleId = "",
   closureDates,
+  wixAssignsNumber = false,
 }: Props) {
   const router = useRouter();
   const queue = usePhotoUploadQueue();
@@ -172,6 +177,8 @@ export function CreateWorkOrderForm({
   const customerIdRef = useRef(resolvedInitialCustomerId);
   const bikeLoadRequestRef = useRef(0);
   const [workOrderNumber, setWorkOrderNumber] = useState("");
+  const [invoicePreview, setInvoicePreview] = useState<string | null>(null);
+  const [wixAcknowledgementId, setWixAcknowledgementId] = useState<string | null>(null);
   const [mileage, setMileage] = useState("");
   const [mileageUnit, setMileageUnit] = useState<MileageUnit>(() =>
     normalizeMileageUnit(
@@ -357,9 +364,26 @@ export function CreateWorkOrderForm({
     selectedServiceIds,
     servicePricingComplete,
     intakeComplete,
+    wixAssignsNumber,
   };
 
   const canProceed = canProceedFromWizardStep(stepId, stepData);
+
+  useEffect(() => {
+    if (!wixAssignsNumber) return;
+    let cancelled = false;
+    void fetch("/api/wix/invoices/preview")
+      .then((response) => response.json())
+      .then((body: { preview?: string | null }) => {
+        if (!cancelled) setInvoicePreview(body.preview ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setInvoicePreview(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wixAssignsNumber]);
 
   useEffect(() => {
     if (!resolvedInitialCustomerId) return;
@@ -445,6 +469,7 @@ export function CreateWorkOrderForm({
 
       const created = await createWorkOrderOnlyAction({ error: null }, formData);
       if (created.error || !created.workOrderId) {
+        setWixAcknowledgementId(created.wixAcknowledgementId ?? null);
         setClientError(created.error ?? "Could not create the work order. Try again.");
         return;
       }
@@ -514,6 +539,7 @@ export function CreateWorkOrderForm({
           customerId,
           motorcycleId,
           workOrderNumber,
+          wixAssignsNumber,
           mileage,
           estimatedCompletion,
           selectedServiceIds,
@@ -534,6 +560,20 @@ export function CreateWorkOrderForm({
       }}
     >
       <FormError message={clientError} />
+      {wixAcknowledgementId ? (
+        <button
+          type="button"
+          className="btn"
+          onClick={() => {
+            void acknowledgeWixInvoiceFailureAction(wixAcknowledgementId).then((result) => {
+              if (result.error) setClientError(result.error);
+              else setClientError("Acknowledged. Try again to create the invoice.");
+            });
+          }}
+        >
+          Acknowledge Wix error
+        </button>
+      ) : null}
 
       <WizardProgress
         stepIndex={stepIndex}
@@ -542,6 +582,7 @@ export function CreateWorkOrderForm({
       />
 
       {/* Persist values for submit regardless of which step is visible */}
+      <input type="hidden" name="customer_id" value={customerId} />
       <input type="hidden" name="motorcycle_id" value={motorcycleId} />
       <input type="hidden" name="work_order_number" value={workOrderNumber.trim()} />
       <input type="hidden" name="mileage" value={mileage} />
@@ -588,6 +629,25 @@ export function CreateWorkOrderForm({
               </Link>
               .
             </span>
+            {customerId ? (
+              <div className="mt-3">
+                <LicenceBarcodeScan
+                  onConfirm={(scan) => {
+                    void saveLicenceScanAction(customerId, {
+                      firstName: scan.firstName,
+                      lastName: scan.lastName,
+                      address: scan.address,
+                      dateOfBirth: scan.dateOfBirth,
+                      licenceNumber: scan.licenceNumber,
+                      licenceExpiry: scan.licenceExpiry,
+                    }).then((result) => {
+                      if (result.error) setClientError(result.error);
+                      else router.refresh();
+                    });
+                  }}
+                />
+              </div>
+            ) : null}
             {selectedCustomer ? (
               <CustomerInformationReminder
                 phone={selectedCustomer.phone}
@@ -692,7 +752,9 @@ export function CreateWorkOrderForm({
               >
                 Add plate
               </Link>
-              . You can continue this intake without it.
+              . {wixAssignsNumber
+                ? "Enter N/A on the motorcycle if it has no plate. Colour and VIN are required before the invoice is created."
+                : "You can continue this intake without it."}
             </p>
           ) : null}
           {selectedBike ? <VinDecodePanel vin={selectedBike.vin} /> : null}
@@ -714,29 +776,36 @@ export function CreateWorkOrderForm({
         <section className="intake-wizard-panel">
           <h2 className="intake-wizard-panel-title">Visit details</h2>
           <p className="intake-wizard-panel-lede">
-            Enter the Wix work order number first — that becomes the shop work order #.
-            Then mileage, services, and technician. Square invoicing is created later from
-            the work order Billing panel.
+            {wixAssignsNumber
+              ? "Wix assigns the invoice number when you save. The preview is not reserved."
+              : "Enter the Wix work order number first — that becomes the shop work order #. Then mileage, services, and technician. Square invoicing is created later from the work order Billing panel."}
           </p>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-foreground">
-              Wix work order # <span className="ml-1 text-red-600">*</span>
-            </span>
-            <input
-              className={INPUT_CLASS}
-              type="text"
-              inputMode="text"
-              autoComplete="off"
-              placeholder="e.g. WO-1042"
-              value={workOrderNumber}
-              onChange={(event) => setWorkOrderNumber(event.target.value)}
-              required
-            />
-            <span className="mt-1 block text-xs text-[var(--status-neutral)]">
-              Copy the number from Wix. We no longer assign work order numbers in the shop
-              app.
-            </span>
-          </label>
+          {wixAssignsNumber ? (
+            <p className="text-sm">
+              Next invoice preview:{" "}
+              <span className="font-medium">{invoicePreview ?? "Wix will assign it on save"}</span>
+            </p>
+          ) : (
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-foreground">
+                Wix work order # <span className="ml-1 text-red-600">*</span>
+              </span>
+              <input
+                className={INPUT_CLASS}
+                type="text"
+                inputMode="text"
+                autoComplete="off"
+                placeholder="e.g. WO-1042"
+                value={workOrderNumber}
+                onChange={(event) => setWorkOrderNumber(event.target.value)}
+                required
+              />
+              <span className="mt-1 block text-xs text-[var(--status-neutral)]">
+                Copy the number from Wix. We no longer assign work order numbers in the shop
+                app.
+              </span>
+            </label>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-foreground">
@@ -1206,7 +1275,14 @@ export function CreateWorkOrderForm({
                   : "—"
               }
             />
-            <ReviewCard label="Wix work order #" value={workOrderNumber.trim() || "—"} />
+            <ReviewCard
+              label={wixAssignsNumber ? "Invoice number" : "Wix work order #"}
+              value={
+                wixAssignsNumber
+                  ? invoicePreview ?? "Assigned by Wix on save"
+                  : workOrderNumber.trim() || "—"
+              }
+            />
             <ReviewCard label="Mileage" value={formatMileage(mileage, mileageUnit)} />
             <ReviewCard
               label="Estimated completion"
@@ -1317,6 +1393,7 @@ export function CreateWorkOrderForm({
                   customerId,
                   motorcycleId,
                   workOrderNumber,
+                  wixAssignsNumber,
                   mileage,
                   estimatedCompletion,
                   selectedServiceIds,

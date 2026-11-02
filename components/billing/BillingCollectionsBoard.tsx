@@ -38,9 +38,11 @@ function preferredChannel(item: BillingBoardItem): "sms" | "email" | null {
 function BillingCard({
   item,
   showQuickActions,
+  hideSquareInvoices,
 }: {
   item: BillingBoardItem;
   showQuickActions: boolean;
+  hideSquareInvoices: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [messageError, setMessageError] = useState<string | null>(null);
@@ -72,7 +74,7 @@ function BillingCard({
         <span className="stage-chip stage-chip--teal">{item.billing_stage}</span>
       </div>
       <div className="td-board-card-actions">
-        {item.square_invoice_public_url ? (
+        {item.square_invoice_public_url && !hideSquareInvoices ? (
           <a
             href={item.square_invoice_public_url}
             target="_blank"
@@ -117,7 +119,7 @@ function BillingCard({
               : "Send payment reminder"}
           </button>
         ) : null}
-        {showQuickActions ? (
+        {showQuickActions && !hideSquareInvoices ? (
           <>
             <button
               type="button"
@@ -179,9 +181,11 @@ const COLLECTION_BUCKETS = [
 export function BillingCollectionsBoard({
   items,
   showQuickActions = false,
+  hideSquareInvoices = false,
 }: {
   items: BillingBoardItem[];
   showQuickActions?: boolean;
+  hideSquareInvoices?: boolean;
 }) {
   const actionable = items.filter((i) =>
     (COLLECTION_BUCKETS as readonly string[]).includes(i.bucket)
@@ -220,6 +224,7 @@ export function BillingCollectionsBoard({
                       key={item.work_order_id}
                       item={item}
                       showQuickActions={showQuickActions}
+                      hideSquareInvoices={hideSquareInvoices}
                     />
                   ))
                 )}

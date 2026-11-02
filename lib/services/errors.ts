@@ -278,6 +278,17 @@ const MESSAGES: Record<string, string> = {
   WIX_CONTACT_NOT_LINKED:
     "This customer is not linked to a Wix contact yet. Sync to Wix first.",
   WIX_CONTACT_SYNC_FAILED: "Could not sync this customer to Wix.",
+  WIX_INVOICE_NOT_FOUND: "This visit does not have a Wix invoice yet.",
+  WIX_INVOICE_NOT_DRAFT: "Only a draft invoice can be published.",
+  WIX_PAYMENT_NOT_FOUND: "That Wix payment is no longer on the invoice.",
+  WIX_PAYMENT_EXCLUDED:
+    "That payment is on a voided invoice or was already paid in Wix before launch, so it stays out of Square.",
+  WIX_REFUND_RECORD_UNSUPPORTED:
+    "This Square refund stays on the ask list. Wix has no way to record it back onto the invoice from here.",
+  SQUARE_AMOUNT_REQUIRED:
+    "Choose the Square terminal payment, or enter the cash, e-transfer, or cheque amount.",
+  SQUARE_TERMINAL_PAYMENT_NOT_FOUND:
+    "That Square terminal payment is not in the recent completed list.",
   WIX_WEBHOOK_INVALID: "Wix webhook payload is missing a contact id.",
   WIX_WEBHOOK_CONTACT_REQUIRED: "Wix webhook contact needs an email or phone number.",
   FITMENT_IMPORT_FAILED: "Fitment import failed.",

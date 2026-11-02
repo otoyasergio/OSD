@@ -33,6 +33,9 @@ import {
 import { listMotorcycleDocuments } from "@/lib/services/motorcycleDocuments";
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage, normalizeMileageUnit } from "@/lib/mileage/format";
+import { WixInvoiceList } from "@/components/billing/WixInvoiceList";
+import { listInvoicesForMotorcycle } from "@/lib/services/wixInvoices";
+import { wixInvoicesEnabled } from "@/lib/config/features";
 
 function formatMoneyCents(cents: number): string {
   return new Intl.NumberFormat("en-CA", {
@@ -63,6 +66,7 @@ export default async function MotorcycleDetailPage({
     visits,
     photos,
     documents,
+    invoices,
   ] = await Promise.all([
     getServiceInformation(motorcycle_id),
     searchCustomers("", { preferShopCustomers: true }),
@@ -70,6 +74,9 @@ export default async function MotorcycleDetailPage({
     listWorkOrdersForMotorcycle(motorcycle_id),
     listIntakePhotosForMotorcycle(motorcycle_id),
     canViewDocs ? listMotorcycleDocuments(motorcycle_id) : Promise.resolve([]),
+    wixInvoicesEnabled()
+      ? listInvoicesForMotorcycle(motorcycle_id)
+      : Promise.resolve([]),
   ]);
 
   let customerOptions = customers;
@@ -235,6 +242,20 @@ export default async function MotorcycleDetailPage({
         recommendations={outstandingRecommendations}
         title="Pending recommendations"
       />
+
+      {wixInvoicesEnabled() ? (
+        <section>
+          <h2 className="text-lg font-semibold text-foreground">Wix invoices</h2>
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
+            Every invoice whose VIN matches this motorcycle, including one billed to a
+            previous owner.
+          </p>
+          <WixInvoiceList
+            invoices={invoices}
+            emptyLabel="No Wix invoices match this VIN."
+          />
+        </section>
+      ) : null}
 
       <section>
         <h2 className="text-lg font-semibold text-foreground">Open visits</h2>

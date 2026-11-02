@@ -32,6 +32,14 @@ import {
   getWorkOrderDetail,
   listTechniciansForActiveLocation,
 } from "@/lib/services/workOrders";
+import { wixInvoicesEnabled } from "@/lib/config/features";
+import {
+  blockingAcknowledgementForWorkOrder,
+  listSquareAsks,
+  portalInvoiceForWorkOrder,
+} from "@/lib/services/wixInvoices";
+import { WixInvoicePanel } from "@/components/billing/WixInvoicePanel";
+import { acknowledgeWixInvoiceFailureFormAction } from "@/app/(app)/work_orders/wix-invoice-actions";
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import {
@@ -311,6 +319,14 @@ export default async function WorkOrderDetailPage({
   const canManageParts = canOrderPart(viewRole) || canEditWorkOrder(viewRole);
   const canSeePartCost = canViewPartCost(viewRole);
   const canSeePricing = canViewPricing(viewRole);
+  const wixOn = wixInvoicesEnabled();
+  const [wixInvoice, squareAsks, invoiceBlock] = wixOn
+    ? await Promise.all([
+        portalInvoiceForWorkOrder(work_order_id),
+        listSquareAsks(),
+        blockingAcknowledgementForWorkOrder(work_order_id),
+      ])
+    : [null, [], null];
   const canSeeClients = canViewClients(viewRole);
   const canAdd = canCreateWorkOrder(viewRole) || canEditWorkOrder(viewRole);
   const canUploadPhotos =
@@ -451,6 +467,21 @@ export default async function WorkOrderDetailPage({
 
       {intake === "complete" ? <IntakeCompleteNotice followUp={intakeFollowUp} /> : null}
 
+      {invoiceBlock ? (
+        <form
+          action={acknowledgeWixInvoiceFailureFormAction}
+          className="rounded border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-950"
+        >
+          <p>{invoiceBlock.wix_error_text}</p>
+          <input type="hidden" name="acknowledgement_id" value={invoiceBlock.acknowledgement_id} />
+          {canApprove ? (
+            <button type="submit" className="btn mt-2">
+              Acknowledge
+            </button>
+          ) : null}
+        </form>
+      ) : null}
+
       {detail.is_foreign_location ? (
         <div
           role="status"
@@ -528,7 +559,17 @@ export default async function WorkOrderDetailPage({
               detail.work_order_id
             )}
           />
-          {canSeePricing ? (
+          {wixInvoicesEnabled() && canSeePricing ? (
+            <WixInvoicePanel
+              workOrderId={detail.work_order_id}
+              displayNumber={wixInvoice?.displayNumber ?? null}
+              statusLabel={wixInvoice?.statusLabel ?? null}
+              totalCents={wixInvoice?.totalCents ?? null}
+              payUrl={wixInvoice?.payUrl ?? null}
+              canManage={canApprove}
+              asks={squareAsks}
+            />
+          ) : canSeePricing ? (
             <SquareInvoicePanel
               workOrderId={detail.work_order_id}
               squareInvoiceId={detail.square_invoice_id}
