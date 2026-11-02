@@ -78,9 +78,23 @@ export function invoiceIsSealed(status: string | null | undefined): boolean {
   return SEALED_STATUSES.has((status ?? "").toUpperCase());
 }
 
-/** Customer profile edits update an unpaid draft only. */
+/** Customer profile edits update a draft or a published invoice that is still unpaid. */
 export function canSyncCustomerBlock(status: string | null | undefined): boolean {
-  return (status ?? "").toUpperCase() === "DRAFT";
+  const normalized = (status ?? "").toUpperCase();
+  return normalized === "DRAFT" || normalized === "PUBLISHED";
+}
+
+/**
+ * Wix assigns numbering.displayNumber when a draft is published.
+ * A draft with no number still needs that publish. Sending the email is separate.
+ */
+export function draftNeedsNumberAllocation(input: {
+  status?: string | null;
+  displayNumber?: string | null;
+}): boolean {
+  if (input.displayNumber?.trim()) return false;
+  const status = (input.status ?? "DRAFT").toUpperCase();
+  return status === "DRAFT" || status === "";
 }
 
 export function isVoidStatus(status: string | null | undefined): boolean {

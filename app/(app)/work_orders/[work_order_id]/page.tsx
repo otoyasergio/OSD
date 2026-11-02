@@ -567,6 +567,7 @@ export default async function WorkOrderDetailPage({
               totalCents={wixInvoice?.totalCents ?? null}
               payUrl={wixInvoice?.payUrl ?? null}
               canManage={canApprove}
+              sent={wixInvoice?.sent ?? false}
               asks={squareAsks}
             />
           ) : canSeePricing ? (

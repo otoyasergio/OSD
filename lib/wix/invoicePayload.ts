@@ -22,6 +22,9 @@ export type WixInvoicePayment = {
   };
 };
 
+/** Wix Invoices app. Required on sourceReference whenever that object is sent. */
+export const WIX_INVOICES_APP_ID = "13ee94c1-b635-8505-3391-97919052c16f";
+
 export type WixInvoiceRecord = {
   id?: string;
   revision?: string;
@@ -31,7 +34,7 @@ export type WixInvoiceRecord = {
   currency?: string;
   issueDate?: string;
   dueDate?: string;
-  sourceReference?: { externalReferenceId?: string };
+  sourceReference?: { appId?: string; externalReferenceId?: string };
   numbering?: { number?: number; displayNumber?: string; prefix?: string; suffix?: string };
   customerInfo?: { contactId?: string; contactDetails?: { firstName?: string; lastName?: string } };
   customFields?: {
@@ -73,7 +76,7 @@ export function buildDraftInvoiceBody(input: DraftInvoiceInput): Record<string, 
     title: input.title,
     reference: {
       referenceType: "STANDALONE",
-      standaloneReference: {},
+      standaloneReference: { limitActions: false },
     },
     customerInfo: {
       contactId: input.contactId,
@@ -110,7 +113,10 @@ export function buildDraftInvoiceBody(input: DraftInvoiceInput): Record<string, 
 
   if (input.dueDate) invoice.dueDate = input.dueDate;
   if (input.externalReferenceId) {
-    invoice.sourceReference = { externalReferenceId: input.externalReferenceId };
+    invoice.sourceReference = {
+      appId: WIX_INVOICES_APP_ID,
+      externalReferenceId: input.externalReferenceId,
+    };
   }
   if (input.creditCents && input.creditCents > 0) {
     invoice.discounts = [

@@ -23,6 +23,7 @@ export function WixInvoicePanel({
   totalCents,
   payUrl,
   canManage,
+  sent = false,
   asks,
 }: {
   workOrderId: string;
@@ -31,6 +32,7 @@ export function WixInvoicePanel({
   totalCents: number | null;
   payUrl: string | null;
   canManage: boolean;
+  sent?: boolean;
   asks: SquareAskItem[];
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export function WixInvoicePanel({
         </a>
       ) : null}
       {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
-      {canManage && statusLabel === "Draft" ? (
+      {canManage && (statusLabel === "Draft" || (statusLabel === "Published" && !sent)) ? (
         <form
           className="mt-3 flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
@@ -80,7 +82,7 @@ export function WixInvoicePanel({
             />
           </label>
           <button type="submit" className="btn" disabled={pending}>
-            Publish and send
+            {statusLabel === "Draft" ? "Publish and send" : "Send to customer"}
           </button>
         </form>
       ) : null}

@@ -3,10 +3,12 @@ import { squareExternalPaymentBody } from "@/lib/square/client";
 import { parseAamvaLicence } from "@/lib/id/aamva";
 import { validateVinForModelYear } from "@/lib/vin/validate";
 import { evaluateInvoiceGates } from "@/lib/wix/invoiceGates";
-import { buildDraftInvoiceBody } from "@/lib/wix/invoicePayload";
+import { buildDraftInvoiceBody, WIX_INVOICES_APP_ID } from "@/lib/wix/invoicePayload";
 import {
   acknowledgementClearedOnSuccess,
   bikeHeaderFields,
+  canSyncCustomerBlock,
+  draftNeedsNumberAllocation,
   formatPreviewDisplayNumber,
   invoiceNumbersEqual,
   isInvoiceIntegerQuery,
@@ -79,6 +81,41 @@ describe("HST is sent once", () => {
     };
     expect(invoice.lineItems.map((line) => line.customItem.name)).toEqual(["Oil change"]);
     expect(invoice.customFields.businessCustomFields[0]?.title).toBe("Technician");
+  });
+
+  it("sends the Wix Invoices app id with the work order reference", () => {
+    const body = buildDraftInvoiceBody({
+      contactId: "00000000-0000-4000-8000-000000000001",
+      externalReferenceId: "11111111-1111-4111-8111-111111111111",
+      issueDate: "2026-11-02T17:00:00.000Z",
+      currency: "CAD",
+      title: "2017 Triumph Bonneville T100",
+      firstName: "Evan",
+      lastName: "Kerr",
+      lines: [{ name: "Oil change", price: 165 }],
+      header: [],
+    });
+    const invoice = body.invoice as {
+      sourceReference: { appId: string; externalReferenceId: string };
+      reference: { standaloneReference: { limitActions: boolean } };
+    };
+    expect(invoice.sourceReference).toEqual({
+      appId: WIX_INVOICES_APP_ID,
+      externalReferenceId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(invoice.reference.standaloneReference.limitActions).toBe(false);
+  });
+});
+
+describe("invoice number allocation", () => {
+  it("publishes a draft that has no display number and leaves a numbered invoice alone", () => {
+    expect(draftNeedsNumberAllocation({ status: "DRAFT", displayNumber: "" })).toBe(true);
+    expect(draftNeedsNumberAllocation({ status: undefined, displayNumber: null })).toBe(true);
+    expect(draftNeedsNumberAllocation({ status: "DRAFT", displayNumber: "0003895" })).toBe(false);
+    expect(draftNeedsNumberAllocation({ status: "PUBLISHED", displayNumber: "" })).toBe(false);
+    expect(canSyncCustomerBlock("DRAFT")).toBe(true);
+    expect(canSyncCustomerBlock("PUBLISHED")).toBe(true);
+    expect(canSyncCustomerBlock("PAID")).toBe(false);
   });
 });
 

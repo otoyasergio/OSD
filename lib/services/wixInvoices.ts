@@ -36,6 +36,7 @@ import {
   bikeHeaderFields,
   canSyncCustomerBlock,
   canSyncInvoiceLines,
+  draftNeedsNumberAllocation,
   formatPreviewDisplayNumber,
   intakeFailureMessage,
   invoiceInteger,
@@ -764,6 +765,37 @@ export async function prepareIntakeInvoice(input: {
     }
   }
 
+  if (record?.id && !draftHasDisplayNumber(record)) {
+    const invoiceId = record.id;
+    try {
+      if (
+        draftNeedsNumberAllocation({
+          status: record.status,
+          displayNumber: record.numbering?.displayNumber,
+        })
+      ) {
+        record = await publishWixInvoice(invoiceId);
+      }
+      if (!draftHasDisplayNumber(record)) {
+        record = await getWixInvoice(invoiceId);
+      }
+    } catch (error) {
+      if (error instanceof WixIntakeBlockedError) throw error;
+      const reason = error instanceof Error ? error.message : "Wix invoice publish failed.";
+      const message = intakeFailureMessage({ clientName, bikeLabel, wixReason: reason });
+      const acknowledgementId = await openHold(admin, {
+        customerId: input.customerId,
+        motorcycleId: input.motorcycleId,
+        staffUserId: user.user_id,
+        workOrderId: replacesBookingStub ? workOrderId : null,
+        pendingWorkOrderId: workOrderId,
+        message,
+        wixInvoiceId: invoiceId,
+      });
+      throw new WixIntakeBlockedError(message, acknowledgementId);
+    }
+  }
+
   if (!draftHasDisplayNumber(record)) {
     const message = intakeFailureMessage({
       clientName,
@@ -979,7 +1011,7 @@ export async function syncCustomerDrafts(customerId: string): Promise<void> {
     .from("wix_invoice")
     .select("wix_invoice_id, revision, status")
     .eq("customer_id", customerId)
-    .eq("status", "DRAFT")
+    .in("status", ["DRAFT", "PUBLISHED"])
     .eq("voided", false);
   for (const draft of drafts ?? []) {
     if (!canSyncCustomerBlock(String(draft.status))) continue;
@@ -1025,20 +1057,29 @@ export async function publishWorkOrderInvoice(input: {
     .limit(1)
     .maybeSingle();
   if (!invoice) throw new Error("WIX_INVOICE_NOT_FOUND");
-  if (String(invoice.status) !== "DRAFT") throw new Error("WIX_INVOICE_NOT_DRAFT");
+  const storedStatus = String(invoice.status ?? "").toUpperCase();
+  if (storedStatus !== "DRAFT" && storedStatus !== "PUBLISHED") {
+    throw new Error("WIX_INVOICE_NOT_DRAFT");
+  }
   const due = shopDueDateIso(
     input.dueDate || (invoice.due_date as string | null),
     shopTodayIso()
   );
-  const remote = await getWixInvoice(String(invoice.wix_invoice_id));
-  await updateWixInvoice(String(invoice.wix_invoice_id), {
+  const invoiceId = String(invoice.wix_invoice_id);
+  const remote = await getWixInvoice(invoiceId);
+  const remoteStatus = String(remote.status ?? storedStatus).toUpperCase();
+  if (remoteStatus !== "DRAFT" && remoteStatus !== "PUBLISHED") {
+    throw new Error("WIX_INVOICE_NOT_DRAFT");
+  }
+  await updateWixInvoice(invoiceId, {
     revision: String(remote.revision ?? invoice.revision),
     dueDate: due,
   });
-  let published = await publishWixInvoice(String(invoice.wix_invoice_id));
+  let published =
+    remoteStatus === "DRAFT" ? await publishWixInvoice(invoiceId) : await getWixInvoice(invoiceId);
   const sent = (published.statusQualifiers ?? []).some((flag) => flag.toUpperCase() === "SENT");
   if (!sent) {
-    published = await sendWixInvoice(String(invoice.wix_invoice_id));
+    published = await sendWixInvoice(invoiceId);
   }
   let payUrl = payUrlFromInvoice(published);
   if (!payUrl) {
@@ -1279,6 +1320,7 @@ export async function portalInvoiceForWorkOrder(workOrderId: string): Promise<{
   statusLabel: string;
   payUrl: string | null;
   totalCents: number;
+  sent: boolean;
 } | null> {
   if (!wixInvoicesEnabled()) return null;
   const admin = adminOrNull();
@@ -1292,11 +1334,13 @@ export async function portalInvoiceForWorkOrder(workOrderId: string): Promise<{
     .limit(1)
     .maybeSingle();
   if (!data) return null;
+  const qualifiers = (data.status_qualifiers as string[]) ?? [];
   return {
     displayNumber: String(data.display_number),
-    statusLabel: wixStatusLabel(String(data.status), (data.status_qualifiers as string[]) ?? []),
+    statusLabel: wixStatusLabel(String(data.status), qualifiers),
     payUrl: (data.pay_url as string | null) ?? null,
     totalCents: Number(data.total_cents ?? 0),
+    sent: qualifiers.some((flag) => flag.toUpperCase() === "SENT"),
   };
 }
 
