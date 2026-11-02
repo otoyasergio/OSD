@@ -16,7 +16,7 @@ flowchart LR
   ble[Bluetooth to a phone]
   cansw[AO3401A switch]
   can[MCP2515 and SN65HVD230]
-  plug[Red 6-pin plug]
+  plug[16-pin OBD plug]
   div[Switched divider]
   ign[Key sense transistor]
 
@@ -38,11 +38,11 @@ Battery +  -- 1A fuse --+-- 1N5822 --> TPS7A1601 IN --> 3.7 V --> XIAO BAT+
 
 Battery -  ---------------------------------------------- XIAO GND
                                                             and CAN ground
-                                                            and pin 3
+                                                            and OBD pin 4 or 5
 
-Pin 4 -- 100k -- 2N3904 -- XIAO D2     (key on pulls D2 low)
-Pin 2 CAN H ---------------------- SN65HVD230 CANH
-Pin 5 CAN L ---------------------- SN65HVD230 CANL
+Key-switched 12 V -- 100k -- 2N3904 -- XIAO D2     (key on pulls D2 low)
+OBD pin 6 CAN H ---------------------- SN65HVD230 CANH
+OBD pin 14 CAN L --------------------- SN65HVD230 CANL
 
 XIAO 3V3 -- AO3401A -- MCP2515 VDD and SN65HVD230 VCC
 ```
@@ -121,15 +121,15 @@ A 3.3 V zener sits on D0, band toward D0, other end to ground. It should be off 
 ## Ignition sense
 
 ```text
-Pin 4 of the red plug -- 100 kΩ -- base of 2N3904
-                         base -- 100 kΩ -- ground
-                         collector -- XIAO D2
-                         emitter -- ground
+Key-switched 12 V -- 100 kΩ -- base of 2N3904
+                     base -- 100 kΩ -- ground
+                     collector -- XIAO D2
+                     emitter -- ground
 ```
 
-Turn on the XIAO internal pull-up on D2. Key on, D2 reads low. Key off, D2 reads high. Current from pin 4 is about 0.1 mA, and only while the key is on.
+Turn on the XIAO internal pull-up on D2. Key on, D2 reads low. Key off, D2 reads high. Current from the sense wire is about 0.1 mA, and only while the key is on.
 
-If pin 4 does not follow the key, disconnect pin 4 and land this same 100 kΩ on a wire that does follow the key.
+The sense wire is OBD pin 16 only when that pin is about 0 V with the key off and about battery voltage with the key on. If pin 16 stays hot with the key off, leave it open and land this same 100 kΩ on a wire that does follow the key, such as the tail lamp.
 
 ## CAN section
 
@@ -175,31 +175,33 @@ SOIC-8. Pins from the TI datasheet.
 | 3 | VCC | Switched 3.3 V |
 | 4 | R | MCP2515 RXCAN |
 | 5 | Vref | Open |
-| 6 | CANL | Pin 5 of the red plug, through the twisted pair |
-| 7 | CANH | Pin 2 of the red plug, through the twisted pair |
+| 6 | CANL | OBD pin 14, through the twisted pair |
+| 7 | CANH | OBD pin 6, through the twisted pair |
 | 8 | RS | Ground. High-speed while the chip is powered. Parked state is "power removed," because standby on this part is still about 370 µA. |
 
 No 120 Ω resistor between CANH and CANL. The bike is already terminated. If a carrier board has a terminator jumper, leave it open and measure that it is open.
 
-## Red 6-pin plug
+## 16-pin OBD plug
 
-Male housing JST MWTPB-06-1A-R. This plugs into the bike's female connector. Wire the diagnostic pigtail in 22 AWG. The 18 AWG battery leads do not go through this plug.
+Male SAE J1962 plug, the regular car-style OBD-II pigtail. This plugs into the Triumph's female socket, usually under the seat. The pigtail wires are the signal wires. The 18 AWG battery leads do not go through this plug.
+
+Looking into the bike's socket, wide edge up: top row pins 1–8 left to right, bottom row pins 9–16 left to right.
 
 | Pin | Wire | Other end |
 | --- | --- | --- |
-| 1 | none | |
-| 2 | CAN H, one side of the twisted pair | SN65HVD230 pin 7 |
-| 3 | ground | Box ground |
-| 4 | sense | 100 kΩ into the ignition transistor. Or none, if this pin is not switched by the key. |
-| 5 | CAN L, the other side of the pair | SN65HVD230 pin 6 |
-| 6 | none | |
+| 4 or 5 | ground, whichever pin has continuity to battery negative | Box ground |
+| 6 | CAN H, one side of the twisted pair | SN65HVD230 pin 7 |
+| 14 | CAN L, the other side of the pair | SN65HVD230 pin 6 |
+| 16 | sense, only if it follows the key | 100 kΩ into the ignition transistor |
+| every other pin | none | Cut the pigtail wire off and insulate it |
 
 Before you trust a ready-made pigtail, battery negative disconnected:
 
-- Pin 3 has continuity to battery negative.
-- Pin 4 is 0 V with the key off and about battery voltage with the key on. If that is not true, do not use pin 4 for sense.
-- Pins 2 and 5 are not shorted to ground or to battery positive.
-- With the bike off and this cable unplugged, resistance between the bike's CAN H and CAN L is often about 60 Ω. Plugging in the sleeping box should not change it.
+- Buzz each pigtail wire to its pin. Do not trust the colors printed on the jacket.
+- Pin 4 or pin 5 has continuity to battery negative. Use the one that does. If neither does, leave both open. The battery negative wire is the ground.
+- Pin 16 is 0 V with the key off and about battery voltage with the key on. If that is not true, do not use pin 16 for sense.
+- Pins 6 and 14 are not shorted to ground or to battery positive.
+- With the bike off and this cable unplugged, resistance between the bike's pins 6 and 14 is often about 60 Ω. Plugging in the sleeping box should not change it.
 
 ## Mailbox, later
 

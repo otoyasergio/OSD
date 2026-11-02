@@ -48,8 +48,8 @@
   <text x="556" y="350" font-size="13" fill="#1a1a1a">drip loop</text>
 
   <rect x="520" y="372" width="260" height="74" rx="6" fill="#fff5f5" stroke="#9b1c1c" stroke-width="2"/>
-  <text x="534" y="398" font-size="15" font-weight="700" fill="#1a1a1a">Red 6-pin male</text>
-  <text x="534" y="418" font-size="14" fill="#1a1a1a">JST MWTPB-06-1A-R</text>
+  <text x="534" y="398" font-size="15" font-weight="700" fill="#1a1a1a">16-pin OBD male</text>
+  <text x="534" y="418" font-size="14" fill="#1a1a1a">Triumph socket, SAE J1962</text>
   <text x="534" y="436" font-size="14" fill="#1a1a1a">Signal only. Not power.</text>
 
   <circle cx="78" cy="400" r="32" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.8"/>

@@ -6,7 +6,7 @@ This is a build guide. It is not firmware, and it does not add an ingest API to 
 
 Build the Bluetooth box first. Leave the radio off until that box sleeps, reads a bike, and a person can copy the reading into the motorcycle page. The wiring picture and pin tables are in [bike-link-wiring.md](bike-link-wiring.md).
 
-The shop is OTOMOTO TORONTO MOTO INC., 99 River Street, Toronto. These boxes go on motorcycles. A car OBD plug is the wrong connector. Customer texts stay on the existing Wix Inbox thread. Nothing in this build sends an SMS.
+The shop is OTOMOTO TORONTO MOTO INC., 99 River Street, Toronto. The first boxes go on Triumphs that still have the regular 16-pin OBD-II socket under the seat, the same trapezoid plug a car uses. Customer texts stay on the existing Wix Inbox thread. Nothing in this build sends an SMS.
 
 ## The two devices
 
@@ -21,20 +21,20 @@ A phone or the shop tablet is the first handoff. The mailbox is the second. Bike
 ```text
 battery + ---- fuse ---- diode ---- 3.7 V regulator ---- XIAO nRF52840 ---- Bluetooth
                  |                         |
-                 |                         +-- switch ---- CAN controller and transceiver ---- red 6-pin
+                 |                         +-- switch ---- CAN controller and transceiver ---- 16-pin OBD
                  +-- divider, switched, into the XIAO ADC
-red plug pin 4 -- transistor ---------------- ignition sense into the XIAO
+key-switched 12 V -- transistor ----------- ignition sense into the XIAO
 
 optional later: same XIAO UART ---- 915 MHz radio
 ```
 
-The diagnostic reader is CAN. The first cable is the red Euro 5 6-pin. K-line is not in this build. A cheap K-line chip such as the ST L9637 only turns the single wire into a logic level. It does not speak Honda, Yamaha, Suzuki, or Kawasaki diagnostic protocols, and the Euro 5 bikes this cable is for put legislated diagnostics on CAN (pins 2 and 5). Pin 6 stays empty.
+The diagnostic reader is CAN, on that 16-pin plug. CAN H is pin 6. CAN L is pin 14. K-line is not in this build. A cheap K-line chip such as the ST L9637 only turns the single wire into a logic level. It does not speak the older Triumph K-line protocol, and some of those bikes wear this same 16-pin plastic with K-line on pin 7. Pin 7 stays empty.
 
 Bluetooth is the Nordic radio on the Seeed XIAO nRF52840. Storage is that board's on-board flash. The log is small: one reading is under 100 bytes, and a winter of daily voltage checks is a few dozen kilobytes.
 
 The 915 MHz radio is a socket on the first build, empty until the mailbox exists.
 
-Power is a fused wire to the battery. The red diagnostic plug does not power the box.
+Power is a fused wire to the battery. The 16-pin plug does not power the box.
 
 ## Parts
 
@@ -60,7 +60,7 @@ Prices move. The names below were still current manufacturer parts when this was
 | 2N3904 (two) and 2N3906 (one) | Through-hole transistors for ignition sense and for switching the voltage divider. | Any small-signal NPN and PNP with a 40 V rating. |
 | 100 kΩ (several), 12 kΩ 1%, 47 kΩ, 10 kΩ | Divider, bias, CAN reset pull-up. The 12 kΩ wants to be 1% because it sets the voltage reading. | Divider ratio 12 / 112. Keep that ratio if you change the values. |
 | 3.3 V zener, 1N5226B or BZX55C3V3 | Clamps the ADC pin if the divider is on during a spike. | Any 3.3 V, 500 mW zener. |
-| JST male plug MWTPB-06-1A-R, male terminals SMWTWS-A021T-064, seals A03WS-MWT-N | This is the tool side of the ISO 19689 connector. The bike already has the red female housing. Terminals fit 0.3–0.5 mm² (about 22–20 AWG). | A ready-made red Euro 5 OBD pigtail. Confirm every pin with a meter before trusting the seller's colors. |
+| SAE J1962 male OBD-II pigtail, 16-pin | Plugs into the Triumph socket under the seat. Buy a short one with the wires already fitted. Keep pins 4 or 5, 6, 14, and 16 until the meter check. Pin 16 stays only if it follows the key. Cut the other wires off and insulate the ends. | Any 16-pin OBD-II male plug wired to those pins. Not a 16-pin to red 6-pin adapter. Confirm each wire with a meter. The seller's colors are not a standard. |
 | 22 AWG twisted pair, plus a ground and a sense wire | CAN H and CAN L, diagnostic ground, ignition sense. These wires are thinner than the battery lead on purpose. They do not carry the box's power. | An old Ethernet pair is fine for CAN H and CAN L. |
 | Gasketed ABS box and a cable gland | Under-seat weather and wash water. Hammond 1591 series is the kind of box. The exact shell is not important. | Any small gasketed box that closes properly and accepts a gland. |
 | Perfboard, solder, heat-shrink, zip ties | The thing you actually assemble. | |
@@ -81,32 +81,37 @@ The RYLR998 defaults to 915 MHz and to **22 dBm**. Change the power before the f
 
 ## Connector
 
-The first cable mates with the red 6-pin diagnostic connector in ISO 19689:2016. JST calls their version the MWT series and says it is that connector. The bike side is the female housing. The box side is the male plug, part MWTPB-06-1A-R.
+The first cable is for a Triumph that still has the regular 16-pin diagnostic socket, SAE J1962. That is the trapezoid plug used on cars. On these Triumphs it sits under the seat. The bike has the female socket. The box has the male plug.
 
-ISO 19689's contact jobs:
+AiM's Triumph sheets put CAN High on pin 6 and CAN Low on pin 14 for the 16-pin bikes they document: Daytona 675 from 2013 to 2017, Street Triple 675 from 2013 to 2016, Street Triple 765 from 2017, and Daytona 765 from 2018, through about 2023. A 2022 Tiger 900 uses that same 16-pin socket. Bonneville, Speed Twin, Scrambler, Rocket 3, and the other Tigers are the same shape of plug when the socket under the seat is the 16-pin one. Look at the bike. The year on the registration is not enough.
 
-| Pin | ISO 19689 job | What this cable does |
+Two other Triumphs are the wrong bike for this cable.
+
+The small red 6-pin showed up as Triumph changed models over to Euro 5. Published tool notes list Street Triple from 2023, Tiger 900 and Tiger 850 for model year 2024, Speed 400, Scrambler 400, and Scrambler 1200 for model year 2024. Later Euro 5+ Bonnevilles moved as well. If the socket under the seat is that small red plug, stop. This 16-pin cable does not fit it. Do not force it, and do not put a 16-to-6 adapter on the first box. A red-plug Triumph is a later cable.
+
+Older Triumphs can have this same 16-pin shape and still speak K-line. AiM's sheet for the Daytona 675 from 2006 to 2012, the Street Triple from 2007 to 2012, and the Speed Triple from 2007 to 2012 uses pin 7 for K-line and pin 4 for ground. This box has no K-line chip. The plug will seat and the bike will not answer. Leave those bikes for a later lead.
+
+Pins, looking into the bike's socket with the wide edge up. The top row is 1 through 8, left to right. The bottom row is 9 through 16, left to right. Pin 16 is the bottom-right corner.
+
+| Pin | SAE J1962 job | What this cable does |
 | --- | --- | --- |
-| 1 | Left to the motorcycle maker | Leave open |
-| 2 | CAN H when the bike uses ISO 15765-4 CAN | CAN H |
-| 3 | Ground | Signal ground |
-| 4 | Battery positive, and the standard allows it to be either always-on or ignition-switched | Sense only. A 100 kΩ resistor into a transistor. This pin does not power the box. |
-| 5 | CAN L when the bike uses ISO 15765-4 CAN | CAN L |
-| 6 | K-line when the bike uses ISO 9141-2 or ISO 14230-4 | Leave open |
+| 4 | Chassis ground | Signal ground, if a meter shows continuity to battery negative |
+| 5 | Signal ground | Signal ground, if this is the pin that actually reaches battery negative |
+| 6 | CAN H, ISO 15765-4 | CAN H |
+| 7 | K-line | Leave open |
+| 14 | CAN L, ISO 15765-4 | CAN L |
+| 16 | Battery positive | Leave open unless it follows the key. See below. |
+| 1, 2, 3, 8–13, 15 | Other jobs, including J1850 and manufacturer pins | Cut those pigtail wires off and insulate them |
 
-The standard also says pins 2, 5, and 6 can be used for something else when the bike does not use those protocols. A public Suzuki Burgman AN650 sheet matches the table above and marks pin 4 as ignition-switched, with pin 6 empty. Treat that as one worked example. On the bike in front of you, find ground and the key-switched pin with a meter before you finish the crimps. The [wiring file](bike-link-wiring.md) has the check.
+Use pin 4 or pin 5, whichever one has continuity to battery negative. Some Triumph sockets leave a ground cavity empty. If both pins are open, do not add a pin to the bike. The box ground is already the 18 AWG wire on the battery negative post, and that is the CAN reference.
 
-Many Euro 5 bikes grew this red plug because European rules required a common diagnostic connector. A Canadian bike of the same model may or may not have it. Look under the seat before you build the cable.
+Pin 16 is a bad place to steal power. On at least some 2013–2023 Triumph triples it is tied to the battery and stays live with the key off. A box powered from that pin is on all winter, on a wire that was not fused at the post for this job. The fused 18 AWG lead is the power wire. Pin 16 is only a sense candidate, and only after the meter says it drops out with the key.
 
-Pin 4 is a bad place to steal power. The standard explicitly allows the maker to switch it with the key. A lot of bikes do. A box powered only from that pin goes dead as soon as the rider parks, which is exactly when you wanted the resting voltage.
+On the bike in front of you, find ground and the key-switched wire with a meter before you finish the cable. The [wiring file](bike-link-wiring.md) has the check. Triumph wire colors behind the socket are not a standard. Count the pin numbers.
 
-### Harley-Davidson and older plugs
+### Other bikes
 
-One cable does not fit the floor.
-
-Harley-Davidson does not use this red JST plug as a universal diagnostic connector. Fuel-injected bikes from the 2000s and early 2010s commonly have a 4-pin data link and a single-wire J1850 protocol, which is not CAN H and CAN L. Later Harley CAN bikes use a 6-pin data link. Harley's own dealer notes say 2021 and later models connect through a red data-link connector with their TechLink 3 tool. The pin count and which cavities are filled changed more than once; there is no single Harley pinout to print here. Do not force the Euro 5 plug into a Harley. A Harley lead is a later cable, checked against that bike's wiring diagram. The fused battery wire is the same idea. The plastic on the end is not.
-
-Older Honda 4-pin, Yamaha, Kawasaki, and Suzuki SDS plugs, and the round BMW diagnostic plug, are brand-specific. They are often K-line or a private protocol. They are not this build.
+This cable is the Triumph 16-pin cable. A Honda, Yamaha, Kawasaki, Suzuki, Harley-Davidson, or BMW plug is a different part, even when an adapter looks close. Do not plug this box into those bikes. The fused battery wire is the same idea on a later cable. The plastic on the end is not.
 
 ## Power
 
@@ -114,13 +119,13 @@ Older Honda 4-pin, Yamaha, Kawasaki, and Suzuki SDS plugs, and the round BMW dia
 
 Put a 1 A mini fuse in an inline holder on the red 18 AWG wire, within 15 cm of the battery positive post. The fuse is at the battery, so a rubbed wire between the battery and the box opens the fuse instead of heating the harness. Run the black 18 AWG wire to the battery negative post. A painted frame bolt is a bad ground.
 
-The diagnostic plug's ground (pin 3) still connects to the box, as the CAN reference. It is a signal wire, 22 AWG. It is not the power ground.
+The diagnostic plug's ground (pin 4 or pin 5, whichever is actually grounded) still connects to the box, as the CAN reference. It is a signal wire, 22 AWG. It is not the power ground. If neither pin is grounded in the socket, the 18 AWG wire on the battery negative post is the only ground, and that is enough.
 
-### The diagnostic connector often has no constant 12 V
+### The diagnostic connector is a poor place to take power
 
-Pin 4 may be ignition-switched. Plan on that. The box's always-on power is the fused battery wire. Pin 4 only tells the box that the key turned.
+Pin 16 may be tied straight to the battery. Plan on that. The box's always-on power is the fused battery wire.
 
-On the first install, measure pin 4 with the key off and the key on. If it stays at battery voltage with the key off, that bike left pin 4 permanently powered. Leave pin 4 open on that bike and move the sense wire to a circuit that really does follow the key (a tail-lamp feed or an ignition-switched fuse). The transistor circuit is the same.
+Key sense is a wire that is about 0 V with the key off and about battery voltage with the key on. Measure pin 16 first. If it follows the key, that is the sense wire. If it stays at battery voltage with the key off, leave pin 16 open and move the sense wire to a circuit that really does follow the key, such as the tail lamp or an ignition-switched fuse. The transistor circuit is the same.
 
 ### How the box tells ignition-on from parked
 
@@ -172,7 +177,7 @@ Behavior for whoever writes the firmware later. No code in this document.
 
 **Sleep.** Most of the time the box is asleep with the clock running. CAN power is off. Bluetooth is off. If the radio is fitted, it has been told to sleep. The ignition pin can wake it. The clock can wake it.
 
-**Key on.** Wait a few seconds so the ECU is up. Turn on CAN power. Try 500 kbit/s, then 250 kbit/s. Ask the way a normal OBD scan tool asks on CAN. The standard 11-bit broadcast request id is 7DF (ISO 15765-4). Read emission fault codes. Ask for the odometer. Spend only a few seconds on the bus. There is no single odometer identifier that works on every brand. If the bike does not answer the odometer, store a blank, not a zero. Turn CAN power off again until key-off.
+**Key on.** Wait a few seconds so the ECU is up. Turn on CAN power. Try 500 kbit/s first, then 250 kbit/s. Ask the way a normal OBD scan tool asks on CAN. The standard 11-bit broadcast request id is 7DF (ISO 15765-4). Read emission fault codes. Ask for the odometer. Spend only a few seconds on the bus. There is no single odometer identifier that works on every Triumph. If the bike does not answer the odometer, store a blank, not a zero. Turn CAN power off again until key-off.
 
 **Key off.** Read the odometer and the fault codes once more, immediately, before the ECU goes to sleep. Then turn CAN power off. Twenty minutes later, measure resting voltage and append one reading: time, odometer or blank, volts or blank, and the codes. A reading the app can accept needs at least one of those three. A failed CAN read with no voltage yet stays in a local error note and is not handed off.
 
@@ -263,7 +268,7 @@ At 0 dBm, with the built-in antenna, plan on the driveway, the yard, or the shop
 
 ### Tools
 
-Soldering iron, flux, solder, side cutters, wire strippers, heat-shrink, a multimeter that can read microamps, a current-limited 12 V bench supply, zip ties, dielectric grease, a drill for the cable gland, and a motorcycle charger in the bay before the first start. A small open-barrel crimper only if you are crimping the JST terminals yourself. Those 0.64 mm terminals are easy to ruin with pliers.
+Soldering iron, flux, solder, side cutters, wire strippers, heat-shrink, a multimeter that can read microamps, a current-limited 12 V bench supply, zip ties, dielectric grease, a drill for the cable gland, and a motorcycle charger in the bay before the first start. The OBD pigtail arrives with its wires fitted. You should not need to crimp the 16-pin plug.
 
 ### Order of work
 
@@ -274,9 +279,9 @@ Soldering iron, flux, solder, side cutters, wire strippers, heat-shrink, a multi
 5. Only then go to a bike. Disconnect the battery negative. Fit the fused red wire to battery positive, fuse at the post. Fit the black wire to battery negative. Leave CAN H and CAN L disconnected. Reconnect the negative.
 6. The bike should start and idle. If it does not, remove the fuse and undo the new wires before you look any further.
 7. Key off, measure current again at the fuse, box asleep. Still under 50 µA.
-8. Meter on pin 4, key off and key on. Confirm it follows the key, or move the sense wire as described above.
-9. Battery disconnected again. Crimp or plug CAN H, CAN L, and pin 3. No terminator in the box. Reconnect, and start the bike a second time. It should start and idle with no new warning that appeared the moment you plugged the cable in. If it misbehaves, unplug pins 2 and 5.
-10. With the box unplugged and the bike off, measure resistance between CAN H and CAN L on the bike. You will often see about 60 Ω (two 120 Ω terminators). After you plug in the sleeping box, that reading should be unchanged. If it falls, the box is loading or terminating the bus. Unplug it.
+8. Meter on pin 16, key off and key on. If it follows the key, that is the sense wire. If it stays hot with the key off, move the sense wire as described above.
+9. Battery disconnected again. Connect CAN H (pin 6), CAN L (pin 14), and the ground pin that actually reaches battery negative. No terminator in the box. Reconnect, and start the bike a second time. It should start and idle with no new warning that appeared the moment you plugged the cable in. If it misbehaves, unplug pins 6 and 14.
+10. With the box unplugged and the bike off, measure resistance between pins 6 and 14 on the bike. You will often see about 60 Ω (two 120 Ω terminators). After you plug in the sleeping box, that reading should be unchanged. If it falls, the box is loading or terminating the bus. Unplug it.
 
 ### Pair the box to a motorcycle already in the app
 
@@ -292,9 +297,9 @@ The app has no field for a hardware id yet.
 
 **Fuse.** 1 A, at the battery, on the red wire. If the fuse is open, the box is off and the bike is unharmed by the box. Replace it once, after you know why it opened. A fuse that opens again means a short in the new wire or the box.
 
-**No back-feeding the ECU.** The Schottky is in the power lead so the regulator cannot push voltage back to the battery. Pin 4 never gets 3.3 V or 5 V from the box; it only drives a transistor through 100 kΩ. CAN H and CAN L land only on the transceiver. The terminator is absent. The transceiver supply is off while the bike is parked. The firmware never sends a clear-codes command.
+**No back-feeding the ECU.** The Schottky is in the power lead so the regulator cannot push voltage back to the battery. The sense wire never gets 3.3 V or 5 V from the box; it only drives a transistor through 100 kΩ. CAN H and CAN L land only on the transceiver. The terminator is absent. The transceiver supply is off while the bike is parked. The firmware never sends a clear-codes command.
 
-**Water and vibration.** Gasketed box, gland, drip loop, dielectric grease on the red plug, latch clicked. Strap the board down. Strain-relieve the wires inside the box. Under the seat, off the chain and out of the wheel spray. You should still be able to open the box. Do not pot it.
+**Water and vibration.** Gasketed box, gland, drip loop, dielectric grease on the OBD plug, latch clicked. Strap the board down. Strain-relieve the wires inside the box. Under the seat, off the chain and out of the wheel spray. You should still be able to open the box. Do not pot it.
 
 **Flat battery.** Pull the 1 A fuse. That removes the box. Charge the battery with a motorcycle charger. A normal jump of a tired battery is fine with the fuse in. If you are chasing a short, or the bike will not crank, pull the fuse first. After it starts, measure the box again in series with the fuse, key off, asleep. Under 50 µA means the box was not the main drain; look at the usual causes (an old battery, a tender that was never plugged in, accessories). A milliamp or more means the fuse stays out until the box is fixed. This box is not a battery tender. A bike that sits from November to April still wants a tender, or the battery taken off and charged indoors.
 
@@ -305,15 +310,18 @@ The app has no field for a hardware id yet.
 - Bike-to-bike mesh, and any design that tries to cover Toronto.
 - Customer SMS. That stays on Wix Inbox, on the shop number already there.
 - Reading service-interval or oil-life data the ECU does not share, and deciding inside the box that a service is due.
-- K-line brand protocols, Harley cables, and the older Japanese and BMW plugs.
+- K-line Triumphs, including the 2006–2012 triples that use this same 16-pin shape with K-line on pin 7.
+- The red 6-pin Euro 5 Triumph socket, and any 16-to-6 adapter on the first box.
+- Honda, Yamaha, Kawasaki, Suzuki, Harley-Davidson, and BMW leads.
 - A claim that this build is certified. The Bluetooth board and the Reyax module carry whatever grants their makers published. The finished motorcycle box does not inherit a Canadian certificate from this document.
 
 ## What is still uncertain
 
-- Kilometers are the weak signal. Emission fault codes and a rested voltage are the reliable first readings. Odometer identifiers are per maker, and some clusters will not answer a standard OBD request at all. The firmware stores a blank when that happens.
-- Whether a given bike in the shop even has the red ISO 19689 plug. Euro 5 is a European requirement. Confirm the connector before crimping a cable.
-- ISO pins that the maker marked discretionary. The Burgman map is one bike. The meter check is part of the install.
-- Harley pinouts by year. This guide deliberately does not give one.
+- Kilometers are the weak signal. Emission fault codes and a rested voltage are the reliable first readings. There is no single Triumph odometer request confirmed here. If the ECU does not answer, the firmware stores a blank.
+- Which Triumph in the bay still has the 16-pin socket. From about 2023 some models moved to the red 6-pin. The socket under the seat decides.
+- Whether that 16-pin Triumph is CAN or K-line. The 2006–2012 triples are K-line on pin 7. This box will not read them.
+- Whether pin 16 follows the key. On some 2013–2023 triples it stays live. The meter decides the sense wire.
+- Whether pin 4 or pin 5 is actually grounded in that socket.
 - XIAO sleep current once the board is wired. Seeed's number and a few published measurements are a few microamps. The same board is easy to leave at hundreds of microamps. The fuse measurement is mandatory.
 - The XIAO battery pads expect a lithium cell. A stiff 3.7 V regulator is the stand-in, with USB unplugged. If the on-board charger misbehaves, use the TLV70433 fallback and an nRF52840 module.
 - TPS7A1601 is a small HVSSOP-8 with a metal pad underneath. It is the right electrical part and it is fiddly to solder. Flux, a magnifier, and a check for shorts. The spec, if the exact reel is gone: adjustable LDO, 60 V in, about 5 µA idle, 100 mA out.

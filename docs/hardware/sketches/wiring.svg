@@ -96,21 +96,21 @@
   <text x="394" y="304" font-size="12" fill="#1a1a1a">pin 6 is CAN L</text>
   <text x="394" y="322" font-size="12" fill="#1a1a1a">no 120 ohm resistor</text>
 
-  <text x="604" y="270" font-size="14" font-weight="700" fill="#1a1a1a">Red 6-pin male</text>
-  <text x="604" y="288" font-size="12" fill="#1a1a1a">MWTPB-06-1A-R</text>
-  <text x="604" y="310" font-size="13" fill="#1a1a1a">1   open</text>
-  <text x="604" y="328" font-size="13" fill="#1a1a1a">2   CAN H</text>
-  <text x="604" y="346" font-size="13" fill="#1a1a1a">3   ground</text>
-  <text x="604" y="364" font-size="13" fill="#1a1a1a">4   sense only</text>
-  <text x="604" y="382" font-size="13" fill="#1a1a1a">5   CAN L</text>
-  <text x="604" y="400" font-size="13" fill="#1a1a1a">6   open, no K-line</text>
+  <text x="604" y="268" font-size="14" font-weight="700" fill="#1a1a1a">16-pin OBD male</text>
+  <text x="604" y="286" font-size="12" fill="#1a1a1a">SAE J1962, Triumph</text>
+  <text x="604" y="308" font-size="13" fill="#1a1a1a">4 or 5   ground</text>
+  <text x="604" y="326" font-size="13" fill="#1a1a1a">6        CAN H</text>
+  <text x="604" y="344" font-size="13" fill="#1a1a1a">14       CAN L</text>
+  <text x="604" y="362" font-size="13" fill="#1a1a1a">16       sense if</text>
+  <text x="604" y="380" font-size="13" fill="#1a1a1a">         key switches it</text>
+  <text x="604" y="398" font-size="13" fill="#1a1a1a">others   cut off</text>
 
-  <text x="18" y="374" font-size="13" font-weight="700" fill="#1a1a1a">Pin 4 sense</text>
+  <text x="18" y="374" font-size="13" font-weight="700" fill="#1a1a1a">Key sense</text>
   <text x="18" y="392" font-size="12" fill="#1a1a1a">100k into a 2N3904, then XIAO D2. Key on pulls D2 low.</text>
-  <text x="18" y="408" font-size="12" fill="#1a1a1a">Pin 4 does not power the box.</text>
+  <text x="18" y="408" font-size="12" fill="#1a1a1a">Pin 16 only if it follows the key. Else the tail lamp.</text>
 
   <text x="8" y="444" font-size="13" font-weight="700" fill="#1a1a1a">Ground</text>
-  <text x="70" y="444" font-size="12" fill="#1a1a1a">Battery negative, regulator pad, XIAO GND, transceiver pin 2, and plug pin 3.</text>
+  <text x="70" y="444" font-size="12" fill="#1a1a1a">Battery negative, regulator pad, XIAO GND, transceiver pin 2, and OBD pin 4 or 5.</text>
   <text x="8" y="464" font-size="12" fill="#1a1a1a">1N5822 band points at the regulator. P6KE18A band points at the fused 12 V.</text>
   <text x="8" y="484" font-size="12" fill="#1a1a1a">Not a painted frame bolt. First build: radio header empty.</text>
 </svg>

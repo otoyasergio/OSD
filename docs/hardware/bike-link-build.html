@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Bike link — OTOMOTO TORONTO MOTO INC.</title>
+<style>
+  @page {
+    size: letter;
+    margin: 0.52in 0.58in 0.56in 0.58in;
+    @bottom-left {
+      content: "OTOMOTO TORONTO MOTO INC.  ·  Bike link  ·  99 River Street, Toronto";
+      font-family: "Liberation Sans", sans-serif;
+      font-size: 8pt;
+      color: #222;
+    }
+    @bottom-right {
+      content: "Page " counter(page);
+      font-family: "Liberation Sans", sans-serif;
+      font-size: 8pt;
+      color: #222;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: #1a1a1a;
+    font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+    font-size: 11pt;
+    line-height: 1.35;
+  }
+  h1 { font-size: 22pt; line-height: 1.05; margin: 0 0 4px; font-weight: 700; }
+  h2 { font-size: 13pt; line-height: 1.15; margin: 0 0 4px; font-weight: 700; }
+  p { margin: 0 0 6px; }
+  .page { break-after: page; }
+  .page:last-child { break-after: auto; }
+  .shop {
+    font-size: 12.5pt;
+    font-weight: 700;
+    margin: 0;
+  }
+  .addr { margin: 2px 0 0; font-size: 11pt; }
+  .rule { border: 0; border-top: 2.5px solid #1a1a1a; margin: 8px 0 10px; }
+  .deck { font-size: 12pt; margin: 0 0 10px; }
+  .card {
+    border: 1.5px solid #1a1a1a;
+    border-left: 6px solid #1a1a1a;
+    padding: 8px 10px 4px;
+    margin: 0 0 8px;
+  }
+  .card.later { border-left-color: #1a1a1a; }
+  .kicker {
+    font-size: 9.5pt;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    margin: 0 0 2px;
+  }
+  .ban {
+    border: 2px solid #1a1a1a;
+    padding: 8px 10px 4px;
+    margin: 2px 0 0;
+  }
+  .lead { margin-bottom: 6px; }
+  figure { margin: 4px 0 6px; }
+  figcaption { font-size: 9.5pt; line-height: 1.3; margin: 2px 0 0; }
+  figure svg { width: 100%; height: auto; display: block; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 4px 0 6px;
+  }
+  th, td {
+    border: 1px solid #1a1a1a;
+    padding: 3px 5px;
+    vertical-align: top;
+    text-align: left;
+  }
+  th {
+    background: #ececec;
+    font-weight: 700;
+    font-size: 8.5pt;
+  }
+  td { font-size: 8.5pt; line-height: 1.28; }
+  table.pins th, table.pins td { font-size: 9.5pt; line-height: 1.3; padding: 3px 5px; }
+  table.later th, table.later td { font-size: 10.5pt; line-height: 1.35; padding: 5px 6px; }
+  .part { font-weight: 700; }
+  .sku { white-space: nowrap; }
+  .qty { width: 18%; }
+  .why { width: 50%; }
+  .note { font-size: 10pt; line-height: 1.35; margin: 4px 0 0; }
+  .callout {
+    border: 1.5px solid #1a1a1a;
+    padding: 8px 10px 4px;
+    margin: 0 0 8px;
+  }
+  .callout.later { background: #f7f7f7; }
+  .pass {
+    border: 2.5px solid #1a1a1a;
+    padding: 8px 12px 6px;
+    margin: 0 0 8px;
+  }
+  .pass .big {
+    font-size: 16pt;
+    font-weight: 700;
+    margin: 0 0 2px;
+  }
+  ol.store { margin: 4px 0 8px; padding-left: 1.2em; }
+  ol.store li { margin: 0 0 6px; }
+  ul.never { margin: 4px 0 0; padding-left: 1.15em; }
+  ul.never li { margin: 0 0 4px; }
+  .fine { font-size: 10pt; }
+</style>
+</head>
+<body>
+
+<section class="page">
+  <p class="shop">OTOMOTO TORONTO MOTO INC.</p>
+  <p class="addr">99 River Street, Toronto, ON M5A 3P4, Canada</p>
+  <hr class="rule"/>
+  <h1>Bike link</h1>
+  <p class="deck">Two boxes. A sketch of the hardware, what the finished boxes look like, and what to buy first.</p>
+
+  <div class="card">
+    <p class="kicker">Bike box · build this first</p>
+    <h2>Under the seat</h2>
+    <p>One box on one motorcycle. It wakes when the key turns on, asks the bike for kilometers and fault codes, then goes back to sleep. After the bike has been sitting, it measures the resting battery voltage and keeps that reading until a phone or the shop tablet is next to it.</p>
+    <p>The first handoff is Bluetooth. Staff read the reading on the phone and type it into the motorcycle page. Power is a fused wire on the battery. The 16-pin plug does not power the box. This first cable is for a Triumph that still has the regular 16-pin OBD socket under the seat.</p>
+  </div>
+
+  <div class="card later">
+    <p class="kicker">Mailbox · later</p>
+    <h2>In a window</h2>
+    <p>A listener with wall power and the building’s Wi-Fi. It uses the same short-range radio as the bike box, once that radio is fitted. At the shop it sits in a plastic box in a window at 99 River Street that faces where the bikes park. Not a metal electrical room. Not a closed cabinet.</p>
+    <p>A phone is the first handoff. The mailbox is the second. Bike-to-bike relay, and coverage across Toronto, are out of scope.</p>
+  </div>
+
+  <div class="card">
+    <p class="kicker">In this packet</p>
+    <p>1. What the bike box and the mailbox look like.</p>
+    <p>2. Wiring, and the Triumph 16-pin, the pins this cable uses.</p>
+    <p>3. Parts for the first Bluetooth box.</p>
+    <p>4. Mailbox parts, only after the sleep test.</p>
+    <p>5. The pass mark, and the three numbers the box stores.</p>
+  </div>
+
+  <div class="ban">
+    <h2>No cell. No satellite.</h2>
+    <p>No cellular modem, no SIM card, and no monthly radio bill. No satellite radio and no satellite fee. Customer texts stay on the Wix Inbox thread the shop already uses. Nothing in this build sends a text.</p>
+    <p>Build the Bluetooth box first. Leave the radio off until that box sleeps, reads a bike, and a person can copy the reading into the motorcycle page.</p>
+  </div>
+</section>
+
+<section class="page">
+  <h1>What it looks like</h1>
+  <p class="lead">Build sketches, not a product render. The bike box is the one to build now. The mailbox waits.</p>
+
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 460" font-family="Liberation Sans, DejaVu Sans, sans-serif">
+  <rect width="820" height="460" fill="#ffffff"/>
+  <rect x="16" y="8" width="788" height="64" rx="12" fill="#f4f4f4" stroke="#1a1a1a" stroke-width="1.8"/>
+  <text x="32" y="36" font-size="18" font-weight="700" fill="#1a1a1a">Seat</text>
+  <text x="86" y="36" font-size="14" fill="#1a1a1a">The box straps in the space under this seat.</text>
+  <text x="32" y="58" font-size="13" fill="#1a1a1a">Build this one first. Bluetooth only. Radio socket stays empty.</text>
+
+  <text x="214" y="112" font-size="14" font-weight="700" fill="#1a1a1a">within 15 cm of the positive post</text>
+  <line x1="168" y1="124" x2="214" y2="124" stroke="#9b1c1c" stroke-width="1.5"/>
+  <line x1="168" y1="118" x2="168" y2="130" stroke="#9b1c1c" stroke-width="1.5"/>
+  <line x1="214" y1="118" x2="214" y2="130" stroke="#9b1c1c" stroke-width="1.5"/>
+
+  <rect x="36" y="148" width="150" height="112" rx="3" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.8"/>
+  <circle cx="168" cy="148" r="8" fill="#9b1c1c"/>
+  <circle cx="168" cy="260" r="8" fill="#1a1a1a"/>
+  <text x="156" y="140" font-size="14" font-weight="700" fill="#9b1c1c">+</text>
+  <text x="146" y="252" font-size="14" font-weight="700" fill="#1a1a1a">-</text>
+  <text x="52" y="196" font-size="16" font-weight="700" fill="#1a1a1a">Battery</text>
+  <text x="52" y="218" font-size="13" fill="#1a1a1a">under the seat</text>
+
+  <line x1="176" y1="148" x2="214" y2="148" stroke="#9b1c1c" stroke-width="3.2"/>
+  <rect x="214" y="128" width="120" height="40" rx="4" fill="#ffffff" stroke="#9b1c1c" stroke-width="2"/>
+  <text x="238" y="154" font-size="16" font-weight="700" fill="#1a1a1a">1 A fuse</text>
+
+  <line x1="334" y1="148" x2="520" y2="178" stroke="#9b1c1c" stroke-width="3.2"/>
+  <text x="360" y="142" font-size="13" font-weight="700" fill="#1a1a1a">18 AWG red</text>
+
+  <line x1="176" y1="260" x2="524" y2="260" stroke="#1a1a1a" stroke-width="3.2"/>
+  <circle cx="524" cy="260" r="3.5" fill="#1a1a1a"/>
+  <text x="200" y="232" font-size="13" font-weight="700" fill="#1a1a1a">18 AWG black, to the negative post</text>
+
+  <rect x="508" y="150" width="286" height="156" rx="6" fill="#ffffff" stroke="#1a1a1a" stroke-width="2"/>
+  <rect x="520" y="162" width="262" height="132" rx="4" fill="none" stroke="#1a1a1a" stroke-width="1.3"/>
+  <circle cx="520" cy="162" r="2.6" fill="#1a1a1a"/>
+  <circle cx="782" cy="162" r="2.6" fill="#1a1a1a"/>
+  <circle cx="520" cy="294" r="2.6" fill="#1a1a1a"/>
+  <circle cx="782" cy="294" r="2.6" fill="#1a1a1a"/>
+  <text x="534" y="188" font-size="16" font-weight="700" fill="#1a1a1a">Gasketed box</text>
+  <text x="534" y="210" font-size="14" fill="#1a1a1a">XIAO nRF52840</text>
+  <text x="534" y="230" font-size="14" fill="#1a1a1a">TPS7A1601, MCP2515,</text>
+  <text x="534" y="250" font-size="14" fill="#1a1a1a">SN65HVD230</text>
+  <text x="534" y="272" font-size="14" fill="#1a1a1a">Radio socket empty</text>
+
+  <circle cx="651" cy="306" r="12" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.8"/>
+  <circle cx="651" cy="306" r="4" fill="none" stroke="#1a1a1a" stroke-width="1.3"/>
+  <text x="672" y="334" font-size="13" fill="#1a1a1a">cable gland</text>
+  <path d="M651 318 C651 356, 548 356, 548 372" fill="none" stroke="#1a1a1a" stroke-width="1.8"/>
+  <text x="556" y="350" font-size="13" fill="#1a1a1a">drip loop</text>
+
+  <rect x="520" y="372" width="260" height="74" rx="6" fill="#fff5f5" stroke="#9b1c1c" stroke-width="2"/>
+  <text x="534" y="398" font-size="15" font-weight="700" fill="#1a1a1a">16-pin OBD male</text>
+  <text x="534" y="418" font-size="14" fill="#1a1a1a">Triumph socket, SAE J1962</text>
+  <text x="534" y="436" font-size="14" fill="#1a1a1a">Signal only. Not power.</text>
+
+  <circle cx="78" cy="400" r="32" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.8"/>
+  <circle cx="78" cy="400" r="6" fill="none" stroke="#1a1a1a" stroke-width="1.3"/>
+  <path d="M106 400 C140 372, 180 366, 214 360" fill="none" stroke="#1a1a1a" stroke-width="1.4" stroke-dasharray="5 4"/>
+  <text x="120" y="354" font-size="13" fill="#1a1a1a">chain, keep clear</text>
+  <text x="40" y="448" font-size="13" fill="#1a1a1a">rear wheel</text>
+</svg>
+    <figcaption>Bike box under the seat. Not to scale. The 1 A fuse is at the battery, on the red 18 AWG wire. The small gasketed box holds the XIAO. The 16-pin plug is the diagnostic plug. It does not feed power.</figcaption>
+  </figure>
+
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 360" font-family="Liberation Sans, DejaVu Sans, sans-serif">
+  <rect width="820" height="360" fill="#ffffff"/>
+  <text x="16" y="26" font-size="16" font-weight="700" fill="#1a1a1a">Outside</text>
+  <text x="400" y="26" font-size="16" font-weight="700" fill="#1a1a1a">Inside the shop</text>
+  <text x="730" y="26" font-size="16" font-weight="700" fill="#1a1a1a">Later</text>
+
+  <g fill="none" stroke="#1a1a1a" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+    <circle cx="48" cy="210" r="26"/>
+    <circle cx="48" cy="210" r="6"/>
+    <circle cx="138" cy="210" r="26"/>
+    <circle cx="138" cy="210" r="6"/>
+    <path d="M48 210 L78 168 L138 210"/>
+    <path d="M86 168 L124 152 L156 172"/>
+    <circle cx="200" cy="220" r="20"/>
+    <circle cx="200" cy="220" r="5"/>
+    <circle cx="272" cy="220" r="20"/>
+    <circle cx="272" cy="220" r="5"/>
+    <path d="M200 220 L224 188 L272 220"/>
+    <path d="M230 188 L260 176 L284 192"/>
+  </g>
+  <text x="16" y="268" font-size="14" fill="#1a1a1a">Bikes parked outside</text>
+
+  <g fill="none" stroke="#1a1a1a" stroke-width="1.8">
+    <rect x="308" y="42" width="54" height="200"/>
+    <line x1="316" y1="70" x2="354" y2="44"/>
+    <line x1="316" y1="124" x2="356" y2="86"/>
+    <line x1="316" y1="178" x2="356" y2="140"/>
+    <line x1="330" y1="234" x2="356" y2="198"/>
+  </g>
+  <text x="308" y="38" font-size="13" fill="#1a1a1a">window</text>
+
+  <rect x="286" y="242" width="500" height="14" fill="#f0f0f0" stroke="#1a1a1a" stroke-width="1.5"/>
+  <text x="300" y="272" font-size="13" fill="#1a1a1a">window sill</text>
+
+  <g fill="#ffffff" stroke="#1a1a1a" stroke-width="2">
+    <rect x="430" y="100" width="360" height="142" rx="4"/>
+    <rect x="442" y="112" width="336" height="118" rx="3"/>
+  </g>
+  <text x="454" y="132" font-size="15" font-weight="700" fill="#1a1a1a">Plastic box</text>
+  <text x="560" y="132" font-size="13" fill="#1a1a1a">building Wi-Fi, wall power</text>
+
+  <g fill="#ffffff" stroke="#1a1a1a" stroke-width="1.6">
+    <rect x="454" y="148" width="130" height="62" rx="2"/>
+    <rect x="604" y="148" width="156" height="62" rx="2"/>
+  </g>
+  <text x="466" y="172" font-size="13" font-weight="700" fill="#1a1a1a">RYLR998</text>
+  <text x="466" y="192" font-size="12" fill="#1a1a1a">faces the glass</text>
+  <text x="616" y="172" font-size="13" font-weight="700" fill="#1a1a1a">ESP32-S3-DevKitC-1</text>
+  <text x="616" y="192" font-size="12" fill="#1a1a1a">USB down to the adapter</text>
+
+  <line x1="366" y1="170" x2="448" y2="170" stroke="#1a1a1a" stroke-width="1.4"/>
+  <polygon points="448,170 440,166 440,174" fill="#1a1a1a"/>
+
+  <line x1="682" y1="210" x2="682" y2="286" stroke="#1a1a1a" stroke-width="1.6"/>
+  <rect x="600" y="286" width="160" height="40" rx="3" fill="#ffffff" stroke="#1a1a1a" stroke-width="1.6"/>
+  <text x="618" y="311" font-size="13" font-weight="700" fill="#1a1a1a">5 V USB adapter</text>
+
+  <text x="16" y="328" font-size="14" fill="#1a1a1a">99 River Street. A window toward the bikes.</text>
+  <text x="16" y="348" font-size="14" fill="#1a1a1a">Not a metal room. Not a closed cabinet.</text>
+</svg>
+    <figcaption>Mailbox, later. Not to scale. Plastic box on a window sill. The RYLR998 antenna is inside the module, so the whole mailbox has to sit in the window. A roof antenna is a different radio, and this sheet does not name one.</figcaption>
+  </figure>
+</section>
+
+<section class="page">
+  <h1>Wiring</h1>
+  <p class="lead">First build, Bluetooth only, for a Triumph with the regular 16-pin socket. The radio header stays empty. The fuse is within 15 cm of the battery positive post. The 16-pin plug is signal only.</p>
+
+  <figure>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 500" font-family="Liberation Sans, DejaVu Sans, sans-serif">
+  <rect width="840" height="500" fill="#ffffff"/>
+
+  <line x1="108" y1="62" x2="130" y2="62" stroke="#9b1c1c" stroke-width="3"/>
+  <polygon points="130,62 122,58 122,66" fill="#9b1c1c"/>
+  <line x1="254" y1="62" x2="276" y2="62" stroke="#9b1c1c" stroke-width="3"/>
+  <polygon points="276,62 268,58 268,66" fill="#9b1c1c"/>
+  <line x1="390" y1="62" x2="412" y2="62" stroke="#9b1c1c" stroke-width="3"/>
+  <polygon points="412,62 404,58 404,66" fill="#9b1c1c"/>
+  <line x1="566" y1="62" x2="588" y2="62" stroke="#9b1c1c" stroke-width="3"/>
+  <polygon points="588,62 580,58 580,66" fill="#9b1c1c"/>
+
+  <circle cx="266" cy="62" r="3.5" fill="#1a1a1a"/>
+  <line x1="266" y1="62" x2="266" y2="136" stroke="#1a1a1a" stroke-width="1.6"/>
+
+  <!-- D0, below the second row, up into the XIAO -->
+  <path d="M398 186 V210 H760 V124" fill="none" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="760,124 756,132 764,132" fill="#1a1a1a"/>
+  <text x="586" y="196" font-size="13" font-weight="700" fill="#1a1a1a">D0</text>
+
+  <!-- 3V3 hops over the D0 wire, then runs left to the CAN switch -->
+  <line x1="700" y1="124" x2="700" y2="202" stroke="#1a1a1a" stroke-width="1.6"/>
+  <path d="M700 202 Q686 210 700 218" fill="none" stroke="#1a1a1a" stroke-width="1.6"/>
+  <path d="M700 218 V232 H88 V250" fill="none" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="88,250 84,242 92,242" fill="#1a1a1a"/>
+  <text x="708" y="168" font-size="12" font-weight="700" fill="#1a1a1a">3V3</text>
+
+  <line x1="168" y1="286" x2="182" y2="286" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="186,286 178,282 178,290" fill="#1a1a1a"/>
+  <line x1="366" y1="286" x2="380" y2="286" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="384,286 376,282 376,290" fill="#1a1a1a"/>
+  <line x1="564" y1="274" x2="588" y2="274" stroke="#1a1a1a" stroke-width="1.6"/>
+  <line x1="564" y1="298" x2="588" y2="298" stroke="#1a1a1a" stroke-width="1.6"/>
+  <text x="568" y="268" font-size="11" font-weight="700" fill="#1a1a1a">H</text>
+  <text x="568" y="312" font-size="11" font-weight="700" fill="#1a1a1a">L</text>
+
+  <line x1="560" y1="386" x2="588" y2="386" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="560,386 568,382 568,390" fill="#1a1a1a"/>
+
+  <g fill="#ffffff" stroke="#1a1a1a" stroke-width="1.7">
+    <rect x="8" y="28" width="100" height="68" rx="3"/>
+    <rect x="134" y="38" width="120" height="48" rx="3" stroke="#9b1c1c" stroke-width="2"/>
+    <rect x="280" y="32" width="110" height="60" rx="3"/>
+    <rect x="416" y="22" width="150" height="80" rx="3"/>
+    <rect x="592" y="14" width="240" height="110" rx="3" stroke-width="2"/>
+    <rect x="8" y="136" width="390" height="68" rx="3"/>
+    <rect x="416" y="136" width="150" height="68" rx="3"/>
+    <rect x="8" y="252" width="160" height="76" rx="3"/>
+    <rect x="186" y="248" width="180" height="88" rx="3"/>
+    <rect x="384" y="248" width="180" height="88" rx="3"/>
+    <rect x="592" y="248" width="240" height="180" rx="3" fill="#fff5f5" stroke="#9b1c1c" stroke-width="2"/>
+    <rect x="8" y="352" width="552" height="62" rx="3"/>
+  </g>
+
+  <polygon points="296,62 322,48 322,76" fill="none" stroke="#1a1a1a" stroke-width="1.6"/>
+  <line x1="322" y1="46" x2="322" y2="78" stroke="#1a1a1a" stroke-width="1.8"/>
+  <text x="330" y="58" font-size="12" font-weight="700" fill="#1a1a1a">1N5822</text>
+  <text x="330" y="76" font-size="11" fill="#1a1a1a">band to reg</text>
+
+  <text x="22" y="54" font-size="14" font-weight="700" fill="#1a1a1a">Battery</text>
+  <text x="18" y="76" font-size="12" fill="#9b1c1c">+ post</text>
+  <text x="62" y="76" font-size="12" fill="#1a1a1a">- post</text>
+
+  <text x="158" y="58" font-size="14" font-weight="700" fill="#1a1a1a">1 A fuse</text>
+  <text x="146" y="76" font-size="12" fill="#1a1a1a">within 15 cm</text>
+
+  <text x="430" y="46" font-size="14" font-weight="700" fill="#1a1a1a">TPS7A1601</text>
+  <text x="430" y="66" font-size="13" fill="#1a1a1a">about 3.7 V</text>
+  <text x="430" y="86" font-size="12" fill="#1a1a1a">into XIAO BAT+</text>
+
+  <text x="606" y="36" font-size="15" font-weight="700" fill="#1a1a1a">XIAO nRF52840</text>
+  <text x="606" y="54" font-size="13" fill="#1a1a1a">SKU 102010448</text>
+  <text x="606" y="72" font-size="13" fill="#1a1a1a">BAT+, GND, and D0</text>
+  <text x="606" y="90" font-size="13" fill="#1a1a1a">Bluetooth to a phone</text>
+  <text x="606" y="108" font-size="12" fill="#1a1a1a">D6 and D7 left open</text>
+
+  <text x="18" y="156" font-size="13" font-weight="700" fill="#1a1a1a">Sense tap, before the diode</text>
+  <text x="18" y="174" font-size="12" fill="#1a1a1a">2N3906 switches 100k over 12k</text>
+  <text x="18" y="192" font-size="12" fill="#1a1a1a">into D0. 3.3 V zener on D0.</text>
+
+  <text x="428" y="158" font-size="13" font-weight="700" fill="#1a1a1a">P6KE18A</text>
+  <text x="428" y="176" font-size="12" fill="#1a1a1a">across the input</text>
+  <text x="428" y="192" font-size="12" fill="#1a1a1a">to ground, not in series</text>
+
+  <text x="18" y="274" font-size="13" font-weight="700" fill="#1a1a1a">AO3401A</text>
+  <text x="18" y="292" font-size="12" fill="#1a1a1a">switches 3.3 V</text>
+  <text x="18" y="310" font-size="12" fill="#1a1a1a">D3 low = CAN on</text>
+
+  <text x="196" y="268" font-size="13" font-weight="700" fill="#1a1a1a">MCP2515-I/P</text>
+  <text x="196" y="286" font-size="12" fill="#1a1a1a">16 MHz crystal</text>
+  <text x="196" y="304" font-size="12" fill="#1a1a1a">SPI: D4 CS, D8 SCK</text>
+  <text x="196" y="322" font-size="12" fill="#1a1a1a">D10 SI, D9 SO</text>
+
+  <text x="394" y="268" font-size="13" font-weight="700" fill="#1a1a1a">SN65HVD230</text>
+  <text x="394" y="286" font-size="12" fill="#1a1a1a">pin 7 is CAN H</text>
+  <text x="394" y="304" font-size="12" fill="#1a1a1a">pin 6 is CAN L</text>
+  <text x="394" y="322" font-size="12" fill="#1a1a1a">no 120 ohm resistor</text>
+
+  <text x="604" y="268" font-size="14" font-weight="700" fill="#1a1a1a">16-pin OBD male</text>
+  <text x="604" y="286" font-size="12" fill="#1a1a1a">SAE J1962, Triumph</text>
+  <text x="604" y="308" font-size="13" fill="#1a1a1a">4 or 5   ground</text>
+  <text x="604" y="326" font-size="13" fill="#1a1a1a">6        CAN H</text>
+  <text x="604" y="344" font-size="13" fill="#1a1a1a">14       CAN L</text>
+  <text x="604" y="362" font-size="13" fill="#1a1a1a">16       sense if</text>
+  <text x="604" y="380" font-size="13" fill="#1a1a1a">         key switches it</text>
+  <text x="604" y="398" font-size="13" fill="#1a1a1a">others   cut off</text>
+
+  <text x="18" y="374" font-size="13" font-weight="700" fill="#1a1a1a">Key sense</text>
+  <text x="18" y="392" font-size="12" fill="#1a1a1a">100k into a 2N3904, then XIAO D2. Key on pulls D2 low.</text>
+  <text x="18" y="408" font-size="12" fill="#1a1a1a">Pin 16 only if it follows the key. Else the tail lamp.</text>
+
+  <text x="8" y="444" font-size="13" font-weight="700" fill="#1a1a1a">Ground</text>
+  <text x="70" y="444" font-size="12" fill="#1a1a1a">Battery negative, regulator pad, XIAO GND, transceiver pin 2, and OBD pin 4 or 5.</text>
+  <text x="8" y="464" font-size="12" fill="#1a1a1a">1N5822 band points at the regulator. P6KE18A band points at the fused 12 V.</text>
+  <text x="8" y="484" font-size="12" fill="#1a1a1a">Not a painted frame bolt. First build: radio header empty.</text>
+</svg>
+    <figcaption>Power path and the 16-pin plug. Not to scale. Thick red is battery power. Thin lines are signal. D6 and D7 stay open until a radio is fitted.</figcaption>
+  </figure>
+
+  <p class="note">Male SAE J1962 plug. The Triumph already has the female socket under the seat. The pigtail is the signal cable. The 18 AWG battery leads do not go through this plug. K-line is not this build. A 2006–2012 triple can wear this same plug and still speak K-line on pin 7. Leave that bike alone. Do not plug this into the small red 6-pin on a newer Triumph.</p>
+
+  <table class="pins">
+    <thead>
+      <tr>
+        <th>Pin</th>
+        <th>What the plug is for</th>
+        <th>What this cable does</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>4 or 5</td>
+        <td>Ground. Use the pin that actually reaches battery negative.</td>
+        <td>Signal ground, 22 AWG, to the box</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>CAN H</td>
+        <td>Twisted pair to SN65HVD230 pin 7</td>
+      </tr>
+      <tr>
+        <td>14</td>
+        <td>CAN L</td>
+        <td>Twisted pair to SN65HVD230 pin 6</td>
+      </tr>
+      <tr>
+        <td>16</td>
+        <td>Battery positive. On some Triumph triples it stays live with the key off.</td>
+        <td>Sense only if it follows the key. Does not power the box. Otherwise leave it open.</td>
+      </tr>
+      <tr>
+        <td>7, and the rest</td>
+        <td>K-line, and pins this cable does not use</td>
+        <td>Cut those wires off and insulate them</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">Before you trust the pigtail, buzz each wire to its pin. Battery negative disconnected: pin 4 or pin 5 reads through to battery negative, pin 16 is near 0 V with the key off and about battery voltage with the key on, and pins 6 and 14 are not shorted to ground or to battery positive. If pin 16 stays hot with the key off, leave it open and move the sense wire to a circuit that really follows the key, such as the tail lamp.</p>
+</section>
+
+<section class="page">
+  <h1>What to buy</h1>
+  <p class="lead">First prototype, Bluetooth only. Leave the radio socket empty. If a distributor is out, buy the spec in the build notes. Do not substitute a different kind of part.</p>
+
+  <table class="parts">
+    <thead>
+      <tr>
+        <th>Part</th>
+        <th class="why">Why</th>
+        <th class="qty">Qty</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="part">Seeed Studio XIAO nRF52840, SKU 102010448</td>
+        <td>Bluetooth and the log, on one small board. Buy the plain board. The Sense and the Plus do not match this wiring.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">Texas Instruments TPS7A1601</td>
+        <td>Makes about 3.7 V for the XIAO battery pads from motorcycle voltage.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">210 kΩ 1%, and 100 kΩ 1%</td>
+        <td>Set the regulator to about 3.70 V. One more 100 kΩ 1% is the top of the voltage divider.</td>
+        <td>1 × 210 kΩ<br/>2 × 100 kΩ 1%</td>
+      </tr>
+      <tr>
+        <td class="part">10 µF ceramic, X7R, 25 V or more, and 0.1 µF ceramic</td>
+        <td>Two 10 µF caps on the regulator. One 0.1 µF across each CAN chip.</td>
+        <td>2 × 10 µF<br/>2 × 0.1 µF</td>
+      </tr>
+      <tr>
+        <td class="part">1N5822</td>
+        <td>Schottky after the fuse, so the box cannot push voltage back up the battery wire.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">P6KE18A</td>
+        <td>Spike clipper across the regulator input. A normal charging voltage leaves it alone. If charging sits above 15 V, use a P6KE20A instead.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">1 A ATM (mini) blade fuse and an inline holder</td>
+        <td>Protects the new wire at the battery. The box itself draws well under 100 mA.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">18 AWG red and 18 AWG black</td>
+        <td>Battery lead and main ground. Black goes to the battery negative post.</td>
+        <td>1 each</td>
+      </tr>
+      <tr>
+        <td class="part">Microchip MCP2515-I/P</td>
+        <td>CAN controller. The XIAO has no CAN. DIP-18, runs on 3.3 V. An SOIC MCP2515 is the same chip if you can solder it.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">16 MHz crystal and two load capacitors</td>
+        <td>Clock for the MCP2515. A crystal marked 18 pF usually wants about 22 pF on each leg.</td>
+        <td>1 crystal<br/>2 caps</td>
+      </tr>
+      <tr>
+        <td class="part">SN65HVD230DR</td>
+        <td>3.3 V CAN transceiver. Order the DR reel. The older SN65HVD230D is obsolete. Do not buy a TJA1050 or an MCP2551.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">SOIC-8 to DIP adapter</td>
+        <td>Solder the transceiver once and plug it in on the bench.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">AO3401A</td>
+        <td>Turns 3.3 V on to the CAN chips only while the box is reading. Off while parked.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">2N3904 and 2N3906</td>
+        <td>Ignition sense, and the switch for the voltage divider.</td>
+        <td>2 × 2N3904<br/>1 × 2N3906</td>
+      </tr>
+      <tr>
+        <td class="part">100 kΩ, 12 kΩ 1%, 47 kΩ, 10 kΩ</td>
+        <td>Divider bias, ignition sense, CAN gate pull-up, and the CAN reset pull-up. Keep the 12 kΩ at 1%.</td>
+        <td>5 × 100 kΩ<br/>1 × 12 kΩ 1%<br/>1 × 47 kΩ<br/>2 × 10 kΩ</td>
+      </tr>
+      <tr>
+        <td class="part">3.3 V zener, 1N5226B or BZX55C3V3</td>
+        <td>Clamps the voltage-sense pin if a spike hits while the divider is on.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">SAE J1962 male OBD-II pigtail, 16-pin</td>
+        <td>Plugs into the Triumph socket. Keep pins 4 or 5, 6, 14, and 16 until the meter check. Pin 16 stays only if it follows the key.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">22 AWG twisted pair, plus a ground and a sense wire</td>
+        <td>CAN H, CAN L, signal ground, and ignition sense. These wires do not power the box.</td>
+        <td>1 set</td>
+      </tr>
+      <tr>
+        <td class="part">Gasketed ABS box and a cable gland</td>
+        <td>Under-seat weather and wash water. A Hammond 1591 is the kind of box. The exact shell is not important.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">Perfboard, solder, heat-shrink, zip ties</td>
+        <td>What you assemble it on. Strap the board down. Do not pot the box.</td>
+        <td>shop stock</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="note">A fixed 3.3 V regulator is the wrong voltage for the XIAO battery pads. On the bike, solder the MCP2515 or strap the socket so vibration cannot walk the chip out.</p>
+</section>
+
+<section class="page">
+  <h1>Mailbox parts, later</h1>
+  <div class="callout later">
+    <p><strong>Buy these only after the Bluetooth box sleeps under 50 microamps</strong> at the fuse, and a person has typed a reading into the motorcycle page.</p>
+  </div>
+  <table class="later">
+    <thead>
+      <tr>
+        <th>Part</th>
+        <th>Why</th>
+        <th>Qty</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="part">Reyax RYLR998</td>
+        <td>Short-range radio, 915 MHz, antenna built in. One goes in the bike box. One goes in the mailbox. Power it from 3.3 V. Cross TX and RX.</td>
+        <td>2</td>
+      </tr>
+      <tr>
+        <td class="part">Espressif ESP32-S3-DevKitC-1</td>
+        <td>Mailbox brain. Wi-Fi, USB, and a 3.3 V pin that can run the radio. It sits on wall power.</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td class="part">5 V USB power adapter, 1 A</td>
+        <td>Mailbox power. A normal phone charger is enough.</td>
+        <td>1</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>The radio must be set to 0 dBm before the first transmission, and this PDF is not a certification.</p>
+  <p class="fine">Put the mailbox in the plastic box in the window from the sketch. The module’s own setting when it arrives is much hotter than 0 dBm. Change it before you transmit. The shop command in the build notes is AT+CRFOP=0.</p>
+</section>
+
+<section class="page">
+  <h1>Pass mark and what it stores</h1>
+  <div class="pass">
+    <p class="big">Under 50 microamps</p>
+    <p>Measure in series at the fuse. Key off. USB unplugged. CAN power off. Wait one minute after the box goes to sleep. Over 50 microamps, it stays on the bench. Do not put it on a customer bike.</p>
+    <p>On a small 8 amp-hour sport-bike battery, 50 microamps all winter is about 3 percent. A box at 1 milliamp is not acceptable.</p>
+  </div>
+
+  <h2>Three stored values</h2>
+  <ol class="store">
+    <li><strong>Kilometers.</strong> The whole number already on that motorcycle, in kilometres or miles. The box does not convert. If the bike does not answer, store a blank. Never send 0 to mean “could not read it.”</li>
+    <li><strong>Resting battery voltage.</strong> One decimal, about 20 minutes after the key is off. A reading while the engine is running is not stored. If there is no rested sample, leave the voltage blank. The box does not call the battery good or flat. A lithium battery rests higher than a lead-acid battery. Send the measured number anyway.</li>
+    <li><strong>Fault codes.</strong> Short codes such as P0335 or C14, up to 20. Store them. Do not clear them.</li>
+  </ol>
+  <p>A reading needs at least one of those three. Staff type it into the motorcycle page. The sticker and the Bluetooth name are TM-BL- plus four digits.</p>
+
+  <h2>What the box does not do</h2>
+  <ul class="never">
+    <li>It does not decide that a service is due. The shop app does that from the kilometers and the date.</li>
+    <li>It does not clear codes, and it does not send a clear-codes command.</li>
+    <li>It does not text the customer. Customer texts stay on Wix Inbox.</li>
+  </ul>
+</section>
+
+</body>
+</html>
