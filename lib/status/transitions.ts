@@ -5,6 +5,7 @@ import {
   canOverrideWorkOrderStatus,
   canParkAnyBikeInStorage,
   canRearrangeControlCenter,
+  isFloorTech,
 } from "@/lib/permissions";
 import type { GALLERY_BOARD_COLUMNS, SHOP_BOARD_COLUMNS } from "@/lib/status/pipeline";
 
@@ -119,14 +120,19 @@ export function canDropInColumn(
     return false;
   }
 
-  // QC / safety columns require status override (managers/owners).
-  if (
-    columnId === "qc" ||
-    columnId === "gallery_qc" ||
-    columnId === "safety" ||
-    columnId === "gallery_safety"
-  ) {
+  // Final inspection stays with managers and owners.
+  if (columnId === "qc" || columnId === "gallery_qc") {
     return canOverrideWorkOrderStatus(role);
+  }
+
+  // Ready for safety is a parking spot. Anyone who moves bikes can drop one there.
+  if (columnId === "safety" || columnId === "gallery_safety") {
+    return (
+      canEditWorkOrder(role) ||
+      canOverrideWorkOrderStatus(role) ||
+      isFloorTech(role) ||
+      role === "admin"
+    );
   }
 
   // Control Center complete box — front office who can release a bike.

@@ -27,6 +27,7 @@ import {
   isStorageBoardColumn,
 } from "@/lib/status/transitions";
 import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
+import { entersSafetyColumn } from "@/lib/status/safetyReadyText";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -293,4 +294,13 @@ export async function moveWorkOrderOnBoard(
     old_value: { status: workOrder.status },
     new_value: { status: targetStatus, column: targetColumnId },
   });
+
+  if (entersSafetyColumn(workOrder.status, targetStatus)) {
+    try {
+      const { sendSafetyReadyText } = await import("@/lib/services/safetyReadySms");
+      await sendSafetyReadyText(supabase, workOrderId);
+    } catch {
+      // A failed text does not undo the drop.
+    }
+  }
 }

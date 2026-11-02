@@ -284,6 +284,32 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("ready_for_pickup");
   });
 
+  it("keeps a dropped bike in safety until the check is stamped", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "in_progress" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        safetyCheckComplete: false,
+      })
+    ).toBe("safety_check");
+  });
+
+  it("leaves safety when a failed check needs customer approval", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "completed" }, { status: "waiting_for_approval" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        safetyCheckComplete: false,
+      })
+    ).toBe("waiting_for_customer_approval");
+  });
+
   it("sets safety_check when QC complete and safety required but not stamped", () => {
     expect(
       deriveWorkOrderStatus({

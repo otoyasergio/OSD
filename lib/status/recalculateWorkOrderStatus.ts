@@ -99,6 +99,12 @@ export function deriveWorkOrderStatus(
     return "waiting_for_customer_approval";
   }
 
+  // A drop into Ready for safety stays there until the check is stamped.
+  // A failed check adds a job that needs approval, which already returned above.
+  if (currentStatus === "safety_check" && !safetyCheckComplete) {
+    return "safety_check";
+  }
+
   if (
     jobs.some((job) => job.status === "waiting_for_parts") ||
     jobs.some((job) => jobHasWaitingParts(job, parts))
