@@ -35,7 +35,7 @@ export async function sendSafetyReadyText(
 
   const { data: motorcycle, error: motorcycleError } = await supabase
     .from("motorcycle")
-    .select("make, year, model")
+    .select("make, year, model, vin")
     .eq("motorcycle_id", workOrder.motorcycle_id)
     .maybeSingle();
   if (motorcycleError) throw motorcycleError;

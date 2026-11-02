@@ -5,13 +5,16 @@ export function safetyReadyMessage(bike: {
   make?: string | null;
   year?: number | string | null;
   model?: string | null;
+  vin?: string | null;
 }): string {
   const make = bike.make?.trim() || "Motorcycle";
   const year =
     bike.year == null || String(bike.year).trim() === "" ? "" : String(bike.year).trim();
   const model = bike.model?.trim() ?? "";
+  const vin = bike.vin?.trim() ?? "";
   const label = [make, year, model].filter(Boolean).join(" ");
-  return `${label} is ready for safety`;
+  const identity = vin ? `${label} VIN ${vin}` : label;
+  return `${identity} is ready for safety`;
 }
 
 /** One text each time a visit moves into the safety column. */

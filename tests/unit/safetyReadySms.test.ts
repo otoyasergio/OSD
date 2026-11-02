@@ -33,7 +33,7 @@ function client() {
         table === "work_order"
           ? { motorcycle_id: "bike-1" }
           : table === "motorcycle"
-            ? { make: "Yamaha", year: 2022, model: "MT-07" }
+            ? { make: "Yamaha", year: 2022, model: "MT-07", vin: "JYARM07E2NA000001" }
             : null;
       const chain = {
         select: () => chain,
@@ -53,10 +53,21 @@ describe("safety ready text", () => {
     isWixInboxSmsConfigured.mockReturnValue(true);
   });
 
-  it("names the bike as make, year, and model", () => {
-    expect(safetyReadyMessage({ make: "Yamaha", year: 2022, model: "MT-07" })).toBe(
-      "Yamaha 2022 MT-07 is ready for safety"
-    );
+  it("names the bike as make, year, model, and VIN", () => {
+    expect(
+      safetyReadyMessage({
+        make: "Yamaha",
+        year: 2022,
+        model: "MT-07",
+        vin: " JYARM07E2NA000001 ",
+      })
+    ).toBe("Yamaha 2022 MT-07 VIN JYARM07E2NA000001 is ready for safety");
+  });
+
+  it("still names the bike when it has no VIN", () => {
+    expect(
+      safetyReadyMessage({ make: "Yamaha", year: 2022, model: "MT-07", vin: "  " })
+    ).toBe("Yamaha 2022 MT-07 is ready for safety");
   });
 
   it("texts once each time a visit enters the safety column", () => {
@@ -79,7 +90,7 @@ describe("safety ready text", () => {
     expect(sendWixInboxSms).toHaveBeenCalledTimes(1);
     expect(sendWixInboxSms).toHaveBeenCalledWith({
       contactId: CONTACT,
-      body: "Yamaha 2022 MT-07 is ready for safety",
+      body: "Yamaha 2022 MT-07 VIN JYARM07E2NA000001 is ready for safety",
     });
   });
 
