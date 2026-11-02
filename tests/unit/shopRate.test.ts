@@ -7,19 +7,19 @@ import {
 } from "@/lib/pricing/shopRate";
 
 describe("shopRate", () => {
-  it("uses the contract shop rate of $145/h", () => {
-    expect(SHOP_HOURLY_RATE).toBe(145);
+  it("uses the contract shop rate of $156/h", () => {
+    expect(SHOP_HOURLY_RATE).toBe(156);
   });
 
   it("computes labour price from hours", () => {
-    expect(labourPriceFromHours(1)).toBe(145);
-    expect(labourPriceFromHours(1.5)).toBe(217.5);
-    expect(labourPriceFromHours(0.25)).toBe(36.25);
+    expect(labourPriceFromHours(1)).toBe(156);
+    expect(labourPriceFromHours(1.5)).toBe(234);
+    expect(labourPriceFromHours(0.25)).toBe(39);
     expect(labourPriceFromHours(null)).toBeNull();
   });
 
   it("suggests price from labour hours string", () => {
-    expect(suggestedPriceFromLabourHours("2")).toBe("290");
+    expect(suggestedPriceFromLabourHours("2")).toBe("312");
     expect(suggestedPriceFromLabourHours("")).toBe("");
   });
 
@@ -40,7 +40,7 @@ describe("shopRate", () => {
         catalogueLabour: 1,
         labourHours: "1",
       })
-    ).toBe("145");
+    ).toBe("156");
   });
 });
 

@@ -20,8 +20,12 @@ import {
 import { listIntakePhotos, uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { requireUser } from "@/lib/auth/session";
+import { createClient } from "@/lib/database/supabase-server";
 import type { PhotoCategory } from "@/lib/database/types";
-import { readServiceLinesFromFormData } from "@/lib/forms/serviceLines";
+import {
+  readServiceLinesFromFormData,
+  type BikePackageFitment,
+} from "@/lib/forms/serviceLines";
 import { CREATE_INTAKE_PHOTO_SLOTS, PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { parseShopLocalDateTimeInput } from "@/lib/datetime/format";
 
@@ -42,6 +46,26 @@ export async function getLastRecordedMileageAction(
 ): Promise<LastRecordedMileage | null> {
   if (!motorcycleId.trim()) return null;
   return getLastRecordedMileageForMotorcycle(motorcycleId);
+}
+
+export async function getMotorcyclePackageFitmentAction(
+  motorcycleId: string
+): Promise<BikePackageFitment | null> {
+  if (!motorcycleId.trim()) return null;
+  await requireUser();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("motorcycle_service_information")
+    .select("oil_filter, oil_type, spark_plugs, air_filter")
+    .eq("motorcycle_id", motorcycleId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return {
+    oil_filter: data.oil_filter,
+    oil_type: data.oil_type,
+    spark_plugs: data.spark_plugs,
+    air_filter: data.air_filter,
+  };
 }
 
 function readRequiredMileage(formData: FormData): number {

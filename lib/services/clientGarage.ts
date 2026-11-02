@@ -37,7 +37,7 @@ export type GarageBikeCard = {
 
 /**
  * Prefer the newest work order that has intake photos; within that visit,
- * front is preferred via pickPrimaryIntakePhoto.
+ * the left side is preferred via pickPrimaryIntakePhoto, then the front.
  */
 export function pickPrimaryPhotoForMotorcycle(
   workOrders: GarageWorkOrderPhotos[]

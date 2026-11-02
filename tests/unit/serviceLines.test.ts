@@ -4,9 +4,11 @@ import {
   createIntakeServiceLineDraft,
   formatServiceLineSummary,
   hasValidServiceLinePrice,
+  oilChangeIncludedParts,
   readServiceLinesFromFormData,
   resolveJobSnapshots,
   serviceLineSubtotalDollars,
+  tuneUpIncludedNote,
 } from "@/lib/forms/serviceLines";
 
 const SERVICE_A = "11111111-1111-4111-8111-111111111111";
@@ -15,14 +17,14 @@ const MOTO = "33333333-3333-4333-8333-333333333333";
 const LOC = "44444444-4444-4444-8444-444444444444";
 
 describe("createIntakeServiceLineDraft", () => {
-  it("starts Diagnostic at one hour and the $145 pre-tax shop rate", () => {
+  it("starts Diagnostic at one hour and the $156 pre-tax shop rate", () => {
     expect(
       createIntakeServiceLineDraft({
         name: "Diagnostic",
         estimatedLabour: 1,
         standardPrice: null,
       })
-    ).toEqual({ note: "", labourHours: "1", price: "145" });
+    ).toEqual({ note: "", labourHours: "1", price: "156" });
   });
 
   it("falls back to one hour when Diagnostic has no catalogue labour", () => {
@@ -32,17 +34,76 @@ describe("createIntakeServiceLineDraft", () => {
         estimatedLabour: null,
         standardPrice: null,
       })
-    ).toEqual({ note: "", labourHours: "1", price: "145" });
+    ).toEqual({ note: "", labourHours: "1", price: "156" });
   });
 
-  it("leaves other hourly services blank for staff to estimate", () => {
+  it("prices catalogue labour with no fixed price at hours × $156", () => {
     expect(
       createIntakeServiceLineDraft({
         name: "General repair",
         estimatedLabour: 2,
         standardPrice: null,
       })
+    ).toEqual({ note: "", labourHours: "2", price: "312" });
+  });
+
+  it("leaves custom work blank until staff enter hours", () => {
+    expect(
+      createIntakeServiceLineDraft({
+        name: "Custom work",
+        estimatedLabour: null,
+        standardPrice: null,
+      })
     ).toEqual({ note: "", labourHours: "", price: "" });
+  });
+
+  it("prices an oil change at $165 and adds two $0 parts from the bike", () => {
+    expect(
+      createIntakeServiceLineDraft({
+        name: "Oil Change",
+        estimatedLabour: 1,
+        standardPrice: 165,
+      })
+    ).toEqual({ note: "", labourHours: "", price: "165" });
+    expect(oilChangeIncludedParts({ oil_filter: "HF204", oil_type: "10W-40" })).toEqual([
+      { part_name: "Oil filter HF204", unit_price: 0, quantity: 1 },
+      { part_name: "Oil 10W-40", unit_price: 0, quantity: 1 },
+    ]);
+    expect(oilChangeIncludedParts(null)).toEqual([
+      { part_name: "Oil filter", unit_price: 0, quantity: 1 },
+      { part_name: "Oil", unit_price: 0, quantity: 1 },
+    ]);
+  });
+
+  it("prices a seasonal tune-up at $500 and notes the included parts", () => {
+    const fitment = {
+      oil_filter: "HF204",
+      oil_type: "10W-40",
+      spark_plugs: "LMAR8A-9",
+      air_filter: "HFA7914",
+    };
+    expect(
+      createIntakeServiceLineDraft({
+        name: "Fall Tune Up",
+        estimatedLabour: null,
+        standardPrice: 500,
+        fitment,
+      })
+    ).toEqual({
+      note: tuneUpIncludedNote(fitment),
+      labourHours: "",
+      price: "500",
+    });
+    expect(tuneUpIncludedNote(fitment)).toBe(
+      "Includes oil 10W-40, filter HF204, spark plug LMAR8A-9, and air filter HFA7914."
+    );
+    expect(
+      createIntakeServiceLineDraft({
+        name: "Spring/Summer Tune Up",
+        estimatedLabour: null,
+        standardPrice: 500,
+      }).note
+    ).toBe("Includes oil, filter, spark plug, and air filter.");
   });
 
   it("uses a fixed catalogue price when one is configured", () => {

@@ -13,37 +13,106 @@ export type ServiceLineDraft = {
   price: string;
 };
 
+/** Fitment stored on the bike. Blank fields stay off the invoice names and notes. */
+export type BikePackageFitment = {
+  oil_filter?: string | null;
+  oil_type?: string | null;
+  spark_plugs?: string | null;
+  air_filter?: string | null;
+};
+
+export type IncludedPartLine = {
+  part_name: string;
+  unit_price: 0;
+  quantity: 1;
+};
+
 function isDiagnosticService(name: string): boolean {
   return /^(diagnostic|diagnostics)$/i.test(name.trim());
 }
 
+export function isOilChangeService(name: string): boolean {
+  return name.trim().toLowerCase() === "oil change";
+}
+
+export function isSeasonalTuneUp(name: string): boolean {
+  const normalized = name.trim().toLowerCase();
+  return normalized === "fall tune up" || normalized === "spring/summer tune up";
+}
+
+function fitmentDetail(label: string, value: string | null | undefined): string {
+  const detail = value?.trim() ?? "";
+  return detail ? `${label} ${detail}` : label;
+}
+
+/** Staff can edit this note. The tune-up price stays the catalogue amount. */
+export function tuneUpIncludedNote(fitment?: BikePackageFitment | null): string {
+  const listed = [
+    fitmentDetail("oil", fitment?.oil_type),
+    fitmentDetail("filter", fitment?.oil_filter),
+    fitmentDetail("spark plug", fitment?.spark_plugs),
+    fitmentDetail("air filter", fitment?.air_filter),
+  ];
+  return `Includes ${listed.slice(0, -1).join(", ")}, and ${listed[listed.length - 1]}.`;
+}
+
+/**
+ * Oil change is one $165 job. Filter and oil are $0 lines on that job.
+ * Names use the bike's fitment when it is filled in.
+ */
+export function oilChangeIncludedParts(
+  fitment?: BikePackageFitment | null
+): IncludedPartLine[] {
+  const filter = fitment?.oil_filter?.trim() ?? "";
+  const oil = fitment?.oil_type?.trim() ?? "";
+  return [
+    {
+      part_name: filter ? `Oil filter ${filter}` : "Oil filter",
+      unit_price: 0,
+      quantity: 1,
+    },
+    {
+      part_name: oil ? `Oil ${oil}` : "Oil",
+      unit_price: 0,
+      quantity: 1,
+    },
+  ];
+}
+
 /**
  * Create the editable intake line for a selected service.
- * Diagnostic starts at one labour hour; all prices remain pre-tax.
+ * A diagnostic starts at one labour hour. A catalogue price wins.
+ * Catalogue labour with no fixed price fills hours × the shop rate.
+ * Prices stay pre-tax.
  */
 export function createIntakeServiceLineDraft(args: {
   name: string;
   estimatedLabour: number | null;
   standardPrice: number | null;
+  fitment?: BikePackageFitment | null;
 }): ServiceLineDraft {
   const diagnostic = isDiagnosticService(args.name);
-  const estimatedLabour =
+  const hasFixedPrice = args.standardPrice != null && Number.isFinite(args.standardPrice);
+  const catalogueLabour =
     args.estimatedLabour != null &&
     Number.isFinite(args.estimatedLabour) &&
     args.estimatedLabour >= 0
       ? args.estimatedLabour
-      : 1;
-  const labourHours = diagnostic ? String(estimatedLabour) : "";
+      : null;
+  const labourHours = diagnostic
+    ? String(catalogueLabour ?? 1)
+    : !hasFixedPrice && catalogueLabour != null
+      ? String(catalogueLabour)
+      : "";
 
   return {
-    note: "",
+    note: isSeasonalTuneUp(args.name) ? tuneUpIncludedNote(args.fitment) : "",
     labourHours,
-    price:
-      args.standardPrice != null && Number.isFinite(args.standardPrice)
-        ? String(args.standardPrice)
-        : diagnostic
-          ? suggestedPriceFromLabourHours(labourHours)
-          : "",
+    price: hasFixedPrice
+      ? String(args.standardPrice)
+      : labourHours
+        ? suggestedPriceFromLabourHours(labourHours)
+        : "",
   };
 }
 

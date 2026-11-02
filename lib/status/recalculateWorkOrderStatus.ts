@@ -11,6 +11,7 @@ import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import { checkoutEvidenceOverridden } from "@/lib/status/checkoutEvidence";
 import { loadCommittedCheckoutCoverage } from "@/lib/services/checkoutEvidence";
 import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
+import { entersSafetyColumn } from "@/lib/status/safetyReadyText";
 
 export type DeriveJobInput = {
   status: JobStatus | string;
@@ -344,6 +345,15 @@ export async function recalculateWorkOrderStatus(
   if (nextStatus === "quality_check") {
     const { autoAssignPeerQc } = await import("@/lib/services/peerQc");
     await autoAssignPeerQc(supabase, workOrderId, workOrder.location_id, actorUserId);
+  }
+
+  if (entersSafetyColumn(workOrder.status, nextStatus)) {
+    try {
+      const { sendSafetyReadyText } = await import("@/lib/services/safetyReadySms");
+      await sendSafetyReadyText(supabase, workOrderId);
+    } catch {
+      // A failed text does not undo the status change.
+    }
   }
 
   return nextStatus;

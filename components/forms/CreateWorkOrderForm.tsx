@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   createWorkOrderOnlyAction,
   getLastRecordedMileageAction,
+  getMotorcyclePackageFitmentAction,
   type WorkOrderFormState,
 } from "@/app/(app)/work_orders/actions";
 import { getOutstandingRecommendationsAction } from "@/app/(app)/work_orders/recommendation-actions";
@@ -58,7 +59,12 @@ import {
   createIntakeServiceLineDraft,
   formatServiceLineSummary,
   hasValidServiceLinePrice,
+  isOilChangeService,
+  isSeasonalTuneUp,
+  oilChangeIncludedParts,
   serviceLineSubtotalDollars,
+  tuneUpIncludedNote,
+  type BikePackageFitment,
   type ServiceLineDraft,
 } from "@/lib/forms/serviceLines";
 import { estimateTotalsWithHst, HST_PERCENT } from "@/lib/pricing/hst";
@@ -196,6 +202,15 @@ export function CreateWorkOrderForm({
   ]);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [serviceLines, setServiceLines] = useState<Record<string, ServiceLineDraft>>({});
+  const [fitmentFetch, setFitmentFetch] = useState<{
+    motorcycleId: string;
+    fitment: BikePackageFitment | null;
+  } | null>(null);
+  const autoTuneNotes = useRef<Record<string, string>>({});
+  const packageFitment =
+    motorcycleId && fitmentFetch?.motorcycleId === motorcycleId
+      ? fitmentFetch.fitment
+      : null;
   const [primaryTechnicianId, setPrimaryTechnicianId] = useState("");
   const [outstandingFetch, setOutstandingFetch] = useState<{
     motorcycleId: string;
@@ -417,6 +432,27 @@ export function CreateWorkOrderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedInitialCustomerId]);
 
+  function refreshTuneUpNotes(fitment: BikePackageFitment | null) {
+    setServiceLines((lines) => {
+      let changed = false;
+      const next = { ...lines };
+      for (const service of services) {
+        if (!isSeasonalTuneUp(service.name)) continue;
+        const line = next[service.service_id];
+        if (!line) continue;
+        const fresh = tuneUpIncludedNote(fitment);
+        const previousAuto = autoTuneNotes.current[service.service_id];
+        if (line.note !== previousAuto && line.note !== tuneUpIncludedNote(null))
+          continue;
+        autoTuneNotes.current[service.service_id] = fresh;
+        if (line.note === fresh) continue;
+        next[service.service_id] = { ...line, note: fresh };
+        changed = true;
+      }
+      return changed ? next : lines;
+    });
+  }
+
   useEffect(() => {
     if (!motorcycleId) return;
 
@@ -424,15 +460,20 @@ export function CreateWorkOrderForm({
     void Promise.all([
       getOutstandingRecommendationsAction(motorcycleId).catch(() => []),
       getLastRecordedMileageAction(motorcycleId).catch(() => null),
-    ]).then(([rows, lastMileage]) => {
+      getMotorcyclePackageFitmentAction(motorcycleId).catch(() => null),
+    ]).then(([rows, lastMileage, fitment]) => {
       if (cancelled) return;
       setOutstandingFetch({ motorcycleId, rows });
       setLastMileageFetch({ motorcycleId, row: lastMileage });
+      setFitmentFetch({ motorcycleId, fitment });
+      refreshTuneUpNotes(fitment);
     });
 
     return () => {
       cancelled = true;
     };
+    // refreshTuneUpNotes reads the latest services list when the bike changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [motorcycleId]);
 
   function goNext() {
@@ -565,10 +606,12 @@ export function CreateWorkOrderForm({
           type="button"
           className="btn"
           onClick={() => {
-            void acknowledgeWixInvoiceFailureAction(wixAcknowledgementId).then((result) => {
-              if (result.error) setClientError(result.error);
-              else setClientError("Acknowledged. Try again to create the invoice.");
-            });
+            void acknowledgeWixInvoiceFailureAction(wixAcknowledgementId).then(
+              (result) => {
+                if (result.error) setClientError(result.error);
+                else setClientError("Acknowledged. Try again to create the invoice.");
+              }
+            );
           }}
         >
           Acknowledge Wix error
@@ -752,7 +795,8 @@ export function CreateWorkOrderForm({
               >
                 Add plate
               </Link>
-              . {wixAssignsNumber
+              .{" "}
+              {wixAssignsNumber
                 ? "Enter N/A on the motorcycle if it has no plate. Colour and VIN are required before the invoice is created."
                 : "You can continue this intake without it."}
             </p>
@@ -783,7 +827,9 @@ export function CreateWorkOrderForm({
           {wixAssignsNumber ? (
             <p className="text-sm">
               Next invoice preview:{" "}
-              <span className="font-medium">{invoicePreview ?? "Wix will assign it on save"}</span>
+              <span className="font-medium">
+                {invoicePreview ?? "Wix will assign it on save"}
+              </span>
             </p>
           ) : (
             <label className="block">
@@ -801,8 +847,8 @@ export function CreateWorkOrderForm({
                 required
               />
               <span className="mt-1 block text-xs text-[var(--status-neutral)]">
-                Copy the number from Wix. We no longer assign work order numbers in the shop
-                app.
+                Copy the number from Wix. We no longer assign work order numbers in the
+                shop app.
               </span>
             </label>
           )}
@@ -987,15 +1033,22 @@ export function CreateWorkOrderForm({
                                           (id) => id !== service.service_id
                                         );
                                       }
-                                      setServiceLines((lines) => ({
-                                        ...lines,
-                                        [service.service_id]:
-                                          createIntakeServiceLineDraft({
-                                            name: service.name,
-                                            estimatedLabour: service.estimated_labour,
-                                            standardPrice: service.standard_price,
-                                          }),
-                                      }));
+                                      setServiceLines((lines) => {
+                                        const draft = createIntakeServiceLineDraft({
+                                          name: service.name,
+                                          estimatedLabour: service.estimated_labour,
+                                          standardPrice: service.standard_price,
+                                          fitment: packageFitment,
+                                        });
+                                        if (isSeasonalTuneUp(service.name)) {
+                                          autoTuneNotes.current[service.service_id] =
+                                            draft.note;
+                                        }
+                                        return {
+                                          ...lines,
+                                          [service.service_id]: draft,
+                                        };
+                                      });
                                       return [...prev, service.service_id];
                                     });
                                   }}
@@ -1108,6 +1161,17 @@ export function CreateWorkOrderForm({
                                       </span>
                                     ) : null}
                                   </label>
+                                  {isOilChangeService(service.name) ? (
+                                    <ul className="sm:col-span-2 space-y-1 text-sm text-[var(--status-neutral)]">
+                                      {oilChangeIncludedParts(packageFitment).map(
+                                        (part) => (
+                                          <li key={part.part_name}>
+                                            {part.part_name} · $0
+                                          </li>
+                                        )
+                                      )}
+                                    </ul>
+                                  ) : null}
                                   <details className="sm:col-span-2">
                                     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-foreground underline-offset-2 hover:underline">
                                       {line.note.trim() ? "Edit note" : "+ Add note"}
@@ -1279,7 +1343,7 @@ export function CreateWorkOrderForm({
               label={wixAssignsNumber ? "Invoice number" : "Wix work order #"}
               value={
                 wixAssignsNumber
-                  ? invoicePreview ?? "Assigned by Wix on save"
+                  ? (invoicePreview ?? "Assigned by Wix on save")
                   : workOrderNumber.trim() || "—"
               }
             />
@@ -1310,12 +1374,17 @@ export function CreateWorkOrderForm({
                   ? selectedServices
                       .map((s) => {
                         const line = serviceLines[s.service_id];
-                        return formatServiceLineSummary({
+                        const summary = formatServiceLineSummary({
                           name: s.name,
                           labourHours: line?.labourHours ?? "",
                           price: line?.price ?? "",
                           note: line?.note ?? "",
                         });
+                        if (!isOilChangeService(s.name)) return summary;
+                        const included = oilChangeIncludedParts(packageFitment)
+                          .map((part) => `${part.part_name} · $0`)
+                          .join("\n");
+                        return `${summary}\n${included}`;
                       })
                       .join("\n")
                   : "None selected"

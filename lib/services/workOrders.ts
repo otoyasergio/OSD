@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { JobStatus, WorkOrderStatus } from "@/lib/database/types";
+import type { DbClient, JobStatus, WorkOrderStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
@@ -16,7 +16,12 @@ import {
   scopeWorkOrdersForViewer,
 } from "@/lib/workOrders/assignmentVisibility";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
-import { resolveJobSnapshots } from "@/lib/forms/serviceLines";
+import {
+  isOilChangeService,
+  oilChangeIncludedParts,
+  resolveJobSnapshots,
+  type BikePackageFitment,
+} from "@/lib/forms/serviceLines";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { buildWorkOrderFlags } from "@/lib/status/flags";
 import { getAgreementFollowUp } from "@/lib/status/agreementFollowUp";
@@ -813,6 +818,44 @@ export async function setPrimaryTechnician(
   }
 }
 
+async function packageFitmentForMotorcycle(
+  supabase: DbClient,
+  motorcycleId: string
+): Promise<BikePackageFitment> {
+  const { data, error } = await supabase
+    .from("motorcycle_service_information")
+    .select("oil_filter, oil_type, spark_plugs, air_filter")
+    .eq("motorcycle_id", motorcycleId)
+    .maybeSingle();
+  if (error || !data) return {};
+  return data;
+}
+
+/**
+ * Included oil and filter are $0 invoice lines. `not_required` keeps them off
+ * the parts queue and lets the job finish; the visit is not waiting on them.
+ */
+async function insertOilChangeParts(
+  supabase: DbClient,
+  jobId: string,
+  userId: string,
+  fitment: BikePackageFitment
+): Promise<void> {
+  const { error } = await supabase.from("part").insert(
+    oilChangeIncludedParts(fitment).map((part) => ({
+      job_id: jobId,
+      part_name: part.part_name,
+      quantity: part.quantity,
+      unit_price: part.unit_price,
+      status: "not_required",
+      notes: "Included in the oil change.",
+      catalog_source: "manual",
+      created_by_user_id: userId,
+    }))
+  );
+  if (error) throw error;
+}
+
 export async function createWorkOrder(
   input: CreateWorkOrderInput
 ): Promise<{ work_order_id: string; work_order_number: string }> {
@@ -994,6 +1037,10 @@ export async function createWorkOrder(
   }
 
   const createdJobs: Array<{ job_id: string; service_name_snapshot: string }> = [];
+  const packageFitment = await packageFitmentForMotorcycle(
+    supabase,
+    parsed.motorcycle_id
+  );
 
   for (const service of services) {
     // Booked intake services are already customer-approved.
@@ -1024,6 +1071,9 @@ export async function createWorkOrder(
 
     if (jobError) throw jobError;
     createdJobs.push(job);
+    if (isOilChangeService(service.name)) {
+      await insertOilChangeParts(supabase, job.job_id, user.user_id, packageFitment);
+    }
   }
 
   if (parsed.primary_technician_id && createdJobs.length > 0) {
@@ -1129,7 +1179,7 @@ export async function applyWixNumberToExistingWorkOrder(
   const supabase = await createClient();
   const { data: existing, error: existingError } = await supabase
     .from("work_order")
-    .select("work_order_id, location_id")
+    .select("work_order_id, location_id, motorcycle_id")
     .eq("work_order_id", workOrderId)
     .maybeSingle();
   if (existingError) throw existingError;
@@ -1189,27 +1239,37 @@ export async function applyWixNumberToExistingWorkOrder(
       },
     ])
   );
+  const packageFitment = existing.motorcycle_id
+    ? await packageFitmentForMotorcycle(supabase, existing.motorcycle_id)
+    : {};
   for (const service of services ?? []) {
     const snapshots = resolveJobSnapshots({
       catalogueLabour: service.estimated_labour,
       cataloguePrice: service.standard_price,
       line: lineById.get(service.service_id),
     });
-    const { error: jobError } = await supabase.from("job").insert({
-      work_order_id: workOrderId,
-      service_id: service.service_id,
-      service_name_snapshot: service.name,
-      standard_price_snapshot: snapshots.standard_price_snapshot,
-      estimated_labour_snapshot: snapshots.estimated_labour_snapshot,
-      notes: snapshots.notes,
-      status: "approved",
-      origin: "customer_request",
-      created_by_user_id: user.user_id,
-      approved_by_customer_at: new Date().toISOString(),
-      approval_method: "in_person",
-      approval_recorded_by_user_id: user.user_id,
-    });
+    const { data: job, error: jobError } = await supabase
+      .from("job")
+      .insert({
+        work_order_id: workOrderId,
+        service_id: service.service_id,
+        service_name_snapshot: service.name,
+        standard_price_snapshot: snapshots.standard_price_snapshot,
+        estimated_labour_snapshot: snapshots.estimated_labour_snapshot,
+        notes: snapshots.notes,
+        status: "approved",
+        origin: "customer_request",
+        created_by_user_id: user.user_id,
+        approved_by_customer_at: new Date().toISOString(),
+        approval_method: "in_person",
+        approval_recorded_by_user_id: user.user_id,
+      })
+      .select("job_id")
+      .single();
     if (jobError) throw jobError;
+    if (isOilChangeService(service.name)) {
+      await insertOilChangeParts(supabase, job.job_id, user.user_id, packageFitment);
+    }
   }
 
   return { work_order_id: workOrderId, work_order_number: parsed.work_order_number };
