@@ -1,3 +1,9 @@
+import {
+  storageLeaveBlockCode,
+  type StorageChecklist,
+  type StorageLeaveBlockCode,
+} from "@/lib/storage/checklist";
+
 export type PickupLeaveGateInput = {
   inspectionComplete: boolean;
   qualityChecked: boolean;
@@ -46,20 +52,19 @@ export function pickupLeaveBlockReason(
   return null;
 }
 
+export type StorageLeaveGateInput = Pick<
+  StorageChecklist,
+  "inspectionDone" | "awaitingApproval" | "unfinishedApproved" | "partsOutstanding"
+>;
+
 /**
- * Storage keeps the bike in the building. Arrival inspection and final
- * inspection still apply (the owner may waive final inspection). The safety
- * check and checkout photos are for a bike that is leaving, so they do not
- * block this drop.
+ * Storage keeps the bike in the building after the same service path as any
+ * other bike: arrival inspection, a decided estimate, and finished approved
+ * work. Final inspection, safety, and checkout photos are for a bike that is
+ * leaving. No role can skip this gate.
  */
 export function storageLeaveBlockReason(
-  input: Omit<
-    PickupLeaveGateInput,
-    "checkoutEvidenceRequired" | "checkoutEvidenceComplete" | "checkoutEvidenceOverridden"
-  >
-): PickupLeaveBlockReason | null {
-  if (input.skipAllGates) return null;
-  if (!input.inspectionComplete) return "INSPECTION_REQUIRED_BEFORE_PICKUP";
-  if (!input.qualityChecked && !input.waiveQualityCheck) return "QC_REQUIRED";
-  return null;
+  input: StorageLeaveGateInput
+): StorageLeaveBlockCode | null {
+  return storageLeaveBlockCode(input);
 }

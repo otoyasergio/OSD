@@ -26,6 +26,8 @@ import {
 import { deriveTechAvailability } from "@/lib/control-center/availability";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
 import { PickupNoticeDialog } from "@/components/communications/PickupNoticeDialog";
+import { StorageChecklistDialog } from "@/components/work_orders/StorageChecklistDialog";
+import { isStorageBoardColumn } from "@/lib/status/transitions";
 import {
   pickupNoticeFromBoardBike,
   shouldPromptPickupNotice,
@@ -101,8 +103,11 @@ function toStageBike(
 ): WaitingStageBike {
   if ("motorcycle_label" in bike && "ready_since" in bike) {
     const item = bike as WaitingStageBike;
+    const stayingInStorage = isStorageBoardColumn(stageId);
     return {
       ...item,
+      storage_pickup_by: stayingInStorage ? item.storage_pickup_by : null,
+      storage_monthly_cents: stayingInStorage ? item.storage_monthly_cents : null,
       overview_href:
         stageId === "parts"
           ? `/work_orders/${item.work_order_id}?tab=parts`
@@ -499,6 +504,11 @@ export function ControlCenterShell({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pickupNotice, setPickupNotice] = useState<PickupNoticeContact | null>(null);
+  const [storageDrop, setStorageDrop] = useState<{
+    workOrderId: string;
+    targetColumnId: string;
+    bikeLabel: string;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
   const [pendingMoves, setPendingMoves] = useState<CcPendingMove[]>([]);
   const activeIdRef = useRef<string | null>(null);
@@ -1063,7 +1073,11 @@ export function ControlCenterShell({
     return previous;
   }
 
-  function applyOptimisticStatusMove(workOrderId: string, stageId: CcStageDropId) {
+  function applyOptimisticStatusMove(
+    workOrderId: string,
+    stageId: CcStageDropId,
+    storageTerms?: { pickupBy: string; monthlyCents: number }
+  ) {
     const previous = snapshotBoard();
     const source = allBikes.get(workOrderId) ?? stageBikeMap.get(workOrderId) ?? null;
     if (!source) return null;
@@ -1076,6 +1090,10 @@ export function ControlCenterShell({
       stages: stageQueues,
     });
     const nextItem = toStageBike(source, stageId);
+    if (storageTerms && isStorageBoardColumn(stageId)) {
+      nextItem.storage_pickup_by = storageTerms.pickupBy;
+      nextItem.storage_monthly_cents = storageTerms.monthlyCents;
+    }
     const nextStages = {
       ...lists.stages,
       [stageId]: [nextItem, ...lists.stages[stageId]],
@@ -1257,6 +1275,14 @@ export function ControlCenterShell({
       cancelRefresh();
       const noticeBike =
         allBikes.get(workOrderId) ?? stageBikeMap.get(workOrderId) ?? null;
+      if (isStorageBoardColumn(targetId)) {
+        setStorageDrop({
+          workOrderId,
+          targetColumnId: targetId,
+          bikeLabel: storageDropBikeLabel(noticeBike),
+        });
+        return;
+      }
       const previous = applyOptimisticStatusMove(workOrderId, targetId);
       if (!previous) {
         flushRefresh();
@@ -1758,6 +1784,36 @@ export function ControlCenterShell({
           onClose={() => setPickupNotice(null)}
         />
       ) : null}
+      {storageDrop ? (
+        <StorageChecklistDialog
+          workOrderId={storageDrop.workOrderId}
+          targetColumnId={storageDrop.targetColumnId}
+          bikeLabel={storageDrop.bikeLabel}
+          onClose={() => setStorageDrop(null)}
+          onStored={(terms) => {
+            const drop = storageDrop;
+            setStorageDrop(null);
+            if (!isCcStageDropId(drop.targetColumnId)) return;
+            applyOptimisticStatusMove(drop.workOrderId, drop.targetColumnId, terms);
+            scheduleRefresh();
+          }}
+        />
+      ) : null}
     </div>
   );
+}
+
+function storageDropBikeLabel(
+  bike: ControlCenterBike | WaitingStageBike | null
+): string {
+  if (!bike) return "this motorcycle";
+  if ("bike_title" in bike && bike.bike_title.trim()) return bike.bike_title;
+  if (
+    "motorcycle_label" in bike &&
+    bike.motorcycle_label.trim() &&
+    bike.motorcycle_label !== "—"
+  ) {
+    return bike.motorcycle_label;
+  }
+  return "this motorcycle";
 }

@@ -141,12 +141,24 @@
   }
 }
 
+.cardStorageOk {
+  border-color: color-mix(in srgb, #15803d 55%, var(--border));
+}
+
 .cardWarn {
   border-color: color-mix(in srgb, var(--status-warning) 45%, var(--border));
 }
 
 .cardLate {
   border-color: color-mix(in srgb, var(--status-danger) 45%, var(--border));
+}
+
+.cardStorageWarn {
+  border-color: color-mix(in srgb, #d97706 55%, var(--border));
+}
+
+.cardStorageLate {
+  border-color: color-mix(in srgb, #dc2626 55%, var(--border));
 }
 
 .media {
@@ -200,6 +212,11 @@
   animation: pickupPulse 1.6s ease-in-out infinite;
 }
 
+.timerStorageOk .timerDot {
+  background: #15803d;
+  box-shadow: 0 0 0 3px rgb(21 128 61 / 0.28);
+}
+
 .timerWarn .timerDot {
   background: var(--status-warning);
   box-shadow: 0 0 0 3px rgb(245 158 11 / 0.28);
@@ -208,6 +225,16 @@
 .timerLate .timerDot {
   background: var(--status-danger);
   box-shadow: 0 0 0 3px rgb(239 68 68 / 0.28);
+}
+
+.timerStorageWarn .timerDot {
+  background: #d97706;
+  box-shadow: 0 0 0 3px rgb(217 119 6 / 0.28);
+}
+
+.timerStorageLate .timerDot {
+  background: #dc2626;
+  box-shadow: 0 0 0 3px rgb(220 38 38 / 0.28);
 }
 
 @keyframes pickupPulse {

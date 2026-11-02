@@ -21,11 +21,13 @@ import {
   buildShopBoardRowsKey,
   canDragShopBoardCard,
   getTargetStatusForColumn,
+  isStorageBoardColumn,
   overlayShopBoardPendingMoves,
   resolveShopBoardDropColumnId,
 } from "@/lib/status/transitions";
 import { moveWorkOrderOnBoardAction } from "@/app/(app)/work_orders/board-actions";
 import { PickupNoticeDialog } from "@/components/communications/PickupNoticeDialog";
+import { StorageChecklistDialog } from "@/components/work_orders/StorageChecklistDialog";
 import {
   pickupNoticeFromShopCard,
   shouldPromptPickupNotice,
@@ -124,6 +126,11 @@ export function ShopBoard({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pickupNotice, setPickupNotice] = useState<PickupNoticeContact | null>(null);
+  const [storageDrop, setStorageDrop] = useState<{
+    workOrderId: string;
+    targetColumnId: string;
+    bikeLabel: string;
+  } | null>(null);
   const [isPending, startTransition] = useTransition();
   const suppressClickRef = useRef(false);
   const activeIdRef = useRef<string | null>(null);
@@ -247,6 +254,16 @@ export function ShopBoard({
       return;
     }
 
+    if (isStorageBoardColumn(targetColumnId)) {
+      const bike = card.motorcycle;
+      setStorageDrop({
+        workOrderId,
+        targetColumnId,
+        bikeLabel: bike ? `${bike.year} ${bike.make} ${bike.model}` : "this motorcycle",
+      });
+      return;
+    }
+
     cancelRefresh();
     const previousStatus = card.status;
     setPendingMoves((current) => ({ ...current, [workOrderId]: targetStatus }));
@@ -357,6 +374,32 @@ export function ShopBoard({
           contact={pickupNotice}
           locationCode={locationCode}
           onClose={() => setPickupNotice(null)}
+        />
+      ) : null}
+      {storageDrop ? (
+        <StorageChecklistDialog
+          workOrderId={storageDrop.workOrderId}
+          targetColumnId={storageDrop.targetColumnId}
+          bikeLabel={storageDrop.bikeLabel}
+          onClose={() => setStorageDrop(null)}
+          onStored={(terms) => {
+            const drop = storageDrop;
+            setStorageDrop(null);
+            setPendingMoves((current) => ({ ...current, [drop.workOrderId]: "in_storage" }));
+            setBoardRows((current) =>
+              current.map((row) =>
+                row.work_order_id === drop.workOrderId
+                  ? {
+                      ...row,
+                      status: "in_storage",
+                      storage_pickup_by: terms.pickupBy,
+                      storage_monthly_cents: terms.monthlyCents,
+                    }
+                  : row
+              )
+            );
+            scheduleRefresh();
+          }}
         />
       ) : null}
     </div>

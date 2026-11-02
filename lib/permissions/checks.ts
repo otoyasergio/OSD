@@ -159,9 +159,21 @@ export function canCompleteWithoutFinalInspection(role: UserRole) {
   return role === "owner" || role === "manager" || role === "admin";
 }
 
-/** Park a bike in Storage from any active stage. Owner already skips every gate. */
+/**
+ * Drag any active bike onto Storage so the checklist can open.
+ * The server still requires the service path before the bike is stored.
+ */
 export function canParkAnyBikeInStorage(role: UserRole) {
   return role === "service_advisor" || role === "admin";
+}
+
+/** Change the pickup date and monthly amount on a bike that is already stored. */
+export function canEditStorageTerms(role: UserRole) {
+  return (
+    canEditWorkOrder(role) ||
+    canRearrangeControlCenter(role) ||
+    canParkAnyBikeInStorage(role)
+  );
 }
 
 /**

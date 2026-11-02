@@ -269,6 +269,8 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
   const readyPatch: Record<string, unknown> = {
     ready_for_pickup_at: now,
     stored_at: null,
+    storage_pickup_by: null,
+    storage_monthly_cents: null,
     status: "ready_for_pickup",
     updated_at: now,
   };
@@ -285,8 +287,18 @@ export async function markReadyForPickup(workOrderId: string): Promise<void> {
     .from("work_order")
     .update(readyPatch)
     .eq("work_order_id", workOrderId);
-  if (error && isUndefinedColumnError(error, "stored_at")) {
-    delete readyPatch.stored_at;
+  const readyOptional = ["stored_at", "storage_pickup_by", "storage_monthly_cents"] as const;
+  while (
+    error &&
+    readyOptional.some(
+      (column) => column in readyPatch && isUndefinedColumnError(error, column)
+    )
+  ) {
+    const missing = readyOptional.find(
+      (column) => column in readyPatch && isUndefinedColumnError(error, column)
+    );
+    if (!missing) break;
+    delete readyPatch[missing];
     ({ error } = await supabase
       .from("work_order")
       .update(readyPatch)
@@ -366,6 +378,8 @@ export async function completeWorkOrder(
     released_by_user_id: user.user_id,
     pickup_notes: trimmedNotes,
     stored_at: null,
+    storage_pickup_by: null,
+    storage_monthly_cents: null,
     updated_at: now,
   };
   const skippedFinalInspection =
@@ -381,7 +395,13 @@ export async function completeWorkOrder(
       completionPatch.checkout_evidence_override_by_user_id = user.user_id;
     }
   }
-  const optionalColumns = ["stored_at", "quality_check_waived", "safety_waived"] as const;
+  const optionalColumns = [
+    "stored_at",
+    "storage_pickup_by",
+    "storage_monthly_cents",
+    "quality_check_waived",
+    "safety_waived",
+  ] as const;
   let { error } = await supabase
     .from("work_order")
     .update(completionPatch)

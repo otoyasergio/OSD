@@ -9,6 +9,7 @@ import type { WaitingStageBike } from "@/lib/services/readyForPickup";
 import { formatElapsedTimer } from "@/lib/control-center/formatTimer";
 import { useNowTick } from "@/lib/client/useNowTick";
 import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
+import { storageStayPresentation } from "@/lib/storage/terms";
 import styles from "./ReadyForPickupCarousel.module.css";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -75,10 +76,15 @@ function CardBody({
   warnAfterMs: number;
   lateAfterMs: number;
 }) {
+  const stay = storageStayPresentation(
+    item.storage_pickup_by,
+    item.storage_monthly_cents,
+    new Date(now)
+  );
   const startMs = Date.parse(item.ready_since);
   const elapsed = !Number.isFinite(startMs) ? null : Math.max(0, now - startMs);
-  const tone = elapsed == null ? "ok" : waitTone(elapsed, warnAfterMs, lateAfterMs);
-  const timerLabel = elapsed == null ? "—" : formatElapsedTimer(elapsed);
+  const tone = stay?.tone ?? (elapsed == null ? "ok" : waitTone(elapsed, warnAfterMs, lateAfterMs));
+  const timerLabel = stay?.remaining ?? (elapsed == null ? "—" : formatElapsedTimer(elapsed));
 
   return (
     <>
@@ -101,8 +107,11 @@ function CardBody({
         <span
           className={[
             styles.timer,
-            tone === "warn" ? styles.timerWarn : "",
-            tone === "late" ? styles.timerLate : "",
+            stay && tone === "ok" ? styles.timerStorageOk : "",
+            stay && tone === "warn" ? styles.timerStorageWarn : "",
+            stay && tone === "late" ? styles.timerStorageLate : "",
+            !stay && tone === "warn" ? styles.timerWarn : "",
+            !stay && tone === "late" ? styles.timerLate : "",
           ]
             .filter(Boolean)
             .join(" ")}
@@ -120,8 +129,11 @@ function CardBody({
         ) : null}
         <p className={styles.wo}>{item.work_order_number}</p>
         <p className={styles.caption}>
-          {item.ready_since_inferred ? approxCaption : readyCaption}
-          {elapsed == null ? "" : ` · ${formatElapsedTimer(elapsed)}`}
+          {stay
+            ? stay.detail
+            : `${item.ready_since_inferred ? approxCaption : readyCaption}${
+                elapsed == null ? "" : ` · ${formatElapsedTimer(elapsed)}`
+              }`}
         </p>
       </div>
     </>
@@ -134,13 +146,21 @@ function cardToneClass(
   warnAfterMs: number,
   lateAfterMs: number
 ) {
+  const stay = storageStayPresentation(
+    item.storage_pickup_by,
+    item.storage_monthly_cents,
+    new Date(now)
+  );
   const startMs = Date.parse(item.ready_since);
   const elapsed = !Number.isFinite(startMs) ? null : Math.max(0, now - startMs);
-  const tone = elapsed == null ? "ok" : waitTone(elapsed, warnAfterMs, lateAfterMs);
+  const tone = stay?.tone ?? (elapsed == null ? "ok" : waitTone(elapsed, warnAfterMs, lateAfterMs));
   return [
     styles.card,
-    tone === "warn" ? styles.cardWarn : "",
-    tone === "late" ? styles.cardLate : "",
+    stay && tone === "ok" ? styles.cardStorageOk : "",
+    stay && tone === "warn" ? styles.cardStorageWarn : "",
+    stay && tone === "late" ? styles.cardStorageLate : "",
+    !stay && tone === "warn" ? styles.cardWarn : "",
+    !stay && tone === "late" ? styles.cardLate : "",
   ]
     .filter(Boolean)
     .join(" ");

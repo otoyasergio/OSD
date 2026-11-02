@@ -286,13 +286,20 @@ export async function recalculateWorkOrderStatus(
   if (clearWaiver) statusPatch.quality_check_waived = false;
   if (workOrder.status === "in_storage" && nextStatus !== "in_storage") {
     statusPatch.stored_at = null;
+    statusPatch.storage_pickup_by = null;
+    statusPatch.storage_monthly_cents = null;
   }
 
   let { error: updateError } = await supabase
     .from("work_order")
     .update(statusPatch)
     .eq("work_order_id", workOrderId);
-  const optionalColumns = ["stored_at", "quality_check_waived"] as const;
+  const optionalColumns = [
+    "stored_at",
+    "storage_pickup_by",
+    "storage_monthly_cents",
+    "quality_check_waived",
+  ] as const;
   while (
     updateError &&
     optionalColumns.some(

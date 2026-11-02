@@ -11,6 +11,9 @@
     },
     "app/api/cron/weekly-shop-report/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/cron/storage-notice/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -25,6 +28,10 @@
     {
       "path": "/api/cron/weekly-shop-report",
       "schedule": "0 0,1 * * 6"
+    },
+    {
+      "path": "/api/cron/storage-notice",
+      "schedule": "0 15 * * *"
     }
   ]
 }

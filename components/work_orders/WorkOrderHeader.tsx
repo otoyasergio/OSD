@@ -6,6 +6,7 @@ import { StageChip } from "@/components/ui/StageChip";
 import { WorkOrderJobTodo } from "@/components/work_orders/WorkOrderJobTodo";
 import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
 import { WorkOrderPhotoStrip } from "@/components/work_orders/WorkOrderPhotoStrip";
+import { StorageTermsFields } from "@/components/work_orders/StorageTermsFields";
 import { getGalleryStageForStatus, getWorkOrderNextAction } from "@/lib/status/pipeline";
 import { formatDateTime } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
@@ -35,6 +36,7 @@ export function WorkOrderHeader({
   canViewPricing = true,
   showContractAction = true,
   showShopPhone = false,
+  canEditStorage = false,
 }: {
   detail: WorkOrderDetail;
   photos?: IntakePhoto[];
@@ -45,6 +47,8 @@ export function WorkOrderHeader({
   /** Overview renders a larger intake follow-up notice instead. */
   showContractAction?: boolean;
   showShopPhone?: boolean;
+  /** Change the pickup date and monthly amount without dragging the bike out. */
+  canEditStorage?: boolean;
 }) {
   const customer = canViewClients ? detail.customer : null;
   const bike = detail.motorcycle;
@@ -214,6 +218,21 @@ export function WorkOrderHeader({
                 ? estimatedLabourTotal
                 : estimatedLabourTotal.toFixed(1)}
               h
+            </dd>
+          </div>
+        ) : null}
+        {detail.status === "in_storage" ? (
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
+              Storage
+            </dt>
+            <dd>
+              <StorageTermsFields
+                workOrderId={detail.work_order_id}
+                pickupBy={detail.storage_pickup_by ?? null}
+                monthlyCents={detail.storage_monthly_cents ?? null}
+                canEdit={canEditStorage}
+              />
             </dd>
           </div>
         ) : null}
