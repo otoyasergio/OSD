@@ -10,6 +10,7 @@ import {
   formatPreviewDisplayNumber,
   invoiceNumbersEqual,
   isInvoiceIntegerQuery,
+  isWixInvoiceId,
   shouldIgnoreIncomingRevision,
   squareDecision,
   squareIdempotencyKey,
@@ -31,6 +32,8 @@ describe("invoice number match", () => {
     expect(invoiceNumbersEqual("38940", "0003894")).toBe(false);
     expect(isInvoiceIntegerQuery("0003894")).toBe(true);
     expect(isInvoiceIntegerQuery("WO-1042")).toBe(false);
+    expect(isWixInvoiceId("11111111-1111-4111-8111-111111111111")).toBe(true);
+    expect(isWixInvoiceId("../invoices/1")).toBe(false);
   });
 
   it("previews the next padded number without reserving it", () => {

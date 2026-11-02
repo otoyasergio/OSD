@@ -12,6 +12,8 @@ export const runtime = "nodejs";
  * Inbound invoice sync from Wix Automations.
  * Auth: Authorization: Bearer <WIX_WEBHOOK_SECRET>
  * Fail-closed if the secret is missing.
+ * The body is only an id and an event name. The invoice is loaded from Wix,
+ * and nothing is written while the invoice switches are off.
  */
 export async function POST(request: Request) {
   const requestId = newRequestId();

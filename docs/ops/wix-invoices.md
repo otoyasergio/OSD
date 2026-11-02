@@ -17,6 +17,8 @@ Unset means the shop keeps the current Square invoice screens.
 
 The site business name must be **OTOMOTO TORONTO MOTO INC.** Prices sent to Wix are pre-tax. Wix adds Ontario HST.
 
+The invoice webhook accepts the shared secret, then loads the invoice from Wix by id. While either switch is unset it records nothing. A delete removes the local row only after Wix answers that the invoice is gone.
+
 ## Cutover from main
 
 Production deploys only from `main` with `npm run deploy:production`.

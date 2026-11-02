@@ -51,6 +51,12 @@ export function formatPreviewDisplayNumber(
   return width > raw.length ? raw.padStart(width, "0") : raw;
 }
 
+const WIX_INVOICE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isWixInvoiceId(value: string | null | undefined): boolean {
+  return WIX_INVOICE_ID.test(value?.trim() ?? "");
+}
+
 export function shouldIgnoreIncomingRevision(
   storedRevision: string | null | undefined,
   incomingRevision: string | null | undefined

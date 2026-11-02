@@ -40,6 +40,7 @@ import {
   intakeFailureMessage,
   invoiceInteger,
   invoiceIsSealed,
+  isWixInvoiceId,
   invoiceTitle,
   isVoidStatus,
   recordedCentsForVisit,
@@ -1305,16 +1306,27 @@ export async function handleInvoiceWebhook(body: {
   invoiceId?: string;
   revision?: string;
 }): Promise<{ ignored: boolean }> {
+  if (!wixInvoicesEnabled()) return { ignored: true };
+  const invoiceId = (body.invoice?.id ?? body.invoiceId ?? "").trim();
+  if (!isWixInvoiceId(invoiceId)) throw new Error("WIX_WEBHOOK_INVOICE_REQUIRED");
   const event = (body.event ?? "").toLowerCase();
-  const invoiceId = body.invoice?.id ?? body.invoiceId;
-  if (!invoiceId) throw new Error("WIX_WEBHOOK_INVOICE_REQUIRED");
   if (event.includes("deleted") || event.includes("delete")) {
-    await deleteInvoiceLocally(invoiceId);
-    return { ignored: false };
+    return deleteInvoiceIfWixGone(invoiceId);
   }
-  const invoice = body.invoice?.id ? body.invoice : await getWixInvoice(invoiceId);
-  if (body.revision && invoice.revision == null) invoice.revision = body.revision;
-  return upsertInvoiceFromRecord(invoice);
+  return upsertInvoiceFromRecord(await getWixInvoice(invoiceId));
+}
+
+async function deleteInvoiceIfWixGone(invoiceId: string): Promise<{ ignored: boolean }> {
+  try {
+    await getWixInvoice(invoiceId);
+    return { ignored: true };
+  } catch (error) {
+    if (error instanceof WixInvoiceApiError && error.status === 404) {
+      await deleteInvoiceLocally(invoiceId);
+      return { ignored: false };
+    }
+    throw error;
+  }
 }
 
 export async function noteSquareRefundAsk(input: {

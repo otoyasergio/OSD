@@ -95,7 +95,9 @@ export async function updateWixInvoice(
 }
 
 export async function getWixInvoice(invoiceId: string): Promise<WixInvoiceRecord> {
-  const response = await invoiceFetch(`/invoices/v4/invoices/${invoiceId}`);
+  const response = await invoiceFetch(
+    `/invoices/v4/invoices/${encodeURIComponent(invoiceId)}`
+  );
   const body = await parseOk<{ invoice?: WixInvoiceRecord }>(response);
   if (!body.invoice?.id) {
     throw new WixInvoiceApiError(response.status, "Wix invoice was not found.");
