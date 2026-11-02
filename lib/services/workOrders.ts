@@ -959,7 +959,8 @@ export async function createWorkOrder(
   if (existingError) throw existingError;
   if (existingWo) throw new Error("WORK_ORDER_NUMBER_TAKEN");
 
-  const initialStatus: WorkOrderStatus = services.length > 0 ? "open" : "draft";
+  const initialStatus: WorkOrderStatus =
+    services.length > 0 ? "inspection_in_progress" : "draft";
 
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
@@ -1215,6 +1216,7 @@ export async function applyWixNumberToExistingWorkOrder(
     .eq("work_order_id", workOrderId);
   if (countError) throw countError;
   if ((count ?? 0) > 0) {
+    await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
     return { work_order_id: workOrderId, work_order_number: parsed.work_order_number };
   }
 
@@ -1271,6 +1273,8 @@ export async function applyWixNumberToExistingWorkOrder(
       await insertOilChangeParts(supabase, job.job_id, user.user_id, packageFitment);
     }
   }
+
+  await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
 
   return { work_order_id: workOrderId, work_order_number: parsed.work_order_number };
 }

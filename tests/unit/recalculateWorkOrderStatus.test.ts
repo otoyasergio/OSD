@@ -412,6 +412,41 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("ready_for_pickup");
   });
 
+  it("starts at arrival inspection when intake services are approved and the report is open", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "open",
+        jobs: [{ status: "approved" }],
+        parts: [],
+        inspectionComplete: false,
+        qualityCheckComplete: false,
+        hasSignedAgreement: true,
+      })
+    ).toBe("inspection_in_progress");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_technician",
+        jobs: [{ status: "approved" }, { status: "approved" }],
+        parts: [],
+        inspectionComplete: false,
+        qualityCheckComplete: false,
+        hasSignedAgreement: false,
+      })
+    ).toBe("inspection_in_progress");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_pickup",
+        jobs: [{ status: "completed" }, { status: "approved" }],
+        parts: [],
+        inspectionComplete: false,
+        qualityCheckComplete: true,
+        hasSignedAgreement: true,
+      })
+    ).toBe("ready_for_technician");
+  });
+
   it("sets ready_for_technician when all jobs approved and contract signed", () => {
     expect(
       deriveWorkOrderStatus({

@@ -168,6 +168,18 @@ export function deriveWorkOrderStatus(
     );
 
   if (allReadyForTechnician) {
+    // Booked intake services are already approved. A visit that has not
+    // reached the floor yet still starts at arrival inspection. Bikes
+    // already in the bay, in storage, or ready for pickup keep that place.
+    const beforeWork =
+      currentStatus === "draft" ||
+      currentStatus === "open" ||
+      currentStatus === "inspection_in_progress" ||
+      currentStatus === "waiting_for_customer_approval" ||
+      currentStatus === "ready_for_technician";
+    if (!inspectionComplete && beforeWork) {
+      return "inspection_in_progress";
+    }
     if (hasSignedAgreement === false) {
       // Do not auto-promote; demote only if already incorrectly on ready.
       if (currentStatus === "ready_for_technician") {

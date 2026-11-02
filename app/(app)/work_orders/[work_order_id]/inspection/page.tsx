@@ -11,6 +11,8 @@ import {
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
+import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
+import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import {
   floorWorkReturnFromInspectBack,
   safeFloorReturnTo,
@@ -23,7 +25,11 @@ export default async function InspectionPage({
   searchParams,
 }: {
   params: Promise<{ work_order_id: string }>;
-  searchParams: Promise<{ returnTo?: string | string[] }>;
+  searchParams: Promise<{
+    returnTo?: string | string[];
+    intake?: string;
+    follow_up?: string;
+  }>;
 }) {
   const preview = await getRolePreviewContext();
   if (!preview) redirect("/login");
@@ -31,6 +37,10 @@ export default async function InspectionPage({
 
   const { work_order_id } = await params;
   const query = await searchParams;
+  const intakeFollowUp: IntakeFollowUp | undefined =
+    query.follow_up === "signature" || query.follow_up === "paper_copy"
+      ? query.follow_up
+      : undefined;
   const floorReturn = safeFloorReturnTo(query.returnTo);
   const backHref = floorReturn ?? `/work_orders/${work_order_id}?tab=inspection`;
   const backLabel = floorReturn ? "← Back to Tech floor" : "← Back";
@@ -71,6 +81,9 @@ export default async function InspectionPage({
       </header>
 
       <div className="inspection-fullscreen-body">
+        {query.intake === "complete" ? (
+          <IntakeCompleteNotice followUp={intakeFollowUp} />
+        ) : null}
         {!readOnly ? (
           <p className="inspection-fullscreen-hint">
             Tap OK / Future / Now / N/A on each item. Status saves immediately. Add
