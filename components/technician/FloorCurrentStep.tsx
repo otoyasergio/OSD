@@ -346,10 +346,22 @@ export function FloorCurrentStep({
             </p>
           ) : (
             <p className="pit-current-body">
-              Do the work. Write what you found, and add a photo when there is
-              something to show.
+              Do the work. Write what you found, and add a photo when there is something
+              to show.
             </p>
           )}
+          {surface.work_brief?.job_notes ? (
+            <p className="pit-current-body">{surface.work_brief.job_notes}</p>
+          ) : null}
+          {(surface.work_brief?.technician_notes ?? [])
+            .filter((note) => note.note_type !== "proof_exception")
+            .slice(0, 5)
+            .map((note) => (
+              <p key={note.technician_note_id} className="pit-current-body">
+                {note.author_name ? `${note.author_name}: ` : ""}
+                {note.note}
+              </p>
+            ))}
           <WorkJournal surface={surface} />
           <button
             type="button"

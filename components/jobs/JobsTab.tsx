@@ -2,6 +2,8 @@
 
 import { useActionState } from "react";
 import type { WorkOrderJob, TechnicianOption } from "@/lib/services/workOrders";
+import type { TechnicianNote } from "@/lib/services/notes";
+import { technicianNotesForJob } from "@/lib/workOrders/sharedNotes";
 import {
   groupServicesByCategory,
   type Service,
@@ -26,6 +28,7 @@ export function JobsTab({
   jobs,
   services,
   technicians,
+  technicianNotes = [],
   readOnly,
   canAdd,
   canApprove,
@@ -45,6 +48,7 @@ export function JobsTab({
   jobs: WorkOrderJob[];
   services: Service[];
   technicians: TechnicianOption[];
+  technicianNotes?: TechnicianNote[];
   readOnly: boolean;
   canAdd: boolean;
   canApprove: boolean;
@@ -118,6 +122,7 @@ export function JobsTab({
               isTechnicianSelf={job.assigned_technician_id === currentUserId}
               inspectionComplete={inspectionComplete}
               inspectionHref={inspectionHref}
+              technicianNotes={technicianNotesForJob(technicianNotes, job.job_id)}
               assignAction={assignActionFor.bind(null, job.job_id)}
               statusAction={statusActionFor.bind(null, job.job_id)}
               approveAction={approveActionFor.bind(null, job.job_id)}

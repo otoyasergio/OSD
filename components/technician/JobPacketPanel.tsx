@@ -14,6 +14,7 @@ import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedIma
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { formatDateTime } from "@/lib/datetime/format";
+import { shopInstructions } from "@/lib/workOrders/sharedNotes";
 import { AskOtomotoPanel } from "@/components/diagnostics/AskOtomotoPanel";
 import type { AskOtomotoPanelData } from "@/lib/diagnostics/askOtomotoView";
 
@@ -66,6 +67,15 @@ export function JobPacketPanel({
 
   const activeTab: PacketTabId = section;
   const lightboxPhotos = toLightboxPhotos(photos);
+  const instructions = shopInstructions({
+    internalNotes: packet.internal_notes,
+    jobs: packet.jobs.map((job) => ({
+      job_id: job.job_id,
+      service_name: job.service_name,
+      notes: job.notes,
+    })),
+  });
+  const noteCount = packet.notes.length + instructions.length;
 
   function hrefFor(tab: PacketTabId): string {
     return technicianPacketHref({
@@ -168,9 +178,13 @@ export function JobPacketPanel({
                 </li>
                 <li>
                   <span className="floor-packet-summary-label">Notes</span>
-                  {packet.notes.length === 0
+                  {noteCount === 0
                     ? "No notes yet"
-                    : `${packet.notes.length} note${packet.notes.length === 1 ? "" : "s"} — newest ${formatDateTime(packet.notes[0].created_at)}`}
+                    : `${noteCount} note${noteCount === 1 ? "" : "s"}${
+                        packet.notes[0]
+                          ? ` — newest ${formatDateTime(packet.notes[0].created_at)}`
+                          : ""
+                      }`}
                 </li>
                 <li>
                   <span className="floor-packet-summary-label">Photos</span>
@@ -281,6 +295,7 @@ export function JobPacketPanel({
               <TechnicianNotes
                 notes={packet.notes}
                 jobs={toNoteJobs(packet)}
+                instructions={instructions}
                 readOnly={false}
                 canAdd
                 addAction={addTechnicianNoteAction.bind(null, packet.work_order_id)}
