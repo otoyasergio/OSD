@@ -307,6 +307,7 @@ describe("revision, square, and acknowledgement", () => {
       wixReason: reason,
     });
     expect(message).toContain("enter that invoice number here");
+    expect(isLegacyInvoicesApiUnavailable(message)).toBe(false);
     expect(allowsEnteredWixInvoiceNumber(message)).toBe(true);
     expect(message).toContain("Evan Kerr");
     expect(message).toContain("2017 TRIUMPH Bonneville T100");

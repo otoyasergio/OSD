@@ -575,9 +575,15 @@ export function CreateWorkOrderForm({
             : await createWorkOrderOnlyAction({ error: null }, formData);
       if (created.error || !created.workOrderId) {
         const nextAcknowledgementId = created.wixAcknowledgementId ?? null;
-        setWixAcknowledgementId(nextAcknowledgementId);
-        setWixHoldRevision(nextAcknowledgementId ? (created.wixHoldRevision ?? null) : null);
-        setWixErrorText(nextAcknowledgementId ? (created.error ?? null) : null);
+        if (nextAcknowledgementId) {
+          setWixAcknowledgementId(nextAcknowledgementId);
+          setWixHoldRevision(created.wixHoldRevision ?? null);
+          setWixErrorText(created.error ?? null);
+        } else if (mode !== "entered") {
+          setWixAcknowledgementId(null);
+          setWixHoldRevision(null);
+          setWixErrorText(null);
+        }
         const banner = intakeBannerMessage({
           error: created.error ?? "Could not create the work order. Try again.",
           notice: null,

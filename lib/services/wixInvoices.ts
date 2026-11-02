@@ -41,6 +41,7 @@ import {
   bikeHeaderFields,
   canSyncCustomerBlock,
   canSyncInvoiceLines,
+  allowsEnteredWixInvoiceNumber,
   draftNeedsNumberAllocation,
   formatPreviewDisplayNumber,
   intakeFailureMessage,
@@ -614,7 +615,7 @@ export async function getOpenWixIntakeHold(
     acknowledgementId: String(data.acknowledgement_id),
     holdRevision: Number(data.hold_revision ?? 1),
     errorText,
-    legacyNumberEntry: isLegacyInvoicesApiUnavailable(errorText),
+    legacyNumberEntry: allowsEnteredWixInvoiceNumber(errorText),
     pendingWorkOrderId: (data.pending_work_order_id as string | null) ?? null,
   };
 }
@@ -633,7 +634,7 @@ export async function clearLegacyInvoiceHold(acknowledgementId: string): Promise
   if (error) throw error;
   if (!data || data.cleared_at || data.wix_invoice_id) return false;
   const errorText = String(data.wix_error_text ?? "");
-  if (!isLegacyInvoicesApiUnavailable(errorText)) return false;
+  if (!allowsEnteredWixInvoiceNumber(errorText)) return false;
   const { data: updated, error: updateError } = await admin
     .from("invoice_create_acknowledgement")
     .update({ cleared_at: new Date().toISOString() })
