@@ -160,10 +160,11 @@ export function bikeHeaderFields(input: {
   colour: string;
   mileage: string;
 }): HeaderField[] {
+  const colour = input.colour.trim();
   return [
     { title: "VIN", value: input.vin.slice(0, 100) },
     { title: "Plate", value: input.plate.slice(0, 100) },
-    { title: "Colour", value: input.colour.slice(0, 100) },
+    ...(colour ? [{ title: "Colour", value: colour.slice(0, 100) }] : []),
     { title: "Mileage", value: input.mileage.slice(0, 100) },
   ];
 }
@@ -399,13 +400,6 @@ export function assertIntakeInvoiceReady(input: {
       ok: false,
       code: "CONTACT_REQUIRED",
       message: `${client} on ${bike} needs a phone number or an email before a Wix invoice can be created.`,
-    };
-  }
-  if (!input.colour?.trim()) {
-    return {
-      ok: false,
-      code: "COLOUR_REQUIRED",
-      message: `${client} on ${bike}: colour is required on the Wix invoice.`,
     };
   }
   if (!input.plate?.trim()) {

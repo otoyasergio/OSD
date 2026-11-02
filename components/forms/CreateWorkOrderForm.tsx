@@ -939,7 +939,7 @@ export function CreateWorkOrderForm({
               </Link>
               .{" "}
               {wixAssignsNumber
-                ? "Enter N/A on the motorcycle if it has no plate. Colour and VIN are required before the invoice is created."
+                ? "Enter N/A on the motorcycle if it has no plate. VIN is required before the invoice is created."
                 : "You can continue this intake without it."}
             </p>
           ) : null}

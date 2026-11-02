@@ -8,6 +8,7 @@ import {
   ACKNOWLEDGED_INTAKE_SUCCESS,
   acknowledgementClearedOnSuccess,
   acknowledgementFieldsOnFailedRetry,
+  assertIntakeInvoiceReady,
   bikeHeaderFields,
   canSyncCustomerBlock,
   draftNeedsNumberAllocation,
@@ -57,6 +58,31 @@ describe("intake VIN year rule", () => {
     expect(validateVinForModelYear("1HD1KEM16", 2004).ok).toBe(false);
     expect(validateVinForModelYear("ABC123", 1990).ok).toBe(true);
     expect(validateVinForModelYear("1HD1KEM1XDB609584", 2013).ok).toBe(true);
+  });
+});
+
+describe("colour is optional", () => {
+  it("lets intake continue when the motorcycle has no colour", () => {
+    const ready = assertIntakeInvoiceReady({
+      clientName: "Sergey Kurylo",
+      phone: "4165550100",
+      email: null,
+      year: 2004,
+      make: "HONDA",
+      model: "CB650R",
+      colour: "  ",
+      plate: "N/A",
+      vin: "1HD1KEM16DB609584",
+    });
+    expect(ready.ok).toBe(true);
+    expect(
+      bikeHeaderFields({
+        vin: "1HD1KEM16DB609584",
+        plate: "N/A",
+        colour: "  ",
+        mileage: "12000 km",
+      }).map((field) => field.title)
+    ).toEqual(["VIN", "Plate", "Mileage"]);
   });
 });
 

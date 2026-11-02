@@ -875,7 +875,7 @@ export async function prepareIntakeInvoice(input: {
         header: bikeHeaderFields({
           vin: String(bike.vin),
           plate: String(bike.plate_number),
-          colour: String(bike.colour),
+          colour: String(bike.colour ?? "").trim(),
           mileage: `${input.mileage} ${input.mileageUnit}`,
         }),
         technicianName: technician,
