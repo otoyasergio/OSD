@@ -9,6 +9,7 @@ import {
   canSubmitCreateWorkOrderWizard,
   intakePrimaryActionLabel,
   intakePrimaryActionRetries,
+  intakeUsesEnteredWixNumber,
   isWizardStepComplete,
   shouldApplyCreateIntakePhotoChange,
   shouldApplyCreateOptionalPhotoChange,
@@ -180,5 +181,14 @@ describe("create work order wizard steps", () => {
     expect(intakePrimaryActionLabel(false)).toBe("Create work order");
     expect(intakePrimaryActionRetries(true)).toBe(true);
     expect(intakePrimaryActionRetries(false)).toBe(false);
+    expect(
+      intakeUsesEnteredWixNumber({ acknowledgementPending: true, legacyNumberEntry: true })
+    ).toBe(true);
+    expect(
+      intakeUsesEnteredWixNumber({ acknowledgementPending: true, legacyNumberEntry: false })
+    ).toBe(false);
+    expect(
+      intakeUsesEnteredWixNumber({ acknowledgementPending: false, legacyNumberEntry: true })
+    ).toBe(false);
   });
 });

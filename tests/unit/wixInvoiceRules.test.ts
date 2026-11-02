@@ -16,7 +16,10 @@ import {
   intakeBannerMessage,
   intakeFailureMessage,
   isLegacyInvoicesApiUnavailable,
+  LEGACY_INVOICES_API_REASON,
   normalizeEnteredWixInvoiceNumber,
+  shouldLogWixInvoiceCreateFailure,
+  shouldSkipWixInvoiceApi,
   shouldApplyInvoiceAcknowledgement,
   formatPreviewDisplayNumber,
   invoiceNumbersEqual,
@@ -320,6 +323,39 @@ describe("revision, square, and acknowledgement", () => {
     expect(allowsEnteredWixInvoiceNumber("Wix did not return an invoice number.")).toBe(
       false
     );
+    expect(isLegacyInvoicesApiUnavailable(LEGACY_INVOICES_API_REASON)).toBe(true);
+    expect(shouldLogWixInvoiceCreateFailure(reason)).toBe(false);
+    expect(shouldLogWixInvoiceCreateFailure(message)).toBe(true);
+    expect(shouldLogWixInvoiceCreateFailure("Wix timed out.")).toBe(true);
+    const now = Date.parse("2026-11-02T22:00:00.000Z");
+    expect(
+      shouldSkipWixInvoiceApi({
+        latestLegacyRefusalAt: "2026-11-02T20:40:46.000Z",
+        latestWixInvoiceAt: null,
+        nowMs: now,
+      })
+    ).toBe(true);
+    expect(
+      shouldSkipWixInvoiceApi({
+        latestLegacyRefusalAt: "2026-11-02T20:40:46.000Z",
+        latestWixInvoiceAt: "2026-11-02T21:00:00.000Z",
+        nowMs: now,
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipWixInvoiceApi({
+        latestLegacyRefusalAt: "2026-10-01T20:40:46.000Z",
+        latestWixInvoiceAt: null,
+        nowMs: now,
+      })
+    ).toBe(false);
+    expect(
+      shouldSkipWixInvoiceApi({
+        latestLegacyRefusalAt: null,
+        latestWixInvoiceAt: null,
+        nowMs: now,
+      })
+    ).toBe(false);
   });
 
   it("labels Overdue from Wix", () => {

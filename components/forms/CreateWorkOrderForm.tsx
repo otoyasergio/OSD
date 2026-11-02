@@ -55,6 +55,7 @@ import {
   canSubmitCreateWorkOrderWizard,
   intakePrimaryActionLabel,
   intakePrimaryActionRetries,
+  intakeUsesEnteredWixNumber,
   shouldApplyCreateIntakePhotoChange,
   shouldApplyCreateOptionalPhotoChange,
   showIntakePrimaryAction,
@@ -544,7 +545,10 @@ export function CreateWorkOrderForm({
     setClientError(null);
   }
 
-  async function submitCreate(form: HTMLFormElement, mode: "wix" | "entered" = "wix") {
+  async function submitCreate(
+    form: HTMLFormElement,
+    mode: "wix" | "entered" | "wix-force" = "wix"
+  ) {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setClientError(null);
@@ -559,13 +563,14 @@ export function CreateWorkOrderForm({
       // Never send six camera originals in one serverless POST — Vercel rejects
       // large bodies with an unexpected-response crash instead of a form error.
       stripIntakePhotoFields(formData, ALL_REQUIRED);
+      if (mode === "wix-force") formData.set("force_wix_attempt", "1");
 
       const created =
         mode === "entered"
           ? await createWorkOrderWithEnteredWixNumberAction(formData)
           : acknowledgementId &&
               holdRevision != null &&
-              intakePrimaryActionRetries(true)
+              (mode === "wix-force" || intakePrimaryActionRetries(true))
             ? await retryAcknowledgedWixIntakeAction(
                 acknowledgementId,
                 holdRevision,
@@ -663,9 +668,15 @@ export function CreateWorkOrderForm({
     error: clientError ?? (acknowledgementPending ? wixErrorText : null),
     notice: clientNotice,
   });
+  const legacyNumberEntry = intakeUsesEnteredWixNumber({
+    acknowledgementPending,
+    legacyNumberEntry: allowsEnteredWixInvoiceNumber(wixErrorText ?? intakeBanner.error),
+  });
   const primaryLabel = submitting
     ? "Creating & uploading…"
-    : intakePrimaryActionLabel(acknowledgementPending);
+    : legacyNumberEntry
+      ? "Use this invoice number"
+      : intakePrimaryActionLabel(acknowledgementPending);
 
   return (
     <form
@@ -694,7 +705,7 @@ export function CreateWorkOrderForm({
         }
 
         const form = event.currentTarget;
-        void submitCreate(form);
+        void submitCreate(form, legacyNumberEntry ? "entered" : "wix");
       }}
     >
       <div ref={wixHoldBannerRef} className="flex flex-col gap-3">
@@ -707,7 +718,7 @@ export function CreateWorkOrderForm({
             {intakeBanner.notice}
           </p>
         ) : null}
-        {showPrimary ? (
+        {showPrimary && !legacyNumberEntry ? (
           <button
             type="button"
             className={`${NAV_BTN_CLASS} btn-primary w-full`}
@@ -721,8 +732,7 @@ export function CreateWorkOrderForm({
             {primaryLabel}
           </button>
         ) : null}
-        {acknowledgementPending &&
-        allowsEnteredWixInvoiceNumber(wixErrorText ?? intakeBanner.error) ? (
+        {legacyNumberEntry ? (
           <div className="flex flex-col gap-2">
             <a
               className="btn w-full min-h-12 text-base"
@@ -761,6 +771,18 @@ export function CreateWorkOrderForm({
               }}
             >
               {submitting ? "Creating & uploading…" : "Use this invoice number"}
+            </button>
+            <button
+              type="button"
+              className="self-start text-sm font-medium text-[var(--status-neutral)] underline underline-offset-2"
+              disabled={submitting || !readyToCreate}
+              onClick={() => {
+                const form = formRef.current;
+                if (!form) return;
+                void submitCreate(form, "wix-force");
+              }}
+            >
+              Check Wix again
             </button>
           </div>
         ) : null}
@@ -968,11 +990,13 @@ export function CreateWorkOrderForm({
         <section className="intake-wizard-panel">
           <h2 className="intake-wizard-panel-title">Visit details</h2>
           <p className="intake-wizard-panel-lede">
-            {wixAssignsNumber
-              ? "Wix assigns the invoice number when you save. The preview is not reserved."
-              : "Enter the Wix work order number first — that becomes the shop work order #. Then mileage, services, and technician. Square invoicing is created later from the work order Billing panel."}
+            {legacyNumberEntry
+              ? "Create the invoice in Wix, then enter that number at the top. That number is the work order number."
+              : wixAssignsNumber
+                ? "Wix assigns the invoice number when you save. The preview is not reserved."
+                : "Enter the Wix work order number first — that becomes the shop work order #. Then mileage, services, and technician. Square invoicing is created later from the work order Billing panel."}
           </p>
-          {wixAssignsNumber ? (
+          {legacyNumberEntry ? null : wixAssignsNumber ? (
             <p className="text-sm">
               Next invoice preview:{" "}
               <span className="font-medium">
@@ -1490,9 +1514,12 @@ export function CreateWorkOrderForm({
             <ReviewCard
               label={wixAssignsNumber ? "Invoice number" : "Wix work order #"}
               value={
-                wixAssignsNumber
-                  ? (invoicePreview ?? "Assigned by Wix on save")
-                  : workOrderNumber.trim() || "—"
+                legacyNumberEntry
+                  ? (normalizeEnteredWixInvoiceNumber(workOrderNumber) ??
+                    "Type the Wix invoice number above")
+                  : wixAssignsNumber
+                    ? (invoicePreview ?? "Assigned by Wix on save")
+                    : workOrderNumber.trim() || "—"
               }
             />
             <ReviewCard label="Mileage" value={formatMileage(mileage, mileageUnit)} />
@@ -1603,7 +1630,11 @@ export function CreateWorkOrderForm({
           ) : (
             <button
               type="submit"
-              disabled={submitting || !readyToCreate}
+              disabled={
+                submitting ||
+                !readyToCreate ||
+                (legacyNumberEntry && !normalizeEnteredWixInvoiceNumber(workOrderNumber))
+              }
               className={`${NAV_BTN_CLASS} btn-primary disabled:pointer-events-none disabled:opacity-60`}
             >
               {primaryLabel}

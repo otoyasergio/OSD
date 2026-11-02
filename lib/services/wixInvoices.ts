@@ -46,7 +46,11 @@ import {
   formatPreviewDisplayNumber,
   intakeFailureMessage,
   isLegacyInvoicesApiUnavailable,
+  LEGACY_INVOICES_API_REASON,
+  LEGACY_INVOICE_SKIP_MAX_AGE_MS,
   shouldApplyInvoiceAcknowledgement,
+  shouldLogWixInvoiceCreateFailure,
+  shouldSkipWixInvoiceApi,
   invoiceInteger,
   invoiceIsSealed,
   isWixInvoiceId,
@@ -725,6 +729,36 @@ async function openHold(
   };
 }
 
+async function siteStillUsesLegacyInvoices(admin: Admin): Promise<boolean> {
+  try {
+    const since = new Date(Date.now() - LEGACY_INVOICE_SKIP_MAX_AGE_MS).toISOString();
+    const [refusals, invoice] = await Promise.all([
+      admin
+        .from("invoice_create_acknowledgement")
+        .select("created_at, wix_error_text")
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      admin
+        .from("wix_invoice")
+        .select("created_at")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (refusals.error || invoice.error) return false;
+    const legacy = (refusals.data ?? []).find((row) =>
+      allowsEnteredWixInvoiceNumber(String(row.wix_error_text ?? ""))
+    );
+    return shouldSkipWixInvoiceApi({
+      latestLegacyRefusalAt: legacy?.created_at ? String(legacy.created_at) : null,
+      latestWixInvoiceAt: invoice.data?.created_at ? String(invoice.data.created_at) : null,
+    });
+  } catch {
+    return false;
+  }
+}
+
 export async function prepareIntakeInvoice(input: {
   customerId: string;
   motorcycleId: string;
@@ -734,6 +768,8 @@ export async function prepareIntakeInvoice(input: {
   technicianName: string | null;
   technicianUserId?: string | null;
   existingWorkOrderId?: string | null;
+  /** Staff asked to call Wix again after a known legacy refusal. */
+  forceWixAttempt?: boolean;
 }): Promise<PreparedIntake> {
   const user = await requireUser();
   if (!canRecordCustomerApproval(user.role)) throw new Error("FORBIDDEN");
@@ -784,7 +820,7 @@ export async function prepareIntakeInvoice(input: {
     .maybeSingle();
   if (holdError) throw holdError;
 
-  if (hold && !hold.acknowledged_at) {
+  if (hold && !hold.acknowledged_at && !input.forceWixAttempt) {
     throw new WixIntakeBlockedError(
       String(hold.wix_error_text),
       String(hold.acknowledgement_id),
@@ -851,6 +887,25 @@ export async function prepareIntakeInvoice(input: {
     (await technicianName(admin, input.technicianUserId ?? null));
 
   let draftCreditCents = 0;
+  if (!record && !input.existingWorkOrderId && !input.forceWixAttempt) {
+    if (await siteStillUsesLegacyInvoices(admin)) {
+      const message = intakeFailureMessage({
+        clientName,
+        bikeLabel,
+        wixReason: LEGACY_INVOICES_API_REASON,
+      });
+      const opened = await openHold(admin, {
+        customerId: input.customerId,
+        motorcycleId: input.motorcycleId,
+        staffUserId: user.user_id,
+        workOrderId: replacesBookingStub ? workOrderId : null,
+        pendingWorkOrderId: workOrderId,
+        message,
+        wixInvoiceId: null,
+      });
+      throw new WixIntakeBlockedError(message, opened.acknowledgementId, opened.holdRevision);
+    }
+  }
   if (!record) {
     try {
       if (!customer.wix_contact_id) {
@@ -885,7 +940,10 @@ export async function prepareIntakeInvoice(input: {
     } catch (error) {
       if (error instanceof WixIntakeBlockedError) throw error;
       const reason = error instanceof Error ? error.message : "Wix invoice create failed.";
-      if (error instanceof WixInvoiceApiError) {
+      if (
+        error instanceof WixInvoiceApiError &&
+        shouldLogWixInvoiceCreateFailure(reason)
+      ) {
         console.error("Wix invoice create failed", {
           status: error.status,
           legacyApiUnavailable: isLegacyInvoicesApiUnavailable(reason),

@@ -313,6 +313,47 @@ export function isLegacyInvoicesApiUnavailable(reason: string): boolean {
   );
 }
 
+/**
+ * Stable text for a skipped create after Wix has already refused this site.
+ * `intakeFailureMessage` turns it into the counter copy.
+ */
+export const LEGACY_INVOICES_API_REASON =
+  "The new Invoices API isn't available on this site yet. The site still uses the legacy invoices service, which is only accessible through Velo.";
+
+/** How long a recorded legacy refusal keeps intake from calling Wix again. */
+export const LEGACY_INVOICE_SKIP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The known 428 is the signal to type the invoice number. It is not an
+ * application fault, so it stays out of the runtime error log.
+ */
+export function shouldLogWixInvoiceCreateFailure(reason: string): boolean {
+  return !isLegacyInvoicesApiUnavailable(reason);
+}
+
+/**
+ * Skip another Wix create when this site already refused the new API and no
+ * invoice has been stored since that refusal. A newer stored invoice means
+ * the API accepted a create, so the next intake calls Wix again.
+ */
+export function shouldSkipWixInvoiceApi(input: {
+  latestLegacyRefusalAt: string | null;
+  latestWixInvoiceAt: string | null;
+  nowMs?: number;
+  maxAgeMs?: number;
+}): boolean {
+  if (!input.latestLegacyRefusalAt) return false;
+  const refusalMs = Date.parse(input.latestLegacyRefusalAt);
+  if (!Number.isFinite(refusalMs)) return false;
+  const now = input.nowMs ?? Date.now();
+  const maxAge = input.maxAgeMs ?? LEGACY_INVOICE_SKIP_MAX_AGE_MS;
+  if (now - refusalMs > maxAge) return false;
+  if (!input.latestWixInvoiceAt) return true;
+  const invoiceMs = Date.parse(input.latestWixInvoiceAt);
+  if (!Number.isFinite(invoiceMs)) return true;
+  return refusalMs > invoiceMs;
+}
+
 /** Staff may type the Wix invoice number only while the new API is unavailable. */
 export function allowsEnteredWixInvoiceNumber(text: string | null | undefined): boolean {
   if (!text) return false;

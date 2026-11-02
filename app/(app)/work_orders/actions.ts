@@ -188,6 +188,7 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
       })),
       technicianName: null,
       technicianUserId: primaryTech || null,
+      forceWixAttempt: String(formData.get("force_wix_attempt") ?? "") === "1",
     });
     const created = prepared.replacesBookingStub
       ? await applyWixNumberToExistingWorkOrder(prepared.workOrderId, {

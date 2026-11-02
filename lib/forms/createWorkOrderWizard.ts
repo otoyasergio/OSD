@@ -174,3 +174,15 @@ export function intakePrimaryActionLabel(acknowledgementPending: boolean): strin
 export function intakePrimaryActionRetries(acknowledgementPending: boolean): boolean {
   return acknowledgementPending;
 }
+
+/**
+ * While the open hold already tells staff to type the Wix invoice number,
+ * the create control must save that number. Another Wix call only repeats
+ * the same refusal.
+ */
+export function intakeUsesEnteredWixNumber(input: {
+  acknowledgementPending: boolean;
+  legacyNumberEntry: boolean;
+}): boolean {
+  return input.acknowledgementPending && input.legacyNumberEntry;
+}
