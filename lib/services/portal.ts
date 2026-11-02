@@ -86,6 +86,12 @@ export type PortalWorkOrderView = {
   }[];
   square_invoice_id: string | null;
   square_payment_status: string | null;
+  wix_invoice: {
+    displayNumber: string;
+    statusLabel: string;
+    payUrl: string | null;
+    totalCents: number;
+  } | null;
   inspection_completed: boolean;
   has_signed_contract: boolean;
   has_inspection_ack: boolean;
@@ -154,6 +160,11 @@ async function resolvePortalSession(token: string): Promise<PortalSession> {
     purpose: data.purpose as PortalTokenPurpose,
     expires_at: data.expires_at,
   };
+}
+
+async function portalWixInvoice(workOrderId: string) {
+  const { portalInvoiceForWorkOrder } = await import("@/lib/services/wixInvoices");
+  return portalInvoiceForWorkOrder(workOrderId);
 }
 
 export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrderView> {
@@ -239,6 +250,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
     parts,
     square_invoice_id: wo.square_invoice_id,
     square_payment_status: wo.square_payment_status,
+    wix_invoice: await portalWixInvoice(wo.work_order_id),
     inspection_completed: Boolean(inspection?.completed_at),
     has_signed_contract: Boolean(contract),
     has_inspection_ack: Boolean(ack),

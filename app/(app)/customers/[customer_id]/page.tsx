@@ -33,6 +33,10 @@ import { CustomerAtAGlance } from "@/components/customers/CustomerAtAGlance";
 import { CustomerPhotoForm } from "@/components/customers/CustomerPhotoForm";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { summarizeCustomerVisits } from "@/lib/customers/glance";
+import { WixInvoiceList } from "@/components/billing/WixInvoiceList";
+import { listInvoicesForCustomer } from "@/lib/services/wixInvoices";
+import { readPrivateLicence } from "@/lib/services/customerPrivate";
+import { wixInvoicesEnabled } from "@/lib/config/features";
 import { signCustomerPhotoForViewer } from "@/lib/services/customerPhotos";
 import {
   removeCustomerPhotoAction,
@@ -116,12 +120,14 @@ export default async function CustomerDetailPage({
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 
-  const [garage, history, documents] = await Promise.all([
+  const [garage, history, documents, invoices, licence] = await Promise.all([
     listGarageForCustomer(customer_id),
     listWorkOrdersForCustomer(customer_id),
     canViewCustomerDocuments(viewRole)
       ? listCustomerDocuments(customer_id)
       : Promise.resolve([]),
+    wixInvoicesEnabled() ? listInvoicesForCustomer(customer_id) : Promise.resolve([]),
+    readPrivateLicence(customer_id),
   ]);
   const updateAction = updateCustomerAction.bind(null, customer_id);
   const uploadPhotoAction = uploadCustomerPhotoAction.bind(null, customer_id);
@@ -196,6 +202,23 @@ export default async function CustomerDetailPage({
         glance={glance}
         smsOptedOutAt={customer.sms_opted_out_at}
       />
+
+      {licence?.licence_number ? (
+        <p className="text-sm text-[var(--status-neutral)]">
+          Licence {licence.licence_number}
+          {licence.licence_expiry ? ` · expires ${licence.licence_expiry}` : ""}
+        </p>
+      ) : null}
+
+      {wixInvoicesEnabled() ? (
+        <section>
+          <h2 className="text-lg font-semibold">Wix invoices</h2>
+          <WixInvoiceList
+            invoices={invoices}
+            emptyLabel="No Wix invoices for this customer yet."
+          />
+        </section>
+      ) : null}
 
       <CustomerInformationReminder
         phone={customer.phone}

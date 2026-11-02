@@ -130,3 +130,43 @@ export function validateOptionalVin(
   }
   return validateVinFormat(raw);
 }
+
+/**
+ * Intake VIN rule. Model year 1991 or later must be 17 characters.
+ * 1990 or earlier may be shorter. A bad North American check digit does
+ * not block. Unknown year is treated as 1991 or later.
+ */
+export function validateVinForModelYear(
+  raw: string,
+  modelYear: number | null | undefined
+): VinValidationResult {
+  const vin = normalizeVin(raw);
+  if (!vin) {
+    return { ok: false, error: "Enter a VIN.", vin: "" };
+  }
+  if (!VIN_CHARSET.test(vin)) {
+    return {
+      ok: false,
+      error: "VIN may only use letters A–H, J–N, P, R–Z and digits 0–9 (no I, O, or Q).",
+      vin,
+    };
+  }
+  const year =
+    modelYear != null && Number.isFinite(modelYear) ? Math.trunc(modelYear) : null;
+  const modern = year == null || year >= 1991;
+  if (modern && vin.length !== VIN_LENGTH) {
+    return {
+      ok: false,
+      error: `A ${year ?? "1991 or later"} motorcycle needs a ${VIN_LENGTH}-character VIN (got ${vin.length}).`,
+      vin,
+    };
+  }
+  if (!modern && (vin.length < 1 || vin.length > VIN_LENGTH)) {
+    return {
+      ok: false,
+      error: `VIN must be 1 to ${VIN_LENGTH} characters for a ${year} motorcycle.`,
+      vin,
+    };
+  }
+  return { ok: true, vin };
+}

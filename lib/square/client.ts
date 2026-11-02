@@ -257,4 +257,147 @@ export async function getSquareInvoice(
   return response.invoice;
 }
 
+export type SquareExternalPaymentInput = {
+  idempotencyKey: string;
+  amountCents: number;
+  currency: string;
+  recordName: string;
+  locationId?: string;
+};
+
+/**
+ * Records money Square already has or that was taken outside Square.
+ * source_id EXTERNAL does not charge a card.
+ */
+export function squareExternalPaymentBody(
+  input: SquareExternalPaymentInput & { locationId: string }
+) {
+  return {
+    source_id: "EXTERNAL",
+    idempotency_key: input.idempotencyKey.slice(0, 45),
+    amount_money: {
+      amount: input.amountCents,
+      currency: input.currency,
+    },
+    location_id: input.locationId,
+    note: input.recordName.slice(0, 500),
+    external_details: {
+      type: "OTHER",
+      source: input.recordName.slice(0, 255),
+    },
+  };
+}
+
+export async function createSquareExternalPayment(
+  input: SquareExternalPaymentInput
+): Promise<{ id: string }> {
+  const config = getSquareConfig();
+  const response = await squareFetch<{ payment?: { id?: string } }>("/v2/payments", {
+    method: "POST",
+    body: JSON.stringify(
+      squareExternalPaymentBody({
+        ...input,
+        locationId: input.locationId || config.locationId,
+      })
+    ),
+  });
+  const id = response.payment?.id;
+  if (!id) throw new Error("SQUARE_API_ERROR: external payment was not created");
+  return { id };
+}
+
+export type SquarePaymentListItem = {
+  id: string;
+  amountCents: number;
+  currency: string;
+  createdAt: string | null;
+  status: string | null;
+  note: string | null;
+  last4: string | null;
+};
+
+export async function listRecentSquarePayments(limit = 20): Promise<SquarePaymentListItem[]> {
+  const config = getSquareConfig();
+  const params = new URLSearchParams({
+    location_id: config.locationId,
+    sort_order: "DESC",
+    limit: String(Math.min(Math.max(limit, 1), 50)),
+  });
+  const response = await squareFetch<{
+    payments?: Array<{
+      id?: string;
+      status?: string;
+      created_at?: string;
+      note?: string;
+      amount_money?: { amount?: number; currency?: string };
+      card_details?: { card?: { last_4?: string } };
+    }>;
+  }>(`/v2/payments?${params.toString()}`);
+  return (response.payments ?? [])
+    .filter((payment) => payment.id && payment.status === "COMPLETED")
+    .map((payment) => ({
+      id: payment.id as string,
+      amountCents: payment.amount_money?.amount ?? 0,
+      currency: payment.amount_money?.currency ?? "CAD",
+      createdAt: payment.created_at ?? null,
+      status: payment.status ?? null,
+      note: payment.note ?? null,
+      last4: payment.card_details?.card?.last_4 ?? null,
+    }));
+}
+
+export async function searchOpenSquareInvoices(): Promise<
+  Array<{ id: string; status: string | null; invoiceNumber: string | null; version: number }>
+> {
+  const config = getSquareConfig();
+  const response = await squareFetch<{
+    invoices?: Array<{
+      id?: string;
+      status?: string;
+      invoice_number?: string;
+      version?: number;
+    }>;
+  }>("/v2/invoices/search", {
+    method: "POST",
+    body: JSON.stringify({
+      query: {
+        filter: {
+          location_ids: [config.locationId],
+          statuses: ["DRAFT", "UNPAID", "SCHEDULED", "PARTIALLY_PAID"],
+        },
+      },
+      limit: 200,
+    }),
+  });
+  return (response.invoices ?? [])
+    .filter((invoice) => invoice.id)
+    .map((invoice) => ({
+      id: invoice.id as string,
+      status: invoice.status ?? null,
+      invoiceNumber: invoice.invoice_number ?? null,
+      version: invoice.version ?? 0,
+    }));
+}
+
+export async function refundSquarePayment(input: {
+  paymentId: string;
+  idempotencyKey: string;
+  amountCents: number;
+  currency: string;
+  reason: string;
+}): Promise<{ id: string }> {
+  const response = await squareFetch<{ refund?: { id?: string } }>("/v2/refunds", {
+    method: "POST",
+    body: JSON.stringify({
+      idempotency_key: input.idempotencyKey.slice(0, 45),
+      payment_id: input.paymentId,
+      amount_money: { amount: input.amountCents, currency: input.currency },
+      reason: input.reason.slice(0, 192),
+    }),
+  });
+  const id = response.refund?.id;
+  if (!id) throw new Error("SQUARE_API_ERROR: refund was not created");
+  return { id };
+}
+
 export { isSquareConfigured };

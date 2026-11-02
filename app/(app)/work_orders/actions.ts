@@ -4,12 +4,19 @@ import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { revalidatePath } from "next/cache";
 import {
+  applyWixNumberToExistingWorkOrder,
   assignTechnicianToWorkOrder,
   createWorkOrder,
   getLastRecordedMileageForMotorcycle,
   setPrimaryTechnician,
   type LastRecordedMileage,
 } from "@/lib/services/workOrders";
+import { wixInvoicesEnabled } from "@/lib/config/features";
+import {
+  attachInvoiceToWorkOrder,
+  prepareIntakeInvoice,
+  WixIntakeBlockedError,
+} from "@/lib/services/wixInvoices";
 import { listIntakePhotos, uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { requireUser } from "@/lib/auth/session";
@@ -24,6 +31,8 @@ export type WorkOrderFormState = {
   workOrderId?: string | null;
   workOrderNumber?: string | null;
   missingCategories?: PhotoCategory[];
+  /** Staff must acknowledge a Wix failure before intake can continue. */
+  wixAcknowledgementId?: string | null;
 };
 
 const REQUIRED_INTAKE_CATEGORIES = CREATE_INTAKE_PHOTO_SLOTS.map((slot) => slot.category);
@@ -121,19 +130,52 @@ async function createWorkOrderFromFormData(formData: FormData): Promise<{
     throw new Error("SERVICE_PRICE_REQUIRED");
   }
 
-  return createWorkOrder({
+  const mileage = readRequiredMileage(formData);
+  const mileageUnit = formData.get("mileage_unit") === "mi" ? "mi" : "km";
+  const shared = {
     motorcycle_id: String(formData.get("motorcycle_id") ?? ""),
     location_id: user.active_location_id!,
-    work_order_number: String(formData.get("work_order_number") ?? "").trim(),
-    // Square assigns invoice_number when staff sync/publish from Billing
     external_invoice_number: null,
-    mileage: readRequiredMileage(formData),
-    mileage_unit: formData.get("mileage_unit") === "mi" ? "mi" : "km",
+    mileage,
+    mileage_unit: mileageUnit as "km" | "mi",
     estimated_completion: readEstimatedCompletion(formData),
     internal_notes: String(formData.get("internal_notes") ?? ""),
     primary_technician_id: primaryTech || null,
     service_ids: serviceIds,
     service_lines: serviceLines,
+  };
+
+  if (wixInvoicesEnabled()) {
+    const prepared = await prepareIntakeInvoice({
+      customerId: String(formData.get("customer_id") ?? ""),
+      motorcycleId: shared.motorcycle_id,
+      mileage,
+      mileageUnit,
+      serviceLines: serviceLines.map((line) => ({
+        serviceId: line.service_id,
+        name: "Service",
+        price: line.standard_price ?? 0,
+      })),
+      technicianName: null,
+      technicianUserId: primaryTech || null,
+    });
+    const created = prepared.replacesBookingStub
+      ? await applyWixNumberToExistingWorkOrder(prepared.workOrderId, {
+          ...shared,
+          work_order_number: prepared.displayNumber,
+        })
+      : await createWorkOrder({
+          ...shared,
+          work_order_number: prepared.displayNumber,
+          work_order_id: prepared.workOrderId,
+        });
+    await attachInvoiceToWorkOrder(prepared.wixInvoiceId, created.work_order_id);
+    return created;
+  }
+
+  return createWorkOrder({
+    ...shared,
+    work_order_number: String(formData.get("work_order_number") ?? "").trim(),
   });
 }
 
@@ -160,6 +202,12 @@ export async function createWorkOrderOnlyAction(
     };
   } catch (error) {
     if (isRedirectError(error)) throw error;
+    if (error instanceof WixIntakeBlockedError) {
+      return {
+        error: error.message,
+        wixAcknowledgementId: error.acknowledgementId,
+      };
+    }
     return { error: toFormErrorMessage(error) };
   }
 }
@@ -189,6 +237,12 @@ export async function createWorkOrderWithIntakePhotosAction(
       workOrderId = result.work_order_id;
       workOrderNumber = result.work_order_number;
     } catch (error) {
+      if (error instanceof WixIntakeBlockedError) {
+        return {
+          error: error.message,
+          wixAcknowledgementId: error.acknowledgementId,
+        };
+      }
       return { error: toFormErrorMessage(error) };
     }
 

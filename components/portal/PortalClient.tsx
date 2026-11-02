@@ -187,7 +187,25 @@ export function PortalClient({ token, view, contractTemplate, estimate }: Props)
             </p>
             <p className="font-semibold">Total (est.): ${estimateTotal.toFixed(2)}</p>
           </div>
-          {view.square_payment_status === "paid" ? (
+          {view.wix_invoice ? (
+            <div className="mt-3 text-center text-sm">
+              <p>
+                Invoice {view.wix_invoice.displayNumber} · {view.wix_invoice.statusLabel}
+              </p>
+              {view.wix_invoice.payUrl ? (
+                <a
+                  href={view.wix_invoice.payUrl}
+                  className="mt-2 inline-block font-medium underline"
+                >
+                  Pay this invoice
+                </a>
+              ) : (
+                <p className="mt-2 text-zinc-600">
+                  The shop sends this invoice from Wix. That email is the only copy.
+                </p>
+              )}
+            </div>
+          ) : view.square_payment_status === "paid" ? (
             <p className="mt-3 text-center font-medium text-emerald-700">
               Paid — thank you!
             </p>

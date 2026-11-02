@@ -300,5 +300,9 @@ export async function updateCustomer(
     new_value: customer,
   });
 
+  await import("@/lib/services/wixInvoices")
+    .then((mod) => mod.syncCustomerDrafts(customerId))
+    .catch(() => undefined);
+
   return customer;
 }

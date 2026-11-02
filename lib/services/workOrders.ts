@@ -127,6 +127,8 @@ export type CreateWorkOrderInput = {
     estimated_labour?: number | null;
     standard_price?: number | null;
   }>;
+  /** Set when Wix already reserved this id as sourceReference.externalReferenceId. */
+  work_order_id?: string;
 };
 
 export type LastRecordedMileage = {
@@ -919,6 +921,7 @@ export async function createWorkOrder(
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
     .insert({
+      ...(input.work_order_id ? { work_order_id: input.work_order_id } : {}),
       motorcycle_id: parsed.motorcycle_id,
       customer_id: motorcycle.customer_id,
       location_id: parsed.location_id,
@@ -1098,4 +1101,116 @@ export async function createWorkOrder(
     work_order_id: workOrderId,
     work_order_number: workOrderNumber,
   };
+}
+
+/**
+ * A Wix booking stub keeps its minted number until intake finishes.
+ * Finishing intake replaces that number with the Wix display number and
+ * adds the intake services when the stub has none yet.
+ */
+export async function applyWixNumberToExistingWorkOrder(
+  workOrderId: string,
+  input: CreateWorkOrderInput
+): Promise<{ work_order_id: string; work_order_number: string }> {
+  const user = await requireUser();
+  if (!canCreateWorkOrder(user.role)) throw new Error("FORBIDDEN");
+
+  const parsed = createWorkOrderSchema.parse({
+    ...input,
+    work_order_number: input.work_order_number,
+    external_invoice_number: normalizeOptional(input.external_invoice_number),
+    internal_notes: normalizeOptional(input.internal_notes),
+    primary_technician_id: normalizeOptional(input.primary_technician_id),
+    estimated_completion: normalizeOptional(input.estimated_completion),
+    service_ids: input.service_ids,
+    service_lines: input.service_lines ?? [],
+  });
+
+  const supabase = await createClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("work_order")
+    .select("work_order_id, location_id")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (!existing) throw new Error("WORK_ORDER_NOT_FOUND");
+
+  const { data: clash, error: clashError } = await supabase
+    .from("work_order")
+    .select("work_order_id")
+    .eq("location_id", parsed.location_id)
+    .eq("work_order_number", parsed.work_order_number)
+    .neq("work_order_id", workOrderId)
+    .maybeSingle();
+  if (clashError) throw clashError;
+  if (clash) throw new Error("WORK_ORDER_NUMBER_TAKEN");
+
+  const { error: updateError } = await supabase
+    .from("work_order")
+    .update({
+      work_order_number: parsed.work_order_number,
+      mileage: parsed.mileage,
+      mileage_unit: parsed.mileage_unit,
+      estimated_completion: parsed.estimated_completion,
+      internal_notes: parsed.internal_notes ?? null,
+      primary_technician_id: parsed.primary_technician_id ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("work_order_id", workOrderId);
+  if (updateError) throw updateError;
+
+  const { count, error: countError } = await supabase
+    .from("job")
+    .select("job_id", { count: "exact", head: true })
+    .eq("work_order_id", workOrderId);
+  if (countError) throw countError;
+  if ((count ?? 0) > 0) {
+    return { work_order_id: workOrderId, work_order_number: parsed.work_order_number };
+  }
+
+  const { data: services, error: serviceError } = await supabase
+    .from("service")
+    .select("service_id, name, standard_price, estimated_labour, active")
+    .in("service_id", parsed.service_ids)
+    .eq("active", true);
+  if (serviceError) throw serviceError;
+  if ((services ?? []).length !== parsed.service_ids.length) {
+    throw new Error("SERVICE_NOT_FOUND");
+  }
+
+  const lineById = new Map(
+    parsed.service_lines.map((line) => [
+      line.service_id,
+      {
+        service_id: line.service_id,
+        note: line.note?.trim() ? line.note.trim() : null,
+        estimated_labour: line.estimated_labour ?? null,
+        standard_price: line.standard_price ?? null,
+      },
+    ])
+  );
+  for (const service of services ?? []) {
+    const snapshots = resolveJobSnapshots({
+      catalogueLabour: service.estimated_labour,
+      cataloguePrice: service.standard_price,
+      line: lineById.get(service.service_id),
+    });
+    const { error: jobError } = await supabase.from("job").insert({
+      work_order_id: workOrderId,
+      service_id: service.service_id,
+      service_name_snapshot: service.name,
+      standard_price_snapshot: snapshots.standard_price_snapshot,
+      estimated_labour_snapshot: snapshots.estimated_labour_snapshot,
+      notes: snapshots.notes,
+      status: "approved",
+      origin: "customer_request",
+      created_by_user_id: user.user_id,
+      approved_by_customer_at: new Date().toISOString(),
+      approval_method: "in_person",
+      approval_recorded_by_user_id: user.user_id,
+    });
+    if (jobError) throw jobError;
+  }
+
+  return { work_order_id: workOrderId, work_order_number: parsed.work_order_number };
 }

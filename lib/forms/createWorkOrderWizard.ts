@@ -21,12 +21,14 @@ export function canProceedFromMotorcycleStep(motorcycleId: string): boolean {
 
 export function canProceedFromVisitStep(data: {
   workOrderNumber: string;
+  /** When Wix assigns the number, the typed field is not required. */
+  wixAssignsNumber?: boolean;
   mileage: string;
   estimatedCompletion: string;
   selectedServiceIds: string[];
   servicePricingComplete: boolean;
 }): boolean {
-  if (!data.workOrderNumber.trim()) return false;
+  if (!data.wixAssignsNumber && !data.workOrderNumber.trim()) return false;
 
   const trimmed = data.mileage.trim();
   if (!trimmed) return false;
@@ -61,6 +63,7 @@ type StepCompleteInput = {
   customerId?: string;
   motorcycleId?: string;
   workOrderNumber?: string;
+  wixAssignsNumber?: boolean;
   mileage?: string;
   estimatedCompletion?: string;
   selectedServiceIds?: string[];
@@ -80,6 +83,7 @@ export function isWizardStepComplete(
     case "visit":
       return canProceedFromVisitStep({
         workOrderNumber: data.workOrderNumber ?? "",
+        wixAssignsNumber: data.wixAssignsNumber,
         mileage: data.mileage ?? "",
         estimatedCompletion: data.estimatedCompletion ?? "",
         selectedServiceIds: data.selectedServiceIds ?? [],
@@ -100,6 +104,7 @@ export function canSubmitCreateWorkOrderWizard(data: {
   customerId: string;
   motorcycleId: string;
   workOrderNumber: string;
+  wixAssignsNumber?: boolean;
   mileage: string;
   estimatedCompletion: string;
   selectedServiceIds: string[];
@@ -112,6 +117,7 @@ export function canSubmitCreateWorkOrderWizard(data: {
     canProceedFromMotorcycleStep(data.motorcycleId) &&
     canProceedFromVisitStep({
       workOrderNumber: data.workOrderNumber,
+      wixAssignsNumber: data.wixAssignsNumber,
       mileage: data.mileage,
       estimatedCompletion: data.estimatedCompletion,
       selectedServiceIds: data.selectedServiceIds,
