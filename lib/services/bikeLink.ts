@@ -2,12 +2,14 @@ import { requireUser } from "@/lib/auth/session";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { createClient } from "@/lib/database/supabase-server";
 import {
+  attentionLevel,
   baselineCaption,
   interpretBikeReading,
   parseBikeLinkSchedule,
   parseBikeReading,
   readingOriginLabel,
   resolveServiceBaseline,
+  type AttentionLevel,
   type BikeLinkReport,
   type BikeLinkSource,
   type BikeReading,
@@ -50,6 +52,7 @@ type ScheduleRow = {
 
 type ReadingRow = {
   reading_id: string;
+  motorcycle_id: string;
   source: string;
   place_name: string | null;
   odometer: number | null;
@@ -57,6 +60,64 @@ type ReadingRow = {
   fault_codes: string[] | null;
   recorded_at: string;
 };
+
+export type BikeLinkAttentionItem = {
+  motorcycleId: string;
+  label: string;
+  customerName: string;
+  level: AttentionLevel;
+  clientNote: string;
+  origin: string;
+  recordedAt: string;
+};
+
+export async function listBikeLinkAttention(): Promise<BikeLinkAttentionItem[]> {
+  const user = await requireUser();
+  if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("bike_link_latest_reading")
+    .select(
+      "reading_id, motorcycle_id, source, place_name, odometer, battery_volts, fault_codes, recorded_at"
+    );
+  if (error) throw error;
+  const readings = (data ?? []) as ReadingRow[];
+  if (readings.length === 0) return [];
+
+  const motorcycleIds = readings.map((reading) => reading.motorcycle_id);
+  const [motorcycles, schedules, visits] = await Promise.all([
+    loadMotorcycles(supabase, motorcycleIds),
+    loadSchedules(supabase, motorcycleIds),
+    loadCompletedVisits(supabase, motorcycleIds),
+  ]);
+
+  const items: BikeLinkAttentionItem[] = [];
+  for (const readingRow of readings) {
+    const motorcycle = motorcycles.get(readingRow.motorcycle_id);
+    if (!motorcycle) continue;
+    const unit = normalizeMileageUnit(motorcycle.odometer_unit);
+    const schedule = schedules.get(readingRow.motorcycle_id) ?? null;
+    const view = buildView(unit, schedule, readingRow, visits.get(readingRow.motorcycle_id) ?? null);
+    const level = view.report ? attentionLevel(view.report) : null;
+    if (!level || !view.report?.clientNote) continue;
+    items.push({
+      motorcycleId: motorcycle.motorcycle_id,
+      label: `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`,
+      customerName: motorcycle.customerName,
+      level,
+      clientNote: view.report.clientNote,
+      origin: readingOriginLabel(readingRow.source as BikeLinkSource, readingRow.place_name),
+      recordedAt: readingRow.recorded_at,
+    });
+  }
+
+  items.sort((a, b) => {
+    if (a.level !== b.level) return a.level === "now" ? -1 : 1;
+    return b.recordedAt.localeCompare(a.recordedAt);
+  });
+  return items;
+}
 
 export async function getBikeLink(motorcycleId: string): Promise<BikeLinkView> {
   const user = await requireUser();
@@ -220,6 +281,103 @@ function toReading(row: ReadingRow): BikeReading {
   };
 }
 
+type MotorcycleAttentionRow = {
+  motorcycle_id: string;
+  year: number;
+  make: string;
+  model: string;
+  odometer_unit: string | null;
+  customerName: string;
+};
+
+async function loadMotorcycles(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  motorcycleIds: string[]
+): Promise<Map<string, MotorcycleAttentionRow>> {
+  const { data, error } = await supabase
+    .from("motorcycle")
+    .select(
+      "motorcycle_id, year, make, model, odometer_unit, customer:customer_id ( first_name, last_name )"
+    )
+    .in("motorcycle_id", motorcycleIds);
+  if (error) throw error;
+  const map = new Map<string, MotorcycleAttentionRow>();
+  for (const row of data ?? []) {
+    const customer = one(row.customer);
+    map.set(row.motorcycle_id, {
+      motorcycle_id: row.motorcycle_id,
+      year: row.year,
+      make: row.make,
+      model: row.model,
+      odometer_unit: row.odometer_unit,
+      customerName: customer
+        ? `${customer.first_name} ${customer.last_name}`
+        : "Unknown",
+    });
+  }
+  return map;
+}
+
+async function loadSchedules(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  motorcycleIds: string[]
+): Promise<Map<string, ScheduleRow>> {
+  const { data, error } = await supabase
+    .from("bike_link_schedule")
+    .select(
+      "motorcycle_id, interval_distance, interval_days, last_service_odometer, last_service_on"
+    )
+    .in("motorcycle_id", motorcycleIds);
+  if (error) throw error;
+  const map = new Map<string, ScheduleRow>();
+  for (const row of (data ?? []) as Array<ScheduleRow & { motorcycle_id: string }>) {
+    map.set(row.motorcycle_id, row);
+  }
+  return map;
+}
+
+async function loadCompletedVisits(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  motorcycleIds: string[]
+): Promise<Map<string, { odometer: number | null; completedAt: Date | null }>> {
+  const { data, error } = await supabase
+    .from("work_order")
+    .select("motorcycle_id, mileage, mileage_unit, completed_at")
+    .in("motorcycle_id", motorcycleIds)
+    .eq("status", "completed")
+    .not("completed_at", "is", null)
+    .order("completed_at", { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+
+  const units = new Map<string, MileageUnit>();
+  const { data: bikes, error: bikeError } = await supabase
+    .from("motorcycle")
+    .select("motorcycle_id, odometer_unit")
+    .in("motorcycle_id", motorcycleIds);
+  if (bikeError) throw bikeError;
+  for (const bike of bikes ?? []) {
+    units.set(bike.motorcycle_id, normalizeMileageUnit(bike.odometer_unit));
+  }
+
+  const map = new Map<string, { odometer: number | null; completedAt: Date | null }>();
+  for (const row of data ?? []) {
+    if (map.has(row.motorcycle_id)) continue;
+    if (row.mileage == null || !row.completed_at) continue;
+    if (normalizeMileageUnit(row.mileage_unit) !== units.get(row.motorcycle_id)) continue;
+    map.set(row.motorcycle_id, {
+      odometer: Number(row.mileage),
+      completedAt: new Date(row.completed_at),
+    });
+  }
+  return map;
+}
+
+function one<T>(value: T | T[] | null | undefined): T | null {
+  if (value == null) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
 async function loadUnit(
   supabase: Awaited<ReturnType<typeof createClient>>,
   motorcycleId: string
@@ -256,7 +414,7 @@ async function loadLatestReading(
   const { data, error } = await supabase
     .from("bike_link_reading")
     .select(
-      "reading_id, source, place_name, odometer, battery_volts, fault_codes, recorded_at"
+      "reading_id, motorcycle_id, source, place_name, odometer, battery_volts, fault_codes, recorded_at"
     )
     .eq("motorcycle_id", motorcycleId)
     .order("recorded_at", { ascending: false })

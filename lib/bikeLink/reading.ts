@@ -39,6 +39,8 @@ export type ServiceBaseline = {
   dateFrom: "schedule" | "visit" | "none";
 };
 
+export type AttentionLevel = "now" | "soon";
+
 export type BikeLinkReport = {
   service: "ok" | "due_soon" | "due" | "unknown";
   serviceDetail: string;
@@ -104,6 +106,14 @@ export function resolveServiceBaseline(args: {
           ? "visit"
           : "none",
   };
+}
+
+export function attentionLevel(report: BikeLinkReport): AttentionLevel | null {
+  if (report.service === "due" || report.battery === "flat" || report.faults === "present") {
+    return "now";
+  }
+  if (report.service === "due_soon" || report.battery === "low") return "soon";
+  return null;
 }
 
 export function interpretBikeReading(

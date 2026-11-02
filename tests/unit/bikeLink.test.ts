@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  attentionLevel,
   interpretBikeReading,
   parseBikeReading,
   resolveServiceBaseline,
@@ -292,5 +293,56 @@ describe("parseBikeReading", () => {
       ok: false,
       error: "Fault codes look like P0335 or C14.",
     });
+  });
+});
+
+describe("attentionLevel", () => {
+  const baseline = resolveServiceBaseline({
+    unit: "km",
+    schedule: {
+      intervalDistance: 6000,
+      intervalDays: 365,
+      lastServiceOdometer: 10000,
+      lastServiceAt: new Date("2026-06-01T12:00:00.000Z"),
+    },
+    lastVisit: null,
+  });
+
+  function reportFor(reading: {
+    odometer: number | null;
+    batteryVolts: number | null;
+    faultCodes: string[];
+  }) {
+    return interpretBikeReading(
+      { ...reading, recordedAt, source: "home", placeName: null },
+      baseline
+    );
+  }
+
+  it("puts a due service, a flat battery, or a fault code on the call-now list", () => {
+    expect(
+      attentionLevel(reportFor({ odometer: 16400, batteryVolts: 12.6, faultCodes: [] }))
+    ).toBe("now");
+    expect(
+      attentionLevel(reportFor({ odometer: 11000, batteryVolts: 11.5, faultCodes: [] }))
+    ).toBe("now");
+    expect(
+      attentionLevel(reportFor({ odometer: 11000, batteryVolts: 12.6, faultCodes: ["P0335"] }))
+    ).toBe("now");
+  });
+
+  it("puts a coming-due service or a low battery on the call-soon list", () => {
+    expect(
+      attentionLevel(reportFor({ odometer: 15600, batteryVolts: 12.6, faultCodes: [] }))
+    ).toBe("soon");
+    expect(
+      attentionLevel(reportFor({ odometer: 11000, batteryVolts: 12.2, faultCodes: [] }))
+    ).toBe("soon");
+  });
+
+  it("leaves a healthy reading off the list", () => {
+    expect(
+      attentionLevel(reportFor({ odometer: 11200, batteryVolts: 12.6, faultCodes: [] }))
+    ).toBeNull();
   });
 });
