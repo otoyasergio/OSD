@@ -11,9 +11,11 @@ import {
   bikeHeaderFields,
   canSyncCustomerBlock,
   draftNeedsNumberAllocation,
+  allowsEnteredWixInvoiceNumber,
   intakeBannerMessage,
   intakeFailureMessage,
   isLegacyInvoicesApiUnavailable,
+  normalizeEnteredWixInvoiceNumber,
   shouldApplyInvoiceAcknowledgement,
   formatPreviewDisplayNumber,
   invoiceNumbersEqual,
@@ -268,20 +270,29 @@ describe("revision, square, and acknowledgement", () => {
     ).toBe(false);
   });
 
-  it("tells the counter to tap Try again when Wix has not migrated this site", () => {
+  it("tells the counter to enter the Wix invoice number when the new API is unavailable", () => {
     const reason =
       "The new Invoices API isn't available on this site yet. The site still uses the legacy invoices service, which is only accessible through Velo. New Invoices, along with its API and SDK, is being rolled out gradually — no action is needed on your side.";
     expect(isLegacyInvoicesApiUnavailable(reason)).toBe(true);
+    expect(allowsEnteredWixInvoiceNumber(reason)).toBe(true);
     const message = intakeFailureMessage({
       clientName: "Evan Kerr",
       bikeLabel: "2017 TRIUMPH Bonneville T100",
       wixReason: reason,
     });
-    expect(message).toContain("Tap Try again");
+    expect(message).toContain("enter that invoice number here");
+    expect(allowsEnteredWixInvoiceNumber(message)).toBe(true);
     expect(message).toContain("Evan Kerr");
     expect(message).toContain("2017 TRIUMPH Bonneville T100");
     expect(message).not.toContain(ACKNOWLEDGED_INTAKE_SUCCESS);
     expect(message).toContain("No work order number was created.");
+    expect(normalizeEnteredWixInvoiceNumber("0003894")).toBe("0003894");
+    expect(normalizeEnteredWixInvoiceNumber(" 3894 ")).toBe("3894");
+    expect(normalizeEnteredWixInvoiceNumber("WO-1042")).toBeNull();
+    expect(normalizeEnteredWixInvoiceNumber("0")).toBeNull();
+    expect(allowsEnteredWixInvoiceNumber("Wix did not return an invoice number.")).toBe(
+      false
+    );
   });
 
   it("labels Overdue from Wix", () => {

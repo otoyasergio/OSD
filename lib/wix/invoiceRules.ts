@@ -7,6 +7,10 @@ import { validateVinForModelYear, VIN_CHARSET, normalizeVin } from "@/lib/vin/va
 
 export const HST_LINE_PATTERN = /^\s*hst\b/i;
 export const LEGAL_ENTITY_NAME = "OTOMOTO TORONTO MOTO INC.";
+
+/** New invoice page for torontomoto.com while the site is still on legacy invoices. */
+export const WIX_NEW_INVOICE_URL =
+  "https://manage.wix.com/dashboard/50360639-7b1c-4bc8-ae1e-bd7cb472d611/wix-invoices/invoice/new";
 export const ONTARIO_HST_RATE = "0.13";
 
 const SEALED_STATUSES = new Set(["PAID", "VOIDED", "CANCELED", "CLOSED"]);
@@ -24,6 +28,17 @@ export function invoiceInteger(value: string | null | undefined): number | null 
 /** Digit-only search. `389`, `03894`, and `0003894` compare as integers. */
 export function isInvoiceIntegerQuery(query: string): boolean {
   return /^\d+$/.test(query.trim());
+}
+
+/**
+ * The invoice number staff copied from Wix. Leading zeros stay, because that
+ * is the number printed on the invoice. Zero and non-digits are refused.
+ */
+export function normalizeEnteredWixInvoiceNumber(value: string): string | null {
+  const trimmed = value.trim();
+  const parsed = invoiceInteger(trimmed);
+  if (parsed == null || parsed <= 0) return null;
+  return trimmed;
 }
 
 export function invoiceNumbersEqual(
@@ -297,6 +312,13 @@ export function isLegacyInvoicesApiUnavailable(reason: string): boolean {
   );
 }
 
+/** Staff may type the Wix invoice number only while the new API is unavailable. */
+export function allowsEnteredWixInvoiceNumber(text: string | null | undefined): boolean {
+  if (!text) return false;
+  if (isLegacyInvoicesApiUnavailable(text)) return true;
+  return text.toLowerCase().includes("enter that invoice number here");
+}
+
 /**
  * A failed retry replaces the stored error and clears the previous
  * acknowledge. `hold_revision` moves forward so a late Acknowledge for the
@@ -413,7 +435,7 @@ export function intakeFailureMessage(input: {
   const bike = input.bikeLabel.trim();
   const reason = input.wixReason.trim();
   if (isLegacyInvoicesApiUnavailable(reason)) {
-    return `Wix is still rolling the new Invoices API out to this site. The work order number for ${client} on ${bike} will come from that API when the rollout reaches this site. Tap Try again to check. No work order number was created.`;
+    return `Wix cannot create the invoice from the app yet for ${client} on ${bike}. This site is still on the older Wix invoices. Create the invoice in Wix, then enter that invoice number here. That number is the work order number. No work order number was created.`;
   }
   return `Wix did not return an invoice number for ${client} on ${bike}. ${reason} Acknowledge this before trying again. No work order number was created.`;
 }

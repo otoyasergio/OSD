@@ -3,7 +3,11 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/database/supabase-admin";
 import { requireUser } from "@/lib/auth/session";
-import { canRecordCustomerApproval, canViewPricing } from "@/lib/permissions/checks";
+import {
+  canCreateWorkOrder,
+  canRecordCustomerApproval,
+  canViewPricing,
+} from "@/lib/permissions/checks";
 import { wixInvoicesEnabled } from "@/lib/config/features";
 import { getWixContactsConfig } from "@/lib/wix/config";
 import {
@@ -574,6 +578,72 @@ export async function acknowledgeInvoiceFailure(
     .select("acknowledgement_id");
   if (error) throw error;
   return { applied: (updated ?? []).length > 0 };
+}
+
+export type OpenWixIntakeHold = {
+  acknowledgementId: string;
+  holdRevision: number;
+  errorText: string;
+  legacyNumberEntry: boolean;
+  pendingWorkOrderId: string | null;
+};
+
+/** The open intake hold for this customer and bike, if one is still blocking create. */
+export async function getOpenWixIntakeHold(
+  customerId: string,
+  motorcycleId: string
+): Promise<OpenWixIntakeHold | null> {
+  const user = await requireUser();
+  if (!canCreateWorkOrder(user.role)) return null;
+  if (!customerId || !motorcycleId) return null;
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("invoice_create_acknowledgement")
+    .select(
+      "acknowledgement_id, wix_error_text, hold_revision, pending_work_order_id, wix_invoice_id"
+    )
+    .eq("customer_id", customerId)
+    .eq("motorcycle_id", motorcycleId)
+    .is("cleared_at", null)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || data.wix_invoice_id) return null;
+  const errorText = String(data.wix_error_text ?? "");
+  return {
+    acknowledgementId: String(data.acknowledgement_id),
+    holdRevision: Number(data.hold_revision ?? 1),
+    errorText,
+    legacyNumberEntry: isLegacyInvoicesApiUnavailable(errorText),
+    pendingWorkOrderId: (data.pending_work_order_id as string | null) ?? null,
+  };
+}
+
+/**
+ * Close the hold after staff save a work order with the invoice number they
+ * copied from Wix. Only the legacy-API refusal can be closed this way.
+ */
+export async function clearLegacyInvoiceHold(acknowledgementId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("invoice_create_acknowledgement")
+    .select("wix_error_text, wix_invoice_id, cleared_at")
+    .eq("acknowledgement_id", acknowledgementId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data || data.cleared_at || data.wix_invoice_id) return false;
+  const errorText = String(data.wix_error_text ?? "");
+  if (!isLegacyInvoicesApiUnavailable(errorText)) return false;
+  const { data: updated, error: updateError } = await admin
+    .from("invoice_create_acknowledgement")
+    .update({ cleared_at: new Date().toISOString() })
+    .eq("acknowledgement_id", acknowledgementId)
+    .eq("wix_error_text", errorText)
+    .is("wix_invoice_id", null)
+    .is("cleared_at", null)
+    .select("acknowledgement_id");
+  if (updateError) throw updateError;
+  return (updated ?? []).length > 0;
 }
 
 async function openHold(

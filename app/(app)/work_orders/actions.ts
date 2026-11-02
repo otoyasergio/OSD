@@ -15,9 +15,12 @@ import { wixInvoicesEnabled } from "@/lib/config/features";
 import {
   acknowledgeInvoiceFailure,
   attachInvoiceToWorkOrder,
+  clearLegacyInvoiceHold,
+  getOpenWixIntakeHold,
   prepareIntakeInvoice,
   WixIntakeBlockedError,
 } from "@/lib/services/wixInvoices";
+import { normalizeEnteredWixInvoiceNumber } from "@/lib/wix/invoiceRules";
 import { listIntakePhotos, uploadIntakePhoto } from "@/lib/services/photos";
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { requireUser } from "@/lib/auth/session";
@@ -257,6 +260,116 @@ export async function retryAcknowledgedWixIntakeAction(
     return { error: toFormErrorMessage(error) };
   }
   return createWorkOrderOnlyAction({ error: null }, formData);
+}
+
+export async function loadOpenWixIntakeHoldAction(
+  customerId: string,
+  motorcycleId: string
+): Promise<WorkOrderFormState & { legacyNumberEntry?: boolean }> {
+  try {
+    const hold = await getOpenWixIntakeHold(customerId, motorcycleId);
+    if (!hold) {
+      return {
+        error: null,
+        wixAcknowledgementId: null,
+        wixHoldRevision: null,
+        legacyNumberEntry: false,
+      };
+    }
+    return {
+      error: hold.errorText,
+      wixAcknowledgementId: hold.acknowledgementId,
+      wixHoldRevision: hold.holdRevision,
+      legacyNumberEntry: hold.legacyNumberEntry,
+    };
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    return { error: toFormErrorMessage(error), legacyNumberEntry: false };
+  }
+}
+
+/**
+ * Save the visit with the invoice number staff copied from Wix.
+ * Used only while this site is still on the legacy invoices service.
+ */
+export async function createWorkOrderWithEnteredWixNumberAction(
+  formData: FormData
+): Promise<WorkOrderFormState> {
+  try {
+    if (!wixInvoicesEnabled()) {
+      return { error: toFormErrorMessage(new Error("WIX_INVOICE_NUMBER_NOT_ALLOWED")) };
+    }
+    const number = normalizeEnteredWixInvoiceNumber(
+      String(formData.get("work_order_number") ?? "")
+    );
+    if (!number) {
+      return { error: toFormErrorMessage(new Error("WIX_INVOICE_NUMBER_REQUIRED")) };
+    }
+    const customerId = String(formData.get("customer_id") ?? "");
+    const motorcycleId = String(formData.get("motorcycle_id") ?? "");
+    const hold = await getOpenWixIntakeHold(customerId, motorcycleId);
+    if (!hold?.legacyNumberEntry) {
+      return { error: toFormErrorMessage(new Error("WIX_INVOICE_NUMBER_NOT_ALLOWED")) };
+    }
+
+    const user = await requireUser();
+    const serviceIds = formData
+      .getAll("service_ids")
+      .map((value) => String(value))
+      .filter(Boolean);
+    const primaryTech = String(formData.get("primary_technician_id") ?? "").trim();
+    const serviceLines = readServiceLinesFromFormData(formData, serviceIds);
+    if (serviceLines.some((line) => line.standard_price === null)) {
+      throw new Error("SERVICE_PRICE_REQUIRED");
+    }
+    const shared = {
+      motorcycle_id: motorcycleId,
+      location_id: user.active_location_id!,
+      external_invoice_number: null,
+      mileage: readRequiredMileage(formData),
+      mileage_unit: (formData.get("mileage_unit") === "mi" ? "mi" : "km") as "km" | "mi",
+      estimated_completion: readEstimatedCompletion(formData),
+      internal_notes: String(formData.get("internal_notes") ?? ""),
+      primary_technician_id: primaryTech || null,
+      service_ids: serviceIds,
+      service_lines: serviceLines,
+      work_order_number: number,
+    };
+
+    let existingId: string | null = null;
+    if (hold.pendingWorkOrderId) {
+      const supabase = await createClient();
+      const { data, error } = await supabase
+        .from("work_order")
+        .select("work_order_id")
+        .eq("work_order_id", hold.pendingWorkOrderId)
+        .maybeSingle();
+      if (error) throw error;
+      if (data?.work_order_id) existingId = String(data.work_order_id);
+    }
+
+    const created = existingId
+      ? await applyWixNumberToExistingWorkOrder(existingId, shared)
+      : await createWorkOrder({
+          ...shared,
+          ...(hold.pendingWorkOrderId ? { work_order_id: hold.pendingWorkOrderId } : {}),
+        });
+    await clearLegacyInvoiceHold(hold.acknowledgementId);
+    revalidatePath("/work_orders");
+    revalidatePath("/dashboard");
+    revalidatePath("/control-center");
+    revalidatePath("/technician");
+    revalidatePath("/technician/docket");
+    revalidatePath(`/work_orders/${created.work_order_id}`);
+    return {
+      error: null,
+      workOrderId: created.work_order_id,
+      workOrderNumber: created.work_order_number,
+    };
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    return { error: toFormErrorMessage(error) };
+  }
 }
 
 /**

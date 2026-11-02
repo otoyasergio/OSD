@@ -49,6 +49,10 @@ const MESSAGES: Record<string, string> = {
   WORK_ORDER_NOT_FOUND: "That work order no longer exists.",
   WORK_ORDER_NUMBER_FAILED: "Could not mint a work order number. Try again.",
   WORK_ORDER_NUMBER_REQUIRED: "Enter the Wix work order number.",
+  WIX_INVOICE_NUMBER_REQUIRED:
+    "Enter the invoice number from Wix. Use the digits printed on the invoice.",
+  WIX_INVOICE_NUMBER_NOT_ALLOWED:
+    "Wix has to return the invoice number before this work order can be saved.",
   WORK_ORDER_NUMBER_TAKEN:
     "That Wix work order number is already used at this location. Check the number and try again.",
   JOB_NOT_FOUND: "That job no longer exists.",

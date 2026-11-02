@@ -5,8 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   createWorkOrderOnlyAction,
+  createWorkOrderWithEnteredWixNumberAction,
   getLastRecordedMileageAction,
   getMotorcyclePackageFitmentAction,
+  loadOpenWixIntakeHoldAction,
   retryAcknowledgedWixIntakeAction,
   type WorkOrderFormState,
 } from "@/app/(app)/work_orders/actions";
@@ -77,7 +79,12 @@ import {
   suggestedPriceFromLabourHours,
 } from "@/lib/pricing/shopRate";
 import { toFormErrorMessage } from "@/lib/services/errors";
-import { intakeBannerMessage } from "@/lib/wix/invoiceRules";
+import {
+  allowsEnteredWixInvoiceNumber,
+  intakeBannerMessage,
+  normalizeEnteredWixInvoiceNumber,
+  WIX_NEW_INVOICE_URL,
+} from "@/lib/wix/invoiceRules";
 import {
   formatDateTime,
   nextShopBusinessCompletionValue,
@@ -425,6 +432,23 @@ export function CreateWorkOrderForm({
   }, [wixAcknowledgementId]);
 
   useEffect(() => {
+    if (!wixAssignsNumber || !customerId || !motorcycleId) return;
+    let cancelled = false;
+    void loadOpenWixIntakeHoldAction(customerId, motorcycleId).then((hold) => {
+      if (cancelled || !hold.wixAcknowledgementId || !hold.error) return;
+      setWixAcknowledgementId(hold.wixAcknowledgementId);
+      setWixHoldRevision(hold.wixHoldRevision ?? null);
+      setWixErrorText(hold.error);
+      const banner = intakeBannerMessage({ error: hold.error, notice: null });
+      setClientError(banner.error);
+      setClientNotice(banner.notice);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [wixAssignsNumber, customerId, motorcycleId]);
+
+  useEffect(() => {
     if (!resolvedInitialCustomerId) return;
     let cancelled = false;
     const requestId = ++bikeLoadRequestRef.current;
@@ -520,7 +544,7 @@ export function CreateWorkOrderForm({
     setClientError(null);
   }
 
-  async function submitCreate(form: HTMLFormElement) {
+  async function submitCreate(form: HTMLFormElement, mode: "wix" | "entered" = "wix") {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setClientError(null);
@@ -537,16 +561,18 @@ export function CreateWorkOrderForm({
       stripIntakePhotoFields(formData, ALL_REQUIRED);
 
       const created =
-        acknowledgementId &&
-        holdRevision != null &&
-        intakePrimaryActionRetries(true)
-          ? await retryAcknowledgedWixIntakeAction(
-              acknowledgementId,
-              holdRevision,
-              seenError,
-              formData
-            )
-          : await createWorkOrderOnlyAction({ error: null }, formData);
+        mode === "entered"
+          ? await createWorkOrderWithEnteredWixNumberAction(formData)
+          : acknowledgementId &&
+              holdRevision != null &&
+              intakePrimaryActionRetries(true)
+            ? await retryAcknowledgedWixIntakeAction(
+                acknowledgementId,
+                holdRevision,
+                seenError,
+                formData
+              )
+            : await createWorkOrderOnlyAction({ error: null }, formData);
       if (created.error || !created.workOrderId) {
         const nextAcknowledgementId = created.wixAcknowledgementId ?? null;
         setWixAcknowledgementId(nextAcknowledgementId);
@@ -688,6 +714,49 @@ export function CreateWorkOrderForm({
           >
             {primaryLabel}
           </button>
+        ) : null}
+        {acknowledgementPending &&
+        allowsEnteredWixInvoiceNumber(wixErrorText ?? intakeBanner.error) ? (
+          <div className="flex flex-col gap-2">
+            <a
+              className="btn w-full min-h-12 text-base"
+              href={WIX_NEW_INVOICE_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open Wix invoices
+            </a>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-foreground">
+                Wix invoice number
+              </span>
+              <input
+                className={INPUT_CLASS}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="0003894"
+                value={workOrderNumber}
+                onChange={(event) => setWorkOrderNumber(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className={`${NAV_BTN_CLASS} btn-primary w-full`}
+              disabled={
+                submitting ||
+                !readyToCreate ||
+                !normalizeEnteredWixInvoiceNumber(workOrderNumber)
+              }
+              onClick={() => {
+                const form = formRef.current;
+                if (!form) return;
+                void submitCreate(form, "entered");
+              }}
+            >
+              {submitting ? "Creating & uploading…" : "Use this invoice number"}
+            </button>
+          </div>
         ) : null}
       </div>
 
