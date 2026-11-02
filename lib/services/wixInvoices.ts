@@ -32,6 +32,7 @@ import {
 } from "@/lib/wix/invoicePayload";
 import {
   acknowledgementClearedOnSuccess,
+  acknowledgementFieldsOnFailedRetry,
   assertIntakeInvoiceReady,
   bikeHeaderFields,
   canSyncCustomerBlock,
@@ -39,6 +40,8 @@ import {
   draftNeedsNumberAllocation,
   formatPreviewDisplayNumber,
   intakeFailureMessage,
+  isLegacyInvoicesApiUnavailable,
+  shouldApplyInvoiceAcknowledgement,
   invoiceInteger,
   invoiceIsSealed,
   isWixInvoiceId,
@@ -64,10 +67,12 @@ type Admin = ReturnType<typeof createAdminClient>;
 
 export class WixIntakeBlockedError extends Error {
   readonly acknowledgementId: string;
-  constructor(message: string, acknowledgementId: string) {
+  readonly holdRevision: number;
+  constructor(message: string, acknowledgementId: string, holdRevision: number) {
     super(message);
     this.name = "WixIntakeBlockedError";
     this.acknowledgementId = acknowledgementId;
+    this.holdRevision = holdRevision;
   }
 }
 
@@ -512,12 +517,13 @@ function toListItem(row: Record<string, unknown>): WixInvoiceListItem {
 export async function blockingAcknowledgementForWorkOrder(workOrderId: string): Promise<{
   acknowledgement_id: string;
   wix_error_text: string;
+  hold_revision: number;
 } | null> {
   const admin = adminOrNull();
   if (!admin) return null;
   const { data } = await admin
     .from("invoice_create_acknowledgement")
-    .select("acknowledgement_id, wix_error_text")
+    .select("acknowledgement_id, wix_error_text, hold_revision")
     .eq("work_order_id", workOrderId)
     .is("acknowledged_at", null)
     .is("cleared_at", null)
@@ -527,22 +533,47 @@ export async function blockingAcknowledgementForWorkOrder(workOrderId: string): 
   return {
     acknowledgement_id: data.acknowledgement_id as string,
     wix_error_text: data.wix_error_text as string,
+    hold_revision: Number(data.hold_revision ?? 1),
   };
 }
 
-export async function acknowledgeInvoiceFailure(acknowledgementId: string): Promise<void> {
+export async function acknowledgeInvoiceFailure(
+  acknowledgementId: string,
+  seen: { holdRevision: number; errorText: string }
+): Promise<{ applied: boolean }> {
   const user = await requireUser();
   if (!canRecordCustomerApproval(user.role)) throw new Error("FORBIDDEN");
   const admin = createAdminClient();
-  const { error } = await admin
+  const { data: row, error: readError } = await admin
+    .from("invoice_create_acknowledgement")
+    .select("wix_error_text, hold_revision, acknowledged_at, cleared_at")
+    .eq("acknowledgement_id", acknowledgementId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!row) return { applied: false };
+  const applies = shouldApplyInvoiceAcknowledgement({
+    storedRevision: Number(row.hold_revision ?? 1),
+    seenRevision: seen.holdRevision,
+    storedErrorText: String(row.wix_error_text ?? ""),
+    seenErrorText: seen.errorText,
+    cleared: Boolean(row.cleared_at),
+    alreadyAcknowledged: Boolean(row.acknowledged_at),
+  });
+  if (!applies) return { applied: false };
+  const { data: updated, error } = await admin
     .from("invoice_create_acknowledgement")
     .update({
       acknowledged_at: new Date().toISOString(),
       staff_user_id: user.user_id,
     })
     .eq("acknowledgement_id", acknowledgementId)
-    .is("cleared_at", null);
+    .eq("hold_revision", seen.holdRevision)
+    .eq("wix_error_text", seen.errorText)
+    .is("acknowledged_at", null)
+    .is("cleared_at", null)
+    .select("acknowledgement_id");
   if (error) throw error;
+  return { applied: (updated ?? []).length > 0 };
 }
 
 async function openHold(
@@ -556,27 +587,52 @@ async function openHold(
     message: string;
     wixInvoiceId: string | null;
   }
-): Promise<string> {
-  const { data: existing } = await admin
+): Promise<{ acknowledgementId: string; holdRevision: number }> {
+  const { data: existing, error: existingError } = await admin
     .from("invoice_create_acknowledgement")
-    .select("acknowledgement_id")
+    .select("acknowledgement_id, hold_revision")
     .eq("customer_id", input.customerId)
     .eq("motorcycle_id", input.motorcycleId)
     .is("cleared_at", null)
     .limit(1)
     .maybeSingle();
+  if (existingError) throw existingError;
   if (existing?.acknowledgement_id) {
-    await admin
-      .from("invoice_create_acknowledgement")
-      .update({
-        wix_error_text: input.message,
-        wix_invoice_id: input.wixInvoiceId,
-        pending_work_order_id: input.pendingWorkOrderId,
-        work_order_id: input.workOrderId,
-        acknowledged_at: null,
-      })
-      .eq("acknowledgement_id", existing.acknowledgement_id);
-    return existing.acknowledgement_id as string;
+    let expectedRevision = Number(existing.hold_revision ?? 1);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const next = acknowledgementFieldsOnFailedRetry({ holdRevision: expectedRevision });
+      const { data: updated, error } = await admin
+        .from("invoice_create_acknowledgement")
+        .update({
+          wix_error_text: input.message,
+          wix_invoice_id: input.wixInvoiceId,
+          pending_work_order_id: input.pendingWorkOrderId,
+          work_order_id: input.workOrderId,
+          acknowledged_at: next.acknowledged_at,
+          hold_revision: next.hold_revision,
+        })
+        .eq("acknowledgement_id", existing.acknowledgement_id)
+        .eq("hold_revision", expectedRevision)
+        .select("acknowledgement_id, hold_revision")
+        .maybeSingle();
+      if (error) throw error;
+      if (updated?.acknowledgement_id) {
+        return {
+          acknowledgementId: updated.acknowledgement_id as string,
+          holdRevision: Number(updated.hold_revision),
+        };
+      }
+      const { data: current, error: rereadError } = await admin
+        .from("invoice_create_acknowledgement")
+        .select("hold_revision")
+        .eq("acknowledgement_id", existing.acknowledgement_id)
+        .is("cleared_at", null)
+        .maybeSingle();
+      if (rereadError) throw rereadError;
+      if (current?.hold_revision == null) break;
+      expectedRevision = Number(current.hold_revision);
+    }
+    throw new Error("INVOICE_ACK_REVISION_CONFLICT");
   }
   const { data, error } = await admin
     .from("invoice_create_acknowledgement")
@@ -589,10 +645,13 @@ async function openHold(
       wix_error_text: input.message,
       wix_invoice_id: input.wixInvoiceId,
     })
-    .select("acknowledgement_id")
+    .select("acknowledgement_id, hold_revision")
     .single();
   if (error) throw error;
-  return data.acknowledgement_id as string;
+  return {
+    acknowledgementId: data.acknowledgement_id as string,
+    holdRevision: Number(data.hold_revision ?? 1),
+  };
 }
 
 export async function prepareIntakeInvoice(input: {
@@ -642,19 +701,23 @@ export async function prepareIntakeInvoice(input: {
     throw new Error(ready.message);
   }
 
-  const { data: hold } = await admin
+  const { data: hold, error: holdError } = await admin
     .from("invoice_create_acknowledgement")
-    .select("acknowledgement_id, acknowledged_at, wix_invoice_id, pending_work_order_id, wix_error_text")
+    .select(
+      "acknowledgement_id, acknowledged_at, wix_invoice_id, pending_work_order_id, wix_error_text, hold_revision"
+    )
     .eq("customer_id", input.customerId)
     .eq("motorcycle_id", input.motorcycleId)
     .is("cleared_at", null)
     .limit(1)
     .maybeSingle();
+  if (holdError) throw holdError;
 
   if (hold && !hold.acknowledged_at) {
     throw new WixIntakeBlockedError(
       String(hold.wix_error_text),
-      String(hold.acknowledgement_id)
+      String(hold.acknowledgement_id),
+      Number(hold.hold_revision ?? 1)
     );
   }
 
@@ -751,8 +814,14 @@ export async function prepareIntakeInvoice(input: {
     } catch (error) {
       if (error instanceof WixIntakeBlockedError) throw error;
       const reason = error instanceof Error ? error.message : "Wix invoice create failed.";
+      if (error instanceof WixInvoiceApiError) {
+        console.error("Wix invoice create failed", {
+          status: error.status,
+          legacyApiUnavailable: isLegacyInvoicesApiUnavailable(reason),
+        });
+      }
       const message = intakeFailureMessage({ clientName, bikeLabel, wixReason: reason });
-      const acknowledgementId = await openHold(admin, {
+      const opened = await openHold(admin, {
         customerId: input.customerId,
         motorcycleId: input.motorcycleId,
         staffUserId: user.user_id,
@@ -761,7 +830,7 @@ export async function prepareIntakeInvoice(input: {
         message,
         wixInvoiceId: null,
       });
-      throw new WixIntakeBlockedError(message, acknowledgementId);
+      throw new WixIntakeBlockedError(message, opened.acknowledgementId, opened.holdRevision);
     }
   }
 
@@ -783,7 +852,7 @@ export async function prepareIntakeInvoice(input: {
       if (error instanceof WixIntakeBlockedError) throw error;
       const reason = error instanceof Error ? error.message : "Wix invoice publish failed.";
       const message = intakeFailureMessage({ clientName, bikeLabel, wixReason: reason });
-      const acknowledgementId = await openHold(admin, {
+      const opened = await openHold(admin, {
         customerId: input.customerId,
         motorcycleId: input.motorcycleId,
         staffUserId: user.user_id,
@@ -792,7 +861,7 @@ export async function prepareIntakeInvoice(input: {
         message,
         wixInvoiceId: invoiceId,
       });
-      throw new WixIntakeBlockedError(message, acknowledgementId);
+      throw new WixIntakeBlockedError(message, opened.acknowledgementId, opened.holdRevision);
     }
   }
 
@@ -802,7 +871,7 @@ export async function prepareIntakeInvoice(input: {
       bikeLabel,
       wixReason: "Wix created the invoice without a display number.",
     });
-    const acknowledgementId = await openHold(admin, {
+    const opened = await openHold(admin, {
       customerId: input.customerId,
       motorcycleId: input.motorcycleId,
       staffUserId: user.user_id,
@@ -811,7 +880,7 @@ export async function prepareIntakeInvoice(input: {
       message,
       wixInvoiceId: record.id ?? null,
     });
-    throw new WixIntakeBlockedError(message, acknowledgementId);
+    throw new WixIntakeBlockedError(message, opened.acknowledgementId, opened.holdRevision);
   }
 
   await upsertInvoiceFromRecord(record, { excludeFromSquare: false });

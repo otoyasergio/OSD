@@ -7,9 +7,12 @@ import {
   canProceedFromPhotosStep,
   canProceedFromVisitStep,
   canSubmitCreateWorkOrderWizard,
+  intakePrimaryActionLabel,
+  intakePrimaryActionRetries,
   isWizardStepComplete,
   shouldApplyCreateIntakePhotoChange,
   shouldApplyCreateOptionalPhotoChange,
+  showIntakePrimaryAction,
 } from "@/lib/forms/createWorkOrderWizard";
 import { allRequiredIntakeSelected } from "@/components/forms/IntakePhotoSlots";
 import { CREATE_INTAKE_PHOTO_SLOTS } from "@/lib/status/labels";
@@ -161,5 +164,21 @@ describe("create work order wizard steps", () => {
     expect(shouldApplyCreateOptionalPhotoChange("photos", [], [front])).toBe(true);
     expect(shouldApplyCreateOptionalPhotoChange("review", [front], [front])).toBe(false);
     expect(shouldApplyCreateOptionalPhotoChange("review", [front], [])).toBe(true);
+  });
+
+  it("puts Try again at the top while a Wix hold is open", () => {
+    expect(showIntakePrimaryAction({ onReviewStep: false, acknowledgementPending: true })).toBe(
+      true
+    );
+    expect(showIntakePrimaryAction({ onReviewStep: true, acknowledgementPending: false })).toBe(
+      true
+    );
+    expect(showIntakePrimaryAction({ onReviewStep: false, acknowledgementPending: false })).toBe(
+      false
+    );
+    expect(intakePrimaryActionLabel(true)).toBe("Try again");
+    expect(intakePrimaryActionLabel(false)).toBe("Create work order");
+    expect(intakePrimaryActionRetries(true)).toBe(true);
+    expect(intakePrimaryActionRetries(false)).toBe(false);
   });
 });

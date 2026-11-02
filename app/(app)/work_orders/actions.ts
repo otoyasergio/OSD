@@ -13,6 +13,7 @@ import {
 } from "@/lib/services/workOrders";
 import { wixInvoicesEnabled } from "@/lib/config/features";
 import {
+  acknowledgeInvoiceFailure,
   attachInvoiceToWorkOrder,
   prepareIntakeInvoice,
   WixIntakeBlockedError,
@@ -37,6 +38,8 @@ export type WorkOrderFormState = {
   missingCategories?: PhotoCategory[];
   /** Staff must acknowledge a Wix failure before intake can continue. */
   wixAcknowledgementId?: string | null;
+  /** Revision staff saw. A later failure bumps this and ignores a stale acknowledge. */
+  wixHoldRevision?: number | null;
 };
 
 const REQUIRED_INTAKE_CATEGORIES = CREATE_INTAKE_PHOTO_SLOTS.map((slot) => slot.category);
@@ -230,10 +233,30 @@ export async function createWorkOrderOnlyAction(
       return {
         error: error.message,
         wixAcknowledgementId: error.acknowledgementId,
+        wixHoldRevision: error.holdRevision,
       };
     }
     return { error: toFormErrorMessage(error) };
   }
+}
+
+/**
+ * Acknowledge the Wix error staff are looking at, then create the work order.
+ * One request keeps a second Acknowledge from stamping the failure this retry stores.
+ */
+export async function retryAcknowledgedWixIntakeAction(
+  acknowledgementId: string,
+  holdRevision: number,
+  errorText: string,
+  formData: FormData
+): Promise<WorkOrderFormState> {
+  try {
+    await acknowledgeInvoiceFailure(acknowledgementId, { holdRevision, errorText });
+  } catch (error) {
+    if (isRedirectError(error)) throw error;
+    return { error: toFormErrorMessage(error) };
+  }
+  return createWorkOrderOnlyAction({ error: null }, formData);
 }
 
 /**
@@ -265,6 +288,7 @@ export async function createWorkOrderWithIntakePhotosAction(
         return {
           error: error.message,
           wixAcknowledgementId: error.acknowledgementId,
+          wixHoldRevision: error.holdRevision,
         };
       }
       return { error: toFormErrorMessage(error) };

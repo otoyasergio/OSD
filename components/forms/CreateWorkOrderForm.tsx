@@ -7,6 +7,7 @@ import {
   createWorkOrderOnlyAction,
   getLastRecordedMileageAction,
   getMotorcyclePackageFitmentAction,
+  retryAcknowledgedWixIntakeAction,
   type WorkOrderFormState,
 } from "@/app/(app)/work_orders/actions";
 import { getOutstandingRecommendationsAction } from "@/app/(app)/work_orders/recommendation-actions";
@@ -38,7 +39,6 @@ import {
 } from "@/lib/photos/intakeQueue";
 import { CustomerSearchPicker } from "@/components/forms/CustomerSearchPicker";
 import { LicenceBarcodeScan } from "@/components/customers/LicenceBarcodeScan";
-import { acknowledgeWixInvoiceFailureAction } from "@/app/(app)/work_orders/wix-invoice-actions";
 import { saveLicenceScanAction } from "@/app/(app)/customers/actions";
 import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
 import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
@@ -51,8 +51,11 @@ import {
   canNavigateToWizardStep,
   canProceedFromWizardStep,
   canSubmitCreateWorkOrderWizard,
+  intakePrimaryActionLabel,
+  intakePrimaryActionRetries,
   shouldApplyCreateIntakePhotoChange,
   shouldApplyCreateOptionalPhotoChange,
+  showIntakePrimaryAction,
 } from "@/lib/forms/createWorkOrderWizard";
 import { stripIntakePhotoFields } from "@/lib/forms/intakeFormData";
 import {
@@ -74,6 +77,7 @@ import {
   suggestedPriceFromLabourHours,
 } from "@/lib/pricing/shopRate";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import { intakeBannerMessage } from "@/lib/wix/invoiceRules";
 import {
   formatDateTime,
   nextShopBusinessCompletionValue,
@@ -142,6 +146,8 @@ export function CreateWorkOrderForm({
   const queue = usePhotoUploadQueue();
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const wixHoldBannerRef = useRef<HTMLDivElement>(null);
   const draftHydration = useIntakeDraftHydration();
   const intakeDraftId = draftHydration.intakeDraftId;
   const photosRestored = draftHydration.photosRestored;
@@ -185,6 +191,9 @@ export function CreateWorkOrderForm({
   const [workOrderNumber, setWorkOrderNumber] = useState("");
   const [invoicePreview, setInvoicePreview] = useState<string | null>(null);
   const [wixAcknowledgementId, setWixAcknowledgementId] = useState<string | null>(null);
+  const [wixHoldRevision, setWixHoldRevision] = useState<number | null>(null);
+  const [wixErrorText, setWixErrorText] = useState<string | null>(null);
+  const [clientNotice, setClientNotice] = useState<string | null>(null);
   const [mileage, setMileage] = useState("");
   const [mileageUnit, setMileageUnit] = useState<MileageUnit>(() =>
     normalizeMileageUnit(
@@ -304,6 +313,14 @@ export function CreateWorkOrderForm({
     });
   }
 
+  function clearWixHold() {
+    setWixAcknowledgementId(null);
+    setWixHoldRevision(null);
+    setWixErrorText(null);
+    setClientNotice(null);
+    setClientError(null);
+  }
+
   function handleCustomerChange(nextCustomerId: string, customer: Customer | null) {
     customerIdRef.current = nextCustomerId;
     const requestId = ++bikeLoadRequestRef.current;
@@ -311,6 +328,7 @@ export function CreateWorkOrderForm({
     setMotorcycleId("");
     setMileageUnit("km");
     setMaxReachedIndex(0);
+    clearWixHold();
     if (customer) {
       setKnownCustomers((prev) => {
         if (prev.some((c) => c.customer_id === customer.customer_id)) {
@@ -347,6 +365,7 @@ export function CreateWorkOrderForm({
     );
     setMileageUnit(normalizeMileageUnit(bike?.odometer_unit));
     setMaxReachedIndex((prev) => Math.min(prev, 1));
+    clearWixHold();
   }
   const selectedTech = technicians.find((tech) => tech.user_id === primaryTechnicianId);
   const selectedServices = services.filter((service) =>
@@ -399,6 +418,11 @@ export function CreateWorkOrderForm({
       cancelled = true;
     };
   }, [wixAssignsNumber]);
+
+  useEffect(() => {
+    if (!wixAcknowledgementId) return;
+    wixHoldBannerRef.current?.scrollIntoView({ block: "start" });
+  }, [wixAcknowledgementId]);
 
   useEffect(() => {
     if (!resolvedInitialCustomerId) return;
@@ -500,7 +524,11 @@ export function CreateWorkOrderForm({
     if (submittingRef.current) return;
     submittingRef.current = true;
     setClientError(null);
+    setClientNotice(null);
     setSubmitting(true);
+    const acknowledgementId = wixAcknowledgementId;
+    const holdRevision = wixHoldRevision;
+    const seenError = wixErrorText ?? "";
 
     try {
       const formData = new FormData(form);
@@ -508,10 +536,28 @@ export function CreateWorkOrderForm({
       // large bodies with an unexpected-response crash instead of a form error.
       stripIntakePhotoFields(formData, ALL_REQUIRED);
 
-      const created = await createWorkOrderOnlyAction({ error: null }, formData);
+      const created =
+        acknowledgementId &&
+        holdRevision != null &&
+        intakePrimaryActionRetries(true)
+          ? await retryAcknowledgedWixIntakeAction(
+              acknowledgementId,
+              holdRevision,
+              seenError,
+              formData
+            )
+          : await createWorkOrderOnlyAction({ error: null }, formData);
       if (created.error || !created.workOrderId) {
-        setWixAcknowledgementId(created.wixAcknowledgementId ?? null);
-        setClientError(created.error ?? "Could not create the work order. Try again.");
+        const nextAcknowledgementId = created.wixAcknowledgementId ?? null;
+        setWixAcknowledgementId(nextAcknowledgementId);
+        setWixHoldRevision(nextAcknowledgementId ? (created.wixHoldRevision ?? null) : null);
+        setWixErrorText(nextAcknowledgementId ? (created.error ?? null) : null);
+        const banner = intakeBannerMessage({
+          error: created.error ?? "Could not create the work order. Try again.",
+          notice: null,
+        });
+        setClientError(banner.error);
+        setClientNotice(banner.notice);
         return;
       }
 
@@ -538,7 +584,12 @@ export function CreateWorkOrderForm({
 
       router.push(intakeContractHref(created.workOrderId));
     } catch (error) {
-      setClientError(toFormErrorMessage(error));
+      const banner = intakeBannerMessage({
+        error: toFormErrorMessage(error),
+        notice: null,
+      });
+      setClientError(banner.error);
+      setClientNotice(banner.notice);
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -559,9 +610,34 @@ export function CreateWorkOrderForm({
   const selectedPhotoCount = Object.values(visibleIntakePhotos).filter(
     (file) => file instanceof File && file.size > 0
   ).length;
+  const acknowledgementPending = Boolean(wixAcknowledgementId);
+  const readyToCreate = canSubmitCreateWorkOrderWizard({
+    stepId: acknowledgementPending ? "review" : stepId,
+    customerId,
+    motorcycleId,
+    workOrderNumber,
+    wixAssignsNumber,
+    mileage,
+    estimatedCompletion,
+    selectedServiceIds,
+    servicePricingComplete,
+    intakeComplete,
+  });
+  const showPrimary = showIntakePrimaryAction({
+    onReviewStep: isLastStep,
+    acknowledgementPending,
+  });
+  const intakeBanner = intakeBannerMessage({
+    error: clientError ?? (acknowledgementPending ? wixErrorText : null),
+    notice: clientNotice,
+  });
+  const primaryLabel = submitting
+    ? "Creating & uploading…"
+    : intakePrimaryActionLabel(acknowledgementPending);
 
   return (
     <form
+      ref={formRef}
       encType="multipart/form-data"
       className="intake-wizard"
       onKeyDown={(event) => {
@@ -575,21 +651,10 @@ export function CreateWorkOrderForm({
       }}
       onSubmit={(event) => {
         event.preventDefault();
-        const ok = canSubmitCreateWorkOrderWizard({
-          stepId,
-          customerId,
-          motorcycleId,
-          workOrderNumber,
-          wixAssignsNumber,
-          mileage,
-          estimatedCompletion,
-          selectedServiceIds,
-          servicePricingComplete,
-          intakeComplete,
-        });
-        if (!ok) {
+        if (!readyToCreate) {
+          setClientNotice(null);
           setClientError(
-            isLastStep
+            isLastStep || acknowledgementPending
               ? "Complete every required step, including the Wix work order number and all six intake photos, before creating the work order."
               : "Finish each step in order before creating the work order."
           );
@@ -600,23 +665,31 @@ export function CreateWorkOrderForm({
         void submitCreate(form);
       }}
     >
-      <FormError message={clientError} />
-      {wixAcknowledgementId ? (
-        <button
-          type="button"
-          className="btn"
-          onClick={() => {
-            void acknowledgeWixInvoiceFailureAction(wixAcknowledgementId).then(
-              (result) => {
-                if (result.error) setClientError(result.error);
-                else setClientError("Acknowledged. Try again to create the invoice.");
-              }
-            );
-          }}
-        >
-          Acknowledge Wix error
-        </button>
-      ) : null}
+      <div ref={wixHoldBannerRef} className="flex flex-col gap-3">
+        <FormError message={intakeBanner.error} />
+        {intakeBanner.notice ? (
+          <p
+            role="status"
+            className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-foreground"
+          >
+            {intakeBanner.notice}
+          </p>
+        ) : null}
+        {showPrimary ? (
+          <button
+            type="button"
+            className={`${NAV_BTN_CLASS} btn-primary w-full`}
+            disabled={submitting || !readyToCreate}
+            onClick={() => {
+              const form = formRef.current;
+              if (!form) return;
+              void submitCreate(form);
+            }}
+          >
+            {primaryLabel}
+          </button>
+        ) : null}
+      </div>
 
       <WizardProgress
         stepIndex={stepIndex}
@@ -1455,24 +1528,10 @@ export function CreateWorkOrderForm({
           ) : (
             <button
               type="submit"
-              disabled={
-                submitting ||
-                !canSubmitCreateWorkOrderWizard({
-                  stepId,
-                  customerId,
-                  motorcycleId,
-                  workOrderNumber,
-                  wixAssignsNumber,
-                  mileage,
-                  estimatedCompletion,
-                  selectedServiceIds,
-                  servicePricingComplete,
-                  intakeComplete,
-                })
-              }
+              disabled={submitting || !readyToCreate}
               className={`${NAV_BTN_CLASS} btn-primary disabled:pointer-events-none disabled:opacity-60`}
             >
-              {submitting ? "Creating & uploading…" : "Create work order"}
+              {primaryLabel}
             </button>
           )}
         </div>

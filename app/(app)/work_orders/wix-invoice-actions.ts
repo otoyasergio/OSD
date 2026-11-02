@@ -12,19 +12,10 @@ import { toFormErrorMessage } from "@/lib/services/errors";
 
 export async function acknowledgeWixInvoiceFailureFormAction(formData: FormData): Promise<void> {
   const acknowledgementId = String(formData.get("acknowledgement_id") ?? "");
-  await acknowledgeInvoiceFailure(acknowledgementId);
+  const holdRevision = Number(formData.get("hold_revision") ?? "");
+  const errorText = String(formData.get("wix_error_text") ?? "");
+  await acknowledgeInvoiceFailure(acknowledgementId, { holdRevision, errorText });
   revalidatePath("/work_orders");
-}
-
-export async function acknowledgeWixInvoiceFailureAction(
-  acknowledgementId: string
-): Promise<{ error: string | null }> {
-  try {
-    await acknowledgeInvoiceFailure(acknowledgementId);
-    return { error: null };
-  } catch (error) {
-    return { error: toFormErrorMessage(error) };
-  }
 }
 
 export async function publishWixInvoiceAction(

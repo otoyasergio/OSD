@@ -158,3 +158,19 @@ export function canProceedFromWizardStep(
   if (stepId === "review") return false;
   return isWizardStepComplete(stepId, data);
 }
+
+/** The create control stays at the top of review, and beside a Wix hold. */
+export function showIntakePrimaryAction(input: {
+  onReviewStep: boolean;
+  acknowledgementPending: boolean;
+}): boolean {
+  return input.onReviewStep || input.acknowledgementPending;
+}
+
+export function intakePrimaryActionLabel(acknowledgementPending: boolean): string {
+  return acknowledgementPending ? "Try again" : "Create work order";
+}
+
+export function intakePrimaryActionRetries(acknowledgementPending: boolean): boolean {
+  return acknowledgementPending;
+}

@@ -5,10 +5,16 @@ import { validateVinForModelYear } from "@/lib/vin/validate";
 import { evaluateInvoiceGates } from "@/lib/wix/invoiceGates";
 import { buildDraftInvoiceBody, WIX_INVOICES_APP_ID } from "@/lib/wix/invoicePayload";
 import {
+  ACKNOWLEDGED_INTAKE_SUCCESS,
   acknowledgementClearedOnSuccess,
+  acknowledgementFieldsOnFailedRetry,
   bikeHeaderFields,
   canSyncCustomerBlock,
   draftNeedsNumberAllocation,
+  intakeBannerMessage,
+  intakeFailureMessage,
+  isLegacyInvoicesApiUnavailable,
+  shouldApplyInvoiceAcknowledgement,
   formatPreviewDisplayNumber,
   invoiceNumbersEqual,
   isInvoiceIntegerQuery,
@@ -207,6 +213,75 @@ describe("revision, square, and acknowledgement", () => {
   it("clears the acknowledgement only after a successful retry", () => {
     expect(acknowledgementClearedOnSuccess({ retrySucceeded: true })).toBe(true);
     expect(acknowledgementClearedOnSuccess({ retrySucceeded: false })).toBe(false);
+  });
+
+  it("keeps an acknowledge success out of the form error", () => {
+    expect(
+      intakeBannerMessage({
+        error: ACKNOWLEDGED_INTAKE_SUCCESS,
+        notice: null,
+      })
+    ).toEqual({ error: null, notice: ACKNOWLEDGED_INTAKE_SUCCESS });
+    expect(
+      intakeBannerMessage({
+        error: "Wix did not return an invoice number.",
+        notice: null,
+      }).error
+    ).toBe("Wix did not return an invoice number.");
+  });
+
+  it("clears the previous acknowledge when a retry stores a new Wix error", () => {
+    expect(acknowledgementFieldsOnFailedRetry({ holdRevision: 4 })).toEqual({
+      acknowledged_at: null,
+      hold_revision: 5,
+    });
+  });
+
+  it("ignores an acknowledge for an error that a retry already replaced", () => {
+    const seen = {
+      storedErrorText: "legacy api",
+      seenErrorText: "legacy api",
+      cleared: false,
+      alreadyAcknowledged: false,
+    };
+    expect(
+      shouldApplyInvoiceAcknowledgement({ ...seen, storedRevision: 5, seenRevision: 5 })
+    ).toBe(true);
+    expect(
+      shouldApplyInvoiceAcknowledgement({ ...seen, storedRevision: 6, seenRevision: 5 })
+    ).toBe(false);
+    expect(
+      shouldApplyInvoiceAcknowledgement({
+        ...seen,
+        storedRevision: 5,
+        seenRevision: 5,
+        alreadyAcknowledged: true,
+      })
+    ).toBe(false);
+    expect(
+      shouldApplyInvoiceAcknowledgement({
+        ...seen,
+        storedRevision: 5,
+        seenRevision: 5,
+        seenErrorText: "older app id error",
+      })
+    ).toBe(false);
+  });
+
+  it("tells the counter to tap Try again when Wix has not migrated this site", () => {
+    const reason =
+      "The new Invoices API isn't available on this site yet. The site still uses the legacy invoices service, which is only accessible through Velo. New Invoices, along with its API and SDK, is being rolled out gradually — no action is needed on your side.";
+    expect(isLegacyInvoicesApiUnavailable(reason)).toBe(true);
+    const message = intakeFailureMessage({
+      clientName: "Evan Kerr",
+      bikeLabel: "2017 TRIUMPH Bonneville T100",
+      wixReason: reason,
+    });
+    expect(message).toContain("Tap Try again");
+    expect(message).toContain("Evan Kerr");
+    expect(message).toContain("2017 TRIUMPH Bonneville T100");
+    expect(message).not.toContain(ACKNOWLEDGED_INTAKE_SUCCESS);
+    expect(message).toContain("No work order number was created.");
   });
 
   it("labels Overdue from Wix", () => {

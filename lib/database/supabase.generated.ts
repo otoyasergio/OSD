@@ -752,6 +752,7 @@ export type Database = {
           pending_work_order_id: string | null;
           acknowledged_at: string | null;
           cleared_at: string | null;
+          hold_revision: number;
           created_at: string;
         };
         Insert: Record<string, unknown>;

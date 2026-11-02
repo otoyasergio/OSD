@@ -474,6 +474,8 @@ export default async function WorkOrderDetailPage({
         >
           <p>{invoiceBlock.wix_error_text}</p>
           <input type="hidden" name="acknowledgement_id" value={invoiceBlock.acknowledgement_id} />
+          <input type="hidden" name="hold_revision" value={String(invoiceBlock.hold_revision)} />
+          <input type="hidden" name="wix_error_text" value={invoiceBlock.wix_error_text} />
           {canApprove ? (
             <button type="submit" className="btn mt-2">
               Acknowledge

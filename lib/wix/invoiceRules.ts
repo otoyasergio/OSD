@@ -262,6 +262,69 @@ export function acknowledgementClearedOnSuccess(input: {
   return input.retrySucceeded;
 }
 
+/**
+ * Shown in the red form error during the appId outage. A successful
+ * acknowledge is a status, and the next create has to run from the same tap.
+ */
+export const ACKNOWLEDGED_INTAKE_SUCCESS = "Acknowledged. Try again to create the invoice.";
+
+export function intakeBannerMessage(input: {
+  error: string | null;
+  notice: string | null;
+}): { error: string | null; notice: string | null } {
+  if (input.error === ACKNOWLEDGED_INTAKE_SUCCESS) {
+    return { error: null, notice: input.notice ?? ACKNOWLEDGED_INTAKE_SUCCESS };
+  }
+  return { error: input.error, notice: input.notice };
+}
+
+/**
+ * Get Paid Invoices (`POST /invoices/v4/invoices`) are the only REST create
+ * that returns `numbering.displayNumber`. Wix documents HTTP 428 until it
+ * migrates the site, and says the legacy service is Velo-only
+ * (`wix-billing-backend`). That module returns an invoice id, not
+ * `numbering.displayNumber`, and it is not a REST method.
+ */
+export function isLegacyInvoicesApiUnavailable(reason: string): boolean {
+  const text = reason.toLowerCase();
+  return (
+    text.includes("legacy invoices service") ||
+    text.includes("only accessible through velo") ||
+    text.includes("isn't available on this site yet") ||
+    text.includes("is not available on this site yet") ||
+    text.includes("new invoices api isn't available") ||
+    text.includes("new invoices api is not available")
+  );
+}
+
+/**
+ * A failed retry replaces the stored error and clears the previous
+ * acknowledge. `hold_revision` moves forward so a late Acknowledge for the
+ * error staff already saw cannot stamp the new one.
+ */
+export function acknowledgementFieldsOnFailedRetry(input: {
+  holdRevision: number;
+}): { acknowledged_at: null; hold_revision: number } {
+  const current = Number.isFinite(input.holdRevision) ? Math.trunc(input.holdRevision) : 1;
+  return {
+    acknowledged_at: null,
+    hold_revision: Math.max(1, current) + 1,
+  };
+}
+
+export function shouldApplyInvoiceAcknowledgement(input: {
+  storedRevision: number;
+  seenRevision: number;
+  storedErrorText: string;
+  seenErrorText: string;
+  cleared: boolean;
+  alreadyAcknowledged: boolean;
+}): boolean {
+  if (input.cleared || input.alreadyAcknowledged) return false;
+  if (input.storedRevision !== input.seenRevision) return false;
+  return input.storedErrorText === input.seenErrorText;
+}
+
 const VIN_TOKEN = /\b[A-HJ-NPR-Z0-9]{5,17}\b/g;
 
 export function extractVinCandidates(text: string): string[] {
@@ -346,5 +409,11 @@ export function intakeFailureMessage(input: {
   bikeLabel: string;
   wixReason: string;
 }): string {
-  return `Wix did not return an invoice number for ${input.clientName.trim()} on ${input.bikeLabel.trim()}. ${input.wixReason.trim()} Acknowledge this before trying again. No work order number was created.`;
+  const client = input.clientName.trim();
+  const bike = input.bikeLabel.trim();
+  const reason = input.wixReason.trim();
+  if (isLegacyInvoicesApiUnavailable(reason)) {
+    return `Wix is still rolling the new Invoices API out to this site. The work order number for ${client} on ${bike} will come from that API when the rollout reaches this site. Tap Try again to check. No work order number was created.`;
+  }
+  return `Wix did not return an invoice number for ${client} on ${bike}. ${reason} Acknowledge this before trying again. No work order number was created.`;
 }
