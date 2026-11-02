@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 500" font-family="Liberation Sans, DejaVu Sans, sans-serif">
+  <rect width="840" height="500" fill="#ffffff"/>
+
+  <line x1="108" y1="62" x2="130" y2="62" stroke="#9b1c1c" stroke-width="3"/>
+  <polygon points="130,62 122,58 122,66" fill="#9b1c1c"/>
+  <line x1="254" y1="62" x2="276" y2="62" stroke="#9b1c1c" stroke-width="3"/>
+  <polygon points="276,62 268,58 268,66" fill="#9b1c1c"/>
+  <line x1="390" y1="62" x2="412" y2="62" stroke="#9b1c1c" stroke-width="3"/>
+  <polygon points="412,62 404,58 404,66" fill="#9b1c1c"/>
+  <line x1="566" y1="62" x2="588" y2="62" stroke="#9b1c1c" stroke-width="3"/>
+  <polygon points="588,62 580,58 580,66" fill="#9b1c1c"/>
+
+  <circle cx="266" cy="62" r="3.5" fill="#1a1a1a"/>
+  <line x1="266" y1="62" x2="266" y2="136" stroke="#1a1a1a" stroke-width="1.6"/>
+
+  <!-- D0, below the second row, up into the XIAO -->
+  <path d="M398 186 V210 H760 V124" fill="none" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="760,124 756,132 764,132" fill="#1a1a1a"/>
+  <text x="586" y="196" font-size="13" font-weight="700" fill="#1a1a1a">D0</text>
+
+  <!-- 3V3 hops over the D0 wire, then runs left to the CAN switch -->
+  <line x1="700" y1="124" x2="700" y2="202" stroke="#1a1a1a" stroke-width="1.6"/>
+  <path d="M700 202 Q686 210 700 218" fill="none" stroke="#1a1a1a" stroke-width="1.6"/>
+  <path d="M700 218 V232 H88 V250" fill="none" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="88,250 84,242 92,242" fill="#1a1a1a"/>
+  <text x="708" y="168" font-size="12" font-weight="700" fill="#1a1a1a">3V3</text>
+
+  <line x1="168" y1="286" x2="182" y2="286" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="186,286 178,282 178,290" fill="#1a1a1a"/>
+  <line x1="366" y1="286" x2="380" y2="286" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="384,286 376,282 376,290" fill="#1a1a1a"/>
+  <line x1="564" y1="274" x2="588" y2="274" stroke="#1a1a1a" stroke-width="1.6"/>
+  <line x1="564" y1="298" x2="588" y2="298" stroke="#1a1a1a" stroke-width="1.6"/>
+  <text x="568" y="268" font-size="11" font-weight="700" fill="#1a1a1a">H</text>
+  <text x="568" y="312" font-size="11" font-weight="700" fill="#1a1a1a">L</text>
+
+  <line x1="560" y1="386" x2="588" y2="386" stroke="#1a1a1a" stroke-width="1.6"/>
+  <polygon points="560,386 568,382 568,390" fill="#1a1a1a"/>
+
+  <g fill="#ffffff" stroke="#1a1a1a" stroke-width="1.7">
+    <rect x="8" y="28" width="100" height="68" rx="3"/>
+    <rect x="134" y="38" width="120" height="48" rx="3" stroke="#9b1c1c" stroke-width="2"/>
+    <rect x="280" y="32" width="110" height="60" rx="3"/>
+    <rect x="416" y="22" width="150" height="80" rx="3"/>
+    <rect x="592" y="14" width="240" height="110" rx="3" stroke-width="2"/>
+    <rect x="8" y="136" width="390" height="68" rx="3"/>
+    <rect x="416" y="136" width="150" height="68" rx="3"/>
+    <rect x="8" y="252" width="160" height="76" rx="3"/>
+    <rect x="186" y="248" width="180" height="88" rx="3"/>
+    <rect x="384" y="248" width="180" height="88" rx="3"/>
+    <rect x="592" y="248" width="240" height="180" rx="3" fill="#fff5f5" stroke="#9b1c1c" stroke-width="2"/>
+    <rect x="8" y="352" width="552" height="62" rx="3"/>
+  </g>
+
+  <polygon points="296,62 322,48 322,76" fill="none" stroke="#1a1a1a" stroke-width="1.6"/>
+  <line x1="322" y1="46" x2="322" y2="78" stroke="#1a1a1a" stroke-width="1.8"/>
+  <text x="330" y="58" font-size="12" font-weight="700" fill="#1a1a1a">1N5822</text>
+  <text x="330" y="76" font-size="11" fill="#1a1a1a">band to reg</text>
+
+  <text x="22" y="54" font-size="14" font-weight="700" fill="#1a1a1a">Battery</text>
+  <text x="18" y="76" font-size="12" fill="#9b1c1c">+ post</text>
+  <text x="62" y="76" font-size="12" fill="#1a1a1a">- post</text>
+
+  <text x="158" y="58" font-size="14" font-weight="700" fill="#1a1a1a">1 A fuse</text>
+  <text x="146" y="76" font-size="12" fill="#1a1a1a">within 15 cm</text>
+
+  <text x="430" y="46" font-size="14" font-weight="700" fill="#1a1a1a">TPS7A1601</text>
+  <text x="430" y="66" font-size="13" fill="#1a1a1a">about 3.7 V</text>
+  <text x="430" y="86" font-size="12" fill="#1a1a1a">into XIAO BAT+</text>
+
+  <text x="606" y="36" font-size="15" font-weight="700" fill="#1a1a1a">XIAO nRF52840</text>
+  <text x="606" y="54" font-size="13" fill="#1a1a1a">SKU 102010448</text>
+  <text x="606" y="72" font-size="13" fill="#1a1a1a">BAT+, GND, and D0</text>
+  <text x="606" y="90" font-size="13" fill="#1a1a1a">Bluetooth to a phone</text>
+  <text x="606" y="108" font-size="12" fill="#1a1a1a">D6 and D7 left open</text>
+
+  <text x="18" y="156" font-size="13" font-weight="700" fill="#1a1a1a">Sense tap, before the diode</text>
+  <text x="18" y="174" font-size="12" fill="#1a1a1a">2N3906 switches 100k over 12k</text>
+  <text x="18" y="192" font-size="12" fill="#1a1a1a">into D0. 3.3 V zener on D0.</text>
+
+  <text x="428" y="158" font-size="13" font-weight="700" fill="#1a1a1a">P6KE18A</text>
+  <text x="428" y="176" font-size="12" fill="#1a1a1a">across the input</text>
+  <text x="428" y="192" font-size="12" fill="#1a1a1a">to ground, not in series</text>
+
+  <text x="18" y="274" font-size="13" font-weight="700" fill="#1a1a1a">AO3401A</text>
+  <text x="18" y="292" font-size="12" fill="#1a1a1a">switches 3.3 V</text>
+  <text x="18" y="310" font-size="12" fill="#1a1a1a">D3 low = CAN on</text>
+
+  <text x="196" y="268" font-size="13" font-weight="700" fill="#1a1a1a">MCP2515-I/P</text>
+  <text x="196" y="286" font-size="12" fill="#1a1a1a">16 MHz crystal</text>
+  <text x="196" y="304" font-size="12" fill="#1a1a1a">SPI: D4 CS, D8 SCK</text>
+  <text x="196" y="322" font-size="12" fill="#1a1a1a">D10 SI, D9 SO</text>
+
+  <text x="394" y="268" font-size="13" font-weight="700" fill="#1a1a1a">SN65HVD230</text>
+  <text x="394" y="286" font-size="12" fill="#1a1a1a">pin 7 is CAN H</text>
+  <text x="394" y="304" font-size="12" fill="#1a1a1a">pin 6 is CAN L</text>
+  <text x="394" y="322" font-size="12" fill="#1a1a1a">no 120 ohm resistor</text>
+
+  <text x="604" y="270" font-size="14" font-weight="700" fill="#1a1a1a">Red 6-pin male</text>
+  <text x="604" y="288" font-size="12" fill="#1a1a1a">MWTPB-06-1A-R</text>
+  <text x="604" y="310" font-size="13" fill="#1a1a1a">1   open</text>
+  <text x="604" y="328" font-size="13" fill="#1a1a1a">2   CAN H</text>
+  <text x="604" y="346" font-size="13" fill="#1a1a1a">3   ground</text>
+  <text x="604" y="364" font-size="13" fill="#1a1a1a">4   sense only</text>
+  <text x="604" y="382" font-size="13" fill="#1a1a1a">5   CAN L</text>
+  <text x="604" y="400" font-size="13" fill="#1a1a1a">6   open, no K-line</text>
+
+  <text x="18" y="374" font-size="13" font-weight="700" fill="#1a1a1a">Pin 4 sense</text>
+  <text x="18" y="392" font-size="12" fill="#1a1a1a">100k into a 2N3904, then XIAO D2. Key on pulls D2 low.</text>
+  <text x="18" y="408" font-size="12" fill="#1a1a1a">Pin 4 does not power the box.</text>
+
+  <text x="8" y="444" font-size="13" font-weight="700" fill="#1a1a1a">Ground</text>
+  <text x="70" y="444" font-size="12" fill="#1a1a1a">Battery negative, regulator pad, XIAO GND, transceiver pin 2, and plug pin 3.</text>
+  <text x="8" y="464" font-size="12" fill="#1a1a1a">1N5822 band points at the regulator. P6KE18A band points at the fused 12 V.</text>
+  <text x="8" y="484" font-size="12" fill="#1a1a1a">Not a painted frame bolt. First build: radio header empty.</text>
+</svg>
