@@ -769,6 +769,45 @@ export type Database = {
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
       };
+      auction_lot: {
+        Row: {
+          auction_lot_id: string;
+          source: string;
+          source_lot_id: string;
+          title: string;
+          make: string;
+          make_key: string;
+          model: string;
+          model_year: number | null;
+          vendor: string | null;
+          sale_date: string | null;
+          status: "sold" | "unsold" | "withdrawn" | "unknown";
+          price_usd_cents: number | null;
+          hammer_amount_cents: number | null;
+          hammer_currency: string | null;
+          location: string | null;
+          country: string | null;
+          lot_url: string | null;
+          search_text: string;
+          imported_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      auction_price_snapshot: {
+        Row: {
+          motorcycle_id: string;
+          year: number;
+          make: string;
+          model: string;
+          guide: Json;
+          provider_status: "ready" | "empty" | "not_configured" | "unavailable" | "error";
+          provider_message: string | null;
+          fetched_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
     };
     Views: Record<string, never>;
     Functions: {

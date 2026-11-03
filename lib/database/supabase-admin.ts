@@ -44,3 +44,11 @@ export function createPhotoAdminClient() {
 export function createPassportAdminClient() {
   return createServiceRoleClient("PASSPORT_ADMIN_MISCONFIGURED");
 }
+
+/**
+ * Server-only client for the auction price guide cache.
+ * Never import this into client components.
+ */
+export function createAuctionAdminClient() {
+  return createServiceRoleClient("AUCTION_GUIDE_MISCONFIGURED");
+}

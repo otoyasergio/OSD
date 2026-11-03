@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { after } from "next/server";
 import { notFound, redirect } from "next/navigation";
 import { getMotorcycleById, getServiceInformation } from "@/lib/services/motorcycles";
 import { getCustomerById, searchCustomers } from "@/lib/services/customers";
@@ -23,6 +24,7 @@ import { ServiceInformationForm } from "@/components/forms/ServiceInformationFor
 import { TransferMotorcycleForm } from "@/components/forms/TransferMotorcycleForm";
 import { OutstandingRecommendations } from "@/components/recommendations/OutstandingRecommendations";
 import { StaffPhotoGrid } from "@/components/photos/StaffPhotoGrid";
+import { AuctionPriceGuide } from "@/components/auctions/AuctionPriceGuide";
 import { MotorcycleDocuments } from "@/components/motorcycles/MotorcycleDocuments";
 import { MotorcycleVisitList } from "@/components/motorcycles/MotorcycleVisitList";
 import {
@@ -30,6 +32,8 @@ import {
   updateServiceInformationAction,
   transferMotorcycleAction,
 } from "@/app/(app)/motorcycles/actions";
+import { refreshAuctionPriceGuideAction } from "@/app/(app)/motorcycles/auction-actions";
+import { loadAuctionPriceGuide } from "@/lib/services/auctionPriceGuide";
 import { listMotorcycleDocuments } from "@/lib/services/motorcycleDocuments";
 import { formatDate, formatDateTime } from "@/lib/datetime/format";
 import { formatMileage, normalizeMileageUnit } from "@/lib/mileage/format";
@@ -67,6 +71,7 @@ export default async function MotorcycleDetailPage({
     photos,
     documents,
     invoices,
+    auctionGuide,
   ] = await Promise.all([
     getServiceInformation(motorcycle_id),
     searchCustomers("", { preferShopCustomers: true }),
@@ -74,9 +79,12 @@ export default async function MotorcycleDetailPage({
     listWorkOrdersForMotorcycle(motorcycle_id),
     listIntakePhotosForMotorcycle(motorcycle_id),
     canViewDocs ? listMotorcycleDocuments(motorcycle_id) : Promise.resolve([]),
-    wixInvoicesEnabled()
-      ? listInvoicesForMotorcycle(motorcycle_id)
-      : Promise.resolve([]),
+    wixInvoicesEnabled() ? listInvoicesForMotorcycle(motorcycle_id) : Promise.resolve([]),
+    loadAuctionPriceGuide({
+      motorcycleId: motorcycle_id,
+      bike: { year: motorcycle.year, make: motorcycle.make, model: motorcycle.model },
+      audience: "staff",
+    }),
   ]);
 
   let customerOptions = customers;
@@ -102,6 +110,21 @@ export default async function MotorcycleDetailPage({
     ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
     : "Unknown";
   const bikeLabel = `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`;
+
+  if (auctionGuide.refreshInBackground) {
+    after(() => {
+      void loadAuctionPriceGuide({
+        motorcycleId: motorcycle_id,
+        bike: {
+          year: motorcycle.year,
+          make: motorcycle.make,
+          model: motorcycle.model,
+        },
+        audience: "staff",
+        refresh: "force",
+      }).catch(() => undefined);
+    });
+  }
 
   const allVisits = [...visits.open, ...visits.filed];
   const snapshot = buildBikeSnapshot(allVisits);
@@ -214,6 +237,13 @@ export default async function MotorcycleDetailPage({
           ) : null}
         </div>
       </section>
+
+      <AuctionPriceGuide
+        guide={auctionGuide.view}
+        variant="staff"
+        motorcycleId={motorcycle_id}
+        refreshAction={refreshAuctionPriceGuideAction}
+      />
 
       {canViewDocs ? (
         <MotorcycleDocuments
