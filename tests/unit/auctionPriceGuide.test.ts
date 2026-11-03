@@ -392,6 +392,11 @@ describe("auction price summary", () => {
       amount: "$8,100",
       range: "$5,000 to $11,200",
       caption: "Typical auction price in Canadian dollars",
+      historyNote: null,
+      points: [
+        { saleYear: 2022, medianCad: 5000, count: 1, amount: "$5,000" },
+        { saleYear: 2024, medianCad: 11200, count: 1, amount: "$11,200" },
+      ],
     });
 
     const empty = guideFrom({
@@ -682,5 +687,7 @@ describe("price guide wiring", () => {
       "utf8"
     );
     expect(callout).toContain("inspection-auction-price");
+    expect(callout).toContain("inspection-auction-chart");
+    expect(callout).toContain("Auction price by year of sale");
   });
 });

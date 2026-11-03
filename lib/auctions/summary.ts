@@ -402,11 +402,20 @@ function guideCopy(
   };
 }
 
-/** Compact price for the visual inspection report. Empty when no sale is on file. */
+export type InspectionAuctionPoint = {
+  saleYear: number;
+  medianCad: number;
+  count: number;
+  amount: string;
+};
+
+/** Compact price and year-by-year series for the visual inspection report. */
 export function inspectionAuctionCallout(guide: AuctionPriceGuideView | null): {
   amount: string;
   range: string | null;
   caption: string;
+  historyNote: string | null;
+  points: InspectionAuctionPoint[];
 } | null {
   if (!guide || guide.state !== "ready" || guide.modelYearMedianCad == null) return null;
   const low = guide.modelYearLowCad;
@@ -419,5 +428,12 @@ export function inspectionAuctionCallout(guide: AuctionPriceGuideView | null): {
     amount: formatCad(guide.modelYearMedianCad),
     range,
     caption: "Typical auction price in Canadian dollars",
+    historyNote: guide.historyNote,
+    points: guide.visibleHistory.map((point) => ({
+      saleYear: point.saleYear,
+      medianCad: point.medianCad,
+      count: point.count,
+      amount: formatCad(point.medianCad),
+    })),
   };
 }
