@@ -6,7 +6,11 @@ import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
 import { canRecordCustomerApproval } from "@/lib/permissions";
-import { readWorkflowV2Flags, v2WritesEnabled, wixInvoicesEnabled } from "@/lib/config/features";
+import {
+  readWorkflowV2Flags,
+  v2WritesEnabled,
+  wixInvoicesEnabled,
+} from "@/lib/config/features";
 import {
   isUndefinedColumnError,
   isUndefinedTableError,
@@ -34,6 +38,7 @@ import {
 } from "@/lib/square/client";
 import {
   buildLegacyPaymentStatusUpdates,
+  creditIdsSettledByPaidInvoice,
   squareInvoiceTransactionId,
   v2PaymentStatusForMapped,
 } from "@/lib/square/webhookDecisions";
@@ -901,7 +906,7 @@ export async function processSquareWebhookEvent(payload: {
     const { data: workOrders, error } = await admin
       .from("work_order")
       .select(
-        "work_order_id, work_order_number, location_id, customer_id, billing_collected_cents, billing_amount_cents, billing_amount_mode, square_payment_status"
+        "work_order_id, work_order_number, location_id, customer_id, billing_collected_cents, billing_amount_cents, billing_amount_mode, square_payment_status, invoice_published_at"
       )
       .eq("square_invoice_id", invoiceId);
 
@@ -937,15 +942,24 @@ export async function processSquareWebhookEvent(payload: {
       if (mapped === "paid" && !isDeposit) {
         const credits = await admin
           .from("customer_credit")
-          .select("credit_id, remaining_amount")
+          .select("credit_id, remaining_amount, created_at")
           .eq("customer_id", wo.customer_id)
           .gt("remaining_amount", 0);
+        if (credits.error && !isUndefinedTableError(credits.error)) throw credits.error;
 
-        for (const credit of credits.data ?? []) {
-          await admin
+        const settledIds = creditIdsSettledByPaidInvoice({
+          credits: (credits.data ?? []) as Array<{
+            credit_id: string;
+            created_at: string | null;
+          }>,
+          invoicePublishedAt: (wo.invoice_published_at as string | null) ?? null,
+        });
+        for (const creditId of settledIds) {
+          const { error: creditError } = await admin
             .from("customer_credit")
             .update({ remaining_amount: 0 })
-            .eq("credit_id", credit.credit_id);
+            .eq("credit_id", creditId);
+          if (creditError) throw creditError;
         }
       }
 

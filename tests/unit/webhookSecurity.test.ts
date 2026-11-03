@@ -7,6 +7,7 @@ import {
 import { rateLimit } from "@/lib/security/rateLimit";
 import {
   buildLegacyPaymentStatusUpdates,
+  creditIdsSettledByPaidInvoice,
   shouldSkipIntegrationEvent,
   squareInvoiceTransactionId,
   v2PaymentStatusForMapped,
@@ -181,6 +182,35 @@ describe("buildLegacyPaymentStatusUpdates", () => {
       billing_collected_cents: 6_000,
       billing_stage: "invoiced",
     });
+  });
+});
+
+describe("creditIdsSettledByPaidInvoice", () => {
+  const older = {
+    credit_id: "older",
+    created_at: "2026-11-01T12:00:00.000Z",
+  };
+  const newer = {
+    credit_id: "newer",
+    created_at: "2026-11-03T18:00:00.000Z",
+  };
+
+  it("settles only credit that existed when the invoice was published", () => {
+    expect(
+      creditIdsSettledByPaidInvoice({
+        credits: [older, newer],
+        invoicePublishedAt: "2026-11-02T15:00:00.000Z",
+      })
+    ).toEqual(["older"]);
+  });
+
+  it("settles every open credit when the invoice has no publish time", () => {
+    expect(
+      creditIdsSettledByPaidInvoice({
+        credits: [older, newer],
+        invoicePublishedAt: null,
+      })
+    ).toEqual(["older", "newer"]);
   });
 });
 
