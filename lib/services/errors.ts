@@ -133,10 +133,10 @@ const MESSAGES: Record<string, string> = {
   INSPECTION_RESULT_NOT_FOUND: "That inspection result no longer exists.",
   INSPECTION_ALREADY_COMPLETE: "This inspection is already complete.",
   INSPECTION_INCOMPLETE:
-    "Some checklist items are still incomplete. An owner or manager can force completion.",
+    "Every line needs a result before you can sign. Measured items need a number, anything that does not apply needs a real reason, and items marked for attention need a description.",
   INSPECTION_NOT_COMPLETED: "Complete the inspection report before finishing jobs.",
   INSPECTION_PHOTOS_REQUIRED:
-    "Add required inspection photos (tires, brakes, forks, and any items marked needing work) before completing the report.",
+    "Add the required photos before signing. Front and rear tires, front and rear brakes, forks, leaks, the battery, and both sides each need their own photo.",
   RECOMMENDATION_NOT_FOUND: "That recommendation no longer exists.",
   RECOMMENDATION_DECLINED:
     "That recommendation was declined and can’t be sent to the floor.",
@@ -213,7 +213,8 @@ const MESSAGES: Record<string, string> = {
   SIGNATURE_INVALID: "Could not read the signature image.",
   SIGNATURE_TOO_LARGE: "Signature image is too large.",
   SIGNATURE_UPLOAD_FAILED: "Could not save the signature. Try again.",
-  SIGNATURE_REQUIRED: "Draw your signature before submitting.",
+  SIGNATURE_REQUIRED:
+    "Draw your full signature. A blank box or a single dot does not count.",
   DOCUMENT_TITLE_REQUIRED: "Enter a title for this document.",
   DOCUMENT_REQUIRED: "Choose a file to upload.",
   DOCUMENT_TOO_LARGE: "Documents must be 10 MB or smaller.",

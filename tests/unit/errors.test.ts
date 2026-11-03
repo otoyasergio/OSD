@@ -37,7 +37,7 @@ describe("toFormErrorMessage", () => {
 
   it("maps signature required", () => {
     expect(toFormErrorMessage(new Error("SIGNATURE_REQUIRED"))).toBe(
-      "Draw your signature before submitting."
+      "Draw your full signature. A blank box or a single dot does not count."
     );
   });
 

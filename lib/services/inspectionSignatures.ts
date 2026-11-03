@@ -1,4 +1,5 @@
 import type { DbClient } from "@/lib/database/types";
+import { signatureHasEnoughInk } from "@/lib/inspections/signatureInk";
 
 export const INSPECTION_SIGNATURE_BUCKET = "inspection-signatures";
 export const INSPECTION_SIGNATURE_MAX_BYTES = 5 * 1024 * 1024;
@@ -30,6 +31,25 @@ export function parseSignatureDataUrl(dataUrl: string): ParsedSignatureDataUrl {
   return { ext, contentType, bytes };
 }
 
+/** Reject a blank pad or a single dot. A signature has to be drawn. */
+export async function assertSignatureHasInk(bytes: Buffer): Promise<void> {
+  let data: Buffer;
+  let channels: number;
+  try {
+    const sharp = (await import("sharp")).default;
+    const decoded = await sharp(bytes).ensureAlpha().raw().toBuffer({
+      resolveWithObject: true,
+    });
+    data = decoded.data;
+    channels = decoded.info.channels;
+  } catch {
+    throw new Error("SIGNATURE_INVALID");
+  }
+  if (!signatureHasEnoughInk(data, channels)) {
+    throw new Error("SIGNATURE_REQUIRED");
+  }
+}
+
 export function inspectionSignatureStoragePath(input: {
   locationId: string;
   workOrderId: string;
@@ -56,6 +76,7 @@ export async function uploadInspectionSignature(
   if (!trimmed) throw new Error("SIGNATURE_REQUIRED");
 
   const parsed = parseSignatureDataUrl(trimmed);
+  await assertSignatureHasInk(parsed.bytes);
   const storagePath = inspectionSignatureStoragePath({
     locationId: input.locationId,
     workOrderId: input.workOrderId,

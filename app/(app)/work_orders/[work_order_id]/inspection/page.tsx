@@ -106,8 +106,9 @@ export default async function InspectionPage({
         ) : null}
         {!readOnly ? (
           <p className="inspection-fullscreen-hint">
-            Tap OK / Future / Now / N/A on each item. Status saves immediately. Add
-            required photos before completing the report.
+            Mark every line OK, Future, or Now. “Doesn’t apply” needs a real reason. Enter
+            every measurement. Photograph front and rear tires, front and rear brakes,
+            forks, and the other evidence slots. Sign the report at the end.
           </p>
         ) : null}
 

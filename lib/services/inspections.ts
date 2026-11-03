@@ -670,7 +670,9 @@ export async function completeInspection(
         status,
         category_snapshot,
         item_name_snapshot,
-        notes
+        notes,
+        measurement,
+        requires_measurement_snapshot
       )
     `
     )
@@ -688,8 +690,14 @@ export async function completeInspection(
       category_snapshot: string;
       item_name_snapshot: string;
       notes: string | null;
+      measurement: string | null;
+      requires_measurement_snapshot: boolean | null;
     }> | null) ?? [];
-  const incompleteCount = countIncompleteInspectionResults(results);
+  const gatedResults = results.map((result) => ({
+    ...result,
+    requires_measurement: Boolean(result.requires_measurement_snapshot),
+  }));
+  const incompleteCount = countIncompleteInspectionResults(gatedResults);
 
   if (incompleteCount > 0) {
     if (!options.force || !canOverrideWorkOrderStatus(user.role)) {
@@ -710,7 +718,7 @@ export async function completeInspection(
   if (photoError) throw photoError;
 
   assertInspectionPhotosComplete(
-    results,
+    gatedResults,
     (photoRows ?? []) as Array<{
       category: string;
       inspection_result_id: string | null;
@@ -779,7 +787,7 @@ export async function completeInspection(
     await import("@/lib/services/recommendations");
   const recommendationCount = await ensureRecommendationsForAttentionFindings(
     workOrderId,
-    results
+    gatedResults
   );
 
   if (recommendationCount > 0) {

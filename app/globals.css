@@ -2757,6 +2757,108 @@ button.board-control-link {
   background: var(--surface-muted);
 }
 
+.inspection-item-row--incomplete {
+  border-color: #b45309;
+}
+
+.inspection-na-toggle,
+.inspection-skip-toggle {
+  margin-top: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.35rem 0.7rem;
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  color: var(--status-neutral);
+}
+
+.inspection-na-toggle.is-selected,
+.inspection-skip-toggle.is-selected {
+  border-style: solid;
+  border-color: #334155;
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.inspection-skip-note,
+.inspection-evidence-lede,
+.inspection-evidence-callout {
+  margin: 0.4rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--status-neutral);
+}
+
+.inspection-evidence-callout.is-missing {
+  color: #92400e;
+  font-weight: 650;
+}
+
+.inspection-evidence {
+  margin-bottom: 1rem;
+  border: 1px solid #b45309;
+  background: #fffbeb;
+  padding: 0.75rem;
+}
+
+.inspection-evidence.is-complete {
+  border-color: #047857;
+  background: #ecfdf5;
+}
+
+.inspection-signoff {
+  margin-top: 1.25rem;
+  border: 2px solid #0a0a0a;
+  background: #fff;
+  padding: 1rem;
+}
+
+.inspection-signoff-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 750;
+}
+
+.inspection-signoff-statement {
+  margin: 0.4rem 0 0.75rem;
+  max-width: 40rem;
+  font-size: 0.9375rem;
+}
+
+.inspection-signoff-image {
+  display: block;
+  max-width: 24rem;
+  max-height: 8rem;
+  margin-top: 0.75rem;
+  background: #fff;
+  border-bottom: 2px solid #0a0a0a;
+}
+
+.inspection-signoff-line,
+.inspection-signoff-missing {
+  margin: 0.6rem 0 0;
+  font-size: 0.875rem;
+}
+
+.inspection-gap-panel {
+  margin-top: 0.9rem;
+  font-size: 0.875rem;
+}
+
+.inspection-gap-title {
+  margin: 0 0 0.35rem;
+  font-weight: 750;
+}
+
+.inspection-gap-list {
+  margin: 0.2rem 0 0.6rem;
+  padding-left: 1.1rem;
+}
+
+.inspection-gap-detail {
+  color: var(--status-neutral);
+}
+
 .inspection-item-row:focus-within {
   scroll-margin-bottom: 12rem;
 }
@@ -2904,11 +3006,19 @@ button.board-control-link {
 }
 
 .inspection-measurement-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   margin-bottom: 0.25rem;
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--status-neutral);
+}
+
+.inspection-measurement-input.is-missing,
+.inspection-notes-input.is-missing {
+  border-color: #b45309;
+  background: #fffbeb;
 }
 
 .inspection-measurement-input {

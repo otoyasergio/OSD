@@ -21,19 +21,23 @@ export function InspectionPhotoSlot({
   category,
   inspectionResultId,
   label,
+  detail,
   required,
   existingUrls = [],
   readOnly,
   onExpand,
+  id,
 }: {
   workOrderId: string;
   category: PhotoCategory;
   inspectionResultId?: string | null;
   label: string;
+  detail?: string;
   required?: boolean;
   existingUrls?: string[];
   readOnly?: boolean;
   onExpand?: (src: string) => void;
+  id?: string;
 }) {
   const router = useRouter();
   const queue = usePhotoUploadQueue();
@@ -155,6 +159,7 @@ export function InspectionPhotoSlot({
 
   return (
     <div
+      id={id}
       className={`inspection-photo-slot ${
         required && !hasPhotos ? "inspection-photo-slot--required" : ""
       } ${hasPhotos ? "inspection-photo-slot--done" : ""}`}
@@ -228,6 +233,7 @@ export function InspectionPhotoSlot({
       </div>
       <div className="inspection-photo-slot-meta">
         <p className="inspection-photo-slot-label">{label}</p>
+        {detail ? <p className="inspection-photo-slot-count">{detail}</p> : null}
         {hasPhotos ? (
           <p className="inspection-photo-slot-count">
             {previews.length} photo{previews.length === 1 ? "" : "s"}
