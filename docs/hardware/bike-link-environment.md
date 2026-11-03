@@ -47,3 +47,5 @@ Build one stage until it has caught a real reading before buying the next.
 - Clearing fault codes, and any service decision made inside the box.
 
 Prices are supplier ranges from 2 November 2026, in Canadian dollars, tax included, for a one-off build. They are not a quote.
+
+The implementation order for the app, the bike sketch, and the window-box sketch is `docs/superpowers/plans/2026-11-02-bike-link-environment.md`. That file is the brief to hand to another developer. The hardware documents win if a task disagrees with them.
