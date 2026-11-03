@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import { TimelineEventType } from "@/lib/timeline/events";
 import {
   buildWeeklyShopReport,
@@ -32,7 +33,8 @@ describe("buildWeeklyShopReport", () => {
     expect(message.text).toContain("Bikes arrived: 0 (last week 0, 0)");
     expect(message.text).toContain("None.");
     expect(message.text).toContain("Parts still open: 0 needed, 0 ordered, 0 in stock.");
-    expect(message.html).toContain("OTOMOTO TORONTO MOTO INC.");
+    expect(message.text.startsWith(TORONTO_SHOP.legalName)).toBe(true);
+    expect(message.html).toContain(TORONTO_SHOP.legalName);
   });
 
   it("compares the week to Friday 8 p.m. with the previous one and lists the bikes", () => {
