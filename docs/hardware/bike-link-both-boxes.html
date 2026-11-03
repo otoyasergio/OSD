@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Bike link — parts, where to buy, how to connect</title>
+<style>
+  @page {
+    size: letter;
+    margin: 0.5in 0.55in 0.52in 0.55in;
+    @bottom-left {
+      content: "OTOMOTO TORONTO MOTO INC.  ·  99 River Street  ·  both boxes";
+      font-family: "Liberation Sans", sans-serif;
+      font-size: 8pt;
+      color: #222;
+    }
+    @bottom-right {
+      content: "Page " counter(page);
+      font-family: "Liberation Sans", sans-serif;
+      font-size: 8pt;
+      color: #222;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: #1a1a1a;
+    font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.32;
+  }
+  h1 { font-size: 20pt; line-height: 1.05; margin: 0 0 4px; }
+  h2 { font-size: 13pt; margin: 12px 0 4px; break-after: avoid; }
+  h3 { font-size: 11pt; margin: 8px 0 3px; break-after: avoid; }
+  p { margin: 0 0 6px; }
+  .shop { font-size: 12pt; font-weight: 700; margin: 0; }
+  .addr { margin: 1px 0 0; }
+  .rule { border: 0; border-top: 2.5px solid #1a1a1a; margin: 8px 0; }
+  .ban {
+    border: 2px solid #1a1a1a;
+    padding: 7px 10px 2px;
+    margin: 0 0 8px;
+  }
+  .ban strong { font-size: 11pt; }
+  ul, ol { margin: 2px 0 8px; padding-left: 1.15em; }
+  li { margin: 0 0 3px; }
+  table { width: 100%; border-collapse: collapse; margin: 2px 0 8px; break-inside: avoid; }
+  th, td {
+    border: 1px solid #1a1a1a;
+    padding: 3px 5px;
+    vertical-align: top;
+    text-align: left;
+    font-size: 8.5pt;
+    line-height: 1.28;
+  }
+  th { background: #ececec; font-weight: 700; }
+  td.q { width: 2.2em; text-align: center; font-weight: 700; }
+  .keep { break-inside: avoid; }
+  .url { font-size: 8pt; }
+  .socket { width: 100%; border-collapse: collapse; margin: 4px 0 6px; }
+  .socket td {
+    width: 12.5%;
+    text-align: center;
+    font-size: 8pt;
+    padding: 4px 2px;
+    font-weight: 700;
+  }
+  .socket td.on { background: #ececec; }
+  .fine { font-size: 9pt; }
+  code { font-family: "Liberation Mono", "DejaVu Sans Mono", monospace; font-size: 9pt; }
+</style>
+</head>
+<body>
+
+<p class="shop">OTOMOTO TORONTO MOTO INC.</p>
+<p class="addr">99 River Street, Toronto, ON M5A 3P4, Canada · 647-424-1088</p>
+<hr class="rule"/>
+<h1>Both boxes: what to buy, where, and how it connects</h1>
+<p>One bike box under the seat of a Triumph that still has the regular 16-pin socket. One window box at 99 River Street, on the shop Wi-Fi. Build the bike box on the bench first. The window box can be soldered the same day. The second radio stays in the bag until the fuse current is under 50 µA.</p>
+<p class="fine">Buy links were checked 2 November 2026. Shelf counts move. Prices below are the USD amounts those pages showed that day, before Canadian tax and shipping. This sheet is not a quote and not a radio certification.</p>
+
+<div class="ban">
+  <p><strong>Stop if any of these are true.</strong> The socket under the seat is the small red 6-pin. The bike is a 2006–2012 triple (K-line on pin 7 of this same plastic). You were about to power the box from pin 16. Current at the fuse is over 50 µA. A 120 Ω resistor is still between CAN H and CAN L. The radio is still at the factory 22 dBm. Customer texts stay on Wix Inbox. This build does not send them.</p>
+</div>
+
+<h2>1. Bike box parts</h2>
+<p>Search Digi-Key Canada with the keyword in the last column: <span class="url">https://www.digikey.ca/en/products/result?keywords=</span> plus that keyword. Mouser Canada takes the same keyword.</p>
+<table>
+  <thead>
+    <tr><th>Qty</th><th>Buy this</th><th>Where</th><th>Search</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="q">1</td>
+      <td>Seeed Studio XIAO nRF52840, SKU 102010448. Plain board. Not Sense. Not Plus.</td>
+      <td>Seeed, in stock at USD 9.99 on 2 Nov 2026. <span class="url">seeedstudio.com/Seeed-XIAO-BLE-nRF52840-p-5201.html</span></td>
+      <td>102010448</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>Texas Instruments TPS7A1601, order TPS7A1601DGNT. HVSSOP-8 with the metal pad.</td>
+      <td>Digi-Key or Mouser. TI page: ti.com/product/TPS7A1601</td>
+      <td>TPS7A1601DGNT</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>Microchip MCP2515-I/P. DIP-18. On 2 Nov 2026 Digi-Key’s restock date was 9 Nov 2026.</td>
+      <td>LCSC C469036, or Digi-Key when the reel lands. SOIC is allowed if you can solder it.</td>
+      <td>MCP2515-I/P</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>Texas Instruments SN65HVD230DR, plus an SOIC-8 to DIP adapter.</td>
+      <td>Digi-Key or Mouser. If the DR reel is gone, SN65HVD231 is the allowed cousin. Do not buy a TJA1050 or MCP2551.</td>
+      <td>SN65HVD230DR</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>16 MHz crystal, and the two load capacitors its datasheet asks for. An 18 pF crystal usually wants about 22 pF on each leg.</td>
+      <td>Digi-Key. HC-49 or a smaller can. The firmware number is 16 MHz.</td>
+      <td>16MHz crystal</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>AO3401A P-channel MOSFET, SOT-23.</td>
+      <td>Digi-Key or LCSC. Any P-channel that is fully on at −2.5 V and is happy at 3.3 V.</td>
+      <td>AO3401A</td>
+    </tr>
+    <tr>
+      <td class="q">2</td>
+      <td>2N3904 NPN, TO-92. One switches the divider. One senses the key.</td>
+      <td>Digi-Key, or any small-signal NPN rated 40 V.</td>
+      <td>2N3904</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>2N3906 PNP, TO-92. Switches the high side of the divider.</td>
+      <td>Digi-Key, or any small-signal PNP rated 40 V.</td>
+      <td>2N3906</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>1N5822 Schottky, 3 A, 40 V. Through-hole.</td>
+      <td>Digi-Key.</td>
+      <td>1N5822</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>P6KE18A, 600 W unidirectional TVS. Through-hole.</td>
+      <td>Digi-Key. If this bike’s charging voltage sits above 15 V, use a P6KE20A.</td>
+      <td>P6KE18A</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>1 A ATM mini blade fuse and a sealed inline holder.</td>
+      <td>Princess Auto, Canadian Tire, or Digi-Key. Any 1 A automotive mini fuse.</td>
+      <td>ATM fuse holder</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>3.3 V zener, 500 mW. 1N5226B or BZX55C3V3.</td>
+      <td>Digi-Key.</td>
+      <td>1N5226B</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>SAE J1962 male OBD-II pigtail, 16-pin, wires already fitted. Short.</td>
+      <td>Amazon or an auto-parts counter. Not a 16-pin to red 6-pin adapter. Do not trust the jacket colors.</td>
+      <td>OBD2 pigtail 16 pin</td>
+    </tr>
+    <tr>
+      <td class="q">—</td>
+      <td>18 AWG red and black for the battery. 22 AWG twisted pair for CAN. A gasketed ABS box and a cable gland. Perfboard, solder, heat-shrink.</td>
+      <td>The box can be a Hammond 1591 or any small gasketed shell that takes a gland.</td>
+      <td>—</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Resistors and capacitors for the bike box</h3>
+<table>
+  <thead>
+    <tr><th>Qty</th><th>Part</th><th>Where it goes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="q">1</td><td>210 kΩ, 1%</td><td>Regulator R1, OUT to FB</td></tr>
+    <tr><td class="q">2</td><td>100 kΩ, 1%</td><td>Regulator R2, FB to ground. Divider top, from the 2N3906 collector toward D0.</td></tr>
+    <tr><td class="q">1</td><td>12 kΩ, 1%</td><td>Divider bottom, D0 side to ground</td></tr>
+    <tr><td class="q">5</td><td>100 kΩ, 5% is fine</td><td>2N3906 base to its emitter. Divider-switch base to ground. Key-sense series. Key-sense base to ground. MOSFET gate pull-up to 3V3.</td></tr>
+    <tr><td class="q">1</td><td>47 kΩ</td><td>XIAO D1 to the divider-switch 2N3904 base</td></tr>
+    <tr><td class="q">2</td><td>10 kΩ</td><td>2N3906 base to the divider-switch collector. MCP2515 RESET up to the switched 3.3 V rail.</td></tr>
+    <tr><td class="q">2</td><td>10 µF ceramic, X7R, 25 V or more</td><td>Regulator IN to ground, and OUT to ground, close to the chip</td></tr>
+    <tr><td class="q">3</td><td>100 nF ceramic</td><td>One across the regulator if you want the datasheet’s extra cap. One across MCP2515 VDD. One across the transceiver VCC.</td></tr>
+    <tr><td class="q">2</td><td>Load capacitors for the crystal</td><td>Each crystal leg to ground. About 22 pF when the crystal is marked 18 pF.</td></tr>
+  </tbody>
+</table>
+
+<h2>2. Window box parts</h2>
+<p>Buy two radios. Fit one in the window now. Keep the second in the bag until the bike box has passed the fuse test.</p>
+<table>
+  <thead>
+    <tr><th>Qty</th><th>Buy this</th><th>Where</th><th>Search</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="q">1</td>
+      <td>Espressif ESP32-S3-DevKitC-1. N8R8 is fine.</td>
+      <td>Espressif’s devkit page lists Digi-Key and Mouser. <span class="url">espressif.com/en/products/devkits</span></td>
+      <td>ESP32-S3-DevKitC-1</td>
+    </tr>
+    <tr>
+      <td class="q">2</td>
+      <td>Reyax RYLR998 with the built-in antenna. Not RYLR998_M4. That one has a connector and no antenna.</td>
+      <td>Digi-Key Marketplace 5487-RYLR998-ND showed 5,547 in stock at USD 11.80 on 2 Nov 2026. Datasheet 9 Feb 2026: reyax.com</td>
+      <td>RYLR998</td>
+    </tr>
+    <tr>
+      <td class="q">1</td>
+      <td>5 V USB power adapter, 1 A, and a short USB cable that fits the devkit.</td>
+      <td>Any phone charger that is really 5 V. A plastic box for the window sill.</td>
+      <td>—</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>3. How the bike box connects</h2>
+<p>Power is the fused battery lead. The 16-pin plug does not power the box. USB is for programming on the bench. Unplug USB before the sleep test and before the box goes on the bike. Do not feed 12 V into the 5 V pin or the 3V3 pin. 3V3 is an output.</p>
+
+<h3>Power path, in order</h3>
+<table>
+  <thead><tr><th>From</th><th>To</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Battery positive post</td><td>1 A fuse, within 15 cm</td><td>18 AWG red</td></tr>
+    <tr><td>Fuse output</td><td>1N5822 anode (the end without the band)</td><td>Band points toward the regulator</td></tr>
+    <tr><td>1N5822 cathode (banded end)</td><td>TPS7A1601 pin 8, IN</td><td>Also pin 5, EN, tied to pin 8</td></tr>
+    <tr><td>That same cathode</td><td>P6KE18A banded end</td><td>The other end of the TVS goes to ground. A backwards TVS blows the fuse.</td></tr>
+    <tr><td>TPS7A1601 pin 1, OUT</td><td>XIAO BAT+ pad on the back</td><td>Meter this at about 3.7 V before the XIAO is connected. 12 V here is a solder bridge.</td></tr>
+    <tr><td>TPS7A1601 pin 4 and the metal pad</td><td>Box ground, and the XIAO GND pad</td><td>18 AWG black goes to the battery negative post. A painted frame bolt is a bad ground.</td></tr>
+    <tr><td>210 kΩ from OUT to pin 2, FB. 100 kΩ from FB to ground.</td><td>Sets about 3.70 V</td><td>200 kΩ instead of 210 kΩ gives about 3.58 V. That is still acceptable. Wash the flux off.</td></tr>
+  </tbody>
+</table>
+
+<h3>XIAO nRF52840 pins</h3>
+<p>Board: Seeed nRF52 Boards, “Seeed XIAO nRF52840”. Board URL to add in Arduino: <span class="url">https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json</span>. Copy <code>firmware/bike</code> to a folder named <code>bike_link</code> before you open it. Set <code>BOX_ID</code> to the sticker. Leave <code>radio.h</code> out until the fuse test passes.</p>
+<table>
+  <thead><tr><th>XIAO pin</th><th>Connects to</th><th>Idle</th></tr></thead>
+  <tbody>
+    <tr><td>BAT+</td><td>Regulator OUT, about 3.7 V</td><td>Always powered from the battery lead</td></tr>
+    <tr><td>GND</td><td>Box ground</td><td></td></tr>
+    <tr><td>3V3</td><td>AO3401A source</td><td>Output. On whenever the board is powered.</td></tr>
+    <tr><td>D0</td><td>Divider output, the ADC</td><td>Input. 3.3 V zener from D0 to ground, band toward D0.</td></tr>
+    <tr><td>D1</td><td>47 kΩ to the divider-switch 2N3904 base</td><td>Low while parked. High only while sampling.</td></tr>
+    <tr><td>D2</td><td>Key-sense 2N3904 collector</td><td>Pull-up on. Low means key on.</td></tr>
+    <tr><td>D3</td><td>AO3401A gate</td><td>High, or the 100 kΩ pull-up, keeps CAN power off.</td></tr>
+    <tr><td>D4</td><td>MCP2515 pin 16, CS</td><td>High while idle. Active low.</td></tr>
+    <tr><td>D6</td><td>Radio TX, later</td><td>Leave open on the first build.</td></tr>
+    <tr><td>D7</td><td>Radio RX, later</td><td>Leave open on the first build.</td></tr>
+    <tr><td>D8</td><td>MCP2515 pin 13, SCK</td><td>SPI clock</td></tr>
+    <tr><td>D9</td><td>MCP2515 pin 15, SO</td><td>Data from the CAN controller</td></tr>
+    <tr><td>D10</td><td>MCP2515 pin 14, SI</td><td>Data to the CAN controller</td></tr>
+  </tbody>
+</table>
+<p class="fine">D5, the NFC pins, and the on-board battery-read enable (P0.14) stay untouched.</p>
+
+<h3>Voltage divider</h3>
+<p>The sense point is the fuse output, on the battery side of the Schottky, so the diode drop is not in the reading. TO-92, flat face toward you, pins down: emitter, base, collector. That order is the same for the 2N3904 and the 2N3906.</p>
+<table>
+  <thead><tr><th>From</th><th>To</th></tr></thead>
+  <tbody>
+    <tr><td>Fused battery +</td><td>2N3906 emitter</td></tr>
+    <tr><td>2N3906 base</td><td>100 kΩ to its own emitter, and 10 kΩ to the 2N3904 collector</td></tr>
+    <tr><td>2N3906 collector</td><td>100 kΩ 1%, then to XIAO D0</td></tr>
+    <tr><td>XIAO D0</td><td>12 kΩ 1% to ground, and the 3.3 V zener to ground</td></tr>
+    <tr><td>Divider 2N3904 emitter</td><td>Ground</td></tr>
+    <tr><td>Divider 2N3904 base</td><td>47 kΩ from D1, and 100 kΩ to ground</td></tr>
+  </tbody>
+</table>
+<p>D1 high turns the divider on. At 12.6 V the ADC pin should see about 1.35 V. The sketch multiplies by 112 / 12. Trim <code>BENCH_VOLT_SCALE</code> until the Bluetooth JSON matches a meter within 0.1 V.</p>
+
+<h3>Key sense</h3>
+<table>
+  <thead><tr><th>From</th><th>To</th></tr></thead>
+  <tbody>
+    <tr><td>Key-switched 12 V</td><td>100 kΩ to the second 2N3904 base</td></tr>
+    <tr><td>That base</td><td>100 kΩ to ground</td></tr>
+    <tr><td>Collector</td><td>XIAO D2</td></tr>
+    <tr><td>Emitter</td><td>Ground</td></tr>
+  </tbody>
+</table>
+<p>Key on, D2 reads low. The sense wire is OBD pin 16 only when a meter shows about 0 V with the key off and about battery voltage with the key on. If pin 16 stays hot with the key off, leave it open and land this 100 kΩ on a wire that does follow the key, such as the tail lamp.</p>
+
+<h3>CAN power switch, AO3401A</h3>
+<p>SOT-23, text toward you, pins down: pin 1 gate, pin 2 source, pin 3 drain. Confirm the pin-1 mark on the reel you received.</p>
+<table>
+  <thead><tr><th>MOSFET pin</th><th>Connects to</th></tr></thead>
+  <tbody>
+    <tr><td>2, source</td><td>XIAO 3V3</td></tr>
+    <tr><td>3, drain</td><td>CAN 3.3 V rail: MCP2515 pin 18 and SN65HVD230 pin 3</td></tr>
+    <tr><td>1, gate</td><td>XIAO D3, and 100 kΩ up to 3V3 so a floating gate keeps the rail off</td></tr>
+  </tbody>
+</table>
+<p>D3 low turns CAN on. D3 high keeps it off. No 120 Ω resistor anywhere between CAN H and CAN L.</p>
+
+<h3>MCP2515-I/P, DIP-18</h3>
+<p>Pins from the Microchip PDIP datasheet. A DIP socket is fine on the bench. On the bike, solder the chip or strap the socket so vibration cannot walk it out.</p>
+<table>
+  <thead><tr><th>Pin</th><th>Name</th><th>Connects to</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>TXCAN</td><td>SN65HVD230 pin 1 (D)</td></tr>
+    <tr><td>2</td><td>RXCAN</td><td>SN65HVD230 pin 4 (R)</td></tr>
+    <tr><td>3</td><td>CLKOUT</td><td>Open</td></tr>
+    <tr><td>4, 5, 6</td><td>TX0RTS, TX1RTS, TX2RTS</td><td>Open</td></tr>
+    <tr><td>7 and 8</td><td>OSC2, OSC1</td><td>16 MHz crystal. A load capacitor from each leg to ground.</td></tr>
+    <tr><td>9</td><td>VSS</td><td>Ground</td></tr>
+    <tr><td>10, 11</td><td>RX1BF, RX0BF</td><td>Open</td></tr>
+    <tr><td>12</td><td>INT</td><td>Open. The sketch polls while the key is on.</td></tr>
+    <tr><td>13</td><td>SCK</td><td>XIAO D8</td></tr>
+    <tr><td>14</td><td>SI</td><td>XIAO D10</td></tr>
+    <tr><td>15</td><td>SO</td><td>XIAO D9</td></tr>
+    <tr><td>16</td><td>CS</td><td>XIAO D4. Active low.</td></tr>
+    <tr><td>17</td><td>RESET</td><td>10 kΩ to the switched 3.3 V rail. Active low.</td></tr>
+    <tr><td>18</td><td>VDD</td><td>Switched 3.3 V, and 100 nF to ground</td></tr>
+  </tbody>
+</table>
+
+<h3>SN65HVD230, SOIC-8</h3>
+<p>Pins from the TI datasheet. Solder it to the DIP adapter once.</p>
+<table>
+  <thead><tr><th>Pin</th><th>Name</th><th>Connects to</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>D</td><td>MCP2515 pin 1</td></tr>
+    <tr><td>2</td><td>GND</td><td>Box ground</td></tr>
+    <tr><td>3</td><td>VCC</td><td>Switched 3.3 V, and 100 nF to ground</td></tr>
+    <tr><td>4</td><td>R</td><td>MCP2515 pin 2</td></tr>
+    <tr><td>5</td><td>Vref</td><td>Open</td></tr>
+    <tr><td>6</td><td>CANL</td><td>OBD pin 14, twisted pair</td></tr>
+    <tr><td>7</td><td>CANH</td><td>OBD pin 6, twisted pair</td></tr>
+    <tr><td>8</td><td>RS</td><td>Ground. High-speed while powered. Parked state is power removed.</td></tr>
+  </tbody>
+</table>
+
+<h2>4. The 16-pin plug</h2>
+<p>Male SAE J1962 plug into the Triumph’s female socket, usually under the seat. Look into the bike’s socket, wide edge up. Top row is pins 1–8 left to right. Bottom row is pins 9–16 left to right. Pin 16 is the bottom-right corner. Buzz every pigtail wire to its pin before you trust it. Battery negative disconnected for that check.</p>
+<table class="socket">
+  <tr>
+    <td>1 open</td><td>2 open</td><td>3 open</td><td class="on">4 ground?</td>
+    <td class="on">5 ground?</td><td class="on">6 CAN H</td><td>7 open</td><td>8 open</td>
+  </tr>
+  <tr>
+    <td>9 open</td><td>10 open</td><td>11 open</td><td>12 open</td>
+    <td>13 open</td><td class="on">14 CAN L</td><td>15 open</td><td class="on">16 sense?</td>
+  </tr>
+</table>
+<table>
+  <thead><tr><th>Pin</th><th>Wire</th><th>Other end</th></tr></thead>
+  <tbody>
+    <tr><td>4 or 5</td><td>Whichever one has continuity to battery negative</td><td>Box ground. If neither does, leave both open. The battery negative wire is the CAN reference.</td></tr>
+    <tr><td>6</td><td>One side of the twisted pair</td><td>SN65HVD230 pin 7, CAN H</td></tr>
+    <tr><td>14</td><td>The other side</td><td>SN65HVD230 pin 6, CAN L</td></tr>
+    <tr><td>16</td><td>Sense, only if it follows the key</td><td>100 kΩ into the key-sense transistor. If it stays hot with the key off, cut it off and insulate it.</td></tr>
+    <tr><td>Every other pin</td><td>None</td><td>Cut the pigtail wire off and insulate the end. Pin 7 stays open.</td></tr>
+  </tbody>
+</table>
+<p>With the bike off and this cable unplugged, resistance between pins 6 and 14 is often about 60 Ω. After the sleeping box is plugged in, that reading should be unchanged. If it falls, unplug the box.</p>
+
+<h2>5. How the window box connects</h2>
+<p>Wall power. No fuse and no sleep budget. Antenna side of the box toward the bikes, in a window at 99 River Street that faces where they actually park. Not a metal electrical room and not a closed cabinet. The RYLR998 has a built-in antenna and no external jack, so the whole box has to be in the window.</p>
+<p>Board URL: <span class="url">https://espressif.github.io/arduino-esp32/package_esp32_index.json</span>. Board: ESP32S3 Dev Module. Open <code>firmware/mailbox/mailbox.ino</code>. Copy <code>secrets.example.h</code> to <code>secrets.h</code> in that same folder. Fill in the shop Wi-Fi, the origin <code>https://service.torontomoto.com</code> with no path, and the ingest secret. <code>secrets.h</code> stays off git. Leave <code>SOURCE</code> as <code>shop_bay</code> and <code>PLACE_NAME</code> as <code>99 River Street</code>.</p>
+<p>Reyax pin numbers are from the RYLR998 datasheet dated 9 February 2026. The header is the row of five pins. NRST stays open. It already has a pull-up. Holding it low resets the module.</p>
+<table>
+  <thead><tr><th>RYLR998 pin</th><th>Name</th><th>Window box</th><th>Bike box, only after the fuse test</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>VDD</td><td>ESP32-S3 3V3 pin. Maximum 3.6 V.</td><td>XIAO 3V3. Not the 3.7 V battery pad.</td></tr>
+    <tr><td>2</td><td>NRST</td><td>Open</td><td>Open</td></tr>
+    <tr><td>3</td><td>RXD</td><td>Devkit TX, GPIO 17</td><td>XIAO D6</td></tr>
+    <tr><td>4</td><td>TXD</td><td>Devkit RX, GPIO 18</td><td>XIAO D7</td></tr>
+    <tr><td>5</td><td>GND</td><td>Devkit GND</td><td>XIAO GND</td></tr>
+  </tbody>
+</table>
+<p>TX and RX are crossed. The sketch sets <code>AT+CRFOP=0</code> and <code>AT+BAND=915000000</code> in setup, before any send. Confirm with <code>AT+CRFOP?</code>. Factory power is 22 dBm. Do not leave it there. On the bike, after each send, the sketch sends <code>AT+MODE=1</code> so that module sleeps. The window box stays listening.</p>
+<p>USB serial prints every POST body. Until <code>BIKE_LINK_INGEST_SECRET</code> is set on the server, type that body into <strong>Record a reading</strong> on the motorcycle page. HTTP 401 prints once and is not retried. The route is <code>POST /api/bike-link/readings</code>.</p>
+
+<h2>6. Order of work, and the pass marks</h2>
+<ol>
+  <li>Regulator on the bench, through the fuse. No bike. No XIAO. About 3.7 V. Then the battery pads, flash, unplug USB.</li>
+  <li>CAN section. Switch off when D3 is idle. Terminator absent. Measure that it is absent.</li>
+  <li>Whole box from the bench supply, key-sense grounded. 3.3 V on the XIAO 3V3 pin. Asleep, current in series with the fuse under 50 µA. Over that, stop.</li>
+  <li>Bench supply at 12.6 V. The voltage in the Bluetooth JSON matches the meter within 0.1 V.</li>
+  <li>Battery negative off. Fuse at the post. Black wire to battery negative. CAN H and CAN L still open. Reconnect. The bike starts and idles. If it does not, pull the fuse.</li>
+  <li>Key off, asleep, fuse current still under 50 µA.</li>
+  <li>Meter pin 16, key off and key on. Meter pin 4 and pin 5 to battery negative.</li>
+  <li>Battery off again. Connect pin 6, pin 14, and the ground pin that actually reaches battery negative. Start a second time. Resistance between pins 6 and 14 unchanged with the sleeping box plugged in.</li>
+  <li>Stick <code>TM-BL-</code> and four digits on the box. On that motorcycle’s page, save the same sticker. Kilometers in the JSON stay blank until a Triumph in the bay answers a real request. Voltage and fault codes are the first reading.</li>
+  <li>Window box on the sill. Second radio onto the bike only after both fuse measurements passed: 3.3 V, D6 to radio RX, D7 to radio TX, <code>radio.h</code> containing <code>#define BIKE_LINK_RADIO 1</code>, then reflash. Write the network id and the addresses on the mailbox.</li>
+</ol>
+
+<p class="fine">The long version of why each part is here, the sleep budget, and the radio limit is <code>docs/hardware/bike-link-build.md</code>. The pin tables this sheet was taken from are <code>docs/hardware/bike-link-wiring.md</code>. Sketches are <code>firmware/bike/bike_link.ino</code> and <code>firmware/mailbox/mailbox.ino</code>.</p>
+
+</body>
+</html>
