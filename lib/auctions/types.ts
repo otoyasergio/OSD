@@ -6,7 +6,10 @@ export type BikeIdentity = {
   model: string;
 };
 
-/** Normalized realized (or offered) auction lot. Prices are US dollars. */
+/**
+ * Normalized realized (or offered) auction lot.
+ * `priceUsd` stays in US dollars. The price guide converts it to Canadian dollars.
+ */
 export type AuctionLotRecord = {
   source: string;
   sourceLotId: string;
@@ -27,7 +30,7 @@ export type AuctionLotRecord = {
 
 export type AuctionHistoryPoint = {
   saleYear: number;
-  medianUsd: number;
+  medianCad: number;
   count: number;
 };
 
@@ -36,11 +39,17 @@ export type AuctionCompView = {
   modelYear: number | null;
   vendor: string | null;
   saleDate: string | null;
-  priceUsd: number;
+  priceCad: number;
   place: string | null;
   lotUrl: string | null;
   sourceId: string;
   sourceName: string;
+};
+
+/** How stored US-dollar auction results were turned into Canadian dollars. */
+export type AuctionFxNote = {
+  source: "bank-of-canada" | "fallback";
+  label: string;
 };
 
 export type AuctionGuideState =
@@ -59,14 +68,15 @@ export type StoredAuctionGuide = {
   year: number;
   modelYearScope: ModelYearScope;
   modelYearCount: number;
-  modelYearMedianUsd: number | null;
-  modelYearLowUsd: number | null;
-  modelYearHighUsd: number | null;
+  modelYearMedianCad: number | null;
+  modelYearLowCad: number | null;
+  modelYearHighCad: number | null;
   nearbySpan: number | null;
   overallCount: number;
-  overallMedianUsd: number | null;
-  overallLowUsd: number | null;
-  overallHighUsd: number | null;
+  overallMedianCad: number | null;
+  overallLowCad: number | null;
+  overallHighCad: number | null;
+  fx: AuctionFxNote;
   earliestSaleYear: number | null;
   latestSaleYear: number | null;
   truncated: boolean;

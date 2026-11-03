@@ -1,6 +1,7 @@
 import Link from "next/link";
 import nextDynamic from "next/dynamic";
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import type { ReadView } from "@/lib/auth/role-preview-shared";
 import {
@@ -42,6 +43,7 @@ import { WixInvoicePanel } from "@/components/billing/WixInvoicePanel";
 import { acknowledgeWixInvoiceFailureFormAction } from "@/app/(app)/work_orders/wix-invoice-actions";
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
+import { loadAuctionPriceGuide } from "@/lib/services/auctionPriceGuide";
 import {
   isRecommendationOpenForEstimate,
   listOutstandingRecommendationsForMotorcycle,
@@ -279,12 +281,15 @@ export default async function WorkOrderDetailPage({
   const needsTechs = !foreign && (activeTab === "overview" || isEstimateTab);
   const needsServices = !foreign && isEstimateTab;
 
+  const auctionBike =
+    activeTab === "inspection" ? (inspection?.header.motorcycle ?? null) : null;
   const [
     technicians,
     services,
     outstandingRecommendations,
     serviceInformation,
     assistantData,
+    auctionLoaded,
   ] = await Promise.all([
     needsTechs ? listTechniciansForActiveLocation() : Promise.resolve([]),
     needsServices ? listServices({ includeInactive: false }) : Promise.resolve([]),
@@ -306,7 +311,33 @@ export default async function WorkOrderDetailPage({
           ),
         })
       : Promise.resolve(null),
+    auctionBike
+      ? loadAuctionPriceGuide({
+          motorcycleId: auctionBike.motorcycle_id,
+          bike: {
+            year: auctionBike.year,
+            make: auctionBike.make,
+            model: auctionBike.model,
+          },
+          audience: "staff",
+        })
+      : Promise.resolve(null),
   ]);
+  if (auctionLoaded?.refreshInBackground && auctionBike) {
+    after(() => {
+      void loadAuctionPriceGuide({
+        motorcycleId: auctionBike.motorcycle_id,
+        bike: {
+          year: auctionBike.year,
+          make: auctionBike.make,
+          model: auctionBike.model,
+        },
+        audience: "staff",
+        refresh: "force",
+      }).catch(() => undefined);
+    });
+  }
+  const auctionGuide = auctionLoaded?.view ?? null;
 
   const canAssign = canAssignTechnician(viewRole);
   const canEdit = canEditWorkOrder(viewRole);
@@ -473,9 +504,21 @@ export default async function WorkOrderDetailPage({
           className="rounded border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-950"
         >
           <p>{invoiceBlock.wix_error_text}</p>
-          <input type="hidden" name="acknowledgement_id" value={invoiceBlock.acknowledgement_id} />
-          <input type="hidden" name="hold_revision" value={String(invoiceBlock.hold_revision)} />
-          <input type="hidden" name="wix_error_text" value={invoiceBlock.wix_error_text} />
+          <input
+            type="hidden"
+            name="acknowledgement_id"
+            value={invoiceBlock.acknowledgement_id}
+          />
+          <input
+            type="hidden"
+            name="hold_revision"
+            value={String(invoiceBlock.hold_revision)}
+          />
+          <input
+            type="hidden"
+            name="wix_error_text"
+            value={invoiceBlock.wix_error_text}
+          />
           {canApprove ? (
             <button type="submit" className="btn mt-2">
               Acknowledge
@@ -674,6 +717,7 @@ export default async function WorkOrderDetailPage({
               canEdit={canInspect}
               canForceComplete={canForceInspect}
               canRecommend={canRecommend}
+              auctionGuide={auctionGuide}
             />
           </div>
         ) : (

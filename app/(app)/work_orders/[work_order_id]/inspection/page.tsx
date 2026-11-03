@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
+import { loadAuctionPriceGuide } from "@/lib/services/auctionPriceGuide";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canCompleteInspection,
@@ -67,6 +69,24 @@ export default async function InspectionPage({
     work_order_status: inspection.work_order_status,
     canEdit,
   });
+  const bike = inspection.header.motorcycle;
+  const auction = bike
+    ? await loadAuctionPriceGuide({
+        motorcycleId: bike.motorcycle_id,
+        bike: { year: bike.year, make: bike.make, model: bike.model },
+        audience: "staff",
+      })
+    : null;
+  if (auction?.refreshInBackground && bike) {
+    after(() => {
+      void loadAuctionPriceGuide({
+        motorcycleId: bike.motorcycle_id,
+        bike: { year: bike.year, make: bike.make, model: bike.model },
+        audience: "staff",
+        refresh: "force",
+      }).catch(() => undefined);
+    });
+  }
 
   return (
     <>
@@ -106,6 +126,7 @@ export default async function InspectionPage({
           canForceComplete={canForce}
           canRecommend={canRecommend}
           completeReturnTo={completeReturnTo}
+          auctionGuide={auction?.view ?? null}
         />
       </div>
     </>

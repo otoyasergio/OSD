@@ -3,6 +3,7 @@
  *
  * Accepts ALT/FNDATA JSON or CSV (the AWS Data Exchange motorcycle feed)
  * and a generic export with make, model, year, price_usd, sale_date.
+ * Lots stay in US dollars. The price guide converts them to Canadian dollars.
  *
  * Refuses the production Supabase project unless IMPORT_AUCTION_LOTS_CONFIRM=1.
  *

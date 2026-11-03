@@ -44,6 +44,12 @@ export type InspectionResultRow = {
 export type InspectionHeader = {
   customer_name: string | null;
   motorcycle_label: string | null;
+  motorcycle: {
+    motorcycle_id: string;
+    year: number;
+    make: string;
+    model: string;
+  } | null;
   vin: string | null;
   mileage: number | null;
   mileage_unit: MileageUnit;
@@ -216,6 +222,7 @@ export async function getInspectionForWorkOrder(
     .select(
       `
       work_order_id,
+      motorcycle_id,
       location_id,
       work_order_number,
       status,
@@ -434,6 +441,15 @@ export async function getInspectionForWorkOrder(
       motorcycle_label: motorcycle
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : null,
+      motorcycle:
+        motorcycle && workOrder.motorcycle_id
+          ? {
+              motorcycle_id: workOrder.motorcycle_id as string,
+              year: motorcycle.year,
+              make: motorcycle.make,
+              model: motorcycle.model,
+            }
+          : null,
       vin: motorcycle?.vin ?? null,
       mileage: (workOrder.mileage as number | null) ?? null,
       mileage_unit: normalizeMileageUnit(workOrder.mileage_unit),

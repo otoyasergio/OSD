@@ -16,7 +16,7 @@ export const AUCTION_SOURCE_CATALOG = [
     id: "altfndata",
     name: "ALT/FNDATA motorcycle auctions",
     covers:
-      "Collector and specialty lots from 1999 onward, including Mecum, Bonhams, and RM Sotheby's. AWS Data Exchange delivers the file; api.altfndata.com queries the same tape. Realized prices are normalized to US dollars.",
+      "Collector and specialty lots from 1999 onward, including Mecum, Bonhams, and RM Sotheby's. AWS Data Exchange delivers the file; api.altfndata.com queries the same tape. Realized prices are normalized to US dollars, then shown here in Canadian dollars.",
     connection: "connected",
   },
   {

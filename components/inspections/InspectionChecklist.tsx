@@ -1,7 +1,9 @@
 "use client";
 
 import { useActionState, useMemo, useState } from "react";
+import type { AuctionPriceGuideView } from "@/lib/auctions/types";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
+import { InspectionAuctionPrice } from "@/components/auctions/InspectionAuctionPrice";
 import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
@@ -78,12 +80,14 @@ export function InspectionChecklist({
   canForceComplete,
   canRecommend,
   completeReturnTo,
+  auctionGuide = null,
 }: {
   inspection: InspectionDetail;
   canEdit: boolean;
   canForceComplete: boolean;
   canRecommend?: boolean;
   completeReturnTo?: string | null;
+  auctionGuide?: AuctionPriceGuideView | null;
 }) {
   const [completeState, completeAction] = useActionState(
     completeInspectionAction.bind(null, inspection.work_order_id),
@@ -254,6 +258,8 @@ export function InspectionChecklist({
             N/A
           </span>
         </div>
+
+        <InspectionAuctionPrice guide={auctionGuide} />
 
         <dl className="inspection-report-meta">
           {header.customer_name ? (
