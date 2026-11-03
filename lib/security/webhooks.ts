@@ -8,6 +8,18 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 /**
+ * Inbound Authorization check for a shared secret.
+ * Length is checked before timingSafeEqual, which throws on unequal buffers.
+ */
+export function bearerAuthorizationMatches(
+  authorizationHeader: string | null,
+  secret: string
+): boolean {
+  if (!authorizationHeader || !secret) return false;
+  return safeEqual(authorizationHeader, `Bearer ${secret}`);
+}
+
+/**
  * Square signs: HMAC-SHA256(notificationUrl + rawBody) → base64
  * Header: x-square-hmacsha256-signature
  */
