@@ -101,3 +101,27 @@ export function v2PaymentStatusForMapped(mapped: string): string | null {
 export function squareInvoiceTransactionId(invoiceId: string, mapped: string): string {
   return `sq-invoice:${invoiceId}:${mapped}`;
 }
+
+/**
+ * Store credit applied to a Square invoice is the balance that existed when
+ * that invoice was published. Credit added afterward belongs to a later bill.
+ * Invoices with no publish timestamp keep the older "settle every open credit"
+ * behavior.
+ */
+export function creditIdsSettledByPaidInvoice(input: {
+  credits: Array<{ credit_id: string; created_at: string | null }>;
+  invoicePublishedAt: string | null;
+}): string[] {
+  const publishedMs = input.invoicePublishedAt
+    ? Date.parse(input.invoicePublishedAt)
+    : Number.NaN;
+  const settleAll = !Number.isFinite(publishedMs);
+  return input.credits
+    .filter((credit) => {
+      if (settleAll) return true;
+      const createdMs = credit.created_at ? Date.parse(credit.created_at) : Number.NaN;
+      if (!Number.isFinite(createdMs)) return true;
+      return createdMs <= publishedMs;
+    })
+    .map((credit) => credit.credit_id);
+}

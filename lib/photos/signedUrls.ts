@@ -81,6 +81,9 @@ export async function signBucketPaths(
       });
     }
   }
+  for (const path of misses) {
+    if (!byPath.has(path)) byPath.set(path, null);
+  }
   if (cacheable) pruneSignedUrlCache(now);
   return byPath;
 }
