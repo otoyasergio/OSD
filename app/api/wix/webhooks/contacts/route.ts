@@ -5,6 +5,7 @@ import type { WixWebhookContactPayload } from "@/lib/wix/types";
 import { clientIp, rateLimit } from "@/lib/security/rateLimit";
 import { logger, newRequestId } from "@/lib/security/logger";
 import { captureException } from "@/lib/security/sentry";
+import { bearerAuthorizationMatches } from "@/lib/security/webhooks";
 
 export const runtime = "nodejs";
 
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
 
   const expected = getWixWebhookSecret();
   const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${expected}`) {
+  if (!bearerAuthorizationMatches(authHeader, expected)) {
     logger.warn("Wix contacts webhook unauthorized", { requestId, ip });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -3,6 +3,7 @@ import { isFridayShopReportHour } from "@/lib/datetime/format";
 import { sendWeeklyShopReport } from "@/lib/services/weeklyShopReport";
 import { logger, newRequestId } from "@/lib/security/logger";
 import { captureException } from "@/lib/security/sentry";
+import { bearerAuthorizationMatches } from "@/lib/security/webhooks";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -21,7 +22,7 @@ export async function GET(request: Request) {
   }
 
   const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${secret}`) {
+  if (!bearerAuthorizationMatches(authHeader, secret)) {
     logger.warn("Weekly shop report cron unauthorized", { requestId });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -1,5 +1,15 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { bearerAuthorizationMatches } from "@/lib/security/webhooks";
+
+const INBOUND_BEARER_ROUTES = [
+  "app/api/cron/parts-canada-sync/route.ts",
+  "app/api/cron/weekly-shop-report/route.ts",
+  "app/api/cron/wix-contacts-sync/route.ts",
+  "app/api/wix/webhooks/invoices/route.ts",
+  "app/api/wix/webhooks/contacts/route.ts",
+  "app/api/wix/webhooks/bookings/route.ts",
+];
 
 describe("bearerAuthorizationMatches", () => {
   it("accepts an exact Bearer secret", () => {
@@ -20,5 +30,15 @@ describe("bearerAuthorizationMatches", () => {
     expect(bearerAuthorizationMatches(null, "cron-secret")).toBe(false);
     expect(bearerAuthorizationMatches("Bearer cron-secret", "")).toBe(false);
     expect(bearerAuthorizationMatches("Basic cron-secret", "cron-secret")).toBe(false);
+  });
+});
+
+describe("inbound bearer routes", () => {
+  it("compares the shared secret with bearerAuthorizationMatches", () => {
+    for (const path of INBOUND_BEARER_ROUTES) {
+      const source = readFileSync(path, "utf8");
+      expect(source, path).toContain("bearerAuthorizationMatches(");
+      expect(source, path).not.toContain("!== `Bearer");
+    }
   });
 });
