@@ -2,7 +2,7 @@ type TextFieldProps = {
   label: string;
   name: string;
   id?: string;
-  type?: "text" | "email" | "tel" | "number" | "date" | "password";
+  type?: "text" | "email" | "tel" | "number" | "date" | "datetime-local" | "password";
   defaultValue?: string | number | null;
   required?: boolean;
   placeholder?: string;
