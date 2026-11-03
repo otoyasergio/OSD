@@ -10,4 +10,4 @@ Copy `secrets.example.h` to `secrets.h` and fill in the building Wi-Fi, the shop
 | Client home                  | `home`     | empty, or a short label                |
 | Cafe or storage              | `partner`  | the place name, 80 characters or fewer |
 
-The box stamps that pair onto the bike packet, drops `clockSet`, and POSTs to `/api/bike-link/readings`. The USB serial print of that body stays on, so the bay can type a reading if the post does not land. HTTP 401 is printed once and not retried.
+The box stamps that pair onto the bike packet, drops `clockSet`, and POSTs to `/api/bike-link/readings` on the origin in `secrets.h`. The USB serial print of that body stays on, so the bay can type a reading if the post does not land. HTTP 401 is printed once and not retried.

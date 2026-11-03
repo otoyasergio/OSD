@@ -3,6 +3,7 @@
 
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 
 #include "secrets.h"
 
@@ -84,7 +85,12 @@ static void postReading(const String& body) {
   }
 
   HTTPClient http;
-  http.begin(readingsUrl());
+  WiFiClientSecure client;
+  client.setInsecure();
+  if (!http.begin(client, readingsUrl())) {
+    Serial.println("bike-link HTTP 0");
+    return;
+  }
   http.addHeader("Content-Type", "application/json");
   http.addHeader("Authorization", String("Bearer ") + BIKE_LINK_INGEST_SECRET);
   int status = http.POST(body);

@@ -18,6 +18,8 @@ describe("mailbox.ino", () => {
     expect(sketch).toContain("AT+CRFOP=0");
     expect(sketch).toContain("/api/bike-link/readings");
     expect(sketch).toContain("secrets.h");
+    expect(sketch).toContain("WiFiClientSecure");
+    expect(sketch).toContain("if (status == 401) return;");
     expect(gitignore).toContain("firmware/mailbox/secrets.h");
     expect(example).toContain('WIFI_SSID[] = ""');
     expect(example).toContain('WIFI_PASSWORD[] = ""');
