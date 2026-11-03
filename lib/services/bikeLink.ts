@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth/session";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { createClient } from "@/lib/database/supabase-server";
+import { parseBoxId } from "@/lib/bikeLink/box";
 import {
   attentionLevel,
   baselineCaption,
@@ -31,6 +32,7 @@ export type BikeLinkLatest = {
 
 export type BikeLinkView = {
   unit: MileageUnit;
+  boxId: string | null;
   report: BikeLinkReport | null;
   latest: BikeLinkLatest | null;
   baseline: ServiceBaseline;
@@ -98,7 +100,13 @@ export async function listBikeLinkAttention(): Promise<BikeLinkAttentionItem[]> 
     if (!motorcycle) continue;
     const unit = normalizeMileageUnit(motorcycle.odometer_unit);
     const schedule = schedules.get(readingRow.motorcycle_id) ?? null;
-    const view = buildView(unit, schedule, readingRow, visits.get(readingRow.motorcycle_id) ?? null);
+    const view = buildView(
+      unit,
+      schedule,
+      readingRow,
+      visits.get(readingRow.motorcycle_id) ?? null,
+      null
+    );
     const level = view.report ? attentionLevel(view.report) : null;
     if (!level || !view.report?.clientNote) continue;
     items.push({
@@ -124,12 +132,43 @@ export async function getBikeLink(motorcycleId: string): Promise<BikeLinkView> {
   if (!canViewClients(user.role)) throw new Error("FORBIDDEN");
   const supabase = await createClient();
   const unit = await loadUnit(supabase, motorcycleId);
-  const [schedule, latest, lastVisit] = await Promise.all([
+  const [schedule, latest, lastVisit, boxId] = await Promise.all([
     loadSchedule(supabase, motorcycleId),
     loadLatestReading(supabase, motorcycleId),
     loadLastVisit(supabase, motorcycleId, unit),
+    loadBoxId(supabase, motorcycleId),
   ]);
-  return buildView(unit, schedule, latest, lastVisit);
+  return buildView(unit, schedule, latest, lastVisit, boxId);
+}
+
+export async function assignBikeLinkBox(motorcycleId: string, boxId: string): Promise<void> {
+  const user = await requireUser();
+  if (!canUpdateServiceInformation(user.role)) throw new Error("FORBIDDEN");
+  const parsed = parseBoxId(boxId);
+  if (!parsed.ok) throw new Error(parsed.error);
+
+  const supabase = await createClient();
+  await loadUnit(supabase, motorcycleId);
+  const { error } = await supabase.rpc("replace_bike_link_box", {
+    p_motorcycle_id: motorcycleId,
+    p_box_id: parsed.boxId,
+    p_user_id: user.user_id,
+  });
+  if (error) {
+    if (error.message.includes("That box is already paired")) {
+      throw new Error("That box is already paired.");
+    }
+    throw error;
+  }
+
+  await addAuditLog(supabase, {
+    actor_user_id: user.user_id,
+    action: "bike_link.box_paired",
+    entity_type: "motorcycle",
+    entity_id: motorcycleId,
+    description: `Paired bike box ${parsed.boxId}.`,
+    new_value: { box_id: parsed.boxId },
+  });
 }
 
 export async function recordBikeReading(
@@ -217,7 +256,8 @@ function buildView(
   unit: MileageUnit,
   schedule: ScheduleRow | null,
   latest: ReadingRow | null,
-  lastVisit: { odometer: number | null; completedAt: Date | null } | null
+  lastVisit: { odometer: number | null; completedAt: Date | null } | null,
+  boxId: string | null
 ): BikeLinkView {
   const baseline = resolveServiceBaseline({
     unit,
@@ -236,6 +276,7 @@ function buildView(
   const reading = latest ? toReading(latest) : null;
   return {
     unit,
+    boxId,
     baseline,
     baselineText: baselineCaption(baseline),
     report: reading ? interpretBikeReading(reading, baseline) : null,
@@ -405,6 +446,19 @@ async function loadSchedule(
     .maybeSingle();
   if (error) throw error;
   return (data as ScheduleRow | null) ?? null;
+}
+
+async function loadBoxId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  motorcycleId: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("bike_link_box")
+    .select("box_id")
+    .eq("motorcycle_id", motorcycleId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.box_id ?? null;
 }
 
 async function loadLatestReading(

@@ -367,6 +367,7 @@ export type Database = {
           recorded_at: string;
           received_at: string;
           recorded_by_user_id: string | null;
+          box_id: string | null;
         };
         Insert: {
           reading_id?: string;
@@ -379,8 +380,24 @@ export type Database = {
           recorded_at: string;
           received_at?: string;
           recorded_by_user_id?: string | null;
+          box_id?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["bike_link_reading"]["Insert"]>;
+      };
+      bike_link_box: {
+        Row: {
+          box_id: string;
+          motorcycle_id: string;
+          paired_at: string;
+          paired_by_user_id: string | null;
+        };
+        Insert: {
+          box_id: string;
+          motorcycle_id: string;
+          paired_at?: string;
+          paired_by_user_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["bike_link_box"]["Insert"]>;
       };
       shop_mailbox: {
         Row: {
@@ -819,6 +836,14 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      replace_bike_link_box: {
+        Args: {
+          p_motorcycle_id: string;
+          p_box_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
       mint_work_order_number: {
         Args: { p_location_id: string };
         Returns: string;

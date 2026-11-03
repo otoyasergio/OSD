@@ -19,6 +19,7 @@ type Props = {
   recordedAtDefault: string;
   recordAction: Action;
   scheduleAction: Action;
+  boxAction: Action;
 };
 
 const SERVICE_LABEL = {
@@ -41,6 +42,7 @@ export function BikeLinkPanel({
   recordedAtDefault,
   recordAction,
   scheduleAction,
+  boxAction,
 }: Props) {
   const report = view.report;
   const latest = view.latest;
@@ -104,10 +106,17 @@ export function BikeLinkPanel({
         )}
       </div>
 
+      <p className="mt-3 text-sm text-foreground">
+        Box {view.boxId ?? "not paired"}
+      </p>
+
       {canEdit ? (
         <div className="mt-6 grid gap-8 lg:grid-cols-2">
           <ReadingForm action={recordAction} recordedAtDefault={recordedAtDefault} />
-          <ScheduleForm action={scheduleAction} view={view} />
+          <div className="flex flex-col gap-8">
+            <BoxForm action={boxAction} boxId={view.boxId} />
+            <ScheduleForm action={scheduleAction} view={view} />
+          </div>
         </div>
       ) : null}
     </section>
@@ -183,6 +192,29 @@ function ReadingForm({
       />
       <div>
         <SubmitButton label="Save reading" pendingLabel="Saving…" />
+      </div>
+    </form>
+  );
+}
+
+function BoxForm({ action, boxId }: { action: Action; boxId: string | null }) {
+  const [state, formAction] = useActionState(action, { error: null });
+
+  return (
+    <form action={formAction} className="flex flex-col gap-4">
+      <h3 className="text-base font-semibold text-foreground">Box sticker</h3>
+      <FormError message={state.error} />
+      <TextField
+        label="Box id"
+        name="box_id"
+        defaultValue={boxId ?? ""}
+        placeholder="TM-BL-0007"
+        autoCapitalize="characters"
+        autoCorrect="off"
+        spellCheck={false}
+      />
+      <div>
+        <SubmitButton label="Save box" pendingLabel="Saving…" />
       </div>
     </form>
   );

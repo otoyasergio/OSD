@@ -1,7 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { recordBikeReading, saveBikeLinkSchedule } from "@/lib/services/bikeLink";
+import {
+  assignBikeLinkBox,
+  recordBikeReading,
+  saveBikeLinkSchedule,
+} from "@/lib/services/bikeLink";
 import { toFormErrorMessage } from "@/lib/services/errors";
 
 export type BikeLinkFormState = { error: string | null };
@@ -20,6 +24,21 @@ export async function recordBikeReadingAction(
       faultCodes: String(formData.get("fault_codes") ?? ""),
       recordedAt: String(formData.get("recorded_at") ?? ""),
     });
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+
+  revalidatePath(`/motorcycles/${motorcycleId}`);
+  return { error: null };
+}
+
+export async function assignBikeLinkBoxAction(
+  motorcycleId: string,
+  _prev: BikeLinkFormState,
+  formData: FormData
+): Promise<BikeLinkFormState> {
+  try {
+    await assignBikeLinkBox(motorcycleId, String(formData.get("box_id") ?? ""));
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }

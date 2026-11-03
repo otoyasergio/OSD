@@ -28,6 +28,7 @@ import { MotorcycleVisitList } from "@/components/motorcycles/MotorcycleVisitLis
 import { BikeLinkPanel } from "@/components/motorcycles/BikeLinkPanel";
 import { getBikeLink } from "@/lib/services/bikeLink";
 import {
+  assignBikeLinkBoxAction,
   recordBikeReadingAction,
   saveBikeLinkScheduleAction,
 } from "@/app/(app)/motorcycles/bike-link-actions";
@@ -229,6 +230,7 @@ export default async function MotorcycleDetailPage({
         recordedAtDefault={toShopDatetimeLocalValue(new Date())}
         recordAction={recordBikeReadingAction.bind(null, motorcycle_id)}
         scheduleAction={saveBikeLinkScheduleAction.bind(null, motorcycle_id)}
+        boxAction={assignBikeLinkBoxAction.bind(null, motorcycle_id)}
       />
 
       {canViewDocs ? (
