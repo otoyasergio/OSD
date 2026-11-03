@@ -34,11 +34,13 @@ if (!filePath || !source) {
   process.exit(1);
 }
 
+const inputPath = filePath;
+
 async function main() {
-  const text = await readFile(filePath, "utf8");
+  const text = await readFile(inputPath, "utf8");
   const lots = recordsFromAuctionFile(text, source);
   const imported = await upsertAuctionLots(lots);
-  console.log(`Imported ${imported} auction lots from ${filePath} as ${source}.`);
+  console.log(`Imported ${imported} auction lots from ${inputPath} as ${source}.`);
 }
 
 main().catch((error: unknown) => {
