@@ -214,7 +214,7 @@ const MESSAGES: Record<string, string> = {
   SIGNATURE_TOO_LARGE: "Signature image is too large.",
   SIGNATURE_UPLOAD_FAILED: "Could not save the signature. Try again.",
   SIGNATURE_REQUIRED:
-    "Draw your full signature on the report. A blank box or a single dot does not count.",
+    "Draw your full signature. A blank box or a single dot does not count.",
   DOCUMENT_TITLE_REQUIRED: "Enter a title for this document.",
   DOCUMENT_REQUIRED: "Choose a file to upload.",
   DOCUMENT_TOO_LARGE: "Documents must be 10 MB or smaller.",
