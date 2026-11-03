@@ -27,6 +27,13 @@ import { StaffPhotoGrid } from "@/components/photos/StaffPhotoGrid";
 import { AuctionPriceGuide } from "@/components/auctions/AuctionPriceGuide";
 import { MotorcycleDocuments } from "@/components/motorcycles/MotorcycleDocuments";
 import { MotorcycleVisitList } from "@/components/motorcycles/MotorcycleVisitList";
+import { BikeLinkPanel } from "@/components/motorcycles/BikeLinkPanel";
+import { getBikeLink } from "@/lib/services/bikeLink";
+import {
+  assignBikeLinkBoxAction,
+  recordBikeReadingAction,
+  saveBikeLinkScheduleAction,
+} from "@/app/(app)/motorcycles/bike-link-actions";
 import {
   updateMotorcycleAction,
   updateServiceInformationAction,
@@ -35,7 +42,11 @@ import {
 import { refreshAuctionPriceGuideAction } from "@/app/(app)/motorcycles/auction-actions";
 import { loadAuctionPriceGuide } from "@/lib/services/auctionPriceGuide";
 import { listMotorcycleDocuments } from "@/lib/services/motorcycleDocuments";
-import { formatDate, formatDateTime } from "@/lib/datetime/format";
+import {
+  formatDate,
+  formatDateTime,
+  toShopDatetimeLocalValue,
+} from "@/lib/datetime/format";
 import { formatMileage, normalizeMileageUnit } from "@/lib/mileage/format";
 import { WixInvoiceList } from "@/components/billing/WixInvoiceList";
 import { listInvoicesForMotorcycle } from "@/lib/services/wixInvoices";
@@ -72,6 +83,7 @@ export default async function MotorcycleDetailPage({
     documents,
     invoices,
     auctionGuide,
+    bikeLink,
   ] = await Promise.all([
     getServiceInformation(motorcycle_id),
     searchCustomers("", { preferShopCustomers: true }),
@@ -85,6 +97,7 @@ export default async function MotorcycleDetailPage({
       bike: { year: motorcycle.year, make: motorcycle.make, model: motorcycle.model },
       audience: "staff",
     }),
+    getBikeLink(motorcycle_id),
   ]);
 
   let customerOptions = customers;
@@ -243,6 +256,15 @@ export default async function MotorcycleDetailPage({
         variant="staff"
         motorcycleId={motorcycle_id}
         refreshAction={refreshAuctionPriceGuideAction}
+      />
+
+      <BikeLinkPanel
+        view={bikeLink}
+        canEdit={canEditServiceInfo}
+        recordedAtDefault={toShopDatetimeLocalValue(new Date())}
+        recordAction={recordBikeReadingAction.bind(null, motorcycle_id)}
+        scheduleAction={saveBikeLinkScheduleAction.bind(null, motorcycle_id)}
+        boxAction={assignBikeLinkBoxAction.bind(null, motorcycle_id)}
       />
 
       {canViewDocs ? (

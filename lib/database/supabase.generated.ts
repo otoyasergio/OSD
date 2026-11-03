@@ -334,6 +334,71 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["shop_closure"]["Insert"]>;
       };
+      bike_link_schedule: {
+        Row: {
+          motorcycle_id: string;
+          interval_distance: number;
+          interval_days: number;
+          last_service_odometer: number | null;
+          last_service_on: string | null;
+          updated_at: string;
+          updated_by_user_id: string | null;
+        };
+        Insert: {
+          motorcycle_id: string;
+          interval_distance: number;
+          interval_days: number;
+          last_service_odometer?: number | null;
+          last_service_on?: string | null;
+          updated_at?: string;
+          updated_by_user_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["bike_link_schedule"]["Insert"]>;
+      };
+      bike_link_reading: {
+        Row: {
+          reading_id: string;
+          motorcycle_id: string;
+          source: "shop_bay" | "home" | "partner";
+          place_name: string | null;
+          odometer: number | null;
+          battery_volts: number | null;
+          fault_codes: string[];
+          recorded_at: string;
+          received_at: string;
+          recorded_by_user_id: string | null;
+          box_id: string | null;
+        };
+        Insert: {
+          reading_id?: string;
+          motorcycle_id: string;
+          source: "shop_bay" | "home" | "partner";
+          place_name?: string | null;
+          odometer?: number | null;
+          battery_volts?: number | null;
+          fault_codes?: string[];
+          recorded_at: string;
+          received_at?: string;
+          recorded_by_user_id?: string | null;
+          box_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["bike_link_reading"]["Insert"]>;
+      };
+      bike_link_box: {
+        Row: {
+          box_id: string;
+          motorcycle_id: string;
+          paired_at: string;
+          paired_by_user_id: string | null;
+        };
+        Insert: {
+          box_id: string;
+          motorcycle_id: string;
+          paired_at?: string;
+          paired_by_user_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["bike_link_box"]["Insert"]>;
+      };
       shop_mailbox: {
         Row: {
           location_id: string;
@@ -811,6 +876,14 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      replace_bike_link_box: {
+        Args: {
+          p_motorcycle_id: string;
+          p_box_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
       mint_work_order_number: {
         Args: { p_location_id: string };
         Returns: string;

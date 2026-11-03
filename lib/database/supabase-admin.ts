@@ -52,3 +52,11 @@ export function createPassportAdminClient() {
 export function createAuctionAdminClient() {
   return createServiceRoleClient("AUCTION_GUIDE_MISCONFIGURED");
 }
+
+/**
+ * Server-only client for a window box posting a bike reading.
+ * Never import this into client components.
+ */
+export function createBikeLinkAdminClient() {
+  return createServiceRoleClient("BIKE_LINK_INGEST_MISCONFIGURED");
+}
