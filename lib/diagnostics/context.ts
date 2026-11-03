@@ -27,6 +27,7 @@ const SECTION_BUDGETS = {
   recommendations: 3_000,
   qualityChecks: 1_500,
   safetyChecks: 1_500,
+  faultCodes: 2_000,
   selectedJobParts: 2_000,
   selectedJobChecklist: 1_000,
   selectedJobVerification: 1_000,
@@ -165,6 +166,16 @@ export type DiagnosticsContextSource = {
   references?: Partial<
     Record<DiagnosticsReferenceName, boolean | string | { text?: NullableText }>
   >;
+  faultCodes?: {
+    recordedAt: string | null;
+    scanResults: string | null;
+    readings: Array<{
+      code: string;
+      status: string;
+      description?: NullableText;
+      severity?: NullableText;
+    }>;
+  };
 };
 
 type DiagnosticsCheckSource = {
@@ -333,6 +344,17 @@ export type DiagnosticsModelContext = {
   };
   missingReferences: Record<DiagnosticsReferenceName, boolean>;
   referenceEvidence: Record<DiagnosticsReferenceName, string | null>;
+  recordedFaultCodes?: {
+    recordedAt: string | null;
+    scanResults: string | null;
+    readings: Array<{
+      code: string;
+      status: string;
+      description: string | null;
+      severity: string | null;
+    }>;
+    truncation: DiagnosticsTruncation;
+  };
   truncation: {
     customerRequestJobs: DiagnosticsTruncation;
     inspectionResults: DiagnosticsTruncation;
@@ -817,6 +839,12 @@ export function deriveDiagnosticsClaimContext(
     ...context.checks.safety.map((item) => item.notes),
     ...context.checks.quality.map((item) => JSON.stringify(item.checklist)),
     ...context.checks.safety.map((item) => JSON.stringify(item.checklist)),
+    ...(context.recordedFaultCodes?.readings.flatMap((item) => [
+      item.code,
+      item.description,
+      item.severity,
+      item.status,
+    ]) ?? []),
   ].filter((value): value is string => Boolean(value));
   const allowedMeasuredValues = [
     ...new Set(
@@ -1004,6 +1032,21 @@ export function shapeDiagnosticsContext(
     shapeChecks(source.checks?.safety, checklistWork),
     SECTION_BUDGETS.safetyChecks
   );
+  const recordedFaultCodes = source.faultCodes
+    ? budgetItems(
+        [...source.faultCodes.readings]
+          .sort(
+            (a, b) => a.code.localeCompare(b.code) || a.status.localeCompare(b.status)
+          )
+          .map((reading) => ({
+            code: boundedRequiredText(reading.code),
+            status: boundedRequiredText(reading.status),
+            description: boundedText(reading.description),
+            severity: boundedText(reading.severity),
+          })),
+        SECTION_BUDGETS.faultCodes
+      )
+    : null;
 
   const context = {
     missingReferences,
@@ -1062,6 +1105,16 @@ export function shapeDiagnosticsContext(
     },
     technicianNotes: technicianNotes.items,
     recommendations: recommendations.items,
+    ...(recordedFaultCodes
+      ? {
+          recordedFaultCodes: {
+            recordedAt: source.faultCodes?.recordedAt ?? null,
+            scanResults: boundedText(source.faultCodes?.scanResults),
+            readings: recordedFaultCodes.items,
+            truncation: recordedFaultCodes.truncation,
+          },
+        }
+      : {}),
     truncation: {
       customerRequestJobs: customerRequestJobs.truncation,
       inspectionResults: inspectionResults.truncation,

@@ -1505,7 +1505,7 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
     const { data: workOrder, error: workOrderError } = await this.session
       .from("work_order")
       .select(
-        "work_order_id, work_order_number, status, lifecycle_state, mileage, mileage_unit, internal_notes, motorcycle_id"
+        "work_order_id, work_order_number, status, lifecycle_state, mileage, mileage_unit, internal_notes, motorcycle_id, location_id"
       )
       .eq("work_order_id", workOrderId)
       .single();
@@ -1559,6 +1559,8 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
       checklistResult,
       partsResult,
       proofResult,
+      diagnosticSessionResult,
+      diagnosticCatalogResult,
     ] = await Promise.all([
       this.session
         .from("motorcycle_service_information")
@@ -1625,6 +1627,18 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
             .in("job_id", jobIds)
             .eq("category", "job_proof")
         : Promise.resolve({ data: [], error: null }),
+      this.session
+        .from("diagnostic_session")
+        .select(
+          "session_id, recorded_at, scan_results, readings:diagnostic_reading(code, status)"
+        )
+        .eq("motorcycle_id", motorcycle.motorcycle_id)
+        .order("recorded_at", { ascending: false })
+        .limit(1),
+      this.session
+        .from("diagnostic_catalog")
+        .select("dtc_code, description, severity_hint")
+        .eq("location_id", String(workOrder.location_id ?? "")),
     ]);
     for (const result of [
       serviceInfoResult,
@@ -1636,6 +1650,8 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
       checklistResult,
       partsResult,
       proofResult,
+      diagnosticSessionResult,
+      diagnosticCatalogResult,
     ]) {
       throwQuery(result.error);
     }
@@ -1657,6 +1673,22 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
           }
         >();
     const inspection = inspectionResult.data as Record<string, unknown> | null;
+    const faultSessions = Array.isArray(diagnosticSessionResult.data)
+      ? (diagnosticSessionResult.data as Array<Record<string, unknown>>)
+      : [];
+    const latestFault = faultSessions[0];
+    const catalogRows = Array.isArray(diagnosticCatalogResult.data)
+      ? (diagnosticCatalogResult.data as Array<Record<string, unknown>>)
+      : [];
+    const catalogByCode = new Map(
+      catalogRows.map((row) => [String(row.dtc_code ?? ""), row])
+    );
+    const rawFaultReadings = latestFault?.readings;
+    const faultReadings = Array.isArray(rawFaultReadings)
+      ? (rawFaultReadings as Array<Record<string, unknown>>)
+      : rawFaultReadings && typeof rawFaultReadings === "object"
+        ? [rawFaultReadings as Record<string, unknown>]
+        : [];
 
     return {
       source: {
@@ -1832,6 +1864,30 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
             notes: check.notes ? String(check.notes) : null,
             performedAt: String(check.performed_at),
           })),
+        },
+        faultCodes: {
+          recordedAt: latestFault?.recorded_at ? String(latestFault.recorded_at) : null,
+          scanResults: latestFault?.scan_results
+            ? String(latestFault.scan_results)
+            : null,
+          readings: faultReadings.flatMap((reading) => {
+            const code = String(reading.code ?? "").trim();
+            if (!code) return [];
+            const catalog = catalogByCode.get(code);
+            const severity =
+              catalog?.severity_hint &&
+              ["P0", "P1", "P2", "P3"].includes(String(catalog.severity_hint))
+                ? String(catalog.severity_hint)
+                : null;
+            return [
+              {
+                code,
+                status: String(reading.status ?? ""),
+                description: catalog?.description ? String(catalog.description) : null,
+                severity,
+              },
+            ];
+          }),
         },
       },
       redactTerms: {

@@ -684,6 +684,82 @@ describe("Supabase diagnostics repository boundaries", () => {
     expect(JSON.stringify(context.source.jobs[0]?.verification)).not.toContain(
       "Other job passed"
     );
+    expect(context.source.faultCodes).toEqual({
+      recordedAt: null,
+      scanResults: null,
+      readings: [],
+    });
+  });
+
+  it("adds the latest scan codes and catalog text without customer contact fields", async () => {
+    const session = fakeClient(
+      {
+        work_order: {
+          work_order_id: "wo-1",
+          work_order_number: "WO-1",
+          status: "in_progress",
+          motorcycle_id: "motorcycle-1",
+          location_id: "loc-1",
+        },
+        motorcycle: {
+          motorcycle_id: "motorcycle-1",
+          year: 2022,
+          make: "Yamaha",
+          model: "MT-07",
+          colour: null,
+          odometer_unit: "km",
+          notes: null,
+        },
+        job: [],
+        diagnostic_session: [
+          {
+            session_id: "session-1",
+            recorded_at: "2026-09-29T02:00:00.000Z",
+            scan_results: "complete",
+            readings: [{ code: "P0217", status: "active" }],
+          },
+        ],
+        diagnostic_catalog: [
+          {
+            dtc_code: "P0217",
+            description: "Engine coolant temperature above 112 °C",
+            severity_hint: "P0",
+          },
+        ],
+      },
+      []
+    );
+    const admin = fakeClient(
+      {
+        motorcycle: { customer_id: "customer-1", vin: "VIN-SECRET" },
+        customer: {
+          first_name: "Private",
+          last_name: "Customer",
+          email: "private@example.invalid",
+          phone: "647-555-1234",
+          address: "Private address",
+        },
+      },
+      []
+    );
+    const repository = new SupabaseDiagnosticsRepository(session, () => admin);
+    const context = await repository.loadContextSource("wo-1", null, false);
+
+    expect(context.source.faultCodes).toEqual({
+      recordedAt: "2026-09-29T02:00:00.000Z",
+      scanResults: "complete",
+      readings: [
+        {
+          code: "P0217",
+          status: "active",
+          description: "Engine coolant temperature above 112 °C",
+          severity: "P0",
+        },
+      ],
+    });
+    expect(JSON.stringify(context.source.faultCodes)).not.toMatch(
+      /Private|647-555-1234|VIN-SECRET/
+    );
   });
 
   it("maps atomic lifecycle RPC arguments exactly", async () => {

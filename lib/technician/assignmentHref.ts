@@ -137,7 +137,7 @@ export function floorTechWorkOrderRedirect(
   if (tab === "inspection") {
     return floorInspectionHrefs({ workOrderId }).inspectPage;
   }
-  if (tab === "notes" || tab === "photos") {
+  if (tab === "notes" || tab === "photos" || tab === "diagnostics") {
     return techJobPacketHref(workOrderId, { section: tab });
   }
   if (tab === "assistant" && assistantThreadId) {

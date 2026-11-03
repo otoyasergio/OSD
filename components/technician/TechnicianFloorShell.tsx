@@ -62,6 +62,7 @@ import type { JobPacket } from "@/lib/services/jobPacket";
 import type { IntakePhoto } from "@/lib/services/photos";
 import { JobPacketPanel } from "@/components/technician/JobPacketPanel";
 import type { AskOtomotoPanelData } from "@/lib/diagnostics/askOtomotoView";
+import type { DiagnosticPanelData } from "@/lib/diagnostics/sessionView";
 import {
   currentPitStep,
   deriveDefaultStage,
@@ -153,9 +154,7 @@ function WorkDocumentationSheet({
             className="pit-sheet-input"
             rows={3}
             required={!hasLine}
-            placeholder={
-              hasLine ? "Optional" : "What did you find or do?"
-            }
+            placeholder={hasLine ? "Optional" : "What did you find or do?"}
           />
         </label>
         <FloorPhotoField
@@ -208,14 +207,7 @@ function JobPacketErrorState({ backHref }: { backHref: string }) {
 }
 
 type Overlay =
-  | null
-  | "park"
-  | "fail"
-  | "swap"
-  | "qc_pick"
-  | "sign_qc"
-  | "sign_safety"
-  | "work_doc";
+  null | "park" | "fail" | "swap" | "qc_pick" | "sign_qc" | "sign_safety" | "work_doc";
 
 /**
  * Identity-bound floor actions: acknowledgement, bench/timer flows, and QC or
@@ -264,6 +256,8 @@ export function TechnicianFloorShell({
   packetSection,
   packetPhotos,
   packetAssistant,
+  packetDiagnostics = null,
+  canRecordDiagnostics = false,
   packetWorkOrderId,
   packetJobId,
 }: {
@@ -280,6 +274,8 @@ export function TechnicianFloorShell({
   packetSection?: JobPacketSection | null;
   packetPhotos?: IntakePhoto[];
   packetAssistant?: AskOtomotoPanelData | null;
+  packetDiagnostics?: DiagnosticPanelData | null;
+  canRecordDiagnostics?: boolean;
   packetWorkOrderId?: string | null;
   packetJobId?: string | null;
 }) {
@@ -391,9 +387,8 @@ export function TechnicianFloorShell({
       failQcState,
       passSafetyState,
     ];
-    const fresh = states.filter(
-      (s): s is NonNullable<FloorActionState> =>
-        Boolean(s && (s.success || s.error) && !seenFloorResults.current.has(s))
+    const fresh = states.filter((s): s is NonNullable<FloorActionState> =>
+      Boolean(s && (s.success || s.error) && !seenFloorResults.current.has(s))
     );
     if (fresh.length === 0) return;
     for (const s of fresh) seenFloorResults.current.add(s);
@@ -786,6 +781,8 @@ export function TechnicianFloorShell({
                     section={packetSection ?? null}
                     photos={packetPhotos ?? []}
                     assistant={packetAssistant ?? null}
+                    diagnostics={packetDiagnostics}
+                    canRecordDiagnostics={canRecordDiagnostics}
                     selectedJobId={packetJobId ?? null}
                     closeHref={technicianClosePacketHref({
                       workOrderId: packetWorkOrderId,

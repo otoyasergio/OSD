@@ -18,6 +18,7 @@ import {
   canOrderPart,
   canOverrideWorkOrderStatus,
   canRecordCustomerApproval,
+  canRecordDiagnosticSession,
   canRunQualityCheck,
   canClearAdminFlag,
   canOverrideSafetyRequirement,
@@ -74,6 +75,9 @@ import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
 import { AgreementFollowUpNotice } from "@/components/work_orders/AgreementFollowUpNotice";
 import { ComingSoonPanel, WorkOrderTabs } from "@/components/work_orders/WorkOrderTabs";
+import { DiagnosticPanel } from "@/components/diagnostics/DiagnosticPanel";
+import { unavailableDiagnosticPanel } from "@/lib/diagnostics/sessionView";
+import { getDiagnosticPanel } from "@/lib/services/diagnosticSessions";
 import { resolveWorkOrderTabId, type WorkOrderTabId } from "@/lib/workOrders/tabs";
 import type { EstimateVersionHistoryEntry } from "@/components/estimates/EstimateVersionHistory";
 import type { WorkspaceJob, WorkspacePart } from "@/components/estimates/workspaceModel";
@@ -276,6 +280,13 @@ export default async function WorkOrderDetailPage({
       : Promise.resolve([]),
   ]);
   if (!detail) notFound();
+
+  const diagnostics =
+    activeTab === "diagnostics"
+      ? await getDiagnosticPanel(detail.motorcycle_id).catch(() =>
+          unavailableDiagnosticPanel(detail.motorcycle_id)
+        )
+      : null;
 
   const foreign = detail.is_foreign_location;
   const needsTechs = !foreign && (activeTab === "overview" || isEstimateTab);
@@ -747,6 +758,18 @@ export default async function WorkOrderDetailPage({
           canDelete={canDeletePhotos}
           workOrderId={detail.work_order_id}
           deleteAction={deleteIntakePhotoAction.bind(null, detail.work_order_id)}
+        />
+      ) : null}
+      {activeTab === "diagnostics" && diagnostics ? (
+        <DiagnosticPanel
+          data={diagnostics}
+          canRecord={
+            canRecordDiagnosticSession(viewRole) &&
+            !preview.isPreviewing &&
+            !detail.is_foreign_location
+          }
+          workOrderId={detail.work_order_id}
+          customerId={detail.customer_id}
         />
       ) : null}
       {activeTab === "notes" ? (

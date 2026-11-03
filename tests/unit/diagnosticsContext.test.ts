@@ -360,4 +360,53 @@ describe("diagnostics context shaping", () => {
     expect(first.contextHash).toMatch(/^[a-f0-9]{64}$/);
     expect(first.contextHash).toBe(second.contextHash);
   });
+
+  it("includes a recorded fault code in the context and measured claims", () => {
+    const input = {
+      ...source(),
+      faultCodes: {
+        recordedAt: "2026-09-29T02:00:00.000Z",
+        scanResults: "complete",
+        readings: [
+          {
+            code: "P0217",
+            status: "active",
+            description: "Engine coolant temperature above 112 °C",
+            severity: "P0",
+          },
+        ],
+      },
+    };
+
+    const result = shapeDiagnosticsContext(input, {
+      mode: "shop",
+      workOrderId: "wo-1",
+      jobId: "job-1",
+    });
+
+    expect(result.context.recordedFaultCodes?.readings).toEqual([
+      {
+        code: "P0217",
+        status: "active",
+        description: "Engine coolant temperature above 112 °C",
+        severity: "P0",
+      },
+    ]);
+    expect(result.contextBlock).toContain("P0217");
+    expect(result.contextBlock).toContain("Engine coolant temperature above 112 °C");
+    expect(result.contextBlock).toContain("P0");
+    expect(result.claims.allowedMeasuredValues).toContain("112:c");
+    expect(JSON.stringify(result.context.recordedFaultCodes)).not.toMatch(
+      /private@example.com|555-0100|Private address|JH2PC0000MK123456/
+    );
+  });
+
+  it("omits recorded fault codes when the source has no scan section", () => {
+    const result = shapeDiagnosticsContext(source(), {
+      mode: "shop",
+      workOrderId: "wo-1",
+    });
+    expect(result.context.recordedFaultCodes).toBeUndefined();
+    expect(result.contextBlock).not.toContain("recordedFaultCodes");
+  });
 });

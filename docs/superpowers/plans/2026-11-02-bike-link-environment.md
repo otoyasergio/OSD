@@ -40,7 +40,7 @@ Do not rebuild these.
 | Insert a typed reading, save the interval                                         | `lib/services/bikeLink.ts` functions `recordBikeReading`, `saveBikeLinkSchedule`                                               |
 | Forms on the motorcycle page                                                      | `components/motorcycles/BikeLinkPanel.tsx`, `app/(app)/motorcycles/bike-link-actions.ts`                                       |
 | Needs a call list                                                                 | `components/motorcycles/BikeLinkAttention.tsx` on `app/(app)/motorcycles/page.tsx`                                             |
-| Tables `bike_link_schedule`, `bike_link_reading`, view `bike_link_latest_reading` | `supabase/migrations/20261102193000_bike_link_readings.sql`, `supabase/migrations/20261102194500_bike_link_latest_reading.sql` |
+| Tables `bike_link_schedule`, `bike_link_reading`, view `bike_link_latest_reading` | `supabase/migrations/20261102193100_bike_link_readings.sql`, `supabase/migrations/20261102194500_bike_link_latest_reading.sql` |
 | Hardware build, Triumph pinout, window-box parts                                  | `docs/hardware/bike-link-build.md`, `docs/hardware/bike-link-wiring.md`                                                        |
 | Place plan and cost order                                                         | `docs/hardware/bike-link-environment.md`                                                                                       |
 

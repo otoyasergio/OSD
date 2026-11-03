@@ -10,6 +10,14 @@ const MESSAGES: Record<string, string> = {
   VIN_ALREADY_EXISTS:
     "That VIN is already on another motorcycle. Transfer it or use a different VIN.",
   MOTORCYCLE_NOT_FOUND: "That motorcycle no longer exists.",
+  MOTORCYCLE_MISMATCH: "That scan is for a different motorcycle than this work order.",
+  DIAGNOSTIC_SESSION_INVALID: "Check the scan details and try again.",
+  DIAGNOSTIC_CODE_INVALID:
+    "Fault codes use letters, numbers, and hyphens, up to 16 characters.",
+  DIAGNOSTIC_FREEZE_FRAME_INVALID:
+    "Freeze-frame values must be numbers. Leave a value blank if the scan tool did not show it.",
+  DIAGNOSTIC_CATALOG_INVALID:
+    "Add both a description and a P0–P3 severity, or leave both blank.",
   PASSPORT_NO_COMPLETED_SERVICE:
     "Complete at least one service before publishing a vehicle passport.",
   PASSPORT_COMPLETION_DATE_REQUIRED:
@@ -283,8 +291,7 @@ const MESSAGES: Record<string, string> = {
     "This customer is not linked to a Wix contact yet. Sync to Wix first.",
   WIX_CONTACT_SYNC_FAILED: "Could not sync this customer to Wix.",
   WIX_INVOICE_NOT_FOUND: "This visit does not have a Wix invoice yet.",
-  INVOICE_ACK_REVISION_CONFLICT:
-    "Wix saved a newer error for this bike. Tap Try again.",
+  INVOICE_ACK_REVISION_CONFLICT: "Wix saved a newer error for this bike. Tap Try again.",
   WIX_INVOICE_NOT_DRAFT: "Only a draft invoice can be published.",
   WIX_PAYMENT_NOT_FOUND: "That Wix payment is no longer on the invoice.",
   WIX_PAYMENT_EXCLUDED:

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCustomerById } from "@/lib/services/customers";
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
+import { formatOpenFaultBikeCount } from "@/lib/diagnostics/openFaults";
+import { countOpenFaultBikesByCustomer } from "@/lib/services/diagnosticSessions";
 import { listGarageForCustomer } from "@/lib/services/clientGarage";
 import { listWorkOrdersForCustomer } from "@/lib/services/filedWorkOrders";
 import { listCustomerDocuments } from "@/lib/services/customerDocuments";
@@ -141,6 +143,15 @@ export default async function CustomerDetailPage({
   const canViewDocs = canViewCustomerDocuments(viewRole);
   const canSyncWix = canSyncWixContacts(viewRole);
   const wixConfigured = isWixSyncAvailable();
+  let fleetOpenFaultBikes: number | null = null;
+  if (customer.account_type === "fleet") {
+    try {
+      const counts = await countOpenFaultBikesByCustomer([customer_id]);
+      fleetOpenFaultBikes = counts.get(customer_id) ?? 0;
+    } catch {
+      fleetOpenFaultBikes = null;
+    }
+  }
 
   return (
     <div className="page-stack page-stack--narrow">
@@ -177,6 +188,11 @@ export default async function CustomerDetailPage({
               <span className="badge mr-2 bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]">
                 {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
               </span>
+              {customer.account_type === "fleet" ? (
+                <span className="text-xs">
+                  {formatOpenFaultBikeCount(fleetOpenFaultBikes)}
+                </span>
+              ) : null}
               {customer.phone ?? "No phone"} · {customer.email ?? "No email"}
               <ClickToCallButton
                 phone={customer.phone}
