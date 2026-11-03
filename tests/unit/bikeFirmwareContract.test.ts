@@ -11,7 +11,11 @@ describe("bike_link.ino", () => {
   it("asks the ECU at 7DF and does not clear codes", () => {
     expect(sketch).toContain("7DF");
     expect(sketch).toContain("do not clear codes");
+    expect(sketch).toContain("0x19, 0x02");
+    expect(sketch).toContain("0x43");
+    expect(sketch).toContain("0x59");
     expect(sketch).not.toContain("ClearDTC");
+    expect(sketch).not.toContain("0x14");
     expect(sketch).toMatch(/readOdometer\(\)[\s\S]{0,240}return "";/);
   });
 

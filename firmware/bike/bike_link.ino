@@ -276,8 +276,20 @@ static bool acceptCode(const char* code) {
   return true;
 }
 
+static bool alreadyListed(const char* faults, const char* code) {
+  size_t length = strlen(code);
+  const char* found = faults;
+  while ((found = strstr(found, code)) != NULL) {
+    bool start = found == faults || found[-1] == ' ';
+    bool end = found[length] == '\0' || found[length] == ' ';
+    if (start && end) return true;
+    found += length;
+  }
+  return false;
+}
+
 static void appendCode(char* faults, size_t cap, const char* code, int* count) {
-  if (*count >= 20 || !acceptCode(code)) return;
+  if (*count >= 20 || !acceptCode(code) || alreadyListed(faults, code)) return;
   size_t used = strlen(faults);
   size_t need = strlen(code) + (used > 0 ? 1 : 0);
   if (used + need + 1 > cap) return;
@@ -298,19 +310,31 @@ static void formatDtc(uint8_t a, uint8_t b, char* out) {
 }
 
 static void consumePayload(const uint8_t* payload, int length, char* faults, size_t cap, int* count) {
-  if (length < 1 || payload[0] != 0x43) return;
-  for (int i = 1; i + 1 < length && *count < 20; i += 2) {
-    if (payload[i] == 0 && payload[i + 1] == 0) continue;
+  if (length < 1 || payload[0] == 0x7F) return;
+  if (payload[0] == 0x43) {
+    for (int i = 1; i + 1 < length && *count < 20; i += 2) {
+      if (payload[i] == 0 && payload[i + 1] == 0) continue;
+      char code[6];
+      formatDtc(payload[i], payload[i + 1], code);
+      appendCode(faults, cap, code, count);
+    }
+    return;
+  }
+  // reportDTCByStatusMask: 59 02, availability mask, then 3-byte DTC + status.
+  // Keep a code when testFailed or confirmedDTC is set (status bit 0 or bit 3).
+  if (payload[0] != 0x59 || length < 3 || payload[1] != 0x02) return;
+  for (int i = 3; i + 3 < length && *count < 20; i += 4) {
+    if (payload[i] == 0 && payload[i + 1] == 0 && payload[i + 2] == 0) continue;
+    if ((payload[i + 3] & 0x09) == 0) continue;
     char code[6];
     formatDtc(payload[i], payload[i + 1], code);
     appendCode(faults, cap, code, count);
   }
 }
 
-static bool exchange(long bitrate, char* faults, size_t faultsCap) {
-  if (!mcpStart(bitrate)) return false;
-  // Service 03 reads stored emission codes. do not clear codes.
-  const uint8_t request[8] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+// 0 = nobody answered. 1 = a negative response, so this bitrate is live. 2 = a positive payload.
+static int ask(long bitrate, const uint8_t* request, char* faults, size_t faultsCap, int* count) {
+  if (!mcpStart(bitrate)) return 0;
   mcpSend(OBD_REQUEST_ID, request);
 
   uint8_t payload[64];
@@ -347,18 +371,33 @@ static bool exchange(long bitrate, char* faults, size_t faultsCap) {
       if (payloadLen >= expected) break;
     }
   }
-  if (!answered) return false;
-  int count = 0;
-  faults[0] = '\0';
-  consumePayload(payload, payloadLen, faults, faultsCap, &count);
-  return true;
+  if (!answered || payloadLen < 1) return 0;
+  if (payload[0] == 0x7F) return 1;
+  consumePayload(payload, payloadLen, faults, faultsCap, count);
+  return 2;
 }
 
 static void readBus(char* faults, size_t faultsCap) {
   faults[0] = '\0';
+  int count = 0;
+  // Service 03 reads stored emission codes. Service 19 subfunction 02 reads
+  // DTC by status mask. Both are reads. do not clear codes.
+  const uint8_t mode03[8] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  const uint8_t readByMask[8] = {0x03, 0x19, 0x02, 0xFF, 0x00, 0x00, 0x00, 0x00};
   // Try 500 kbit/s, then 250. Request id 7DF.
-  if (exchange(500000, faults, faultsCap)) return;
-  exchange(250000, faults, faultsCap);
+  int heard = ask(500000, mode03, faults, faultsCap, &count);
+  long rate = 500000;
+  if (heard == 0) {
+    heard = ask(250000, mode03, faults, faultsCap, &count);
+    rate = 250000;
+  }
+  if (heard == 0) {
+    if (ask(500000, readByMask, faults, faultsCap, &count) == 0) {
+      ask(250000, readByMask, faults, faultsCap, &count);
+    }
+    return;
+  }
+  ask(rate, readByMask, faults, faultsCap, &count);
 }
 
 static bool sampleVolts(char* out, size_t cap) {

@@ -173,7 +173,7 @@ describe("interpretBikeReading", () => {
     );
 
     expect(report.faults).toBe("present");
-    expect(report.faultDetail).toBe("Fault codes: P0335, C14.");
+    expect(report.faultDetail).toBe("Fault codes: P0335 (ignition system), C14.");
     expect(report.clientNote).toBe(
       "The battery is low at 12.2 V. The bike reported fault codes P0335 and C14."
     );
@@ -327,7 +327,9 @@ describe("attentionLevel", () => {
       attentionLevel(reportFor({ odometer: 11000, batteryVolts: 11.5, faultCodes: [] }))
     ).toBe("now");
     expect(
-      attentionLevel(reportFor({ odometer: 11000, batteryVolts: 12.6, faultCodes: ["P0335"] }))
+      attentionLevel(
+        reportFor({ odometer: 11000, batteryVolts: 12.6, faultCodes: ["P0335"] })
+      )
     ).toBe("now");
   });
 

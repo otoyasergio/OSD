@@ -1,4 +1,5 @@
 import { parseShopLocalDateTimeInput, shopDateKey } from "@/lib/datetime/format";
+import { faultCodeLabel } from "@/lib/bikeLink/saeJ2012";
 import type { MileageUnit } from "@/lib/mileage/format";
 
 export const BIKE_LINK_SOURCES = ["shop_bay", "home", "partner"] as const;
@@ -80,14 +81,12 @@ export function resolveServiceBaseline(args: {
 }): ServiceBaseline {
   const schedule = args.schedule;
   const visit = args.lastVisit;
-  const lastServiceOdometer =
-    schedule?.lastServiceOdometer ?? visit?.odometer ?? null;
+  const lastServiceOdometer = schedule?.lastServiceOdometer ?? visit?.odometer ?? null;
   const lastServiceAt = schedule?.lastServiceAt ?? visit?.completedAt ?? null;
 
   return {
     unit: args.unit,
-    intervalDistance:
-      schedule?.intervalDistance ?? defaultIntervalDistance(args.unit),
+    intervalDistance: schedule?.intervalDistance ?? defaultIntervalDistance(args.unit),
     intervalDays: schedule?.intervalDays ?? DEFAULT_INTERVAL_DAYS,
     dueSoonDistance: dueSoonDistance(args.unit),
     dueSoonDays: DUE_SOON_DAYS,
@@ -109,7 +108,11 @@ export function resolveServiceBaseline(args: {
 }
 
 export function attentionLevel(report: BikeLinkReport): AttentionLevel | null {
-  if (report.service === "due" || report.battery === "flat" || report.faults === "present") {
+  if (
+    report.service === "due" ||
+    report.battery === "flat" ||
+    report.faults === "present"
+  ) {
     return "now";
   }
   if (report.service === "due_soon" || report.battery === "low") return "soon";
@@ -132,7 +135,9 @@ export function interpretBikeReading(
   const batteryDetail = batteryDetailText(reading.batteryVolts, battery);
   const faults = faultCodes.length > 0 ? "present" : "none";
   const faultDetail =
-    faults === "present" ? `Fault codes: ${faultCodes.join(", ")}.` : "No fault codes.";
+    faults === "present"
+      ? `Fault codes: ${faultCodes.map((code) => faultCodeLabel(code)).join(", ")}.`
+      : "No fault codes.";
 
   return {
     service,
@@ -153,9 +158,7 @@ export function interpretBikeReading(
   };
 }
 
-type ParseResult =
-  | { ok: true; reading: BikeReading }
-  | { ok: false; error: string };
+type ParseResult = { ok: true; reading: BikeReading } | { ok: false; error: string };
 
 export function parseBikeReading(input: {
   source: string;
@@ -254,7 +257,10 @@ export function parseBikeLinkSchedule(input: {
   }
   const intervalDays = parseBoundedInteger(input.intervalDays, 30, 1095);
   if (intervalDays == null) {
-    return { ok: false, error: "Service time is a whole number of days from 30 to 1095." };
+    return {
+      ok: false,
+      error: "Service time is a whole number of days from 30 to 1095.",
+    };
   }
 
   const odometerRaw = input.lastServiceOdometer.trim();
@@ -368,7 +374,10 @@ function parseFaultCodes(
   return { ok: true, value: unique };
 }
 
-function distanceAxis(reading: BikeReading, baseline: ServiceBaseline): {
+function distanceAxis(
+  reading: BikeReading,
+  baseline: ServiceBaseline
+): {
   status: Axis;
   since: number | null;
   left: number | null;
@@ -382,7 +391,10 @@ function distanceAxis(reading: BikeReading, baseline: ServiceBaseline): {
   return { status: axisStatus(left, baseline.dueSoonDistance), since, left };
 }
 
-function timeAxis(reading: BikeReading, baseline: ServiceBaseline): {
+function timeAxis(
+  reading: BikeReading,
+  baseline: ServiceBaseline
+): {
   status: Axis;
   since: number | null;
   left: number | null;
@@ -401,7 +413,9 @@ function axisStatus(left: number, dueSoon: number): Exclude<Axis, null> {
 }
 
 function combineAxes(distance: Axis, time: Axis): BikeLinkReport["service"] {
-  const known = [distance, time].filter((status): status is Exclude<Axis, null> => status != null);
+  const known = [distance, time].filter(
+    (status): status is Exclude<Axis, null> => status != null
+  );
   if (known.length === 0) return "unknown";
   if (known.includes("due")) return "due";
   if (known.includes("due_soon")) return "due_soon";
@@ -447,7 +461,8 @@ function distanceSentence(
 function timeSentence(since: number, left: number, status: Exclude<Axis, null>): string {
   if (status === "due") {
     const over = -left;
-    if (over === 0) return `${formatDays(since)} since the last service, which meets the time interval.`;
+    if (over === 0)
+      return `${formatDays(since)} since the last service, which meets the time interval.`;
     return `${formatDays(since)} since the last service, ${formatDays(over)} past the time interval.`;
   }
   if (status === "due_soon") return `${formatDays(left)} left before the time interval.`;

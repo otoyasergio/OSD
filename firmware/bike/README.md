@@ -4,6 +4,8 @@ Wiring, the 16-pin plug, and the parts list are in [docs/hardware/bike-link-wiri
 
 Set `BOX_ID` in `bike_link.ino` to this box's sticker. The radio stays out of the build until `radio.h` in this folder contains `#define BIKE_LINK_RADIO 1`.
 
+Fault reads are service 03, then service 19 subfunction 02 (report DTC by status mask) on the bitrate that answered. The byte layout matches SAE J2012 in `lib/bikeLink/saeJ2012.ts`. The sketch does not clear codes.
+
 Bench pass marks, in this order:
 
 1. Regulator about 3.7 V before the XIAO is connected.
