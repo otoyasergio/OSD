@@ -33,16 +33,16 @@ Bring the work back as commits on branch `cursor/bike-link-readings-0901`, or on
 
 Do not rebuild these.
 
-| Piece | Where |
-| --- | --- |
-| Reading parser, service and battery bands, client sentence | `lib/bikeLink/reading.ts` |
-| Unit tests for that parser | `tests/unit/bikeLink.test.ts` |
-| Insert a typed reading, save the interval | `lib/services/bikeLink.ts` functions `recordBikeReading`, `saveBikeLinkSchedule` |
-| Forms on the motorcycle page | `components/motorcycles/BikeLinkPanel.tsx`, `app/(app)/motorcycles/bike-link-actions.ts` |
-| Needs a call list | `components/motorcycles/BikeLinkAttention.tsx` on `app/(app)/motorcycles/page.tsx` |
-| Tables `bike_link_schedule`, `bike_link_reading`, view `bike_link_latest_reading` | `supabase/migrations/20261102193000_bike_link_readings.sql`, `supabase/migrations/20261102194500_bike_link_latest_reading.sql` |
-| Hardware build, Triumph pinout, window-box parts | `docs/hardware/bike-link-build.md`, `docs/hardware/bike-link-wiring.md` |
-| Place plan and cost order | `docs/hardware/bike-link-environment.md` |
+| Piece                                                                             | Where                                                                                                                          |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Reading parser, service and battery bands, client sentence                        | `lib/bikeLink/reading.ts`                                                                                                      |
+| Unit tests for that parser                                                        | `tests/unit/bikeLink.test.ts`                                                                                                  |
+| Insert a typed reading, save the interval                                         | `lib/services/bikeLink.ts` functions `recordBikeReading`, `saveBikeLinkSchedule`                                               |
+| Forms on the motorcycle page                                                      | `components/motorcycles/BikeLinkPanel.tsx`, `app/(app)/motorcycles/bike-link-actions.ts`                                       |
+| Needs a call list                                                                 | `components/motorcycles/BikeLinkAttention.tsx` on `app/(app)/motorcycles/page.tsx`                                             |
+| Tables `bike_link_schedule`, `bike_link_reading`, view `bike_link_latest_reading` | `supabase/migrations/20261102193100_bike_link_readings.sql`, `supabase/migrations/20261102194500_bike_link_latest_reading.sql` |
+| Hardware build, Triumph pinout, window-box parts                                  | `docs/hardware/bike-link-build.md`, `docs/hardware/bike-link-wiring.md`                                                        |
+| Place plan and cost order                                                         | `docs/hardware/bike-link-environment.md`                                                                                       |
 
 There is no `box_id` column, no ingest route, and no firmware.
 
@@ -55,6 +55,7 @@ Audit writes go through `addAuditLog` in `lib/audit/addAuditLog.ts`. `actor_user
 ## Task 1: Pair a box sticker with one motorcycle
 
 **Files:**
+
 - Create: `supabase/migrations/20261102223000_bike_link_box.sql`
 - Modify: `lib/services/bikeLink.ts`
 - Modify: `app/(app)/motorcycles/bike-link-actions.ts`
@@ -62,6 +63,7 @@ Audit writes go through `addAuditLog` in `lib/audit/addAuditLog.ts`. `actor_user
 - Test: `tests/unit/bikeLinkBox.test.ts`
 
 **Interfaces:**
+
 - Consumes: `canUpdateServiceInformation`, `requireUser`, `createClient`, `addAuditLog`, `parseBikeReading` (unchanged).
 - Produces: table `public.bike_link_box`. Service `assignBikeLinkBox(motorcycleId: string, boxId: string): Promise<void>`. Service `getBikeLink` gains `boxId: string | null` on `BikeLinkView`.
 
@@ -172,12 +174,14 @@ git commit -m "Pair a bike-link sticker with one motorcycle."
 ## Task 2: Accept the window-box JSON with the existing parser
 
 **Files:**
+
 - Create: `lib/bikeLink/ingest.ts`
 - Create: `lib/database/supabase-admin.ts` addition `createBikeLinkAdminClient`
 - Create: `app/api/bike-link/readings/route.ts`
 - Test: `tests/unit/bikeLinkIngest.test.ts`
 
 **Interfaces:**
+
 - Consumes: `parseBoxId`, `parseBikeReading`, table `bike_link_box`, table `bike_link_reading`.
 - Produces: `ingestBikeLinkPacket(body: unknown, now: Date): Promise<IngestResult>` where `IngestResult` is `{ ok: true; readingId: string; duplicate: boolean } | { ok: false; status: 404 | 422; error: string }`.
 - Route: `POST /api/bike-link/readings`. Header `Authorization: Bearer <BIKE_LINK_INGEST_SECRET>`. Body is the mailbox object below. `clockSet` is not a field on this route.
@@ -266,7 +270,10 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const secret = process.env.BIKE_LINK_INGEST_SECRET?.trim();
   if (!secret) {
-    return Response.json({ ok: false, error: "BIKE_LINK_INGEST_SECRET is not configured" }, { status: 500 });
+    return Response.json(
+      { ok: false, error: "BIKE_LINK_INGEST_SECRET is not configured" },
+      { status: 500 }
+    );
   }
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return Response.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -275,7 +282,10 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return Response.json({ ok: false, error: "Reading was not a JSON object." }, { status: 422 });
+    return Response.json(
+      { ok: false, error: "Reading was not a JSON object." },
+      { status: 422 }
+    );
   }
   const result = await ingestBikeLinkPacket(body, new Date());
   if (!result.ok) {
@@ -306,6 +316,7 @@ Document `BIKE_LINK_INGEST_SECRET` in the environment example file this repo alr
 ## Task 3: Show a posted reading the same way as a typed one
 
 **Files:**
+
 - Modify: `lib/services/bikeLink.ts` only if `getBikeLink` and `listBikeLinkAttention` ignore `box_id`. They must keep using `bike_link_latest_reading` ordered by `recorded_at`.
 - Modify: `supabase/migrations/20261102194500_bike_link_latest_reading.sql` only by a new migration that recreates the view if the column list is explicit and would break after `box_id` was added. Read the view first. `SELECT *` is not used; the view lists columns. If `box_id` is absent from the view, leave the view as it is. The panel does not need `box_id` on each reading.
 - Test: `tests/unit/bikeLink.test.ts` already covers interpretation. Add one case only if a posted reading with an empty odometer string and a voltage still produces a report. That case belongs in `tests/unit/bikeLinkIngest.test.ts` by calling `parseBikeReading` on the mapped packet.
@@ -327,6 +338,7 @@ git commit -m "Keep the latest bike reading view valid after box ids."
 Do this after a person can pair `TM-BL-0007` on a motorcycle page. Firmware lives in `firmware/bike/`, new in this repo. The sketch is Arduino for Seeed XIAO nRF52840, SKU 102010448. Pin names are the wiring file, not a second pinout.
 
 **Files:**
+
 - Create: `firmware/bike/README.md` (build steps pointing at `docs/hardware/bike-link-wiring.md`, not a copy of it)
 - Create: `firmware/bike/bike_link.ino`
 - Create: `firmware/bike/packet.h` and `firmware/bike/packet.cpp` for the JSON text
@@ -392,16 +404,17 @@ git commit -m "Add the Triumph bike-box firmware contract."
 One sketch for every place. The place is compile-time configuration, not a bike field.
 
 **Files:**
+
 - Create: `firmware/mailbox/mailbox.ino`
 - Create: `firmware/mailbox/README.md`
 
 **Configuration in the sketch, one box each:**
 
-| Place | `source` | `placeName` |
-| --- | --- | --- |
-| 99 River Street window | `shop_bay` | `99 River Street` |
-| Client home | `home` | empty string, or a short label |
-| Cafe or storage | `partner` | the place name, 80 characters or fewer |
+| Place                  | `source`   | `placeName`                            |
+| ---------------------- | ---------- | -------------------------------------- |
+| 99 River Street window | `shop_bay` | `99 River Street`                      |
+| Client home            | `home`     | empty string, or a short label         |
+| Cafe or storage        | `partner`  | the place name, 80 characters or fewer |
 
 **Behavior:**
 
