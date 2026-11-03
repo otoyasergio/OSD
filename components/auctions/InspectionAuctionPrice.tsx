@@ -1,4 +1,4 @@
-import { inspectionAuctionCallout } from "@/lib/auctions/summary";
+import { inspectionAuctionCallout, inspectionPriceLine } from "@/lib/auctions/summary";
 import type { AuctionPriceGuideView } from "@/lib/auctions/types";
 
 export function InspectionAuctionPrice({
@@ -8,7 +8,7 @@ export function InspectionAuctionPrice({
 }) {
   const callout = inspectionAuctionCallout(guide);
   if (!callout) return null;
-  const max = Math.max(0, ...callout.points.map((point) => point.medianCad));
+  const line = inspectionPriceLine(callout.points);
 
   return (
     <div className="inspection-auction-price">
@@ -22,43 +22,67 @@ export function InspectionAuctionPrice({
           </p>
         </div>
       </div>
-      {callout.points.length > 0 ? (
+      {line.length > 0 ? (
         <figure className="inspection-auction-chart">
           <figcaption className="inspection-auction-chart-caption">
             Auction price by year of sale
           </figcaption>
-          <div className="inspection-auction-chart-scroll">
+          <div className="inspection-auction-line-scroll">
             <div
-              className="inspection-auction-chart-plot"
-              role="list"
-              aria-label="Median auction price by year of sale, in Canadian dollars"
+              className="inspection-auction-line"
               style={
-                callout.points.length > 6
-                  ? { minWidth: `${callout.points.length * 4.5}rem` }
-                  : undefined
+                line.length > 5 ? { minWidth: `${line.length * 4.75}rem` } : undefined
               }
             >
-              {callout.points.map((point) => {
-                const height = max > 0 ? Math.max(8, (point.medianCad / max) * 100) : 0;
-                return (
-                  <div
+              <div className="inspection-auction-line-prices">
+                {line.map((point) => (
+                  <span
                     key={point.saleYear}
-                    className="inspection-auction-chart-col"
-                    role="listitem"
+                    className="inspection-auction-line-label"
+                    style={{ left: `${point.x}%` }}
                   >
-                    <span className="inspection-auction-chart-value">{point.amount}</span>
-                    <span className="inspection-auction-chart-track">
-                      <span
-                        className="inspection-auction-chart-bar"
-                        style={{ height: `${height}%` }}
-                      />
-                    </span>
-                    <span className="inspection-auction-chart-year">
-                      {point.saleYear}
-                    </span>
-                  </div>
-                );
-              })}
+                    {point.amount}
+                  </span>
+                ))}
+              </div>
+              <div className="inspection-auction-line-stage">
+                <svg
+                  className="inspection-auction-line-svg"
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  {line.length > 1 ? (
+                    <polyline
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      vectorEffect="non-scaling-stroke"
+                      points={line.map((point) => `${point.x},${point.y}`).join(" ")}
+                    />
+                  ) : null}
+                </svg>
+                {line.map((point) => (
+                  <span
+                    key={point.saleYear}
+                    className="inspection-auction-line-dot"
+                    style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                  />
+                ))}
+              </div>
+              <div className="inspection-auction-line-years">
+                {line.map((point) => (
+                  <span
+                    key={point.saleYear}
+                    className="inspection-auction-line-label"
+                    style={{ left: `${point.x}%` }}
+                  >
+                    {point.saleYear}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
           {callout.historyNote ? (

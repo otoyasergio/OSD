@@ -2400,60 +2400,59 @@ button.board-control-link {
   color: var(--status-neutral);
 }
 
-.inspection-auction-chart-scroll {
+.inspection-auction-line-scroll {
   overflow-x: auto;
 }
 
-.inspection-auction-chart-plot {
-  display: flex;
-  align-items: stretch;
-  gap: 0.5rem;
-  height: 9.5rem;
-  min-height: 9.5rem;
+.inspection-auction-line-prices,
+.inspection-auction-line-years,
+.inspection-auction-line-stage {
+  position: relative;
 }
 
-.inspection-auction-chart-col {
-  display: flex;
-  flex: 1 1 0;
-  flex-direction: column;
-  align-items: center;
-  min-width: 0;
-  height: 100%;
+.inspection-auction-line-prices,
+.inspection-auction-line-years {
+  height: 1.15rem;
 }
 
-.inspection-auction-chart-value {
-  max-width: 100%;
-  font-size: clamp(0.625rem, 2.6vw, 0.6875rem);
-  font-weight: 700;
-  line-height: 1.2;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  color: var(--foreground);
+.inspection-auction-line-stage {
+  height: 7.5rem;
 }
 
-.inspection-auction-chart-track {
-  display: flex;
-  flex: 1;
-  align-items: flex-end;
-  justify-content: center;
+.inspection-auction-line-svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  margin-top: 0.25rem;
-  border-bottom: 1px solid var(--foreground);
+  height: 100%;
+  overflow: visible;
+  color: var(--chrome);
 }
 
-.inspection-auction-chart-bar {
-  display: block;
-  width: 1.35rem;
-  background: var(--chrome);
-  border-radius: 2px 2px 0 0;
-}
-
-.inspection-auction-chart-year {
-  margin-top: 0.3rem;
-  font-size: 0.75rem;
+.inspection-auction-line-label {
+  position: absolute;
+  top: 0;
+  font-size: 0.6875rem;
   font-weight: 700;
+  line-height: 1.15rem;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
   color: var(--foreground);
+  transform: translateX(-50%);
+}
+
+.inspection-auction-line-years .inspection-auction-line-label {
+  font-size: 0.75rem;
+}
+
+.inspection-auction-line-dot {
+  position: absolute;
+  z-index: 1;
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 2px solid var(--surface-muted);
+  border-radius: 50%;
+  background: var(--chrome);
+  transform: translate(-50%, -50%);
 }
 
 .inspection-auction-chart-note {

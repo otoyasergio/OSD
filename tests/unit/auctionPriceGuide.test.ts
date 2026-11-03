@@ -11,6 +11,7 @@ import { parseStoredAuctionGuide } from "@/lib/auctions/schema";
 import {
   buildStoredAuctionGuide,
   inspectionAuctionCallout,
+  inspectionPriceLine,
   median,
   planAuctionRefresh,
   presentAuctionPriceGuide,
@@ -410,6 +411,19 @@ describe("auction price summary", () => {
     });
     expect(inspectionAuctionCallout(presentAuctionPriceGuide(empty, "staff"))).toBeNull();
   });
+
+  it("plots a higher auction price further up the line", () => {
+    const line = inspectionPriceLine([
+      { saleYear: 2022, medianCad: 5000, amount: "$5,000" },
+      { saleYear: 2024, medianCad: 11200, amount: "$11,200" },
+    ]);
+    expect(line.map((point) => point.saleYear)).toEqual([2022, 2024]);
+    expect(line[1].x).toBeGreaterThan(line[0].x);
+    expect(line[1].y).toBeLessThan(line[0].y);
+    expect(
+      inspectionPriceLine([{ saleYear: 2020, medianCad: 1000, amount: "$1,000" }])
+    ).toEqual([{ saleYear: 2020, amount: "$1,000", x: 50, y: 50 }]);
+  });
 });
 
 describe("ALT/FNDATA records", () => {
@@ -687,7 +701,8 @@ describe("price guide wiring", () => {
       "utf8"
     );
     expect(callout).toContain("inspection-auction-price");
-    expect(callout).toContain("inspection-auction-chart");
+    expect(callout).toContain("inspection-auction-line");
+    expect(callout).toContain("<polyline");
     expect(callout).toContain("Auction price by year of sale");
   });
 });

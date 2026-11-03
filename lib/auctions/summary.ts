@@ -409,6 +409,36 @@ export type InspectionAuctionPoint = {
   amount: string;
 };
 
+export type InspectionPriceLinePoint = {
+  saleYear: number;
+  amount: string;
+  /** Percentage across the plot. Later years sit further right. */
+  x: number;
+  /** Percentage down the plot. A higher price sits further up. */
+  y: number;
+};
+
+/** Plot positions for the inspection price line. x and y are percentages. */
+export function inspectionPriceLine(
+  points: Pick<InspectionAuctionPoint, "saleYear" | "medianCad" | "amount">[]
+): InspectionPriceLinePoint[] {
+  if (points.length === 0) return [];
+  const values = points.map((point) => point.medianCad);
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const span = high - low;
+  const pad = span === 0 ? Math.max(Math.abs(high) * 0.08, 1) : span * 0.28;
+  const yMin = low - pad;
+  const yMax = high + pad;
+  const ySpan = yMax - yMin;
+  return points.map((point, index) => ({
+    saleYear: point.saleYear,
+    amount: point.amount,
+    x: points.length === 1 ? 50 : 12 + (index / (points.length - 1)) * 76,
+    y: ((yMax - point.medianCad) / ySpan) * 100,
+  }));
+}
+
 /** Compact price and year-by-year series for the visual inspection report. */
 export function inspectionAuctionCallout(guide: AuctionPriceGuideView | null): {
   amount: string;
