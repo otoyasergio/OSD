@@ -168,47 +168,74 @@ async function creditCentsForOpenInvoice(
   return remaining + Number(data?.credit_applied_cents ?? 0);
 }
 
-/** Keep the discount on later edits, and stop the next invoice from applying it again. */
+/**
+ * Keep the discount on later edits, and stop the next invoice from applying it
+ * again. The balance and the invoice stamp move in one database transaction.
+ * Returns the cents now reserved on this invoice (never more than the balance).
+ */
 export async function reserveCustomerCredit(
   admin: Admin,
   customerId: string,
   wixInvoiceId: string,
   targetCents: number
-): Promise<void> {
-  if (targetCents <= 0) return;
-  const { data: row, error: rowError } = await admin
-    .from("wix_invoice")
-    .select("credit_applied_cents")
-    .eq("wix_invoice_id", wixInvoiceId)
-    .maybeSingle();
-  if (rowError) throw rowError;
-  const applied = Number(row?.credit_applied_cents ?? 0);
-  const delta = targetCents - applied;
-  if (delta <= 0) return;
-  const { data: credits, error: creditsError } = await admin
-    .from("customer_credit")
-    .select("credit_id, remaining_amount")
-    .eq("customer_id", customerId)
-    .gt("remaining_amount", 0)
-    .order("created_at", { ascending: true });
-  if (creditsError) throw creditsError;
-  let left = delta;
-  for (const credit of credits ?? []) {
-    if (left <= 0) break;
-    const remainingCents = Math.round(Number(credit.remaining_amount ?? 0) * 100);
-    const take = Math.min(remainingCents, left);
-    const { error: creditError } = await admin
-      .from("customer_credit")
-      .update({ remaining_amount: (remainingCents - take) / 100 })
-      .eq("credit_id", credit.credit_id);
-    if (creditError) throw creditError;
-    left -= take;
+): Promise<number> {
+  if (targetCents <= 0) return 0;
+  const { data, error } = await admin.rpc("reserve_customer_credit", {
+    p_customer_id: customerId,
+    p_wix_invoice_id: wixInvoiceId,
+    p_target_cents: targetCents,
+  });
+  if (error) throw error;
+  const reserved = Number(data);
+  if (!Number.isFinite(reserved) || reserved < 0) {
+    throw new Error("CREDIT_RESERVE_FAILED");
   }
-  const { error: appliedError } = await admin
-    .from("wix_invoice")
-    .update({ credit_applied_cents: targetCents - left })
-    .eq("wix_invoice_id", wixInvoiceId);
-  if (appliedError) throw appliedError;
+  return reserved;
+}
+
+/**
+ * Reserve whatever credit this invoice should hold, then put that exact amount
+ * on the Wix draft. Reservation happens first so a failed Wix write can be
+ * retried without spending the balance twice.
+ */
+async function syncReservedCreditOnInvoice(
+  admin: Admin,
+  input: {
+    customerId: string;
+    wixInvoiceId: string;
+    revision: string;
+    status: string | null | undefined;
+    lines: Array<{ name: string; price: number; quantity?: number }>;
+    title: string;
+    header: ReturnType<typeof bikeHeaderFields>;
+    technicianName: string | null;
+  }
+): Promise<void> {
+  const target = await creditCentsForOpenInvoice(
+    admin,
+    input.customerId,
+    input.wixInvoiceId
+  );
+  if (target <= 0) return;
+  const reserved = await reserveCustomerCredit(
+    admin,
+    input.customerId,
+    input.wixInvoiceId,
+    target
+  );
+  if (reserved <= 0 || !canSyncInvoiceLines(input.status)) return;
+  const updated = await updateWixInvoice(
+    input.wixInvoiceId,
+    buildLineUpdate({
+      revision: input.revision,
+      lines: input.lines,
+      title: input.title,
+      header: input.header,
+      technicianName: input.technicianName,
+      creditCents: reserved,
+    }).invoice as Record<string, unknown>
+  );
+  await upsertInvoiceFromRecord(updated);
 }
 
 async function findMotorcycleByVin(admin: Admin, vin: string): Promise<string | null> {
@@ -912,12 +939,25 @@ export async function prepareIntakeInvoice(input: {
       record = await getWixInvoice(String(pending.wix_invoice_id));
     }
   }
+  if (!record && input.existingWorkOrderId) {
+    const { data: linked, error: linkedError } = await admin
+      .from("wix_invoice")
+      .select("wix_invoice_id, status, voided")
+      .eq("work_order_id", input.existingWorkOrderId)
+      .order("invoice_number", { ascending: false });
+    if (linkedError) throw linkedError;
+    const editable = (linked ?? []).find(
+      (row) => !row.voided && canSyncInvoiceLines(String(row.status))
+    );
+    if (editable?.wix_invoice_id) {
+      record = await getWixInvoice(String(editable.wix_invoice_id));
+    }
+  }
 
   const namedLines = await resolveServiceNames(admin, input.serviceLines);
   const technician =
     input.technicianName ?? (await technicianName(admin, input.technicianUserId ?? null));
 
-  let draftCreditCents = 0;
   if (!record && !input.existingWorkOrderId && !input.forceWixAttempt) {
     if (await siteStillUsesLegacyInvoices(admin)) {
       const message = intakeFailureMessage({
@@ -949,7 +989,6 @@ export async function prepareIntakeInvoice(input: {
       }
       if (!customer.wix_contact_id) throw new Error("WIX_CONTACT_SYNC_FAILED");
       const currency = getWixContactsConfig().currency || "CAD";
-      draftCreditCents = await creditCentsForOpenInvoice(admin, input.customerId, null);
       const body = buildDraftInvoiceBody({
         contactId: String(customer.wix_contact_id),
         externalReferenceId,
@@ -962,7 +1001,6 @@ export async function prepareIntakeInvoice(input: {
         phone: customer.phone as string | null,
         address: customer.address as string | null,
         lines: namedLines,
-        creditCents: draftCreditCents,
         header: bikeHeaderFields({
           vin: String(bike.vin),
           plate: String(bike.plate_number),
@@ -1062,21 +1100,52 @@ export async function prepareIntakeInvoice(input: {
   }
 
   await upsertInvoiceFromRecord(record, { excludeFromSquare: false });
-  const { error: linkError } = await admin
-    .from("wix_invoice")
-    .update({
-      pending_work_order_id:
-        replacesBookingStub || input.existingWorkOrderId ? null : workOrderId,
-      work_order_id:
-        replacesBookingStub || input.existingWorkOrderId ? workOrderId : null,
-      customer_id: input.customerId,
-      motorcycle_id: input.motorcycleId,
-      vin_snapshot: String(bike.vin),
-    })
-    .eq("wix_invoice_id", record.id);
-  if (linkError) throw linkError;
-  if (draftCreditCents > 0 && record.id) {
-    await reserveCustomerCredit(admin, input.customerId, record.id, draftCreditCents);
+  const preparedLink = {
+    wixInvoiceId: record.id!,
+    customerId: input.customerId,
+    motorcycleId: input.motorcycleId,
+    vin: String(bike.vin),
+    workOrderId,
+    replacesBookingStub,
+    existingWorkOrderId: input.existingWorkOrderId,
+  };
+  try {
+    await linkPreparedInvoice(admin, preparedLink);
+    await syncReservedCreditOnInvoice(admin, {
+      customerId: input.customerId,
+      wixInvoiceId: record.id!,
+      revision: String(record.revision ?? "1"),
+      status: record.status,
+      lines: namedLines,
+      title: invoiceTitle(Number(bike.year), String(bike.make), String(bike.model)),
+      header: bikeHeaderFields({
+        vin: String(bike.vin),
+        plate: String(bike.plate_number),
+        colour: String(bike.colour ?? "").trim(),
+        mileage: `${input.mileage} ${input.mileageUnit}`,
+      }),
+      technicianName: technician,
+    });
+    // The credit sync saves the Wix copy, which does not know the local link.
+    await linkPreparedInvoice(admin, preparedLink);
+  } catch (error) {
+    if (error instanceof WixIntakeBlockedError) throw error;
+    const reason = error instanceof Error ? error.message : "Wix invoice credit failed.";
+    const message = intakeFailureMessage({ clientName, bikeLabel, wixReason: reason });
+    const opened = await openHold(admin, {
+      customerId: input.customerId,
+      motorcycleId: input.motorcycleId,
+      staffUserId: user.user_id,
+      workOrderId: replacesBookingStub ? workOrderId : null,
+      pendingWorkOrderId: workOrderId,
+      message,
+      wixInvoiceId: record.id ?? null,
+    });
+    throw new WixIntakeBlockedError(
+      message,
+      opened.acknowledgementId,
+      opened.holdRevision
+    );
   }
 
   if (hold && acknowledgementClearedOnSuccess({ retrySucceeded: true })) {
@@ -1092,6 +1161,33 @@ export async function prepareIntakeInvoice(input: {
     workOrderId,
     replacesBookingStub,
   };
+}
+
+async function linkPreparedInvoice(
+  admin: Admin,
+  input: {
+    wixInvoiceId: string;
+    customerId: string;
+    motorcycleId: string;
+    vin: string;
+    workOrderId: string;
+    replacesBookingStub: boolean;
+    existingWorkOrderId?: string | null;
+  }
+): Promise<void> {
+  const linked = Boolean(input.replacesBookingStub || input.existingWorkOrderId);
+  const { error } = await admin
+    .from("wix_invoice")
+    .update({
+      pending_work_order_id: linked ? null : input.workOrderId,
+      work_order_id: linked ? input.workOrderId : null,
+      customer_id: input.customerId,
+      motorcycle_id: input.motorcycleId,
+      vin_snapshot: input.vin,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("wix_invoice_id", input.wixInvoiceId);
+  if (error) throw error;
 }
 
 export async function attachInvoiceToWorkOrder(
@@ -1165,10 +1261,16 @@ export async function pushWorkOrderLinesToWix(workOrderId: string): Promise<void
     admin,
     workOrder.primary_technician_id as string | null
   );
-  const credit = await creditCentsForOpenInvoice(
+  const creditTarget = await creditCentsForOpenInvoice(
     admin,
     String(workOrder.customer_id),
     String(open.wix_invoice_id)
+  );
+  const reserved = await reserveCustomerCredit(
+    admin,
+    String(workOrder.customer_id),
+    String(open.wix_invoice_id),
+    creditTarget
   );
   const updated = await updateWixInvoice(
     String(open.wix_invoice_id),
@@ -1183,18 +1285,10 @@ export async function pushWorkOrderLinesToWix(workOrderId: string): Promise<void
         mileage: `${workOrder.mileage ?? 0} ${workOrder.mileage_unit ?? "km"}`,
       }),
       technicianName: tech,
-      creditCents: credit,
+      creditCents: reserved,
     }).invoice as Record<string, unknown>
   );
   await upsertInvoiceFromRecord(updated);
-  if (credit > 0) {
-    await reserveCustomerCredit(
-      admin,
-      String(workOrder.customer_id),
-      String(open.wix_invoice_id),
-      credit
-    );
-  }
 }
 
 async function resolveServiceNames(

@@ -54,62 +54,41 @@ describe("attachInvoiceToWorkOrder", () => {
 });
 
 describe("reserveCustomerCredit", () => {
-  const updates: Array<{ table: string; payload: Record<string, unknown> }> = [];
-
-  beforeEach(() => {
-    updates.length = 0;
+  it("does not touch the database when there is nothing to reserve", async () => {
+    const rpc = vi.fn();
+    const reserved = await reserveCustomerCredit(
+      { rpc } as never,
+      "customer-1",
+      "inv-1",
+      0
+    );
+    expect(reserved).toBe(0);
+    expect(rpc).not.toHaveBeenCalled();
   });
 
-  function admin(creditError: { message: string } | null) {
-    return {
-      from(table: string) {
-        const builder = {
-          select() {
-            return builder;
-          },
-          eq() {
-            return builder;
-          },
-          gt() {
-            return builder;
-          },
-          order() {
-            return Promise.resolve({
-              data:
-                table === "customer_credit"
-                  ? [{ credit_id: "credit-1", remaining_amount: 10 }]
-                  : null,
-              error: null,
-            });
-          },
-          maybeSingle: async () => ({
-            data: table === "wix_invoice" ? { credit_applied_cents: 0 } : null,
-            error: null,
-          }),
-          update(payload: Record<string, unknown>) {
-            updates.push({ table, payload });
-            return {
-              eq: async () => ({
-                error: table === "customer_credit" ? creditError : null,
-              }),
-            };
-          },
-        };
-        return builder;
-      },
-    };
-  }
+  it("returns the cents the database actually reserved", async () => {
+    const rpc = vi.fn(async () => ({ data: 1500, error: null }));
+    const reserved = await reserveCustomerCredit(
+      { rpc } as never,
+      "customer-1",
+      "inv-1",
+      4000
+    );
+    expect(reserved).toBe(1500);
+    expect(rpc).toHaveBeenCalledWith("reserve_customer_credit", {
+      p_customer_id: "customer-1",
+      p_wix_invoice_id: "inv-1",
+      p_target_cents: 4000,
+    });
+  });
 
-  it("does not record reserved credit when the balance write fails", async () => {
+  it("surfaces a rejected reservation instead of reporting success", async () => {
+    const rpc = vi.fn(async () => ({
+      data: null,
+      error: { message: "credit write failed" },
+    }));
     await expect(
-      reserveCustomerCredit(
-        admin({ message: "credit write failed" }) as never,
-        "customer-1",
-        "inv-1",
-        500
-      )
-    ).rejects.toThrow(/credit write failed/);
-
-    expect(updates.map((update) => update.table)).toEqual(["customer_credit"]);
+      reserveCustomerCredit({ rpc } as never, "customer-1", "inv-1", 500)
+    ).rejects.toEqual({ message: "credit write failed" });
   });
 });
