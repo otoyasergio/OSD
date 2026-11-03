@@ -834,6 +834,46 @@ export type Database = {
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
       };
+      diagnostic_catalog: {
+        Row: {
+          catalog_id: string;
+          location_id: string;
+          dtc_code: string;
+          description: string;
+          severity_hint: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      diagnostic_session: {
+        Row: {
+          session_id: string;
+          motorcycle_id: string;
+          work_order_id: string | null;
+          location_id: string;
+          recorded_by_user_id: string | null;
+          recorded_at: string;
+          source: string;
+          notes: string | null;
+          scan_results: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      diagnostic_reading: {
+        Row: {
+          reading_id: string;
+          session_id: string;
+          code: string;
+          status: string;
+          ecu: string | null;
+          freeze_frame: Json;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -1014,6 +1054,18 @@ export type Database = {
       intake_photo_object_in_user_locations: {
         Args: { object_name: string };
         Returns: boolean;
+      };
+      record_diagnostic_session: {
+        Args: {
+          p_motorcycle_id: string;
+          p_work_order_id: string | null;
+          p_location_id: string;
+          p_source: string;
+          p_scan_results: string;
+          p_notes: string | null;
+          p_readings: Json;
+        };
+        Returns: string;
       };
     };
     Enums: Record<string, never>;

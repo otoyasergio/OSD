@@ -46,6 +46,10 @@ export function canRecordCustomerApproval(role: UserRole) {
 export function canCompleteInspection(role: UserRole) {
   return isFloorTech(role) || FRONT_OFFICE.includes(role);
 }
+/** Record a scan-tool session. Same people who can finish an inspection. */
+export function canRecordDiagnosticSession(role: UserRole) {
+  return canCompleteInspection(role);
+}
 export function canCreateRecommendation(role: UserRole) {
   return isFloorTech(role) || FRONT_OFFICE.includes(role);
 }

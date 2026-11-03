@@ -10,6 +10,7 @@ export const WORK_ORDER_TABS = [
   { id: "service-info", label: "Service Info" },
   { id: "contract", label: "Contract" },
   { id: "messages", label: "Messages" },
+  { id: "diagnostics", label: "Diagnostics" },
 ] as const;
 
 export type WorkOrderTabId = (typeof WORK_ORDER_TABS)[number]["id"];
@@ -24,6 +25,7 @@ export const PRIMARY_TAB_IDS: WorkOrderTabId[] = [
 ];
 
 export const MORE_TAB_IDS: WorkOrderTabId[] = [
+  "diagnostics",
   "assistant",
   "timeline",
   "service-info",

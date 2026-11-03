@@ -139,6 +139,12 @@ describe("floorTechWorkOrderRedirect", () => {
     );
   });
 
+  it("maps the diagnostics tab to the packet diagnostics section", () => {
+    expect(floorTechWorkOrderRedirect("w1", "diagnostics")).toBe(
+      "/technician?wo=w1&panel=packet&packetSection=diagnostics"
+    );
+  });
+
   it("defaults other tabs to packet", () => {
     expect(floorTechWorkOrderRedirect("w1", "overview")).toBe(
       "/technician?wo=w1&panel=packet"

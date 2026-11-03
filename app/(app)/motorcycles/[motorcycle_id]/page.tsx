@@ -12,12 +12,16 @@ import {
   canDeleteMotorcycleDocuments,
   canEditWorkOrder,
   canManageVehiclePassport,
+  canRecordDiagnosticSession,
   canUpdateServiceInformation,
   canUploadMotorcycleDocuments,
   canViewBillingArea,
   canViewClients,
   canViewMotorcycleDocuments,
 } from "@/lib/permissions";
+import { DiagnosticPanel } from "@/components/diagnostics/DiagnosticPanel";
+import { unavailableDiagnosticPanel } from "@/lib/diagnostics/sessionView";
+import { getDiagnosticPanel } from "@/lib/services/diagnosticSessions";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
 import { TransferMotorcycleForm } from "@/components/forms/TransferMotorcycleForm";
@@ -75,6 +79,7 @@ export default async function MotorcycleDetailPage({
     documents,
     invoices,
     bikeLink,
+    diagnostics,
   ] = await Promise.all([
     getServiceInformation(motorcycle_id),
     searchCustomers("", { preferShopCustomers: true }),
@@ -86,6 +91,9 @@ export default async function MotorcycleDetailPage({
       ? listInvoicesForMotorcycle(motorcycle_id)
       : Promise.resolve([]),
     getBikeLink(motorcycle_id),
+    getDiagnosticPanel(motorcycle_id).catch(() =>
+      unavailableDiagnosticPanel(motorcycle_id)
+    ),
   ]);
 
   let customerOptions = customers;
@@ -231,6 +239,26 @@ export default async function MotorcycleDetailPage({
         recordAction={recordBikeReadingAction.bind(null, motorcycle_id)}
         scheduleAction={saveBikeLinkScheduleAction.bind(null, motorcycle_id)}
         boxAction={assignBikeLinkBoxAction.bind(null, motorcycle_id)}
+      />
+
+      <DiagnosticPanel
+        data={diagnostics}
+        canRecord={canRecordDiagnosticSession(viewRole) && !preview?.isPreviewing}
+        customerId={motorcycle.customer_id}
+        newWorkOrderHref={
+          visits.open.length === 0 &&
+          diagnostics.openFaultCount !== null &&
+          diagnostics.openFaultCount > 0
+            ? `/work_orders/new?customer_id=${motorcycle.customer_id}&motorcycle_id=${motorcycle_id}`
+            : null
+        }
+        openWorkOrderHref={
+          visits.open[0] &&
+          diagnostics.openFaultCount !== null &&
+          diagnostics.openFaultCount > 0
+            ? `/work_orders/${visits.open[0].work_order_id}?tab=diagnostics`
+            : null
+        }
       />
 
       {canViewDocs ? (
