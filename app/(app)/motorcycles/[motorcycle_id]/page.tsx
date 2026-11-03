@@ -42,7 +42,11 @@ import {
   transferMotorcycleAction,
 } from "@/app/(app)/motorcycles/actions";
 import { listMotorcycleDocuments } from "@/lib/services/motorcycleDocuments";
-import { formatDate, formatDateTime, toShopDatetimeLocalValue } from "@/lib/datetime/format";
+import {
+  formatDate,
+  formatDateTime,
+  toShopDatetimeLocalValue,
+} from "@/lib/datetime/format";
 import { formatMileage, normalizeMileageUnit } from "@/lib/mileage/format";
 import { WixInvoiceList } from "@/components/billing/WixInvoiceList";
 import { listInvoicesForMotorcycle } from "@/lib/services/wixInvoices";
@@ -87,9 +91,7 @@ export default async function MotorcycleDetailPage({
     listWorkOrdersForMotorcycle(motorcycle_id),
     listIntakePhotosForMotorcycle(motorcycle_id),
     canViewDocs ? listMotorcycleDocuments(motorcycle_id) : Promise.resolve([]),
-    wixInvoicesEnabled()
-      ? listInvoicesForMotorcycle(motorcycle_id)
-      : Promise.resolve([]),
+    wixInvoicesEnabled() ? listInvoicesForMotorcycle(motorcycle_id) : Promise.resolve([]),
     getBikeLink(motorcycle_id),
     getDiagnosticPanel(motorcycle_id).catch(() =>
       unavailableDiagnosticPanel(motorcycle_id)
