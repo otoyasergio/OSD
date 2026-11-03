@@ -11,13 +11,20 @@ export function SignOffPad({
   label = "Your signature",
   required = true,
   fieldName = "signature_data_url",
+  onReadyChange,
 }: {
   label?: string;
   required?: boolean;
   fieldName?: string;
+  onReadyChange?: (ready: boolean) => void;
 }) {
   const [signature, setSignature] = useState<string | null>(null);
   const [cleared, setCleared] = useState(0);
+
+  function updateSignature(next: string | null) {
+    setSignature(next);
+    onReadyChange?.(Boolean(next));
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -30,7 +37,7 @@ export function SignOffPad({
           type="button"
           className="text-sm font-medium text-[var(--accent)] underline"
           onClick={() => {
-            setSignature(null);
+            updateSignature(null);
             setCleared((n) => n + 1);
           }}
         >
@@ -41,12 +48,12 @@ export function SignOffPad({
         key={cleared}
         className="overflow-hidden rounded border border-[var(--border-strong)] bg-white"
       >
-        <SignatureCanvas onChange={setSignature} height={140} />
+        <SignatureCanvas onChange={updateSignature} height={140} />
       </div>
       <input type="hidden" name={fieldName} value={signature ?? ""} />
       {!signature && required ? (
         <p className="text-xs text-[var(--status-neutral)]">
-          Draw your signature before submitting.
+          Draw your full signature. A dot or a blank box does not count.
         </p>
       ) : null}
     </div>

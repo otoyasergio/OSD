@@ -6,7 +6,11 @@ import { Check, Clock, AlertTriangle, Minus } from "lucide-react";
 import type { InspectionResultStatus } from "@/lib/database/types";
 import { saveInspectionResultAction } from "@/app/(app)/work_orders/[work_order_id]/inspection/actions";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
-import { BRAKE_INSPECTION_SKIP_ITEM } from "@/lib/services/inspectionGate";
+import {
+  BRAKE_INSPECTION_SKIP_ITEM,
+  isSubstantiveNote,
+  measurementIsRecorded,
+} from "@/lib/services/inspectionGate";
 import { describeInspectionSaveFailure } from "@/lib/inspections/inspectionSaveFailure";
 import {
   shouldApplyServerInspectionText,
@@ -74,22 +78,32 @@ export function InspectionItemRow({
   result,
   readOnly,
   photoUrls,
-  photoRequired,
+  inlinePhoto,
+  evidenceCallout,
+  incomplete,
   onExpandPhoto,
   onRecommend,
   onBusyChange,
   onLocalStatusChange,
+  onLocalDraftChange,
   compact,
 }: {
   workOrderId: string;
   result: InspectionResultRow;
   readOnly: boolean;
   photoUrls?: string[];
-  photoRequired?: boolean;
+  /** Photo captured on this row. Grid evidence photos use evidenceCallout instead. */
+  inlinePhoto?: { label: string; detail?: string; required: boolean } | null;
+  evidenceCallout?: { label: string; href: string; missing: boolean } | null;
+  incomplete?: boolean;
   onExpandPhoto?: (src: string) => void;
   onRecommend?: (result: InspectionResultRow) => void;
   onBusyChange?: (resultId: string, busy: boolean) => void;
   onLocalStatusChange?: (resultId: string, status: InspectionResultStatus | null) => void;
+  onLocalDraftChange?: (
+    resultId: string,
+    draft: { notes: string; measurement: string }
+  ) => void;
   compact?: boolean;
 }) {
   const [status, setStatus] = useState<InspectionResultStatus | null>(result.status);
@@ -245,15 +259,34 @@ export function InspectionItemRow({
     status === "future_attention" || status === "immediate_attention";
   const unit = measurementHint(result.item_name_snapshot);
   const isSkip = result.item_name_snapshot === BRAKE_INSPECTION_SKIP_ITEM;
+  const isAcknowledgment = /acknowledgment/i.test(result.item_name_snapshot);
   const showMeasurement =
-    result.requires_measurement_snapshot || Boolean(measurement) || Boolean(unit);
+    !isSkip &&
+    (result.requires_measurement_snapshot || Boolean(measurement) || Boolean(unit));
+  const measurementRequired =
+    Boolean(result.requires_measurement_snapshot) &&
+    status != null &&
+    status !== "not_applicable" &&
+    !isSkip;
+  const measurementMissing = measurementRequired && !measurementIsRecorded(measurement);
+  const notesRequired =
+    needsAttention ||
+    status === "not_applicable" ||
+    (isSkip && status === "ok") ||
+    (isAcknowledgment && status != null);
+  const notesMissing = notesRequired && !isSubstantiveNote(notes);
   const selectedOption = STATUS_OPTIONS.find((o) => o.value === status);
+  const primaryStatuses = STATUS_OPTIONS.filter(
+    (option) => option.value !== "not_applicable"
+  );
   const attentionClass =
     status === "immediate_attention"
       ? "inspection-item-row--immediate"
       : status === "future_attention"
         ? "inspection-item-row--flagged"
-        : "";
+        : incomplete
+          ? "inspection-item-row--incomplete"
+          : "";
 
   return (
     <article
@@ -310,9 +343,18 @@ export function InspectionItemRow({
                 : selectedOption.long
               : "Not checked"}
           </span>
+        ) : isSkip ? (
+          <button
+            type="button"
+            onClick={() => saveStatus("ok")}
+            className={`inspection-skip-toggle ${status === "ok" ? "is-selected" : ""}`}
+            aria-pressed={status === "ok"}
+          >
+            Not inspected this visit
+          </button>
         ) : (
           <div className="inspection-status-group" role="group" aria-label="Status">
-            {STATUS_OPTIONS.map((option) => {
+            {primaryStatuses.map((option) => {
               const selected = status === option.value;
               const Icon = option.Icon;
               return (
@@ -337,6 +379,24 @@ export function InspectionItemRow({
           </div>
         )}
       </div>
+      {!readOnly && !isSkip ? (
+        <button
+          type="button"
+          onClick={() => saveStatus("not_applicable")}
+          className={`inspection-na-toggle ${
+            status === "not_applicable" ? "is-selected" : ""
+          }`}
+          aria-pressed={status === "not_applicable"}
+        >
+          Does not apply to this bike
+        </button>
+      ) : null}
+      {!readOnly && isSkip ? (
+        <p className="inspection-skip-note">
+          Only when this visit is not a brake and tire inspection. A real reason is
+          required. Tire and brake photos stay required until that reason is saved.
+        </p>
+      ) : null}
 
       {readOnly ? (
         <>
@@ -361,15 +421,27 @@ export function InspectionItemRow({
             <label className="inspection-measurement">
               <span className="inspection-measurement-label">
                 {unit ? `Measurement (${unit})` : "Measurement"}
+                {measurementRequired ? (
+                  <span className="inspection-notes-required">Required</span>
+                ) : null}
               </span>
               <input
-                className="inspection-measurement-input"
+                className={`inspection-measurement-input ${
+                  measurementMissing ? "is-missing" : ""
+                }`}
                 value={measurement}
                 inputMode="decimal"
-                placeholder={unit ?? ""}
+                placeholder={unit ?? "Number"}
+                aria-required={measurementRequired || undefined}
+                aria-invalid={measurementMissing || undefined}
                 onChange={(e) => {
+                  const next = e.target.value;
                   setTextDirty(true);
-                  setMeasurement(e.target.value);
+                  setMeasurement(next);
+                  onLocalDraftChange?.(result.inspection_result_id, {
+                    notes: notesRef.current,
+                    measurement: next,
+                  });
                   scheduleTextSave();
                 }}
                 onFocus={onTextFocus}
@@ -378,30 +450,47 @@ export function InspectionItemRow({
             </label>
           ) : null}
 
-          {!compact || notes || needsAttention || isSkip ? (
+          {!compact || notes || notesRequired ? (
             <label className="inspection-notes">
-              <span className={needsAttention ? "inspection-notes-label" : "sr-only"}>
-                {needsAttention ? "Describe the issue" : "Notes"}
-                {needsAttention ? (
+              <span className={notesRequired ? "inspection-notes-label" : "sr-only"}>
+                {isSkip
+                  ? "Why not this visit"
+                  : status === "not_applicable"
+                    ? "Why it doesn't apply"
+                    : needsAttention
+                      ? "Describe the issue"
+                      : isAcknowledgment
+                        ? "Acknowledgment"
+                        : "Notes"}
+                {notesRequired ? (
                   <span className="inspection-notes-required">Required</span>
                 ) : null}
               </span>
               <textarea
-                className="inspection-notes-input"
-                rows={needsAttention ? 2 : compact ? 1 : 2}
+                className={`inspection-notes-input ${notesMissing ? "is-missing" : ""}`}
+                rows={notesRequired ? 2 : compact ? 1 : 2}
                 value={notes}
-                required={needsAttention}
-                aria-required={needsAttention || undefined}
+                aria-required={notesRequired || undefined}
+                aria-invalid={notesMissing || undefined}
                 placeholder={
                   isSkip
-                    ? "Optional note"
-                    : needsAttention
-                      ? "Describe the issue…"
-                      : "Notes"
+                    ? "Why aren't brakes and tires being inspected this visit?"
+                    : status === "not_applicable"
+                      ? "Why doesn't this apply? For example: shaft drive, no center stand."
+                      : needsAttention
+                        ? "Describe what you found…"
+                        : isAcknowledgment
+                          ? "Who acknowledged this, and how?"
+                          : "Notes"
                 }
                 onChange={(e) => {
+                  const next = e.target.value;
                   setTextDirty(true);
-                  setNotes(e.target.value);
+                  setNotes(next);
+                  onLocalDraftChange?.(result.inspection_result_id, {
+                    notes: next,
+                    measurement: measurementRef.current,
+                  });
                   scheduleTextSave();
                 }}
                 onFocus={onTextFocus}
@@ -418,19 +507,34 @@ export function InspectionItemRow({
         </p>
       ) : null}
 
-      {needsAttention && (!readOnly || (photoUrls && photoUrls.length > 0)) ? (
+      {evidenceCallout ? (
+        <p
+          className={`inspection-evidence-callout ${
+            evidenceCallout.missing ? "is-missing" : ""
+          }`}
+        >
+          <a href={evidenceCallout.href}>{evidenceCallout.label}</a>
+          {evidenceCallout.missing
+            ? " is required in Evidence photos."
+            : " is on the report."}
+        </p>
+      ) : null}
+
+      {inlinePhoto && (!readOnly || (photoUrls && photoUrls.length > 0)) ? (
         <div className="inspection-item-photo">
           <InspectionPhotoSlot
+            id={`inspection-evidence-${result.inspection_result_id}`}
             workOrderId={workOrderId}
             category="inspection_item"
             inspectionResultId={result.inspection_result_id}
-            label={`Photo for ${displayName(result.item_name_snapshot)}`}
-            required={photoRequired !== false}
+            label={inlinePhoto.label}
+            detail={inlinePhoto.detail}
+            required={inlinePhoto.required}
             existingUrls={photoUrls}
             readOnly={readOnly}
             onExpand={onExpandPhoto}
           />
-          {!readOnly && onRecommend ? (
+          {!readOnly && needsAttention && onRecommend ? (
             <button
               type="button"
               onClick={() => onRecommend(result)}
@@ -439,6 +543,16 @@ export function InspectionItemRow({
               Create recommendation
             </button>
           ) : null}
+        </div>
+      ) : !readOnly && needsAttention && onRecommend ? (
+        <div className="inspection-item-photo">
+          <button
+            type="button"
+            onClick={() => onRecommend(result)}
+            className="btn btn-secondary min-h-12"
+          >
+            Create recommendation
+          </button>
         </div>
       ) : null}
     </article>
