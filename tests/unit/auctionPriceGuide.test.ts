@@ -14,7 +14,27 @@ import {
   planAuctionRefresh,
   presentAuctionPriceGuide,
 } from "@/lib/auctions/summary";
-import type { AuctionLotRecord, BikeIdentity } from "@/lib/auctions/types";
+import type {
+  AuctionLotRecord,
+  BikeIdentity,
+  StoredAuctionGuide,
+} from "@/lib/auctions/types";
+
+const parityFx = {
+  cadPerUsd: () => 1,
+  fx: {
+    source: "bank-of-canada" as const,
+    label:
+      "the Bank of Canada rate on each sale date. Daily rates are used from 2017, and the monthly average before that",
+  },
+};
+
+function guideFrom(
+  args: Omit<Parameters<typeof buildStoredAuctionGuide>[0], "cadPerUsd" | "fx"> &
+    Partial<Pick<Parameters<typeof buildStoredAuctionGuide>[0], "cadPerUsd" | "fx">>
+): StoredAuctionGuide {
+  return buildStoredAuctionGuide({ ...parityFx, ...args });
+}
 
 function lot(
   overrides: Partial<AuctionLotRecord> & Pick<AuctionLotRecord, "title" | "priceUsd">
@@ -173,7 +193,7 @@ describe("make and model matching", () => {
 describe("auction price summary", () => {
   it("uses the median of sold prices and ignores unsold lots", () => {
     expect(median([100, 400, 200, 300])).toBe(250);
-    const guide = buildStoredAuctionGuide({
+    const guide = guideFrom({
       bike: iron,
       lots: [
         lot({ title: "a", priceUsd: 4000, saleDate: "2022-01-01" }),
@@ -203,16 +223,16 @@ describe("auction price summary", () => {
     expect(guide.state).toBe("ready");
     expect(guide.overallCount).toBe(3);
     expect(guide.modelYearScope).toBe("model_year");
-    expect(guide.modelYearMedianUsd).toBe(6000);
-    expect(guide.modelYearLowUsd).toBe(4000);
-    expect(guide.modelYearHighUsd).toBe(8000);
+    expect(guide.modelYearMedianCad).toBe(6000);
+    expect(guide.modelYearLowCad).toBe(4000);
+    expect(guide.modelYearHighCad).toBe(8000);
     expect(guide.history.map((point) => point.saleYear)).toEqual([2022, 2023, 2024]);
     expect(guide.comps).toHaveLength(3);
     expect(guide.comps[0].title).toBe("c");
   });
 
   it("widens to one model year when the exact year has a single sale", () => {
-    const guide = buildStoredAuctionGuide({
+    const guide = guideFrom({
       bike: iron,
       lots: [
         lot({
@@ -235,14 +255,18 @@ describe("auction price summary", () => {
       providerFailed: false,
     });
     expect(guide.modelYearScope).toBe("nearby_year");
-    expect(guide.modelYearMedianUsd).toBe(6000);
+    expect(guide.modelYearMedianCad).toBe(6000);
     const view = presentAuctionPriceGuide(guide, "customer");
     expect(view.headline).toContain("within one model year of 2019");
-    expect(view.disclaimer).toContain("US dollars");
+    expect(view.headline).toContain("$6,000");
+    expect(view.headline).not.toContain("US$");
+    expect(view.disclaimer).toContain("Canadian dollars");
+    expect(view.disclaimer).toContain("Bank of Canada");
+    expect(view.sourceLine).toContain("Canadian dollars");
   });
 
   it("prices the model across years when nearby years are also thin", () => {
-    const guide = buildStoredAuctionGuide({
+    const guide = guideFrom({
       bike: iron,
       lots: [
         lot({
@@ -271,7 +295,7 @@ describe("auction price summary", () => {
   });
 
   it("hides setup instructions from the customer when the feed is not connected", () => {
-    const guide = buildStoredAuctionGuide({
+    const guide = guideFrom({
       bike: iron,
       lots: [],
       truncated: false,
@@ -301,7 +325,7 @@ describe("auction price summary", () => {
         sourceLotId: `sale-${index}`,
       })
     );
-    const guide = buildStoredAuctionGuide({
+    const guide = guideFrom({
       bike: iron,
       lots,
       truncated: false,
@@ -315,6 +339,38 @@ describe("auction price summary", () => {
     expect(view.visibleHistory).toHaveLength(16);
     expect(view.visibleHistory[0].saleYear).toBe(2008);
     expect(view.historyNote).toContain("Earlier sale years");
+  });
+
+  it("converts each sale into Canadian dollars before taking the median", () => {
+    const guide = guideFrom({
+      bike: iron,
+      lots: [
+        lot({ title: "early", priceUsd: 4000, saleDate: "2022-01-03" }),
+        lot({ title: "late", priceUsd: 8000, saleDate: "2024-06-03" }),
+      ],
+      truncated: false,
+      altfnConfigured: true,
+      providerMessage: null,
+      fetchedAt: null,
+      providerFailed: false,
+      cadPerUsd: (saleDate) => (saleDate === "2022-01-03" ? 1.25 : 1.4),
+    });
+
+    expect(guide.modelYearLowCad).toBe(5000);
+    expect(guide.modelYearHighCad).toBe(11200);
+    expect(guide.modelYearMedianCad).toBe(8100);
+    expect(guide.history).toEqual([
+      { saleYear: 2022, medianCad: 5000, count: 1 },
+      { saleYear: 2024, medianCad: 11200, count: 1 },
+    ]);
+    expect(guide.comps.map((sale) => sale.priceCad).sort((a, b) => a - b)).toEqual([
+      5000, 11200,
+    ]);
+    const view = presentAuctionPriceGuide(guide, "customer");
+    expect(view.headline).toContain("$8,100");
+    expect(view.detail).toContain("$5,000");
+    expect(view.detail).toContain("$11,200");
+    expect(view.disclaimer).toContain("monthly average");
   });
 });
 
@@ -529,6 +585,25 @@ describe("stored guide parsing", () => {
   it("rejects a snapshot that is not a guide", () => {
     expect(parseStoredAuctionGuide({ headline: "nope" })).toBeNull();
   });
+
+  it("rejects a snapshot still priced in US dollars", () => {
+    const guide = guideFrom({
+      bike: iron,
+      lots: [lot({ title: "one", priceUsd: 5000 })],
+      truncated: false,
+      altfnConfigured: true,
+      providerMessage: null,
+      fetchedAt: null,
+      providerFailed: false,
+    });
+    const legacy = {
+      ...guide,
+      modelYearMedianUsd: guide.modelYearMedianCad,
+    };
+    delete (legacy as { modelYearMedianCad?: number | null }).modelYearMedianCad;
+    expect(parseStoredAuctionGuide(legacy)).toBeNull();
+    expect(parseStoredAuctionGuide(guide)).toEqual(guide);
+  });
 });
 
 describe("price guide wiring", () => {
@@ -543,5 +618,10 @@ describe("price guide wiring", () => {
     expect(motorcyclePage).toContain('audience: "staff"');
     expect(portalPage).toContain('audience: "customer"');
     expect(portalClient).toContain('variant="portal"');
+    const guideUi = readFileSync("components/auctions/AuctionPriceGuide.tsx", "utf8");
+    expect(guideUi).toContain("formatCad");
+    expect(guideUi).toContain("Canadian dollars");
+    expect(guideUi).not.toContain("formatUsd");
+    expect(guideUi).not.toContain("US$");
   });
 });

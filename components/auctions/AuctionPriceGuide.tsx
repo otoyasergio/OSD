@@ -1,4 +1,4 @@
-import { formatSaleDate, formatUsd } from "@/lib/auctions/summary";
+import { formatCad, formatSaleDate } from "@/lib/auctions/summary";
 import type { AuctionPriceGuideView } from "@/lib/auctions/types";
 
 type Props = {
@@ -19,7 +19,7 @@ export function AuctionPriceGuide({
     variant === "portal"
       ? "text-lg font-semibold"
       : "text-lg font-semibold text-foreground";
-  const maxMedian = Math.max(0, ...guide.visibleHistory.map((point) => point.medianUsd));
+  const maxMedian = Math.max(0, ...guide.visibleHistory.map((point) => point.medianCad));
 
   return (
     <section
@@ -32,7 +32,7 @@ export function AuctionPriceGuide({
             Auction price guide
           </h2>
           <p className={`mt-1 text-sm ${neutral}`}>
-            What similar motorcycles sold for at auction over time.
+            What similar motorcycles sold for at auction over time, in Canadian dollars.
           </p>
         </div>
         {variant === "staff" && refreshAction && motorcycleId ? (
@@ -57,24 +57,24 @@ export function AuctionPriceGuide({
       <p className="mt-4 text-base font-semibold text-foreground">{guide.headline}</p>
       <p className={`mt-1 text-sm ${neutral}`}>{guide.detail}</p>
 
-      {guide.state === "ready" && guide.modelYearMedianUsd != null ? (
+      {guide.state === "ready" && guide.modelYearMedianCad != null ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <div className="stat-card">
             <span className="stat-card-label">Typical price</span>
             <span className="stat-card-value text-base">
-              {formatUsd(guide.modelYearMedianUsd)}
+              {formatCad(guide.modelYearMedianCad)}
             </span>
           </div>
           <div className="stat-card">
             <span className="stat-card-label">Low</span>
             <span className="stat-card-value text-base">
-              {guide.modelYearLowUsd != null ? formatUsd(guide.modelYearLowUsd) : "—"}
+              {guide.modelYearLowCad != null ? formatCad(guide.modelYearLowCad) : "—"}
             </span>
           </div>
           <div className="stat-card">
             <span className="stat-card-label">High</span>
             <span className="stat-card-value text-base">
-              {guide.modelYearHighUsd != null ? formatUsd(guide.modelYearHighUsd) : "—"}
+              {guide.modelYearHighCad != null ? formatCad(guide.modelYearHighCad) : "—"}
             </span>
           </div>
         </div>
@@ -84,7 +84,7 @@ export function AuctionPriceGuide({
         <div className="mt-5">
           <table className="w-full text-sm">
             <caption className={`mb-2 text-left font-medium ${neutral}`}>
-              Median realized price by year of sale
+              Median realized price by year of sale, in Canadian dollars
             </caption>
             <thead>
               <tr className={`border-b text-left ${neutral}`}>
@@ -96,7 +96,7 @@ export function AuctionPriceGuide({
             <tbody>
               {guide.visibleHistory.map((point) => {
                 const width =
-                  maxMedian > 0 ? Math.max(8, (point.medianUsd / maxMedian) * 100) : 0;
+                  maxMedian > 0 ? Math.max(8, (point.medianCad / maxMedian) * 100) : 0;
                 return (
                   <tr key={point.saleYear} className="border-b border-zinc-100">
                     <td className="py-2 pr-3 tabular-nums">{point.saleYear}</td>
@@ -110,7 +110,7 @@ export function AuctionPriceGuide({
                           />
                         </div>
                         <span className="shrink-0 tabular-nums">
-                          {formatUsd(point.medianUsd)}
+                          {formatCad(point.medianCad)}
                         </span>
                       </div>
                     </td>
@@ -129,12 +129,12 @@ export function AuctionPriceGuide({
         <ul className="mt-5 flex flex-col gap-3">
           {guide.comps.map((sale) => (
             <li
-              key={`${sale.sourceId}-${sale.lotUrl ?? sale.title}-${sale.saleDate ?? ""}-${sale.priceUsd}`}
+              key={`${sale.sourceId}-${sale.lotUrl ?? sale.title}-${sale.saleDate ?? ""}-${sale.priceCad}`}
               className="border-b border-zinc-100 pb-3 last:border-0"
             >
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <p className="font-medium">{sale.title}</p>
-                <p className="tabular-nums">{formatUsd(sale.priceUsd)}</p>
+                <p className="tabular-nums">{formatCad(sale.priceCad)}</p>
               </div>
               <p className={`mt-1 text-sm ${neutral}`}>
                 {[

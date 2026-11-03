@@ -1,3 +1,4 @@
+import { auctionFxNote, fallbackUsdCadRateBook, usdToCad } from "@/lib/auctions/cad";
 import { auctionLotMatchesBike } from "@/lib/auctions/match";
 import {
   APPRAISAL_GUIDES_NOTE,
@@ -31,10 +32,10 @@ export function median(values: number[]): number | null {
   return sorted[mid];
 }
 
-export function formatUsd(amount: number): string {
+export function formatCad(amount: number): string {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
-    currency: "USD",
+    currency: "CAD",
     maximumFractionDigits: 0,
   }).format(amount);
 }
@@ -107,33 +108,46 @@ function range(values: number[]): { low: number; high: number } | null {
   return { low: Math.min(...values), high: Math.max(...values) };
 }
 
-function historyFrom(lots: AuctionLotRecord[]): AuctionHistoryPoint[] {
+function saleCad(
+  lot: AuctionLotRecord & { priceUsd: number },
+  cadPerUsd: (saleDate: string | null) => number
+): number {
+  return usdToCad(lot.priceUsd, cadPerUsd(lot.saleDate));
+}
+
+function historyFrom(
+  lots: Array<AuctionLotRecord & { priceUsd: number }>,
+  cadPerUsd: (saleDate: string | null) => number
+): AuctionHistoryPoint[] {
   const byYear = new Map<number, number[]>();
   for (const lot of lots) {
-    if (!lot.saleDate || !isPricedSale(lot)) continue;
+    if (!lot.saleDate) continue;
     const year = Number(lot.saleDate.slice(0, 4));
     if (!Number.isInteger(year)) continue;
     const prices = byYear.get(year) ?? [];
-    prices.push(lot.priceUsd);
+    prices.push(saleCad(lot, cadPerUsd));
     byYear.set(year, prices);
   }
   return [...byYear.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([saleYear, prices]) => ({
       saleYear,
-      medianUsd: median(prices) ?? prices[0],
+      medianCad: median(prices) ?? prices[0],
       count: prices.length,
     }));
 }
 
-function compFrom(lot: AuctionLotRecord & { priceUsd: number }): AuctionCompView {
+function compFrom(
+  lot: AuctionLotRecord & { priceUsd: number },
+  cadPerUsd: (saleDate: string | null) => number
+): AuctionCompView {
   const place = [lot.location, lot.country].filter(Boolean).join(", ") || null;
   return {
     title: lot.title,
     modelYear: lot.modelYear,
     vendor: lot.vendor,
     saleDate: lot.saleDate,
-    priceUsd: lot.priceUsd,
+    priceCad: saleCad(lot, cadPerUsd),
     place,
     lotUrl: lot.lotUrl,
     sourceId: lot.source,
@@ -149,14 +163,15 @@ export function unavailableStoredGuide(bike: BikeIdentity): StoredAuctionGuide {
     year: bike.year,
     modelYearScope: "none",
     modelYearCount: 0,
-    modelYearMedianUsd: null,
-    modelYearLowUsd: null,
-    modelYearHighUsd: null,
+    modelYearMedianCad: null,
+    modelYearLowCad: null,
+    modelYearHighCad: null,
     nearbySpan: null,
     overallCount: 0,
-    overallMedianUsd: null,
-    overallLowUsd: null,
-    overallHighUsd: null,
+    overallMedianCad: null,
+    overallLowCad: null,
+    overallHighCad: null,
+    fx: auctionFxNote(fallbackUsdCadRateBook()),
     earliestSaleYear: null,
     latestSaleYear: null,
     truncated: false,
@@ -178,14 +193,16 @@ export function buildStoredAuctionGuide(args: {
   providerMessage: string | null;
   fetchedAt: string | null;
   providerFailed: boolean;
+  cadPerUsd: (saleDate: string | null) => number;
+  fx: StoredAuctionGuide["fx"];
 }): StoredAuctionGuide {
   const matched = dedupeLots(args.lots).filter((lot) =>
     auctionLotMatchesBike(args.bike, lot)
   );
   const sold = matched.filter(isPricedSale);
-  const prices = sold.map((lot) => lot.priceUsd);
+  const prices = sold.map((lot) => saleCad(lot, args.cadPerUsd));
   const overall = range(prices);
-  const history = historyFrom(sold);
+  const history = historyFrom(sold, args.cadPerUsd);
   const saleYears = history.map((point) => point.saleYear);
 
   const exact = sold.filter((lot) => lot.modelYear === args.bike.year);
@@ -214,7 +231,7 @@ export function buildStoredAuctionGuide(args: {
     slice = sold;
   }
 
-  const slicePrices = slice.map((lot) => lot.priceUsd);
+  const slicePrices = slice.map((lot) => saleCad(lot, args.cadPerUsd));
   const sliceRange = range(slicePrices);
   const sourceIds = [...new Set(sold.map((lot) => lot.source))];
   const fixturePreview = sold.length > 0 && sold.every((lot) => lot.source === "fixture");
@@ -228,7 +245,7 @@ export function buildStoredAuctionGuide(args: {
   const comps = [...sold]
     .sort((a, b) => (b.saleDate ?? "").localeCompare(a.saleDate ?? ""))
     .slice(0, MAX_COMPS)
-    .map(compFrom);
+    .map((lot) => compFrom(lot, args.cadPerUsd));
 
   return {
     state,
@@ -237,14 +254,14 @@ export function buildStoredAuctionGuide(args: {
     year: args.bike.year,
     modelYearScope,
     modelYearCount: slice.length,
-    modelYearMedianUsd: median(slicePrices),
-    modelYearLowUsd: sliceRange?.low ?? null,
-    modelYearHighUsd: sliceRange?.high ?? null,
+    modelYearMedianCad: median(slicePrices),
+    modelYearLowCad: sliceRange?.low ?? null,
+    modelYearHighCad: sliceRange?.high ?? null,
     nearbySpan,
     overallCount: sold.length,
-    overallMedianUsd: median(prices),
-    overallLowUsd: overall?.low ?? null,
-    overallHighUsd: overall?.high ?? null,
+    overallMedianCad: median(prices),
+    overallLowCad: overall?.low ?? null,
+    overallHighCad: overall?.high ?? null,
     earliestSaleYear: saleYears[0] ?? null,
     latestSaleYear: saleYears[saleYears.length - 1] ?? null,
     truncated: args.truncated,
@@ -255,6 +272,7 @@ export function buildStoredAuctionGuide(args: {
     altfnConfigured: args.altfnConfigured,
     providerMessage: args.providerMessage,
     fetchedAt: args.fetchedAt,
+    fx: args.fx,
   };
 }
 
@@ -273,8 +291,8 @@ export function presentAuctionPriceGuide(
     headline: copy.headline,
     detail: copy.detail,
     disclaimer:
-      stored.state === "ready" || stored.state === "empty"
-        ? "These are realized auction prices in US dollars. Use them as a rough comparison of what similar motorcycles sold for. Condition, mileage, and the Canadian retail market sit outside this list."
+      stored.state === "ready"
+        ? `Prices are in Canadian dollars. US auction results are converted using ${stored.fx.label}. Use them as a rough comparison of what similar motorcycles sold for. Condition, mileage, and local retail prices sit outside this list.`
         : "",
     historyNote:
       hiddenYears > 0
@@ -294,7 +312,7 @@ function sourceLine(stored: StoredAuctionGuide): string {
       : "No auction file is loaded yet.";
   }
   const names = stored.sourceIds.map(auctionSourceName);
-  return `Sold prices from ${names.join(", ")}, in US dollars.`;
+  return `Sold prices from ${names.join(", ")}, in Canadian dollars.`;
 }
 
 function guideCopy(
@@ -342,28 +360,28 @@ function guideCopy(
     };
   }
 
-  if (stored.overallCount === 1 && stored.overallMedianUsd != null) {
+  if (stored.overallCount === 1 && stored.overallMedianCad != null) {
     return {
-      headline: `${formatUsd(stored.overallMedianUsd)} is the only matching auction sale on file`,
+      headline: `${formatCad(stored.overallMedianCad)} is the only matching auction sale on file`,
       detail: `One sale is a thin guide for a ${bike}.`,
     };
   }
 
   const medianText =
-    stored.modelYearMedianUsd != null ? formatUsd(stored.modelYearMedianUsd) : "";
+    stored.modelYearMedianCad != null ? formatCad(stored.modelYearMedianCad) : "";
   const band =
-    stored.modelYearLowUsd != null && stored.modelYearHighUsd != null
-      ? `${formatUsd(stored.modelYearLowUsd)} to ${formatUsd(stored.modelYearHighUsd)}`
+    stored.modelYearLowCad != null && stored.modelYearHighCad != null
+      ? `${formatCad(stored.modelYearLowCad)} to ${formatCad(stored.modelYearHighCad)}`
       : "";
   const span =
     stored.earliestSaleYear && stored.latestSaleYear
       ? `${stored.earliestSaleYear} to ${stored.latestSaleYear}`
       : "the years on file";
 
-  if (stored.modelYearScope === "model_year" && stored.modelYearMedianUsd != null) {
+  if (stored.modelYearScope === "model_year" && stored.modelYearMedianCad != null) {
     const across =
-      stored.overallCount > stored.modelYearCount && stored.overallMedianUsd != null
-        ? ` Across ${stored.overallCount} sales of this model, the middle price is ${formatUsd(stored.overallMedianUsd)}.`
+      stored.overallCount > stored.modelYearCount && stored.overallMedianCad != null
+        ? ` Across ${stored.overallCount} sales of this model, the middle price is ${formatCad(stored.overallMedianCad)}.`
         : "";
     return {
       headline: `${medianText} typical auction price for the ${stored.year} model year`,
@@ -371,7 +389,7 @@ function guideCopy(
     };
   }
 
-  if (stored.modelYearScope === "nearby_year" && stored.modelYearMedianUsd != null) {
+  if (stored.modelYearScope === "nearby_year" && stored.modelYearMedianCad != null) {
     return {
       headline: `${medianText} typical auction price within one model year of ${stored.year}`,
       detail: `${stored.modelYearCount} sales from ${stored.year - 1} to ${stored.year + 1} sold for ${band}. The ${stored.year} model year alone has fewer than two sales.`,
@@ -379,7 +397,7 @@ function guideCopy(
   }
 
   return {
-    headline: `${formatUsd(stored.overallMedianUsd ?? 0)} typical auction price for this model`,
-    detail: `${stored.overallCount} auction sales from ${span}, ranging from ${formatUsd(stored.overallLowUsd ?? 0)} to ${formatUsd(stored.overallHighUsd ?? 0)}. The ${stored.year} model year alone has fewer than two sales, so this mixes model years.`,
+    headline: `${formatCad(stored.overallMedianCad ?? 0)} typical auction price for this model`,
+    detail: `${stored.overallCount} auction sales from ${span}, ranging from ${formatCad(stored.overallLowCad ?? 0)} to ${formatCad(stored.overallHighCad ?? 0)}. The ${stored.year} model year alone has fewer than two sales, so this mixes model years.`,
   };
 }

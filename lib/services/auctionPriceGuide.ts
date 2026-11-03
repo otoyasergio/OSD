@@ -1,4 +1,6 @@
 import { fetchAltfnMotorcycleLots } from "@/lib/auctions/altfndata";
+import { auctionFxNote, cadPerUsdOn } from "@/lib/auctions/cad";
+import { loadUsdCadRateBook } from "@/lib/auctions/cadRates";
 import {
   auctionSearchText,
   makeKey,
@@ -281,6 +283,7 @@ export async function loadAuctionPriceGuide(args: {
       }
     }
 
+    const rates = await loadUsdCadRateBook();
     const stored = buildStoredAuctionGuide({
       bike: args.bike,
       lots,
@@ -289,6 +292,8 @@ export async function loadAuctionPriceGuide(args: {
       providerMessage,
       fetchedAt: new Date(now).toISOString(),
       providerFailed,
+      cadPerUsd: (saleDate) => cadPerUsdOn(rates, saleDate),
+      fx: auctionFxNote(rates),
     });
     await writeSnapshot(args.motorcycleId, args.bike, stored);
     return {
@@ -318,6 +323,8 @@ export async function loadAuctionPriceGuide(args: {
 }
 
 function countPricedMatches(bike: BikeIdentity, lots: AuctionLotRecord[]): number {
+  // The count is of priced US-dollar sales. A rate of 1 keeps every sale in range
+  // without calling the Bank of Canada just to see whether the cache is stale.
   const stored = buildStoredAuctionGuide({
     bike,
     lots,
@@ -326,6 +333,8 @@ function countPricedMatches(bike: BikeIdentity, lots: AuctionLotRecord[]): numbe
     providerMessage: null,
     fetchedAt: null,
     providerFailed: false,
+    cadPerUsd: () => 1,
+    fx: { source: "bank-of-canada", label: "Count only" },
   });
   return stored.overallCount;
 }

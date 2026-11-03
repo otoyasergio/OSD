@@ -3,6 +3,7 @@
  *
  * Accepts ALT/FNDATA JSON or CSV (the AWS Data Exchange motorcycle feed)
  * and a generic export with make, model, year, price_usd, sale_date.
+ * Lots stay in US dollars. The price guide converts them to Canadian dollars.
  *
  * Refuses the production Supabase project unless IMPORT_AUCTION_LOTS_CONFIRM=1.
  *
@@ -34,11 +35,13 @@ if (!filePath || !source) {
   process.exit(1);
 }
 
+const inputPath = filePath;
+
 async function main() {
-  const text = await readFile(filePath, "utf8");
+  const text = await readFile(inputPath, "utf8");
   const lots = recordsFromAuctionFile(text, source);
   const imported = await upsertAuctionLots(lots);
-  console.log(`Imported ${imported} auction lots from ${filePath} as ${source}.`);
+  console.log(`Imported ${imported} auction lots from ${inputPath} as ${source}.`);
 }
 
 main().catch((error: unknown) => {
