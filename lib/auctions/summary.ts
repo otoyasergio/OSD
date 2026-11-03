@@ -401,3 +401,23 @@ function guideCopy(
     detail: `${stored.overallCount} auction sales from ${span}, ranging from ${formatCad(stored.overallLowCad ?? 0)} to ${formatCad(stored.overallHighCad ?? 0)}. The ${stored.year} model year alone has fewer than two sales, so this mixes model years.`,
   };
 }
+
+/** Compact price for the visual inspection report. Empty when no sale is on file. */
+export function inspectionAuctionCallout(guide: AuctionPriceGuideView | null): {
+  amount: string;
+  range: string | null;
+  caption: string;
+} | null {
+  if (!guide || guide.state !== "ready" || guide.modelYearMedianCad == null) return null;
+  const low = guide.modelYearLowCad;
+  const high = guide.modelYearHighCad;
+  const range =
+    low != null && high != null && low !== high
+      ? `${formatCad(low)} to ${formatCad(high)}`
+      : null;
+  return {
+    amount: formatCad(guide.modelYearMedianCad),
+    range,
+    caption: "Typical auction price in Canadian dollars",
+  };
+}

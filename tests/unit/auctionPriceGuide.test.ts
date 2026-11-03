@@ -10,6 +10,7 @@ import { recordsFromAuctionFile } from "@/lib/auctions/parseLots";
 import { parseStoredAuctionGuide } from "@/lib/auctions/schema";
 import {
   buildStoredAuctionGuide,
+  inspectionAuctionCallout,
   median,
   planAuctionRefresh,
   presentAuctionPriceGuide,
@@ -372,6 +373,38 @@ describe("auction price summary", () => {
     expect(view.detail).toContain("$11,200");
     expect(view.disclaimer).toContain("monthly average");
   });
+
+  it("puts the Canadian typical price on the inspection report", () => {
+    const priced = guideFrom({
+      bike: iron,
+      lots: [
+        lot({ title: "early", priceUsd: 4000, saleDate: "2022-01-03" }),
+        lot({ title: "late", priceUsd: 8000, saleDate: "2024-06-03" }),
+      ],
+      truncated: false,
+      altfnConfigured: true,
+      providerMessage: null,
+      fetchedAt: null,
+      providerFailed: false,
+      cadPerUsd: (saleDate) => (saleDate === "2022-01-03" ? 1.25 : 1.4),
+    });
+    expect(inspectionAuctionCallout(presentAuctionPriceGuide(priced, "staff"))).toEqual({
+      amount: "$8,100",
+      range: "$5,000 to $11,200",
+      caption: "Typical auction price in Canadian dollars",
+    });
+
+    const empty = guideFrom({
+      bike: iron,
+      lots: [],
+      truncated: false,
+      altfnConfigured: false,
+      providerMessage: null,
+      fetchedAt: null,
+      providerFailed: false,
+    });
+    expect(inspectionAuctionCallout(presentAuctionPriceGuide(empty, "staff"))).toBeNull();
+  });
 });
 
 describe("ALT/FNDATA records", () => {
@@ -623,5 +656,31 @@ describe("price guide wiring", () => {
     expect(guideUi).toContain("Canadian dollars");
     expect(guideUi).not.toContain("formatUsd");
     expect(guideUi).not.toContain("US$");
+  });
+
+  it("shows the auction price on the inspection report", () => {
+    const inspectionPage = readFileSync(
+      "app/(app)/work_orders/[work_order_id]/inspection/page.tsx",
+      "utf8"
+    );
+    const workOrderPage = readFileSync(
+      "app/(app)/work_orders/[work_order_id]/page.tsx",
+      "utf8"
+    );
+    const checklist = readFileSync(
+      "components/inspections/InspectionChecklist.tsx",
+      "utf8"
+    );
+    expect(inspectionPage).toContain("loadAuctionPriceGuide");
+    expect(inspectionPage).toContain("auctionGuide");
+    expect(workOrderPage).toContain("loadAuctionPriceGuide");
+    expect(workOrderPage).toContain("auctionGuide={auctionGuide}");
+    expect(checklist).toContain("InspectionAuctionPrice");
+    expect(checklist).toContain("auctionGuide");
+    const callout = readFileSync(
+      "components/auctions/InspectionAuctionPrice.tsx",
+      "utf8"
+    );
+    expect(callout).toContain("inspection-auction-price");
   });
 });
