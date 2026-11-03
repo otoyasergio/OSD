@@ -7,13 +7,17 @@ export function InspectionAuctionPrice({
   guide: AuctionPriceGuideView | null;
 }) {
   const callout = inspectionAuctionCallout(guide);
-  if (!callout) return null;
+  if (!callout || !guide) return null;
   const line = inspectionPriceLine(callout.points);
+  const vehicle = `${guide.year} ${guide.make} ${guide.model}`
+    .replace(/\s+/g, " ")
+    .trim();
 
   return (
     <div className="inspection-auction-price">
+      <p className="inspection-auction-vehicle">{vehicle}</p>
       <div className="inspection-auction-price-summary">
-        <p className="inspection-auction-price-label">Auction value</p>
+        <p className="inspection-auction-price-label">Price today</p>
         <div className="inspection-auction-price-figures">
           <p className="inspection-auction-price-amount">{callout.amount}</p>
           <p className="inspection-auction-price-note">

@@ -2360,6 +2360,14 @@ button.board-control-link {
   gap: 0.25rem 0.75rem;
 }
 
+.inspection-auction-vehicle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
 .inspection-auction-price-label {
   margin: 0;
   font-size: 0.6875rem;
@@ -2476,6 +2484,13 @@ button.board-control-link {
   font-weight: 600;
   color: var(--foreground);
   word-break: break-word;
+}
+
+.inspection-column-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
 }
 
 .inspection-report-columns {

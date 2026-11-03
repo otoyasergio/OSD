@@ -4,6 +4,7 @@ import { useActionState, useMemo, useState } from "react";
 import type { AuctionPriceGuideView } from "@/lib/auctions/types";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
 import { InspectionAuctionPrice } from "@/components/auctions/InspectionAuctionPrice";
+import { inspectionAuctionAnchorCategory } from "@/lib/inspections/inspectionAuctionPlacement";
 import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
@@ -223,6 +224,7 @@ export function InspectionChecklist({
       ));
 
   const header = inspection.header;
+  const auctionAnchor = inspectionAuctionAnchorCategory(Object.keys(grouped));
 
   return (
     <div className="inspection-report">
@@ -258,8 +260,6 @@ export function InspectionChecklist({
             N/A
           </span>
         </div>
-
-        <InspectionAuctionPrice guide={auctionGuide} />
 
         <dl className="inspection-report-meta">
           {header.customer_name ? (
@@ -399,6 +399,7 @@ export function InspectionChecklist({
 
       <div className="inspection-report-columns">
         {Object.entries(grouped).map(([category, results]) => {
+          const showAuctionHere = category === auctionAnchor;
           const sectionPhoto = sectionPhotoForCategory(category);
           const forksNeeded =
             sectionPhoto?.category === "inspection_forks" &&
@@ -434,8 +435,8 @@ export function InspectionChecklist({
                 : "";
           const SectionIcon = sectionIcon(category);
 
-          return (
-            <section key={category} className="inspection-section">
+          const section = (
+            <section className="inspection-section">
               <h2 className="inspection-section-header">
                 <span className="inspection-section-header-title">
                   <SectionIcon
@@ -514,7 +515,15 @@ export function InspectionChecklist({
               </div>
             </section>
           );
+
+          return (
+            <div key={category} className="inspection-column-stack">
+              {section}
+              {showAuctionHere ? <InspectionAuctionPrice guide={auctionGuide} /> : null}
+            </div>
+          );
         })}
+        {auctionAnchor == null ? <InspectionAuctionPrice guide={auctionGuide} /> : null}
       </div>
 
       {!readOnly ? (

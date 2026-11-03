@@ -21,6 +21,7 @@ import type {
   BikeIdentity,
   StoredAuctionGuide,
 } from "@/lib/auctions/types";
+import { inspectionAuctionAnchorCategory } from "@/lib/inspections/inspectionAuctionPlacement";
 
 const parityFx = {
   cadPerUsd: () => 1,
@@ -696,13 +697,38 @@ describe("price guide wiring", () => {
     expect(workOrderPage).toContain("auctionGuide={auctionGuide}");
     expect(checklist).toContain("InspectionAuctionPrice");
     expect(checklist).toContain("auctionGuide");
+    expect(checklist).toContain("inspectionAuctionAnchorCategory");
+    const headerAt = checklist.indexOf("inspection-report-header");
+    const columnsAt = checklist.indexOf("inspection-report-columns");
+    const auctionAt = checklist.indexOf("<InspectionAuctionPrice");
+    expect(auctionAt).toBeGreaterThan(columnsAt);
+    expect(auctionAt).toBeGreaterThan(headerAt);
+    expect(checklist.slice(0, columnsAt)).not.toContain("<InspectionAuctionPrice");
     const callout = readFileSync(
       "components/auctions/InspectionAuctionPrice.tsx",
       "utf8"
     );
     expect(callout).toContain("inspection-auction-price");
+    expect(callout).toContain("inspection-auction-vehicle");
+    expect(callout).toContain("Price today");
+    expect(callout).toContain("guide.year");
     expect(callout).toContain("inspection-auction-line");
     expect(callout).toContain("<polyline");
     expect(callout).toContain("Auction price by year of sale");
+  });
+
+  it("puts the auction block under the short brakes section", () => {
+    expect(
+      inspectionAuctionAnchorCategory([
+        "Brakes & Tires — Front",
+        "Brakes & Tires — Rear",
+        "Brakes & Tires",
+        "Lights, Lenses, Controls and Misc.",
+      ])
+    ).toBe("Brakes & Tires");
+    expect(inspectionAuctionAnchorCategory(["Brakes & Tires — Front", "Lights"])).toBe(
+      "Brakes & Tires — Front"
+    );
+    expect(inspectionAuctionAnchorCategory(["Lights", "Battery"])).toBeNull();
   });
 });
