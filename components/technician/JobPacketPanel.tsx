@@ -15,7 +15,9 @@ import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PHOTO_CATEGORY_LABELS } from "@/lib/status/labels";
 import { formatDateTime } from "@/lib/datetime/format";
 import { AskOtomotoPanel } from "@/components/diagnostics/AskOtomotoPanel";
+import { DiagnosticPanel } from "@/components/diagnostics/DiagnosticPanel";
 import type { AskOtomotoPanelData } from "@/lib/diagnostics/askOtomotoView";
+import type { DiagnosticPanelData } from "@/lib/diagnostics/sessionView";
 
 function toNoteJobs(packet: JobPacket): WorkOrderJob[] {
   return packet.jobs.map(
@@ -35,6 +37,7 @@ const TABS: Array<{ id: PacketTabId; label: string }> = [
   { id: "notes", label: "Notes" },
   { id: "photos", label: "Photos" },
   { id: "jobs", label: "Jobs" },
+  { id: "diagnostics", label: "Diagnostics" },
   { id: "assistant", label: "Ask OTOMOTO" },
 ];
 
@@ -49,6 +52,8 @@ export function JobPacketPanel({
   photos = [],
   selectedJobId = null,
   assistant = null,
+  diagnostics = null,
+  canRecordDiagnostics = false,
   stage,
 }: {
   packet: JobPacket;
@@ -59,6 +64,8 @@ export function JobPacketPanel({
   selectedJobId?: string | null;
   /** Server-authorized, minimized Ask OTOMOTO data; loaded only for its section. */
   assistant?: AskOtomotoPanelData | null;
+  diagnostics?: DiagnosticPanelData | null;
+  canRecordDiagnostics?: boolean;
   stage: FloorStage | null;
 }) {
   const tabRefs = useRef(new Map<string, HTMLAnchorElement>());
@@ -171,6 +178,12 @@ export function JobPacketPanel({
                   {packet.notes.length === 0
                     ? "No notes yet"
                     : `${packet.notes.length} note${packet.notes.length === 1 ? "" : "s"} — newest ${formatDateTime(packet.notes[0].created_at)}`}
+                </li>
+                <li>
+                  <span className="floor-packet-summary-label">Diagnostics</span>
+                  {diagnostics
+                    ? diagnostics.health.faultText
+                    : "Scan history unavailable"}
                 </li>
                 <li>
                   <span className="floor-packet-summary-label">Photos</span>
@@ -335,6 +348,21 @@ export function JobPacketPanel({
                 </ul>
               )}
             </>
+          ) : null}
+
+          {activeTab === "diagnostics" ? (
+            diagnostics ? (
+              <DiagnosticPanel
+                data={diagnostics}
+                canRecord={canRecordDiagnostics && packet.is_foreign_location === false}
+                workOrderId={packet.work_order_id}
+              />
+            ) : (
+              <div className="floor-packet-summary">
+                <h3 className="floor-section-title">Diagnostics</h3>
+                <p className="floor-muted">Scan history could not be loaded.</p>
+              </div>
+            )
           ) : null}
 
           {activeTab === "assistant" ? (

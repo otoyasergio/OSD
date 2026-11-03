@@ -1,0 +1,7 @@
+Guidance for Connected Mobility on AWS
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+
+Portions of lib/diagnostics/verdict.ts and lib/diagnostics/healthStrip.ts are
+adapted from aws-solutions-library-samples/guidance-for-connected-mobility-on-aws
+(https://github.com/aws-solutions-library-samples/guidance-for-connected-mobility-on-aws)
+under the Apache License 2.0. Those files keep the Amazon copyright header.
