@@ -751,61 +751,84 @@ export async function completeInspection(
     throw updateError;
   }
 
-  await addTimelineEvent(supabase, {
-    work_order_id: workOrderId,
-    user_id: user.user_id,
-    event_type: TimelineEventType.INSPECTION_COMPLETED,
-    entity_type: "inspection",
-    entity_id: inspection.inspection_id,
-    description:
-      incompleteCount > 0
-        ? `Arrival inspection completed with ${incompleteCount} incomplete item(s)`
-        : "Arrival inspection completed",
-    new_value: {
-      incomplete_count: incompleteCount,
-      forced: Boolean(options.force && incompleteCount > 0),
-      signature_storage_path: signaturePath,
-    },
-  });
-
-  await addAuditLog(supabase, {
-    actor_user_id: user.user_id,
-    location_id: locationId,
-    action: "inspection_completed",
-    entity_type: "inspection",
-    entity_id: inspection.inspection_id,
-    description: `Arrival inspection completed on ${workOrderNumber}`,
-    new_value: {
-      incomplete_count: incompleteCount,
-      forced: Boolean(options.force && incompleteCount > 0),
-      signature_storage_path: signaturePath,
-    },
-  });
-
-  // Yellow / red findings become recommendations immediately on complete.
-  const { ensureRecommendationsForAttentionFindings } =
-    await import("@/lib/services/recommendations");
-  const recommendationCount = await ensureRecommendationsForAttentionFindings(
-    workOrderId,
-    gatedResults
-  );
-
-  if (recommendationCount > 0) {
+  try {
     await addTimelineEvent(supabase, {
       work_order_id: workOrderId,
       user_id: user.user_id,
-      event_type: TimelineEventType.RECOMMENDATION_CREATED,
+      event_type: TimelineEventType.INSPECTION_COMPLETED,
       entity_type: "inspection",
       entity_id: inspection.inspection_id,
-      description: `${recommendationCount} recommendation(s) created from inspection findings`,
-      new_value: { recommendation_count: recommendationCount },
+      description:
+        incompleteCount > 0
+          ? `Arrival inspection completed with ${incompleteCount} incomplete item(s)`
+          : "Arrival inspection completed",
+      new_value: {
+        incomplete_count: incompleteCount,
+        forced: Boolean(options.force && incompleteCount > 0),
+        signature_storage_path: signaturePath,
+      },
     });
-  }
 
-  await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
-  const woTable = supabase.from("work_order");
-  if ("update" in woTable && typeof woTable.update === "function") {
-    await woTable.update({ updated_at: now }).eq("work_order_id", workOrderId);
+    await addAuditLog(supabase, {
+      actor_user_id: user.user_id,
+      location_id: locationId,
+      action: "inspection_completed",
+      entity_type: "inspection",
+      entity_id: inspection.inspection_id,
+      description: `Arrival inspection completed on ${workOrderNumber}`,
+      new_value: {
+        incomplete_count: incompleteCount,
+        forced: Boolean(options.force && incompleteCount > 0),
+        signature_storage_path: signaturePath,
+      },
+    });
+
+    // Yellow / red findings become recommendations immediately on complete.
+    const { ensureRecommendationsForAttentionFindings } =
+      await import("@/lib/services/recommendations");
+    const recommendationCount = await ensureRecommendationsForAttentionFindings(
+      workOrderId,
+      gatedResults
+    );
+
+    if (recommendationCount > 0) {
+      await addTimelineEvent(supabase, {
+        work_order_id: workOrderId,
+        user_id: user.user_id,
+        event_type: TimelineEventType.RECOMMENDATION_CREATED,
+        entity_type: "inspection",
+        entity_id: inspection.inspection_id,
+        description: `${recommendationCount} recommendation(s) created from inspection findings`,
+        new_value: { recommendation_count: recommendationCount },
+      });
+    }
+
+    await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+    const woTable = supabase.from("work_order");
+    if ("update" in woTable && typeof woTable.update === "function") {
+      await woTable.update({ updated_at: now }).eq("work_order_id", workOrderId);
+    }
+  } catch (downstream) {
+    // The stamp is already written. Clear it so a failed status update or
+    // recommendation pass does not leave a signed report the tech cannot retry.
+    try {
+      const { error: rollbackError } = await supabase
+        .from("inspection")
+        .update({
+          completed_at: null,
+          completed_by_user_id: null,
+          signature_storage_path: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("inspection_id", inspection.inspection_id);
+      await removeInspectionSignature(supabase, signaturePath);
+      if (rollbackError) {
+        console.error("inspection completion rollback failed", rollbackError);
+      }
+    } catch (rollback) {
+      console.error("inspection completion rollback failed", rollback);
+    }
+    throw downstream;
   }
   return {
     inspectionId: inspection.inspection_id,

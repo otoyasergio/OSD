@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useCallback, useMemo, useRef, useState } from "react";
 import type { AuctionPriceGuideView } from "@/lib/auctions/types";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
 import { InspectionAuctionPrice } from "@/components/auctions/InspectionAuctionPrice";
@@ -108,6 +108,19 @@ export function InspectionChecklist({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
   const [signatureReady, setSignatureReady] = useState(false);
+  const finishFlushes = useRef(
+    new Map<string, () => Promise<"clean" | "saved" | "failed">>()
+  );
+  const releaseFinish = useRef(false);
+  const finishing = useRef(false);
+  const finishSubmitterRef = useRef<HTMLButtonElement>(null);
+  const registerFinishFlush = useCallback(
+    (resultId: string, flush: (() => Promise<"clean" | "saved" | "failed">) | null) => {
+      if (flush) finishFlushes.current.set(resultId, flush);
+      else finishFlushes.current.delete(resultId);
+    },
+    []
+  );
   const [drafts, setDrafts] = useState<
     Record<string, { notes: string; measurement: string }>
   >({});
@@ -433,10 +446,10 @@ export function InspectionChecklist({
           const sectionChecked =
             results.length -
             countIncompleteInspectionResults(gated, { within: sectionGated });
-          const sectionImmediate = results.filter(
+          const sectionImmediate = sectionGated.filter(
             (r) => r.status === "immediate_attention"
           ).length;
-          const sectionFuture = results.filter(
+          const sectionFuture = sectionGated.filter(
             (r) => r.status === "future_attention"
           ).length;
           const sectionDone = sectionChecked === results.length;
@@ -536,6 +549,7 @@ export function InspectionChecklist({
                       onLocalDraftChange={(resultId, draft) => {
                         setDrafts((current) => ({ ...current, [resultId]: draft }));
                       }}
+                      onRegisterFlush={registerFinishFlush}
                       onRecommend={
                         canRecommend
                           ? (r) => {
@@ -565,14 +579,39 @@ export function InspectionChecklist({
           action={completeAction}
           className="inspection-finish"
           onSubmit={(event) => {
-            if (!signatureReady || missingPhotos.length > 0 || saving) {
-              event.preventDefault();
+            if (releaseFinish.current) {
+              releaseFinish.current = false;
+              return;
             }
-            if (!forceConfirm && localIncompleteCount > 0) {
-              event.preventDefault();
-            }
+            event.preventDefault();
+            if (finishing.current) return;
+            if (!signatureReady || missingPhotos.length > 0) return;
+            if (!forceConfirm && localIncompleteCount > 0) return;
+            finishing.current = true;
+            const form = event.currentTarget;
+            void (async () => {
+              try {
+                const results = await Promise.all(
+                  [...finishFlushes.current.values()].map((flush) => flush())
+                );
+                if (results.includes("failed")) return;
+                releaseFinish.current = true;
+                form.requestSubmit(finishSubmitterRef.current ?? undefined);
+              } finally {
+                finishing.current = false;
+              }
+            })();
           }}
         >
+          <button
+            ref={finishSubmitterRef}
+            type="submit"
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
+          >
+            Sign and complete inspection
+          </button>
           {completeReturnTo ? (
             <input type="hidden" name="return_to" value={completeReturnTo} />
           ) : null}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { InspectionResultRow } from "@/lib/services/inspections";
 import { Check, Clock, AlertTriangle, Minus } from "lucide-react";
 import type { InspectionResultStatus } from "@/lib/database/types";
@@ -86,6 +86,7 @@ export function InspectionItemRow({
   onBusyChange,
   onLocalStatusChange,
   onLocalDraftChange,
+  onRegisterFlush,
   compact,
 }: {
   workOrderId: string;
@@ -104,6 +105,10 @@ export function InspectionItemRow({
     resultId: string,
     draft: { notes: string; measurement: string }
   ) => void;
+  onRegisterFlush?: (
+    resultId: string,
+    flush: (() => Promise<"clean" | "saved" | "failed">) | null
+  ) => void;
   compact?: boolean;
 }) {
   const [status, setStatus] = useState<InspectionResultStatus | null>(result.status);
@@ -113,8 +118,12 @@ export function InspectionItemRow({
   const [error, setError] = useState<string | null>(null);
   const [textDirty, setTextDirty] = useState(false);
   const [textFocused, setTextFocused] = useState(false);
-  const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textDirtyRef = useRef(false);
+  const inflightRef = useRef<Promise<void> | null>(null);
+  const flushForFinishRef = useRef<(() => Promise<"clean" | "saved" | "failed">) | null>(
+    null
+  );
   const measurementRef = useRef(measurement);
   const notesRef = useRef(notes);
   const statusBeforeSaveRef = useRef<InspectionResultStatus | null>(result.status);
@@ -155,31 +164,40 @@ export function InspectionItemRow({
     };
   }, []);
 
+  useEffect(() => {
+    const resultId = result.inspection_result_id;
+    onRegisterFlush?.(
+      resultId,
+      () => flushForFinishRef.current?.() ?? Promise.resolve("clean")
+    );
+    return () => onRegisterFlush?.(resultId, null);
+  }, [onRegisterFlush, result.inspection_result_id]);
+
   function persist(input: {
     status?: InspectionResultStatus | null;
     measurement?: string | null;
     notes?: string | null;
-  }) {
+  }): Promise<"saved" | "failed" | "superseded"> {
     const resultId = result.inspection_result_id;
     const seq = ++saveSeqRef.current;
     setSaveState("saving");
     onBusyChange?.(resultId, true);
     setError(null);
-    startTransition(async () => {
+    const task = (async (): Promise<"saved" | "failed" | "superseded"> => {
       let response: Awaited<ReturnType<typeof saveInspectionResultAction>>;
       try {
         response = await saveInspectionResultAction(workOrderId, resultId, input);
       } catch (error) {
-        if (seq !== saveSeqRef.current) return;
+        if (seq !== saveSeqRef.current) return "superseded";
         // A thrown action did not write. Keep the draft on screen.
         setSaveState("error");
         setError(describeInspectionSaveFailure(error));
         onBusyChange?.(resultId, false);
-        return;
+        return "failed";
       }
       if (seq !== saveSeqRef.current) {
         // A newer save superseded this one; leave UI to the latest request.
-        return;
+        return "superseded";
       }
       if (!response.ok) {
         if ("status" in input) {
@@ -190,7 +208,7 @@ export function InspectionItemRow({
         setSaveState("error");
         setError(response.error);
         onBusyChange?.(resultId, false);
-        return;
+        return "failed";
       }
       if ("status" in input) {
         statusBeforeSaveRef.current = input.status ?? null;
@@ -204,6 +222,7 @@ export function InspectionItemRow({
           savedMeasurement: input.measurement,
         })
       ) {
+        textDirtyRef.current = false;
         setTextDirty(false);
       }
       setSaveState("saved");
@@ -211,7 +230,17 @@ export function InspectionItemRow({
       window.setTimeout(() => {
         if (seq === saveSeqRef.current) setSaveState("idle");
       }, 1200);
+      return "saved";
+    })();
+    const settled = task.then(
+      () => undefined,
+      () => undefined
+    );
+    inflightRef.current = settled;
+    void settled.finally(() => {
+      if (inflightRef.current === settled) inflightRef.current = null;
     });
+    return task;
   }
 
   function saveStatus(next: InspectionResultStatus | null) {
@@ -231,7 +260,8 @@ export function InspectionItemRow({
   function scheduleTextSave() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      persist({
+      debounceRef.current = null;
+      void persist({
         measurement: measurementRef.current.trim() || null,
         notes: notesRef.current.trim() || null,
       });
@@ -240,11 +270,43 @@ export function InspectionItemRow({
 
   function flushTextSave() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    persist({
+    debounceRef.current = null;
+    void persist({
       measurement: measurementRef.current.trim() || null,
       notes: notesRef.current.trim() || null,
     });
   }
+
+  async function flushForFinish(): Promise<"clean" | "saved" | "failed"> {
+    let pendingDebounce = debounceRef.current != null;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    let saved = false;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (pendingDebounce || textDirtyRef.current) {
+        pendingDebounce = false;
+        const outcome = await persist({
+          measurement: measurementRef.current.trim() || null,
+          notes: notesRef.current.trim() || null,
+        });
+        if (outcome === "failed") return "failed";
+        if (outcome === "saved") saved = true;
+        continue;
+      }
+      if (inflightRef.current) {
+        await inflightRef.current;
+        continue;
+      }
+      return saved ? "saved" : "clean";
+    }
+    return textDirtyRef.current ? "failed" : saved ? "saved" : "clean";
+  }
+
+  useEffect(() => {
+    flushForFinishRef.current = flushForFinish;
+  });
 
   function onTextFocus() {
     setTextFocused(true);
@@ -436,6 +498,7 @@ export function InspectionItemRow({
                 aria-invalid={measurementMissing || undefined}
                 onChange={(e) => {
                   const next = e.target.value;
+                  textDirtyRef.current = true;
                   setTextDirty(true);
                   setMeasurement(next);
                   onLocalDraftChange?.(result.inspection_result_id, {
@@ -485,6 +548,7 @@ export function InspectionItemRow({
                 }
                 onChange={(e) => {
                   const next = e.target.value;
+                  textDirtyRef.current = true;
                   setTextDirty(true);
                   setNotes(next);
                   onLocalDraftChange?.(result.inspection_result_id, {

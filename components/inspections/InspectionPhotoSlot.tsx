@@ -58,7 +58,11 @@ export function InspectionPhotoSlot({
     return true;
   });
   const busy = preparing || queued.some((item) => item.status === "uploading");
-  const hasPhotos = existingUrls.length > 0 || queued.length > 0;
+  // A photo still on this device is not evidence yet. The sign-off gate only
+  // counts rows the server has stored.
+  const hasSavedPhotos =
+    existingUrls.length > 0 || queued.some((item) => item.status === "saved");
+  const showPreviews = hasSavedPhotos || queued.length > 0;
   const online = queue.isOnline();
 
   useEffect(() => {
@@ -161,11 +165,11 @@ export function InspectionPhotoSlot({
     <div
       id={id}
       className={`inspection-photo-slot ${
-        required && !hasPhotos ? "inspection-photo-slot--required" : ""
-      } ${hasPhotos ? "inspection-photo-slot--done" : ""}`}
+        required && !hasSavedPhotos ? "inspection-photo-slot--required" : ""
+      } ${hasSavedPhotos ? "inspection-photo-slot--done" : ""}`}
     >
       <div className="inspection-photo-slot-preview">
-        {hasPhotos ? (
+        {showPreviews ? (
           previews.map((preview, index) =>
             onExpand && preview.src && !preview.pending && !preview.failed ? (
               <button
@@ -234,7 +238,7 @@ export function InspectionPhotoSlot({
       <div className="inspection-photo-slot-meta">
         <p className="inspection-photo-slot-label">{label}</p>
         {detail ? <p className="inspection-photo-slot-count">{detail}</p> : null}
-        {hasPhotos ? (
+        {showPreviews ? (
           <p className="inspection-photo-slot-count">
             {previews.length} photo{previews.length === 1 ? "" : "s"}
           </p>
@@ -290,7 +294,7 @@ export function InspectionPhotoSlot({
                 ? "Preparing photo…"
                 : busy
                   ? "Uploading…"
-                  : hasPhotos
+                  : hasSavedPhotos
                     ? "Add another photo"
                     : "Add photo"}
             </button>
@@ -327,7 +331,7 @@ export function InspectionPhotoSlot({
             onClick={(event) => event.stopPropagation()}
           >
             <p id={titleId} className="photo-source-sheet-title">
-              {hasPhotos ? `Add another ${label}` : `Add ${label}`}
+              {hasSavedPhotos ? `Add another ${label}` : `Add ${label}`}
             </p>
             <p className="photo-source-sheet-lede">
               Take as many as you need. Each photo is saved on this inspection and kept
