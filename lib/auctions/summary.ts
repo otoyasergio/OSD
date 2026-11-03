@@ -16,7 +16,8 @@ import type {
   StoredAuctionGuide,
 } from "@/lib/auctions/types";
 
-export const AUCTION_GUIDE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** A missed daily cron still refreshes on the next page view. */
+export const AUCTION_GUIDE_TTL_MS = 24 * 60 * 60 * 1000;
 export const AUCTION_LOT_READ_LIMIT = 400;
 export const AUCTION_HISTORY_VISIBLE = 16;
 const MAX_COMPS = 12;
@@ -64,7 +65,10 @@ export function planAuctionRefresh(args: {
   localSaleCount: number;
   snapshotSaleCount: number | null;
   ttlMs: number;
+  /** Daily refresh rebuilds from stored lots and CAD rates, without ALT/FNDATA. */
+  localOnly?: boolean;
 }): AuctionRefreshPlan {
+  if (args.localOnly) return "rebuild-local";
   if (args.force) return args.hasKey ? "await-provider" : "rebuild-local";
   if (!args.snapshotMatches) return args.hasKey ? "await-provider" : "rebuild-local";
   if (args.hasKey && !args.snapshotConfigured) return "await-provider";

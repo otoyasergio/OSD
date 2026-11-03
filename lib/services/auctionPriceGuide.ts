@@ -214,7 +214,7 @@ export async function loadAuctionPriceGuide(args: {
   motorcycleId: string;
   bike: BikeIdentity;
   audience: Audience;
-  refresh?: "auto" | "force";
+  refresh?: "auto" | "force" | "local";
   env?: Record<string, string | undefined>;
   now?: number;
 }): Promise<LoadedAuctionGuide> {
@@ -236,6 +236,7 @@ export async function loadAuctionPriceGuide(args: {
     const snapshotAgeMs = snapshot ? now - Date.parse(snapshot.fetchedAt) : null;
     const plan = planAuctionRefresh({
       force: refresh === "force",
+      localOnly: refresh === "local",
       hasKey: Boolean(settings.apiKey),
       snapshotMatches,
       snapshotConfigured: snapshotMatches ? snapshot!.guide.altfnConfigured : false,
