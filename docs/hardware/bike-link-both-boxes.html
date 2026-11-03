@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<title>Bike link — parts, where to buy, how to connect</title>
+<title>Bike link — parts, where to buy, how to assemble</title>
 <style>
   @page {
     size: letter;
@@ -75,7 +75,7 @@
 <p class="shop">OTOMOTO TORONTO MOTO INC.</p>
 <p class="addr">99 River Street, Toronto, ON M5A 3P4, Canada · 647-424-1088</p>
 <hr class="rule"/>
-<h1>Both boxes: what to buy, where, and how it connects</h1>
+<h1>Both boxes: what to buy, where, and how to assemble</h1>
 <p>One bike box under the seat of a Triumph that still has the regular 16-pin socket. One window box at 99 River Street, on the shop Wi-Fi. Build the bike box on the bench first. The window box can be soldered the same day. The second radio stays in the bag until the fuse current is under 50 µA.</p>
 <p class="fine">Buy links were checked 2 November 2026. Shelf counts move. Prices below are the USD amounts those pages showed that day, before Canadian tax and shipping. This sheet is not a quote and not a radio certification.</p>
 
@@ -380,7 +380,34 @@
 <p>TX and RX are crossed. The sketch sets <code>AT+CRFOP=0</code> and <code>AT+BAND=915000000</code> in setup, before any send. Confirm with <code>AT+CRFOP?</code>. Factory power is 22 dBm. Do not leave it there. On the bike, after each send, the sketch sends <code>AT+MODE=1</code> so that module sleeps. The window box stays listening.</p>
 <p>USB serial prints every POST body. Until <code>BIKE_LINK_INGEST_SECRET</code> is set on the server, type that body into <strong>Record a reading</strong> on the motorcycle page. HTTP 401 prints once and is not retried. The route is <code>POST /api/bike-link/readings</code>.</p>
 
-<h2>6. Order of work, and the pass marks</h2>
+<h2>6. Tools</h2>
+<p>Soldering iron, flux, solder, a magnifier, side cutters, wire strippers, heat-shrink, a multimeter that can read microamps, a current-limited 12 V bench supply, zip ties, dielectric grease, and a drill for the cable gland. Have a motorcycle charger in the bay before the first start. The OBD pigtail arrives with its wires fitted. You do not crimp the 16-pin plug.</p>
+
+<h2>7. Assemble the bike box</h2>
+<p>Build this on the bench. No motorcycle yet. The second radio stays in the bag until both fuse readings are under 50 µA. Leave <code>radio.h</code> out of the sketch for this build.</p>
+<ol>
+  <li>Perfboard. Solder the TPS7A1601DGNT first. The metal pad on the bottom goes to ground. Pin 5, EN, ties to pin 8, IN. Pin 3 (PG), pin 6 (NC), and pin 7 (DELAY) stay open. 210 kΩ 1% from OUT (pin 1) to FB (pin 2). 100 kΩ 1% from FB to ground. 10 µF from IN to ground and 10 µF from OUT to ground, close to the chip. Flux, then look for bridges. Do not connect the XIAO.</li>
+  <li>On the red bench lead: 1 A fuse, then the 1N5822 with the band toward the regulator. The banded end of the P6KE18A lands on that same cathode. The other end of the TVS goes to ground. A backwards TVS blows the fuse.</li>
+  <li>Bench supply through the fuse. Meter the regulator output. About 3.7 V. 12 V here is a solder bridge. Stop.</li>
+  <li>Only then solder the regulator output to the XIAO BAT+ pad on the back, and regulator ground to the XIAO GND pad. Do not feed 12 V into the 5 V pin or the 3V3 pin.</li>
+  <li>Copy <code>firmware/bike</code> to a folder named <code>bike_link</code> and open <code>bike_link.ino</code>. Board package URL and board name are in section 3. Set <code>BOX_ID</code> to the sticker you will put on the shell. Flash over USB. Unplug USB. The sketch reads fault codes. It does not clear them. Kilometers stay blank until a Triumph in the bay answers a real request.</li>
+  <li>Solder the divider and the key sense, using the tables in section 3. Flat face of each TO-92 toward you, pins down: emitter, base, collector. Zener on D0, band toward D0. D1 stays low while parked.</li>
+  <li>Solder the AO3401A, then the MCP2515-I/P and the SN65HVD230 on its DIP adapter. Confirm the MOSFET pin-1 mark. 16 MHz crystal on MCP2515 pins 7 and 8, a load capacitor from each leg to ground. 100 nF on each CAN chip. No 120 Ω resistor anywhere between CAN H and CAN L. A DIP socket is fine on the bench. On the bike, solder the controller or strap the socket so it cannot walk out.</li>
+  <li>Buzz every pigtail wire to its pin before you trust a color. Cut and insulate every wire except pin 6, pin 14, the ground pin that reaches battery negative, and pin 16 if the meter later shows that it follows the key. Leave CAN H and CAN L open until the bike tests in section 9.</li>
+  <li>Gasketed box, cable gland, drip loop, and the board strapped down. Strain-relieve the wires inside. Dielectric grease on the plug when it goes on the bike. Under the seat, off the chain and out of the wheel spray. Do not pot the box. You still have to open it.</li>
+</ol>
+
+<h2>8. Assemble the window box</h2>
+<p>This can be soldered the same day. It does not go near the bike’s fuse. One RYLR998 with the built-in antenna, not the M4. Wall power. No sleep budget.</p>
+<ol>
+  <li>ESP32-S3-DevKitC-1 and the radio in a plastic box. Antenna side of the box toward the bikes, in a window at 99 River Street that faces where they park. Not a metal room and not a closed cabinet. The module has no external antenna jack.</li>
+  <li>Radio pin 1, VDD, to the devkit 3V3 pin. Maximum 3.6 V. Pin 5, GND, to devkit ground. Pin 3, RXD, to GPIO 17. Pin 4, TXD, to GPIO 18. Pin 2, NRST, stays open. TX and RX are crossed.</li>
+  <li>Board URL and board name are in section 5. Open <code>firmware/mailbox/mailbox.ino</code>. Copy <code>secrets.example.h</code> to <code>secrets.h</code> in that folder. Fill in the shop Wi-Fi, <code>https://service.torontomoto.com</code> with no path, and the ingest secret. Leave <code>SOURCE</code> as <code>shop_bay</code> and <code>PLACE_NAME</code> as <code>99 River Street</code>. <code>secrets.h</code> stays off git.</li>
+  <li>Flash, then power it from a 5 V USB adapter, 1 A. The sketch sends <code>AT+CRFOP=0</code> and <code>AT+BAND=915000000</code> to the radio before it joins Wi-Fi. Confirm with <code>AT+CRFOP?</code>. Factory power is 22 dBm. Do not leave it there. The window box stays listening. USB serial prints every POST body. Until the ingest secret is set on the server, type that body into <strong>Record a reading</strong>.</li>
+  <li>The second RYLR998 goes on the bike only after both fuse readings in section 9 are under 50 µA: XIAO 3V3, not the 3.7 V pad, D6 to radio RX, D7 to radio TX, then <code>radio.h</code> with <code>#define BIKE_LINK_RADIO 1</code>, then reflash. Write the network id and the addresses on the window box.</li>
+</ol>
+
+<h2>9. Order of work, and the pass marks</h2>
 <ol>
   <li>Regulator on the bench, through the fuse. No bike. No XIAO. About 3.7 V. Then the battery pads, flash, unplug USB.</li>
   <li>CAN section. Switch off when D3 is idle. Terminator absent. Measure that it is absent.</li>
@@ -391,7 +418,7 @@
   <li>Meter pin 16, key off and key on. Meter pin 4 and pin 5 to battery negative.</li>
   <li>Battery off again. Connect pin 6, pin 14, and the ground pin that actually reaches battery negative. Start a second time. Resistance between pins 6 and 14 unchanged with the sleeping box plugged in.</li>
   <li>Stick <code>TM-BL-</code> and four digits on the box. On that motorcycle’s page, save the same sticker. Kilometers in the JSON stay blank until a Triumph in the bay answers a real request. Voltage and fault codes are the first reading.</li>
-  <li>Window box on the sill. Second radio onto the bike only after both fuse measurements passed: 3.3 V, D6 to radio RX, D7 to radio TX, <code>radio.h</code> containing <code>#define BIKE_LINK_RADIO 1</code>, then reflash. Write the network id and the addresses on the mailbox.</li>
+  <li>Both fuse readings passed. Only then fit the second radio, as in section 8.</li>
 </ol>
 
 <p class="fine">The long version of why each part is here, the sleep budget, and the radio limit is <code>docs/hardware/bike-link-build.md</code>. The pin tables this sheet was taken from are <code>docs/hardware/bike-link-wiring.md</code>. Sketches are <code>firmware/bike/bike_link.ino</code> and <code>firmware/mailbox/mailbox.ino</code>.</p>
