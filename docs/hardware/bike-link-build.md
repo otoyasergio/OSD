@@ -4,7 +4,7 @@ A shop-built pair of boxes for Toronto Moto. The bike box remembers kilometers, 
 
 This is a build guide. It is not firmware, and it does not add an ingest API to the shop app. The app already stores a reading. The JSON in [The mailbox](#the-mailbox) is the body a mailbox would POST later, shaped so it can be checked with `parseBikeReading` in `lib/bikeLink/reading.ts`.
 
-Build the Bluetooth box first. Leave the radio off until that box sleeps, reads a bike, and a person can copy the reading into the motorcycle page. The wiring picture and pin tables are in [bike-link-wiring.md](bike-link-wiring.md).
+Build the Bluetooth box first. Leave the radio off until that box sleeps, reads a bike, and a person can copy the reading into the motorcycle page. The wiring picture and pin tables are in [bike-link-wiring.md](bike-link-wiring.md). The places, the order to stand them up, and the cost of a shop window plus later homes are in [bike-link-environment.md](bike-link-environment.md).
 
 The shop is OTOMOTO TORONTO MOTO INC., 99 River Street, Toronto. The first boxes go on Triumphs that still have the regular 16-pin OBD-II socket under the seat, the same trapezoid plug a car uses. Customer texts stay on the existing Wix Inbox thread. Nothing in this build sends an SMS.
 
