@@ -1,3 +1,4 @@
+import { assertContractNamesLegalEntity } from "@/lib/contracts/legalEntity";
 import { createAdminClient } from "@/lib/database/supabase-admin";
 import { createClient } from "@/lib/database/supabase-server";
 import { requireUser } from "@/lib/auth/session";
@@ -596,12 +597,13 @@ export async function portalSignContract(
   const admin = createAdminClient();
   const { data: template } = await admin
     .from("drop_off_agreement_template")
-    .select("template_id, version, initial_fields")
+    .select("template_id, version, initial_fields, body_html")
     .eq("active", true)
     .limit(1)
     .maybeSingle();
 
   if (!template) throw new Error("CONTRACT_TEMPLATE_NOT_FOUND");
+  assertContractNamesLegalEntity(template.body_html);
 
   for (const field of (template.initial_fields as string[]) ?? []) {
     if (!input.initials[field]?.trim()) throw new Error("CONTRACT_INITIALS_REQUIRED");

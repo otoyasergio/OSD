@@ -4,7 +4,7 @@ Headless Adobe App Builder action for OTOMOTO TORONTO MOTO INC.
 
 The customer profile files a drop-off agreement as the signature image. It does not file a PDF of the contract body. This action builds the merge payload for that PDF. It stamps the legal entity, address, and phone from code, because the `location` table has only a name, a code, and a status.
 
-The caller cannot rename the contracting party. A body that says only "Toronto Moto" is rejected. The published contract in `scripts/data/otomoto-legal-contract.html` names Otomoto Toronto Moto Inc. and is accepted. The seeded template in `supabase/migrations/20260712042241_square_expansion.sql` does not, and is rejected until the legal template is published.
+The caller cannot rename the contracting party. A body that says only "Toronto Moto" is rejected. The published contract in `scripts/data/otomoto-legal-contract.html` names Otomoto Toronto Moto Inc. and is accepted. Migration `20261103030500_drop_off_agreement_legal_entity.sql` rewrites the original seed while it still has that trade-name text. Publishing or signing in the shop uses the same rule and refuses a template that omits the legal entity.
 
 `pdf` stays `null` and `pdfStatus` is `merge_data_ready`. Adobe PDF Services Document Generation is the next call, once that API is on the workspace. This action does not render a PDF inside the Next.js app.
 
