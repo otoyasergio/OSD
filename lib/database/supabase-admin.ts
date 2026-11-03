@@ -46,6 +46,14 @@ export function createPassportAdminClient() {
 }
 
 /**
+ * Server-only client for the auction price guide cache.
+ * Never import this into client components.
+ */
+export function createAuctionAdminClient() {
+  return createServiceRoleClient("AUCTION_GUIDE_MISCONFIGURED");
+}
+
+/**
  * Server-only client for a window box posting a bike reading.
  * Never import this into client components.
  */

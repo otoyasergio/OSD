@@ -51,8 +51,8 @@ export function BikeLinkPanel({
     <section aria-label="Bike link">
       <h2 className="text-lg font-semibold text-foreground">Bike link</h2>
       <p className="mt-1 text-sm text-[var(--status-neutral)]">
-        The plug stores kilometers, battery voltage, and fault codes. The shop,
-        the client&apos;s home, or a partner stop delivers that reading here.
+        The plug stores kilometers, battery voltage, and fault codes. The shop, the
+        client&apos;s home, or a partner stop delivers that reading here.
       </p>
 
       <div className="bike-snapshot-grid mt-3">
@@ -60,8 +60,7 @@ export function BikeLinkPanel({
           label="Service"
           value={report ? SERVICE_LABEL[report.service] : "No reading"}
           detail={
-            report?.serviceDetail ??
-            "A reading has not arrived for this motorcycle yet."
+            report?.serviceDetail ?? "A reading has not arrived for this motorcycle yet."
           }
         />
         <StatusCard
@@ -106,9 +105,7 @@ export function BikeLinkPanel({
         )}
       </div>
 
-      <p className="mt-3 text-sm text-foreground">
-        Box {view.boxId ?? "not paired"}
-      </p>
+      <p className="mt-3 text-sm text-foreground">Box {view.boxId ?? "not paired"}</p>
 
       {canEdit ? (
         <div className="mt-6 grid gap-8 lg:grid-cols-2">
@@ -222,7 +219,8 @@ function BoxForm({ action, boxId }: { action: Action; boxId: string | null }) {
 
 function ScheduleForm({ action, view }: { action: Action; view: BikeLinkView }) {
   const [state, formAction] = useActionState(action, { error: null });
-  const distanceLabel = view.unit === "mi" ? "Miles between services" : "Kilometres between services";
+  const distanceLabel =
+    view.unit === "mi" ? "Miles between services" : "Kilometres between services";
 
   return (
     <form action={formAction} className="flex flex-col gap-4">

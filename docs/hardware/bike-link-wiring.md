@@ -57,21 +57,21 @@ The 5 V pin is USB power. The 3V3 pin is an output. Do not feed 12 V into either
 
 Leave the on-board battery-read enable (P0.14) alone. Seeed warns that driving it the wrong way can overvoltage their own battery-sense pin. This build uses D0 for voltage.
 
-| XIAO pin | Connects to | Idle state |
-| --- | --- | --- |
-| BAT+ | TPS7A1601 output, about 3.7 V | Always powered |
-| GND | Box ground | |
-| 3V3 | Source of the AO3401A | Output, on whenever the board is powered |
-| D0 | Divider output, the ADC | Input |
-| D1 | 2N3904 that turns the divider on | Low while parked. High only for the sample. |
-| D2 | Ignition transistor collector | Internal pull-up. Low means key on. |
-| D3 | AO3401A gate | High or pulled up while parked, so CAN power stays off. Low turns CAN on. |
-| D4 | MCP2515 pin 16, CS | High while idle. The chip select is active low. |
-| D6 | Radio TX later | Leave open on the first build |
-| D7 | Radio RX later | Leave open on the first build |
-| D8 | MCP2515 pin 13, SCK | SPI clock |
-| D9 | MCP2515 pin 15, SO | SPI data from the CAN controller |
-| D10 | MCP2515 pin 14, SI | SPI data to the CAN controller |
+| XIAO pin | Connects to                      | Idle state                                                                |
+| -------- | -------------------------------- | ------------------------------------------------------------------------- |
+| BAT+     | TPS7A1601 output, about 3.7 V    | Always powered                                                            |
+| GND      | Box ground                       |                                                                           |
+| 3V3      | Source of the AO3401A            | Output, on whenever the board is powered                                  |
+| D0       | Divider output, the ADC          | Input                                                                     |
+| D1       | 2N3904 that turns the divider on | Low while parked. High only for the sample.                               |
+| D2       | Ignition transistor collector    | Internal pull-up. Low means key on.                                       |
+| D3       | AO3401A gate                     | High or pulled up while parked, so CAN power stays off. Low turns CAN on. |
+| D4       | MCP2515 pin 16, CS               | High while idle. The chip select is active low.                           |
+| D6       | Radio TX later                   | Leave open on the first build                                             |
+| D7       | Radio RX later                   | Leave open on the first build                                             |
+| D8       | MCP2515 pin 13, SCK              | SPI clock                                                                 |
+| D9       | MCP2515 pin 15, SO               | SPI data from the CAN controller                                          |
+| D10      | MCP2515 pin 14, SI               | SPI data to the CAN controller                                            |
 
 D5, the NFC pins, and the user LED pins are unused.
 
@@ -79,13 +79,13 @@ D5, the NFC pins, and the user LED pins are unused.
 
 HVSSOP-8. The metal pad on the bottom goes to ground. EN (pin 5) ties to IN (pin 8). PG (pin 3) and DELAY (pin 7) stay open. NC (pin 6) stays open.
 
-| Pin | Name | Connection |
-| --- | --- | --- |
-| 1 | OUT | XIAO BAT+, and the top of R1 |
-| 2 | FB | R1 and R2 join here |
-| 4 | GND | Box ground. Solder the thermal pad here too. |
-| 5 | EN | Tied to pin 8 |
-| 8 | IN | Cathode of the 1N5822, and the P6KE18A |
+| Pin | Name | Connection                                   |
+| --- | ---- | -------------------------------------------- |
+| 1   | OUT  | XIAO BAT+, and the top of R1                 |
+| 2   | FB   | R1 and R2 join here                          |
+| 4   | GND  | Box ground. Solder the thermal pad here too. |
+| 5   | EN   | Tied to pin 8                                |
+| 8   | IN   | Cathode of the 1N5822, and the P6KE18A       |
 
 R1, 210 kΩ 1%, from OUT to FB. R2, 100 kΩ 1%, from FB to ground. The datasheet formula is VOUT = 1.193 × (1 + R1 / R2), which is about 3.70 V with these two resistors. The divider draws about 12 µA. Wash the flux off so the high-value resistors do not drift.
 
@@ -141,26 +141,26 @@ Power for both chips comes from the XIAO 3V3 pin through the AO3401A. Source of 
 
 Pins from the Microchip datasheet (PDIP).
 
-| Pin | Name | Connection |
-| --- | --- | --- |
-| 1 | TXCAN | SN65HVD230 pin 1 (D) |
-| 2 | RXCAN | SN65HVD230 pin 4 (R) |
-| 3 | CLKOUT | Open |
-| 4 | TX0RTS | Open. Internal pull-up. |
-| 5 | TX1RTS | Open. Internal pull-up. |
-| 6 | TX2RTS | Open. Internal pull-up. |
-| 7 | OSC2 | Crystal |
-| 8 | OSC1 | Crystal |
-| 9 | VSS | Ground |
-| 10 | RX1BF | Open |
-| 11 | RX0BF | Open |
-| 12 | INT | Open. The firmware polls while the key is on. |
-| 13 | SCK | XIAO D8 |
-| 14 | SI | XIAO D10 |
-| 15 | SO | XIAO D9 |
-| 16 | CS | XIAO D4. Active low. |
-| 17 | RESET | 10 kΩ to the switched 3.3 V rail. Active low. |
-| 18 | VDD | Switched 3.3 V |
+| Pin | Name   | Connection                                    |
+| --- | ------ | --------------------------------------------- |
+| 1   | TXCAN  | SN65HVD230 pin 1 (D)                          |
+| 2   | RXCAN  | SN65HVD230 pin 4 (R)                          |
+| 3   | CLKOUT | Open                                          |
+| 4   | TX0RTS | Open. Internal pull-up.                       |
+| 5   | TX1RTS | Open. Internal pull-up.                       |
+| 6   | TX2RTS | Open. Internal pull-up.                       |
+| 7   | OSC2   | Crystal                                       |
+| 8   | OSC1   | Crystal                                       |
+| 9   | VSS    | Ground                                        |
+| 10  | RX1BF  | Open                                          |
+| 11  | RX0BF  | Open                                          |
+| 12  | INT    | Open. The firmware polls while the key is on. |
+| 13  | SCK    | XIAO D8                                       |
+| 14  | SI     | XIAO D10                                      |
+| 15  | SO     | XIAO D9                                       |
+| 16  | CS     | XIAO D4. Active low.                          |
+| 17  | RESET  | 10 kΩ to the switched 3.3 V rail. Active low. |
+| 18  | VDD    | Switched 3.3 V                                |
 
 16 MHz crystal between pins 7 and 8. Use the two load capacitors the crystal datasheet asks for. A crystal marked for 18 pF load usually wants about 22 pF on each leg, to ground. A wrong crystal frequency makes the bike fail to answer. It does not, by itself, drive the CAN wires.
 
@@ -168,16 +168,16 @@ Pins from the Microchip datasheet (PDIP).
 
 SOIC-8. Pins from the TI datasheet.
 
-| Pin | Name | Connection |
-| --- | --- | --- |
-| 1 | D | MCP2515 TXCAN |
-| 2 | GND | Box ground |
-| 3 | VCC | Switched 3.3 V |
-| 4 | R | MCP2515 RXCAN |
-| 5 | Vref | Open |
-| 6 | CANL | OBD pin 14, through the twisted pair |
-| 7 | CANH | OBD pin 6, through the twisted pair |
-| 8 | RS | Ground. High-speed while the chip is powered. Parked state is "power removed," because standby on this part is still about 370 µA. |
+| Pin | Name | Connection                                                                                                                         |
+| --- | ---- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | D    | MCP2515 TXCAN                                                                                                                      |
+| 2   | GND  | Box ground                                                                                                                         |
+| 3   | VCC  | Switched 3.3 V                                                                                                                     |
+| 4   | R    | MCP2515 RXCAN                                                                                                                      |
+| 5   | Vref | Open                                                                                                                               |
+| 6   | CANL | OBD pin 14, through the twisted pair                                                                                               |
+| 7   | CANH | OBD pin 6, through the twisted pair                                                                                                |
+| 8   | RS   | Ground. High-speed while the chip is powered. Parked state is "power removed," because standby on this part is still about 370 µA. |
 
 No 120 Ω resistor between CANH and CANL. The bike is already terminated. If a carrier board has a terminator jumper, leave it open and measure that it is open.
 
@@ -187,13 +187,13 @@ Male SAE J1962 plug, the regular car-style OBD-II pigtail. This plugs into the T
 
 Looking into the bike's socket, wide edge up: top row pins 1–8 left to right, bottom row pins 9–16 left to right.
 
-| Pin | Wire | Other end |
-| --- | --- | --- |
-| 4 or 5 | ground, whichever pin has continuity to battery negative | Box ground |
-| 6 | CAN H, one side of the twisted pair | SN65HVD230 pin 7 |
-| 14 | CAN L, the other side of the pair | SN65HVD230 pin 6 |
-| 16 | sense, only if it follows the key | 100 kΩ into the ignition transistor |
-| every other pin | none | Cut the pigtail wire off and insulate it |
+| Pin             | Wire                                                     | Other end                                |
+| --------------- | -------------------------------------------------------- | ---------------------------------------- |
+| 4 or 5          | ground, whichever pin has continuity to battery negative | Box ground                               |
+| 6               | CAN H, one side of the twisted pair                      | SN65HVD230 pin 7                         |
+| 14              | CAN L, the other side of the pair                        | SN65HVD230 pin 6                         |
+| 16              | sense, only if it follows the key                        | 100 kΩ into the ignition transistor      |
+| every other pin | none                                                     | Cut the pigtail wire off and insulate it |
 
 Before you trust a ready-made pigtail, battery negative disconnected:
 

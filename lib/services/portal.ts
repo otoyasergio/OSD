@@ -70,6 +70,7 @@ export type PortalWorkOrderView = {
   work_order_number: string;
   status: string;
   customer: { first_name: string; last_name: string };
+  motorcycle_id: string;
   motorcycle: { year: number; make: string; model: string };
   jobs: {
     job_id: string;
@@ -178,6 +179,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
       work_order_id,
       work_order_number,
       status,
+      motorcycle_id,
       square_invoice_id,
       square_payment_status,
       customer:customer_id ( first_name, last_name ),
@@ -244,6 +246,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
     work_order_id: wo.work_order_id,
     work_order_number: wo.work_order_number,
     status: wo.status,
+    motorcycle_id: wo.motorcycle_id,
     customer: wo.customer as unknown as PortalWorkOrderView["customer"],
     motorcycle: wo.motorcycle as unknown as PortalWorkOrderView["motorcycle"],
     jobs,

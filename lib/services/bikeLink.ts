@@ -115,7 +115,10 @@ export async function listBikeLinkAttention(): Promise<BikeLinkAttentionItem[]> 
       customerName: motorcycle.customerName,
       level,
       clientNote: view.report.clientNote,
-      origin: readingOriginLabel(readingRow.source as BikeLinkSource, readingRow.place_name),
+      origin: readingOriginLabel(
+        readingRow.source as BikeLinkSource,
+        readingRow.place_name
+      ),
       recordedAt: readingRow.recorded_at,
     });
   }
@@ -141,7 +144,10 @@ export async function getBikeLink(motorcycleId: string): Promise<BikeLinkView> {
   return buildView(unit, schedule, latest, lastVisit, boxId);
 }
 
-export async function assignBikeLinkBox(motorcycleId: string, boxId: string): Promise<void> {
+export async function assignBikeLinkBox(
+  motorcycleId: string,
+  boxId: string
+): Promise<void> {
   const user = await requireUser();
   if (!canUpdateServiceInformation(user.role)) throw new Error("FORBIDDEN");
   const parsed = parseBoxId(boxId);
@@ -351,9 +357,7 @@ async function loadMotorcycles(
       make: row.make,
       model: row.model,
       odometer_unit: row.odometer_unit,
-      customerName: customer
-        ? `${customer.first_name} ${customer.last_name}`
-        : "Unknown",
+      customerName: customer ? `${customer.first_name} ${customer.last_name}` : "Unknown",
     });
   }
   return map;
@@ -439,9 +443,7 @@ async function loadSchedule(
 ): Promise<ScheduleRow | null> {
   const { data, error } = await supabase
     .from("bike_link_schedule")
-    .select(
-      "interval_distance, interval_days, last_service_odometer, last_service_on"
-    )
+    .select("interval_distance, interval_days, last_service_odometer, last_service_on")
     .eq("motorcycle_id", motorcycleId)
     .maybeSingle();
   if (error) throw error;

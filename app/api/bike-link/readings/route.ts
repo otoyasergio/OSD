@@ -18,7 +18,10 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return Response.json({ ok: false, error: "Reading was not a JSON object." }, { status: 422 });
+    return Response.json(
+      { ok: false, error: "Reading was not a JSON object." },
+      { status: 422 }
+    );
   }
 
   const result = await ingestBikeLinkPacket(body, new Date());

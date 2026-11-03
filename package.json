@@ -19,6 +19,7 @@
     "check:twilio": "node --env-file=.env.local scripts/check-twilio.mjs",
     "check:wix-invoices": "node --env-file-if-exists=.env.local scripts/check-wix-invoice-gates.mjs",
     "import:wix-invoices": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/import-wix-invoices.ts",
+    "import:auction-lots": "tsx --conditions=react-server --env-file-if-exists=.env.local scripts/import-auction-lots.ts",
     "square:cancel-open-invoices": "node --env-file-if-exists=.env.local scripts/cancel-open-square-invoices.mjs",
     "smoke:production": "node scripts/smoke-production.mjs",
     "deploy:production": "node scripts/guard-prod-deploy.mjs && node --env-file-if-exists=.env.local scripts/check-photo-schema.mjs && npx vercel --prod --yes",

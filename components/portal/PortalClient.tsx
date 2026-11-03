@@ -14,15 +14,24 @@ import {
   portalSignContractAction,
 } from "@/app/c/[token]/actions";
 import { FormError } from "@/components/forms/Field";
+import { AuctionPriceGuide } from "@/components/auctions/AuctionPriceGuide";
+import type { AuctionPriceGuideView } from "@/lib/auctions/types";
 
 type Props = {
   token: string;
   view: PortalWorkOrderView;
   contractTemplate: AgreementTemplate | null;
   estimate?: PortalEstimateView | null;
+  auctionGuide?: AuctionPriceGuideView | null;
 };
 
-export function PortalClient({ token, view, contractTemplate, estimate }: Props) {
+export function PortalClient({
+  token,
+  view,
+  contractTemplate,
+  estimate,
+  auctionGuide,
+}: Props) {
   const [declineJobId, setDeclineJobId] = useState<string | null>(null);
   const [declineReason, setDeclineReason] = useState("");
   const [ackName, setAckName] = useState(
@@ -250,6 +259,8 @@ export function PortalClient({ token, view, contractTemplate, estimate }: Props)
       ) : view.has_inspection_ack ? (
         <p className="text-center text-sm text-emerald-700">Inspection acknowledged.</p>
       ) : null}
+
+      {auctionGuide ? <AuctionPriceGuide guide={auctionGuide} variant="portal" /> : null}
 
       {error ? <FormError message={error} /> : null}
     </div>

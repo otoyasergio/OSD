@@ -38,7 +38,10 @@ export function packetToReadingInput(
   };
 }
 
-export async function ingestBikeLinkPacket(body: unknown, now: Date): Promise<IngestResult> {
+export async function ingestBikeLinkPacket(
+  body: unknown,
+  now: Date
+): Promise<IngestResult> {
   const mapped = packetToReadingInput(body);
   if (!mapped.ok) return { ok: false, status: 422, error: mapped.error };
 

@@ -6,14 +6,14 @@ The shop is OTOMOTO TORONTO MOTO INC., 99 River Street, Toronto. The first bikes
 
 ## The places
 
-| Place | What sits there | Power and network | What it is for |
-| --- | --- | --- | --- |
-| Triumph, under the seat | One bike box, sticker `TM-BL-` plus four digits | Fused wire at the battery. Bluetooth first. A 915 MHz radio only after the sleep test. | Wake on the key, read kilometres, fault codes, and resting voltage. Sleep under 50 µA. |
-| Phone or shop tablet | Nothing to install | The phone's own Bluetooth | The first handoff. Staff read the text and type it into the motorcycle page. |
-| Shop window, 99 River Street | One Wi-Fi box | Wall power and the building Wi-Fi. The antenna is inside the radio, so the box sits in a window that faces the bikes. | Hears every radio-equipped Triumph in the lot. Stamps the reading as Shop, `99 River Street`. |
-| Client's home | One Wi-Fi box, same parts | Wall power and that home's Wi-Fi. Same window rule. | Hears that client's bike in the driveway or the yard. Stamps the reading as Home. |
-| Cafe, storage, or another partner | One Wi-Fi box, same parts | Wall power and that building's Wi-Fi. | Hears a bike parked there. Stamps the reading as Partner and the place name. |
-| Shop app | Already on the motorcycle page | The live site | Stores the reading, compares the service interval, and writes the sentence to tell the client. The sentence stays on the page. |
+| Place                             | What sits there                                 | Power and network                                                                                                     | What it is for                                                                                                                 |
+| --------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Triumph, under the seat           | One bike box, sticker `TM-BL-` plus four digits | Fused wire at the battery. Bluetooth first. A 915 MHz radio only after the sleep test.                                | Wake on the key, read kilometres, fault codes, and resting voltage. Sleep under 50 µA.                                         |
+| Phone or shop tablet              | Nothing to install                              | The phone's own Bluetooth                                                                                             | The first handoff. Staff read the text and type it into the motorcycle page.                                                   |
+| Shop window, 99 River Street      | One Wi-Fi box                                   | Wall power and the building Wi-Fi. The antenna is inside the radio, so the box sits in a window that faces the bikes. | Hears every radio-equipped Triumph in the lot. Stamps the reading as Shop, `99 River Street`.                                  |
+| Client's home                     | One Wi-Fi box, same parts                       | Wall power and that home's Wi-Fi. Same window rule.                                                                   | Hears that client's bike in the driveway or the yard. Stamps the reading as Home.                                              |
+| Cafe, storage, or another partner | One Wi-Fi box, same parts                       | Wall power and that building's Wi-Fi.                                                                                 | Hears a bike parked there. Stamps the reading as Partner and the place name.                                                   |
+| Shop app                          | Already on the motorcycle page                  | The live site                                                                                                         | Stores the reading, compares the service interval, and writes the sentence to tell the client. The sentence stays on the page. |
 
 One Wi-Fi box serves every bike that can reach that window. A bike does not get its own Wi-Fi box. The bike does not join Wi-Fi.
 
