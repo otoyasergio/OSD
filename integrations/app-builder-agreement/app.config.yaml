@@ -1,0 +1,20 @@
+application:
+  actions: actions
+  runtimeManifest:
+    packages:
+      otomoto-agreement:
+        license: Apache-2.0
+        actions:
+          compose-drop-off-agreement:
+            function: actions/compose-drop-off-agreement/index.js
+            web: "yes"
+            runtime: nodejs:22
+            limits:
+              memory: 256
+            inputs:
+              LOG_LEVEL: info
+              ACTION_SECRET: $AGREEMENT_ACTION_SECRET
+            annotations:
+              # The shop server calls this action. IMS user auth would reject that caller.
+              require-adobe-auth: false
+              final: true

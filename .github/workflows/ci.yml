@@ -35,6 +35,12 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      - name: Agreement document action
+        working-directory: integrations/app-builder-agreement
+        run: |
+          npm ci
+          npm test
+
       - name: Build
         run: npm run build
         env:
