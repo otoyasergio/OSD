@@ -1,6 +1,7 @@
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 
 const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+const GMAIL_READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 const GMAIL_EMAIL_SCOPE = "https://www.googleapis.com/auth/userinfo.email";
 
 export function gmailAuthorizationUrl(input: {
@@ -13,6 +14,24 @@ export function gmailAuthorizationUrl(input: {
     redirect_uri: input.redirectUri,
     response_type: "code",
     scope: `${GMAIL_SEND_SCOPE} ${GMAIL_EMAIL_SCOPE}`,
+    access_type: "offline",
+    prompt: "consent select_account",
+    state: input.state,
+  });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+/** Read-only consent for the scans mailbox. This token cannot send mail. */
+export function scanGmailAuthorizationUrl(input: {
+  clientId: string;
+  redirectUri: string;
+  state: string;
+}): string {
+  const params = new URLSearchParams({
+    client_id: input.clientId,
+    redirect_uri: input.redirectUri,
+    response_type: "code",
+    scope: `${GMAIL_READONLY_SCOPE} ${GMAIL_EMAIL_SCOPE}`,
     access_type: "offline",
     prompt: "consent select_account",
     state: input.state,
@@ -109,7 +128,7 @@ async function readJson(response: Response): Promise<TokenPayload | null> {
   }
 }
 
-async function accessToken(input: {
+export async function refreshGmailAccessToken(input: {
   refreshToken: string;
   clientId: string;
   clientSecret: string;
@@ -201,7 +220,7 @@ export async function sendGmailApiMessage(input: {
   fetchImpl?: typeof fetch;
 }): Promise<{ id: string; refreshToken: string | null }> {
   const fetchImpl = input.fetchImpl ?? fetch;
-  const token = await accessToken({
+  const token = await refreshGmailAccessToken({
     refreshToken: input.refreshToken,
     clientId: input.clientId,
     clientSecret: input.clientSecret,

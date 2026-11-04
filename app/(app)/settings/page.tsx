@@ -36,6 +36,12 @@ export default async function SettingsPage() {
       visible: canConnectShopMailbox(viewRole),
     },
     {
+      href: "/settings/scan-mail",
+      label: "Scan reports",
+      description: "Connect the mailbox that receives TopGuru reports. Customers do not get these.",
+      visible: canConnectShopMailbox(viewRole),
+    },
+    {
       href: "/settings/timesheets",
       label: "Timesheets",
       description: "Who is punched in, weekly hours, and punch corrections.",
