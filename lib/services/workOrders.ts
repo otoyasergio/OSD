@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
-import type { JobStatus, WorkOrderStatus } from "@/lib/database/types";
+import type { DbClient, JobStatus, WorkOrderStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import { addTimelineEvent } from "@/lib/timeline/addTimelineEvent";
 import { TimelineEventType } from "@/lib/timeline/events";
@@ -16,7 +16,12 @@ import {
   scopeWorkOrdersForViewer,
 } from "@/lib/workOrders/assignmentVisibility";
 import { createWorkOrderSchema } from "@/lib/validation/schemas";
-import { resolveJobSnapshots } from "@/lib/forms/serviceLines";
+import {
+  isOilChangeService,
+  oilChangeIncludedParts,
+  resolveJobSnapshots,
+  type BikePackageFitment,
+} from "@/lib/forms/serviceLines";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
 import { buildWorkOrderFlags } from "@/lib/status/flags";
 import { getAgreementFollowUp } from "@/lib/status/agreementFollowUp";
@@ -25,6 +30,7 @@ import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 import { withPrimaryPhotoUrls } from "@/lib/workOrders/listPhotos";
 import { normalizeMileageUnit, type MileageUnit } from "@/lib/mileage/format";
 import { checkoutEvidenceEnabled } from "@/lib/config/features";
+import { createCustomerPhotoSignedUrl } from "@/lib/customers/photoStorage";
 
 export type WorkOrder = {
   work_order_id: string;
@@ -126,6 +132,8 @@ export type CreateWorkOrderInput = {
     estimated_labour?: number | null;
     standard_price?: number | null;
   }>;
+  /** Set when Wix already reserved this id as sourceReference.externalReferenceId. */
+  work_order_id?: string;
 };
 
 export type LastRecordedMileage = {
@@ -396,6 +404,7 @@ export type WorkOrderDetail = WorkOrder & {
     phone: string | null;
     email: string | null;
     sms_opted_out_at: string | null;
+    photo_url: string | null;
   } | null;
   motorcycle: {
     motorcycle_id: string;
@@ -469,7 +478,8 @@ export async function getWorkOrderDetail(
         last_name,
         phone,
         email,
-        sms_opted_out_at
+        sms_opted_out_at,
+        photo_path
       ),
       motorcycle:motorcycle_id (
         motorcycle_id,
@@ -540,9 +550,23 @@ export async function getWorkOrderDetail(
 
   const row = data as Record<string, unknown>;
   const motorcycle = row.motorcycle as WorkOrderDetail["motorcycle"];
-  const customer = canViewClients(user.role)
-    ? (row.customer as WorkOrderDetail["customer"])
-    : null;
+  const rawCustomer = row.customer as
+    | (Omit<NonNullable<WorkOrderDetail["customer"]>, "photo_url"> & {
+        photo_path: string | null;
+      })
+    | null;
+  const customer =
+    canViewClients(user.role) && rawCustomer
+      ? {
+          customer_id: rawCustomer.customer_id,
+          first_name: rawCustomer.first_name,
+          last_name: rawCustomer.last_name,
+          phone: rawCustomer.phone,
+          email: rawCustomer.email,
+          sms_opted_out_at: rawCustomer.sms_opted_out_at,
+          photo_url: await createCustomerPhotoSignedUrl(supabase, rawCustomer.photo_path),
+        }
+      : null;
   const jobs = ((row.job as WorkOrderJob[] | null) ?? []).map((job) => ({
     ...job,
     origin: job.origin ?? null,
@@ -794,6 +818,44 @@ export async function setPrimaryTechnician(
   }
 }
 
+async function packageFitmentForMotorcycle(
+  supabase: DbClient,
+  motorcycleId: string
+): Promise<BikePackageFitment> {
+  const { data, error } = await supabase
+    .from("motorcycle_service_information")
+    .select("oil_filter, oil_type, spark_plugs, air_filter")
+    .eq("motorcycle_id", motorcycleId)
+    .maybeSingle();
+  if (error || !data) return {};
+  return data;
+}
+
+/**
+ * Included oil and filter are $0 invoice lines. `not_required` keeps them off
+ * the parts queue and lets the job finish; the visit is not waiting on them.
+ */
+async function insertOilChangeParts(
+  supabase: DbClient,
+  jobId: string,
+  userId: string,
+  fitment: BikePackageFitment
+): Promise<void> {
+  const { error } = await supabase.from("part").insert(
+    oilChangeIncludedParts(fitment).map((part) => ({
+      job_id: jobId,
+      part_name: part.part_name,
+      quantity: part.quantity,
+      unit_price: part.unit_price,
+      status: "not_required",
+      notes: "Included in the oil change.",
+      catalog_source: "manual",
+      created_by_user_id: userId,
+    }))
+  );
+  if (error) throw error;
+}
+
 export async function createWorkOrder(
   input: CreateWorkOrderInput
 ): Promise<{ work_order_id: string; work_order_number: string }> {
@@ -897,11 +959,13 @@ export async function createWorkOrder(
   if (existingError) throw existingError;
   if (existingWo) throw new Error("WORK_ORDER_NUMBER_TAKEN");
 
-  const initialStatus: WorkOrderStatus = services.length > 0 ? "open" : "draft";
+  const initialStatus: WorkOrderStatus =
+    services.length > 0 ? "inspection_in_progress" : "draft";
 
   const { data: workOrder, error: woError } = await supabase
     .from("work_order")
     .insert({
+      ...(input.work_order_id ? { work_order_id: input.work_order_id } : {}),
       motorcycle_id: parsed.motorcycle_id,
       customer_id: motorcycle.customer_id,
       location_id: parsed.location_id,
@@ -974,6 +1038,10 @@ export async function createWorkOrder(
   }
 
   const createdJobs: Array<{ job_id: string; service_name_snapshot: string }> = [];
+  const packageFitment = await packageFitmentForMotorcycle(
+    supabase,
+    parsed.motorcycle_id
+  );
 
   for (const service of services) {
     // Booked intake services are already customer-approved.
@@ -1004,6 +1072,9 @@ export async function createWorkOrder(
 
     if (jobError) throw jobError;
     createdJobs.push(job);
+    if (isOilChangeService(service.name)) {
+      await insertOilChangeParts(supabase, job.job_id, user.user_id, packageFitment);
+    }
   }
 
   if (parsed.primary_technician_id && createdJobs.length > 0) {
@@ -1081,4 +1152,129 @@ export async function createWorkOrder(
     work_order_id: workOrderId,
     work_order_number: workOrderNumber,
   };
+}
+
+/**
+ * A Wix booking stub keeps its minted number until intake finishes.
+ * Finishing intake replaces that number with the Wix display number and
+ * adds the intake services when the stub has none yet.
+ */
+export async function applyWixNumberToExistingWorkOrder(
+  workOrderId: string,
+  input: CreateWorkOrderInput
+): Promise<{ work_order_id: string; work_order_number: string }> {
+  const user = await requireUser();
+  if (!canCreateWorkOrder(user.role)) throw new Error("FORBIDDEN");
+
+  const parsed = createWorkOrderSchema.parse({
+    ...input,
+    work_order_number: input.work_order_number,
+    external_invoice_number: normalizeOptional(input.external_invoice_number),
+    internal_notes: normalizeOptional(input.internal_notes),
+    primary_technician_id: normalizeOptional(input.primary_technician_id),
+    estimated_completion: normalizeOptional(input.estimated_completion),
+    service_ids: input.service_ids,
+    service_lines: input.service_lines ?? [],
+  });
+
+  const supabase = await createClient();
+  const { data: existing, error: existingError } = await supabase
+    .from("work_order")
+    .select("work_order_id, location_id, motorcycle_id")
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (!existing) throw new Error("WORK_ORDER_NOT_FOUND");
+
+  const { data: clash, error: clashError } = await supabase
+    .from("work_order")
+    .select("work_order_id")
+    .eq("location_id", parsed.location_id)
+    .eq("work_order_number", parsed.work_order_number)
+    .neq("work_order_id", workOrderId)
+    .maybeSingle();
+  if (clashError) throw clashError;
+  if (clash) throw new Error("WORK_ORDER_NUMBER_TAKEN");
+
+  const { error: updateError } = await supabase
+    .from("work_order")
+    .update({
+      work_order_number: parsed.work_order_number,
+      mileage: parsed.mileage,
+      mileage_unit: parsed.mileage_unit,
+      estimated_completion: parsed.estimated_completion,
+      internal_notes: parsed.internal_notes ?? null,
+      primary_technician_id: parsed.primary_technician_id ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("work_order_id", workOrderId);
+  if (updateError) throw updateError;
+
+  const { count, error: countError } = await supabase
+    .from("job")
+    .select("job_id", { count: "exact", head: true })
+    .eq("work_order_id", workOrderId);
+  if (countError) throw countError;
+  if ((count ?? 0) > 0) {
+    await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+    return { work_order_id: workOrderId, work_order_number: parsed.work_order_number };
+  }
+
+  const { data: services, error: serviceError } = await supabase
+    .from("service")
+    .select("service_id, name, standard_price, estimated_labour, active")
+    .in("service_id", parsed.service_ids)
+    .eq("active", true);
+  if (serviceError) throw serviceError;
+  if ((services ?? []).length !== parsed.service_ids.length) {
+    throw new Error("SERVICE_NOT_FOUND");
+  }
+
+  const lineById = new Map(
+    parsed.service_lines.map((line) => [
+      line.service_id,
+      {
+        service_id: line.service_id,
+        note: line.note?.trim() ? line.note.trim() : null,
+        estimated_labour: line.estimated_labour ?? null,
+        standard_price: line.standard_price ?? null,
+      },
+    ])
+  );
+  const packageFitment = existing.motorcycle_id
+    ? await packageFitmentForMotorcycle(supabase, existing.motorcycle_id)
+    : {};
+  for (const service of services ?? []) {
+    const snapshots = resolveJobSnapshots({
+      catalogueLabour: service.estimated_labour,
+      cataloguePrice: service.standard_price,
+      line: lineById.get(service.service_id),
+    });
+    const { data: job, error: jobError } = await supabase
+      .from("job")
+      .insert({
+        work_order_id: workOrderId,
+        service_id: service.service_id,
+        service_name_snapshot: service.name,
+        standard_price_snapshot: snapshots.standard_price_snapshot,
+        estimated_labour_snapshot: snapshots.estimated_labour_snapshot,
+        notes: snapshots.notes,
+        status: "approved",
+        origin: "customer_request",
+        created_by_user_id: user.user_id,
+        approved_by_customer_at: new Date().toISOString(),
+        approval_method: "in_person",
+        approval_recorded_by_user_id: user.user_id,
+      })
+      .select("job_id")
+      .single();
+    if (jobError) throw jobError;
+    if (isOilChangeService(service.name)) {
+      await insertOilChangeParts(supabase, job.job_id, user.user_id, packageFitment);
+    }
+  }
+
+  await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+
+  return { work_order_id: workOrderId, work_order_number: parsed.work_order_number };
 }

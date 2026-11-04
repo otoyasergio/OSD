@@ -1,0 +1,24 @@
+Quantity,Digi-Key Part Number,Manufacturer Part Number,Manufacturer,Customer Reference
+1,1597-102010448-ND,102010448,Seeed Technology,XIAO nRF52840. Plain board. Not Sense. Not Plus.
+1,296-30258-1-ND,TPS7A1601DGNT,Texas Instruments,Regulator HVSSOP-8. Cut tape.
+1,MCP2515-I/P-ND,MCP2515-I/P,Microchip Technology,CAN controller DIP-18. Shelf was empty on 2 Nov 2026 with 25 due 9 Nov 2026. In-stock SOIC of the same chip is MCP2515-I/SO-ND.
+1,296-26343-1-ND,SN65HVD231DR,Texas Instruments,3.3 V CAN transceiver. SN65HVD230DR was out of stock. Solder this onto the adapter. Do not substitute a TJA1050 or MCP2551.
+1,A880AR-ND,LCQT-SOIC8-8,Aries Electronics,SOIC-8 to DIP-8 adapter for the transceiver.
+1,535-9041-ND,ABL-16.000MHZ-B2,Abracon,16 MHz crystal. 18 pF load. HC-49.
+2,,C315C220J1G5TA,KEMET,22 pF C0G radial. One on each crystal leg to ground.
+1,785-1001-1-ND,AO3401A,Alpha & Omega Semiconductor,P-channel MOSFET SOT-23. Cut tape.
+2,2N3904FS-ND,2N3904BU,onsemi,NPN TO-92. One switches the divider. One senses the key.
+1,641-1946-ND,2N3906-G,Comchip Technology,PNP TO-92. 2N3906BU was out of stock. Same 40 V transistor.
+1,1N5822-E3/54GICT-ND,1N5822-E3/54,Vishay,Schottky 40 V 3 A. Band toward the regulator.
+1,P6KE18A-E3/54GICT-ND,P6KE18A-E3/54,Vishay,TVS. Band toward the fused 12 V. Use a P6KE20A if charging voltage sits above 15 V.
+1,1N5226B-ND,1N5226B,onsemi,3.3 V 500 mW zener. Band toward D0.
+1,,0297001.WXNV,Littelfuse,1 A mini blade fuse.
+1,,MFR-25FBF52-200K,YAGEO,200 kohm 1 percent. Regulator R1. Gives about 3.58 V. A 210 kohm 1 percent part is the exact value if you swap this line.
+7,100KXBK-ND,MFR-25FBF52-100K,YAGEO,100 kohm 1 percent. Two are the precision spots. Five are the bias resistors.
+1,MFR-25FBF52-12K-ND,MFR-25FBF52-12K,YAGEO,12 kohm 1 percent. Divider bottom.
+1,MFR-25FBF52-47K-ND,MFR-25FBF52-47K,YAGEO,47 kohm 1 percent. From D1 to the divider transistor.
+2,10.0KXBK-ND,MFR-25FBF52-10K,YAGEO,10 kohm 1 percent.
+3,399-4264-ND,C320C104K5R5TA,KEMET,100 nF 50 V X7R radial. Regulator and both CAN chips.
+2,,C1206C106K3RACTU,KEMET,10 uF 25 V X7R 1206. One on regulator IN and one on OUT.
+1,1965-ESP32-S3-DEVKITC-1-N8R8-ND,ESP32-S3-DEVKITC-1-N8R8,Espressif Systems,Window box. 163 on the shelf on 2 Nov 2026.
+2,5487-RYLR998-ND,RYLR998,REYAX,Built-in antenna. Not the M4. One for the window. The second stays in the bag until the fuse test passes.

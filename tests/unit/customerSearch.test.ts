@@ -70,6 +70,8 @@ function customer(overrides: Partial<Customer>): Customer {
     notes: null,
     account_type: "retail",
     wix_contact_id: null,
+    sms_opted_out_at: null,
+    photo_path: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     ...overrides,

@@ -2,7 +2,8 @@ import "server-only";
 
 /**
  * Shared Wix env helpers for Bookings intake and Contacts CRM sync.
- * Billing stays on Square — this module does not create Wix payment links.
+ * Wix invoices are a separate flag (WIX_INVOICES_ENABLED plus
+ * WIX_INVOICES_GATES_CONFIRMED). Until both are 1, billing stays on Square.
  */
 
 export type WixContactsConfig = {

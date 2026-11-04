@@ -22,4 +22,24 @@ describe("signStoragePaths", () => {
     expect(second.get(path)).toBe(signedUrl);
     expect(first.get(path)).toBe(signedUrl);
   });
+
+  it("keeps an omitted path in the map so callers can tell it was not signed", async () => {
+    const present = `wo/present/${crypto.randomUUID()}.jpg`;
+    const omitted = `wo/omitted/${crypto.randomUUID()}.jpg`;
+    const createSignedUrls = vi.fn().mockResolvedValue({
+      data: [{ path: present, signedUrl: "https://cdn.example/present" }],
+      error: null,
+    });
+    const supabase = {
+      storage: {
+        from: () => ({ createSignedUrls }),
+      },
+    };
+
+    const signed = await signStoragePaths(supabase as never, [present, omitted]);
+
+    expect(signed.get(present)).toBe("https://cdn.example/present");
+    expect(signed.has(omitted)).toBe(true);
+    expect(signed.get(omitted)).toBeNull();
+  });
 });

@@ -185,8 +185,8 @@ function previewPath(photo: {
 }
 
 const PRIMARY_PHOTO_CATEGORY_RANK: Record<string, number> = {
-  front: 0,
-  left_side: 1,
+  left_side: 0,
+  front: 1,
   right_side: 2,
   rear: 3,
   damage: 4,
@@ -194,7 +194,7 @@ const PRIMARY_PHOTO_CATEGORY_RANK: Record<string, number> = {
   other: 6,
 };
 
-/** Prefer front, then other bike angles, then oldest remaining photo. */
+/** Prefer the left-side intake photo, then the front, then other angles. */
 export function pickPrimaryIntakePhoto<T extends IntakePhotoRef>(photos: T[]): T | null {
   if (photos.length === 0) return null;
   return [...photos].sort((a, b) => {
@@ -207,7 +207,7 @@ export function pickPrimaryIntakePhoto<T extends IntakePhotoRef>(photos: T[]): T
   })[0];
 }
 
-/** Sign one display URL per work order (front preferred). */
+/** Sign one display URL per work order (left side preferred). */
 export async function resolvePrimaryPhotoUrls(
   supabase: DbClient,
   photosByWorkOrder: Map<string, IntakePhotoRef[]>

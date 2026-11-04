@@ -9,6 +9,7 @@ import { TECHNICIAN_NOTE_TYPE_LABELS } from "@/lib/status/labels";
 import { FormError, TextAreaField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { formatDateTime } from "@/lib/datetime/format";
+import type { ShopInstruction } from "@/lib/workOrders/sharedNotes";
 
 type Action = (state: NoteFormState, formData: FormData) => Promise<NoteFormState>;
 
@@ -17,20 +18,29 @@ const SELECT_CLASS =
 
 const NOTE_TYPES = Object.keys(TECHNICIAN_NOTE_TYPE_LABELS) as TechnicianNoteType[];
 
+async function noopAddNote(): Promise<NoteFormState> {
+  return { error: null };
+}
+
 export function TechnicianNotes({
   notes,
   jobs,
+  instructions = [],
   readOnly,
   canAdd,
   addAction,
 }: {
   notes: TechnicianNote[];
   jobs: WorkOrderJob[];
+  /** Shop instructions stored on the work order or job, not as technician notes. */
+  instructions?: ShopInstruction[];
   readOnly: boolean;
   canAdd: boolean;
-  addAction: Action;
+  addAction?: Action;
 }) {
-  const [addState, addFormAction] = useActionState(addAction, { error: null });
+  const [addState, addFormAction] = useActionState(addAction ?? noopAddNote, {
+    error: null,
+  });
   const [jobFilter, setJobFilter] = useState<string>("all");
 
   const visible = useMemo(() => {
@@ -41,7 +51,7 @@ export function TechnicianNotes({
 
   return (
     <div className="flex flex-col gap-4">
-      {!readOnly && canAdd ? (
+      {!readOnly && canAdd && addAction ? (
         <form
           action={addFormAction}
           className="flex flex-col gap-3 rounded border border-[var(--border)] bg-white p-4"
@@ -79,6 +89,27 @@ export function TechnicianNotes({
             <SubmitButton label="Add note" pendingLabel="Saving…" />
           </div>
         </form>
+      ) : null}
+
+      {instructions.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h3 className="text-base font-semibold text-foreground">From the shop</h3>
+          <ul className="flex flex-col gap-3">
+            {instructions.map((instruction) => (
+              <li
+                key={instruction.id}
+                className="rounded border border-[var(--border)] bg-white p-4"
+              >
+                <p className="text-sm font-semibold text-foreground">
+                  {instruction.label}
+                </p>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
+                  {instruction.body}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">

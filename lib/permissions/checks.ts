@@ -46,6 +46,10 @@ export function canRecordCustomerApproval(role: UserRole) {
 export function canCompleteInspection(role: UserRole) {
   return isFloorTech(role) || FRONT_OFFICE.includes(role);
 }
+/** Record a scan-tool session. Same people who can finish an inspection. */
+export function canRecordDiagnosticSession(role: UserRole) {
+  return canCompleteInspection(role);
+}
 export function canCreateRecommendation(role: UserRole) {
   return isFloorTech(role) || FRONT_OFFICE.includes(role);
 }
@@ -230,6 +234,11 @@ export function canDeleteIntakePhoto(role: UserRole) {
 /** View client CRM (customers + motorcycles directory) and customer PII. */
 export function canViewClients(role: UserRole) {
   return FRONT_OFFICE.includes(role) || role === "admin";
+}
+
+/** Add, replace, or remove a customer portrait. Same roles as viewing clients. */
+export function canManageCustomerPhotos(role: UserRole) {
+  return canViewClients(role);
 }
 
 /** Publish and revoke externally shared vehicle-passport snapshots. */

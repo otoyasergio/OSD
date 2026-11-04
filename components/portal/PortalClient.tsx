@@ -14,15 +14,24 @@ import {
   portalSignContractAction,
 } from "@/app/c/[token]/actions";
 import { FormError } from "@/components/forms/Field";
+import { AuctionPriceGuide } from "@/components/auctions/AuctionPriceGuide";
+import type { AuctionPriceGuideView } from "@/lib/auctions/types";
 
 type Props = {
   token: string;
   view: PortalWorkOrderView;
   contractTemplate: AgreementTemplate | null;
   estimate?: PortalEstimateView | null;
+  auctionGuide?: AuctionPriceGuideView | null;
 };
 
-export function PortalClient({ token, view, contractTemplate, estimate }: Props) {
+export function PortalClient({
+  token,
+  view,
+  contractTemplate,
+  estimate,
+  auctionGuide,
+}: Props) {
   const [declineJobId, setDeclineJobId] = useState<string | null>(null);
   const [declineReason, setDeclineReason] = useState("");
   const [ackName, setAckName] = useState(
@@ -187,7 +196,25 @@ export function PortalClient({ token, view, contractTemplate, estimate }: Props)
             </p>
             <p className="font-semibold">Total (est.): ${estimateTotal.toFixed(2)}</p>
           </div>
-          {view.square_payment_status === "paid" ? (
+          {view.wix_invoice ? (
+            <div className="mt-3 text-center text-sm">
+              <p>
+                Invoice {view.wix_invoice.displayNumber} · {view.wix_invoice.statusLabel}
+              </p>
+              {view.wix_invoice.payUrl ? (
+                <a
+                  href={view.wix_invoice.payUrl}
+                  className="mt-2 inline-block font-medium underline"
+                >
+                  Pay this invoice
+                </a>
+              ) : (
+                <p className="mt-2 text-zinc-600">
+                  The shop sends this invoice from Wix. That email is the only copy.
+                </p>
+              )}
+            </div>
+          ) : view.square_payment_status === "paid" ? (
             <p className="mt-3 text-center font-medium text-emerald-700">
               Paid — thank you!
             </p>
@@ -232,6 +259,8 @@ export function PortalClient({ token, view, contractTemplate, estimate }: Props)
       ) : view.has_inspection_ack ? (
         <p className="text-center text-sm text-emerald-700">Inspection acknowledged.</p>
       ) : null}
+
+      {auctionGuide ? <AuctionPriceGuide guide={auctionGuide} variant="portal" /> : null}
 
       {error ? <FormError message={error} /> : null}
     </div>

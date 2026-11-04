@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getCustomerById } from "@/lib/services/customers";
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
+import { formatOpenFaultBikeCount } from "@/lib/diagnostics/openFaults";
+import { countOpenFaultBikesByCustomer } from "@/lib/services/diagnosticSessions";
 import { listGarageForCustomer } from "@/lib/services/clientGarage";
 import { listWorkOrdersForCustomer } from "@/lib/services/filedWorkOrders";
 import { listCustomerDocuments } from "@/lib/services/customerDocuments";
@@ -19,6 +21,7 @@ import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canDeleteCustomerDocuments,
   canEditWorkOrder,
+  canManageCustomerPhotos,
   canSyncWixContacts,
   canUploadCustomerDocuments,
   canUseShopPhone,
@@ -28,6 +31,19 @@ import {
 import { isWixSyncAvailable } from "@/lib/services/wixContacts";
 import { formatCalendarDate, formatDate } from "@/lib/datetime/format";
 import { ClickToCallButton } from "@/components/comms/ClickToCallButton";
+import { CustomerAtAGlance } from "@/components/customers/CustomerAtAGlance";
+import { CustomerPhotoForm } from "@/components/customers/CustomerPhotoForm";
+import { UserAvatar } from "@/components/ui/UserAvatar";
+import { summarizeCustomerVisits } from "@/lib/customers/glance";
+import { WixInvoiceList } from "@/components/billing/WixInvoiceList";
+import { listInvoicesForCustomer } from "@/lib/services/wixInvoices";
+import { readPrivateLicence } from "@/lib/services/customerPrivate";
+import { wixInvoicesEnabled } from "@/lib/config/features";
+import { signCustomerPhotoForViewer } from "@/lib/services/customerPhotos";
+import {
+  removeCustomerPhotoAction,
+  uploadCustomerPhotoAction,
+} from "@/app/(app)/customers/photo-actions";
 
 function WorkOrderHistoryList({
   items,
@@ -106,20 +122,36 @@ export default async function CustomerDetailPage({
   const customer = await getCustomerById(customer_id);
   if (!customer) notFound();
 
-  const [garage, history, documents] = await Promise.all([
+  const [garage, history, documents, invoices, licence] = await Promise.all([
     listGarageForCustomer(customer_id),
     listWorkOrdersForCustomer(customer_id),
     canViewCustomerDocuments(viewRole)
       ? listCustomerDocuments(customer_id)
       : Promise.resolve([]),
+    wixInvoicesEnabled() ? listInvoicesForCustomer(customer_id) : Promise.resolve([]),
+    readPrivateLicence(customer_id),
   ]);
   const updateAction = updateCustomerAction.bind(null, customer_id);
+  const uploadPhotoAction = uploadCustomerPhotoAction.bind(null, customer_id);
+  const removePhotoAction = removeCustomerPhotoAction.bind(null, customer_id);
+  const canEditPhoto = canManageCustomerPhotos(viewRole);
+  const photoUrl = await signCustomerPhotoForViewer(customer.photo_path);
+  const glance = summarizeCustomerVisits([...history.open, ...history.filed]);
   const canTransfer = canEditWorkOrder(viewRole);
   const canUploadDocs = canUploadCustomerDocuments(viewRole);
   const canDeleteDocs = canDeleteCustomerDocuments(viewRole);
   const canViewDocs = canViewCustomerDocuments(viewRole);
   const canSyncWix = canSyncWixContacts(viewRole);
   const wixConfigured = isWixSyncAvailable();
+  let fleetOpenFaultBikes: number | null = null;
+  if (customer.account_type === "fleet") {
+    try {
+      const counts = await countOpenFaultBikesByCustomer([customer_id]);
+      fleetOpenFaultBikes = counts.get(customer_id) ?? 0;
+    } catch {
+      fleetOpenFaultBikes = null;
+    }
+  }
 
   return (
     <div className="page-stack page-stack--narrow">
@@ -130,30 +162,79 @@ export default async function CustomerDetailPage({
         >
           ← Customers
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
-          {customer.first_name} {customer.last_name}
-        </h1>
-        <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--status-neutral)]">
-          <span className="badge mr-2 bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]">
-            {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
-          </span>
-          {customer.phone ?? "No phone"} · {customer.email ?? "No email"}
-          <ClickToCallButton
-            phone={customer.phone}
-            customerId={customer.customer_id}
-            customerName={`${customer.first_name} ${customer.last_name}`.trim()}
-            visible={canUseShopPhone(viewRole)}
-          />
-        </p>
-        {customer.address || customer.date_of_birth ? (
-          <p className="mt-1 text-sm text-[var(--status-neutral)]">
-            {customer.address ?? "No address"}
-            {customer.date_of_birth
-              ? ` · Birthday ${formatCalendarDate(customer.date_of_birth)}`
-              : ""}
-          </p>
-        ) : null}
+        <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start">
+          {canEditPhoto ? (
+            <CustomerPhotoForm
+              firstName={customer.first_name}
+              lastName={customer.last_name}
+              photoUrl={photoUrl}
+              uploadAction={uploadPhotoAction}
+              removeAction={removePhotoAction}
+            />
+          ) : (
+            <UserAvatar
+              firstName={customer.first_name}
+              lastName={customer.last_name}
+              photoUrl={photoUrl}
+              size="lg"
+              className="ring-1 ring-[var(--border)]"
+            />
+          )}
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              {customer.first_name} {customer.last_name}
+            </h1>
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[var(--status-neutral)]">
+              <span className="badge mr-2 bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]">
+                {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
+              </span>
+              {customer.account_type === "fleet" ? (
+                <span className="text-xs">
+                  {formatOpenFaultBikeCount(fleetOpenFaultBikes)}
+                </span>
+              ) : null}
+              {customer.phone ?? "No phone"} · {customer.email ?? "No email"}
+              <ClickToCallButton
+                phone={customer.phone}
+                customerId={customer.customer_id}
+                customerName={`${customer.first_name} ${customer.last_name}`.trim()}
+                visible={canUseShopPhone(viewRole)}
+              />
+            </p>
+            {customer.address || customer.date_of_birth ? (
+              <p className="mt-1 text-sm text-[var(--status-neutral)]">
+                {customer.address ?? "No address"}
+                {customer.date_of_birth
+                  ? ` · Birthday ${formatCalendarDate(customer.date_of_birth)}`
+                  : ""}
+              </p>
+            ) : null}
+          </div>
+        </div>
       </div>
+
+      <CustomerAtAGlance
+        createdAt={customer.created_at}
+        glance={glance}
+        smsOptedOutAt={customer.sms_opted_out_at}
+      />
+
+      {licence?.licence_number ? (
+        <p className="text-sm text-[var(--status-neutral)]">
+          Licence {licence.licence_number}
+          {licence.licence_expiry ? ` · expires ${licence.licence_expiry}` : ""}
+        </p>
+      ) : null}
+
+      {wixInvoicesEnabled() ? (
+        <section>
+          <h2 className="text-lg font-semibold">Wix invoices</h2>
+          <WixInvoiceList
+            invoices={invoices}
+            emptyLabel="No Wix invoices for this customer yet."
+          />
+        </section>
+      ) : null}
 
       <CustomerInformationReminder
         phone={customer.phone}
@@ -210,6 +291,15 @@ export default async function CustomerDetailPage({
           showCompletedDate
         />
       </section>
+
+      {customer.notes?.trim() ? (
+        <section>
+          <h2 className="text-lg font-semibold text-foreground">Notes</h2>
+          <p className="mt-3 whitespace-pre-wrap rounded border border-[var(--border)] bg-white px-4 py-3 text-sm text-foreground">
+            {customer.notes}
+          </p>
+        </section>
+      ) : null}
 
       <section id="edit-customer" className="scroll-mt-6">
         <h2 className="text-lg font-semibold text-foreground">Edit customer</h2>

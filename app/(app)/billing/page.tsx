@@ -15,6 +15,7 @@ import { BillingTabs } from "@/components/billing/BillingTabs";
 import { BillingCollectionsBoard } from "@/components/billing/BillingCollectionsBoard";
 import { BillingMoneyDeskStats } from "@/components/billing/BillingMoneyDeskStats";
 import { BillingLedgerTable } from "@/components/billing/BillingLedgerTable";
+import { wixInvoicesEnabled } from "@/lib/config/features";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,11 @@ export default async function BillingPage({
     <div className="page-stack page-stack--wide">
       <PageHeader
         title="Billing"
-        subtitle="Estimates, invoices, and collections for this location — money still posts through Square on each work order."
+        subtitle={
+          wixInvoicesEnabled()
+            ? "Wix owns the invoice. Square records the money after it is squared."
+            : "Estimates, invoices, and collections for this location — money still posts through Square on each work order."
+        }
       />
 
       <BillingTabs active={active} allowed={allowed} />
@@ -66,11 +71,12 @@ export default async function BillingPage({
       {active === "money_desk" ? <BillingMoneyDeskStats stats={stats} /> : null}
 
       {active === "ledger" ? (
-        <BillingLedgerTable items={items} />
+        <BillingLedgerTable items={items} hideSquareInvoices={wixInvoicesEnabled()} />
       ) : (
         <BillingCollectionsBoard
           items={items}
           showQuickActions={showQuickActions && active === "money_desk"}
+          hideSquareInvoices={wixInvoicesEnabled()}
         />
       )}
     </div>

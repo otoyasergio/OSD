@@ -11,6 +11,7 @@ import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import { checkoutEvidenceOverridden } from "@/lib/status/checkoutEvidence";
 import { loadCommittedCheckoutCoverage } from "@/lib/services/checkoutEvidence";
 import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
+import { entersSafetyColumn } from "@/lib/status/safetyReadyText";
 
 export type DeriveJobInput = {
   status: JobStatus | string;
@@ -98,6 +99,12 @@ export function deriveWorkOrderStatus(
     return "waiting_for_customer_approval";
   }
 
+  // A drop into Ready for safety stays there until the check is stamped.
+  // A failed check adds a job that needs approval, which already returned above.
+  if (currentStatus === "safety_check" && !safetyCheckComplete) {
+    return "safety_check";
+  }
+
   if (
     jobs.some((job) => job.status === "waiting_for_parts") ||
     jobs.some((job) => jobHasWaitingParts(job, parts))
@@ -161,6 +168,18 @@ export function deriveWorkOrderStatus(
     );
 
   if (allReadyForTechnician) {
+    // Booked intake services are already approved. A visit that has not
+    // reached the floor yet still starts at arrival inspection. Bikes
+    // already in the bay, in storage, or ready for pickup keep that place.
+    const beforeWork =
+      currentStatus === "draft" ||
+      currentStatus === "open" ||
+      currentStatus === "inspection_in_progress" ||
+      currentStatus === "waiting_for_customer_approval" ||
+      currentStatus === "ready_for_technician";
+    if (!inspectionComplete && beforeWork) {
+      return "inspection_in_progress";
+    }
     if (hasSignedAgreement === false) {
       // Do not auto-promote; demote only if already incorrectly on ready.
       if (currentStatus === "ready_for_technician") {
@@ -344,6 +363,15 @@ export async function recalculateWorkOrderStatus(
   if (nextStatus === "quality_check") {
     const { autoAssignPeerQc } = await import("@/lib/services/peerQc");
     await autoAssignPeerQc(supabase, workOrderId, workOrder.location_id, actorUserId);
+  }
+
+  if (entersSafetyColumn(workOrder.status, nextStatus)) {
+    try {
+      const { sendSafetyReadyText } = await import("@/lib/services/safetyReadySms");
+      await sendSafetyReadyText(supabase, workOrderId);
+    } catch {
+      // A failed text does not undo the status change.
+    }
   }
 
   return nextStatus;

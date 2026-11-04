@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import {
   getPortalContractTemplate,
   getPortalEstimate,
   getPortalWorkOrder,
 } from "@/lib/services/portal";
+import { loadAuctionPriceGuide } from "@/lib/services/auctionPriceGuide";
 import { PortalClient } from "@/components/portal/PortalClient";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +34,21 @@ export default async function CustomerPortalPage({
   const estimate = view.can_decide_estimate
     ? await getPortalEstimate(token).catch(() => null)
     : null;
+  const auctionGuide = await loadAuctionPriceGuide({
+    motorcycleId: view.motorcycle_id,
+    bike: view.motorcycle,
+    audience: "customer",
+  });
+  if (auctionGuide.refreshInBackground) {
+    after(() => {
+      void loadAuctionPriceGuide({
+        motorcycleId: view.motorcycle_id,
+        bike: view.motorcycle,
+        audience: "customer",
+        refresh: "force",
+      }).catch(() => undefined);
+    });
+  }
 
   return (
     <div className="min-h-dvh bg-zinc-100 px-4 py-8 portal-page">
@@ -53,6 +70,7 @@ export default async function CustomerPortalPage({
           view={view}
           contractTemplate={template}
           estimate={estimate}
+          auctionGuide={auctionGuide.view}
         />
       </div>
     </div>

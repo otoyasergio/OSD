@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
     ".worktrees/**",
     // Design handoff prototypes (standalone HTML/JS, not app code).
     "design_handoff_tech_workflow/**",
+    // Adobe Runtime action. It has its own Jest project and is not Next.js source.
+    "integrations/app-builder-agreement/**",
   ]),
   {
     rules: {

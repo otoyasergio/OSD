@@ -7,7 +7,13 @@ function money(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-export function BillingLedgerTable({ items }: { items: BillingBoardItem[] }) {
+export function BillingLedgerTable({
+  items,
+  hideSquareInvoices = false,
+}: {
+  items: BillingBoardItem[];
+  hideSquareInvoices?: boolean;
+}) {
   if (items.length === 0) {
     return (
       <EmptyState
@@ -54,7 +60,9 @@ export function BillingLedgerTable({ items }: { items: BillingBoardItem[] }) {
               <td className="px-3 py-3">{money(item.billing_collected_cents)}</td>
               <td className="px-3 py-3">{money(item.remaining_cents)}</td>
               <td className="px-3 py-3">
-                {item.square_invoice_public_url ? (
+                {hideSquareInvoices ? (
+                  "Wix"
+                ) : item.square_invoice_public_url ? (
                   <a
                     href={item.square_invoice_public_url}
                     target="_blank"

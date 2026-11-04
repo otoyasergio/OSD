@@ -10,6 +10,8 @@ import { AddressAutocomplete } from "@/components/forms/AddressAutocomplete";
 import { PhoneField } from "@/components/forms/PhoneField";
 import { EmailField } from "@/components/forms/EmailField";
 import { CustomerDuplicateWarning } from "@/components/forms/CustomerDuplicateWarning";
+import { LicenceBarcodeScan } from "@/components/customers/LicenceBarcodeScan";
+import type { LicenceScan } from "@/lib/id/aamva";
 
 type Props = {
   action: (state: CustomerFormState, formData: FormData) => Promise<CustomerFormState>;
@@ -26,11 +28,19 @@ export function CustomerForm({ action, customer, submitLabel, returnTo }: Props)
   const hasExistingNotes = Boolean(customer?.notes?.trim());
   const [phoneValue, setPhoneValue] = useState(customer?.phone ?? "");
   const [emailValue, setEmailValue] = useState(customer?.email ?? "");
+  const [scan, setScan] = useState<LicenceScan | null>(null);
 
   return (
     <form action={formAction} className="flex max-w-3xl flex-col gap-4">
       {returnTo ? <input type="hidden" name="return_to" value={returnTo} /> : null}
       <FormError message={state.error} />
+      <LicenceBarcodeScan onConfirm={setScan} />
+      {scan ? (
+        <>
+          <input type="hidden" name="licence_number" value={scan.licenceNumber} />
+          <input type="hidden" name="licence_expiry" value={scan.licenceExpiry} />
+        </>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <TextField
@@ -41,7 +51,8 @@ export function CustomerForm({ action, customer, submitLabel, returnTo }: Props)
           autoCapitalize="words"
           autoCorrect="off"
           autoFocus={!customer}
-          defaultValue={customer?.first_name}
+          defaultValue={scan?.firstName || customer?.first_name}
+          key={`first-${scan?.licenceNumber ?? "saved"}`}
           error={fieldErrors.first_name}
         />
         <TextField
@@ -51,7 +62,8 @@ export function CustomerForm({ action, customer, submitLabel, returnTo }: Props)
           autoComplete="family-name"
           autoCapitalize="words"
           autoCorrect="off"
-          defaultValue={customer?.last_name}
+          defaultValue={scan?.lastName || customer?.last_name}
+          key={`last-${scan?.licenceNumber ?? "saved"}`}
           error={fieldErrors.last_name}
         />
         <PhoneField
@@ -71,7 +83,8 @@ export function CustomerForm({ action, customer, submitLabel, returnTo }: Props)
         />
         <div className="sm:col-span-2">
           <AddressAutocomplete
-            defaultValue={customer?.address}
+            defaultValue={scan?.address || customer?.address}
+            key={`address-${scan?.licenceNumber ?? "saved"}`}
             error={fieldErrors.address}
           />
         </div>
@@ -79,7 +92,8 @@ export function CustomerForm({ action, customer, submitLabel, returnTo }: Props)
           label="Birthday (optional)"
           name="date_of_birth"
           type="date"
-          defaultValue={customer?.date_of_birth}
+          defaultValue={scan?.dateOfBirth || customer?.date_of_birth}
+          key={`dob-${scan?.licenceNumber ?? "saved"}`}
           autoComplete="bday"
           error={fieldErrors.date_of_birth}
         />

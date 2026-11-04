@@ -41,6 +41,7 @@ const WO = "41111111-1111-4111-8111-111111111111";
 const INSPECTION = "e1111111-1111-4111-8111-111111111111";
 const USER = "11111111-1111-4111-8111-111111111111";
 const LOCATION = "31111111-1111-4111-8111-111111111111";
+const inspectionUpdates: Array<Record<string, unknown>> = [];
 
 function client() {
   const from = vi.fn((table: string) => {
@@ -74,9 +75,11 @@ function client() {
                   {
                     inspection_result_id: "f1111111-1111-4111-8111-111111111111",
                     status: "ok",
-                    category_snapshot: "Brakes",
-                    item_name_snapshot: "Front brake",
+                    category_snapshot: "Battery",
+                    item_name_snapshot: "Battery Terminal / Cables / Mountings",
                     notes: null,
+                    measurement: null,
+                    requires_measurement_snapshot: false,
                   },
                 ],
               },
@@ -84,8 +87,11 @@ function client() {
             }),
           }),
         }),
-        update: () => ({
-          eq: async () => ({ error: null }),
+        update: (payload: Record<string, unknown>) => ({
+          eq: async () => {
+            inspectionUpdates.push(payload);
+            return { error: null };
+          },
         }),
       };
     }
@@ -105,6 +111,7 @@ function client() {
 
 describe("completeInspection return contract", () => {
   beforeEach(() => {
+    inspectionUpdates.length = 0;
     vi.clearAllMocks();
     requireUser.mockResolvedValue({
       user_id: USER,
@@ -132,9 +139,21 @@ describe("completeInspection return contract", () => {
     expect(recalculateWorkOrderStatus).toHaveBeenCalledWith(expect.anything(), WO, USER);
   });
 
-  it("does not return completion metadata when existing status work fails", async () => {
+  it("undoes the completion stamp when status work fails", async () => {
     recalculateWorkOrderStatus.mockRejectedValue(new Error("status failed"));
 
     await expect(completeInspection(WO)).rejects.toThrow("status failed");
+    expect(inspectionUpdates.map((update) => update.completed_at)).toEqual([
+      expect.stringMatching(/^20/),
+      null,
+    ]);
+    expect(inspectionUpdates[1]).toMatchObject({
+      completed_by_user_id: null,
+      signature_storage_path: null,
+    });
+    expect(removeInspectionSignature).toHaveBeenCalledWith(
+      expect.anything(),
+      "inspection/signature.png"
+    );
   });
 });

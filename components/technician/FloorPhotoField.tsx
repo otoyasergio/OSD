@@ -25,6 +25,7 @@ export function FloorPhotoField({
   workOrderId,
   jobId,
   category,
+  askCaption = true,
   onPhotoReady,
 }: {
   hint: string;
@@ -32,6 +33,8 @@ export function FloorPhotoField({
   workOrderId: string;
   jobId: string;
   category: "job_proof" | "job_work";
+  /** Ask what the photo shows before it is queued. */
+  askCaption?: boolean;
   onPhotoReady?: (label: string | null) => void;
 }) {
   const router = useRouter();
@@ -41,6 +44,7 @@ export function FloorPhotoField({
   const refreshedIds = useRef(new Set<string>());
   const [photoLabel, setPhotoLabel] = useState<string | null>(null);
   const [pickError, setPickError] = useState<string | null>(null);
+  const [caption, setCaption] = useState("");
   const cameraProps = photoFileInputProps("camera");
   const libraryProps = photoFileInputProps("library");
   const dock = variant === "dock";
@@ -99,6 +103,7 @@ export function FloorPhotoField({
         return;
       }
       let added = 0;
+      const notes = caption.trim();
       for (const file of prepared) {
         if (exceedsServerActionUploadLimit(file)) {
           setPickError(photoTooLargeMessage(file));
@@ -110,9 +115,11 @@ export function FloorPhotoField({
           workOrderId,
           jobId,
           surface: "floor",
+          ...(notes ? { notes } : {}),
         });
         added += 1;
       }
+      if (added > 0) setCaption("");
       notifyPhotoReady(queued.length + added);
     } catch (error) {
       if (error instanceof PhotoQueuePersistenceError) {
@@ -150,6 +157,18 @@ export function FloorPhotoField({
         aria-label="Choose from library"
         onChange={(event) => void applyPickedFiles(event.currentTarget)}
       />
+      {dock || !askCaption ? null : (
+        <label className="pit-sheet-label">
+          What should the shop know?
+          <input
+            className="pit-sheet-input"
+            value={caption}
+            onChange={(event) => setCaption(event.target.value)}
+            placeholder="What should the shop know about this photo?"
+            autoComplete="off"
+          />
+        </label>
+      )}
       {dock ? null : (
         <>
           <div className="pit-photo-actions">

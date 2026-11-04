@@ -185,6 +185,10 @@ export async function addJobToWorkOrder(
     await assignTechnicianToJob(job.job_id, woTech.primary_technician_id as string);
   }
 
+  await import("@/lib/services/wixInvoices")
+    .then((mod) => mod.pushWorkOrderLinesToWix(workOrderId))
+    .catch(() => undefined);
+
   return { job_id: job.job_id };
 }
 

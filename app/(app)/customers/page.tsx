@@ -11,6 +11,10 @@ import {
 import { CUSTOMER_ACCOUNT_TYPE_LABELS } from "@/lib/services/customerShared";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { UserAvatar } from "@/components/ui/UserAvatar";
+import { signCustomerPhotosForViewer } from "@/lib/services/customerPhotos";
+import { formatOpenFaultBikeCount } from "@/lib/diagnostics/openFaults";
+import { countOpenFaultBikesByCustomer } from "@/lib/services/diagnosticSessions";
 
 const ACCOUNT_FILTERS: Array<CustomerAccountType | ""> = [
   "",
@@ -39,6 +43,23 @@ export default async function CustomersPage({
     }),
     countCustomers(),
   ]);
+  const photoUrls = await signCustomerPhotosForViewer(
+    customers.map((customer) => customer.photo_path)
+  );
+  const fleetIds = customers
+    .filter((customer) => customer.account_type === "fleet")
+    .map((customer) => customer.customer_id);
+  const openFaultBikes = new Map<string, number | null>();
+  if (fleetIds.length > 0) {
+    try {
+      const counts = await countOpenFaultBikesByCustomer(fleetIds);
+      for (const customerId of fleetIds) {
+        openFaultBikes.set(customerId, counts.get(customerId) ?? 0);
+      }
+    } catch {
+      for (const customerId of fleetIds) openFaultBikes.set(customerId, null);
+    }
+  }
 
   return (
     <div className="page-stack">
@@ -134,8 +155,18 @@ export default async function CustomersPage({
                   <td>
                     <Link
                       href={`/customers/${customer.customer_id}`}
-                      className="data-table-link"
+                      className="data-table-link inline-flex items-center gap-2"
                     >
+                      <UserAvatar
+                        firstName={customer.first_name}
+                        lastName={customer.last_name}
+                        photoUrl={
+                          customer.photo_path
+                            ? (photoUrls.get(customer.photo_path) ?? null)
+                            : null
+                        }
+                        size="sm"
+                      />
                       {customer.first_name} {customer.last_name}
                     </Link>
                   </td>
@@ -143,6 +174,13 @@ export default async function CustomersPage({
                     <span className="status-badge status-badge--neutral">
                       {CUSTOMER_ACCOUNT_TYPE_LABELS[customer.account_type] ?? "Retail"}
                     </span>
+                    {customer.account_type === "fleet" ? (
+                      <span className="mt-1 block text-xs text-[var(--status-neutral)]">
+                        {formatOpenFaultBikeCount(
+                          openFaultBikes.get(customer.customer_id) ?? null
+                        )}
+                      </span>
+                    ) : null}
                   </td>
                   <td className="text-[var(--status-neutral-fg)]">
                     {customer.phone ?? "—"}

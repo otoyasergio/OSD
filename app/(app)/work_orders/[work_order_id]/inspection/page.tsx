@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
+import { loadAuctionPriceGuide } from "@/lib/services/auctionPriceGuide";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import {
   canCompleteInspection,
@@ -11,6 +13,8 @@ import {
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
 import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
+import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
+import type { IntakeFollowUp } from "@/lib/forms/intakeCompletion";
 import {
   floorWorkReturnFromInspectBack,
   safeFloorReturnTo,
@@ -23,7 +27,11 @@ export default async function InspectionPage({
   searchParams,
 }: {
   params: Promise<{ work_order_id: string }>;
-  searchParams: Promise<{ returnTo?: string | string[] }>;
+  searchParams: Promise<{
+    returnTo?: string | string[];
+    intake?: string;
+    follow_up?: string;
+  }>;
 }) {
   const preview = await getRolePreviewContext();
   if (!preview) redirect("/login");
@@ -31,6 +39,10 @@ export default async function InspectionPage({
 
   const { work_order_id } = await params;
   const query = await searchParams;
+  const intakeFollowUp: IntakeFollowUp | undefined =
+    query.follow_up === "signature" || query.follow_up === "paper_copy"
+      ? query.follow_up
+      : undefined;
   const floorReturn = safeFloorReturnTo(query.returnTo);
   const backHref = floorReturn ?? `/work_orders/${work_order_id}?tab=inspection`;
   const backLabel = floorReturn ? "← Back to Tech floor" : "← Back";
@@ -57,6 +69,24 @@ export default async function InspectionPage({
     work_order_status: inspection.work_order_status,
     canEdit,
   });
+  const bike = inspection.header.motorcycle;
+  const auction = bike
+    ? await loadAuctionPriceGuide({
+        motorcycleId: bike.motorcycle_id,
+        bike: { year: bike.year, make: bike.make, model: bike.model },
+        audience: "staff",
+      })
+    : null;
+  if (auction?.refreshInBackground && bike) {
+    after(() => {
+      void loadAuctionPriceGuide({
+        motorcycleId: bike.motorcycle_id,
+        bike: { year: bike.year, make: bike.make, model: bike.model },
+        audience: "staff",
+        refresh: "force",
+      }).catch(() => undefined);
+    });
+  }
 
   return (
     <>
@@ -71,10 +101,14 @@ export default async function InspectionPage({
       </header>
 
       <div className="inspection-fullscreen-body">
+        {query.intake === "complete" ? (
+          <IntakeCompleteNotice followUp={intakeFollowUp} />
+        ) : null}
         {!readOnly ? (
           <p className="inspection-fullscreen-hint">
-            Tap OK / Future / Now / N/A on each item. Status saves immediately. Add
-            required photos before completing the report.
+            Mark every line OK, Future, or Now. “Doesn’t apply” needs a real reason. Enter
+            every measurement. Photograph front and rear tires, front and rear brakes,
+            forks, and the other evidence slots. Sign the report at the end.
           </p>
         ) : null}
 
@@ -93,6 +127,7 @@ export default async function InspectionPage({
           canForceComplete={canForce}
           canRecommend={canRecommend}
           completeReturnTo={completeReturnTo}
+          auctionGuide={auction?.view ?? null}
         />
       </div>
     </>

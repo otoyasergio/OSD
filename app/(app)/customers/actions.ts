@@ -13,6 +13,7 @@ import {
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { zodFieldErrors } from "@/lib/validation/fieldErrors";
 import { syncCustomerToWixAfterSave } from "@/app/(app)/customers/wix-actions";
+import { savePrivateLicence } from "@/lib/services/customerPrivate";
 
 export type CustomerFormState = {
   error: string | null;
@@ -22,6 +23,41 @@ export type CustomerFormState = {
 /** Typeahead search for intake and other customer pickers. */
 export async function searchCustomersAction(query: string): Promise<Customer[]> {
   return searchCustomers(query, { preferShopCustomers: true });
+}
+
+export async function saveLicenceScanAction(
+  customerId: string,
+  scan: {
+    firstName: string;
+    lastName: string;
+    address: string;
+    dateOfBirth: string;
+    licenceNumber: string;
+    licenceExpiry: string;
+  }
+): Promise<{ error: string | null }> {
+  try {
+    const { getCustomerById, updateCustomer } = await import("@/lib/services/customers");
+    const customer = await getCustomerById(customerId);
+    if (!customer) return { error: "That customer no longer exists." };
+    await updateCustomer(customerId, {
+      first_name: scan.firstName || customer.first_name,
+      last_name: scan.lastName || customer.last_name,
+      phone: customer.phone,
+      email: customer.email,
+      address: scan.address || customer.address,
+      date_of_birth: scan.dateOfBirth || customer.date_of_birth,
+      notes: customer.notes,
+      account_type: customer.account_type,
+    });
+    await savePrivateLicence(customerId, {
+      licenceNumber: scan.licenceNumber,
+      licenceExpiry: scan.licenceExpiry || null,
+    });
+    return { error: null };
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
 }
 
 function readCustomerInput(formData: FormData) {
@@ -57,6 +93,10 @@ export async function createCustomerAction(
   try {
     const customer = await createCustomer(readCustomerInput(formData));
     customerId = customer.customer_id;
+    await savePrivateLicence(customerId, {
+      licenceNumber: String(formData.get("licence_number") ?? ""),
+      licenceExpiry: String(formData.get("licence_expiry") ?? "") || null,
+    });
     await syncCustomerToWixAfterSave(customerId);
   } catch (error) {
     return toCustomerFormError(error);
@@ -93,6 +133,10 @@ export async function updateCustomerAction(
 ): Promise<CustomerFormState> {
   try {
     await updateCustomer(customerId, readCustomerInput(formData));
+    await savePrivateLicence(customerId, {
+      licenceNumber: String(formData.get("licence_number") ?? ""),
+      licenceExpiry: String(formData.get("licence_expiry") ?? "") || null,
+    });
     await syncCustomerToWixAfterSave(customerId);
   } catch (error) {
     return toCustomerFormError(error);

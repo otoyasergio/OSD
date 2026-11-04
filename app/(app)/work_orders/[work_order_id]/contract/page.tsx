@@ -38,7 +38,7 @@ export default async function WorkOrderContractPage({
     ? Math.max(0, parsedExtraPhotoFailures)
     : 0;
   const workOrderHref = `/work_orders/${work_order_id}`;
-  const intakeCompleteHref = `${workOrderHref}?intake=complete`;
+  const intakeCompleteHref = `/work_orders/${work_order_id}/inspection?intake=complete`;
 
   const [template, agreement] = await Promise.all([
     getActiveAgreementTemplate(),
@@ -86,7 +86,7 @@ export default async function WorkOrderContractPage({
         existing={agreement}
         action={signDropOffAgreementAction.bind(null, work_order_id)}
         continueHref={fromIntake ? intakeCompleteHref : undefined}
-        continueLabel="Continue to work order"
+        continueLabel="Start inspection"
         allowPaperSignature
         paperCopyAction={uploadPaperAgreementCopyAction.bind(null, work_order_id)}
       />

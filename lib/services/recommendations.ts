@@ -1420,6 +1420,10 @@ export async function convertRecommendationToJob(
 
   await recalculateWorkOrderStatus(supabase, existing.work_order_id, user.user_id);
 
+  await import("@/lib/services/wixInvoices")
+    .then((mod) => mod.pushWorkOrderLinesToWix(existing.work_order_id))
+    .catch(() => undefined);
+
   return {
     job_id: job.job_id,
     recommendation_id: recommendationId,
@@ -1547,6 +1551,10 @@ export async function createDraftJobFromRecommendation(
   // Perform-work checklist so the job is floor-ready once authorized.
   const { listJobChecklist } = await import("@/lib/services/jobChecklist");
   await listJobChecklist(job.job_id, supabase);
+
+  await import("@/lib/services/wixInvoices")
+    .then((mod) => mod.pushWorkOrderLinesToWix(existing.work_order_id))
+    .catch(() => undefined);
 
   return { job_id: job.job_id, recommendation_id: recommendationId };
 }

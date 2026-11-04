@@ -50,3 +50,6 @@ supabase/.branches/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Window-box Wi-Fi and the bike-link ingest secret. Copy secrets.example.h.
+firmware/mailbox/secrets.h

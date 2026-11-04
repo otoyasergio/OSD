@@ -2,7 +2,7 @@
  * Toronto Moto shop labour rate from the drop-off / service agreement.
  * Shop minimum is 0.25 hours of this rate.
  */
-export const SHOP_HOURLY_RATE = 145;
+export const SHOP_HOURLY_RATE = 156;
 
 export const SHOP_MINIMUM_HOURS = 0.25;
 

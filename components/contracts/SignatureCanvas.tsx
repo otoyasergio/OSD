@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { SIGNATURE_MIN_INK_PIXELS, countInkPixels } from "@/lib/inspections/signatureInk";
 
 type Props = {
   onChange: (dataUrl: string | null) => void;
@@ -72,8 +73,17 @@ export function SignatureCanvas({ onChange, height = 180 }: Props) {
 
   function emitChange() {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    onChange(canvas.toDataURL("image/png"));
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx || canvas.width === 0 || canvas.height === 0) {
+      onChange(null);
+      return;
+    }
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    onChange(
+      countInkPixels(pixels) >= SIGNATURE_MIN_INK_PIXELS
+        ? canvas.toDataURL("image/png")
+        : null
+    );
   }
 
   function onPointerDown(event: React.PointerEvent<HTMLCanvasElement>) {

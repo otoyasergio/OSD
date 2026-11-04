@@ -37,6 +37,7 @@ type Props = {
   initialCustomerId?: string;
   initialMotorcycleId?: string;
   closureDates: string[];
+  wixAssignsNumber?: boolean;
 };
 
 export function CreateWorkOrderFormLazy(props: Props) {

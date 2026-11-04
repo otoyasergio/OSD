@@ -47,6 +47,8 @@ export type Database = {
           motorcycle_id: string;
           customer_id: string | null;
           work_order_number: string | null;
+          /** Digits-only work order numbers, leading zeros ignored. Null otherwise. */
+          invoice_number_int: number | null;
           status: string;
           primary_technician_id: string | null;
           mileage: number | null;
@@ -301,6 +303,7 @@ export type Database = {
           date_of_birth: string | null;
           account_type: string;
           sms_opted_out_at: string | null;
+          photo_path: string | null;
         };
         Insert: Record<string, unknown>;
         Update: Record<string, unknown>;
@@ -330,6 +333,71 @@ export type Database = {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["shop_closure"]["Insert"]>;
+      };
+      bike_link_schedule: {
+        Row: {
+          motorcycle_id: string;
+          interval_distance: number;
+          interval_days: number;
+          last_service_odometer: number | null;
+          last_service_on: string | null;
+          updated_at: string;
+          updated_by_user_id: string | null;
+        };
+        Insert: {
+          motorcycle_id: string;
+          interval_distance: number;
+          interval_days: number;
+          last_service_odometer?: number | null;
+          last_service_on?: string | null;
+          updated_at?: string;
+          updated_by_user_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["bike_link_schedule"]["Insert"]>;
+      };
+      bike_link_reading: {
+        Row: {
+          reading_id: string;
+          motorcycle_id: string;
+          source: "shop_bay" | "home" | "partner";
+          place_name: string | null;
+          odometer: number | null;
+          battery_volts: number | null;
+          fault_codes: string[];
+          recorded_at: string;
+          received_at: string;
+          recorded_by_user_id: string | null;
+          box_id: string | null;
+        };
+        Insert: {
+          reading_id?: string;
+          motorcycle_id: string;
+          source: "shop_bay" | "home" | "partner";
+          place_name?: string | null;
+          odometer?: number | null;
+          battery_volts?: number | null;
+          fault_codes?: string[];
+          recorded_at: string;
+          received_at?: string;
+          recorded_by_user_id?: string | null;
+          box_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["bike_link_reading"]["Insert"]>;
+      };
+      bike_link_box: {
+        Row: {
+          box_id: string;
+          motorcycle_id: string;
+          paired_at: string;
+          paired_by_user_id: string | null;
+        };
+        Insert: {
+          box_id: string;
+          motorcycle_id: string;
+          paired_at?: string;
+          paired_by_user_id?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["bike_link_box"]["Insert"]>;
       };
       shop_mailbox: {
         Row: {
@@ -690,9 +758,172 @@ export type Database = {
         };
         Update: Partial<Database["public"]["Tables"]["vehicle_passport_share"]["Insert"]>;
       };
+      wix_invoice: {
+        Row: {
+          wix_invoice_id: string;
+          revision: string;
+          display_number: string;
+          invoice_number: number;
+          status: string;
+          status_qualifiers: string[];
+          total_cents: number;
+          paid_cents: number;
+          currency: string;
+          issue_date: string | null;
+          due_date: string | null;
+          customer_id: string | null;
+          motorcycle_id: string | null;
+          vin_snapshot: string | null;
+          work_order_id: string | null;
+          pending_work_order_id: string | null;
+          voided: boolean;
+          title: string | null;
+          contact_id: string | null;
+          pay_url: string | null;
+          exclude_from_square: boolean;
+          credit_applied_cents: number;
+          sync_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      wix_invoice_payment: {
+        Row: {
+          wix_invoice_payment_id: string;
+          wix_payment_id: string;
+          wix_invoice_id: string;
+          amount_cents: number;
+          method: string;
+          kind: "payment" | "refund";
+          square_status: "unasked" | "not_yet" | "squared" | "skipped_void";
+          square_payment_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      invoice_create_acknowledgement: {
+        Row: {
+          acknowledgement_id: string;
+          work_order_id: string | null;
+          customer_id: string;
+          motorcycle_id: string;
+          staff_user_id: string;
+          wix_error_text: string;
+          wix_invoice_id: string | null;
+          pending_work_order_id: string | null;
+          acknowledged_at: string | null;
+          cleared_at: string | null;
+          hold_revision: number;
+          created_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      customer_private_profile: {
+        Row: {
+          customer_id: string;
+          licence_number: string | null;
+          licence_expiry: string | null;
+          scanned_at: string | null;
+          updated_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      auction_lot: {
+        Row: {
+          auction_lot_id: string;
+          source: string;
+          source_lot_id: string;
+          title: string;
+          make: string;
+          make_key: string;
+          model: string;
+          model_year: number | null;
+          vendor: string | null;
+          sale_date: string | null;
+          status: "sold" | "unsold" | "withdrawn" | "unknown";
+          price_usd_cents: number | null;
+          hammer_amount_cents: number | null;
+          hammer_currency: string | null;
+          location: string | null;
+          country: string | null;
+          lot_url: string | null;
+          search_text: string;
+          imported_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      auction_price_snapshot: {
+        Row: {
+          motorcycle_id: string;
+          year: number;
+          make: string;
+          model: string;
+          guide: Json;
+          provider_status: "ready" | "empty" | "not_configured" | "unavailable" | "error";
+          provider_message: string | null;
+          fetched_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      diagnostic_catalog: {
+        Row: {
+          catalog_id: string;
+          location_id: string;
+          dtc_code: string;
+          description: string;
+          severity_hint: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      diagnostic_session: {
+        Row: {
+          session_id: string;
+          motorcycle_id: string;
+          work_order_id: string | null;
+          location_id: string;
+          recorded_by_user_id: string | null;
+          recorded_at: string;
+          source: string;
+          notes: string | null;
+          scan_results: string;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
+      diagnostic_reading: {
+        Row: {
+          reading_id: string;
+          session_id: string;
+          code: string;
+          status: string;
+          ecu: string | null;
+          freeze_frame: Json;
+        };
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      replace_bike_link_box: {
+        Args: {
+          p_motorcycle_id: string;
+          p_box_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
       mint_work_order_number: {
         Args: { p_location_id: string };
         Returns: string;
@@ -862,6 +1093,18 @@ export type Database = {
       intake_photo_object_in_user_locations: {
         Args: { object_name: string };
         Returns: boolean;
+      };
+      record_diagnostic_session: {
+        Args: {
+          p_motorcycle_id: string;
+          p_work_order_id: string | null;
+          p_location_id: string;
+          p_source: string;
+          p_scan_results: string;
+          p_notes: string | null;
+          p_readings: Json;
+        };
+        Returns: string;
       };
     };
     Enums: Record<string, never>;

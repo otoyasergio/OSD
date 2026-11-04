@@ -110,3 +110,18 @@ export function photoUploadQueueEnabled(
 ): boolean {
   return env.PHOTO_UPLOAD_QUEUE_ENABLED === "1";
 }
+
+/**
+ * Wix is the invoice. Square stays the books.
+ * Both switches must be exactly "1". The confirmation switch is set only
+ * after scripts/check-wix-invoice-gates.mjs exits 0, including a draft
+ * that returned numbering.displayNumber. Unset means the Square invoice
+ * path stays in place.
+ */
+export function wixInvoicesEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return (
+    env.WIX_INVOICES_ENABLED === "1" && env.WIX_INVOICES_GATES_CONFIRMED === "1"
+  );
+}

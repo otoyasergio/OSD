@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   createWorkOrderOnlyAction,
+  createWorkOrderWithEnteredWixNumberAction,
   getLastRecordedMileageAction,
+  getMotorcyclePackageFitmentAction,
+  loadOpenWixIntakeHoldAction,
+  retryAcknowledgedWixIntakeAction,
   type WorkOrderFormState,
 } from "@/app/(app)/work_orders/actions";
 import { getOutstandingRecommendationsAction } from "@/app/(app)/work_orders/recommendation-actions";
@@ -36,6 +40,8 @@ import {
   intakeContractHref,
 } from "@/lib/photos/intakeQueue";
 import { CustomerSearchPicker } from "@/components/forms/CustomerSearchPicker";
+import { LicenceBarcodeScan } from "@/components/customers/LicenceBarcodeScan";
+import { saveLicenceScanAction } from "@/app/(app)/customers/actions";
 import { CustomerInformationReminder } from "@/components/customers/CustomerInformationReminder";
 import { VinDecodePanel } from "@/components/forms/VinDecodePanel";
 import { FindMotorcycleByVin } from "@/components/forms/FindMotorcycleByVin";
@@ -47,15 +53,24 @@ import {
   canNavigateToWizardStep,
   canProceedFromWizardStep,
   canSubmitCreateWorkOrderWizard,
+  intakePrimaryActionLabel,
+  intakePrimaryActionRetries,
+  intakeUsesEnteredWixNumber,
   shouldApplyCreateIntakePhotoChange,
   shouldApplyCreateOptionalPhotoChange,
+  showIntakePrimaryAction,
 } from "@/lib/forms/createWorkOrderWizard";
 import { stripIntakePhotoFields } from "@/lib/forms/intakeFormData";
 import {
   createIntakeServiceLineDraft,
   formatServiceLineSummary,
   hasValidServiceLinePrice,
+  isOilChangeService,
+  isSeasonalTuneUp,
+  oilChangeIncludedParts,
   serviceLineSubtotalDollars,
+  tuneUpIncludedNote,
+  type BikePackageFitment,
   type ServiceLineDraft,
 } from "@/lib/forms/serviceLines";
 import { estimateTotalsWithHst, HST_PERCENT } from "@/lib/pricing/hst";
@@ -65,6 +80,12 @@ import {
   suggestedPriceFromLabourHours,
 } from "@/lib/pricing/shopRate";
 import { toFormErrorMessage } from "@/lib/services/errors";
+import {
+  allowsEnteredWixInvoiceNumber,
+  intakeBannerMessage,
+  normalizeEnteredWixInvoiceNumber,
+  WIX_NEW_INVOICE_URL,
+} from "@/lib/wix/invoiceRules";
 import {
   formatDateTime,
   nextShopBusinessCompletionValue,
@@ -86,6 +107,7 @@ type Props = {
   initialCustomerId?: string;
   initialMotorcycleId?: string;
   closureDates: string[];
+  wixAssignsNumber?: boolean;
 };
 
 const SELECT_CLASS =
@@ -126,11 +148,14 @@ export function CreateWorkOrderForm({
   initialCustomerId = "",
   initialMotorcycleId = "",
   closureDates,
+  wixAssignsNumber = false,
 }: Props) {
   const router = useRouter();
   const queue = usePhotoUploadQueue();
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const wixHoldBannerRef = useRef<HTMLDivElement>(null);
   const draftHydration = useIntakeDraftHydration();
   const intakeDraftId = draftHydration.intakeDraftId;
   const photosRestored = draftHydration.photosRestored;
@@ -172,6 +197,11 @@ export function CreateWorkOrderForm({
   const customerIdRef = useRef(resolvedInitialCustomerId);
   const bikeLoadRequestRef = useRef(0);
   const [workOrderNumber, setWorkOrderNumber] = useState("");
+  const [invoicePreview, setInvoicePreview] = useState<string | null>(null);
+  const [wixAcknowledgementId, setWixAcknowledgementId] = useState<string | null>(null);
+  const [wixHoldRevision, setWixHoldRevision] = useState<number | null>(null);
+  const [wixErrorText, setWixErrorText] = useState<string | null>(null);
+  const [clientNotice, setClientNotice] = useState<string | null>(null);
   const [mileage, setMileage] = useState("");
   const [mileageUnit, setMileageUnit] = useState<MileageUnit>(() =>
     normalizeMileageUnit(
@@ -189,6 +219,15 @@ export function CreateWorkOrderForm({
   ]);
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
   const [serviceLines, setServiceLines] = useState<Record<string, ServiceLineDraft>>({});
+  const [fitmentFetch, setFitmentFetch] = useState<{
+    motorcycleId: string;
+    fitment: BikePackageFitment | null;
+  } | null>(null);
+  const autoTuneNotes = useRef<Record<string, string>>({});
+  const packageFitment =
+    motorcycleId && fitmentFetch?.motorcycleId === motorcycleId
+      ? fitmentFetch.fitment
+      : null;
   const [primaryTechnicianId, setPrimaryTechnicianId] = useState("");
   const [outstandingFetch, setOutstandingFetch] = useState<{
     motorcycleId: string;
@@ -282,6 +321,14 @@ export function CreateWorkOrderForm({
     });
   }
 
+  function clearWixHold() {
+    setWixAcknowledgementId(null);
+    setWixHoldRevision(null);
+    setWixErrorText(null);
+    setClientNotice(null);
+    setClientError(null);
+  }
+
   function handleCustomerChange(nextCustomerId: string, customer: Customer | null) {
     customerIdRef.current = nextCustomerId;
     const requestId = ++bikeLoadRequestRef.current;
@@ -289,6 +336,7 @@ export function CreateWorkOrderForm({
     setMotorcycleId("");
     setMileageUnit("km");
     setMaxReachedIndex(0);
+    clearWixHold();
     if (customer) {
       setKnownCustomers((prev) => {
         if (prev.some((c) => c.customer_id === customer.customer_id)) {
@@ -325,6 +373,7 @@ export function CreateWorkOrderForm({
     );
     setMileageUnit(normalizeMileageUnit(bike?.odometer_unit));
     setMaxReachedIndex((prev) => Math.min(prev, 1));
+    clearWixHold();
   }
   const selectedTech = technicians.find((tech) => tech.user_id === primaryTechnicianId);
   const selectedServices = services.filter((service) =>
@@ -357,9 +406,48 @@ export function CreateWorkOrderForm({
     selectedServiceIds,
     servicePricingComplete,
     intakeComplete,
+    wixAssignsNumber,
   };
 
   const canProceed = canProceedFromWizardStep(stepId, stepData);
+
+  useEffect(() => {
+    if (!wixAssignsNumber) return;
+    let cancelled = false;
+    void fetch("/api/wix/invoices/preview")
+      .then((response) => response.json())
+      .then((body: { preview?: string | null }) => {
+        if (!cancelled) setInvoicePreview(body.preview ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setInvoicePreview(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wixAssignsNumber]);
+
+  useEffect(() => {
+    if (!wixAcknowledgementId) return;
+    wixHoldBannerRef.current?.scrollIntoView({ block: "start" });
+  }, [wixAcknowledgementId]);
+
+  useEffect(() => {
+    if (!wixAssignsNumber || !customerId || !motorcycleId) return;
+    let cancelled = false;
+    void loadOpenWixIntakeHoldAction(customerId, motorcycleId).then((hold) => {
+      if (cancelled || !hold.wixAcknowledgementId || !hold.error) return;
+      setWixAcknowledgementId(hold.wixAcknowledgementId);
+      setWixHoldRevision(hold.wixHoldRevision ?? null);
+      setWixErrorText(hold.error);
+      const banner = intakeBannerMessage({ error: hold.error, notice: null });
+      setClientError(banner.error);
+      setClientNotice(banner.notice);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [wixAssignsNumber, customerId, motorcycleId]);
 
   useEffect(() => {
     if (!resolvedInitialCustomerId) return;
@@ -393,6 +481,27 @@ export function CreateWorkOrderForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedInitialCustomerId]);
 
+  function refreshTuneUpNotes(fitment: BikePackageFitment | null) {
+    setServiceLines((lines) => {
+      let changed = false;
+      const next = { ...lines };
+      for (const service of services) {
+        if (!isSeasonalTuneUp(service.name)) continue;
+        const line = next[service.service_id];
+        if (!line) continue;
+        const fresh = tuneUpIncludedNote(fitment);
+        const previousAuto = autoTuneNotes.current[service.service_id];
+        if (line.note !== previousAuto && line.note !== tuneUpIncludedNote(null))
+          continue;
+        autoTuneNotes.current[service.service_id] = fresh;
+        if (line.note === fresh) continue;
+        next[service.service_id] = { ...line, note: fresh };
+        changed = true;
+      }
+      return changed ? next : lines;
+    });
+  }
+
   useEffect(() => {
     if (!motorcycleId) return;
 
@@ -400,15 +509,20 @@ export function CreateWorkOrderForm({
     void Promise.all([
       getOutstandingRecommendationsAction(motorcycleId).catch(() => []),
       getLastRecordedMileageAction(motorcycleId).catch(() => null),
-    ]).then(([rows, lastMileage]) => {
+      getMotorcyclePackageFitmentAction(motorcycleId).catch(() => null),
+    ]).then(([rows, lastMileage, fitment]) => {
       if (cancelled) return;
       setOutstandingFetch({ motorcycleId, rows });
       setLastMileageFetch({ motorcycleId, row: lastMileage });
+      setFitmentFetch({ motorcycleId, fitment });
+      refreshTuneUpNotes(fitment);
     });
 
     return () => {
       cancelled = true;
     };
+    // refreshTuneUpNotes reads the latest services list when the bike changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [motorcycleId]);
 
   function goNext() {
@@ -431,21 +545,56 @@ export function CreateWorkOrderForm({
     setClientError(null);
   }
 
-  async function submitCreate(form: HTMLFormElement) {
+  async function submitCreate(
+    form: HTMLFormElement,
+    mode: "wix" | "entered" | "wix-force" = "wix"
+  ) {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setClientError(null);
+    setClientNotice(null);
     setSubmitting(true);
+    const acknowledgementId = wixAcknowledgementId;
+    const holdRevision = wixHoldRevision;
+    const seenError = wixErrorText ?? "";
 
     try {
       const formData = new FormData(form);
       // Never send six camera originals in one serverless POST — Vercel rejects
       // large bodies with an unexpected-response crash instead of a form error.
       stripIntakePhotoFields(formData, ALL_REQUIRED);
+      if (mode === "wix-force") formData.set("force_wix_attempt", "1");
 
-      const created = await createWorkOrderOnlyAction({ error: null }, formData);
+      const created =
+        mode === "entered"
+          ? await createWorkOrderWithEnteredWixNumberAction(formData)
+          : acknowledgementId &&
+              holdRevision != null &&
+              (mode === "wix-force" || intakePrimaryActionRetries(true))
+            ? await retryAcknowledgedWixIntakeAction(
+                acknowledgementId,
+                holdRevision,
+                seenError,
+                formData
+              )
+            : await createWorkOrderOnlyAction({ error: null }, formData);
       if (created.error || !created.workOrderId) {
-        setClientError(created.error ?? "Could not create the work order. Try again.");
+        const nextAcknowledgementId = created.wixAcknowledgementId ?? null;
+        if (nextAcknowledgementId) {
+          setWixAcknowledgementId(nextAcknowledgementId);
+          setWixHoldRevision(created.wixHoldRevision ?? null);
+          setWixErrorText(created.error ?? null);
+        } else if (mode !== "entered") {
+          setWixAcknowledgementId(null);
+          setWixHoldRevision(null);
+          setWixErrorText(null);
+        }
+        const banner = intakeBannerMessage({
+          error: created.error ?? "Could not create the work order. Try again.",
+          notice: null,
+        });
+        setClientError(banner.error);
+        setClientNotice(banner.notice);
         return;
       }
 
@@ -472,7 +621,12 @@ export function CreateWorkOrderForm({
 
       router.push(intakeContractHref(created.workOrderId));
     } catch (error) {
-      setClientError(toFormErrorMessage(error));
+      const banner = intakeBannerMessage({
+        error: toFormErrorMessage(error),
+        notice: null,
+      });
+      setClientError(banner.error);
+      setClientNotice(banner.notice);
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -493,9 +647,40 @@ export function CreateWorkOrderForm({
   const selectedPhotoCount = Object.values(visibleIntakePhotos).filter(
     (file) => file instanceof File && file.size > 0
   ).length;
+  const acknowledgementPending = Boolean(wixAcknowledgementId);
+  const readyToCreate = canSubmitCreateWorkOrderWizard({
+    stepId: acknowledgementPending ? "review" : stepId,
+    customerId,
+    motorcycleId,
+    workOrderNumber,
+    wixAssignsNumber,
+    mileage,
+    estimatedCompletion,
+    selectedServiceIds,
+    servicePricingComplete,
+    intakeComplete,
+  });
+  const showPrimary = showIntakePrimaryAction({
+    onReviewStep: isLastStep,
+    acknowledgementPending,
+  });
+  const intakeBanner = intakeBannerMessage({
+    error: clientError ?? (acknowledgementPending ? wixErrorText : null),
+    notice: clientNotice,
+  });
+  const legacyNumberEntry = intakeUsesEnteredWixNumber({
+    acknowledgementPending,
+    legacyNumberEntry: allowsEnteredWixInvoiceNumber(wixErrorText ?? intakeBanner.error),
+  });
+  const primaryLabel = submitting
+    ? "Creating & uploading…"
+    : legacyNumberEntry
+      ? "Use this invoice number"
+      : intakePrimaryActionLabel(acknowledgementPending);
 
   return (
     <form
+      ref={formRef}
       encType="multipart/form-data"
       className="intake-wizard"
       onKeyDown={(event) => {
@@ -509,20 +694,10 @@ export function CreateWorkOrderForm({
       }}
       onSubmit={(event) => {
         event.preventDefault();
-        const ok = canSubmitCreateWorkOrderWizard({
-          stepId,
-          customerId,
-          motorcycleId,
-          workOrderNumber,
-          mileage,
-          estimatedCompletion,
-          selectedServiceIds,
-          servicePricingComplete,
-          intakeComplete,
-        });
-        if (!ok) {
+        if (!readyToCreate) {
+          setClientNotice(null);
           setClientError(
-            isLastStep
+            isLastStep || acknowledgementPending
               ? "Complete every required step, including the Wix work order number and all six intake photos, before creating the work order."
               : "Finish each step in order before creating the work order."
           );
@@ -530,10 +705,88 @@ export function CreateWorkOrderForm({
         }
 
         const form = event.currentTarget;
-        void submitCreate(form);
+        void submitCreate(form, legacyNumberEntry ? "entered" : "wix");
       }}
     >
-      <FormError message={clientError} />
+      <div ref={wixHoldBannerRef} className="flex flex-col gap-3">
+        <FormError message={intakeBanner.error} />
+        {intakeBanner.notice ? (
+          <p
+            role="status"
+            className="rounded border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-foreground"
+          >
+            {intakeBanner.notice}
+          </p>
+        ) : null}
+        {showPrimary && !legacyNumberEntry ? (
+          <button
+            type="button"
+            className={`${NAV_BTN_CLASS} btn-primary w-full`}
+            disabled={submitting || !readyToCreate}
+            onClick={() => {
+              const form = formRef.current;
+              if (!form) return;
+              void submitCreate(form);
+            }}
+          >
+            {primaryLabel}
+          </button>
+        ) : null}
+        {legacyNumberEntry ? (
+          <div className="flex flex-col gap-2">
+            <a
+              className="btn w-full min-h-12 text-base"
+              href={WIX_NEW_INVOICE_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open Wix invoices
+            </a>
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-foreground">
+                Wix invoice number
+              </span>
+              <input
+                className={INPUT_CLASS}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="0003894"
+                value={workOrderNumber}
+                onChange={(event) => setWorkOrderNumber(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className={`${NAV_BTN_CLASS} btn-primary w-full`}
+              disabled={
+                submitting ||
+                !readyToCreate ||
+                !normalizeEnteredWixInvoiceNumber(workOrderNumber)
+              }
+              onClick={() => {
+                const form = formRef.current;
+                if (!form) return;
+                void submitCreate(form, "entered");
+              }}
+            >
+              {submitting ? "Creating & uploading…" : "Use this invoice number"}
+            </button>
+            <button
+              type="button"
+              className="self-start text-sm font-medium text-[var(--status-neutral)] underline underline-offset-2"
+              disabled={submitting || !readyToCreate}
+              onClick={() => {
+                const form = formRef.current;
+                if (!form) return;
+                void submitCreate(form, "wix-force");
+              }}
+            >
+              Check Wix again
+            </button>
+          </div>
+        ) : null}
+      </div>
 
       <WizardProgress
         stepIndex={stepIndex}
@@ -542,6 +795,7 @@ export function CreateWorkOrderForm({
       />
 
       {/* Persist values for submit regardless of which step is visible */}
+      <input type="hidden" name="customer_id" value={customerId} />
       <input type="hidden" name="motorcycle_id" value={motorcycleId} />
       <input type="hidden" name="work_order_number" value={workOrderNumber.trim()} />
       <input type="hidden" name="mileage" value={mileage} />
@@ -588,6 +842,25 @@ export function CreateWorkOrderForm({
               </Link>
               .
             </span>
+            {customerId ? (
+              <div className="mt-3">
+                <LicenceBarcodeScan
+                  onConfirm={(scan) => {
+                    void saveLicenceScanAction(customerId, {
+                      firstName: scan.firstName,
+                      lastName: scan.lastName,
+                      address: scan.address,
+                      dateOfBirth: scan.dateOfBirth,
+                      licenceNumber: scan.licenceNumber,
+                      licenceExpiry: scan.licenceExpiry,
+                    }).then((result) => {
+                      if (result.error) setClientError(result.error);
+                      else router.refresh();
+                    });
+                  }}
+                />
+              </div>
+            ) : null}
             {selectedCustomer ? (
               <CustomerInformationReminder
                 phone={selectedCustomer.phone}
@@ -692,7 +965,10 @@ export function CreateWorkOrderForm({
               >
                 Add plate
               </Link>
-              . You can continue this intake without it.
+              .{" "}
+              {wixAssignsNumber
+                ? "Enter N/A on the motorcycle if it has no plate. VIN is required before the invoice is created."
+                : "You can continue this intake without it."}
             </p>
           ) : null}
           {selectedBike ? <VinDecodePanel vin={selectedBike.vin} /> : null}
@@ -714,29 +990,40 @@ export function CreateWorkOrderForm({
         <section className="intake-wizard-panel">
           <h2 className="intake-wizard-panel-title">Visit details</h2>
           <p className="intake-wizard-panel-lede">
-            Enter the Wix work order number first — that becomes the shop work order #.
-            Then mileage, services, and technician. Square invoicing is created later from
-            the work order Billing panel.
+            {legacyNumberEntry
+              ? "Create the invoice in Wix, then enter that number at the top. That number is the work order number."
+              : wixAssignsNumber
+                ? "Wix assigns the invoice number when you save. The preview is not reserved."
+                : "Enter the Wix work order number first — that becomes the shop work order #. Then mileage, services, and technician. Square invoicing is created later from the work order Billing panel."}
           </p>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-foreground">
-              Wix work order # <span className="ml-1 text-red-600">*</span>
-            </span>
-            <input
-              className={INPUT_CLASS}
-              type="text"
-              inputMode="text"
-              autoComplete="off"
-              placeholder="e.g. WO-1042"
-              value={workOrderNumber}
-              onChange={(event) => setWorkOrderNumber(event.target.value)}
-              required
-            />
-            <span className="mt-1 block text-xs text-[var(--status-neutral)]">
-              Copy the number from Wix. We no longer assign work order numbers in the shop
-              app.
-            </span>
-          </label>
+          {legacyNumberEntry ? null : wixAssignsNumber ? (
+            <p className="text-sm">
+              Next invoice preview:{" "}
+              <span className="font-medium">
+                {invoicePreview ?? "Wix will assign it on save"}
+              </span>
+            </p>
+          ) : (
+            <label className="block">
+              <span className="mb-1.5 block text-sm font-medium text-foreground">
+                Wix work order # <span className="ml-1 text-red-600">*</span>
+              </span>
+              <input
+                className={INPUT_CLASS}
+                type="text"
+                inputMode="text"
+                autoComplete="off"
+                placeholder="e.g. WO-1042"
+                value={workOrderNumber}
+                onChange={(event) => setWorkOrderNumber(event.target.value)}
+                required
+              />
+              <span className="mt-1 block text-xs text-[var(--status-neutral)]">
+                Copy the number from Wix. We no longer assign work order numbers in the
+                shop app.
+              </span>
+            </label>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-foreground">
@@ -918,15 +1205,22 @@ export function CreateWorkOrderForm({
                                           (id) => id !== service.service_id
                                         );
                                       }
-                                      setServiceLines((lines) => ({
-                                        ...lines,
-                                        [service.service_id]:
-                                          createIntakeServiceLineDraft({
-                                            name: service.name,
-                                            estimatedLabour: service.estimated_labour,
-                                            standardPrice: service.standard_price,
-                                          }),
-                                      }));
+                                      setServiceLines((lines) => {
+                                        const draft = createIntakeServiceLineDraft({
+                                          name: service.name,
+                                          estimatedLabour: service.estimated_labour,
+                                          standardPrice: service.standard_price,
+                                          fitment: packageFitment,
+                                        });
+                                        if (isSeasonalTuneUp(service.name)) {
+                                          autoTuneNotes.current[service.service_id] =
+                                            draft.note;
+                                        }
+                                        return {
+                                          ...lines,
+                                          [service.service_id]: draft,
+                                        };
+                                      });
                                       return [...prev, service.service_id];
                                     });
                                   }}
@@ -1039,6 +1333,17 @@ export function CreateWorkOrderForm({
                                       </span>
                                     ) : null}
                                   </label>
+                                  {isOilChangeService(service.name) ? (
+                                    <ul className="sm:col-span-2 space-y-1 text-sm text-[var(--status-neutral)]">
+                                      {oilChangeIncludedParts(packageFitment).map(
+                                        (part) => (
+                                          <li key={part.part_name}>
+                                            {part.part_name} · $0
+                                          </li>
+                                        )
+                                      )}
+                                    </ul>
+                                  ) : null}
                                   <details className="sm:col-span-2">
                                     <summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-foreground underline-offset-2 hover:underline">
                                       {line.note.trim() ? "Edit note" : "+ Add note"}
@@ -1206,7 +1511,17 @@ export function CreateWorkOrderForm({
                   : "—"
               }
             />
-            <ReviewCard label="Wix work order #" value={workOrderNumber.trim() || "—"} />
+            <ReviewCard
+              label={wixAssignsNumber ? "Invoice number" : "Wix work order #"}
+              value={
+                legacyNumberEntry
+                  ? (normalizeEnteredWixInvoiceNumber(workOrderNumber) ??
+                    "Type the Wix invoice number above")
+                  : wixAssignsNumber
+                    ? (invoicePreview ?? "Assigned by Wix on save")
+                    : workOrderNumber.trim() || "—"
+              }
+            />
             <ReviewCard label="Mileage" value={formatMileage(mileage, mileageUnit)} />
             <ReviewCard
               label="Estimated completion"
@@ -1234,12 +1549,17 @@ export function CreateWorkOrderForm({
                   ? selectedServices
                       .map((s) => {
                         const line = serviceLines[s.service_id];
-                        return formatServiceLineSummary({
+                        const summary = formatServiceLineSummary({
                           name: s.name,
                           labourHours: line?.labourHours ?? "",
                           price: line?.price ?? "",
                           note: line?.note ?? "",
                         });
+                        if (!isOilChangeService(s.name)) return summary;
+                        const included = oilChangeIncludedParts(packageFitment)
+                          .map((part) => `${part.part_name} · $0`)
+                          .join("\n");
+                        return `${summary}\n${included}`;
                       })
                       .join("\n")
                   : "None selected"
@@ -1312,21 +1632,12 @@ export function CreateWorkOrderForm({
               type="submit"
               disabled={
                 submitting ||
-                !canSubmitCreateWorkOrderWizard({
-                  stepId,
-                  customerId,
-                  motorcycleId,
-                  workOrderNumber,
-                  mileage,
-                  estimatedCompletion,
-                  selectedServiceIds,
-                  servicePricingComplete,
-                  intakeComplete,
-                })
+                !readyToCreate ||
+                (legacyNumberEntry && !normalizeEnteredWixInvoiceNumber(workOrderNumber))
               }
               className={`${NAV_BTN_CLASS} btn-primary disabled:pointer-events-none disabled:opacity-60`}
             >
-              {submitting ? "Creating & uploading…" : "Create work order"}
+              {primaryLabel}
             </button>
           )}
         </div>

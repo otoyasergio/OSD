@@ -29,6 +29,23 @@ describe("board transitions", () => {
     expect(canDropInColumn("manager", "qc", "in_progress")).toBe(true);
   });
 
+  it("lets the whole shop drop a bike into ready for safety", () => {
+    for (const role of [
+      "owner",
+      "manager",
+      "service_advisor",
+      "technician",
+      "head_tech",
+      "admin",
+    ] as const) {
+      expect(canDropInColumn(role, "safety", "in_progress")).toBe(true);
+      expect(canDropInColumn(role, "gallery_safety", "quality_check")).toBe(true);
+      expect(allowsShopBoardDrop(role, "safety", "waiting_for_parts")).toBe(true);
+    }
+    expect(canDropInColumn("service_advisor", "qc", "in_progress")).toBe(false);
+    expect(canDropInColumn("technician", "qc", "in_progress")).toBe(false);
+  });
+
   it("maps complete column to completed and gates by front office", () => {
     expect(getTargetStatusForColumn("complete")).toBe("completed");
     expect(canDropInColumn("service_advisor", "complete", "ready_for_pickup")).toBe(true);

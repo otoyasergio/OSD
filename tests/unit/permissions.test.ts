@@ -30,6 +30,7 @@ import {
   canUpdateServiceInformation,
   canDeleteIntakePhoto,
   canViewClients,
+  canManageCustomerPhotos,
   canViewCustomerDocuments,
   canUploadCustomerDocuments,
   canDeleteCustomerDocuments,
@@ -41,6 +42,7 @@ import {
   canPerformSafetyCheck,
   canOverrideSafetyRequirement,
   canCompleteInspection,
+  canRecordDiagnosticSession,
   canCompleteJob,
   canCreateRecommendation,
   canViewTechnicianDocket,
@@ -234,6 +236,15 @@ describe("permissions", () => {
     expect(canViewClients("technician")).toBe(false);
   });
 
+  it("front office can add and remove customer photos; floor staff cannot", () => {
+    for (const role of ["owner", "manager", "admin", "service_advisor"] as const) {
+      expect(canManageCustomerPhotos(role)).toBe(true);
+    }
+    expect(canManageCustomerPhotos("technician")).toBe(false);
+    expect(canManageCustomerPhotos("head_tech")).toBe(false);
+    expect(canManageCustomerPhotos("time_clock_kiosk")).toBe(false);
+  });
+
   it("owner, manager, admin, and service advisor can view and upload customer documents", () => {
     for (const role of ["owner", "manager", "admin", "service_advisor"] as const) {
       expect(canViewCustomerDocuments(role)).toBe(true);
@@ -304,6 +315,16 @@ describe("permissions", () => {
     expect(canOverrideSafetyRequirement("head_tech")).toBe(false);
     expect(canOverrideSafetyRequirement("technician")).toBe(false);
     expect(canOverrideSafetyRequirement("admin")).toBe(false);
+  });
+
+  it("records a scan with the same roles that can finish an inspection", () => {
+    expect(canRecordDiagnosticSession("technician")).toBe(true);
+    expect(canRecordDiagnosticSession("head_tech")).toBe(true);
+    expect(canRecordDiagnosticSession("service_advisor")).toBe(true);
+    expect(canRecordDiagnosticSession("owner")).toBe(true);
+    expect(canRecordDiagnosticSession("manager")).toBe(true);
+    expect(canRecordDiagnosticSession("admin")).toBe(false);
+    expect(canRecordDiagnosticSession("time_clock_kiosk")).toBe(false);
   });
 
   it("head_tech inherits technician floor permissions without client CRM", () => {

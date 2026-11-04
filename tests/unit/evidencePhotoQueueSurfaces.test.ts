@@ -88,6 +88,9 @@ describe("evidence photo queue surfaces", () => {
       workOrderId: "wo-1",
       inspectionResultId: "ir-1",
     });
+    expect(container.querySelector(".inspection-photo-slot--done")).toBeNull();
+    expect(container.textContent).toContain("Add photo");
+    expect(container.textContent).not.toContain("Add another photo");
   });
 
   it("refreshes once when an inspection receipt photo is missing from current urls", async () => {

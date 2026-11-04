@@ -31,6 +31,7 @@ export type CustomerWorkOrderSummary = {
   location_code: string;
   motorcycle_label: string;
   jobs: CustomerWorkOrderJobSummary[];
+  billing_collected_cents: number;
 };
 
 export type MotorcycleWorkOrderSummary = CustomerWorkOrderSummary & {
@@ -134,6 +135,7 @@ type RawCustomerWo = {
     service_name_snapshot: string;
     status: JobStatus;
   }> | null;
+  billing_collected_cents: number | null;
 };
 
 type RawFiledWo = {
@@ -188,6 +190,7 @@ export async function listWorkOrdersForCustomer(
       status,
       completed_at,
       date_created,
+      billing_collected_cents,
       location:location_id ( name, code ),
       motorcycle:motorcycle_id (
         year,
@@ -219,6 +222,7 @@ export async function listWorkOrdersForCustomer(
         ? `${bike.year} ${bike.make} ${bike.model}`
         : "Unknown motorcycle",
       jobs: row.job ?? [],
+      billing_collected_cents: Number(row.billing_collected_cents ?? 0),
     };
   });
 

@@ -73,7 +73,7 @@ describe("required intake photo slots", () => {
     ]);
   });
 
-  it("pickPrimaryIntakePhoto prefers front over other angles", () => {
+  it("pickPrimaryIntakePhoto prefers the left side, then the front", () => {
     const primary = pickPrimaryIntakePhoto([
       {
         photo_id: "1",
@@ -94,7 +94,25 @@ describe("required intake photo slots", () => {
         created_at: "2026-01-03T00:00:00Z",
       },
     ]);
-    expect(primary?.photo_id).toBe("2");
+    expect(primary?.photo_id).toBe("3");
+  });
+
+  it("pickPrimaryIntakePhoto uses the front photo when the left side is missing", () => {
+    const primary = pickPrimaryIntakePhoto([
+      {
+        photo_id: "rear",
+        storage_path: "a.jpg",
+        category: "rear",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        photo_id: "front",
+        storage_path: "b.jpg",
+        category: "front",
+        created_at: "2026-01-02T00:00:00Z",
+      },
+    ]);
+    expect(primary?.photo_id).toBe("front");
   });
 
   it("pickPrimaryIntakePhoto falls back to oldest when no preferred angle", () => {

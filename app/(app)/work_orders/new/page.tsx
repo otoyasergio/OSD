@@ -8,6 +8,7 @@ import { listServices } from "@/lib/services/serviceCatalogue";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
 import { listUpcomingShopClosureDates } from "@/lib/services/shopClosures";
 import { CreateWorkOrderFormLazy } from "@/components/forms/CreateWorkOrderFormLazy";
+import { wixInvoicesEnabled } from "@/lib/config/features";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,7 @@ export default async function NewWorkOrderPage({
           initialCustomerId={customer_id}
           initialMotorcycleId={motorcycle_id}
           closureDates={closureDates}
+          wixAssignsNumber={wixInvoicesEnabled()}
         />
       </div>
     </div>

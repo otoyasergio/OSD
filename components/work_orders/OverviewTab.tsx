@@ -16,6 +16,8 @@ import { VisitWorkListSections } from "@/components/work_orders/VisitWorkListSec
 import { SignOffPad } from "@/components/inspections/SignOffPad";
 import { CheckoutEvidencePanel } from "@/components/photos/CheckoutEvidencePanel";
 import type { IntakePhoto } from "@/lib/services/photos";
+import type { TechnicianNote } from "@/lib/services/notes";
+import { TechnicianNotes } from "@/components/work_orders/TechnicianNotes";
 import {
   checkoutCapturePreconditions,
   checkoutCoverageFromPhotos,
@@ -72,6 +74,7 @@ export function OverviewTab({
   clearFlagAction,
   safetyOverrideAction,
   photos = [],
+  technicianNotes = [],
   canUploadPhotos = false,
   canOverrideCheckout = false,
   checkoutOverrideAction,
@@ -109,6 +112,7 @@ export function OverviewTab({
   clearFlagAction?: QualityAction;
   safetyOverrideAction?: SafetyAction;
   photos?: IntakePhoto[];
+  technicianNotes?: TechnicianNote[];
   canUploadPhotos?: boolean;
   canOverrideCheckout?: boolean;
   checkoutOverrideAction?: QualityAction;
@@ -254,6 +258,20 @@ export function OverviewTab({
           {detail.internal_notes?.trim() || "No internal notes."}
         </p>
       </section>
+
+      {technicianNotes.length > 0 ? (
+        <section className="rounded border border-[var(--border)] bg-white p-4">
+          <h2 className="text-lg font-semibold text-foreground">Technician notes</h2>
+          <div className="mt-3">
+            <TechnicianNotes
+              notes={technicianNotes}
+              jobs={detail.jobs}
+              readOnly
+              canAdd={false}
+            />
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded border border-[var(--border)] bg-white p-4">
         <h2 className="text-lg font-semibold text-foreground">Assigned technicians</h2>

@@ -21,12 +21,14 @@ export function canProceedFromMotorcycleStep(motorcycleId: string): boolean {
 
 export function canProceedFromVisitStep(data: {
   workOrderNumber: string;
+  /** When Wix assigns the number, the typed field is not required. */
+  wixAssignsNumber?: boolean;
   mileage: string;
   estimatedCompletion: string;
   selectedServiceIds: string[];
   servicePricingComplete: boolean;
 }): boolean {
-  if (!data.workOrderNumber.trim()) return false;
+  if (!data.wixAssignsNumber && !data.workOrderNumber.trim()) return false;
 
   const trimmed = data.mileage.trim();
   if (!trimmed) return false;
@@ -61,6 +63,7 @@ type StepCompleteInput = {
   customerId?: string;
   motorcycleId?: string;
   workOrderNumber?: string;
+  wixAssignsNumber?: boolean;
   mileage?: string;
   estimatedCompletion?: string;
   selectedServiceIds?: string[];
@@ -80,6 +83,7 @@ export function isWizardStepComplete(
     case "visit":
       return canProceedFromVisitStep({
         workOrderNumber: data.workOrderNumber ?? "",
+        wixAssignsNumber: data.wixAssignsNumber,
         mileage: data.mileage ?? "",
         estimatedCompletion: data.estimatedCompletion ?? "",
         selectedServiceIds: data.selectedServiceIds ?? [],
@@ -100,6 +104,7 @@ export function canSubmitCreateWorkOrderWizard(data: {
   customerId: string;
   motorcycleId: string;
   workOrderNumber: string;
+  wixAssignsNumber?: boolean;
   mileage: string;
   estimatedCompletion: string;
   selectedServiceIds: string[];
@@ -112,6 +117,7 @@ export function canSubmitCreateWorkOrderWizard(data: {
     canProceedFromMotorcycleStep(data.motorcycleId) &&
     canProceedFromVisitStep({
       workOrderNumber: data.workOrderNumber,
+      wixAssignsNumber: data.wixAssignsNumber,
       mileage: data.mileage,
       estimatedCompletion: data.estimatedCompletion,
       selectedServiceIds: data.selectedServiceIds,
@@ -151,4 +157,32 @@ export function canProceedFromWizardStep(
 ): boolean {
   if (stepId === "review") return false;
   return isWizardStepComplete(stepId, data);
+}
+
+/** The create control stays at the top of review, and beside a Wix hold. */
+export function showIntakePrimaryAction(input: {
+  onReviewStep: boolean;
+  acknowledgementPending: boolean;
+}): boolean {
+  return input.onReviewStep || input.acknowledgementPending;
+}
+
+export function intakePrimaryActionLabel(acknowledgementPending: boolean): string {
+  return acknowledgementPending ? "Try again" : "Create work order";
+}
+
+export function intakePrimaryActionRetries(acknowledgementPending: boolean): boolean {
+  return acknowledgementPending;
+}
+
+/**
+ * While the open hold already tells staff to type the Wix invoice number,
+ * the create control must save that number. Another Wix call only repeats
+ * the same refusal.
+ */
+export function intakeUsesEnteredWixNumber(input: {
+  acknowledgementPending: boolean;
+  legacyNumberEntry: boolean;
+}): boolean {
+  return input.acknowledgementPending && input.legacyNumberEntry;
 }

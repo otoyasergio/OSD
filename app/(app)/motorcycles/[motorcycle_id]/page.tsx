@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { after } from "next/server";
 import { notFound, redirect } from "next/navigation";
 import { getMotorcycleById, getServiceInformation } from "@/lib/services/motorcycles";
 import { getCustomerById, searchCustomers } from "@/lib/services/customers";
@@ -12,27 +13,48 @@ import {
   canDeleteMotorcycleDocuments,
   canEditWorkOrder,
   canManageVehiclePassport,
+  canRecordDiagnosticSession,
   canUpdateServiceInformation,
   canUploadMotorcycleDocuments,
   canViewBillingArea,
   canViewClients,
   canViewMotorcycleDocuments,
 } from "@/lib/permissions";
+import { DiagnosticPanel } from "@/components/diagnostics/DiagnosticPanel";
+import { unavailableDiagnosticPanel } from "@/lib/diagnostics/sessionView";
+import { getDiagnosticPanel } from "@/lib/services/diagnosticSessions";
 import { MotorcycleForm } from "@/components/forms/MotorcycleForm";
 import { ServiceInformationForm } from "@/components/forms/ServiceInformationForm";
 import { TransferMotorcycleForm } from "@/components/forms/TransferMotorcycleForm";
 import { OutstandingRecommendations } from "@/components/recommendations/OutstandingRecommendations";
 import { StaffPhotoGrid } from "@/components/photos/StaffPhotoGrid";
+import { AuctionPriceGuide } from "@/components/auctions/AuctionPriceGuide";
 import { MotorcycleDocuments } from "@/components/motorcycles/MotorcycleDocuments";
 import { MotorcycleVisitList } from "@/components/motorcycles/MotorcycleVisitList";
+import { BikeLinkPanel } from "@/components/motorcycles/BikeLinkPanel";
+import { getBikeLink } from "@/lib/services/bikeLink";
+import {
+  assignBikeLinkBoxAction,
+  recordBikeReadingAction,
+  saveBikeLinkScheduleAction,
+} from "@/app/(app)/motorcycles/bike-link-actions";
 import {
   updateMotorcycleAction,
   updateServiceInformationAction,
   transferMotorcycleAction,
 } from "@/app/(app)/motorcycles/actions";
+import { refreshAuctionPriceGuideAction } from "@/app/(app)/motorcycles/auction-actions";
+import { loadAuctionPriceGuide } from "@/lib/services/auctionPriceGuide";
 import { listMotorcycleDocuments } from "@/lib/services/motorcycleDocuments";
-import { formatDate, formatDateTime } from "@/lib/datetime/format";
+import {
+  formatDate,
+  formatDateTime,
+  toShopDatetimeLocalValue,
+} from "@/lib/datetime/format";
 import { formatMileage, normalizeMileageUnit } from "@/lib/mileage/format";
+import { WixInvoiceList } from "@/components/billing/WixInvoiceList";
+import { listInvoicesForMotorcycle } from "@/lib/services/wixInvoices";
+import { wixInvoicesEnabled } from "@/lib/config/features";
 
 function formatMoneyCents(cents: number): string {
   return new Intl.NumberFormat("en-CA", {
@@ -63,6 +85,10 @@ export default async function MotorcycleDetailPage({
     visits,
     photos,
     documents,
+    invoices,
+    auctionGuide,
+    bikeLink,
+    diagnostics,
   ] = await Promise.all([
     getServiceInformation(motorcycle_id),
     searchCustomers("", { preferShopCustomers: true }),
@@ -70,6 +96,16 @@ export default async function MotorcycleDetailPage({
     listWorkOrdersForMotorcycle(motorcycle_id),
     listIntakePhotosForMotorcycle(motorcycle_id),
     canViewDocs ? listMotorcycleDocuments(motorcycle_id) : Promise.resolve([]),
+    wixInvoicesEnabled() ? listInvoicesForMotorcycle(motorcycle_id) : Promise.resolve([]),
+    loadAuctionPriceGuide({
+      motorcycleId: motorcycle_id,
+      bike: { year: motorcycle.year, make: motorcycle.make, model: motorcycle.model },
+      audience: "staff",
+    }),
+    getBikeLink(motorcycle_id),
+    getDiagnosticPanel(motorcycle_id).catch(() =>
+      unavailableDiagnosticPanel(motorcycle_id)
+    ),
   ]);
 
   let customerOptions = customers;
@@ -95,6 +131,21 @@ export default async function MotorcycleDetailPage({
     ? `${motorcycle.customer.first_name} ${motorcycle.customer.last_name}`
     : "Unknown";
   const bikeLabel = `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`;
+
+  if (auctionGuide.refreshInBackground) {
+    after(() => {
+      void loadAuctionPriceGuide({
+        motorcycleId: motorcycle_id,
+        bike: {
+          year: motorcycle.year,
+          make: motorcycle.make,
+          model: motorcycle.model,
+        },
+        audience: "staff",
+        refresh: "force",
+      }).catch(() => undefined);
+    });
+  }
 
   const allVisits = [...visits.open, ...visits.filed];
   const snapshot = buildBikeSnapshot(allVisits);
@@ -208,6 +259,42 @@ export default async function MotorcycleDetailPage({
         </div>
       </section>
 
+      <AuctionPriceGuide
+        guide={auctionGuide.view}
+        variant="staff"
+        motorcycleId={motorcycle_id}
+        refreshAction={refreshAuctionPriceGuideAction}
+      />
+
+      <BikeLinkPanel
+        view={bikeLink}
+        canEdit={canEditServiceInfo}
+        recordedAtDefault={toShopDatetimeLocalValue(new Date())}
+        recordAction={recordBikeReadingAction.bind(null, motorcycle_id)}
+        scheduleAction={saveBikeLinkScheduleAction.bind(null, motorcycle_id)}
+        boxAction={assignBikeLinkBoxAction.bind(null, motorcycle_id)}
+      />
+
+      <DiagnosticPanel
+        data={diagnostics}
+        canRecord={canRecordDiagnosticSession(viewRole) && !preview?.isPreviewing}
+        customerId={motorcycle.customer_id}
+        newWorkOrderHref={
+          visits.open.length === 0 &&
+          diagnostics.openFaultCount !== null &&
+          diagnostics.openFaultCount > 0
+            ? `/work_orders/new?customer_id=${motorcycle.customer_id}&motorcycle_id=${motorcycle_id}`
+            : null
+        }
+        openWorkOrderHref={
+          visits.open[0] &&
+          diagnostics.openFaultCount !== null &&
+          diagnostics.openFaultCount > 0
+            ? `/work_orders/${visits.open[0].work_order_id}?tab=diagnostics`
+            : null
+        }
+      />
+
       {canViewDocs ? (
         <MotorcycleDocuments
           motorcycleId={motorcycle_id}
@@ -235,6 +322,20 @@ export default async function MotorcycleDetailPage({
         recommendations={outstandingRecommendations}
         title="Pending recommendations"
       />
+
+      {wixInvoicesEnabled() ? (
+        <section>
+          <h2 className="text-lg font-semibold text-foreground">Wix invoices</h2>
+          <p className="mt-1 text-sm text-[var(--status-neutral)]">
+            Every invoice whose VIN matches this motorcycle, including one billed to a
+            previous owner.
+          </p>
+          <WixInvoiceList
+            invoices={invoices}
+            emptyLabel="No Wix invoices match this VIN."
+          />
+        </section>
+      ) : null}
 
       <section>
         <h2 className="text-lg font-semibold text-foreground">Open visits</h2>

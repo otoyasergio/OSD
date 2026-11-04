@@ -4,6 +4,8 @@ import { requireUser } from "@/lib/auth/session";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canViewClients } from "@/lib/permissions";
 import { countMotorcycles, searchMotorcycles } from "@/lib/services/motorcycles";
+import { listBikeLinkAttention } from "@/lib/services/bikeLink";
+import { BikeLinkAttention } from "@/components/motorcycles/BikeLinkAttention";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -17,9 +19,10 @@ export default async function MotorcyclesPage({
   if (!canViewClients(preview?.role ?? user.role)) redirect("/dashboard");
 
   const { q = "" } = await searchParams;
-  const [motorcycles, totalMotorcycles] = await Promise.all([
+  const [motorcycles, totalMotorcycles, attention] = await Promise.all([
     searchMotorcycles(q),
     countMotorcycles(),
+    listBikeLinkAttention(),
   ]);
 
   return (
@@ -46,6 +49,8 @@ export default async function MotorcyclesPage({
           </div>
         ) : null}
       </div>
+
+      <BikeLinkAttention items={attention} />
 
       <form method="get" className="filter-panel sm:grid-cols-1 lg:grid-cols-2">
         <label className="block sm:col-span-2 lg:col-span-1">

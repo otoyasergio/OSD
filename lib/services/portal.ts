@@ -1,3 +1,4 @@
+import { assertContractNamesLegalEntity } from "@/lib/contracts/legalEntity";
 import { createAdminClient } from "@/lib/database/supabase-admin";
 import { createClient } from "@/lib/database/supabase-server";
 import { requireUser } from "@/lib/auth/session";
@@ -70,6 +71,7 @@ export type PortalWorkOrderView = {
   work_order_number: string;
   status: string;
   customer: { first_name: string; last_name: string };
+  motorcycle_id: string;
   motorcycle: { year: number; make: string; model: string };
   jobs: {
     job_id: string;
@@ -86,6 +88,12 @@ export type PortalWorkOrderView = {
   }[];
   square_invoice_id: string | null;
   square_payment_status: string | null;
+  wix_invoice: {
+    displayNumber: string;
+    statusLabel: string;
+    payUrl: string | null;
+    totalCents: number;
+  } | null;
   inspection_completed: boolean;
   has_signed_contract: boolean;
   has_inspection_ack: boolean;
@@ -156,6 +164,11 @@ async function resolvePortalSession(token: string): Promise<PortalSession> {
   };
 }
 
+async function portalWixInvoice(workOrderId: string) {
+  const { portalInvoiceForWorkOrder } = await import("@/lib/services/wixInvoices");
+  return portalInvoiceForWorkOrder(workOrderId);
+}
+
 export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrderView> {
   const session = await resolvePortalSession(token);
   const admin = createAdminClient();
@@ -167,6 +180,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
       work_order_id,
       work_order_number,
       status,
+      motorcycle_id,
       square_invoice_id,
       square_payment_status,
       customer:customer_id ( first_name, last_name ),
@@ -233,12 +247,14 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
     work_order_id: wo.work_order_id,
     work_order_number: wo.work_order_number,
     status: wo.status,
+    motorcycle_id: wo.motorcycle_id,
     customer: wo.customer as unknown as PortalWorkOrderView["customer"],
     motorcycle: wo.motorcycle as unknown as PortalWorkOrderView["motorcycle"],
     jobs,
     parts,
     square_invoice_id: wo.square_invoice_id,
     square_payment_status: wo.square_payment_status,
+    wix_invoice: await portalWixInvoice(wo.work_order_id),
     inspection_completed: Boolean(inspection?.completed_at),
     has_signed_contract: Boolean(contract),
     has_inspection_ack: Boolean(ack),
@@ -584,12 +600,13 @@ export async function portalSignContract(
   const admin = createAdminClient();
   const { data: template } = await admin
     .from("drop_off_agreement_template")
-    .select("template_id, version, initial_fields")
+    .select("template_id, version, initial_fields, body_html")
     .eq("active", true)
     .limit(1)
     .maybeSingle();
 
   if (!template) throw new Error("CONTRACT_TEMPLATE_NOT_FOUND");
+  assertContractNamesLegalEntity(template.body_html);
 
   for (const field of (template.initial_fields as string[]) ?? []) {
     if (!input.initials[field]?.trim()) throw new Error("CONTRACT_INITIALS_REQUIRED");

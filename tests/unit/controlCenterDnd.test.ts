@@ -107,6 +107,9 @@ describe("control center dnd helpers", () => {
     expect(isCcStageDropEnabledForRole("technician", "insurance")).toBe(false);
     expect(isCcStageDropEnabledForRole("admin", "insurance")).toBe(true);
     expect(isCcStageDropEnabledForRole("service_advisor", "qc")).toBe(false);
+    expect(isCcStageDropEnabledForRole("service_advisor", "safety")).toBe(true);
+    expect(isCcStageDropEnabledForRole("technician", "safety")).toBe(true);
+    expect(isCcStageDropEnabledForRole("head_tech", "safety")).toBe(true);
     expect(isCcStageDropEnabledForRole("admin", "parts")).toBe(true);
     expect(isCcStageDropEnabledForRole("admin", "qc")).toBe(true);
     expect(isCcStageDropEnabledForRole("admin", "safety")).toBe(true);
@@ -308,6 +311,24 @@ describe("control center dnd helpers", () => {
         techIds: techs,
       })
     ).toBe(false);
+    expect(
+      allowsControlCenterDrop({
+        role: "service_advisor",
+        currentStatus: "in_progress",
+        targetId: "safety",
+        poolId: "pool",
+        techIds: techs,
+      })
+    ).toBe(true);
+    expect(
+      allowsControlCenterDrop({
+        role: "technician",
+        currentStatus: "quality_check",
+        targetId: "safety",
+        poolId: "pool",
+        techIds: techs,
+      })
+    ).toBe(true);
     expect(
       allowsControlCenterDrop({
         role: "manager",

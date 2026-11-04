@@ -1,10 +1,21 @@
 # Mid-work photos & notes (Floor OS)
 
 **Date:** 2026-07-15  
-**Status:** Approved  
+**Status:** Amended 2026-11-01 — Perform work now asks for a written line and a photo  
 **Parent:** [2026-07-12-technician-floor-os-design.md](./2026-07-12-technician-floor-os-design.md)  
 **Related:** [2026-07-13-technician-floor-os-ux-polish-design.md](./2026-07-13-technician-floor-os-ux-polish-design.md)  
 **Approach:** Extend Floor Work + revive Notes mode (reuse `intake_photo` + `technician_note`)
+
+## Amendment (2026-11-01)
+
+The original decision that mid-work notes and photos never gate leaving the work step is superseded:
+
+- **Perform work** cannot be checked off until the job has a written line (a general `technician_note` or a `job_work` caption) and either a `job_work` photo or the explicit line `Nothing to photograph.`
+- **Park** and **Parts not here** require one typed line, saved on the blocker note and as a general technician note. A photo is offered and not required. **Swap** stays one action and writes `Swapped to another bike`.
+- **Inspection** items marked future or immediate attention stay incomplete until they have a description. The existing photo requirement is unchanged.
+- **Proof** still requires a `job_proof` photo or a skip reason. Work photos still do not satisfy proof. The after-photo field asks for a caption.
+
+Checklist rows other than Perform work stay one tap. Customer portal visibility is unchanged.
 
 ## Goal
 
@@ -17,8 +28,8 @@ Primary client: Safari on iPad (Floor OS). Deep links to work-order Notes/Photos
 | Topic           | Choice                                                                                                               |
 | --------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Placement       | Both: quick capture on **Work** stage, plus fuller gallery/notes list in Floor **Notes** mode anytime during the job |
-| Mid-work photos | Optional documentation — never gate Complete                                                                         |
-| Proof           | Unchanged — still requires `job_proof` photo or `proof_exception` note                                               |
+| Mid-work photos | Asked on the work card. Perform work also requires a photo or "Nothing to photograph." They still never satisfy the proof gate. |
+| Proof           | Unchanged — still requires `job_proof` photo or `proof_exception` note. Caption is asked. |
 | Notes           | Free-form text; optionally attach as a caption when taking a photo                                                   |
 | Visibility      | Shop only (techs + office) — never on customer portal                                                                |
 | Storage         | Approach 1 — extend existing photo/note tables; no new work-log table                                                |
@@ -28,7 +39,7 @@ Primary client: Safari on iPad (Floor OS). Deep links to work-order Notes/Photos
 - Replacing or weakening the Proof complete gate
 - Customer portal visibility or customer-facing progress updates
 - Per-checklist-item notes/photos (can be a later enhancement)
-- Requiring mid-work media before continuing to Proof
+- Letting a work photo count as the after-photo proof
 
 ## Data model
 
@@ -79,7 +90,7 @@ Under the checklist / parts block, add a compact **Work journal** strip:
    - **Add photo** — camera / library chooser → optional caption field → upload
    - **Add note** — free-form textarea → save
 2. Summary chip: `N photos · M notes` (counts for this job’s `job_work` + job-linked `general` notes) — tapping opens Floor **Notes** mode for the same job
-3. Does not block **Continue to Proof**
+3. Marking Perform work done still requires a written line and a work photo or "Nothing to photograph" (see the amendment). The journal itself can be added to at any time before that.
 
 Photo upload must use the durable prepare/compress path (`preparePhotoFileForUpload`) so Library picks on iOS Safari remain reliable.
 
@@ -118,7 +129,7 @@ Unchanged behavior and copy. Keep proof uploads as `job_proof` only.
 
 | Gate                  | Mid-work media                                                                               |
 | --------------------- | -------------------------------------------------------------------------------------------- |
-| Continue Work → Proof | No requirement                                                                               |
+| Continue Work → Proof | Written line plus a work photo or "Nothing to photograph." Work photos do not satisfy proof. |
 | Complete job          | Still requires proof photo **or** proof exception — mid-work photos do **not** satisfy proof |
 
 ## Services / actions (sketch)
@@ -132,7 +143,7 @@ Unchanged behavior and copy. Keep proof uploads as `job_proof` only.
 ## UX copy (suggested)
 
 - Work strip title: **Work journal**
-- Empty state: “Optional — add photos or notes while you work. Proof is still required at the end.”
+- Empty state: “Write what you found or did, and add a photo when there is something to show. Proof is still required at the end.”
 - Photo caption placeholder: “What should the shop know about this photo?”
 - Note placeholder: “Note for the shop (parts, findings, questions)…”
 

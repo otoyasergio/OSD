@@ -16,6 +16,7 @@ export type PhotoTelemetryEventName = (typeof PHOTO_TELEMETRY_EVENT_NAMES)[numbe
 export const PHOTO_TELEMETRY_SURFACES = [
   "composer",
   "profile",
+  "customer_photo",
   "customer_documents",
   "staff_documents",
   "motorcycle_documents",

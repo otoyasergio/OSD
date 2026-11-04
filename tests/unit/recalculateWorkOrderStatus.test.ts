@@ -284,6 +284,32 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("ready_for_pickup");
   });
 
+  it("keeps a dropped bike in safety until the check is stamped", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "in_progress" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        safetyCheckComplete: false,
+      })
+    ).toBe("safety_check");
+  });
+
+  it("leaves safety when a failed check needs customer approval", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "safety_check",
+        jobs: [{ status: "completed" }, { status: "waiting_for_approval" }],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+        safetyCheckComplete: false,
+      })
+    ).toBe("waiting_for_customer_approval");
+  });
+
   it("sets safety_check when QC complete and safety required but not stamped", () => {
     expect(
       deriveWorkOrderStatus({
@@ -384,6 +410,41 @@ describe("deriveWorkOrderStatus", () => {
         checkoutEvidenceOverridden: true,
       })
     ).toBe("ready_for_pickup");
+  });
+
+  it("starts at arrival inspection when intake services are approved and the report is open", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "open",
+        jobs: [{ status: "approved" }],
+        parts: [],
+        inspectionComplete: false,
+        qualityCheckComplete: false,
+        hasSignedAgreement: true,
+      })
+    ).toBe("inspection_in_progress");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_technician",
+        jobs: [{ status: "approved" }, { status: "approved" }],
+        parts: [],
+        inspectionComplete: false,
+        qualityCheckComplete: false,
+        hasSignedAgreement: false,
+      })
+    ).toBe("inspection_in_progress");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "ready_for_pickup",
+        jobs: [{ status: "completed" }, { status: "approved" }],
+        parts: [],
+        inspectionComplete: false,
+        qualityCheckComplete: true,
+        hasSignedAgreement: true,
+      })
+    ).toBe("ready_for_technician");
   });
 
   it("sets ready_for_technician when all jobs approved and contract signed", () => {

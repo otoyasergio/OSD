@@ -53,6 +53,12 @@ export type InspectionResultRow = {
 export type InspectionHeader = {
   customer_name: string | null;
   motorcycle_label: string | null;
+  motorcycle: {
+    motorcycle_id: string;
+    year: number;
+    make: string;
+    model: string;
+  } | null;
   vin: string | null;
   mileage: number | null;
   mileage_unit: MileageUnit;
@@ -287,6 +293,7 @@ export async function getInspectionForWorkOrder(
     .select(
       `
       work_order_id,
+      motorcycle_id,
       location_id,
       work_order_number,
       status,
@@ -473,6 +480,15 @@ export async function getInspectionForWorkOrder(
       motorcycle_label: motorcycle
         ? `${motorcycle.year} ${motorcycle.make} ${motorcycle.model}`
         : null,
+      motorcycle:
+        motorcycle && workOrder.motorcycle_id
+          ? {
+              motorcycle_id: workOrder.motorcycle_id as string,
+              year: motorcycle.year,
+              make: motorcycle.make,
+              model: motorcycle.model,
+            }
+          : null,
       vin: motorcycle?.vin ?? null,
       mileage: (workOrder.mileage as number | null) ?? null,
       mileage_unit: normalizeMileageUnit(workOrder.mileage_unit),
@@ -782,7 +798,9 @@ export async function completeInspection(
         status,
         category_snapshot,
         item_name_snapshot,
-        notes
+        notes,
+        measurement,
+        requires_measurement_snapshot
       )
     `
     )
@@ -800,8 +818,14 @@ export async function completeInspection(
       category_snapshot: string;
       item_name_snapshot: string;
       notes: string | null;
+      measurement: string | null;
+      requires_measurement_snapshot: boolean | null;
     }> | null) ?? [];
-  const incompleteCount = countIncompleteInspectionResults(results);
+  const gatedResults = results.map((result) => ({
+    ...result,
+    requires_measurement: Boolean(result.requires_measurement_snapshot),
+  }));
+  const incompleteCount = countIncompleteInspectionResults(gatedResults);
 
   if (incompleteCount > 0) {
     if (!options.force || !canOverrideWorkOrderStatus(user.role)) {
@@ -822,7 +846,7 @@ export async function completeInspection(
   if (photoError) throw photoError;
 
   assertInspectionPhotosComplete(
-    results,
+    gatedResults,
     (photoRows ?? []) as Array<{
       category: string;
       inspection_result_id: string | null;
@@ -855,61 +879,84 @@ export async function completeInspection(
     throw updateError;
   }
 
-  await addTimelineEvent(supabase, {
-    work_order_id: workOrderId,
-    user_id: user.user_id,
-    event_type: TimelineEventType.INSPECTION_COMPLETED,
-    entity_type: "inspection",
-    entity_id: inspection.inspection_id,
-    description:
-      incompleteCount > 0
-        ? `Arrival inspection completed with ${incompleteCount} incomplete item(s)`
-        : "Arrival inspection completed",
-    new_value: {
-      incomplete_count: incompleteCount,
-      forced: Boolean(options.force && incompleteCount > 0),
-      signature_storage_path: signaturePath,
-    },
-  });
-
-  await addAuditLog(supabase, {
-    actor_user_id: user.user_id,
-    location_id: locationId,
-    action: "inspection_completed",
-    entity_type: "inspection",
-    entity_id: inspection.inspection_id,
-    description: `Arrival inspection completed on ${workOrderNumber}`,
-    new_value: {
-      incomplete_count: incompleteCount,
-      forced: Boolean(options.force && incompleteCount > 0),
-      signature_storage_path: signaturePath,
-    },
-  });
-
-  // Yellow / red findings become recommendations immediately on complete.
-  const { ensureRecommendationsForAttentionFindings } =
-    await import("@/lib/services/recommendations");
-  const recommendationCount = await ensureRecommendationsForAttentionFindings(
-    workOrderId,
-    results
-  );
-
-  if (recommendationCount > 0) {
+  try {
     await addTimelineEvent(supabase, {
       work_order_id: workOrderId,
       user_id: user.user_id,
-      event_type: TimelineEventType.RECOMMENDATION_CREATED,
+      event_type: TimelineEventType.INSPECTION_COMPLETED,
       entity_type: "inspection",
       entity_id: inspection.inspection_id,
-      description: `${recommendationCount} recommendation(s) created from inspection findings`,
-      new_value: { recommendation_count: recommendationCount },
+      description:
+        incompleteCount > 0
+          ? `Arrival inspection completed with ${incompleteCount} incomplete item(s)`
+          : "Arrival inspection completed",
+      new_value: {
+        incomplete_count: incompleteCount,
+        forced: Boolean(options.force && incompleteCount > 0),
+        signature_storage_path: signaturePath,
+      },
     });
-  }
 
-  await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
-  const woTable = supabase.from("work_order");
-  if ("update" in woTable && typeof woTable.update === "function") {
-    await woTable.update({ updated_at: now }).eq("work_order_id", workOrderId);
+    await addAuditLog(supabase, {
+      actor_user_id: user.user_id,
+      location_id: locationId,
+      action: "inspection_completed",
+      entity_type: "inspection",
+      entity_id: inspection.inspection_id,
+      description: `Arrival inspection completed on ${workOrderNumber}`,
+      new_value: {
+        incomplete_count: incompleteCount,
+        forced: Boolean(options.force && incompleteCount > 0),
+        signature_storage_path: signaturePath,
+      },
+    });
+
+    // Yellow / red findings become recommendations immediately on complete.
+    const { ensureRecommendationsForAttentionFindings } =
+      await import("@/lib/services/recommendations");
+    const recommendationCount = await ensureRecommendationsForAttentionFindings(
+      workOrderId,
+      gatedResults
+    );
+
+    if (recommendationCount > 0) {
+      await addTimelineEvent(supabase, {
+        work_order_id: workOrderId,
+        user_id: user.user_id,
+        event_type: TimelineEventType.RECOMMENDATION_CREATED,
+        entity_type: "inspection",
+        entity_id: inspection.inspection_id,
+        description: `${recommendationCount} recommendation(s) created from inspection findings`,
+        new_value: { recommendation_count: recommendationCount },
+      });
+    }
+
+    await recalculateWorkOrderStatus(supabase, workOrderId, user.user_id);
+    const woTable = supabase.from("work_order");
+    if ("update" in woTable && typeof woTable.update === "function") {
+      await woTable.update({ updated_at: now }).eq("work_order_id", workOrderId);
+    }
+  } catch (downstream) {
+    // The stamp is already written. Clear it so a failed status update or
+    // recommendation pass does not leave a signed report the tech cannot retry.
+    try {
+      const { error: rollbackError } = await supabase
+        .from("inspection")
+        .update({
+          completed_at: null,
+          completed_by_user_id: null,
+          signature_storage_path: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("inspection_id", inspection.inspection_id);
+      await removeInspectionSignature(supabase, signaturePath);
+      if (rollbackError) {
+        console.error("inspection completion rollback failed", rollbackError);
+      }
+    } catch (rollback) {
+      console.error("inspection completion rollback failed", rollback);
+    }
+    throw downstream;
   }
   return {
     inspectionId: inspection.inspection_id,
