@@ -10,6 +10,14 @@ const MESSAGES: Record<string, string> = {
   VIN_ALREADY_EXISTS:
     "That VIN is already on another motorcycle. Transfer it or use a different VIN.",
   MOTORCYCLE_NOT_FOUND: "That motorcycle no longer exists.",
+  MOTORCYCLE_MISMATCH: "That scan is for a different motorcycle than this work order.",
+  DIAGNOSTIC_SESSION_INVALID: "Check the scan details and try again.",
+  DIAGNOSTIC_CODE_INVALID:
+    "Fault codes use letters, numbers, and hyphens, up to 16 characters.",
+  DIAGNOSTIC_FREEZE_FRAME_INVALID:
+    "Freeze-frame values must be numbers. Leave a value blank if the scan tool did not show it.",
+  DIAGNOSTIC_CATALOG_INVALID:
+    "Add both a description and a P0–P3 severity, or leave both blank.",
   PASSPORT_NO_COMPLETED_SERVICE:
     "Complete at least one service before publishing a vehicle passport.",
   PASSPORT_COMPLETION_DATE_REQUIRED:
@@ -125,10 +133,10 @@ const MESSAGES: Record<string, string> = {
   INSPECTION_RESULT_NOT_FOUND: "That inspection result no longer exists.",
   INSPECTION_ALREADY_COMPLETE: "This inspection is already complete.",
   INSPECTION_INCOMPLETE:
-    "Some checklist items are still incomplete. An owner or manager can force completion.",
+    "Every line needs a result before you can sign. Measured items need a number, anything that does not apply needs a real reason, and items marked for attention need a description.",
   INSPECTION_NOT_COMPLETED: "Complete the inspection report before finishing jobs.",
   INSPECTION_PHOTOS_REQUIRED:
-    "Add required inspection photos (tires, brakes, forks, and any items marked needing work) before completing the report.",
+    "Add the required photos before signing. Front and rear tires, front and rear brakes, forks, leaks, the battery, and both sides each need their own photo.",
   RECOMMENDATION_NOT_FOUND: "That recommendation no longer exists.",
   RECOMMENDATION_DECLINED:
     "That recommendation was declined and can’t be sent to the floor.",
@@ -197,6 +205,8 @@ const MESSAGES: Record<string, string> = {
   VIEW_NAME_REQUIRED: "Enter a name for this view.",
   VIEW_NAME_TOO_LONG: "View names must be 60 characters or fewer.",
   CONTRACT_TEMPLATE_NOT_FOUND: "No active drop-off agreement template is configured.",
+  CONTRACT_LEGAL_ENTITY_REQUIRED:
+    "The contract must name OTOMOTO TORONTO MOTO INC. as the contracting party.",
   CONTRACT_INITIALS_REQUIRED: "Initial each section before signing.",
   CONTRACT_ALREADY_SIGNED: "A drop-off agreement is already on file for this work order.",
   PAPER_AGREEMENT_REQUIRED:
@@ -205,7 +215,8 @@ const MESSAGES: Record<string, string> = {
   SIGNATURE_INVALID: "Could not read the signature image.",
   SIGNATURE_TOO_LARGE: "Signature image is too large.",
   SIGNATURE_UPLOAD_FAILED: "Could not save the signature. Try again.",
-  SIGNATURE_REQUIRED: "Draw your signature before submitting.",
+  SIGNATURE_REQUIRED:
+    "Draw your full signature. A blank box or a single dot does not count.",
   DOCUMENT_TITLE_REQUIRED: "Enter a title for this document.",
   DOCUMENT_REQUIRED: "Choose a file to upload.",
   DOCUMENT_TOO_LARGE: "Documents must be 10 MB or smaller.",
@@ -283,8 +294,7 @@ const MESSAGES: Record<string, string> = {
     "This customer is not linked to a Wix contact yet. Sync to Wix first.",
   WIX_CONTACT_SYNC_FAILED: "Could not sync this customer to Wix.",
   WIX_INVOICE_NOT_FOUND: "This visit does not have a Wix invoice yet.",
-  INVOICE_ACK_REVISION_CONFLICT:
-    "Wix saved a newer error for this bike. Tap Try again.",
+  INVOICE_ACK_REVISION_CONFLICT: "Wix saved a newer error for this bike. Tap Try again.",
   WIX_INVOICE_NOT_DRAFT: "Only a draft invoice can be published.",
   WIX_PAYMENT_NOT_FOUND: "That Wix payment is no longer on the invoice.",
   WIX_PAYMENT_EXCLUDED:

@@ -24,6 +24,7 @@ import {
   canViewerAccessWorkOrderLocation,
   floorAssignedLocationIds,
 } from "@/lib/workOrders/assignmentVisibility";
+import { technicianNotesOnBenchFilter } from "@/lib/workOrders/sharedNotes";
 import { floorInspectionHrefs, techJobPacketHref } from "@/lib/technician/assignmentHref";
 import { sortByDocketPosition } from "@/lib/technician/docketOrder";
 import { groupAssignedJobsByWorkOrder } from "@/lib/technician/groupAssignedWorkOrders";
@@ -781,7 +782,7 @@ export async function getTechnicianFloorOs(input: {
           `
           )
           .eq("work_order_id", wo.work_order_id)
-          .eq("job_id", job.job_id)
+          .or(technicianNotesOnBenchFilter(job.job_id))
           .order("created_at", { ascending: false })
           .limit(20),
         supabase

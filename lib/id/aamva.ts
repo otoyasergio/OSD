@@ -12,17 +12,48 @@ export type LicenceScan = {
   licenceNumber: string;
 };
 
-const ELEMENT = /^([A-Z]{3})(.*)$/;
+const ELEMENT = /^([DZ][A-Z]{2})(.*)$/;
+const SUBFILE = /^(?:DL|ID|ZO)(?=[A-Z]{3})/;
+
+/**
+ * AAMVA separates elements with LF, and ends the header with RS CR.
+ * ZXing's default text mode prints those bytes as `<LF>`, `<RS>`, and `<CR>`.
+ * The licence number is often glued to the header: `...DLDAQD1234-...`.
+ */
+function normalizePayload(raw: string): string {
+  return raw
+    .replace(/^\uFEFF/, "")
+    .replace(/<(?:LF|CR|RS)>/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .replace(/[\r\u001e]/g, "\n");
+}
+
+function remember(map: Map<string, string>, code: string, value: string) {
+  if (!map.has(code)) map.set(code, value.trim());
+}
+
+function takeLine(line: string, map: Map<string, string>) {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+  const body = trimmed.replace(SUBFILE, "");
+  const direct = body.match(ELEMENT);
+  if (direct) {
+    remember(map, direct[1], direct[2]);
+    return;
+  }
+  const embedded = trimmed.match(/(?:DL|ID)([A-Z]{3}.*)$/);
+  const inner = embedded?.[1].match(ELEMENT);
+  if (inner) remember(map, inner[1], inner[2]);
+}
 
 function elements(raw: string): Map<string, string> {
   const map = new Map<string, string>();
-  const text = raw.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  for (const line of text.split("\n")) {
-    const match = line.trim().match(ELEMENT);
-    if (!match) continue;
-    map.set(match[1], match[2].trim());
-  }
+  for (const line of normalizePayload(raw).split("\n")) takeLine(line, map);
   return map;
+}
+
+function personName(value: string): string {
+  return value.replace(/,/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /** AAMVA dates are usually MMDDCCYY. Some cards use CCYYMMDD. */
@@ -41,8 +72,8 @@ export function aamvaDateToIso(value: string | undefined): string {
 export function parseAamvaLicence(raw: string): LicenceScan | null {
   const fields = elements(raw);
   const licenceNumber = fields.get("DAQ") ?? "";
-  const lastName = fields.get("DCS") ?? "";
-  const firstName = fields.get("DAC") ?? fields.get("DCT") ?? "";
+  const lastName = personName(fields.get("DCS") ?? "");
+  const firstName = personName(fields.get("DAC") ?? fields.get("DCT") ?? "");
   if (!licenceNumber || (!firstName && !lastName)) return null;
 
   const street = fields.get("DAG") ?? "";
@@ -54,8 +85,8 @@ export function parseAamvaLicence(raw: string): LicenceScan | null {
     .join(", ");
 
   return {
-    firstName: firstName.trim(),
-    lastName: lastName.trim(),
+    firstName,
+    lastName,
     address,
     dateOfBirth: aamvaDateToIso(fields.get("DBB")),
     licenceExpiry: aamvaDateToIso(fields.get("DBA")),

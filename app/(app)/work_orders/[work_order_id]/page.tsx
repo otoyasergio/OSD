@@ -18,6 +18,7 @@ import {
   canOrderPart,
   canOverrideWorkOrderStatus,
   canRecordCustomerApproval,
+  canRecordDiagnosticSession,
   canRunQualityCheck,
   canClearAdminFlag,
   canOverrideSafetyRequirement,
@@ -74,6 +75,9 @@ import { WorkOrderHeader } from "@/components/work_orders/WorkOrderHeader";
 import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
 import { AgreementFollowUpNotice } from "@/components/work_orders/AgreementFollowUpNotice";
 import { ComingSoonPanel, WorkOrderTabs } from "@/components/work_orders/WorkOrderTabs";
+import { DiagnosticPanel } from "@/components/diagnostics/DiagnosticPanel";
+import { unavailableDiagnosticPanel } from "@/lib/diagnostics/sessionView";
+import { getDiagnosticPanel } from "@/lib/services/diagnosticSessions";
 import { resolveWorkOrderTabId, type WorkOrderTabId } from "@/lib/workOrders/tabs";
 import type { EstimateVersionHistoryEntry } from "@/components/estimates/EstimateVersionHistory";
 import type { WorkspaceJob, WorkspacePart } from "@/components/estimates/workspaceModel";
@@ -86,6 +90,8 @@ import { RecommendationsTab } from "@/components/recommendations/Recommendations
 import { PartsTab } from "@/components/parts/PartsTab";
 import { PhotosTab } from "@/components/photos/PhotosTab";
 import { TechnicianNotes } from "@/components/work_orders/TechnicianNotes";
+import { WorkOrderNotesSync } from "@/components/work_orders/WorkOrderNotesSync";
+import { shopInstructions } from "@/lib/workOrders/sharedNotes";
 import { TimelineList } from "@/components/timeline/TimelineList";
 import { updateServiceInformationAction } from "@/app/(app)/motorcycles/actions";
 import {
@@ -217,6 +223,7 @@ export default async function WorkOrderDetailPage({
     activeTab === "overview" || activeTab === "inspection" || isEstimateTab;
   const needsParts = activeTab === "overview" || activeTab === "parts" || isEstimateTab;
   const needsRecommendations = activeTab === "overview" || isEstimateTab;
+  const needsNotes = activeTab === "notes" || activeTab === "overview" || isEstimateTab;
   const workflowFlags = readWorkflowV2Flags();
   const showV2Workspace =
     isEstimateTab && v2WritesEnabled(workflowFlags) && canViewPricing(viewRole);
@@ -257,7 +264,7 @@ export default async function WorkOrderDetailPage({
       : Promise.resolve([]),
     isEstimateTab ? listRecommendationEstimateLines(work_order_id) : Promise.resolve([]),
     needsParts ? listPartsForWorkOrder(work_order_id) : Promise.resolve([]),
-    activeTab === "notes" ? listTechnicianNotes(work_order_id) : Promise.resolve([]),
+    needsNotes ? listTechnicianNotes(work_order_id) : Promise.resolve([]),
     activeTab === "timeline" ? listTimelineEvents(work_order_id) : Promise.resolve([]),
     activeTab === "contract" ? getDropOffAgreement(work_order_id) : Promise.resolve(null),
     activeTab === "contract" ? getActiveAgreementTemplate() : Promise.resolve(null),
@@ -276,6 +283,13 @@ export default async function WorkOrderDetailPage({
       : Promise.resolve([]),
   ]);
   if (!detail) notFound();
+
+  const diagnostics =
+    activeTab === "diagnostics"
+      ? await getDiagnosticPanel(detail.motorcycle_id).catch(() =>
+          unavailableDiagnosticPanel(detail.motorcycle_id)
+        )
+      : null;
 
   const foreign = detail.is_foreign_location;
   const needsTechs = !foreign && (activeTab === "overview" || isEstimateTab);
@@ -453,6 +467,7 @@ export default async function WorkOrderDetailPage({
       canComplete={canComplete}
       canViewPricing={canSeePricing}
       currentUserId={user.user_id}
+      technicianNotes={notes}
       inspectionComplete={Boolean(inspection?.completed_at)}
       inspectionHref={`/work_orders/${detail.work_order_id}/inspection`}
       addAction={addJobAction.bind(null, detail.work_order_id)}
@@ -489,6 +504,7 @@ export default async function WorkOrderDetailPage({
 
   return (
     <div className="page-stack page-stack--narrow">
+      <WorkOrderNotesSync workOrderId={detail.work_order_id} />
       <Link
         href={isFloorTech(viewRole) ? "/technician" : "/work_orders"}
         className="text-sm text-[var(--status-neutral)] underline-offset-2 hover:underline"
@@ -583,6 +599,7 @@ export default async function WorkOrderDetailPage({
             inspectionCompleted={Boolean(inspection?.completed_at)}
             readOnly={detail.is_foreign_location}
             photos={photos}
+            technicianNotes={notes}
             checkoutCoverage={checkoutCoverage}
             checkoutOverridden={checkoutOverridden}
             canUploadPhotos={canUploadPhotos}
@@ -749,10 +766,30 @@ export default async function WorkOrderDetailPage({
           deleteAction={deleteIntakePhotoAction.bind(null, detail.work_order_id)}
         />
       ) : null}
+      {activeTab === "diagnostics" && diagnostics ? (
+        <DiagnosticPanel
+          data={diagnostics}
+          canRecord={
+            canRecordDiagnosticSession(viewRole) &&
+            !preview.isPreviewing &&
+            !detail.is_foreign_location
+          }
+          workOrderId={detail.work_order_id}
+          customerId={detail.customer_id}
+        />
+      ) : null}
       {activeTab === "notes" ? (
         <TechnicianNotes
           notes={notes}
           jobs={detail.jobs}
+          instructions={shopInstructions({
+            internalNotes: detail.internal_notes,
+            jobs: detail.jobs.map((job) => ({
+              job_id: job.job_id,
+              service_name: job.service_name_snapshot,
+              notes: job.notes,
+            })),
+          })}
           readOnly={detail.is_foreign_location}
           canAdd={canAddNotes}
           addAction={addTechnicianNoteAction.bind(null, detail.work_order_id)}

@@ -169,42 +169,46 @@ async function creditCentsForOpenInvoice(
 }
 
 /** Keep the discount on later edits, and stop the next invoice from applying it again. */
-async function reserveCustomerCredit(
+export async function reserveCustomerCredit(
   admin: Admin,
   customerId: string,
   wixInvoiceId: string,
   targetCents: number
 ): Promise<void> {
   if (targetCents <= 0) return;
-  const { data: row } = await admin
+  const { data: row, error: rowError } = await admin
     .from("wix_invoice")
     .select("credit_applied_cents")
     .eq("wix_invoice_id", wixInvoiceId)
     .maybeSingle();
+  if (rowError) throw rowError;
   const applied = Number(row?.credit_applied_cents ?? 0);
   const delta = targetCents - applied;
   if (delta <= 0) return;
-  const { data: credits } = await admin
+  const { data: credits, error: creditsError } = await admin
     .from("customer_credit")
     .select("credit_id, remaining_amount")
     .eq("customer_id", customerId)
     .gt("remaining_amount", 0)
     .order("created_at", { ascending: true });
+  if (creditsError) throw creditsError;
   let left = delta;
   for (const credit of credits ?? []) {
     if (left <= 0) break;
     const remainingCents = Math.round(Number(credit.remaining_amount ?? 0) * 100);
     const take = Math.min(remainingCents, left);
-    await admin
+    const { error: creditError } = await admin
       .from("customer_credit")
       .update({ remaining_amount: (remainingCents - take) / 100 })
       .eq("credit_id", credit.credit_id);
+    if (creditError) throw creditError;
     left -= take;
   }
-  await admin
+  const { error: appliedError } = await admin
     .from("wix_invoice")
     .update({ credit_applied_cents: targetCents - left })
     .eq("wix_invoice_id", wixInvoiceId);
+  if (appliedError) throw appliedError;
 }
 
 async function findMotorcycleByVin(admin: Admin, vin: string): Promise<string | null> {
@@ -244,7 +248,9 @@ export async function upsertInvoiceFromRecord(
 
   const { data: existing } = await admin
     .from("wix_invoice")
-    .select("revision, status, voided, vin_snapshot, motorcycle_id, exclude_from_square, customer_id")
+    .select(
+      "revision, status, voided, vin_snapshot, motorcycle_id, exclude_from_square, customer_id"
+    )
     .eq("wix_invoice_id", wixId)
     .maybeSingle();
 
@@ -261,7 +267,9 @@ export async function upsertInvoiceFromRecord(
   const textVins = vinsOnInvoice(invoice);
   const headerVin = headerValue(invoice, "VIN");
   const nextVin = headerVin || textVins[0] || null;
-  const vinSnapshot = sealed ? ((existing?.vin_snapshot as string | null) ?? nextVin) : nextVin;
+  const vinSnapshot = sealed
+    ? ((existing?.vin_snapshot as string | null) ?? nextVin)
+    : nextVin;
   const motorcycleId = sealed
     ? ((existing?.motorcycle_id as string | null) ?? null)
     : vinSnapshot
@@ -290,7 +298,8 @@ export async function upsertInvoiceFromRecord(
   const exclude =
     Boolean(options.excludeFromSquare) ||
     Boolean(existing?.exclude_from_square) ||
-    (invoice.status ?? "").toUpperCase() === "PAID" && Boolean(options.excludeFromSquare);
+    ((invoice.status ?? "").toUpperCase() === "PAID" &&
+      Boolean(options.excludeFromSquare));
 
   const row = {
     wix_invoice_id: wixId,
@@ -316,7 +325,9 @@ export async function upsertInvoiceFromRecord(
     updated_at: new Date().toISOString(),
   };
 
-  const { error } = await admin.from("wix_invoice").upsert(row, { onConflict: "wix_invoice_id" });
+  const { error } = await admin
+    .from("wix_invoice")
+    .upsert(row, { onConflict: "wix_invoice_id" });
   if (error) throw error;
 
   await syncPaymentRows(admin, wixId, invoice, {
@@ -412,7 +423,8 @@ async function syncPaymentRows(
       { onConflict: "wix_payment_id" }
     );
 
-    const refunded = payment.regularPayment?.paymentStatus === "REFUNDED" ||
+    const refunded =
+      payment.regularPayment?.paymentStatus === "REFUNDED" ||
       payment.regularPayment?.paymentStatus === "PARTIALLY_REFUNDED";
     if (refunded) {
       const refundId = `${paymentId}:refund`;
@@ -428,7 +440,8 @@ async function syncPaymentRows(
           amount_cents: paymentCents(payment),
           method,
           kind: "refund",
-          square_status: context.voided || context.excludeFromSquare ? "skipped_void" : "unasked",
+          square_status:
+            context.voided || context.excludeFromSquare ? "skipped_void" : "unasked",
           square_payment_id: (existing?.square_payment_id as string | null) ?? null,
         });
       }
@@ -452,13 +465,17 @@ async function applyDraftPricesToJobs(
     .eq("work_order_id", workOrderId);
   for (const job of jobs ?? []) {
     const line = (invoice.lineItems ?? []).find(
-      (item) => item.customItem?.name?.trim() === String(job.service_name_snapshot ?? "").trim()
+      (item) =>
+        item.customItem?.name?.trim() === String(job.service_name_snapshot ?? "").trim()
     );
     if (!line?.customItem?.price) continue;
     const price = Number(line.customItem.price);
     if (!Number.isFinite(price)) continue;
     if (Number(job.standard_price_snapshot) === price) continue;
-    await admin.from("job").update({ standard_price_snapshot: price }).eq("job_id", job.job_id);
+    await admin
+      .from("job")
+      .update({ standard_price_snapshot: price })
+      .eq("job_id", job.job_id);
   }
 }
 
@@ -467,7 +484,9 @@ export async function deleteInvoiceLocally(wixInvoiceId: string): Promise<void> 
   await admin.from("wix_invoice").delete().eq("wix_invoice_id", wixInvoiceId);
 }
 
-export async function listInvoicesForCustomer(customerId: string): Promise<WixInvoiceListItem[]> {
+export async function listInvoicesForCustomer(
+  customerId: string
+): Promise<WixInvoiceListItem[]> {
   const user = await requireUser();
   if (!canViewPricing(user.role)) return [];
   const admin = adminOrNull();
@@ -483,7 +502,9 @@ export async function listInvoicesForCustomer(customerId: string): Promise<WixIn
   return (data ?? []).map(toListItem);
 }
 
-export async function listInvoicesForMotorcycle(motorcycleId: string): Promise<WixInvoiceListItem[]> {
+export async function listInvoicesForMotorcycle(
+  motorcycleId: string
+): Promise<WixInvoiceListItem[]> {
   const user = await requireUser();
   if (!canViewPricing(user.role)) return [];
   const admin = adminOrNull();
@@ -628,7 +649,9 @@ export async function getOpenWixIntakeHold(
  * Close the hold after staff save a work order with the invoice number they
  * copied from Wix. Only the legacy-API refusal can be closed this way.
  */
-export async function clearLegacyInvoiceHold(acknowledgementId: string): Promise<boolean> {
+export async function clearLegacyInvoiceHold(
+  acknowledgementId: string
+): Promise<boolean> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("invoice_create_acknowledgement")
@@ -752,7 +775,9 @@ async function siteStillUsesLegacyInvoices(admin: Admin): Promise<boolean> {
     );
     return shouldSkipWixInvoiceApi({
       latestLegacyRefusalAt: legacy?.created_at ? String(legacy.created_at) : null,
-      latestWixInvoiceAt: invoice.data?.created_at ? String(invoice.data.created_at) : null,
+      latestWixInvoiceAt: invoice.data?.created_at
+        ? String(invoice.data.created_at)
+        : null,
     });
   } catch {
     return false;
@@ -764,7 +789,12 @@ export async function prepareIntakeInvoice(input: {
   motorcycleId: string;
   mileage: number;
   mileageUnit: "km" | "mi";
-  serviceLines: Array<{ serviceId?: string; name: string; price: number; quantity?: number }>;
+  serviceLines: Array<{
+    serviceId?: string;
+    name: string;
+    price: number;
+    quantity?: number;
+  }>;
   technicianName: string | null;
   technicianUserId?: string | null;
   existingWorkOrderId?: string | null;
@@ -829,7 +859,9 @@ export async function prepareIntakeInvoice(input: {
   }
 
   let workOrderId =
-    input.existingWorkOrderId ?? (hold?.pending_work_order_id as string | null) ?? randomUUID();
+    input.existingWorkOrderId ??
+    (hold?.pending_work_order_id as string | null) ??
+    randomUUID();
   let replacesBookingStub = Boolean(input.existingWorkOrderId);
   let externalReferenceId = workOrderId;
   if (!input.existingWorkOrderId) {
@@ -883,8 +915,7 @@ export async function prepareIntakeInvoice(input: {
 
   const namedLines = await resolveServiceNames(admin, input.serviceLines);
   const technician =
-    input.technicianName ??
-    (await technicianName(admin, input.technicianUserId ?? null));
+    input.technicianName ?? (await technicianName(admin, input.technicianUserId ?? null));
 
   let draftCreditCents = 0;
   if (!record && !input.existingWorkOrderId && !input.forceWixAttempt) {
@@ -903,7 +934,11 @@ export async function prepareIntakeInvoice(input: {
         message,
         wixInvoiceId: null,
       });
-      throw new WixIntakeBlockedError(message, opened.acknowledgementId, opened.holdRevision);
+      throw new WixIntakeBlockedError(
+        message,
+        opened.acknowledgementId,
+        opened.holdRevision
+      );
     }
   }
   if (!record) {
@@ -939,7 +974,8 @@ export async function prepareIntakeInvoice(input: {
       record = await createWixInvoice(body.invoice as Record<string, unknown>);
     } catch (error) {
       if (error instanceof WixIntakeBlockedError) throw error;
-      const reason = error instanceof Error ? error.message : "Wix invoice create failed.";
+      const reason =
+        error instanceof Error ? error.message : "Wix invoice create failed.";
       if (
         error instanceof WixInvoiceApiError &&
         shouldLogWixInvoiceCreateFailure(reason)
@@ -959,7 +995,11 @@ export async function prepareIntakeInvoice(input: {
         message,
         wixInvoiceId: null,
       });
-      throw new WixIntakeBlockedError(message, opened.acknowledgementId, opened.holdRevision);
+      throw new WixIntakeBlockedError(
+        message,
+        opened.acknowledgementId,
+        opened.holdRevision
+      );
     }
   }
 
@@ -979,7 +1019,8 @@ export async function prepareIntakeInvoice(input: {
       }
     } catch (error) {
       if (error instanceof WixIntakeBlockedError) throw error;
-      const reason = error instanceof Error ? error.message : "Wix invoice publish failed.";
+      const reason =
+        error instanceof Error ? error.message : "Wix invoice publish failed.";
       const message = intakeFailureMessage({ clientName, bikeLabel, wixReason: reason });
       const opened = await openHold(admin, {
         customerId: input.customerId,
@@ -990,7 +1031,11 @@ export async function prepareIntakeInvoice(input: {
         message,
         wixInvoiceId: invoiceId,
       });
-      throw new WixIntakeBlockedError(message, opened.acknowledgementId, opened.holdRevision);
+      throw new WixIntakeBlockedError(
+        message,
+        opened.acknowledgementId,
+        opened.holdRevision
+      );
     }
   }
 
@@ -1009,20 +1054,27 @@ export async function prepareIntakeInvoice(input: {
       message,
       wixInvoiceId: record.id ?? null,
     });
-    throw new WixIntakeBlockedError(message, opened.acknowledgementId, opened.holdRevision);
+    throw new WixIntakeBlockedError(
+      message,
+      opened.acknowledgementId,
+      opened.holdRevision
+    );
   }
 
   await upsertInvoiceFromRecord(record, { excludeFromSquare: false });
-  await admin
+  const { error: linkError } = await admin
     .from("wix_invoice")
     .update({
-      pending_work_order_id: replacesBookingStub || input.existingWorkOrderId ? null : workOrderId,
-      work_order_id: replacesBookingStub || input.existingWorkOrderId ? workOrderId : null,
+      pending_work_order_id:
+        replacesBookingStub || input.existingWorkOrderId ? null : workOrderId,
+      work_order_id:
+        replacesBookingStub || input.existingWorkOrderId ? workOrderId : null,
       customer_id: input.customerId,
       motorcycle_id: input.motorcycleId,
       vin_snapshot: String(bike.vin),
     })
     .eq("wix_invoice_id", record.id);
+  if (linkError) throw linkError;
   if (draftCreditCents > 0 && record.id) {
     await reserveCustomerCredit(admin, input.customerId, record.id, draftCreditCents);
   }
@@ -1047,7 +1099,7 @@ export async function attachInvoiceToWorkOrder(
   workOrderId: string
 ): Promise<void> {
   const admin = createAdminClient();
-  await admin
+  const { error } = await admin
     .from("wix_invoice")
     .update({
       work_order_id: workOrderId,
@@ -1055,6 +1107,7 @@ export async function attachInvoiceToWorkOrder(
       updated_at: new Date().toISOString(),
     })
     .eq("wix_invoice_id", wixInvoiceId);
+  if (error) throw error;
 }
 
 export async function pushWorkOrderLinesToWix(workOrderId: string): Promise<void> {
@@ -1080,9 +1133,14 @@ export async function pushWorkOrderLinesToWix(workOrderId: string): Promise<void
 
   const lines = await loadWorkOrderLines(admin, workOrderId);
   if (!open) {
-    const sealed = (invoices ?? []).some((row) => invoiceIsSealed(String(row.status)) || row.voided);
+    const sealed = (invoices ?? []).some(
+      (row) => invoiceIsSealed(String(row.status)) || row.voided
+    );
     if (!sealed) return;
-    const tech = await technicianName(admin, workOrder.primary_technician_id as string | null);
+    const tech = await technicianName(
+      admin,
+      workOrder.primary_technician_id as string | null
+    );
     await prepareIntakeInvoice({
       customerId: String(workOrder.customer_id),
       motorcycleId: String(workOrder.motorcycle_id),
@@ -1103,7 +1161,10 @@ export async function pushWorkOrderLinesToWix(workOrderId: string): Promise<void
     .eq("motorcycle_id", workOrder.motorcycle_id)
     .maybeSingle();
   if (!bike) return;
-  const tech = await technicianName(admin, workOrder.primary_technician_id as string | null);
+  const tech = await technicianName(
+    admin,
+    workOrder.primary_technician_id as string | null
+  );
   const credit = await creditCentsForOpenInvoice(
     admin,
     String(workOrder.customer_id),
@@ -1140,10 +1201,15 @@ async function resolveServiceNames(
   admin: Admin,
   lines: Array<{ serviceId?: string; name: string; price: number; quantity?: number }>
 ): Promise<Array<{ name: string; price: number; quantity?: number }>> {
-  const ids = lines.map((line) => line.serviceId).filter((id): id is string => Boolean(id));
+  const ids = lines
+    .map((line) => line.serviceId)
+    .filter((id): id is string => Boolean(id));
   const names = new Map<string, string>();
   if (ids.length > 0) {
-    const { data } = await admin.from("service").select("service_id, name").in("service_id", ids);
+    const { data } = await admin
+      .from("service")
+      .select("service_id, name")
+      .in("service_id", ids);
     for (const row of data ?? []) names.set(String(row.service_id), String(row.name));
   }
   return lines.map((line) => ({
@@ -1167,7 +1233,10 @@ async function loadWorkOrderLines(
       name: String(job.service_name_snapshot ?? "Service"),
       price: Number(job.standard_price_snapshot ?? 0),
     }));
-  const { data: jobIds } = await admin.from("job").select("job_id").eq("work_order_id", workOrderId);
+  const { data: jobIds } = await admin
+    .from("job")
+    .select("job_id")
+    .eq("work_order_id", workOrderId);
   const ids = (jobIds ?? []).map((job) => job.job_id as string);
   if (ids.length === 0) return lines;
   const { data: parts } = await admin
@@ -1184,7 +1253,10 @@ async function loadWorkOrderLines(
   return lines;
 }
 
-async function technicianName(admin: Admin, userId: string | null): Promise<string | null> {
+async function technicianName(
+  admin: Admin,
+  userId: string | null
+): Promise<string | null> {
   if (!userId) return null;
   const { data } = await admin
     .from("app_user")
@@ -1274,8 +1346,12 @@ export async function publishWorkOrderInvoice(input: {
     dueDate: due,
   });
   let published =
-    remoteStatus === "DRAFT" ? await publishWixInvoice(invoiceId) : await getWixInvoice(invoiceId);
-  const sent = (published.statusQualifiers ?? []).some((flag) => flag.toUpperCase() === "SENT");
+    remoteStatus === "DRAFT"
+      ? await publishWixInvoice(invoiceId)
+      : await getWixInvoice(invoiceId);
+  const sent = (published.statusQualifiers ?? []).some(
+    (flag) => flag.toUpperCase() === "SENT"
+  );
   if (!sent) {
     published = await sendWixInvoice(invoiceId);
   }
@@ -1334,7 +1410,8 @@ export async function listSquareAsks(): Promise<SquareAskItem[]> {
         wix_invoice_payment_id: String(row.wix_invoice_payment_id),
         wix_payment_id: String(row.wix_payment_id),
         display_number: String(invoice.display_number ?? ""),
-        client_name: `${customer?.first_name ?? ""} ${customer?.last_name ?? ""}`.trim() || "Client",
+        client_name:
+          `${customer?.first_name ?? ""} ${customer?.last_name ?? ""}`.trim() || "Client",
         amount_cents: Number(row.amount_cents ?? 0),
         method: String(row.method ?? ""),
         kind: String(row.kind ?? "payment"),
@@ -1352,7 +1429,9 @@ async function squarePaymentRow(
 ): Promise<string> {
   const { data: row } = await admin
     .from("wix_invoice_payment")
-    .select("wix_invoice_payment_id, amount_cents, square_status, square_payment_id, kind, method, wix_invoice_id")
+    .select(
+      "wix_invoice_payment_id, amount_cents, square_status, square_payment_id, kind, method, wix_invoice_id"
+    )
     .eq("wix_payment_id", wixPaymentId)
     .maybeSingle();
   if (!row) throw new Error("WIX_PAYMENT_NOT_FOUND");
@@ -1406,7 +1485,9 @@ export async function answerSquareAsk(input: {
   const admin = createAdminClient();
   const { data: row } = await admin
     .from("wix_invoice_payment")
-    .select("square_status, wix_invoice:wix_invoice_id ( display_number, voided, exclude_from_square, customer:customer_id ( first_name, last_name ) )")
+    .select(
+      "square_status, wix_invoice:wix_invoice_id ( display_number, voided, exclude_from_square, customer:customer_id ( first_name, last_name ) )"
+    )
     .eq("wix_payment_id", input.wixPaymentId)
     .maybeSingle();
   if (!row) throw new Error("WIX_PAYMENT_NOT_FOUND");
@@ -1427,8 +1508,14 @@ export async function answerSquareAsk(input: {
       .eq("wix_payment_id", input.wixPaymentId);
     return;
   }
-  const clientName = `${invoice.customer?.first_name ?? ""} ${invoice.customer?.last_name ?? ""}`.trim();
-  await squarePaymentRow(admin, input.wixPaymentId, clientName || "Client", String(invoice.display_number));
+  const clientName =
+    `${invoice.customer?.first_name ?? ""} ${invoice.customer?.last_name ?? ""}`.trim();
+  await squarePaymentRow(
+    admin,
+    input.wixPaymentId,
+    clientName || "Client",
+    String(invoice.display_number)
+  );
 }
 
 export async function voidAndSquareVisit(input: {
@@ -1441,7 +1528,9 @@ export async function voidAndSquareVisit(input: {
   const admin = createAdminClient();
   const { data: invoice } = await admin
     .from("wix_invoice")
-    .select("wix_invoice_id, display_number, voided, customer:customer_id ( first_name, last_name )")
+    .select(
+      "wix_invoice_id, display_number, voided, customer:customer_id ( first_name, last_name )"
+    )
     .eq("work_order_id", input.workOrderId)
     .order("invoice_number", { ascending: false })
     .limit(1)
@@ -1450,7 +1539,9 @@ export async function voidAndSquareVisit(input: {
   let terminalAmount: number | null = null;
   if (input.squarePaymentId?.trim()) {
     const payments = await listRecentSquarePayments(50);
-    const match = payments.find((payment) => payment.id === input.squarePaymentId?.trim());
+    const match = payments.find(
+      (payment) => payment.id === input.squarePaymentId?.trim()
+    );
     if (!match) throw new Error("SQUARE_TERMINAL_PAYMENT_NOT_FOUND");
     terminalAmount = match.amountCents;
   }
@@ -1469,7 +1560,8 @@ export async function voidAndSquareVisit(input: {
     .neq("square_status", "squared");
 
   const customer = invoice.customer as { first_name?: string; last_name?: string } | null;
-  const clientName = `${customer?.first_name ?? ""} ${customer?.last_name ?? ""}`.trim() || "Client";
+  const clientName =
+    `${customer?.first_name ?? ""} ${customer?.last_name ?? ""}`.trim() || "Client";
   const displayNumber = String(invoice.display_number);
   if (input.squarePaymentId?.trim()) {
     const key = squareIdempotencyKey(input.squarePaymentId.trim());

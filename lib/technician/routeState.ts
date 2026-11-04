@@ -1,7 +1,7 @@
 import type { FloorStage } from "@/lib/technician/floorStage";
 
 /** Packet sections. `null` section = packet overview (top summary). */
-export type JobPacketSection = "notes" | "photos" | "jobs" | "assistant";
+export type JobPacketSection = "notes" | "photos" | "jobs" | "assistant" | "diagnostics";
 
 export const FLOOR_STAGES: readonly FloorStage[] = [
   "inspect",
@@ -17,6 +17,7 @@ const PACKET_SECTIONS: readonly JobPacketSection[] = [
   "photos",
   "jobs",
   "assistant",
+  "diagnostics",
 ];
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

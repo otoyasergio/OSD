@@ -16,6 +16,7 @@ const {
   getTechnicianFloorOs,
   getTechnicianDocket,
   listReadyForPickup,
+  getDiagnosticsForWorkOrder,
 } = vi.hoisted(() => ({
   getRolePreviewContext: vi.fn(),
   getJobPacket: vi.fn(),
@@ -25,6 +26,7 @@ const {
   getTechnicianFloorOs: vi.fn(),
   getTechnicianDocket: vi.fn(),
   listReadyForPickup: vi.fn(),
+  getDiagnosticsForWorkOrder: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -41,6 +43,7 @@ vi.mock("@/lib/services/technicianFloor", () => ({
 }));
 vi.mock("@/lib/services/technicianDocket", () => ({ getTechnicianDocket }));
 vi.mock("@/lib/services/readyForPickup", () => ({ listReadyForPickup }));
+vi.mock("@/lib/services/diagnosticSessions", () => ({ getDiagnosticsForWorkOrder }));
 vi.mock("@/lib/services/diagnosticsAssistant", () => ({
   createDiagnosticsAssistantService: () => ({ loadThread, listThreads }),
 }));
@@ -149,6 +152,7 @@ describe("technician page Ask OTOMOTO wiring", () => {
     getTechnicianFloorOs.mockResolvedValue({ selected: null });
     getTechnicianDocket.mockResolvedValue({ items: [] });
     listReadyForPickup.mockResolvedValue([]);
+    getDiagnosticsForWorkOrder.mockResolvedValue(null);
     getJobPacket.mockResolvedValue(packet());
     listIntakePhotos.mockResolvedValue([
       fullPhoto("a1111111-1111-4111-8111-111111111111", "job_work", JOB),
@@ -330,6 +334,7 @@ describe("technician page Ask OTOMOTO wiring", () => {
     let props = await shellProps("technician", false);
     expect(listIntakePhotos).not.toHaveBeenCalled();
     expect(listThreads).not.toHaveBeenCalled();
+    expect(getDiagnosticsForWorkOrder).not.toHaveBeenCalled();
     expect(props.packetAssistant).toBeNull();
 
     vi.clearAllMocks();

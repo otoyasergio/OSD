@@ -11,7 +11,9 @@ import { listReadyForPickup } from "@/lib/services/readyForPickup";
 import { getJobPacket, type JobPacket } from "@/lib/services/jobPacket";
 import { listIntakePhotos, type IntakePhoto } from "@/lib/services/photos";
 import type { UserRole } from "@/lib/database/types";
-import { isFloorTech } from "@/lib/permissions";
+import type { DiagnosticPanelData } from "@/lib/diagnostics/sessionView";
+import { getDiagnosticsForWorkOrder } from "@/lib/services/diagnosticSessions";
+import { canRecordDiagnosticSession, isFloorTech } from "@/lib/permissions";
 import {
   askOtomotoCapabilities,
   loadAskOtomotoPanelData,
@@ -43,9 +45,15 @@ type PacketBundle = {
   packet: JobPacket | null;
   photos: IntakePhoto[];
   assistant: AskOtomotoPanelData | null;
+  diagnostics: DiagnosticPanelData | null;
 };
 
-const EMPTY_PACKET: PacketBundle = { packet: null, photos: [], assistant: null };
+const EMPTY_PACKET: PacketBundle = {
+  packet: null,
+  photos: [],
+  assistant: null,
+  diagnostics: null,
+};
 
 async function loadPacketBundle({
   route,
@@ -69,7 +77,7 @@ async function loadPacketBundle({
   const jobLabels = Object.fromEntries(
     packet.jobs.map((job) => [job.job_id, job.service_name])
   );
-  const [photos, assistantData] = await Promise.all([
+  const [photos, assistantData, diagnostics] = await Promise.all([
     listIntakePhotos(workOrderId, { sign: "thumbs" }).catch(() => []),
     assistantActive
       ? loadAskOtomotoPanelData({
@@ -81,8 +89,9 @@ async function loadPacketBundle({
           jobLabels,
         })
       : Promise.resolve(null),
+    getDiagnosticsForWorkOrder(workOrderId).catch(() => null),
   ]);
-  if (!assistantData) return { packet, photos, assistant: null };
+  if (!assistantData) return { packet, photos, assistant: null, diagnostics };
 
   // A route job only scopes a new thread when this viewer may work it; a floor
   // tech's query string can't claim another technician's job.
@@ -131,6 +140,7 @@ async function loadPacketBundle({
       }),
       historyUnavailable: assistantData.historyUnavailable,
     },
+    diagnostics,
   };
 }
 
@@ -202,6 +212,8 @@ export default async function TechnicianPage({
       packetSection={route.packetSection}
       packetPhotos={packetBundle.photos}
       packetAssistant={packetBundle.assistant}
+      packetDiagnostics={packetBundle.diagnostics}
+      canRecordDiagnostics={canRecordDiagnosticSession(viewRole) && !preview.isPreviewing}
       packetWorkOrderId={route.workOrderId}
       packetJobId={route.jobId}
     />

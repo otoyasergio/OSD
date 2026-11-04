@@ -42,6 +42,7 @@ import {
   canPerformSafetyCheck,
   canOverrideSafetyRequirement,
   canCompleteInspection,
+  canRecordDiagnosticSession,
   canCompleteJob,
   canCreateRecommendation,
   canViewTechnicianDocket,
@@ -314,6 +315,16 @@ describe("permissions", () => {
     expect(canOverrideSafetyRequirement("head_tech")).toBe(false);
     expect(canOverrideSafetyRequirement("technician")).toBe(false);
     expect(canOverrideSafetyRequirement("admin")).toBe(false);
+  });
+
+  it("records a scan with the same roles that can finish an inspection", () => {
+    expect(canRecordDiagnosticSession("technician")).toBe(true);
+    expect(canRecordDiagnosticSession("head_tech")).toBe(true);
+    expect(canRecordDiagnosticSession("service_advisor")).toBe(true);
+    expect(canRecordDiagnosticSession("owner")).toBe(true);
+    expect(canRecordDiagnosticSession("manager")).toBe(true);
+    expect(canRecordDiagnosticSession("admin")).toBe(false);
+    expect(canRecordDiagnosticSession("time_clock_kiosk")).toBe(false);
   });
 
   it("head_tech inherits technician floor permissions without client CRM", () => {
