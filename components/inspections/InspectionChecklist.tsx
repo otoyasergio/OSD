@@ -2,7 +2,9 @@
 
 import { useActionState, useCallback, useMemo, useRef, useState } from "react";
 import type { AuctionPriceGuideView } from "@/lib/auctions/types";
+import type { InspectionScanView } from "@/lib/email/scanReport";
 import type { InspectionDetail, InspectionResultRow } from "@/lib/services/inspections";
+import { InspectionScanLive } from "@/components/inspections/InspectionScanLive";
 import { InspectionAuctionPrice } from "@/components/auctions/InspectionAuctionPrice";
 import { inspectionAuctionAnchorCategory } from "@/lib/inspections/inspectionAuctionPlacement";
 import { InspectionItemRow } from "@/components/inspections/InspectionItemRow";
@@ -87,6 +89,7 @@ function photoUrlsFor(
 
 export function InspectionChecklist({
   inspection,
+  scan = null,
   canEdit,
   canForceComplete,
   canRecommend,
@@ -94,6 +97,7 @@ export function InspectionChecklist({
   auctionGuide = null,
 }: {
   inspection: InspectionDetail;
+  scan?: InspectionScanView | null;
   canEdit: boolean;
   canForceComplete: boolean;
   canRecommend?: boolean;
@@ -298,6 +302,14 @@ export function InspectionChecklist({
             <dd>{formatInspectionDate(header.date_created)}</dd>
           </div>
         </dl>
+        <InspectionScanLive
+          workOrderId={inspection.work_order_id}
+          workOrderVin={header.vin}
+          mileage={header.mileage}
+          mileageUnit={header.mileage_unit}
+          scan={scan}
+          readOnly={readOnly}
+        />
       </header>
 
       <div className="inspection-checklist-toolbar">

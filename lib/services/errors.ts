@@ -472,6 +472,11 @@ const MESSAGES: Record<string, string> = {
   ACK_SIGNER_REQUIRED:
     "Enter the name of the person acknowledging the declined safety repairs.",
   NO_DECLINED_SAFETY: "There are no declined safety repairs to acknowledge.",
+  SCAN_REPORT_REQUIRED: "Paste the TopGuru report.",
+  SCAN_CODES_REQUIRED: "Paste the fault codes from the report.",
+  SCAN_REPORT_NOT_FOUND: "That scan report is no longer on this inspection.",
+  SCAN_REPORT_ALREADY_CONFIRMED: "That scan report was already confirmed.",
+  SCAN_MILEAGE_MISSING: "That report has no mileage to use.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

@@ -27,3 +27,8 @@ export function gmailRedirectUri(origin: string): string {
 }
 
 export const GMAIL_OAUTH_STATE_COOKIE = "otomoto_gmail_oauth_state";
+export const GMAIL_OAUTH_PURPOSE_COOKIE = "otomoto_gmail_oauth_purpose";
+
+export function gmailOauthPurpose(value: string | undefined): "customer" | "scan" {
+  return value === "scan" ? "scan" : "customer";
+}
