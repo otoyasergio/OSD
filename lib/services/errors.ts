@@ -469,6 +469,7 @@ const MESSAGES: Record<string, string> = {
     "On the floor, the verifier records the final check from their own account.",
   ACCOUNTABILITY_WRITE_FORBIDDEN:
     "Only the front office can change advisor, authorization, or acknowledgment records.",
+  SHOP_RATE_WRITE_FORBIDDEN: "Only the owner can change the shop rate.",
   ACK_SIGNER_REQUIRED:
     "Enter the name of the person acknowledging the declined safety repairs.",
   NO_DECLINED_SAFETY: "There are no declined safety repairs to acknowledge.",
