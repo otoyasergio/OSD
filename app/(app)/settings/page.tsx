@@ -38,7 +38,7 @@ export default async function SettingsPage() {
     {
       href: "/settings/scan-mail",
       label: "Scan reports",
-      description: "Connect the mailbox that receives TopGuru reports. Customers do not get these.",
+      description: "TopGuru sends scan reports to scans@torontomoto.com.",
       visible: canConnectShopMailbox(viewRole),
     },
     {

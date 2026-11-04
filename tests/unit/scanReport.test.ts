@@ -71,13 +71,15 @@ describe("chooseInspectionForScan", () => {
 });
 
 describe("scanAddressAllowed", () => {
-  it("refuses the mailbox that sends customer email", () => {
-    expect(scanAddressAllowed("Info@TorontoMoto.com", "info@torontomoto.com")).toBe(false);
+  it("accepts only scans@torontomoto.com", () => {
+    expect(scanAddressAllowed("scans@torontomoto.com", "info@torontomoto.com")).toBe(true);
+    expect(scanAddressAllowed("Scans@TorontoMoto.com", null)).toBe(true);
+    expect(scanAddressAllowed("other@torontomoto.com", null)).toBe(false);
+    expect(scanAddressAllowed("info@torontomoto.com", "info@torontomoto.com")).toBe(false);
   });
 
-  it("accepts a separate scans mailbox", () => {
-    expect(scanAddressAllowed("scans@torontomoto.com", "info@torontomoto.com")).toBe(true);
-    expect(scanAddressAllowed("scans@torontomoto.com", null)).toBe(true);
+  it("refuses scans@torontomoto.com when that address also sends customer email", () => {
+    expect(scanAddressAllowed("scans@torontomoto.com", "scans@torontomoto.com")).toBe(false);
   });
 });
 

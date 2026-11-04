@@ -11,6 +11,8 @@ export type WaitingInspection = {
   vin: string | null;
 };
 
+export const SCAN_REPORT_ADDRESS = "scans@torontomoto.com";
+
 const CODE = /\b([PCBU][0-9A-F]{4})\b([^\n]{0,80})?/gi;
 const VIN = /\b([A-HJ-NPR-Z0-9]{17})\b/;
 
@@ -65,9 +67,9 @@ export function scanAddressAllowed(
   customerMailboxAddress: string | null
 ): boolean {
   const scan = scanAddress.trim().toLowerCase();
-  if (!scan.includes("@")) return false;
+  if (scan !== SCAN_REPORT_ADDRESS) return false;
   const customer = customerMailboxAddress?.trim().toLowerCase() ?? "";
-  return !customer || scan !== customer;
+  return scan !== customer;
 }
 
 type GmailHeader = { name: string; value: string };

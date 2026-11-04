@@ -100,12 +100,13 @@ export async function GET(request: Request) {
       });
     }
   } catch (error) {
-    settings.searchParams.set(
-      "error",
+    const code =
       error instanceof Error && error.message === "SCAN_MAILBOX_IS_CUSTOMER"
         ? "customer_mailbox"
-        : "exchange"
-    );
+        : error instanceof Error && error.message === "SCAN_MAILBOX_WRONG_ADDRESS"
+          ? "wrong_address"
+          : "exchange";
+    settings.searchParams.set("error", code);
     return NextResponse.redirect(settings);
   }
 

@@ -59,7 +59,7 @@ export default async function ScanMailboxPage({
           Scan reports
         </h1>
         <p className="mt-1 text-sm text-[var(--status-neutral)]">
-          The Google mailbox that receives TopGuru reports. Customer email stays on its own
+          TopGuru sends scan reports to scans@torontomoto.com. Customer email stays on its own
           mailbox.
         </p>
       </div>

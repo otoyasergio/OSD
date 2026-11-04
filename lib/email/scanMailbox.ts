@@ -1,7 +1,11 @@
 import { createAdminClient } from "@/lib/database/supabase-admin";
 import { revokeGmailRefreshToken } from "@/lib/email/gmail";
 import { getShopMailboxAddress } from "@/lib/email/mailbox";
-import { scanAddressAllowed, type ScanOutcome } from "@/lib/email/scanReport";
+import {
+  SCAN_REPORT_ADDRESS,
+  scanAddressAllowed,
+  type ScanOutcome,
+} from "@/lib/email/scanReport";
 
 export type ScanMailbox = {
   locationId: string;
@@ -22,7 +26,10 @@ export async function listScanMailboxes(): Promise<ScanMailbox[]> {
     .select("location_id, email_address, refresh_token");
   if (error) throw error;
   return ((data ?? []) as MailboxRow[])
-    .filter((row) => row.email_address && row.refresh_token)
+    .filter(
+      (row) =>
+        row.email_address.trim().toLowerCase() === SCAN_REPORT_ADDRESS && row.refresh_token
+    )
     .map((row) => ({
       locationId: row.location_id,
       emailAddress: row.email_address,
@@ -49,6 +56,9 @@ export async function saveScanMailbox(input: {
   userId: string;
 }): Promise<void> {
   const customerAddress = await getShopMailboxAddress(input.locationId);
+  if (input.emailAddress.trim().toLowerCase() !== SCAN_REPORT_ADDRESS) {
+    throw new Error("SCAN_MAILBOX_WRONG_ADDRESS");
+  }
   if (!scanAddressAllowed(input.emailAddress, customerAddress)) {
     throw new Error("SCAN_MAILBOX_IS_CUSTOMER");
   }

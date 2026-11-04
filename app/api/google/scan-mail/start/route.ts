@@ -10,6 +10,7 @@ import {
   isGmailOAuthConfigured,
 } from "@/lib/email/config";
 import { scanGmailAuthorizationUrl } from "@/lib/email/gmail";
+import { SCAN_REPORT_ADDRESS } from "@/lib/email/scanReport";
 import { isCustomerEmailLocation } from "@/lib/email/mailbox";
 import { canConnectShopMailbox } from "@/lib/permissions";
 
@@ -66,6 +67,7 @@ export async function GET(request: Request) {
     clientId,
     redirectUri: gmailRedirectUri(origin),
     state,
+    loginHint: SCAN_REPORT_ADDRESS,
   });
   return NextResponse.redirect(url);
 }

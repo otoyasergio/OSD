@@ -17,6 +17,7 @@ describe("scanGmailAuthorizationUrl", () => {
     expect(scope).toContain("https://www.googleapis.com/auth/userinfo.email");
     expect(scope).not.toContain("gmail.send");
     expect(url.searchParams.get("prompt")).toBe("consent select_account");
+    expect(url.searchParams.get("login_hint")).toBe("scans@torontomoto.com");
   });
 });
 

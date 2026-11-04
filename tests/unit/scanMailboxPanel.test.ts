@@ -25,8 +25,10 @@ describe("ScanMailboxPanel", () => {
     );
 
     expect(html).toContain("/api/google/scan-mail/start");
+    expect(html).toContain("TopGuru sends scan reports to");
     expect(html).toContain("scans@torontomoto.com");
     expect(html).toMatch(/Customers do not receive/i);
+    expect(html).not.toContain("such as");
     expect(html).not.toContain("Ready for pickup");
   });
 

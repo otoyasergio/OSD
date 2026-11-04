@@ -1,3 +1,4 @@
+import { SCAN_REPORT_ADDRESS } from "@/lib/email/scanReport";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 
 const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
@@ -21,11 +22,12 @@ export function gmailAuthorizationUrl(input: {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
-/** Read-only consent for the scans mailbox. This token cannot send mail. */
+/** Read-only consent for scans@torontomoto.com. This token cannot send mail. */
 export function scanGmailAuthorizationUrl(input: {
   clientId: string;
   redirectUri: string;
   state: string;
+  loginHint?: string;
 }): string {
   const params = new URLSearchParams({
     client_id: input.clientId,
@@ -34,6 +36,7 @@ export function scanGmailAuthorizationUrl(input: {
     scope: `${GMAIL_READONLY_SCOPE} ${GMAIL_EMAIL_SCOPE}`,
     access_type: "offline",
     prompt: "consent select_account",
+    login_hint: input.loginHint ?? SCAN_REPORT_ADDRESS,
     state: input.state,
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
