@@ -9,6 +9,7 @@ import { auctionLotMatchesBike, makeKey } from "@/lib/auctions/match";
 import { recordsFromAuctionFile } from "@/lib/auctions/parseLots";
 import { parseStoredAuctionGuide } from "@/lib/auctions/schema";
 import {
+  AUCTION_GUIDE_TTL_MS,
   buildStoredAuctionGuide,
   inspectionAuctionCallout,
   inspectionPriceLine,
@@ -631,6 +632,16 @@ describe("refresh planning", () => {
     expect(planAuctionRefresh({ ...base, force: true, hasKey: false })).toBe(
       "rebuild-local"
     );
+  });
+
+  it("rebuilds from stored lots when a daily refresh asks it to", () => {
+    expect(planAuctionRefresh({ ...base, localOnly: true, force: true })).toBe(
+      "rebuild-local"
+    );
+  });
+
+  it("treats a guide as stale after one day", () => {
+    expect(AUCTION_GUIDE_TTL_MS).toBe(24 * 60 * 60 * 1000);
   });
 });
 

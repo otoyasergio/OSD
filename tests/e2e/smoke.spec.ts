@@ -111,6 +111,11 @@ test.describe("webhook security", () => {
     expect([401, 500]).toContain(response.status());
   });
 
+  test("auction price refresh cron rejects missing bearer", async ({ request }) => {
+    const response = await request.get("/api/cron/auction-price-refresh");
+    expect([401, 500]).toContain(response.status());
+  });
+
   test("health endpoint reports integration readiness", async ({ request }) => {
     const response = await request.get("/api/health");
     const body = (await response.json()) as {
