@@ -56,6 +56,8 @@ export async function saveFinalCheck(
     verifierUserId: input.verifierUserId,
     roadTestResult: input.roadTestResult,
     mileageOut: input.mileageOut,
+    actorUserId: user.user_id,
+    actorIsFrontOffice: canEditWorkOrder(user.role),
   });
   if (!parsed.ok) throw new Error(parsed.errors[0] ?? "FINAL_CHECK_INVALID");
 

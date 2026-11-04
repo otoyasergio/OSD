@@ -366,3 +366,188 @@ GRANT ALL ON TABLE public.install_task TO service_role;
 REVOKE ALL ON TABLE public.legal_parameter FROM anon;
 REVOKE ALL ON TABLE public.final_check FROM anon;
 REVOKE ALL ON TABLE public.install_task FROM anon;
+
+-- Accountability columns on work_order are authorization evidence. A session
+-- with a user JWT may change them only from a front-office role; server-side
+-- service-role writes carry no JWT and are already trusted. A recorded maximum
+-- is always attributed to the session that recorded it.
+CREATE OR REPLACE FUNCTION public.work_order_accountability_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_role text;
+  v_changing boolean;
+  v_maximum_changing boolean;
+BEGIN
+  IF (SELECT auth.uid()) IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    v_maximum_changing :=
+      NEW.maximum_authorization_cents IS DISTINCT FROM OLD.maximum_authorization_cents;
+    v_changing :=
+      v_maximum_changing
+      OR NEW.advisor_user_id IS DISTINCT FROM OLD.advisor_user_id
+      OR NEW.maximum_authorized_at IS DISTINCT FROM OLD.maximum_authorized_at
+      OR NEW.maximum_authorized_by_user_id IS DISTINCT FROM OLD.maximum_authorized_by_user_id
+      OR NEW.estimate_declined_at IS DISTINCT FROM OLD.estimate_declined_at
+      OR NEW.applied_legal_parameter_id IS DISTINCT FROM OLD.applied_legal_parameter_id
+      OR NEW.declined_safety_ack_at IS DISTINCT FROM OLD.declined_safety_ack_at
+      OR NEW.declined_safety_ack_signer IS DISTINCT FROM OLD.declined_safety_ack_signer
+      OR NEW.declined_safety_ack_items IS DISTINCT FROM OLD.declined_safety_ack_items;
+  ELSE
+    v_maximum_changing := NEW.maximum_authorization_cents IS NOT NULL;
+    v_changing :=
+      v_maximum_changing
+      OR NEW.advisor_user_id IS NOT NULL
+      OR NEW.maximum_authorized_at IS NOT NULL
+      OR NEW.maximum_authorized_by_user_id IS NOT NULL
+      OR NEW.estimate_declined_at IS NOT NULL
+      OR NEW.applied_legal_parameter_id IS NOT NULL
+      OR NEW.declined_safety_ack_at IS NOT NULL
+      OR NEW.declined_safety_ack_signer IS NOT NULL
+      OR NEW.declined_safety_ack_items IS NOT NULL;
+  END IF;
+
+  IF NOT v_changing THEN
+    RETURN NEW;
+  END IF;
+
+  v_role := public.current_app_user_role();
+  IF v_role IS NULL OR v_role NOT IN ('owner', 'manager', 'service_advisor', 'admin') THEN
+    RAISE EXCEPTION 'ACCOUNTABILITY_WRITE_FORBIDDEN';
+  END IF;
+
+  IF v_maximum_changing AND NEW.maximum_authorization_cents IS NOT NULL THEN
+    NEW.maximum_authorized_by_user_id := public.current_app_user_id();
+    NEW.maximum_authorized_at := now();
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.work_order_accountability_guard() FROM PUBLIC, anon, authenticated;
+
+DROP TRIGGER IF EXISTS work_order_accountability_guard ON public.work_order;
+CREATE TRIGGER work_order_accountability_guard
+  BEFORE INSERT OR UPDATE ON public.work_order
+  FOR EACH ROW
+  EXECUTE FUNCTION public.work_order_accountability_guard();
+
+-- Receiving evidence stays inside the receiver's locations.
+DROP POLICY IF EXISTS part_receipt_select ON public.part_receipt;
+CREATE POLICY part_receipt_select ON public.part_receipt
+  FOR SELECT TO authenticated
+  USING (
+    (SELECT public.is_active_app_user())
+    AND (SELECT public.current_app_user_role()) IN ('owner', 'manager', 'service_advisor', 'admin')
+    AND EXISTS (
+      SELECT 1
+      FROM public.purchase_order_line pol
+      JOIN public.purchase_order po ON po.purchase_order_id = pol.purchase_order_id
+      WHERE pol.po_line_id = part_receipt.po_line_id
+        AND po.location_id IN (SELECT public.user_location_ids())
+    )
+  );
+
+DROP POLICY IF EXISTS part_receipt_insert ON public.part_receipt;
+CREATE POLICY part_receipt_insert ON public.part_receipt
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    (SELECT public.is_active_app_user())
+    AND (SELECT public.current_app_user_role()) IN ('owner', 'manager', 'service_advisor', 'admin')
+    AND (
+      received_by_user_id IS NULL
+      OR received_by_user_id = (SELECT public.current_app_user_id())
+    )
+    AND EXISTS (
+      SELECT 1
+      FROM public.purchase_order_line pol
+      JOIN public.purchase_order po ON po.purchase_order_id = pol.purchase_order_id
+      WHERE pol.po_line_id = part_receipt.po_line_id
+        AND po.location_id IN (SELECT public.user_location_ids())
+    )
+  );
+
+-- Whether a person clocked labour on any job of a visit. SECURITY DEFINER so
+-- the final-check policy sees every entry, not only the rows the caller may read.
+CREATE OR REPLACE FUNCTION public.user_clocked_work_order(p_user_id uuid, p_work_order_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.job_time_entry jte
+    JOIN public.job j ON j.job_id = jte.job_id
+    WHERE jte.user_id = p_user_id
+      AND j.work_order_id = p_work_order_id
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.user_clocked_work_order(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.user_clocked_work_order(uuid, uuid) TO authenticated, service_role;
+
+-- The final check is a two-person record. The session that writes it is the
+-- recorder, is never the technician, and is the verifier unless it belongs to
+-- the front office. The verifier never clocked the visit.
+DROP POLICY IF EXISTS final_check_insert ON public.final_check;
+CREATE POLICY final_check_insert ON public.final_check
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    (SELECT public.is_active_app_user())
+    AND (SELECT public.current_app_user_role()) IN (
+      'owner', 'manager', 'service_advisor', 'head_tech', 'technician', 'admin'
+    )
+    AND recorded_by_user_id = (SELECT public.current_app_user_id())
+    AND technician_user_id <> (SELECT public.current_app_user_id())
+    AND technician_user_id <> verifier_user_id
+    AND (
+      (SELECT public.current_app_user_role()) IN ('owner', 'manager', 'service_advisor', 'admin')
+      OR verifier_user_id = (SELECT public.current_app_user_id())
+    )
+    AND NOT public.user_clocked_work_order(verifier_user_id, work_order_id)
+    AND EXISTS (
+      SELECT 1 FROM public.work_order wo
+      WHERE wo.work_order_id = final_check.work_order_id
+        AND wo.location_id IN (SELECT public.user_location_ids())
+    )
+  );
+
+DROP POLICY IF EXISTS final_check_update ON public.final_check;
+CREATE POLICY final_check_update ON public.final_check
+  FOR UPDATE TO authenticated
+  USING (
+    (SELECT public.is_active_app_user())
+    AND (SELECT public.current_app_user_role()) IN (
+      'owner', 'manager', 'service_advisor', 'head_tech', 'technician', 'admin'
+    )
+    AND EXISTS (
+      SELECT 1 FROM public.work_order wo
+      WHERE wo.work_order_id = final_check.work_order_id
+        AND wo.location_id IN (SELECT public.user_location_ids())
+    )
+  )
+  WITH CHECK (
+    (SELECT public.is_active_app_user())
+    AND recorded_by_user_id = (SELECT public.current_app_user_id())
+    AND technician_user_id <> (SELECT public.current_app_user_id())
+    AND technician_user_id <> verifier_user_id
+    AND (
+      (SELECT public.current_app_user_role()) IN ('owner', 'manager', 'service_advisor', 'admin')
+      OR verifier_user_id = (SELECT public.current_app_user_id())
+    )
+    AND NOT public.user_clocked_work_order(verifier_user_id, work_order_id)
+    AND EXISTS (
+      SELECT 1 FROM public.work_order wo
+      WHERE wo.work_order_id = final_check.work_order_id
+        AND wo.location_id IN (SELECT public.user_location_ids())
+    )
+  );

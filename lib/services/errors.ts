@@ -463,6 +463,12 @@ const MESSAGES: Record<string, string> = {
   VERIFIER_MUST_DIFFER: "The technician and the verifier must be two different accounts.",
   BOTH_ACCOUNTS_REQUIRED: "Choose both the technician and the verifier.",
   FINAL_CHECK_INVALID: "Complete the final-check record before saving.",
+  FINAL_CHECK_SELF_RECORDED:
+    "The technician who did the work cannot record the final check.",
+  FINAL_CHECK_VERIFIER_MUST_RECORD:
+    "On the floor, the verifier records the final check from their own account.",
+  ACCOUNTABILITY_WRITE_FORBIDDEN:
+    "Only the front office can change advisor, authorization, or acknowledgment records.",
   ACK_SIGNER_REQUIRED:
     "Enter the name of the person acknowledging the declined safety repairs.",
   NO_DECLINED_SAFETY: "There are no declined safety repairs to acknowledge.",

@@ -5,6 +5,10 @@ export type FinalCheckInput = {
   verifierUserId: string;
   roadTestResult: RoadTestResult;
   mileageOut: number | null;
+  /** The signed-in account writing the record. */
+  actorUserId: string;
+  /** Front office may record on the verifier's behalf; the floor may not. */
+  actorIsFrontOffice: boolean;
 };
 
 export function validateFinalCheck(
@@ -16,10 +20,23 @@ export function validateFinalCheck(
   } else if (input.technicianUserId === input.verifierUserId) {
     errors.push("VERIFIER_MUST_DIFFER");
   }
+  if (input.actorUserId && input.actorUserId === input.technicianUserId) {
+    errors.push("FINAL_CHECK_SELF_RECORDED");
+  }
+  if (
+    !input.actorIsFrontOffice &&
+    input.verifierUserId &&
+    input.actorUserId !== input.verifierUserId
+  ) {
+    errors.push("FINAL_CHECK_VERIFIER_MUST_RECORD");
+  }
   if (!["pass", "fail", "not_performed"].includes(input.roadTestResult)) {
     errors.push("ROAD_TEST_REQUIRED");
   }
-  if (input.mileageOut != null && (!Number.isFinite(input.mileageOut) || input.mileageOut < 0)) {
+  if (
+    input.mileageOut != null &&
+    (!Number.isFinite(input.mileageOut) || input.mileageOut < 0)
+  ) {
     errors.push("MILEAGE_INVALID");
   }
   if (errors.length > 0) return { ok: false, errors };
