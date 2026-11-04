@@ -38,12 +38,15 @@ export async function updateLocationAction(
       code: String(formData.get("code") ?? ""),
       status:
         String(formData.get("status") ?? "active") === "inactive" ? "inactive" : "active",
+      hourly_rate: String(formData.get("hourly_rate") ?? ""),
       voice_e164: String(formData.get("voice_e164") ?? "").trim() || null,
     });
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
   revalidatePath("/settings/locations");
+  revalidatePath("/settings/shop_rate");
+  revalidatePath("/work_orders/new");
   return { error: null };
 }
 

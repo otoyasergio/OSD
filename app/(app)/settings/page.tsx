@@ -6,6 +6,7 @@ import {
   canManageInspectionTemplate,
   canManageLocations,
   canManageLegalParameters,
+  canManageShopRate,
   canManageServiceCatalogue,
   canManageShopClosures,
   canManageTimesheets,
@@ -47,6 +48,12 @@ export default async function SettingsPage() {
       label: "Timesheets",
       description: "Who is punched in, weekly hours, and punch corrections.",
       visible: canManageTimesheets(viewRole),
+    },
+    {
+      href: "/settings/shop_rate",
+      label: "Shop rate",
+      description: "Set the hourly labour rate used on intake.",
+      visible: canManageShopRate(viewRole),
     },
     {
       href: "/settings/services",

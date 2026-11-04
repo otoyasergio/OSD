@@ -210,7 +210,12 @@ describe("buildNavCategories", () => {
     // Owner preview = full nav including owner-only admin surfaces.
     const owner = hrefsFor("owner");
     expect(owner).toEqual(
-      expect.arrayContaining(["/billing", "/settings/users", "/settings/logs"])
+      expect.arrayContaining([
+        "/billing",
+        "/settings/users",
+        "/settings/logs",
+        "/settings/shop_rate",
+      ])
     );
 
     // Service advisor preview keeps billing but loses owner-only admin.
@@ -219,6 +224,7 @@ describe("buildNavCategories", () => {
     expect(advisor).not.toContain("/settings/users");
     expect(advisor).not.toContain("/settings/logs");
     expect(advisor).not.toContain("/settings/reports");
+    expect(advisor).not.toContain("/settings/shop_rate");
 
     // Admin preview loses billing/parts/assign-docket but keeps work orders.
     const admin = hrefsFor("admin");
