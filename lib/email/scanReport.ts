@@ -133,6 +133,126 @@ export function textFromGmailMessage(message: GmailFullMessage): {
   };
 }
 
+export const SCAN_NO_CODES_LINE = "No fault codes were found.";
+export const SCAN_NO_CONNECTION_LINE = "No connection established with the bike.";
+export const SCAN_VIN_MISMATCH_NOTE = "The report VIN does not match this work order.";
+export const SCAN_CLEAR_DTC_NOTE = "Tap Report in TopGuru and leave Clear DTCs alone.";
+
+export type ReportedOdometer = { value: number; unit: "km" | "mi" | null };
+
+export type MileageDecision =
+  | { action: "none" }
+  | { action: "fill"; value: number; unit: "km" | "mi" }
+  | {
+      action: "choose";
+      reportedValue: number;
+      reportedUnit: "km" | "mi" | null;
+      current: number;
+      currentUnit: "km" | "mi";
+    };
+
+export type InspectionScanView = {
+  scanReportId: string;
+  outcome: ScanOutcome;
+  codes: ScanCode[];
+  vin: string | null;
+  reportText: string;
+  mileageChoice: "keep" | null;
+};
+
+function codeLine(code: ScanCode): string {
+  const description = code.description.trim();
+  if (!description || description.toUpperCase() === code.code) return code.code;
+  return `${code.code} ${description}`;
+}
+
+export function scanCustomerLines(input: {
+  outcome: ScanOutcome;
+  codes: ScanCode[];
+}): string[] {
+  if (input.outcome === "codes") return input.codes.map(codeLine);
+  if (input.outcome === "no_codes") return [SCAN_NO_CODES_LINE];
+  if (input.outcome === "no_connection") return [SCAN_NO_CONNECTION_LINE];
+  return [];
+}
+
+const ODOMETER =
+  /(?:odometer|\bmileage\b|\bodo\b)\s*[:#\-]?\s*(\d{1,3}(?:[, ]\d{3})+|\d{1,7})(?:\s*(km|mi|miles|kilometers|kilometres))?\b/i;
+
+function odometerUnit(raw: string | undefined): "km" | "mi" | null {
+  if (!raw) return null;
+  const value = raw.toLowerCase();
+  if (value === "mi" || value === "miles") return "mi";
+  return "km";
+}
+
+/** Odometer text only. Charging voltage is not a mileage. */
+export function readOdometer(text: string): ReportedOdometer | null {
+  const withoutVoltage = text.replace(/\b(?:charging\s+)?voltage\b[^.\n]*/gi, " ");
+  const match = withoutVoltage.match(ODOMETER);
+  if (!match) return null;
+  const value = Number(match[1].replace(/[, ]/g, ""));
+  if (!Number.isInteger(value) || value < 0 || value > 9_999_999) return null;
+  return { value, unit: odometerUnit(match[2]) };
+}
+
+export function mileageDecision(input: {
+  reported: ReportedOdometer | null;
+  current: number | null;
+  currentUnit: "km" | "mi";
+}): MileageDecision {
+  if (!input.reported) return { action: "none" };
+  if (input.current == null) {
+    return {
+      action: "fill",
+      value: input.reported.value,
+      unit: input.reported.unit ?? input.currentUnit,
+    };
+  }
+  const sameUnit = (input.reported.unit ?? input.currentUnit) === input.currentUnit;
+  if (sameUnit && input.reported.value === input.current) return { action: "none" };
+  return {
+    action: "choose",
+    reportedValue: input.reported.value,
+    reportedUnit: input.reported.unit,
+    current: input.current,
+    currentUnit: input.currentUnit,
+  };
+}
+
+export function vinMismatchNote(
+  reportVin: string | null,
+  workOrderVin: string | null
+): string | null {
+  const report = normalizeVin(reportVin);
+  const workOrder = normalizeVin(workOrderVin);
+  if (!report || !workOrder || report === workOrder) return null;
+  return SCAN_VIN_MISMATCH_NOTE;
+}
+
+export function diagnosticFromScan(
+  scan: { outcome: ScanOutcome; codes: ScanCode[] } | null
+): {
+  description: "Diagnostic";
+  severity: "immediate_attention";
+  notes: string;
+} | null {
+  if (!scan || scan.outcome !== "codes" || scan.codes.length === 0) return null;
+  return {
+    description: "Diagnostic",
+    severity: "immediate_attention",
+    notes: scanCustomerLines(scan).join("\n"),
+  };
+}
+
+export function diagnosticToCreate(
+  scan: { outcome: ScanOutcome; codes: ScanCode[] } | null,
+  alreadyHasDiagnostic: boolean
+): ReturnType<typeof diagnosticFromScan> {
+  if (alreadyHasDiagnostic) return null;
+  return diagnosticFromScan(scan);
+}
+
 export function filingsForUnreadMail(input: {
   messages: Array<{ id: string; text: string }>;
   waiting: WaitingInspection[];

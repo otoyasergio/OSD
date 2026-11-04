@@ -435,6 +435,11 @@ const MESSAGES: Record<string, string> = {
   PASSWORD_CONFIRM_MISMATCH: "New password and confirmation do not match.",
   PASSWORD_UNCHANGED: "Choose a new password that is different from your current one.",
   PASSWORD_UPDATE_FAILED: "Could not update your password. Try again.",
+  SCAN_REPORT_REQUIRED: "Paste the TopGuru report.",
+  SCAN_CODES_REQUIRED: "Paste the fault codes from the report.",
+  SCAN_REPORT_NOT_FOUND: "That scan report is no longer on this inspection.",
+  SCAN_REPORT_ALREADY_CONFIRMED: "That scan report was already confirmed.",
+  SCAN_MILEAGE_MISSING: "That report has no mileage to use.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

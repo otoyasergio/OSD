@@ -2331,6 +2331,67 @@ button.board-control-link {
   margin: 0;
 }
 
+.inspection-scan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.inspection-scan h2,
+.inspection-scan-note,
+.inspection-scan-result,
+.inspection-scan-raw,
+.inspection-scan-warning {
+  margin: 0;
+}
+
+.inspection-scan h2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.inspection-scan-note,
+.inspection-scan-result,
+.inspection-scan-raw,
+.inspection-scan-warning {
+  font-size: 0.875rem;
+}
+
+.inspection-scan-codes {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.inspection-scan-raw {
+  white-space: pre-wrap;
+}
+
+.inspection-scan-actions,
+.inspection-scan-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.inspection-scan-paste-form,
+.inspection-scan-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.inspection-scan-paste {
+  width: 100%;
+  min-height: 5.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8125rem;
+}
+
 @media (min-width: 640px) {
   .inspection-report-meta {
     grid-template-columns: repeat(4, minmax(0, 1fr));

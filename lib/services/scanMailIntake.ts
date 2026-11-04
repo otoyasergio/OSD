@@ -6,6 +6,7 @@ import {
 } from "@/lib/email/scanMailbox";
 import { markScanMailRead, readUnreadScanMail } from "@/lib/email/scanInbox";
 import { filingsForUnreadMail, type WaitingInspection } from "@/lib/email/scanReport";
+import { applyEmptyReportedMileage } from "@/lib/services/inspectionScans";
 import { logger } from "@/lib/security/logger";
 
 type WorkOrderRow = {
@@ -117,8 +118,10 @@ export async function ingestScanMail(): Promise<{ filed: number; held: number }>
           work_order_id: row.workOrderId,
         });
         if (error && error.code !== "23505") throw error;
-        if (row.workOrderId) filed += 1;
-        else held += 1;
+        if (row.workOrderId) {
+          await applyEmptyReportedMileage(admin, row.workOrderId, row.reportText);
+          filed += 1;
+        } else held += 1;
       }
       try {
         await markScanMailRead({

@@ -4,7 +4,9 @@ const {
   addAuditLog,
   addTimelineEvent,
   createClient,
+  createRecommendation,
   ensureRecommendations,
+  latestInspectionScan,
   recalculateWorkOrderStatus,
   removeInspectionSignature,
   requireUser,
@@ -13,7 +15,9 @@ const {
   addAuditLog: vi.fn(),
   addTimelineEvent: vi.fn(),
   createClient: vi.fn(),
+  createRecommendation: vi.fn(),
   ensureRecommendations: vi.fn(),
+  latestInspectionScan: vi.fn(),
   recalculateWorkOrderStatus: vi.fn(),
   removeInspectionSignature: vi.fn(),
   requireUser: vi.fn(),
@@ -33,6 +37,10 @@ vi.mock("@/lib/services/inspectionSignatures", () => ({
 }));
 vi.mock("@/lib/services/recommendations", () => ({
   ensureRecommendationsForAttentionFindings: ensureRecommendations,
+  createRecommendation,
+}));
+vi.mock("@/lib/services/inspectionScans", () => ({
+  latestInspectionScan,
 }));
 
 import { completeInspection } from "@/lib/services/inspections";
@@ -42,6 +50,7 @@ const INSPECTION = "e1111111-1111-4111-8111-111111111111";
 const USER = "11111111-1111-4111-8111-111111111111";
 const LOCATION = "31111111-1111-4111-8111-111111111111";
 const inspectionUpdates: Array<Record<string, unknown>> = [];
+let existingDiagnostic = false;
 
 function client() {
   const from = vi.fn((table: string) => {
@@ -95,6 +104,22 @@ function client() {
         }),
       };
     }
+    if (table === "recommendation") {
+      return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              limit: async () => ({
+                data: existingDiagnostic
+                  ? [{ recommendation_id: "d1111111-1111-4111-8111-111111111111" }]
+                  : [],
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      };
+    }
     if (table === "intake_photo") {
       return {
         select: () => ({
@@ -112,7 +137,10 @@ function client() {
 describe("completeInspection return contract", () => {
   beforeEach(() => {
     inspectionUpdates.length = 0;
+    existingDiagnostic = false;
     vi.clearAllMocks();
+    latestInspectionScan.mockResolvedValue(null);
+    createRecommendation.mockResolvedValue({ recommendation_id: "rec-1" });
     requireUser.mockResolvedValue({
       user_id: USER,
       role: "technician",
@@ -155,5 +183,41 @@ describe("completeInspection return contract", () => {
       expect.anything(),
       "inspection/signature.png"
     );
+  });
+
+  it("creates one unpriced Diagnostic when the scan has codes", async () => {
+    latestInspectionScan.mockResolvedValue({
+      outcome: "codes",
+      codes: [{ code: "P0301", description: "Misfire detected" }],
+    });
+
+    await completeInspection(WO, { signatureDataUrl: "data:image/png;base64,YQ==" });
+
+    expect(createRecommendation).toHaveBeenCalledOnce();
+    expect(createRecommendation).toHaveBeenCalledWith(WO, {
+      description: "Diagnostic",
+      severity: "immediate_attention",
+      notes: "P0301 Misfire detected",
+    });
+  });
+
+  it("does not create a Diagnostic when the scan has no codes", async () => {
+    latestInspectionScan.mockResolvedValue({ outcome: "no_codes", codes: [] });
+
+    await completeInspection(WO, { signatureDataUrl: "data:image/png;base64,YQ==" });
+
+    expect(createRecommendation).not.toHaveBeenCalled();
+  });
+
+  it("does not create a second Diagnostic when one is already on the work order", async () => {
+    existingDiagnostic = true;
+    latestInspectionScan.mockResolvedValue({
+      outcome: "codes",
+      codes: [{ code: "P0301", description: "Misfire detected" }],
+    });
+
+    await completeInspection(WO, { signatureDataUrl: "data:image/png;base64,YQ==" });
+
+    expect(createRecommendation).not.toHaveBeenCalled();
   });
 });

@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   chooseInspectionForScan,
+  diagnosticFromScan,
+  diagnosticToCreate,
   filingsForUnreadMail,
+  mileageDecision,
+  readOdometer,
   readTopGuruReport,
   scanAddressAllowed,
+  scanCustomerLines,
   textFromGmailMessage,
+  vinMismatchNote,
 } from "@/lib/email/scanReport";
 
 const open = {
@@ -114,6 +120,128 @@ describe("textFromGmailMessage", () => {
     expect(parsed.from).toBe("TopGuru <reports@topdon.example>");
     expect(parsed.text).toContain("P0301 Misfire");
     expect(parsed.text).not.toContain("report.pdf");
+  });
+});
+
+describe("scanCustomerLines", () => {
+  it("lists each code and its description", () => {
+    expect(
+      scanCustomerLines({
+        outcome: "codes",
+        codes: [
+          { code: "P0301", description: "Misfire detected" },
+          { code: "C0561", description: "chassis" },
+        ],
+      })
+    ).toEqual(["P0301 Misfire detected", "C0561 chassis"]);
+  });
+
+  it("uses the fixed sentences for a clean scan and a failed connection", () => {
+    expect(scanCustomerLines({ outcome: "no_codes", codes: [] })).toEqual([
+      "No fault codes were found.",
+    ]);
+    expect(scanCustomerLines({ outcome: "no_connection", codes: [] })).toEqual([
+      "No connection established with the bike.",
+    ]);
+  });
+
+  it("does not invent a sentence when the report still needs a look", () => {
+    expect(scanCustomerLines({ outcome: "needs_confirmation", codes: [] })).toEqual([]);
+  });
+});
+
+describe("readOdometer", () => {
+  it("reads kilometres and miles from the report", () => {
+    expect(readOdometer("Odometer: 12,345 km")).toEqual({ value: 12345, unit: "km" });
+    expect(readOdometer("Mileage 8200 miles")).toEqual({ value: 8200, unit: "mi" });
+  });
+
+  it("ignores charging voltage", () => {
+    expect(readOdometer("Charging voltage: 14.4 V\nBattery voltage 12.6 V")).toBeNull();
+  });
+});
+
+describe("mileageDecision", () => {
+  it("fills an empty work order mileage", () => {
+    expect(
+      mileageDecision({
+        reported: { value: 12345, unit: "km" },
+        current: null,
+        currentUnit: "km",
+      })
+    ).toEqual({ action: "fill", value: 12345, unit: "km" });
+  });
+
+  it("asks the tech to choose when the numbers disagree", () => {
+    expect(
+      mileageDecision({
+        reported: { value: 18000, unit: "km" },
+        current: 12000,
+        currentUnit: "km",
+      })
+    ).toEqual({
+      action: "choose",
+      reportedValue: 18000,
+      reportedUnit: "km",
+      current: 12000,
+      currentUnit: "km",
+    });
+  });
+
+  it("asks the tech to choose when the units disagree", () => {
+    expect(
+      mileageDecision({
+        reported: { value: 12000, unit: "mi" },
+        current: 12000,
+        currentUnit: "km",
+      }).action
+    ).toBe("choose");
+  });
+
+  it("keeps a matching mileage", () => {
+    expect(
+      mileageDecision({
+        reported: { value: 12000, unit: "km" },
+        current: 12000,
+        currentUnit: "km",
+      })
+    ).toEqual({ action: "none" });
+  });
+});
+
+describe("vinMismatchNote", () => {
+  it("notes a different VIN and stays quiet when they match", () => {
+    expect(vinMismatchNote("JH2SC5912KK123456", "1HD1BJY174Y023456")).toBe(
+      "The report VIN does not match this work order."
+    );
+    expect(vinMismatchNote("1HD1BJY174Y023456", "1hd1bjy174y023456")).toBeNull();
+  });
+});
+
+describe("diagnosticFromScan", () => {
+  it("plans one unpriced Diagnostic when the scan has codes", () => {
+    expect(
+      diagnosticFromScan({
+        outcome: "codes",
+        codes: [{ code: "P0301", description: "Misfire detected" }],
+      })
+    ).toEqual({
+      description: "Diagnostic",
+      severity: "immediate_attention",
+      notes: "P0301 Misfire detected",
+    });
+  });
+
+  it("plans none when the scan has no codes", () => {
+    expect(diagnosticFromScan({ outcome: "no_codes", codes: [] })).toBeNull();
+    expect(diagnosticFromScan({ outcome: "no_connection", codes: [] })).toBeNull();
+    expect(diagnosticFromScan(null)).toBeNull();
+    expect(
+      diagnosticToCreate(
+        { outcome: "codes", codes: [{ code: "P0301", description: "Misfire detected" }] },
+        true
+      )
+    ).toBeNull();
   });
 });
 

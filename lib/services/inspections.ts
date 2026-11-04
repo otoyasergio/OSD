@@ -786,10 +786,29 @@ export async function completeInspection(
     // Yellow / red findings become recommendations immediately on complete.
     const { ensureRecommendationsForAttentionFindings } =
       await import("@/lib/services/recommendations");
-    const recommendationCount = await ensureRecommendationsForAttentionFindings(
+    let recommendationCount = await ensureRecommendationsForAttentionFindings(
       workOrderId,
       gatedResults
     );
+
+    const { data: existingDiagnostic, error: diagnosticError } = await supabase
+      .from("recommendation")
+      .select("recommendation_id")
+      .eq("work_order_id", workOrderId)
+      .eq("description", "Diagnostic")
+      .limit(1);
+    if (diagnosticError) throw diagnosticError;
+    const { latestInspectionScan } = await import("@/lib/services/inspectionScans");
+    const { diagnosticToCreate } = await import("@/lib/email/scanReport");
+    const { createRecommendation } = await import("@/lib/services/recommendations");
+    const plannedDiagnostic = diagnosticToCreate(
+      await latestInspectionScan(workOrderId),
+      (existingDiagnostic ?? []).length > 0
+    );
+    if (plannedDiagnostic) {
+      await createRecommendation(workOrderId, plannedDiagnostic);
+      recommendationCount += 1;
+    }
 
     if (recommendationCount > 0) {
       await addTimelineEvent(supabase, {
