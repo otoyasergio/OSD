@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import type { WorkOrderJob, TechnicianOption } from "@/lib/services/workOrders";
+import type { TechnicianNote } from "@/lib/services/notes";
+import { formatDateTime } from "@/lib/datetime/format";
+import { TECHNICIAN_NOTE_TYPE_LABELS } from "@/lib/status/labels";
 import type { JobFormState } from "@/app/(app)/work_orders/job-actions";
 import type { JobStatus } from "@/lib/database/types";
 import { APPROVAL_METHOD_OPTIONS } from "@/components/jobs/JobActions";
@@ -70,6 +73,7 @@ export function JobCard({
   isTechnicianSelf,
   inspectionComplete,
   inspectionHref,
+  technicianNotes = [],
   assignAction,
   statusAction,
   approveAction,
@@ -86,6 +90,8 @@ export function JobCard({
   isTechnicianSelf: boolean;
   inspectionComplete?: boolean;
   inspectionHref?: string;
+  /** Floor notes written on this job. */
+  technicianNotes?: TechnicianNote[];
   assignAction: Action;
   statusAction: Action;
   approveAction: Action;
@@ -166,6 +172,25 @@ export function JobCard({
             <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">
               {job.notes.trim()}
             </p>
+          ) : null}
+          {technicianNotes.length > 0 ? (
+            <ul className="mt-2 flex flex-col gap-2">
+              {technicianNotes.map((note) => (
+                <li key={note.technician_note_id} className="text-sm text-foreground">
+                  <span className="font-medium">
+                    {TECHNICIAN_NOTE_TYPE_LABELS[note.note_type] ?? note.note_type}
+                  </span>
+                  <span className="text-[var(--status-neutral)]">
+                    {" "}
+                    · {formatDateTime(note.created_at)}
+                    {note.created_by
+                      ? ` · ${note.created_by.first_name} ${note.created_by.last_name}`
+                      : ""}
+                  </span>
+                  <p className="mt-0.5 whitespace-pre-wrap">{note.note}</p>
+                </li>
+              ))}
+            </ul>
           ) : null}
           <p className="mt-1 text-sm text-[var(--status-neutral)]">
             {canViewPricing

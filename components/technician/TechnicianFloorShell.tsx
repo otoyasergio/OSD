@@ -21,6 +21,7 @@ import {
 import { Images, StickyNote } from "lucide-react";
 import { useBoardDragSensors } from "@/lib/client/useBoardDragSensors";
 import { createClient } from "@/lib/database/supabase-browser";
+import { registerTechnicianNoteRealtime } from "@/lib/notes/realtime";
 import type { FloorOsSurface, TechnicianFloorOs } from "@/lib/services/technicianFloor";
 import type { DocketItem } from "@/lib/services/technicianDocket";
 import type { ReadyForPickupItem } from "@/lib/services/readyForPickup";
@@ -473,6 +474,13 @@ export function TechnicianFloorShell({
         }
       );
     }
+    registerTechnicianNoteRealtime(
+      channel,
+      docketWoKey.length > 0 ? docketWoKey.split(",") : [],
+      () => {
+        scheduleRefresh();
+      }
+    );
     channel.subscribe();
     return () => {
       void supabase.removeChannel(channel);

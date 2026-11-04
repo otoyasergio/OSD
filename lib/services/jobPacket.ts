@@ -29,6 +29,8 @@ export type JobPacketJob = {
   assigned_to_me: boolean;
   is_tech_work: boolean;
   floor_href: string; // /technician?wo=&job=
+  /** Shop line instruction. Not a technician_note. */
+  notes: string | null;
 };
 
 export type JobPacketPendingRecommendation = {
@@ -47,6 +49,8 @@ export type JobPacket = {
   is_foreign_location: boolean;
   jobs: JobPacketJob[];
   pending_recommendations: JobPacketPendingRecommendation[];
+  /** Shop note written on the work order at intake. */
+  internal_notes: string | null;
   notes: TechnicianNote[];
   /** Intentionally empty — photos load in a separate client/server action when section opens */
 };
@@ -66,6 +70,7 @@ type PacketJobRow = {
   origin?: string | null;
   assigned_technician_id: string | null;
   created_at: string;
+  notes?: string | null;
 };
 
 type PacketRecommendationRow = {
@@ -100,6 +105,7 @@ export function mapJobPacketJobs(
         assigned_to_me: job.assigned_technician_id === viewerUserId,
         is_tech_work: isTechDoesThisStatus(job.status),
         floor_href: jobFloorHref(workOrderId, job.job_id),
+        notes: job.notes?.trim() || null,
       };
     });
 }
@@ -144,13 +150,13 @@ export async function getJobPacket(
     .from("work_order")
     .select(
       `
-      work_order_id, work_order_number, status, location_id,
+      work_order_id, work_order_number, status, location_id, internal_notes,
       primary_technician_id, quality_check_assigned_to,
       motorcycle:motorcycle_id (
         year, make, model
       ),
       job (
-        job_id, service_name_snapshot, status, origin, assigned_technician_id, created_at
+        job_id, service_name_snapshot, status, origin, assigned_technician_id, notes, created_at
       )
     `
     )
@@ -206,6 +212,7 @@ export async function getJobPacket(
       moto ? { year: moto.year, make: moto.make, model: moto.model } : null
     ),
     is_foreign_location: wo.location_id !== locationId,
+    internal_notes: (wo.internal_notes as string | null)?.trim() || null,
     jobs: mapJobPacketJobs(jobRows, wo.work_order_id, subject.userId),
     pending_recommendations: mapJobPacketPendingRecommendations(
       (recommendationRows as PacketRecommendationRow[] | null) ?? []

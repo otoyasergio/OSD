@@ -72,6 +72,7 @@ const packet: JobPacket = {
   wo_status_label: "In progress",
   motorcycle_label: "2026 Honda CB500F",
   is_foreign_location: false,
+  internal_notes: null,
   jobs: [],
   pending_recommendations: [],
   notes: [],

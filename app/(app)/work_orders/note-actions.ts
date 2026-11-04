@@ -9,6 +9,10 @@ export type NoteFormState = { error: string | null };
 
 function revalidateNotes(workOrderId: string) {
   revalidatePath(`/work_orders/${workOrderId}`);
+  revalidatePath("/technician");
+  revalidatePath("/technician/docket");
+  revalidatePath("/dashboard");
+  revalidatePath("/control-center");
 }
 
 export async function addTechnicianNoteAction(
@@ -20,9 +24,7 @@ export async function addTechnicianNoteAction(
     const jobRaw = String(formData.get("job_id") ?? "").trim();
     await addTechnicianNote(workOrderId, {
       note: String(formData.get("note") ?? ""),
-      note_type: String(
-        formData.get("note_type") ?? "general"
-      ) as TechnicianNoteType,
+      note_type: String(formData.get("note_type") ?? "general") as TechnicianNoteType,
       job_id: jobRaw || null,
     });
   } catch (error) {
