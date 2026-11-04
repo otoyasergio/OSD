@@ -121,6 +121,9 @@ export function InspectionItemRow({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textDirtyRef = useRef(false);
   const inflightRef = useRef<Promise<void> | null>(null);
+  // One save at a time. A slower earlier request must not commit after the
+  // measurement the tech just corrected.
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
   const flushForFinishRef = useRef<(() => Promise<"clean" | "saved" | "failed">) | null>(
     null
   );
@@ -183,59 +186,62 @@ export function InspectionItemRow({
     setSaveState("saving");
     onBusyChange?.(resultId, true);
     setError(null);
-    const task = (async (): Promise<"saved" | "failed" | "superseded"> => {
-      let response: Awaited<ReturnType<typeof saveInspectionResultAction>>;
-      try {
-        response = await saveInspectionResultAction(workOrderId, resultId, input);
-      } catch (error) {
-        if (seq !== saveSeqRef.current) return "superseded";
-        // A thrown action did not write. Keep the draft on screen.
-        setSaveState("error");
-        setError(describeInspectionSaveFailure(error));
-        onBusyChange?.(resultId, false);
-        return "failed";
-      }
-      if (seq !== saveSeqRef.current) {
-        // A newer save superseded this one; leave UI to the latest request.
-        return "superseded";
-      }
-      if (!response.ok) {
-        if ("status" in input) {
-          const reverted = statusBeforeSaveRef.current;
-          setStatus(reverted);
-          onLocalStatusChange?.(resultId, reverted);
+    const task = saveChainRef.current.then(
+      async (): Promise<"saved" | "failed" | "superseded"> => {
+        let response: Awaited<ReturnType<typeof saveInspectionResultAction>>;
+        try {
+          response = await saveInspectionResultAction(workOrderId, resultId, input);
+        } catch (error) {
+          if (seq !== saveSeqRef.current) return "superseded";
+          // A thrown action did not write. Keep the draft on screen.
+          setSaveState("error");
+          setError(describeInspectionSaveFailure(error));
+          onBusyChange?.(resultId, false);
+          return "failed";
         }
-        setSaveState("error");
-        setError(response.error);
+        if (seq !== saveSeqRef.current) {
+          // A newer save superseded this one; leave UI to the latest request.
+          return "superseded";
+        }
+        if (!response.ok) {
+          if ("status" in input) {
+            const reverted = statusBeforeSaveRef.current;
+            setStatus(reverted);
+            onLocalStatusChange?.(resultId, reverted);
+          }
+          setSaveState("error");
+          setError(response.error);
+          onBusyChange?.(resultId, false);
+          return "failed";
+        }
+        if ("status" in input) {
+          statusBeforeSaveRef.current = input.status ?? null;
+        }
+        if (
+          ("notes" in input || "measurement" in input) &&
+          textSaveStillMatchesLocal({
+            localNotes: notesRef.current,
+            localMeasurement: measurementRef.current,
+            savedNotes: input.notes,
+            savedMeasurement: input.measurement,
+          })
+        ) {
+          textDirtyRef.current = false;
+          setTextDirty(false);
+        }
+        setSaveState("saved");
         onBusyChange?.(resultId, false);
-        return "failed";
+        window.setTimeout(() => {
+          if (seq === saveSeqRef.current) setSaveState("idle");
+        }, 1200);
+        return "saved";
       }
-      if ("status" in input) {
-        statusBeforeSaveRef.current = input.status ?? null;
-      }
-      if (
-        ("notes" in input || "measurement" in input) &&
-        textSaveStillMatchesLocal({
-          localNotes: notesRef.current,
-          localMeasurement: measurementRef.current,
-          savedNotes: input.notes,
-          savedMeasurement: input.measurement,
-        })
-      ) {
-        textDirtyRef.current = false;
-        setTextDirty(false);
-      }
-      setSaveState("saved");
-      onBusyChange?.(resultId, false);
-      window.setTimeout(() => {
-        if (seq === saveSeqRef.current) setSaveState("idle");
-      }, 1200);
-      return "saved";
-    })();
+    );
     const settled = task.then(
       () => undefined,
       () => undefined
     );
+    saveChainRef.current = settled;
     inflightRef.current = settled;
     void settled.finally(() => {
       if (inflightRef.current === settled) inflightRef.current = null;
@@ -498,6 +504,7 @@ export function InspectionItemRow({
                 aria-invalid={measurementMissing || undefined}
                 onChange={(e) => {
                   const next = e.target.value;
+                  measurementRef.current = next;
                   textDirtyRef.current = true;
                   setTextDirty(true);
                   setMeasurement(next);
@@ -548,6 +555,7 @@ export function InspectionItemRow({
                 }
                 onChange={(e) => {
                   const next = e.target.value;
+                  notesRef.current = next;
                   textDirtyRef.current = true;
                   setTextDirty(true);
                   setNotes(next);

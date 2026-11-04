@@ -175,4 +175,47 @@ describe("inspection finish waits for the checklist save", () => {
     expect(container.textContent).toContain("Could not save this line");
     expect(completeInspectionAction).not.toHaveBeenCalled();
   });
+
+  it("does not send a corrected measurement until the earlier save finishes", async () => {
+    let releaseFirst: (value: { ok: true }) => void = () => {};
+    const calls: Array<{ measurement?: string | null }> = [];
+    saveInspectionResultAction.mockImplementation((_workOrder, _resultId, input) => {
+      calls.push(input);
+      if (calls.length === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    await renderReady();
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    expect(calls.map((call) => call.measurement)).toEqual(["12"]);
+
+    await act(async () => {
+      setInput(input, "4.5");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+
+    // The corrected value must wait. An earlier request that finishes last
+    // would otherwise overwrite 4.5mm with 12mm on the signed report.
+    expect(saveInspectionResultAction).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      releaseFirst({ ok: true });
+      await Promise.resolve();
+    });
+
+    expect(calls.map((call) => call.measurement)).toEqual(["12", "4.5"]);
+  });
 });
