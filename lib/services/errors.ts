@@ -180,6 +180,15 @@ const MESSAGES: Record<string, string> = {
   NO_JOBS_TO_ASSIGN: "This work order has no active jobs to assign. Add a job first.",
   JOBS_NOT_COMPLETE: "All active jobs must be completed first.",
   QC_REQUIRED: "Complete the final inspection before the bike can leave.",
+  STORAGE_ESTIMATE_OPEN:
+    "The customer still has work to approve or decline before this bike can go into storage.",
+  STORAGE_WORK_INCOMPLETE:
+    "Finish the approved work, including parts that are still on order, before this bike can go into storage.",
+  STORAGE_PICKUP_DATE_REQUIRED: "Enter the date the customer will pick the bike up by.",
+  STORAGE_PICKUP_DATE_PAST: "The pickup date has to be today or later.",
+  STORAGE_MONTHLY_AMOUNT_REQUIRED:
+    "Enter how much monthly storage is. Use 0 when there is no charge.",
+  STORAGE_TERMS_NOT_STORED: "This bike is not in storage.",
   CHECKOUT_EVIDENCE_REQUIRED:
     "Add the five checkout photos, or have an owner or manager record an emergency override, before the bike can leave.",
   CHECKOUT_EVIDENCE_NOT_READY:

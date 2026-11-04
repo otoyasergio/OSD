@@ -67,10 +67,10 @@ describe("pickupLeaveBlockReason", () => {
   it("lets a finished bike enter storage without checkout photos", () => {
     expect(
       storageLeaveBlockReason({
-        inspectionComplete: true,
-        qualityChecked: true,
-        safetyRequired: true,
-        safetyChecked: true,
+        inspectionDone: true,
+        awaitingApproval: [],
+        unfinishedApproved: [],
+        partsOutstanding: [],
       })
     ).toBeNull();
 
@@ -86,43 +86,38 @@ describe("pickupLeaveBlockReason", () => {
     ).toBe("CHECKOUT_EVIDENCE_REQUIRED");
   });
 
-  it("requires inspection and QC before storage, and does not require final inspection", () => {
+  it("requires inspection and finished approved work before storage, not final inspection", () => {
+    const open = {
+      inspectionDone: true,
+      awaitingApproval: [],
+      unfinishedApproved: [],
+      partsOutstanding: [],
+    };
+    expect(storageLeaveBlockReason({ ...open, inspectionDone: false })).toBe(
+      "INSPECTION_REQUIRED_BEFORE_PICKUP"
+    );
     expect(
       storageLeaveBlockReason({
-        inspectionComplete: false,
-        qualityChecked: true,
-        safetyRequired: false,
-        safetyChecked: false,
+        ...open,
+        awaitingApproval: [{ id: "j1", name: "Tires" }],
       })
-    ).toBe("INSPECTION_REQUIRED_BEFORE_PICKUP");
+    ).toBe("STORAGE_ESTIMATE_OPEN");
     expect(
       storageLeaveBlockReason({
-        inspectionComplete: true,
-        qualityChecked: false,
-        safetyRequired: false,
-        safetyChecked: false,
+        ...open,
+        unfinishedApproved: [{ id: "j2", name: "Oil" }],
       })
-    ).toBe("QC_REQUIRED");
+    ).toBe("STORAGE_WORK_INCOMPLETE");
     expect(
       storageLeaveBlockReason({
-        inspectionComplete: true,
-        qualityChecked: true,
-        safetyRequired: true,
-        safetyChecked: false,
+        ...open,
+        partsOutstanding: [{ id: "p1", name: "Filter" }],
       })
-    ).toBeNull();
-    expect(
-      storageLeaveBlockReason({
-        inspectionComplete: true,
-        qualityChecked: false,
-        safetyRequired: true,
-        safetyChecked: false,
-        waiveQualityCheck: true,
-      })
-    ).toBeNull();
+    ).toBe("STORAGE_WORK_INCOMPLETE");
+    expect(storageLeaveBlockReason(open)).toBeNull();
   });
 
-  it("lets the owner skip every leave gate", () => {
+  it("lets the owner skip pickup gates and still blocks an unfinished storage drop", () => {
     expect(
       pickupLeaveBlockReason({
         inspectionComplete: false,
@@ -136,13 +131,12 @@ describe("pickupLeaveBlockReason", () => {
     ).toBeNull();
     expect(
       storageLeaveBlockReason({
-        inspectionComplete: false,
-        qualityChecked: false,
-        safetyRequired: true,
-        safetyChecked: false,
-        skipAllGates: true,
+        inspectionDone: false,
+        awaitingApproval: [],
+        unfinishedApproved: [],
+        partsOutstanding: [],
       })
-    ).toBeNull();
+    ).toBe("INSPECTION_REQUIRED_BEFORE_PICKUP");
   });
 
   it("skips final inspection when waived", () => {

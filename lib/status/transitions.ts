@@ -103,8 +103,9 @@ export function canDropInColumn(
   if (target === null) return false;
   if (target === currentStatus) return false;
 
-  // Storage is a parking spot. Advisors and admins may drop any active bike
-  // there, including one that is on hold.
+  // The card can still be dragged onto Storage so the checklist can explain a
+  // block. The server requires the service path, a pickup date, and the
+  // monthly amount before the move is saved.
   if (isStorageBoardColumn(columnId) && canParkAnyBikeInStorage(role)) {
     return true;
   }

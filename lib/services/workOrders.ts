@@ -1,4 +1,9 @@
 import { requireUser } from "@/lib/auth/session";
+import {
+  getOptionalColumnSupport,
+  isUndefinedColumnError,
+  setOptionalColumnSupport,
+} from "@/lib/database/schemaCompat";
 import { createClient } from "@/lib/database/supabase-server";
 import type { DbClient, JobStatus, WorkOrderStatus } from "@/lib/database/types";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
@@ -78,6 +83,8 @@ export type WorkOrder = {
   source: string;
   created_at: string;
   updated_at: string;
+  storage_pickup_by?: string | null;
+  storage_monthly_cents?: number | null;
 };
 
 export type WorkOrderListItem = {
@@ -447,17 +454,40 @@ export type WorkOrderDetail = WorkOrder & {
   is_foreign_location: boolean;
 };
 
+const STORAGE_TERMS_COLUMN_KEY = "work_order.storage_terms";
+
+async function selectWorkOrderRow(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workOrderId: string,
+  nested: string
+): Promise<unknown> {
+  const includeTerms = getOptionalColumnSupport(STORAGE_TERMS_COLUMN_KEY) !== false;
+  const columns = includeTerms
+    ? `${WORK_ORDER_COLUMNS}, storage_pickup_by, storage_monthly_cents`
+    : WORK_ORDER_COLUMNS;
+  let result = await supabase
+    .from("work_order")
+    .select(`${columns}${nested}`)
+    .eq("work_order_id", workOrderId)
+    .maybeSingle();
+  if (result.error && isUndefinedColumnError(result.error, "storage_")) {
+    setOptionalColumnSupport(STORAGE_TERMS_COLUMN_KEY, false);
+    result = await supabase
+      .from("work_order")
+      .select(`${WORK_ORDER_COLUMNS}${nested}`)
+      .eq("work_order_id", workOrderId)
+      .maybeSingle();
+  } else if (!result.error && includeTerms) {
+    setOptionalColumnSupport(STORAGE_TERMS_COLUMN_KEY, true);
+  }
+  if (result.error) throw result.error;
+  return result.data as unknown;
+}
+
 export async function getWorkOrderById(workOrderId: string): Promise<WorkOrder | null> {
   await requireUser();
   const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .from("work_order")
-    .select(WORK_ORDER_COLUMNS)
-    .eq("work_order_id", workOrderId)
-    .maybeSingle();
-
-  if (error) throw error;
+  const data = await selectWorkOrderRow(supabase, workOrderId, "");
   return (data as WorkOrder) ?? null;
 }
 
@@ -467,11 +497,10 @@ export async function getWorkOrderDetail(
   const user = await requireUser();
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from("work_order")
-    .select(
-      `
-      ${WORK_ORDER_COLUMNS},
+  const data = await selectWorkOrderRow(
+    supabase,
+    workOrderId,
+    `,
       customer:customer_id (
         customer_id,
         first_name,
@@ -541,11 +570,7 @@ export async function getWorkOrderDetail(
         customer_document ( document_id )
       )
     `
-    )
-    .eq("work_order_id", workOrderId)
-    .maybeSingle();
-
-  if (error) throw error;
+  );
   if (!data) return null;
 
   const row = data as Record<string, unknown>;
@@ -636,6 +661,9 @@ export async function getWorkOrderDetail(
     source: (row.source as string) ?? "walk_in",
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
+    storage_pickup_by: (row.storage_pickup_by as string | null) ?? null,
+    storage_monthly_cents:
+      row.storage_monthly_cents == null ? null : Number(row.storage_monthly_cents),
     customer,
     motorcycle,
     primary_technician: row.primary_technician as WorkOrderDetail["primary_technician"],

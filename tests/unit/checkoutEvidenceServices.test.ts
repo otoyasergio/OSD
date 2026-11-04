@@ -482,9 +482,9 @@ describe("pickup service gates query committed checkout photos", () => {
       photos: [],
     });
     createClient.mockResolvedValue(toStore);
-    await moveWorkOrderOnBoard(WO, "storage");
-    const stored = toStore.updates.find((row) => row.payload.status === "in_storage");
-    expect(stored?.payload.safety_waived).toBe(true);
+    await expect(moveWorkOrderOnBoard(WO, "storage")).rejects.toThrow(
+      "INSPECTION_REQUIRED_BEFORE_PICKUP"
+    );
 
     const toComplete = makeClient({
       workOrder: blockedBike,
@@ -504,7 +504,7 @@ describe("pickup service gates query committed checkout photos", () => {
     );
   });
 
-  it("lets a service advisor or admin park any bike in storage", async () => {
+  it("rejects storage for every role until the service path is done", async () => {
     const parkedBike = {
       status: "in_progress",
       quality_checked_at: null,
@@ -520,7 +520,7 @@ describe("pickup service gates query committed checkout photos", () => {
       { job_id: "j1", status: "in_progress", service_name_snapshot: "Oil" },
     ];
 
-    for (const role of ["service_advisor", "admin"] as const) {
+    for (const role of ["owner", "service_advisor", "admin", "manager"] as const) {
       requireUser.mockResolvedValue({ ...owner, role });
       const client = makeClient({
         workOrder: parkedBike,
@@ -529,28 +529,68 @@ describe("pickup service gates query committed checkout photos", () => {
         photos: [],
       });
       createClient.mockResolvedValue(client);
-      await moveWorkOrderOnBoard(WO, "gallery_storage");
-      const stored = client.updates.find((row) => row.payload.status === "in_storage");
-      expect(stored?.payload.stored_at).toEqual(expect.any(String));
-      expect(stored?.payload.safety_waived).toBeUndefined();
+      await expect(
+        moveWorkOrderOnBoard(WO, "gallery_storage", {
+          pickupBy: "2026-12-01",
+          monthlyCents: 12000,
+        })
+      ).rejects.toThrow("INSPECTION_REQUIRED_BEFORE_PICKUP");
+      expect(client.updates.some((row) => row.payload.status === "in_storage")).toBe(
+        false
+      );
     }
   });
 
-  it("still requires finished jobs before a manager parks a bike in storage", async () => {
-    requireUser.mockResolvedValue({ ...owner, role: "manager" });
+  it("stores a finished bike with the pickup date and monthly amount", async () => {
+    requireUser.mockResolvedValue({ ...owner, role: "service_advisor" });
     const client = makeClient({
-      workOrder: {
-        status: "in_progress",
-        quality_checked_at: null,
-        quality_checked_by_user_id: null,
-      },
-      jobs: [{ job_id: "j1", status: "in_progress", service_name_snapshot: "Oil" }],
-      inspection: null,
+      workOrder: { status: "ready_for_pickup" },
+      jobs: [{ job_id: "j1", status: "completed", service_name_snapshot: "Oil" }],
+      inspection: { completed_at: "2026-10-01T11:00:00.000Z" },
+    });
+    createClient.mockResolvedValue(client);
+    await moveWorkOrderOnBoard(WO, "storage", {
+      pickupBy: "2099-12-01",
+      monthlyCents: 15000,
+    });
+    const stored = client.updates.find((row) => row.payload.status === "in_storage");
+    expect(stored?.payload.stored_at).toEqual(expect.any(String));
+    expect(stored?.payload.storage_pickup_by).toBe("2099-12-01");
+    expect(stored?.payload.storage_monthly_cents).toBe(15000);
+    expect(stored?.payload.safety_waived).toBeUndefined();
+  });
+
+  it("rejects a finished storage drop that has no pickup date", async () => {
+    requireUser.mockResolvedValue(advisor);
+    const client = makeClient({
+      workOrder: { status: "ready_for_pickup" },
+      jobs: [{ job_id: "j1", status: "completed", service_name_snapshot: "Oil" }],
+      inspection: { completed_at: "2026-10-01T11:00:00.000Z" },
     });
     createClient.mockResolvedValue(client);
     await expect(moveWorkOrderOnBoard(WO, "storage")).rejects.toThrow(
-      "JOBS_NOT_COMPLETE"
+      "STORAGE_PICKUP_DATE_REQUIRED"
     );
+  });
+
+  it("clears storage terms when the bike leaves storage", async () => {
+    requireUser.mockResolvedValue(owner);
+    const client = makeClient({
+      workOrder: {
+        status: "in_storage",
+        quality_checked_at: "2026-10-01T12:00:00.000Z",
+        safety_waived: true,
+        checkout_evidence_required: false,
+      },
+      jobs: [{ job_id: "j1", status: "completed", service_name_snapshot: "Oil" }],
+      inspection: { completed_at: "2026-10-01T11:00:00.000Z" },
+    });
+    createClient.mockResolvedValue(client);
+    await moveWorkOrderOnBoard(WO, "gallery_in_bay");
+    const moved = client.updates.find((row) => row.payload.status === "in_progress");
+    expect(moved?.payload.stored_at).toBeNull();
+    expect(moved?.payload.storage_pickup_by).toBeNull();
+    expect(moved?.payload.storage_monthly_cents).toBeNull();
   });
 
   it("still requires arrival inspection and checkout photos when a manager files complete", async () => {

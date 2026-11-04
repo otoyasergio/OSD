@@ -1,4 +1,9 @@
 import { requireUser } from "@/lib/auth/session";
+import {
+  getOptionalColumnSupport,
+  isUndefinedColumnError,
+  setOptionalColumnSupport,
+} from "@/lib/database/schemaCompat";
 import { createClient } from "@/lib/database/supabase-server";
 import type { WorkOrderStatus } from "@/lib/database/types";
 import { buildWorkOrderFlags, isOverdue } from "@/lib/status/flags";
@@ -62,6 +67,8 @@ export type DashboardRow = {
   flags: string[];
   /** Signed (or public) URL for the preferred intake photo, when available. */
   primary_photo_url: string | null;
+  storage_pickup_by?: string | null;
+  storage_monthly_cents?: number | null;
 };
 
 export type DashboardData = {
@@ -142,6 +149,8 @@ type RawRow = {
   recommendation: Array<{ severity: string; status: string }> | null;
   drop_off_agreement: Array<{ agreement_id: string }> | null;
   inspection: Array<{ completed_at: string | null }> | null;
+  storage_pickup_by?: string | null;
+  storage_monthly_cents?: number | null;
 };
 
 function emptyCounts(): DashboardCounts {
@@ -240,6 +249,9 @@ function toDashboardRow(
       : null,
     primary_technician: row.primary_technician,
     primary_photo_url: primaryPhotoUrl,
+    storage_pickup_by: row.storage_pickup_by ?? null,
+    storage_monthly_cents:
+      row.storage_monthly_cents == null ? null : Number(row.storage_monthly_cents),
     flags: buildWorkOrderFlags({
       status: row.status,
       vin: bike?.vin,
@@ -266,13 +278,16 @@ export async function getDashboardData(
   const completedSince = new Date(now);
   completedSince.setUTCDate(completedSince.getUTCDate() - 7);
 
-  const rowSelect = `
+  const storageTermsKey = "work_order.storage_terms";
+  const includeStorageTerms = getOptionalColumnSupport(storageTermsKey) !== false;
+  const rowSelect = (withStorageTerms: boolean) => `
       work_order_id,
       work_order_number,
       external_invoice_number,
       status,
       date_created,
       estimated_completion,
+      ${withStorageTerms ? "storage_pickup_by, storage_monthly_cents," : ""}
       primary_technician_id,
       quality_check_assigned_to,
       customer:customer_id (
@@ -303,18 +318,18 @@ export async function getDashboardData(
 
   // Lean nested select for board cards — photos resolved via RPC after filter.
   // Exclude completed/cancelled so the 300-row window stays on operational WOs.
-  const [woResult, completedResult, membershipResult, locationResult] = await Promise.all(
+  let [woResult, completedResult, membershipResult, locationResult] = await Promise.all(
     [
       supabase
         .from("work_order")
-        .select(rowSelect)
+        .select(rowSelect(includeStorageTerms))
         .eq("location_id", locationId)
         .in("status", ACTIVE_STATUSES)
         .order("date_created", { ascending: false })
         .limit(300),
       supabase
         .from("work_order")
-        .select(rowSelect)
+        .select(rowSelect(includeStorageTerms))
         .eq("location_id", locationId)
         .eq("status", "completed")
         .gte("completed_at", completedSince.toISOString())
@@ -328,6 +343,29 @@ export async function getDashboardData(
         .maybeSingle(),
     ]
   );
+
+  if (woResult.error && isUndefinedColumnError(woResult.error, "storage_")) {
+    setOptionalColumnSupport(storageTermsKey, false);
+    [woResult, completedResult] = await Promise.all([
+      supabase
+        .from("work_order")
+        .select(rowSelect(false))
+        .eq("location_id", locationId)
+        .in("status", ACTIVE_STATUSES)
+        .order("date_created", { ascending: false })
+        .limit(300),
+      supabase
+        .from("work_order")
+        .select(rowSelect(false))
+        .eq("location_id", locationId)
+        .eq("status", "completed")
+        .gte("completed_at", completedSince.toISOString())
+        .order("completed_at", { ascending: false, nullsFirst: false })
+        .limit(200),
+    ]);
+  } else if (!woResult.error && includeStorageTerms) {
+    setOptionalColumnSupport(storageTermsKey, true);
+  }
 
   if (woResult.error) throw woResult.error;
   if (membershipResult.error) throw membershipResult.error;

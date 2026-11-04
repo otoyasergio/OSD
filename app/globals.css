@@ -5184,6 +5184,21 @@ label.photo-source-sheet-action {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+.photo-action-card--storage-ok {
+  border-color: color-mix(in srgb, #15803d 55%, var(--border));
+  box-shadow: inset 3px 0 0 #15803d;
+}
+
+.photo-action-card--storage-warn {
+  border-color: color-mix(in srgb, #d97706 55%, var(--border));
+  box-shadow: inset 3px 0 0 #d97706;
+}
+
+.photo-action-card--storage-late {
+  border-color: color-mix(in srgb, #dc2626 55%, var(--border));
+  box-shadow: inset 3px 0 0 #dc2626;
+}
+
 .photo-action-card-media {
   aspect-ratio: 16 / 10;
   background: linear-gradient(145deg, #3f3f46, var(--signal-teal));
@@ -5247,6 +5262,14 @@ label.photo-source-sheet-action {
   margin: 0;
   font-size: 0.8125rem;
   color: var(--status-neutral);
+}
+
+.photo-action-card-storage {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.35;
+  color: var(--foreground);
 }
 
 .photo-action-card-actions {

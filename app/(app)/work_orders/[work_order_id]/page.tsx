@@ -13,6 +13,7 @@ import {
   canCreateRecommendation,
   canCreateWorkOrder,
   canDeleteIntakePhoto,
+  canEditStorageTerms,
   canEditWorkOrder,
   canMarkReadyForPickup,
   canOrderPart,
@@ -560,6 +561,7 @@ export default async function WorkOrderDetailPage({
         canViewPricing={canSeePricing}
         showContractAction={activeTab !== "overview"}
         showShopPhone={canUseShopPhone(viewRole)}
+        canEditStorage={!detail.is_foreign_location && canEditStorageTerms(viewRole)}
       />
       <WorkOrderTabs workOrderId={detail.work_order_id} activeTab={activeTab} />
 

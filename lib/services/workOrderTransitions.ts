@@ -16,9 +16,14 @@ import {
 } from "@/lib/services/checkoutEvidence";
 import {
   canCompleteWithoutFinalInspection,
-  canParkAnyBikeInStorage,
   canRearrangeControlCenter,
 } from "@/lib/permissions";
+import { shopDateKey } from "@/lib/datetime/format";
+import { buildStorageChecklist } from "@/lib/storage/checklist";
+import {
+  isPastStoragePickupDate,
+  parseStoragePickupDate,
+} from "@/lib/storage/terms";
 import {
   canDropInColumn,
   getTargetStatusForColumn,
@@ -91,24 +96,30 @@ async function assertAllActiveJobsCompleted(supabase: DbClient, workOrderId: str
  * Hold/cancel must use detail-page actions, not the board.
  *
  * Gates:
- * - The owner skips every gate on a board drop: unfinished jobs, arrival
- *   inspection, final inspection, safety, and checkout photos. The placement
- *   is kept. Admin does the same, so a Control Center card can move backward
- *   onto another category or a tech. Everyone else still waits for those checks.
+ * - The owner skips every gate on a board drop except Storage: unfinished jobs,
+ *   arrival inspection, final inspection, safety, and checkout photos. Admin
+ *   does the same, so a Control Center card can move backward onto another
+ *   category or a tech. Everyone else still waits for those checks.
  * - Ready / gallery Ready require a finished inspection, final inspection, and
  *   head-tech safety unless the office waived safety.
- * - Storage is a parking spot for the owner, a service advisor, or an admin:
- *   any active bike can go there. A manager still needs finished jobs, arrival
- *   inspection, and final inspection. Safety and checkout photos do not block
- *   storage. A stored bike with new unfinished work can leave Storage the next
- *   time its status is recalculated.
+ * - Storage requires the same service path for every role: a finished arrival
+ *   inspection, no work still waiting on the customer, and every approved job
+ *   finished. The drop also requires a pickup date and a monthly storage amount.
+ *   Safety and checkout photos do not block storage. A stored bike with new
+ *   unfinished work can leave Storage the next time its status is recalculated.
  * - complete uses the same leave gates as Overview (`completeWorkOrder`).
  *   Manager and admin may file a bike that already left without a final
  *   inspection or safety check. Billing is collected on the Billing tab.
  */
+export type StoragePlacement = {
+  pickupBy: string;
+  monthlyCents: number;
+};
+
 export async function moveWorkOrderOnBoard(
   workOrderId: string,
-  targetColumnId: string
+  targetColumnId: string,
+  placement?: StoragePlacement
 ): Promise<void> {
   const user = await requireUser();
   const supabase = await createClient();
@@ -133,9 +144,8 @@ export async function moveWorkOrderOnBoard(
 
   const ownerMove = officeRearrange;
   const waiveQualityCheck = officeRearrange;
-  const parkInStorage =
-    isStorageBoardColumn(targetColumnId) &&
-    (ownerMove || canParkAnyBikeInStorage(user.role));
+  const storing = isStorageBoardColumn(targetColumnId);
+  let storageTerms: { pickupBy: string; monthlyCents: number } | null = null;
 
   if (isQcBoardColumn(targetColumnId) && !ownerMove) {
     await assertAllActiveJobsCompleted(supabase, workOrderId);
@@ -147,10 +157,15 @@ export async function moveWorkOrderOnBoard(
     overridden: boolean;
   } | null = null;
 
-  if (
-    isPickupBoardColumn(targetColumnId) ||
-    (isStorageBoardColumn(targetColumnId) && !parkInStorage)
-  ) {
+  if (storing) {
+    const blocked = storageLeaveBlockReason(
+      await loadStorageChecklist(supabase, workOrderId)
+    );
+    if (blocked) throw new Error(blocked);
+    storageTerms = requireStoragePlacement(placement, shopDateKey(new Date()));
+  }
+
+  if (isPickupBoardColumn(targetColumnId)) {
     const [
       { data: safetyJobs, error: safetyJobsError },
       { data: inspection, error: inspectionError },
@@ -183,19 +198,13 @@ export async function moveWorkOrderOnBoard(
         workOrder.safety_checked_at || workOrder.safety_checked_by_user_id
       ),
     };
-    if (isStorageBoardColumn(targetColumnId)) {
-      if (!ownerMove) await assertAllActiveJobsCompleted(supabase, workOrderId);
-      const blocked = storageLeaveBlockReason(leaveInput);
-      if (blocked) throw new Error(blocked);
-    } else {
-      const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
-      if (ownerMove) ownerCheckoutSkip = checkout;
-      const blocked = pickupLeaveBlockReason({
-        ...leaveInput,
-        ...checkoutPickupGateInput(checkout),
-      });
-      if (blocked) throw new Error(blocked);
-    }
+    const checkout = await loadCheckoutEvidenceState(supabase, workOrderId, workOrder);
+    if (ownerMove) ownerCheckoutSkip = checkout;
+    const blocked = pickupLeaveBlockReason({
+      ...leaveInput,
+      ...checkoutPickupGateInput(checkout),
+    });
+    if (blocked) throw new Error(blocked);
   }
 
   if (targetColumnId === "complete") {
@@ -212,22 +221,26 @@ export async function moveWorkOrderOnBoard(
   if (targetStatus === workOrder.status) return;
 
   const now = new Date().toISOString();
+  const leavingStorage = workOrder.status === "in_storage" && !storing;
   const movePatch: Record<string, unknown> = {
     status: targetStatus,
     updated_at: now,
     ...(isPickupBoardColumn(targetColumnId) ? { ready_for_pickup_at: now } : {}),
-    ...(isStorageBoardColumn(targetColumnId) ? { stored_at: now } : {}),
-    ...(workOrder.status === "in_storage" && !isStorageBoardColumn(targetColumnId)
-      ? { stored_at: null }
+    ...(storing
+      ? {
+          stored_at: now,
+          storage_pickup_by: storageTerms?.pickupBy,
+          storage_monthly_cents: storageTerms?.monthlyCents,
+        }
+      : {}),
+    ...(leavingStorage
+      ? { stored_at: null, storage_pickup_by: null, storage_monthly_cents: null }
       : {}),
     ...(workOrder.status === "completed" ? { completed_at: null } : {}),
   };
-  if (ownerMove) {
+  if (ownerMove && !storing) {
     movePatch.quality_check_waived = true;
-    if (
-      user.role === "owner" &&
-      (isPickupBoardColumn(targetColumnId) || isStorageBoardColumn(targetColumnId))
-    ) {
+    if (user.role === "owner" && isPickupBoardColumn(targetColumnId)) {
       movePatch.safety_waived = true;
     }
   }
@@ -243,6 +256,8 @@ export async function moveWorkOrderOnBoard(
   }
   const optionalColumns = [
     "stored_at",
+    "storage_pickup_by",
+    "storage_monthly_cents",
     "quality_check_waived",
     "safety_waived",
     "completed_at",
@@ -277,7 +292,16 @@ export async function moveWorkOrderOnBoard(
     entity_id: workOrderId,
     description: `Board move: status changed to ${targetStatus}`,
     old_value: { status: workOrder.status, column: null },
-    new_value: { status: targetStatus, column: targetColumnId },
+    new_value: {
+      status: targetStatus,
+      column: targetColumnId,
+      ...(storageTerms
+        ? {
+            storage_pickup_by: storageTerms.pickupBy,
+            storage_monthly_cents: storageTerms.monthlyCents,
+          }
+        : {}),
+    },
   });
 
   await addAuditLog(supabase, {
@@ -286,13 +310,98 @@ export async function moveWorkOrderOnBoard(
     action: "work_order_board_move",
     entity_type: "work_order",
     entity_id: workOrderId,
-    description: ownerMove
-      ? `${user.role === "admin" ? "Admin" : "Owner"} moved the bike to ${targetColumnId} and skipped the usual checks`
-      : parkInStorage
-        ? "Parked the bike in storage and skipped the usual checks"
+    description: storing
+      ? `Placed the bike in storage until ${storageTerms?.pickupBy}`
+      : ownerMove
+        ? `${user.role === "admin" ? "Admin" : "Owner"} moved the bike to ${targetColumnId} and skipped the usual checks`
         : `Board move to ${targetColumnId} (${targetStatus})`,
     old_value: { status: workOrder.status },
-    new_value: { status: targetStatus, column: targetColumnId },
+    new_value: {
+      status: targetStatus,
+      column: targetColumnId,
+      ...(storageTerms
+        ? {
+            storage_pickup_by: storageTerms.pickupBy,
+            storage_monthly_cents: storageTerms.monthlyCents,
+          }
+        : {}),
+    },
+  });
+}
+
+function requireStoragePlacement(
+  placement: StoragePlacement | undefined,
+  today: string
+): { pickupBy: string; monthlyCents: number } {
+  if (!placement || !placement.pickupBy?.trim()) {
+    throw new Error("STORAGE_PICKUP_DATE_REQUIRED");
+  }
+  if (
+    placement.monthlyCents == null ||
+    !Number.isInteger(placement.monthlyCents) ||
+    placement.monthlyCents < 0
+  ) {
+    throw new Error("STORAGE_MONTHLY_AMOUNT_REQUIRED");
+  }
+  const pickupBy = parseStoragePickupDate(placement.pickupBy, today);
+  if (!pickupBy) {
+    throw new Error(
+      isPastStoragePickupDate(placement.pickupBy, today)
+        ? "STORAGE_PICKUP_DATE_PAST"
+        : "STORAGE_PICKUP_DATE_REQUIRED"
+    );
+  }
+  return { pickupBy, monthlyCents: placement.monthlyCents };
+}
+
+async function loadStorageChecklist(supabase: DbClient, workOrderId: string) {
+  const [
+    { data: jobs, error: jobsError },
+    { data: inspection, error: inspectionError },
+  ] = await Promise.all([
+    supabase
+      .from("job")
+      .select("job_id, status, service_name_snapshot")
+      .eq("work_order_id", workOrderId),
+    supabase
+      .from("inspection")
+      .select("completed_at")
+      .eq("work_order_id", workOrderId)
+      .maybeSingle(),
+  ]);
+  if (jobsError) throw jobsError;
+  if (inspectionError) throw inspectionError;
+  const jobRows = (jobs ?? []) as Array<{
+    job_id: string;
+    status: string;
+    service_name_snapshot: string | null;
+  }>;
+  let parts: Array<{ part_name: string | null; status: string; job_id: string | null }> =
+    [];
+  if (jobRows.length > 0) {
+    const { data, error } = await supabase
+      .from("part")
+      .select("part_name, status, job_id")
+      .in(
+        "job_id",
+        jobRows.map((job) => job.job_id)
+      );
+    if (error) throw error;
+    parts = (data ?? []) as typeof parts;
+  }
+  return buildStorageChecklist({
+    inspectionComplete: Boolean(inspection?.completed_at),
+    jobs: jobRows.map((job) => ({
+      jobId: job.job_id,
+      name: job.service_name_snapshot ?? "Work",
+      status: job.status,
+    })),
+    parts: parts.map((part) => ({
+      name: part.part_name ?? "Part",
+      status: part.status,
+      jobId: part.job_id,
+    })),
+    phone: null,
   });
 
   if (entersSafetyColumn(workOrder.status, targetStatus)) {

@@ -15,6 +15,8 @@ export function PhotoActionCard({
   badges = [],
   flagged = false,
   compact = false,
+  storageTone = null,
+  storageNote = null,
 }: {
   href: string;
   photoUrl?: string | null;
@@ -28,6 +30,9 @@ export function PhotoActionCard({
   badges?: string[];
   flagged?: boolean;
   compact?: boolean;
+  /** Days-left color for a bike that is in storage with a pickup date. */
+  storageTone?: "ok" | "warn" | "late" | null;
+  storageNote?: string | null;
 }) {
   return (
     <Link
@@ -37,6 +42,9 @@ export function PhotoActionCard({
         "photo-action-card",
         compact ? "photo-action-card--compact" : "",
         flagged ? "photo-action-card--flagged" : "",
+        storageTone === "ok" ? "photo-action-card--storage-ok" : "",
+        storageTone === "warn" ? "photo-action-card--storage-warn" : "",
+        storageTone === "late" ? "photo-action-card--storage-late" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -73,6 +81,7 @@ export function PhotoActionCard({
           <p className="photo-action-card-customer">{customerName}</p>
         ) : null}
         <p className="photo-action-card-subtitle">{subtitle}</p>
+        {storageNote ? <p className="photo-action-card-storage">{storageNote}</p> : null}
         {badges.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {badges.map((badge) => (

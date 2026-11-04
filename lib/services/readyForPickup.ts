@@ -21,6 +21,9 @@ export type WaitingStageBike = {
   ready_since_inferred: boolean;
   primary_photo_url: string | null;
   overview_href: string;
+  /** Set on storage cards that have a pickup date. Absent dates keep the elapsed timer. */
+  storage_pickup_by?: string | null;
+  storage_monthly_cents?: number | null;
 };
 
 /** @deprecated Prefer WaitingStageBike — kept for existing call sites. */
@@ -46,6 +49,8 @@ type StageRow = {
   ready_for_pickup_at: string | null;
   quality_checked_at: string | null;
   stored_at?: string | null;
+  storage_pickup_by?: string | null;
+  storage_monthly_cents?: number | null;
   updated_at: string;
   motorcycle: NestedMotorcycle | NestedMotorcycle[];
   customer?: NestedCustomer | NestedCustomer[] | null;
@@ -244,10 +249,11 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
   const supabase = await createClient();
   const locationId = user.active_location_id!;
 
-  const storageSelect = `
+  const storageSelect = (includeTerms: boolean) => `
       work_order_id,
       work_order_number,
       stored_at,
+      ${includeTerms ? "storage_pickup_by, storage_monthly_cents," : ""}
       updated_at,
       motorcycle:motorcycle_id ( year, make, model ),
       customer:customer_id (
@@ -258,13 +264,25 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
         sms_opted_out_at
       )
     `;
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("work_order")
-    .select(storageSelect)
+    .select(storageSelect(true))
     .eq("location_id", locationId)
     .eq("status", "in_storage")
     .order("stored_at", { ascending: true, nullsFirst: false })
     .limit(60);
+
+  if (error && isUndefinedColumnError(error, "storage_pickup_by")) {
+    const retry = await supabase
+      .from("work_order")
+      .select(storageSelect(false))
+      .eq("location_id", locationId)
+      .eq("status", "in_storage")
+      .order("stored_at", { ascending: true, nullsFirst: false })
+      .limit(60);
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error && isUndefinedColumnError(error, "stored_at")) {
     return listWaitingStageBikes({
@@ -294,6 +312,9 @@ export async function listInStorage(): Promise<WaitingStageBike[]> {
       ...customerContact(row.customer),
       ready_since: row.stored_at ?? row.updated_at,
       ready_since_inferred: !row.stored_at,
+      storage_pickup_by: row.storage_pickup_by ?? null,
+      storage_monthly_cents:
+        row.storage_monthly_cents == null ? null : Number(row.storage_monthly_cents),
       primary_photo_url: urls.get(row.work_order_id) ?? null,
       overview_href: `/work_orders/${row.work_order_id}`,
     };
