@@ -451,6 +451,58 @@ describe("ALT/FNDATA records", () => {
     expect(safeHttpUrl("https://example.com/lot")).toBe("https://example.com/lot");
   });
 
+  it("keeps an impossible date or a non-sale amount out of the price", () => {
+    const impossible = mapAltfnMotorcycleRow({
+      item_title: "2014 Honda CB500F",
+      manufacturer_name: "Honda",
+      model: "CB500F",
+      production_year: 2014,
+      usd_price_decimal: "0",
+      sale_date: "2024-02-31",
+      status: "Sold",
+    });
+    expect(impossible?.saleDate).toBeNull();
+    expect(impossible?.priceUsd).toBeNull();
+
+    for (const amount of ["-5", "50000001", "$0"]) {
+      expect(
+        mapAltfnMotorcycleRow({
+          item_title: "2014 Honda CB500F",
+          manufacturer_name: "Honda",
+          model: "CB500F",
+          usd_price_decimal: amount,
+          status: "Sold",
+        })?.priceUsd
+      ).toBeNull();
+    }
+
+    expect(
+      mapAltfnMotorcycleRow({
+        item_title: "2014 Honda CB500F",
+        manufacturer_name: "Honda",
+        model: "CB500F",
+        usd_price_decimal: 4500,
+        status: "Bought-in",
+      })?.status
+    ).toBe("unsold");
+    expect(
+      mapAltfnMotorcycleRow({
+        item_title: "2014 Honda CB500F",
+        manufacturer_name: "Honda",
+        model: "CB500F",
+        usd_price_decimal: 4500,
+        status: "Withdrawn",
+      })?.status
+    ).toBe("withdrawn");
+  });
+
+  it("rejects a source slug that is not safe to store and an empty file", () => {
+    expect(() => recordsFromAuctionFile("[]", "../secrets")).toThrow(/slug/);
+    expect(() => recordsFromAuctionFile("{}", "altfndata")).toThrow(/array of rows/);
+    expect(recordsFromAuctionFile(" \n ", " AltFnData ")).toEqual([]);
+    expect(recordsFromAuctionFile("title,make\n", "iconic")).toEqual([]);
+  });
+
   it("does not treat a pound hammer as US dollars", () => {
     const mapped = mapAltfnMotorcycleRow({
       item_title: "1951 Vincent Black Lightning",

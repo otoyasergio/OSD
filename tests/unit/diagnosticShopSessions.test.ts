@@ -4,7 +4,12 @@ import {
   countOpenFaultBikes,
 } from "@/lib/diagnostics/openFaults";
 import { parseDiagnosticSessionForm } from "@/lib/diagnostics/sessionForm";
-import { healthForSessions } from "@/lib/diagnostics/sessionView";
+import {
+  freezeFrameEntries,
+  healthForSessions,
+  parseFreezeFrame,
+  unavailableDiagnosticPanel,
+} from "@/lib/diagnostics/sessionView";
 import type { DiagnosticSessionView } from "@/lib/diagnostics/sessionView";
 
 const MOTORCYCLE = "ad000000-0000-4000-8000-000000000001";
@@ -91,6 +96,58 @@ describe("parseDiagnosticSessionForm", () => {
     );
     expect(parsed.ok).toBe(false);
   });
+
+  it("rejects a freeze-frame value or a half-filled fault that cannot be stored", () => {
+    expect(
+      parseDiagnosticSessionForm(
+        form({ code_0: "P0217", status_0: "active", rpm_0: "high" })
+      )
+    ).toEqual({ ok: false, error: "RPM must be a number, or left blank." });
+    expect(
+      parseDiagnosticSessionForm(
+        form({ code_0: "P0217", status_0: "active", coolant_c_0: "Infinity" })
+      )
+    ).toEqual({ ok: false, error: "Coolant must be a number, or left blank." });
+    expect(
+      parseDiagnosticSessionForm(
+        form({ code_0: "P0217", status_0: "active", severity_0: "P0" })
+      )
+    ).toEqual({
+      ok: false,
+      error: "Add both a description and a severity for P0217, or leave both blank.",
+    });
+    expect(parseDiagnosticSessionForm(form({ ecu_0: "ECM" }))).toEqual({
+      ok: false,
+      error: "Each filled row needs a fault code.",
+    });
+  });
+
+  it("rejects a session that is not tied to a real motorcycle or visit", () => {
+    const data = new FormData();
+    data.set("motorcycle_id", "bike-1");
+    data.set("source", "scan_tool");
+    data.set("scan_results", "complete");
+    expect(parseDiagnosticSessionForm(data)).toEqual({
+      ok: false,
+      error: "That motorcycle is not valid.",
+    });
+    expect(parseDiagnosticSessionForm(form({ work_order_id: "wo-1" }))).toEqual({
+      ok: false,
+      error: "Work order is not valid.",
+    });
+    expect(parseDiagnosticSessionForm(form({ scan_results: "done" }))).toEqual({
+      ok: false,
+      error: "Choose whether the scan finished, was partial, or had no results.",
+    });
+    expect(parseDiagnosticSessionForm(form({ source: "guess" }))).toEqual({
+      ok: false,
+      error: "Choose whether this came from a scan tool or was written down.",
+    });
+    expect(parseDiagnosticSessionForm(form({ notes: "a".repeat(2001) }))).toEqual({
+      ok: false,
+      error: "Notes must be 2000 characters or fewer.",
+    });
+  });
 });
 
 describe("countOpenFaultBikes", () => {
@@ -171,6 +228,36 @@ describe("formatOpenFaultBikeCount", () => {
     expect(formatOpenFaultBikeCount(0)).toBe("0 bikes with open faults");
     expect(formatOpenFaultBikeCount(1)).toBe("1 bike with open faults");
     expect(formatOpenFaultBikeCount(null)).toBe("Open faults unavailable");
+  });
+});
+
+describe("stored freeze frames", () => {
+  it("keeps finite numbers, including zero, and drops anything else", () => {
+    expect(
+      parseFreezeFrame({
+        odometer: 0,
+        rpm: "800",
+        coolant_c: Number.NaN,
+        voltage: Number.POSITIVE_INFINITY,
+        extra: 14,
+      })
+    ).toEqual({ odometer: 0 });
+    expect(parseFreezeFrame(null)).toEqual({});
+    expect(parseFreezeFrame(["12.4"])).toEqual({});
+    expect(freezeFrameEntries({ odometer: 0, voltage: 12.4, rpm: 900 })).toEqual([
+      { label: "Odometer", value: "0" },
+      { label: "RPM", value: "900" },
+      { label: "Voltage", value: "12.4" },
+    ]);
+  });
+
+  it("says the panel failed to load instead of showing an empty history", () => {
+    const panel = unavailableDiagnosticPanel(MOTORCYCLE);
+    expect(panel.loadFailed).toBe(true);
+    expect(panel.motorcycleId).toBe(MOTORCYCLE);
+    expect(panel.sessions).toEqual([]);
+    expect(panel.openFaultCount).toBeNull();
+    expect(panel.health.faultText).toBe("Fault codes unavailable");
   });
 });
 

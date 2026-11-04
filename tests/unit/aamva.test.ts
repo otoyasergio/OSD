@@ -40,6 +40,37 @@ describe("Ontario licence barcode", () => {
     expect(scan?.address).toContain("99 RIVER STREET");
   });
 
+  it("reads a card that stores dates as year, month, then day", () => {
+    const scan = parseAamvaLicence(
+      SPEC_PAYLOAD.replace("DBB01011990", "DBB1990-01-01").replace(
+        "DBA01012030",
+        "DBA20300101"
+      )
+    );
+    expect(scan).toMatchObject({
+      dateOfBirth: "1990-01-01",
+      licenceExpiry: "2030-01-01",
+      licenceNumber: EXPECTED.licenceNumber,
+    });
+  });
+
+  it("keeps the licence when a date is unusable and when only one name is present", () => {
+    const undated = parseAamvaLicence(
+      SPEC_PAYLOAD.replace("DBB01011990", "DBB010190").replace("DBA01012030", "DBA")
+    );
+    expect(undated?.dateOfBirth).toBe("");
+    expect(undated?.licenceExpiry).toBe("");
+    expect(undated?.licenceNumber).toBe(EXPECTED.licenceNumber);
+
+    expect(parseAamvaLicence("DLDAQD1234-56789-01234\nDACADA")).toMatchObject({
+      firstName: "ADA",
+      lastName: "",
+      licenceNumber: EXPECTED.licenceNumber,
+    });
+    expect(parseAamvaLicence("DCSLOVELACE\nDCTADA")).toBeNull();
+    expect(parseAamvaLicence("ANSI 636012 just a header")).toBeNull();
+  });
+
   it("reads a subfile whose first element keeps the DL prefix", () => {
     const scan = parseAamvaLicence(
       [

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertContractNamesLegalEntity,
   contractNamesLegalEntity,
+  visibleContractText,
 } from "@/lib/contracts/legalEntity";
 import { toFormErrorMessage } from "@/lib/services/errors";
 
@@ -42,6 +43,24 @@ describe("contract legal entity", () => {
     );
     expect(toFormErrorMessage(new Error("CONTRACT_LEGAL_ENTITY_REQUIRED"))).toBe(
       "The contract must name OTOMOTO TORONTO MOTO INC. as the contracting party."
+    );
+  });
+
+  it("counts the legal name only in text a signer can see", () => {
+    const scriptOnly =
+      "<script>OTOMOTO TORONTO MOTO INC.</script><p>Toronto Moto stores the motorcycle.</p>";
+    const attributeOnly =
+      '<p title="OTOMOTO TORONTO MOTO INC.">Toronto Moto stores the motorcycle.</p>';
+    const split =
+      "<p>Otomoto <strong>Toronto</strong>&nbsp;Moto Inc stores the motorcycle.</p>";
+
+    expect(visibleContractText(scriptOnly).toLowerCase()).not.toContain("otomoto");
+    expect(visibleContractText(attributeOnly).toLowerCase()).not.toContain("otomoto");
+    expect(contractNamesLegalEntity(scriptOnly)).toBe(false);
+    expect(contractNamesLegalEntity(attributeOnly)).toBe(false);
+    expect(contractNamesLegalEntity(split)).toBe(true);
+    expect(() => assertContractNamesLegalEntity(scriptOnly)).toThrow(
+      "CONTRACT_LEGAL_ENTITY_REQUIRED"
     );
   });
 

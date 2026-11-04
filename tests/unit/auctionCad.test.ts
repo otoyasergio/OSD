@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   auctionFxNote,
   cadPerUsdOn,
+  FALLBACK_CAD_PER_USD,
   mergeUsdCadRates,
   parseValetUsdCad,
   usdToCad,
@@ -69,6 +70,26 @@ describe("US dollar to Canadian dollar rates", () => {
   it("rounds a converted sale to the nearest Canadian dollar", () => {
     expect(usdToCad(4000, 1.25)).toBe(5000);
     expect(usdToCad(100, 1.3333)).toBe(133);
+  });
+
+  it("uses the stand-in rate when a quoted rate is zero or runaway", () => {
+    const standIn = usdToCad(1000, FALLBACK_CAD_PER_USD);
+    expect(usdToCad(1000, 0)).toBe(standIn);
+    expect(usdToCad(1000, 12)).toBe(standIn);
+    expect(usdToCad(1000, Number.NaN)).toBe(standIn);
+
+    expect(
+      parseValetUsdCad(
+        {
+          observations: [
+            { d: "2024-01-02", FXUSDCAD: { v: "0" } },
+            { d: "2024-01-03", FXUSDCAD: { v: "12" } },
+            { d: "2024-01-04", FXUSDCAD: { v: "1.35" } },
+          ],
+        },
+        USD_CAD_DAILY_SERIES
+      )
+    ).toEqual([{ date: "2024-01-04", cadPerUsd: 1.35 }]);
   });
 
   it("loads both Bank of Canada series and falls back when they are unavailable", async () => {
