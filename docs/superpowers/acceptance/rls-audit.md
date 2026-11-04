@@ -74,6 +74,22 @@ Re-ran Supabase security advisors after 012. Cleared: mutable search_path on min
 - No hard DELETE policies on most operational tables (matches soft-delete / status-cancel product rules).
 - Enable **leaked password protection** in Supabase Auth before production cutover (ops follow-up).
 
+## Accountability records (20261101171254)
+
+- **work_order** accountability columns (advisor of record, maximum authorization, applied estimate rule, declined-safety acknowledgment) are authorization evidence. A `BEFORE INSERT OR UPDATE` trigger rejects changes from any authenticated session that is not owner, manager, service_advisor, or admin, and stamps the recording account on a new maximum. Service-role writes (no JWT) pass through.
+- **part_receipt** SELECT and INSERT require the line's purchase order to be in `user_location_ids()`, and a receipt records the session that inserted it.
+- **final_check** INSERT/UPDATE require `recorded_by_user_id` to be the session, the technician to be someone else, the verifier to be the session unless the session is front office, and `user_clocked_work_order(verifier, work_order)` to be false. The helper is SECURITY DEFINER so the rule sees every time entry.
+- **legal_parameter** is insert-only for owner and manager; **install_task** writes are front-office and location-scoped.
+
+| Check                                                          | Expected |
+| -------------------------------------------------------------- | -------- |
+| Tech `UPDATE work_order SET maximum_authorization_cents`       | denied   |
+| Tech `UPDATE work_order SET declined_safety_ack_at`            | denied   |
+| Advisor `INSERT part_receipt` for a foreign-location PO line   | denied   |
+| Tech `INSERT final_check` naming a colleague as verifier       | denied   |
+| Tech `INSERT final_check` as verifier after clocking the visit | denied   |
+| Advisor `INSERT final_check` with a verifier who never clocked | allowed  |
+
 ## Location-scoped checks (034)
 
 | Check                                                  | Expected |

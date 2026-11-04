@@ -43,6 +43,12 @@ vi.mock("@/lib/services/workOrders", () => ({
   listTechniciansForActiveLocation: vi.fn(async () => []),
 }));
 vi.mock("@/lib/services/photos", () => ({ listIntakePhotos: mocks.listIntakePhotos }));
+vi.mock("@/lib/services/workOrderAccountability", () => ({
+  getWorkOrderAccountability: vi.fn(async () => null),
+}));
+vi.mock("@/lib/services/advisorDesk", () => ({
+  listAdvisorsForActiveLocation: vi.fn(async () => []),
+}));
 vi.mock("@/lib/services/diagnosticsAssistant", () => ({
   createDiagnosticsAssistantService: () => ({
     listThreads: mocks.listThreads,

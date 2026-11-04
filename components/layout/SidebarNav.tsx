@@ -24,6 +24,8 @@ import {
   ListOrdered,
   Gauge,
   Images,
+  UserRound,
+  Scale,
 } from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
@@ -31,6 +33,7 @@ import {
   canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
+  canManageLegalParameters,
   canManageServiceCatalogue,
   canManageTimesheets,
   canManageUsers,
@@ -40,6 +43,7 @@ import {
   canViewBillingArea,
   canViewClients,
   canViewDashboard,
+  canEditWorkOrder,
   canViewFiledArchive,
   canViewPartsBoard,
   canViewReports,
@@ -52,6 +56,7 @@ type NavLink = { href: string; label: string; icon: LucideIcon };
 const NAV_ICONS: Record<string, LucideIcon> = {
   "/control-center": Gauge,
   "/dashboard": LayoutDashboard,
+  "/advisor": UserRound,
   "/work_orders": ClipboardList,
   "/gallery": Images,
   "/parts": Package,
@@ -63,6 +68,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/motorcycles": Bike,
   "/settings": Settings,
   "/settings/locations": MapPin,
+  "/settings/legal": Scale,
   "/settings/inspection_template": FileCheck,
   "/settings/contract_template": ScrollText,
   "/settings/services": BookOpen,
@@ -120,6 +126,13 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
       icon: iconFor("/dashboard"),
     });
   }
+  if (canEditWorkOrder(role)) {
+    shopFloorLinks.push({
+      href: "/advisor",
+      label: "Advisor desk",
+      icon: iconFor("/advisor"),
+    });
+  }
   if (!isFloorTech(role)) {
     shopFloorLinks.push({
       href: "/work_orders",
@@ -173,6 +186,13 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
       href: "/settings/locations",
       label: "Locations",
       icon: iconFor("/settings/locations"),
+    });
+  }
+  if (canManageLegalParameters(role)) {
+    shopSettings.push({
+      href: "/settings/legal",
+      label: "Estimate rules",
+      icon: iconFor("/settings/legal"),
     });
   }
   if (canManageInspectionTemplate(role)) {

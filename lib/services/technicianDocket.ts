@@ -23,6 +23,7 @@ import {
 import { groupAssignedJobsByWorkOrder } from "@/lib/technician/groupAssignedWorkOrders";
 import {
   isUndefinedColumnError,
+  isUndefinedTableError,
   OPTIONAL_COLUMNS,
   getOptionalColumnSupport,
   setOptionalColumnSupport,
@@ -46,7 +47,7 @@ import { docketWorkOrderSubtitle } from "@/lib/technician/docketCardDisplay";
 import { floorAssignedLocationIds } from "@/lib/workOrders/assignmentVisibility";
 import type { DbClient } from "@/lib/database/types";
 
-export type DocketItemKind = "now" | "assigned" | "qc" | "safety" | "flag";
+export type DocketItemKind = "now" | "assigned" | "install" | "qc" | "safety" | "flag";
 
 export type DocketItem = {
   position: number;
@@ -140,6 +141,18 @@ export type DocketFlagInput = {
   location_code?: string | null;
 };
 
+/** A received part waiting to be installed, created when the front office receives a line. */
+export type DocketInstallInput = {
+  install_task_id: string;
+  work_order_id: string;
+  work_order_number: string;
+  work_order_status?: WorkOrderStatus | null;
+  job_id: string | null;
+  motorcycle_label: string;
+  description: string;
+  location_code?: string | null;
+};
+
 function floorHref(input: {
   jobId?: string | null;
   workOrderId: string;
@@ -194,6 +207,7 @@ export function buildTechnicianDocketItems(input: {
   qcItems: DocketQcInput[];
   safetyItems: DocketSafetyInput[];
   flags: DocketFlagInput[];
+  installTasks?: DocketInstallInput[];
   includeSafeties: boolean;
 }): DocketItem[] {
   const items: Omit<DocketItem, "position">[] = [];
@@ -278,6 +292,43 @@ export function buildTechnicianDocketItems(input: {
       wait_reason: state.waitReason,
       wait_owner_kind: state.waitOwner,
       awaiting_customer: workOrderStatus === "waiting_for_customer_approval",
+      primary_photo_url: null,
+    });
+  }
+
+  for (const task of input.installTasks ?? []) {
+    if (
+      isTerminalWorkOrderStatus(task.work_order_status ?? null) ||
+      workOrderLeftTechDocket(task.work_order_status ?? null)
+    ) {
+      continue;
+    }
+    items.push({
+      kind: "install",
+      key: `install-${task.install_task_id}`,
+      motorcycle_label: task.motorcycle_label,
+      service_label: task.description,
+      service_names: [task.description],
+      title: `${task.motorcycle_label} · ${task.description}`,
+      subtitle: docketWorkOrderSubtitle(task.work_order_number, task.location_code),
+      status_label: "Part received",
+      job_id: task.job_id,
+      work_order_id: task.work_order_id,
+      href: floorHref({ jobId: task.job_id, workOrderId: task.work_order_id }),
+      overview_href: techJobPacketHref(task.work_order_id, {
+        jobId: task.job_id ?? undefined,
+        section: "notes",
+      }),
+      board_status: "offered",
+      board_stamp: "NEW",
+      floor_park_reason: null,
+      floor_wait_owner: null,
+      wait_owner_label: "",
+      park_reason_label: "",
+      state_label: "Part received. Install it and mark the part installed",
+      wait_reason: null,
+      wait_owner_kind: null,
+      awaiting_customer: false,
       primary_photo_url: null,
     });
   }
@@ -394,6 +445,72 @@ async function attachDocketPrimaryPhotos(
     ...item,
     primary_photo_url: urls.get(item.work_order_id) ?? null,
   }));
+}
+
+async function loadOpenInstallTasks(
+  supabase: DbClient,
+  technicianUserId: string,
+  allowedLocationIds: string[],
+  shopCode: (locationId: string) => string | null
+): Promise<DocketInstallInput[]> {
+  const { data, error } = await supabase
+    .from("install_task")
+    .select(
+      `
+      install_task_id, description, location_id,
+      requirement:requirement_id ( job_id ),
+      work_order:work_order_id!inner (
+        work_order_id, work_order_number, status,
+        motorcycle:motorcycle_id ( year, make, model )
+      )
+    `
+    )
+    .eq("assigned_technician_id", technicianUserId)
+    .in("location_id", allowedLocationIds)
+    .is("completed_at", null)
+    .order("created_at", { ascending: true });
+  if (error) {
+    if (isUndefinedTableError(error, "install_task")) return [];
+    throw error;
+  }
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+    const woRaw = row.work_order as
+      | {
+          work_order_id: string;
+          work_order_number: string;
+          status: WorkOrderStatus;
+          motorcycle: unknown;
+        }
+      | {
+          work_order_id: string;
+          work_order_number: string;
+          status: WorkOrderStatus;
+          motorcycle: unknown;
+        }[]
+      | null;
+    const wo = Array.isArray(woRaw) ? woRaw[0] : woRaw;
+    const motoRaw = wo?.motorcycle as
+      | { year: number; make: string; model: string }
+      | { year: number; make: string; model: string }[]
+      | null
+      | undefined;
+    const moto = Array.isArray(motoRaw) ? motoRaw[0] : motoRaw;
+    const requirementRaw = row.requirement as
+      { job_id?: string | null } | { job_id?: string | null }[] | null;
+    const requirement = Array.isArray(requirementRaw)
+      ? requirementRaw[0]
+      : requirementRaw;
+    return {
+      install_task_id: String(row.install_task_id),
+      work_order_id: wo?.work_order_id ?? "",
+      work_order_number: wo?.work_order_number ?? "",
+      work_order_status: wo?.status ?? null,
+      job_id: requirement?.job_id ?? null,
+      motorcycle_label: motorcycleLabel(moto ?? null),
+      description: String(row.description ?? "Install part"),
+      location_code: shopCode(String(row.location_id)),
+    };
+  });
 }
 
 export async function getTechnicianDocket(
@@ -710,11 +827,19 @@ export async function getTechnicianDocket(
     }
   }
 
+  const installTasks = await loadOpenInstallTasks(
+    supabase,
+    technicianUserId,
+    allowedLocationIds,
+    shopCode
+  );
+
   const bareItems = buildTechnicianDocketItems({
     assignedJobs,
     qcItems,
     safetyItems,
     flags,
+    installTasks,
     includeSafeties: canPerformSafetyCheck(tech.role as UserRole),
   });
   const items = await attachDocketPrimaryPhotos(supabase, bareItems);
