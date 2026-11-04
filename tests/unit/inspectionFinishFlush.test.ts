@@ -15,6 +15,10 @@ vi.mock("@/app/(app)/work_orders/[work_order_id]/inspection/actions", () => ({
   completeInspectionAction,
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: () => undefined }),
+}));
+
 vi.mock("@/components/inspections/SignOffPad", () => ({
   SignOffPad: ({ onReadyChange }: { onReadyChange?: (ready: boolean) => void }) => {
     useEffect(() => {

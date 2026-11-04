@@ -3,13 +3,16 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import {
+  GMAIL_OAUTH_PURPOSE_COOKIE,
   GMAIL_OAUTH_STATE_COOKIE,
   getGmailOAuthConfig,
+  gmailOauthPurpose,
   gmailRedirectUri,
   isGmailOAuthConfigured,
 } from "@/lib/email/config";
 import { exchangeGmailAuthorizationCode } from "@/lib/email/gmail";
 import { isCustomerEmailLocation, saveShopMailbox } from "@/lib/email/mailbox";
+import { saveScanMailbox } from "@/lib/email/scanMailbox";
 import { canConnectShopMailbox } from "@/lib/permissions";
 
 export const runtime = "nodejs";
@@ -29,21 +32,25 @@ function statesMatch(expected: string, received: string): boolean {
 
 export async function GET(request: Request) {
   const origin = originFrom(request);
-  const settings = new URL("/settings/email", origin);
   const url = new URL(request.url);
   const cookieStore = await cookies();
+  const purpose = gmailOauthPurpose(cookieStore.get(GMAIL_OAUTH_PURPOSE_COOKIE)?.value);
+  const settings = new URL(purpose === "scan" ? "/settings/scan-mail" : "/settings/email", origin);
   const expectedState = cookieStore.get(GMAIL_OAUTH_STATE_COOKIE)?.value ?? "";
-  cookieStore.set(GMAIL_OAUTH_STATE_COOKIE, "", {
+  const cleared = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "lax" as const,
     path: "/api/google/mail",
     maxAge: 0,
-  });
+  };
+  cookieStore.set(GMAIL_OAUTH_STATE_COOKIE, "", cleared);
+  cookieStore.set(GMAIL_OAUTH_PURPOSE_COOKIE, "", cleared);
 
   const user = await getCurrentAppUser();
   if (!user) {
-    return NextResponse.redirect(new URL("/login?next=/settings/email", origin));
+    const next = purpose === "scan" ? "/settings/scan-mail" : "/settings/email";
+    return NextResponse.redirect(new URL(`/login?next=${next}`, origin));
   }
   if (!canConnectShopMailbox(user.role) || !user.active_location_id) {
     settings.searchParams.set("error", "forbidden");
@@ -77,14 +84,29 @@ export async function GET(request: Request) {
       clientSecret: config.clientSecret,
       redirectUri: gmailRedirectUri(origin),
     });
-    await saveShopMailbox({
-      locationId: user.active_location_id,
-      emailAddress: connected.emailAddress,
-      refreshToken: connected.refreshToken,
-      userId: user.user_id,
-    });
-  } catch {
-    settings.searchParams.set("error", "exchange");
+    if (purpose === "scan") {
+      await saveScanMailbox({
+        locationId: user.active_location_id,
+        emailAddress: connected.emailAddress,
+        refreshToken: connected.refreshToken,
+        userId: user.user_id,
+      });
+    } else {
+      await saveShopMailbox({
+        locationId: user.active_location_id,
+        emailAddress: connected.emailAddress,
+        refreshToken: connected.refreshToken,
+        userId: user.user_id,
+      });
+    }
+  } catch (error) {
+    const code =
+      error instanceof Error && error.message === "SCAN_MAILBOX_IS_CUSTOMER"
+        ? "customer_mailbox"
+        : error instanceof Error && error.message === "SCAN_MAILBOX_WRONG_ADDRESS"
+          ? "wrong_address"
+          : "exchange";
+    settings.searchParams.set("error", code);
     return NextResponse.redirect(settings);
   }
 

@@ -36,6 +36,12 @@ export default async function SettingsPage() {
       visible: canConnectShopMailbox(viewRole),
     },
     {
+      href: "/settings/scan-mail",
+      label: "Scan reports",
+      description: "TopGuru sends scan reports to scans@torontomoto.com.",
+      visible: canConnectShopMailbox(viewRole),
+    },
+    {
       href: "/settings/timesheets",
       label: "Timesheets",
       description: "Who is punched in, weekly hours, and punch corrections.",

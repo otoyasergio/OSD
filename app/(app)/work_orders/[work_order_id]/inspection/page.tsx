@@ -11,6 +11,7 @@ import {
   staffHomePath,
 } from "@/lib/permissions";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
+import { latestInspectionScan } from "@/lib/services/inspectionScans";
 import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
@@ -70,6 +71,7 @@ export default async function InspectionPage({
     canEdit,
   });
   const bike = inspection.header.motorcycle;
+  const scan = await latestInspectionScan(work_order_id);
   const auction = bike
     ? await loadAuctionPriceGuide({
         motorcycleId: bike.motorcycle_id,
@@ -123,6 +125,7 @@ export default async function InspectionPage({
 
         <InspectionChecklist
           inspection={inspection}
+          scan={scan}
           canEdit={canEdit}
           canForceComplete={canForce}
           canRecommend={canRecommend}

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getCurrentAppUser } from "@/lib/auth/session";
 import {
+  GMAIL_OAUTH_PURPOSE_COOKIE,
   GMAIL_OAUTH_STATE_COOKIE,
   getGmailOAuthConfig,
   gmailRedirectUri,
@@ -47,13 +48,15 @@ export async function GET(request: Request) {
 
   const state = randomBytes(32).toString("hex");
   const cookieStore = await cookies();
-  cookieStore.set(GMAIL_OAUTH_STATE_COOKIE, state, {
+  const cookieOptions = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "lax" as const,
     path: "/api/google/mail",
     maxAge: 600,
-  });
+  };
+  cookieStore.set(GMAIL_OAUTH_STATE_COOKIE, state, cookieOptions);
+  cookieStore.set(GMAIL_OAUTH_PURPOSE_COOKIE, "customer", cookieOptions);
 
   const { clientId } = getGmailOAuthConfig();
   const url = gmailAuthorizationUrl({
