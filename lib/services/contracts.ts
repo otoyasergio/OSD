@@ -11,6 +11,7 @@ import {
   dropOffAgreementSchema,
   publishAgreementTemplateSchema,
 } from "@/lib/validation/schemas";
+import { assertContractNamesLegalEntity } from "@/lib/contracts/legalEntity";
 import { sanitizeContractHtml } from "@/lib/security/sanitizeHtml";
 
 export type AgreementTemplate = {
@@ -120,6 +121,8 @@ export async function publishAgreementTemplate(input: {
   if (!canManageContractTemplate(user.role)) throw new Error("FORBIDDEN");
 
   const parsed = publishAgreementTemplateSchema.parse(input);
+  const bodyHtml = sanitizeContractHtml(parsed.body_html);
+  assertContractNamesLegalEntity(bodyHtml);
   const supabase = await createClient();
   const version = await resolveTemplateVersion(supabase, parsed.version);
 
@@ -135,7 +138,7 @@ export async function publishAgreementTemplate(input: {
     .insert({
       version,
       title: parsed.title,
-      body_html: sanitizeContractHtml(parsed.body_html),
+      body_html: bodyHtml,
       initial_fields: parsed.initial_fields,
       active: true,
     })
@@ -232,6 +235,7 @@ export async function signDropOffAgreement(
   const parsed = dropOffAgreementSchema.parse(input);
   const template = await getActiveAgreementTemplate();
   if (!template) throw new Error("CONTRACT_TEMPLATE_NOT_FOUND");
+  assertContractNamesLegalEntity(template.body_html);
 
   for (const field of template.initial_fields) {
     if (!parsed.initials[field]?.trim()) {
@@ -355,6 +359,7 @@ export async function markDropOffAgreementSignedOnPaper(
 
   const template = await getActiveAgreementTemplate();
   if (!template) throw new Error("CONTRACT_TEMPLATE_NOT_FOUND");
+  assertContractNamesLegalEntity(template.body_html);
 
   const supabase = await createClient();
   const { data: workOrder, error: woError } = await supabase

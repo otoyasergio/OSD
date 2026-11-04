@@ -1,0 +1,8 @@
+node_modules
+coverage
+dist
+.env*
+.aio
+console.json
+.manifest-dist.yml
+logs

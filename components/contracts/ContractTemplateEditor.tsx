@@ -8,6 +8,7 @@ import type {
 import type { ContractTemplateFormState } from "@/app/(app)/settings/contract_template/actions";
 import { FormError } from "@/components/forms/Field";
 import { formatDateTime } from "@/lib/datetime/format";
+import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import { sanitizeContractHtml } from "@/lib/security/sanitizeHtml";
 
 type Props = {
@@ -84,6 +85,9 @@ export function ContractTemplateEditor({ template, history, action }: Props) {
         <div className="grid gap-6 lg:grid-cols-2">
           <label className="block">
             <span className="field-label">Contract HTML</span>
+            <span className="mt-1 block text-xs font-normal text-[var(--status-neutral)]">
+              The contracting party is {TORONTO_SHOP.legalName}.
+            </span>
             <textarea
               name="body_html"
               required

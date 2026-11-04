@@ -205,6 +205,8 @@ const MESSAGES: Record<string, string> = {
   VIEW_NAME_REQUIRED: "Enter a name for this view.",
   VIEW_NAME_TOO_LONG: "View names must be 60 characters or fewer.",
   CONTRACT_TEMPLATE_NOT_FOUND: "No active drop-off agreement template is configured.",
+  CONTRACT_LEGAL_ENTITY_REQUIRED:
+    "The contract must name OTOMOTO TORONTO MOTO INC. as the contracting party.",
   CONTRACT_INITIALS_REQUIRED: "Initial each section before signing.",
   CONTRACT_ALREADY_SIGNED: "A drop-off agreement is already on file for this work order.",
   PAPER_AGREEMENT_REQUIRED:
