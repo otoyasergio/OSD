@@ -257,7 +257,15 @@ describe("buildFloorActionModel matrix", () => {
       enabled: true,
     });
 
-    for (const reason of ["parts", "other", "swapped"] as const) {
+    const parts = modelFor({
+      floor_parked_at: TS,
+      floor_park_reason: "parts",
+      job_timer_running: false,
+    });
+    expect(parts.primary.enabled).toBe(true);
+    expect(parts.waitOwner).toBe("parts");
+
+    for (const reason of ["other", "swapped"] as const) {
       const model = modelFor({
         floor_parked_at: TS,
         floor_park_reason: reason,

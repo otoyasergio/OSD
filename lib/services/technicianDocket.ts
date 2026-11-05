@@ -17,7 +17,7 @@ import {
 import { JOB_STATUS_LABELS, WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import {
   decideFloorQueue,
-  isWorkableService,
+  isTechnicianWorkableService,
   queueNoteLabel,
   waitReasonLabel,
   type QueueBlocker,
@@ -317,7 +317,7 @@ export function buildTechnicianDocketItems(input: {
     const bike = bikeByWorkOrder.get(group.work_order_id);
     const timerJob = group.jobs.find((row) => row.job_timer_running);
     const workable = [...group.jobs]
-      .filter((row) => isWorkableService({ status: row.status, parts: row.parts }))
+      .filter((row) => isTechnicianWorkableService({ status: row.status }))
       .sort((a, b) => {
         const ap = a.docket_position ?? null;
         const bp = b.docket_position ?? null;

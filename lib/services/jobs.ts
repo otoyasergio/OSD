@@ -639,7 +639,11 @@ function assertStatusTransition(
   note?: string | null
 ) {
   if (nextStatus === "in_progress") {
-    if (job.status !== "approved" && job.status !== "ready_to_start") {
+    if (
+      job.status !== "approved" &&
+      job.status !== "ready_to_start" &&
+      job.status !== "waiting_for_parts"
+    ) {
       throw new Error("JOB_NOT_READY");
     }
     if (isFloorTech(user.role) && job.assigned_technician_id !== user.user_id) {

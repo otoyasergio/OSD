@@ -79,7 +79,7 @@ describe("decideFloorQueue", () => {
     expect(decision.bench_work_order_id).toBe("bike");
   });
 
-  it("parks the whole bike on customer approval when nothing left can be worked", () => {
+  it("keeps the bike in line when one service waits on parts and another on the customer", () => {
     const decision = decideFloorQueue({
       technician_id: TECH,
       services: [
@@ -87,12 +87,14 @@ describe("decideFloorQueue", () => {
           job_id: "pads",
           work_order_id: "bike",
           status: "waiting_for_approval",
+          service_name: "Brake pads",
           docket_position: 2,
         }),
         service({
           job_id: "tire",
           work_order_id: "bike",
           status: "approved",
+          service_name: "Tire",
           docket_position: 3,
           parts: [{ status: "ordered" }],
         }),
@@ -103,31 +105,62 @@ describe("decideFloorQueue", () => {
       ],
     });
     expect(decision.bikes[0]).toMatchObject({
-      lane: "waiting",
-      reason: "approval",
-      owner: "front_desk",
-      opened_at: "2026-11-04T10:00:00Z",
+      lane: "line",
+      reason: null,
+      can_start: true,
     });
+    expect(decision.bikes[0]?.notes.map(queueNoteLabel)).toEqual([
+      "Brake pads — waiting on the customer",
+      "Tire — waiting on parts",
+    ]);
+    expect(startRefusal(decision, "bike")).toBeNull();
   });
 
-  it("uses parts when that is the only full-bike stop", () => {
+  it("keeps a parts-waiting bike in line so the tech can start it", () => {
     const decision = decideFloorQueue({
       technician_id: TECH,
       services: [
         service({
           job_id: "tire",
           work_order_id: "bike",
-          status: "approved",
+          status: "waiting_for_parts",
           parts: [{ status: "needed" }],
         }),
       ],
       blockers: [{ job_id: "tire", kind: "parts", opened_at: "2026-11-04T09:00:00Z" }],
     });
     expect(decision.bikes[0]).toMatchObject({
-      lane: "waiting",
-      reason: "parts",
-      owner: "parts",
+      lane: "line",
+      reason: null,
+      can_start: true,
     });
+    expect(decision.bikes[0]?.notes.map(queueNoteLabel)).toEqual([
+      "Service — waiting on parts",
+    ]);
+    expect(startRefusal(decision, "bike")).toBeNull();
+  });
+
+  it("does not let a parts wait skip a bike that is ahead in line", () => {
+    const decision = decideFloorQueue({
+      technician_id: TECH,
+      services: [
+        service({
+          job_id: "first",
+          work_order_id: "ahead",
+          status: "approved",
+          docket_position: 1,
+        }),
+        service({
+          job_id: "tire",
+          work_order_id: "parts",
+          status: "waiting_for_parts",
+          docket_position: 2,
+          parts: [{ status: "ordered" }],
+        }),
+      ],
+    });
+    expect(startRefusal(decision, "parts")).toBe("START_NOT_NEXT");
+    expect(startRefusal(decision, "ahead")).toBeNull();
   });
 
   it("takes the whole bike for a tool wait even when work remains", () => {
@@ -198,7 +231,7 @@ describe("decideFloorQueue", () => {
     expect(startRefusal(decision, "next")).toBe("START_BENCH_OCCUPIED");
   });
 
-  it("allows a clock switch onto another service of the bench bike", () => {
+  it("keeps the running service when its parts are still on order", () => {
     const decision = decideFloorQueue({
       technician_id: TECH,
       services: [
@@ -240,7 +273,7 @@ describe("decideFloorQueue", () => {
             ]
           : [],
       })
-    ).toMatchObject({ action: "switch", job_id: "chain" });
+    ).toMatchObject({ action: "keep", job_id: "oil" });
   });
 
   it("refuses a waiting bike", () => {
@@ -330,7 +363,7 @@ describe("planFloorSync", () => {
     expect(plan.clocks).toEqual([{ technician_id: TECH, action: "keep", job_id: null }]);
   });
 
-  it("stops the clock when the last service on the bench bike is blocked", () => {
+  it("keeps the clock running when the bench service is waiting on parts", () => {
     const plan = planFloorSync({
       services: [
         service({
@@ -343,7 +376,7 @@ describe("planFloorSync", () => {
       ],
     });
     expect(plan.open).toEqual([{ job_id: "oil", kind: "parts", owner: "parts" }]);
-    expect(plan.clocks[0]).toMatchObject({ action: "stop" });
+    expect(plan.clocks[0]).toMatchObject({ action: "keep", job_id: "oil" });
   });
 
   it("leaves a tool blocker alone", () => {

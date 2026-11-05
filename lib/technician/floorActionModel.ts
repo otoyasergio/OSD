@@ -229,17 +229,8 @@ export function deriveFloorWorkState(input: FloorWorkStateInput): FloorWorkState
     };
   }
 
-  if (input.job_status === "waiting_for_parts") {
-    return {
-      board: "waiting",
-      stateLabel: "Waiting for parts",
-      waitReason: "Waiting for parts",
-      waitOwner: "parts",
-      resumable: false,
-    };
-  }
-
-  if (input.floor_parked_at) {
+  // A parts wait is a note. The tech can still start and keep the clock.
+  if (input.floor_parked_at && input.floor_park_reason !== "parts") {
     const wait = parkWait(input.floor_park_reason);
     return {
       board: "waiting",
@@ -256,11 +247,16 @@ export function deriveFloorWorkState(input: FloorWorkStateInput): FloorWorkState
     floor_acknowledged_at: input.floor_acknowledged_at,
     floor_parked_at: null,
     job_timer_running: input.job_timer_running,
-    is_bench: input.job_status === "in_progress",
+    is_bench:
+      input.job_status === "in_progress" ||
+      (input.job_status === "waiting_for_parts" && input.job_timer_running),
   });
 
-  // WO-level parts wait is honest info but never freezes authorized work.
-  const partsPending = input.work_order_status === "waiting_for_parts";
+  // Parts on the visit, the job, or a legacy parts park stay visible and do not freeze work.
+  const partsPending =
+    input.work_order_status === "waiting_for_parts" ||
+    input.job_status === "waiting_for_parts" ||
+    input.floor_park_reason === "parts";
   const partsOverlay = partsPending
     ? { waitReason: "Some parts still on order", waitOwner: "parts" as const }
     : { waitReason: null, waitOwner: null };

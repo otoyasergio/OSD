@@ -501,10 +501,58 @@ describe("buildTechnicianDocketItems", () => {
     const { workNow, waiting } = splitDocketByWait(items);
     expect(workNow.length + waiting.length).toBe(items.length);
     expect(new Set([...workNow, ...waiting]).size).toBe(items.length);
-    expect(waiting.map((item) => item.work_order_id)).toEqual(["w2"]);
-    // The waiting card carries its own reason and owner — no separate panel.
-    expect(waiting[0].wait_reason).toBe("Waiting for parts");
-    expect(waiting[0].wait_owner_kind).toBe("parts");
+    // Missing parts stay on the line. They do not move the bike to Waiting.
+    expect(waiting).toEqual([]);
+    const partsBike = workNow.find((item) => item.work_order_id === "w2");
+    expect(partsBike).toMatchObject({
+      board_status: "offered",
+      can_start: false,
+    });
+    expect(partsBike?.queue_notes).toContain("Brakes — waiting on parts");
+  });
+
+  it("starts the parts service when another service is waiting on the customer", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j-parts",
+          work_order_id: "w-parts",
+          work_order_number: "WO-9",
+          service_name: "Tire",
+          motorcycle_label: "Honda CB",
+          status: "waiting_for_parts",
+          status_label: "Waiting For Parts",
+          docket_position: 1,
+        },
+        {
+          job_id: "j-ok",
+          work_order_id: "w-parts",
+          work_order_number: "WO-9",
+          service_name: "Chain",
+          motorcycle_label: "Honda CB",
+          status: "waiting_for_approval",
+          status_label: "Waiting For Approval",
+          docket_position: 2,
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      job_id: "j-parts",
+      board_status: "offered",
+      can_start: true,
+    });
+    expect(canDragDocketItemToBench(items[0]!)).toBe(true);
+    expect(items[0]?.queue_notes).toEqual(
+      expect.arrayContaining([
+        "Tire — waiting on parts",
+        "Chain — waiting on the customer",
+      ])
+    );
   });
 
   it("never includes customer PII in docket display fields", () => {

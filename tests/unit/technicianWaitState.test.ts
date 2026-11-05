@@ -141,7 +141,17 @@ describe("deriveFloorWorkState matrix", () => {
       other: "technician",
       swapped: "technician",
     };
+    const parts = stateFor({
+      floor_parked_at: TS,
+      floor_park_reason: "parts",
+      job_timer_running: false,
+    });
+    expect(parts.board).toBe("bench");
+    expect(parts.waitOwner).toBe("parts");
+    expect(parts.waitReason).toBe("Some parts still on order");
+
     for (const [reason, owner] of Object.entries(ownerByReason)) {
+      if (reason === "parts") continue;
       const state = stateFor({
         floor_parked_at: TS,
         floor_park_reason: reason as FloorParkReason,
@@ -195,10 +205,17 @@ describe("deriveFloorWorkState matrix", () => {
     expect(benched.waitOwner).toBe("parts");
     expect(benched.waitReason).toBe("Some parts still on order");
 
-    const jobLevel = stateFor({ job_status: "waiting_for_parts" });
-    expect(jobLevel.board).toBe("waiting");
+    const jobLevel = stateFor({
+      job_status: "waiting_for_parts",
+      job_timer_running: false,
+    });
+    expect(jobLevel.board).toBe("next");
     expect(jobLevel.waitOwner).toBe("parts");
-    expect(jobLevel.resumable).toBe(false);
+    expect(jobLevel.waitReason).toBe("Some parts still on order");
+
+    const running = stateFor({ job_status: "waiting_for_parts" });
+    expect(running.board).toBe("bench");
+    expect(running.waitOwner).toBe("parts");
   });
 
   it("keeps quality/safety-stage jobs honest: completed job hands off to QC", () => {
