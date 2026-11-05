@@ -11,6 +11,7 @@ import {
   createAdminClient,
   createDiagnosticsAdminClient,
   createPhotoAdminClient,
+  createStaffFeedbackAdminClient,
 } from "@/lib/database/supabase-admin";
 
 afterEach(() => {
@@ -44,6 +45,12 @@ describe("server service-role Supabase clients", () => {
 
   it("uses a photo-specific configuration error for the reconciler client", () => {
     expect(() => createPhotoAdminClient()).toThrow("PHOTO_ADMIN_MISCONFIGURED");
+  });
+
+  it("uses a staff-feedback configuration error for the nightly squash", () => {
+    expect(() => createStaffFeedbackAdminClient()).toThrow(
+      "STAFF_FEEDBACK_MISCONFIGURED"
+    );
   });
 
   it("trims photo admin URL and key and rejects whitespace-only config", () => {

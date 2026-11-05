@@ -60,3 +60,11 @@ export function createAuctionAdminClient() {
 export function createBikeLinkAdminClient() {
   return createServiceRoleClient("BIKE_LINK_INGEST_MISCONFIGURED");
 }
+
+/**
+ * Server-only client for packing staff screen notes into the nightly archive.
+ * Never import this into client components.
+ */
+export function createStaffFeedbackAdminClient() {
+  return createServiceRoleClient("STAFF_FEEDBACK_MISCONFIGURED");
+}

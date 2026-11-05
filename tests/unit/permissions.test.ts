@@ -48,6 +48,7 @@ import {
   canCreateRecommendation,
   canViewTechnicianDocket,
   canManageVehiclePassport,
+  canSubmitStaffFeedback,
 } from "@/lib/permissions/checks";
 
 describe("permissions", () => {
@@ -346,6 +347,16 @@ describe("permissions", () => {
     expect(canViewClients("head_tech")).toBe(false);
     expect(canRunQualityCheck("head_tech")).toBe(false);
     expect(canRecordCustomerApproval("head_tech")).toBe(false);
+  });
+
+  it("workshop staff can file a screen note, and the kiosk tablet cannot", () => {
+    expect(canSubmitStaffFeedback("owner")).toBe(true);
+    expect(canSubmitStaffFeedback("manager")).toBe(true);
+    expect(canSubmitStaffFeedback("service_advisor")).toBe(true);
+    expect(canSubmitStaffFeedback("technician")).toBe(true);
+    expect(canSubmitStaffFeedback("head_tech")).toBe(true);
+    expect(canSubmitStaffFeedback("admin")).toBe(true);
+    expect(canSubmitStaffFeedback("time_clock_kiosk")).toBe(false);
   });
 
   it("front office can view any tech docket; floor techs only their own", () => {

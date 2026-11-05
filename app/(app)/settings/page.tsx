@@ -101,7 +101,8 @@ export default async function SettingsPage() {
     {
       href: "/settings/logs",
       label: "Logs",
-      description: "Every action recorded across the company.",
+      description:
+        "Audit history, UX signals, and staff notes about screens that don't make sense.",
       visible: canViewAuditLog(viewRole),
     },
   ].filter((link) => link.visible);

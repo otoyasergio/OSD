@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { canViewAuditLog } from "@/lib/permissions";
 import { listAuditFilterOptions, listAuditLogs } from "@/lib/services/audit";
+import { listStaffFeedbackBoard } from "@/lib/services/staffFeedback";
 import { listUxEvents, summarizeUxCodes } from "@/lib/services/uxEvents";
 import { AuditLogTable } from "@/components/audit/AuditLogTable";
+import { StaffFeedbackPanel } from "@/components/logs/StaffFeedbackPanel";
 import { UxEventsPanel } from "@/components/logs/UxEventsPanel";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +31,8 @@ export default async function OwnerLogsPage({
   if (!canViewAuditLog(preview.role)) redirect("/settings");
 
   const params = await searchParams;
-  const tab = params.tab === "ux" ? "ux" : "audit";
+  const tab =
+    params.tab === "ux" ? "ux" : params.tab === "feedback" ? "feedback" : "audit";
   const filters = {
     from: params.from?.trim() || "",
     to: params.to?.trim() || "",
@@ -43,7 +46,7 @@ export default async function OwnerLogsPage({
 
   const options = await listAuditFilterOptions();
 
-  const [uxEvents, auditEntries] = await Promise.all([
+  const [uxEvents, auditEntries, feedback] = await Promise.all([
     tab === "ux"
       ? listUxEvents({
           from: filters.from || null,
@@ -63,6 +66,7 @@ export default async function OwnerLogsPage({
           action: filters.action || null,
         })
       : Promise.resolve([]),
+    tab === "feedback" ? listStaffFeedbackBoard() : Promise.resolve(null),
   ]);
 
   const topCodes = await summarizeUxCodes(uxEvents);
@@ -78,8 +82,8 @@ export default async function OwnerLogsPage({
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Logs</h1>
         <p className="mt-1 text-sm text-[var(--status-neutral)]">
-          Owner-only record of every company action, plus UX friction signals when staff
-          hit a wall.
+          Owner-only record of company actions, UX friction, and notes staff send when a
+          screen doesn&apos;t make sense.
         </p>
       </div>
 
@@ -104,9 +108,24 @@ export default async function OwnerLogsPage({
         >
           UX signals
         </Link>
+        <Link
+          href="/settings/logs?tab=feedback"
+          className={
+            tab === "feedback"
+              ? "rounded-md bg-[var(--chrome)] px-3 py-1.5 text-sm font-semibold text-white"
+              : "rounded-md px-3 py-1.5 text-sm font-medium text-foreground hover:bg-[var(--surface-muted)]"
+          }
+        >
+          Staff notes
+        </Link>
       </div>
 
-      {tab === "audit" ? (
+      {tab === "feedback" ? (
+        <StaffFeedbackPanel
+          openReports={feedback?.openReports ?? []}
+          digests={feedback?.digests ?? []}
+        />
+      ) : tab === "audit" ? (
         <AuditLogTable
           entries={auditEntries}
           actors={options.actors}

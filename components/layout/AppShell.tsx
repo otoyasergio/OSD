@@ -41,6 +41,7 @@ import { staffNotificationHref } from "@/lib/technician/assignmentHref";
 import { FloorTopBar } from "@/components/technician/FloorTopBar";
 import { CommsLayer } from "@/components/comms/CommsLayer";
 import { CommsDock } from "@/components/comms/CommsDock";
+import { StaffFeedbackButton } from "@/components/feedback/StaffFeedbackButton";
 import { PhotoUploadQueueProvider } from "@/components/photos/PhotoUploadQueueProvider";
 import { PhotoUploadQueueStatus } from "@/components/photos/PhotoUploadQueueStatus";
 import { photoUploadQueueProviderKey } from "@/lib/photos/uploadQueue/createStore";
@@ -311,6 +312,7 @@ export function AppShell({
           </div>
           <main className="inspection-fullscreen-main">{children}</main>
         </div>
+        <StaffFeedbackButton role={user.role} />
       </CommsLayer>
     );
   }
@@ -355,6 +357,7 @@ export function AppShell({
             {children}
           </main>
         </div>
+        <StaffFeedbackButton role={user.role} raised />
       </CommsLayer>
     );
   }
@@ -489,6 +492,7 @@ export function AppShell({
             {children}
           </main>
         </div>
+        <StaffFeedbackButton role={user.role} />
       </div>
     </CommsLayer>
   );
