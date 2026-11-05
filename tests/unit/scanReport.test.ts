@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   chooseInspectionForScan,
+  chooseMotorcycleForScan,
   diagnosticFromScan,
   diagnosticToCreate,
   filingsForUnreadMail,
@@ -18,6 +19,7 @@ const open = {
   inspectionId: "insp-1",
   workOrderId: "wo-1",
   workOrderNumber: "WO-1042",
+  motorcycleId: "bike-1",
   vin: "1HD1BJY174Y023456",
 };
 
@@ -111,6 +113,27 @@ describe("chooseInspectionForScan", () => {
 
   it("does not file a report onto an inspection with a different VIN", () => {
     expect(chooseInspectionForScan({ vin: "JH2SC5912KK123456" }, [open])).toBeNull();
+  });
+});
+
+describe("chooseMotorcycleForScan", () => {
+  const bike = { motorcycleId: "bike-1", vin: "WB10J9303KZH99235" };
+
+  it("files a report onto the bike when no visit is open", () => {
+    expect(
+      chooseMotorcycleForScan({ vin: "WB10J9303KZH99235" }, [bike])?.motorcycleId
+    ).toBe("bike-1");
+  });
+
+  it("does not pick a bike when two profiles share the VIN", () => {
+    const second = { motorcycleId: "bike-2", vin: "WB10J9303KZH99235" };
+    expect(
+      chooseMotorcycleForScan({ vin: "WB10J9303KZH99235" }, [bike, second])
+    ).toBeNull();
+  });
+
+  it("does not use the only bike when the report has no VIN", () => {
+    expect(chooseMotorcycleForScan({ vin: null }, [bike])).toBeNull();
   });
 });
 
@@ -301,6 +324,7 @@ describe("filingsForUnreadMail", () => {
         { id: "new", text: "VIN 1HD1BJY174Y023456\nNo fault codes" },
       ],
       waiting: [open],
+      bikes: [],
       alreadyFiledIds: ["old"],
     });
 
@@ -310,6 +334,23 @@ describe("filingsForUnreadMail", () => {
       outcome: "no_codes",
       workOrderId: "wo-1",
       inspectionId: "insp-1",
+      motorcycleId: "bike-1",
+    });
+  });
+
+  it("files a VIN match onto the bike profile when no inspection is open", () => {
+    const filings = filingsForUnreadMail({
+      messages: [{ id: "scan-1", text: "VIN WB10J9303KZH99235\n480682 ABS: Pullaway" }],
+      waiting: [],
+      bikes: [{ motorcycleId: "bike-1", vin: "WB10J9303KZH99235" }],
+      alreadyFiledIds: [],
+    });
+
+    expect(filings[0]).toMatchObject({
+      outcome: "codes",
+      workOrderId: null,
+      inspectionId: null,
+      motorcycleId: "bike-1",
     });
   });
 });

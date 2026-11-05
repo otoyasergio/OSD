@@ -8,6 +8,12 @@ export type WaitingInspection = {
   inspectionId: string;
   workOrderId: string;
   workOrderNumber: string;
+  motorcycleId: string;
+  vin: string | null;
+};
+
+export type ScanBike = {
+  motorcycleId: string;
   vin: string | null;
 };
 
@@ -122,6 +128,17 @@ export function chooseInspectionForScan(
     return matches.length === 1 ? matches[0] : null;
   }
   return waiting.length === 1 ? waiting[0] : null;
+}
+
+/** One bike with this VIN. Two bikes, or no VIN, stays off every profile. */
+export function chooseMotorcycleForScan(
+  report: { vin: string | null },
+  bikes: ScanBike[]
+): ScanBike | null {
+  const vin = normalizeVin(report.vin);
+  if (!vin) return null;
+  const matches = bikes.filter((row) => normalizeVin(row.vin) === vin);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 export function scanAddressAllowed(
@@ -341,6 +358,7 @@ export function diagnosticToCreate(
 export function filingsForUnreadMail(input: {
   messages: Array<{ id: string; text: string }>;
   waiting: WaitingInspection[];
+  bikes: ScanBike[];
   alreadyFiledIds: string[];
 }): Array<{
   gmailMessageId: string;
@@ -349,6 +367,7 @@ export function filingsForUnreadMail(input: {
   codes: ScanCode[];
   inspectionId: string | null;
   workOrderId: string | null;
+  motorcycleId: string | null;
   reportText: string;
 }> {
   const filed = new Set(input.alreadyFiledIds);
@@ -357,6 +376,7 @@ export function filingsForUnreadMail(input: {
     if (filed.has(message.id)) continue;
     const report = readTopGuruReport(message.text);
     const match = chooseInspectionForScan(report, input.waiting);
+    const bike = chooseMotorcycleForScan(report, input.bikes);
     rows.push({
       gmailMessageId: message.id,
       outcome: report.outcome,
@@ -364,6 +384,7 @@ export function filingsForUnreadMail(input: {
       codes: report.codes,
       inspectionId: match?.inspectionId ?? null,
       workOrderId: match?.workOrderId ?? null,
+      motorcycleId: bike?.motorcycleId ?? match?.motorcycleId ?? null,
       reportText: message.text.slice(0, 20_000),
     });
   }

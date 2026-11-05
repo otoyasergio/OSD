@@ -32,6 +32,8 @@ import { AuctionPriceGuide } from "@/components/auctions/AuctionPriceGuide";
 import { MotorcycleDocuments } from "@/components/motorcycles/MotorcycleDocuments";
 import { MotorcycleVisitList } from "@/components/motorcycles/MotorcycleVisitList";
 import { BikeLinkPanel } from "@/components/motorcycles/BikeLinkPanel";
+import { MotorcycleScanReports } from "@/components/motorcycles/MotorcycleScanReports";
+import { listScanReportsForMotorcycle } from "@/lib/services/motorcycleScans";
 import { getBikeLink } from "@/lib/services/bikeLink";
 import {
   assignBikeLinkBoxAction,
@@ -89,6 +91,7 @@ export default async function MotorcycleDetailPage({
     auctionGuide,
     bikeLink,
     diagnostics,
+    scanReports,
   ] = await Promise.all([
     getServiceInformation(motorcycle_id),
     searchCustomers("", { preferShopCustomers: true }),
@@ -106,6 +109,7 @@ export default async function MotorcycleDetailPage({
     getDiagnosticPanel(motorcycle_id).catch(() =>
       unavailableDiagnosticPanel(motorcycle_id)
     ),
+    listScanReportsForMotorcycle(motorcycle_id),
   ]);
 
   let customerOptions = customers;
@@ -274,6 +278,8 @@ export default async function MotorcycleDetailPage({
         scheduleAction={saveBikeLinkScheduleAction.bind(null, motorcycle_id)}
         boxAction={assignBikeLinkBoxAction.bind(null, motorcycle_id)}
       />
+
+      <MotorcycleScanReports reports={scanReports} />
 
       <DiagnosticPanel
         data={diagnostics}

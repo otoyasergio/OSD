@@ -48,6 +48,7 @@ export function ScanMailboxPanel({
     subject: string;
     outcome: ScanOutcome;
     workOrderNumber: string | null;
+    onBike: boolean;
   }>;
   notice: string | null;
   disconnectAction: () => Promise<void>;
@@ -56,14 +57,18 @@ export function ScanMailboxPanel({
     <section className="card">
       <div className="card-body flex flex-col gap-4">
         {notice ? (
-          <p className="text-sm text-foreground" role="status" data-testid="scan-mailbox-notice">
+          <p
+            className="text-sm text-foreground"
+            role="status"
+            data-testid="scan-mailbox-notice"
+          >
             {notice}
           </p>
         ) : null}
 
         <p className="text-sm text-foreground" data-testid="scan-mailbox-address">
-          TopGuru sends scan reports to <strong>{SCAN_REPORT_ADDRESS}</strong>. Customers do
-          not receive this mail.
+          TopGuru sends scan reports to <strong>{SCAN_REPORT_ADDRESS}</strong>. Customers
+          do not receive this mail.
         </p>
         {emailAddress ? (
           <p className="text-sm text-[var(--status-neutral)]">
@@ -99,8 +104,8 @@ export function ScanMailboxPanel({
 
         {locationAllowed && !oauthConfigured ? (
           <p className="text-sm text-[var(--status-neutral)]">
-            Google sign-in uses the same OAuth client as customer email. The scan connection
-            asks only for permission to read this mailbox.
+            Google sign-in uses the same OAuth client as customer email. The scan
+            connection asks only for permission to read this mailbox.
           </p>
         ) : null}
 
@@ -112,18 +117,26 @@ export function ScanMailboxPanel({
 
         {emailAddress ? (
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Reports from this mailbox</h2>
+            <h2 className="text-sm font-semibold text-foreground">
+              Reports from this mailbox
+            </h2>
             {reports.length === 0 ? (
-              <p className="mt-1 text-sm text-[var(--status-neutral)]">No scan reports yet.</p>
+              <p className="mt-1 text-sm text-[var(--status-neutral)]">
+                No scan reports yet.
+              </p>
             ) : (
               <ul className="mt-2 flex flex-col gap-2">
                 {reports.map((report) => (
-                  <li key={`${report.subject}-${report.workOrderNumber ?? "open"}`} className="text-sm">
+                  <li
+                    key={`${report.subject}-${report.workOrderNumber ?? "open"}`}
+                    className="text-sm"
+                  >
                     <span className="text-foreground">{report.subject}</span>
                     <span className="text-[var(--status-neutral)]">
                       {" "}
                       · {OUTCOME_LABEL[report.outcome]} ·{" "}
-                      {report.workOrderNumber ?? "Not matched"}
+                      {report.workOrderNumber ??
+                        (report.onBike ? "Bike profile" : "Not matched")}
                     </span>
                   </li>
                 ))}
