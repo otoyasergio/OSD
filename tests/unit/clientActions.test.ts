@@ -4,6 +4,7 @@ import {
   decideClientActions,
   isClientActionOilService,
   reminderSnoozeUntil,
+  serviceReminderMotorcycles,
   type ClientActionCustomer,
   type ClientActionMotorcycle,
   type ClientActionResolution,
@@ -338,6 +339,50 @@ describe("decideClientActions reminders", () => {
     });
     expect(onTheDay.map((card) => card.reason)).toEqual(["birthday"]);
     expect(dayBefore).toEqual([]);
+  });
+
+  it("addresses a service reminder to the current owner after the bike is transferred", () => {
+    const oldVisit = "2025-11-06T18:00:00.000Z";
+    const oldOil = "2026-05-10T18:00:00.000Z";
+    const facts = serviceReminderMotorcycles({
+      completed: [
+        {
+          motorcycleId: "bike-1",
+          completedAt: oldVisit,
+        },
+      ],
+      ownerIdFor: () => "cust-new",
+      lastOilAtFor: () => oldOil,
+    });
+
+    expect(facts).toEqual([
+      {
+        motorcycleId: "bike-1",
+        customerId: "cust-new",
+        lastCompletedAt: oldVisit,
+        lastOilAt: oldOil,
+      },
+    ]);
+
+    const cards = decide({
+      motorcycles: facts,
+      customers: [
+        customer({ customerId: "cust-old", phone: "+14165550111" }),
+        customer({ customerId: "cust-new", phone: "+14165550122" }),
+      ],
+    });
+    expect(cards.map((card) => card.customerId)).toEqual(["cust-new", "cust-new"]);
+    expect(cards.every((card) => card.customerId !== "cust-old")).toBe(true);
+  });
+
+  it("does not invent a service reminder when the motorcycle has no current owner", () => {
+    expect(
+      serviceReminderMotorcycles({
+        completed: [{ motorcycleId: "bike-1", completedAt: "2025-11-06T18:00:00.000Z" }],
+        ownerIdFor: () => null,
+        lastOilAtFor: () => null,
+      })
+    ).toEqual([]);
   });
 
   it("skips a birthday when the date is missing or the customer has no completed visit", () => {
