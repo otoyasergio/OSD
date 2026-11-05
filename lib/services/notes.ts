@@ -9,6 +9,7 @@ import { technicianNoteSchema } from "@/lib/validation/schemas";
 import {
   assertViewerCanAccessWorkOrder,
   assertViewerCanAccessWorkOrderLocation,
+  technicianIdsFromAssignment,
 } from "@/lib/workOrders/assignmentVisibility";
 import { TECHNICIAN_NOTE_TYPE_LABELS } from "@/lib/status/labels";
 import { z } from "zod";
@@ -210,6 +211,8 @@ export type ReviewedNoteWorkOrder = {
   status: string;
   primaryTechnicianId: string | null;
   qualityCheckAssignedTo: string | null;
+  /** Visit membership from work_order_technician. Omitted when unknown. */
+  technicianIds?: readonly string[] | null;
   jobs: Array<{ jobId: string; assignedTechnicianId: string | null }>;
 };
 
@@ -280,7 +283,7 @@ async function createDefaultReviewedNoteDependencies(): Promise<ReviewedNoteProm
       const { data, error } = await supabase
         .from("work_order")
         .select(
-          "work_order_id, work_order_number, location_id, status, primary_technician_id, quality_check_assigned_to, jobs:job(job_id, assigned_technician_id)"
+          "work_order_id, work_order_number, location_id, status, primary_technician_id, quality_check_assigned_to, work_order_technician(technician_id), jobs:job(job_id, assigned_technician_id)"
         )
         .eq("work_order_id", workOrderId)
         .maybeSingle();
@@ -293,6 +296,12 @@ async function createDefaultReviewedNoteDependencies(): Promise<ReviewedNoteProm
         status: data.status,
         primaryTechnicianId: data.primary_technician_id,
         qualityCheckAssignedTo: data.quality_check_assigned_to,
+        technicianIds: technicianIdsFromAssignment(
+          data.work_order_technician as
+            | Array<{ technician_id?: string | null }>
+            | { technician_id?: string | null }
+            | null
+        ),
         jobs: (
           (data.jobs ?? []) as Array<{
             job_id: string;
@@ -416,6 +425,7 @@ export async function promoteReviewedTechnicianNote(
     {
       primary_technician_id: workOrder.primaryTechnicianId,
       quality_check_assigned_to: workOrder.qualityCheckAssignedTo,
+      technician_ids: workOrder.technicianIds,
       status: workOrder.status,
       jobs: workOrder.jobs.map((job) => ({
         assigned_technician_id: job.assignedTechnicianId,

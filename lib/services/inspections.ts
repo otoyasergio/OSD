@@ -14,6 +14,7 @@ import {
   assertViewerCanAccessWorkOrder,
   assertViewerCanAccessWorkOrderLocation,
   canViewerAccessWorkOrderLocation,
+  technicianIdsFromAssignment,
 } from "@/lib/workOrders/assignmentVisibility";
 import { saveInspectionResultSchema } from "@/lib/validation/schemas";
 import {
@@ -313,6 +314,7 @@ export async function getInspectionForWorkOrder(
         first_name,
         last_name
       ),
+      work_order_technician ( technician_id ),
       job ( assigned_technician_id )
     `
     )
@@ -326,6 +328,12 @@ export async function getInspectionForWorkOrder(
     {
       primary_technician_id: workOrder.primary_technician_id as string | null,
       quality_check_assigned_to: workOrder.quality_check_assigned_to as string | null,
+      technician_ids: technicianIdsFromAssignment(
+        workOrder.work_order_technician as
+          | Array<{ technician_id?: string | null }>
+          | { technician_id?: string | null }
+          | null
+      ),
       status: workOrder.status as string,
       jobs:
         (workOrder.job as Array<{ assigned_technician_id: string | null }> | null) ?? [],

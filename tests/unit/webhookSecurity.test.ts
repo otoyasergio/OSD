@@ -204,13 +204,33 @@ describe("creditIdsSettledByPaidInvoice", () => {
     ).toEqual(["older"]);
   });
 
-  it("settles every open credit when the invoice has no publish time", () => {
+  it("settles every open credit when the invoice has no usable publish time", () => {
     expect(
       creditIdsSettledByPaidInvoice({
         credits: [older, newer],
         invoicePublishedAt: null,
       })
     ).toEqual(["older", "newer"]);
+    expect(
+      creditIdsSettledByPaidInvoice({
+        credits: [older, newer],
+        invoicePublishedAt: "not-a-date",
+      })
+    ).toEqual(["older", "newer"]);
+  });
+
+  it("settles credit timestamped with the invoice, not credit added a moment later", () => {
+    const published = "2026-11-02T15:00:00.000Z";
+    expect(
+      creditIdsSettledByPaidInvoice({
+        credits: [
+          { credit_id: "same", created_at: published },
+          { credit_id: "after", created_at: "2026-11-02T15:00:00.001Z" },
+          { credit_id: "untimed", created_at: null },
+        ],
+        invoicePublishedAt: published,
+      })
+    ).toEqual(["same", "untimed"]);
   });
 });
 

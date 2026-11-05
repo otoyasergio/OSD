@@ -76,6 +76,16 @@ export type FloorSyncPlan = {
 };
 
 const WORKABLE_STATUSES = new Set(["approved", "ready_to_start", "in_progress"]);
+/**
+ * Statuses a technician may clock even while parts are missing.
+ * Customer approval is not one of them.
+ */
+const TECHNICIAN_WORK_STATUSES = new Set([
+  "approved",
+  "ready_to_start",
+  "in_progress",
+  "waiting_for_parts",
+]);
 const TERMINAL_STATUSES = new Set(["completed", "cancelled", "declined", "draft"]);
 
 export function isBlockingPartStatus(status: string): boolean {
@@ -88,6 +98,11 @@ export function isWorkableService(input: {
 }): boolean {
   if (!WORKABLE_STATUSES.has(input.status)) return false;
   return !(input.parts ?? []).some((part) => isBlockingPartStatus(part.status));
+}
+
+/** The technician can wrench this service. Missing parts do not stop the clock. */
+export function isTechnicianWorkableService(input: { status: string }): boolean {
+  return TECHNICIAN_WORK_STATUSES.has(input.status);
 }
 
 /** The standard parts or approval stop for one service, when it cannot be worked. */
@@ -176,7 +191,7 @@ export function decideFloorQueue(input: {
     const notes = services
       .map((service) => noteFor(service, blockers))
       .filter((note): note is QueueNote => note != null);
-    const workable = services.some((service) => isWorkableService(service));
+    const workable = services.some((service) => isTechnicianWorkableService(service));
     const position = positionOf(services);
     const timerOnBike = services.some((service) => service.timer_running);
 
@@ -190,18 +205,13 @@ export function decideFloorQueue(input: {
       reason = "tool";
       owner = "technician";
       opened_at = toolOpened;
-    } else if (!workable && notes.length > 0) {
+    } else if (!workable && notes.some((note) => note.reason === "approval")) {
+      // Parts never take the bike out of the line. The tech keeps working,
+      // and the missing parts stay as a note.
       lane = "waiting";
-      const approval = notes.find((note) => note.reason === "approval");
-      if (approval) {
-        reason = "approval";
-        owner = "front_desk";
-        opened_at = earliestOpened(blockers, jobIds, "approval");
-      } else {
-        reason = "parts";
-        owner = "parts";
-        opened_at = earliestOpened(blockers, jobIds, "parts");
-      }
+      reason = "approval";
+      owner = "front_desk";
+      opened_at = earliestOpened(blockers, jobIds, "approval");
     } else if (timerOnBike) {
       lane = "bench";
     }
@@ -262,7 +272,7 @@ export function planTechnicianClock(input: {
   if (earliestOpened(blockers, jobIds, "tool")) {
     return { technician_id: input.technician_id, action: "stop", job_id: null };
   }
-  if (isWorkableService(running)) {
+  if (isTechnicianWorkableService(running)) {
     return {
       technician_id: input.technician_id,
       action: "keep",
@@ -270,7 +280,7 @@ export function planTechnicianClock(input: {
     };
   }
   const next = bike
-    .filter((service) => isWorkableService(service))
+    .filter((service) => isTechnicianWorkableService(service))
     .sort((a, b) => comparePosition(a.docket_position, b.docket_position))[0];
   if (next) {
     return { technician_id: input.technician_id, action: "switch", job_id: next.job_id };
