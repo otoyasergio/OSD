@@ -6,10 +6,10 @@ import {
   composeStaffSms,
   decideClientActions,
   reminderSnoozeUntil,
+  serviceReminderMotorcycles,
   isClientActionOilService,
   type ClientActionCard,
   type ClientActionCustomer,
-  type ClientActionMotorcycle,
   type ClientActionReason,
   type ClientActionResolution,
   type ClientActionVisit,
@@ -47,6 +47,7 @@ type CustomerRow = {
 
 type MotorcycleRow = {
   motorcycle_id: string;
+  customer_id: string | null;
   year: number | null;
   make: string | null;
   model: string | null;
@@ -175,7 +176,7 @@ async function loadBoard(user: AppUser): Promise<Board> {
         work_order_id, work_order_number, status, opened_at, created_at, ready_for_pickup_at,
         customer_id, motorcycle_id,
         customer:customer_id ( customer_id, first_name, last_name, phone, sms_opted_out_at, wix_contact_id, date_of_birth ),
-        motorcycle:motorcycle_id ( motorcycle_id, year, make, model )
+        motorcycle:motorcycle_id ( motorcycle_id, customer_id, year, make, model )
       `
       )
       .eq("location_id", locationId)
@@ -339,6 +340,13 @@ async function loadBoard(user: AppUser): Promise<Board> {
     motorcycles.set(motorcycle.motorcycle_id, motorcycle);
   }
 
+  const ownerIds = [...latestCompleted.keys()]
+    .map((motorcycleId) => motorcycles.get(motorcycleId)?.customer_id ?? null)
+    .filter((id): id is string => Boolean(id) && !customers.has(id));
+  for (const customer of await loadCustomers(supabase, ownerIds)) {
+    customers.set(customer.customer_id, customer);
+  }
+
   const visits: ClientActionVisit[] = [];
   const workOrders = new Map<string, WorkOrderRow>();
   for (const order of openOrders) {
@@ -375,14 +383,18 @@ async function loadBoard(user: AppUser): Promise<Board> {
     });
   }
 
-  const motorcycleFacts: ClientActionMotorcycle[] = [...latestCompleted.values()].map(
-    (row) => ({
-      motorcycleId: row.motorcycle_id!,
-      customerId: row.customer_id!,
-      lastCompletedAt: row.completed_at,
-      lastOilAt: latestOil.get(row.motorcycle_id!) ?? null,
-    })
-  );
+  const motorcycleFacts = serviceReminderMotorcycles({
+    completed: [...latestCompleted.values()].flatMap((row) =>
+      row.motorcycle_id && row.completed_at
+        ? [{ motorcycleId: row.motorcycle_id, completedAt: row.completed_at }]
+        : []
+    ),
+    ownerIdFor: (motorcycleId) => {
+      const ownerId = motorcycles.get(motorcycleId)?.customer_id ?? null;
+      return ownerId && customers.has(ownerId) ? ownerId : null;
+    },
+    lastOilAtFor: (motorcycleId) => latestOil.get(motorcycleId) ?? null,
+  });
 
   const customerFacts: ClientActionCustomer[] = [...customers.values()].map((row) => ({
     customerId: row.customer_id,
@@ -452,7 +464,7 @@ async function loadMotorcycles(
   for (const chunk of chunks(ids, ID_CHUNK)) {
     const { data, error } = await supabase
       .from("motorcycle")
-      .select("motorcycle_id, year, make, model")
+      .select("motorcycle_id, customer_id, year, make, model")
       .in("motorcycle_id", chunk);
     if (error) throw error;
     rows.push(...((data ?? []) as MotorcycleRow[]));

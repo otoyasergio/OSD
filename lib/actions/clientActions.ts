@@ -263,6 +263,30 @@ function visitReason(
   return null;
 }
 
+/**
+ * Annual and oil reminders belong to whoever owns the bike now.
+ * Completed visits keep the customer who was in the shop that day, including
+ * after a transfer, so the visit customer is not a safe recipient.
+ */
+export function serviceReminderMotorcycles(input: {
+  completed: Array<{ motorcycleId: string; completedAt: string }>;
+  ownerIdFor: (motorcycleId: string) => string | null;
+  lastOilAtFor: (motorcycleId: string) => string | null;
+}): ClientActionMotorcycle[] {
+  const facts: ClientActionMotorcycle[] = [];
+  for (const row of input.completed) {
+    const customerId = input.ownerIdFor(row.motorcycleId);
+    if (!customerId) continue;
+    facts.push({
+      motorcycleId: row.motorcycleId,
+      customerId,
+      lastCompletedAt: row.completedAt,
+      lastOilAt: input.lastOilAtFor(row.motorcycleId),
+    });
+  }
+  return facts;
+}
+
 export function decideClientActions(input: DecideClientActionsInput): ClientActionCard[] {
   const shopDate = shopDateKey(input.now);
   const customers = new Map(input.customers.map((row) => [row.customerId, row]));
