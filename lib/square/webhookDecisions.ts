@@ -105,8 +105,8 @@ export function squareInvoiceTransactionId(invoiceId: string, mapped: string): s
 /**
  * Store credit applied to a Square invoice is the balance that existed when
  * that invoice was published. Credit added afterward belongs to a later bill.
- * Invoices with no publish timestamp keep the older "settle every open credit"
- * behavior.
+ * A missing or unreadable publish time settles every open credit, so credit
+ * already used on that invoice cannot be spent a second time.
  */
 export function creditIdsSettledByPaidInvoice(input: {
   credits: Array<{ credit_id: string; created_at: string | null }>;

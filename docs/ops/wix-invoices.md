@@ -9,6 +9,14 @@ The path stays off until both of these are exactly `1`:
 
 Unset means the shop keeps the current Square invoice screens.
 
+## Legacy invoices
+
+This site still uses Wix's old invoices. Wix is rolling the new Invoices API out site by site, and it has not reached this one. Staff create, edit, and void invoices in Wix.
+
+A `428`, or a refusal that the legacy invoices service is only available through Velo, means leave both switches unset. Do not call the new API to create or edit invoices until Wix enables it here.
+
+Cash, e-transfer, cheque, and a terminal payment void the Wix invoice, and that store credit stays used. Staff also void an invoice to cancel a visit where the customer paid nothing. The app cannot tell those two voids apart without the new API, so it does not return store credit on a void. Staff put that credit back on the customer. When the new API is on this site, integrate Wix and Square together so a cancel can be told from a payment.
+
 ## Gates
 
 `npm run check:wix-invoices` reads the latest number, the site legal name, and the Square location. It does not create an invoice.
