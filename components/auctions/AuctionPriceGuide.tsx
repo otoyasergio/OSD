@@ -1,4 +1,4 @@
-import { formatCad, formatSaleDate } from "@/lib/auctions/summary";
+import { formatCad, formatSaleDate, inspectionPriceLine } from "@/lib/auctions/summary";
 import type { AuctionPriceGuideView } from "@/lib/auctions/types";
 
 type Props = {
@@ -20,6 +20,13 @@ export function AuctionPriceGuide({
       ? "text-lg font-semibold"
       : "text-lg font-semibold text-foreground";
   const maxMedian = Math.max(0, ...guide.visibleHistory.map((point) => point.medianCad));
+  const historyLine = inspectionPriceLine(
+    guide.visibleHistory.map((point) => ({
+      saleYear: point.saleYear,
+      medianCad: point.medianCad,
+      amount: formatCad(point.medianCad),
+    }))
+  );
 
   return (
     <section
@@ -58,27 +65,32 @@ export function AuctionPriceGuide({
       <p className={`mt-1 text-sm ${neutral}`}>{guide.detail}</p>
 
       {guide.state === "ready" && guide.modelYearMedianCad != null ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="stat-card">
-            <span className="stat-card-label">Typical price</span>
-            <span className="stat-card-value text-base">
-              {formatCad(guide.modelYearMedianCad)}
-            </span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-card-label">Low</span>
-            <span className="stat-card-value text-base">
-              {guide.modelYearLowCad != null ? formatCad(guide.modelYearLowCad) : "—"}
-            </span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-card-label">High</span>
-            <span className="stat-card-value text-base">
-              {guide.modelYearHighCad != null ? formatCad(guide.modelYearHighCad) : "—"}
-            </span>
+        <div className="mt-4">
+          <h3 className="text-sm font-semibold text-foreground">Bike valuation</h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="stat-card">
+              <span className="stat-card-label">Typical price</span>
+              <span className="stat-card-value text-base">
+                {formatCad(guide.modelYearMedianCad)}
+              </span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-card-label">Low</span>
+              <span className="stat-card-value text-base">
+                {guide.modelYearLowCad != null ? formatCad(guide.modelYearLowCad) : "—"}
+              </span>
+            </div>
+            <div className="stat-card">
+              <span className="stat-card-label">High</span>
+              <span className="stat-card-value text-base">
+                {guide.modelYearHighCad != null ? formatCad(guide.modelYearHighCad) : "—"}
+              </span>
+            </div>
           </div>
         </div>
       ) : null}
+
+      {historyLine.length > 0 ? <PriceHistoryChart line={historyLine} /> : null}
 
       {guide.visibleHistory.length > 0 ? (
         <div className="mt-5">
@@ -126,40 +138,43 @@ export function AuctionPriceGuide({
       ) : null}
 
       {guide.comps.length > 0 ? (
-        <ul className="mt-5 flex flex-col gap-3">
-          {guide.comps.map((sale) => (
-            <li
-              key={`${sale.sourceId}-${sale.lotUrl ?? sale.title}-${sale.saleDate ?? ""}-${sale.priceCad}`}
-              className="border-b border-zinc-100 pb-3 last:border-0"
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="font-medium">{sale.title}</p>
-                <p className="tabular-nums">{formatCad(sale.priceCad)}</p>
-              </div>
-              <p className={`mt-1 text-sm ${neutral}`}>
-                {[
-                  sale.modelYear ? `${sale.modelYear} model` : null,
-                  sale.vendor,
-                  formatSaleDate(sale.saleDate),
-                  sale.place,
-                  sale.sourceName,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </p>
-              {sale.lotUrl ? (
-                <a
-                  href={sale.lotUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-1 inline-block text-sm underline underline-offset-2"
-                >
-                  Auction listing
-                </a>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-5">
+          <h3 className="text-sm font-semibold text-foreground">Auction prices</h3>
+          <ul className="mt-3 flex flex-col gap-3">
+            {guide.comps.map((sale) => (
+              <li
+                key={`${sale.sourceId}-${sale.lotUrl ?? sale.title}-${sale.saleDate ?? ""}-${sale.priceCad}`}
+                className="border-b border-zinc-100 pb-3 last:border-0"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="font-medium">{sale.title}</p>
+                  <p className="tabular-nums">{formatCad(sale.priceCad)}</p>
+                </div>
+                <p className={`mt-1 text-sm ${neutral}`}>
+                  {[
+                    sale.modelYear ? `${sale.modelYear} model` : null,
+                    sale.vendor,
+                    formatSaleDate(sale.saleDate),
+                    sale.place,
+                    sale.sourceName,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                {sale.lotUrl ? (
+                  <a
+                    href={sale.lotUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-block text-sm underline underline-offset-2"
+                  >
+                    Auction listing
+                  </a>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {guide.truncated ? (
@@ -193,5 +208,81 @@ export function AuctionPriceGuide({
         </details>
       ) : null}
     </section>
+  );
+}
+
+function PriceHistoryChart({ line }: { line: ReturnType<typeof inspectionPriceLine> }) {
+  return (
+    <figure
+      className="auction-price-history"
+      aria-labelledby="auction-price-history-heading"
+    >
+      <figcaption
+        id="auction-price-history-heading"
+        className="auction-price-history-caption"
+      >
+        Price history
+      </figcaption>
+      <p className="auction-price-history-axis auction-price-history-axis-y">
+        Median price (CAD)
+      </p>
+      <div className="auction-price-history-plot inspection-auction-line-scroll">
+        <div className={`inspection-auction-line${line.length > 5 ? " is-wide" : ""}`}>
+          <div className="inspection-auction-line-prices max-sm:hidden">
+            {line.map((point) => (
+              <span
+                key={point.saleYear}
+                className="inspection-auction-line-label"
+                style={{ left: `${point.x}%` }}
+              >
+                {point.amount}
+              </span>
+            ))}
+          </div>
+          <div className="inspection-auction-line-stage">
+            <svg
+              className="inspection-auction-line-svg"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              role="img"
+              aria-label="Median auction price in Canadian dollars by year of sale"
+            >
+              {line.length > 1 ? (
+                <polyline
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                  points={line.map((point) => `${point.x},${point.y}`).join(" ")}
+                />
+              ) : null}
+            </svg>
+            {line.map((point) => (
+              <span
+                key={point.saleYear}
+                className="inspection-auction-line-dot"
+                style={{ left: `${point.x}%`, top: `${point.y}%` }}
+              />
+            ))}
+          </div>
+          <div className="inspection-auction-line-years">
+            {line.map((point) => (
+              <span
+                key={point.saleYear}
+                className="inspection-auction-line-label"
+                style={{ left: `${point.x}%` }}
+              >
+                {point.saleYear}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <p className="auction-price-history-axis auction-price-history-axis-x">
+        Year of sale
+      </p>
+    </figure>
   );
 }

@@ -7,7 +7,6 @@ import { withHst, HST_PERCENT } from "@/lib/pricing/hst";
 import { ContractSigningPanel } from "@/components/contracts/ContractSigningPanel";
 import { PortalEstimateDecision } from "@/components/portal/PortalEstimateDecision";
 import {
-  portalAckInspectionAction,
   portalApproveJobAction,
   portalConfirmEstimateAction,
   portalDeclineJobAction,
@@ -34,18 +33,17 @@ export function PortalClient({
 }: Props) {
   const [declineJobId, setDeclineJobId] = useState<string | null>(null);
   const [declineReason, setDeclineReason] = useState("");
-  const [ackName, setAckName] = useState(
-    `${view.customer.first_name} ${view.customer.last_name}`.trim()
-  );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   // The V2 estimate flow replaces the legacy per-job approve buttons whenever
   // a presented/confirmed estimate version exists for this work order. Tokens
   // whose purpose does not allow estimate decisions never see approve buttons.
-  const hasV2Estimate = Boolean(estimate);
+  // Ready-for-pickup links hide the estimate and every shop price.
+  const showShopPrices = view.show_shop_prices;
+  const hasV2Estimate = showShopPrices && Boolean(estimate);
   const pendingJobs =
-    hasV2Estimate || !view.can_decide_estimate
+    !showShopPrices || hasV2Estimate || !view.can_decide_estimate
       ? []
       : view.jobs.filter((j) => j.status === "waiting_for_approval");
   const merchandiseSubtotal = [...view.jobs, ...view.parts.map((p) => p)].reduce(
@@ -72,7 +70,7 @@ export function PortalClient({
         </section>
       ) : null}
 
-      {estimate ? (
+      {showShopPrices && estimate ? (
         <PortalEstimateDecision
           estimate={estimate}
           defaultSignerName={`${view.customer.first_name} ${view.customer.last_name}`.trim()}
@@ -80,7 +78,7 @@ export function PortalClient({
         />
       ) : null}
 
-      {pendingJobs.length > 0 ? (
+      {showShopPrices && pendingJobs.length > 0 ? (
         <section className="rounded-lg bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold">Approve recommended work</h2>
           <ul className="flex flex-col gap-4">
@@ -162,7 +160,7 @@ export function PortalClient({
         </section>
       ) : null}
 
-      {hasV2Estimate ? null : (
+      {showShopPrices && !hasV2Estimate ? (
         <section className="rounded-lg bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-lg font-semibold">Estimate summary</h2>
           <ul className="mb-4 divide-y divide-zinc-100 text-sm">
@@ -224,40 +222,6 @@ export function PortalClient({
             </p>
           )}
         </section>
-      )}
-
-      {view.inspection_completed && !view.has_inspection_ack ? (
-        <section className="rounded-lg bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-lg font-semibold">Inspection acknowledgement</h2>
-          <p className="mb-4 text-sm text-zinc-600">
-            By signing below you acknowledge reviewing the inspection findings for this
-            visit.
-          </p>
-          <label className="mb-3 block">
-            <span className="field-label">Your name</span>
-            <input
-              type="text"
-              className="min-h-11 w-full rounded border border-zinc-300 px-3"
-              value={ackName}
-              onChange={(e) => setAckName(e.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={pending || !ackName.trim()}
-            onClick={() =>
-              startTransition(async () => {
-                const r = await portalAckInspectionAction(token, ackName.trim());
-                setError(r.error);
-              })
-            }
-          >
-            Acknowledge inspection
-          </button>
-        </section>
-      ) : view.has_inspection_ack ? (
-        <p className="text-center text-sm text-emerald-700">Inspection acknowledged.</p>
       ) : null}
 
       {auctionGuide ? <AuctionPriceGuide guide={auctionGuide} variant="portal" /> : null}

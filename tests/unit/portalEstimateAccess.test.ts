@@ -5,6 +5,7 @@ import {
   portalPurposeAllowsContract,
   portalPurposeAllowsEstimate,
   portalPurposeAllowsPayment,
+  portalPurposeShowsShopPrices,
   type PortalTokenPurpose,
 } from "@/lib/services/portal";
 import { validateConfirmation } from "@/lib/services/estimateAuthorization";
@@ -15,6 +16,7 @@ const ALL_PURPOSES: PortalTokenPurpose[] = [
   "payment",
   "inspection",
   "contract",
+  "pickup",
 ];
 
 describe("portal token purpose gating", () => {
@@ -37,6 +39,20 @@ describe("portal token purpose gating", () => {
   it("only contract and full tokens may sign the agreement", () => {
     const allowed = ALL_PURPOSES.filter(portalPurposeAllowsContract);
     expect(allowed).toEqual(["full", "contract"]);
+  });
+
+  it("hides shop prices on the ready-for-pickup link", () => {
+    expect(portalPurposeShowsShopPrices("pickup")).toBe(false);
+    expect(portalPurposeAllowsEstimate("pickup")).toBe(false);
+    expect(portalPurposeAllowsPayment("pickup")).toBe(false);
+    expect(portalPurposeAllowsContract("pickup")).toBe(false);
+    expect(ALL_PURPOSES.filter(portalPurposeShowsShopPrices).sort()).toEqual([
+      "contract",
+      "estimate",
+      "full",
+      "inspection",
+      "payment",
+    ]);
   });
 });
 

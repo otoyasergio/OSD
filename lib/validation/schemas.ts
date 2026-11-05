@@ -286,11 +286,6 @@ export const sendMessageSchema = z.object({
   channel: z.enum(["sms", "email"]),
 });
 
-export const portalAcknowledgementSchema = z.object({
-  signer_name: z.string().min(1),
-  signature_data_url: z.string().optional(),
-});
-
 const shopHourlyRateSchema = z.coerce
   .number({ error: "Shop rate must be a number" })
   .positive("Shop rate must be greater than 0")

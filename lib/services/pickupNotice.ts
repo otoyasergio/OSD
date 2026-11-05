@@ -125,7 +125,7 @@ export async function sendReadyForPickupNotice(
   try {
     const { token } = await createPortalToken({
       workOrderId,
-      purpose: "full",
+      purpose: "pickup",
       expiresInDays: 14,
     });
     portalLink = portalUrl(token);

@@ -2531,6 +2531,52 @@ button.board-control-link {
   color: var(--foreground);
 }
 
+.auction-price-history {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.35rem 0.75rem;
+  align-items: center;
+  margin-top: 1.25rem;
+}
+
+.auction-price-history-caption {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 650;
+  color: var(--foreground);
+}
+
+.auction-price-history-axis {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--status-neutral);
+}
+
+.auction-price-history-axis-y {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  justify-self: center;
+}
+
+.auction-price-history-plot {
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .auction-price-history-plot .inspection-auction-line.is-wide {
+    min-width: 32rem;
+  }
+}
+
+.auction-price-history-axis-x {
+  grid-column: 2;
+  text-align: center;
+}
+
 .inspection-report-meta dt {
   font-size: 0.6875rem;
   font-weight: 700;

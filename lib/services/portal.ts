@@ -15,7 +15,7 @@ import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderSta
 import type { AuthorizationDecision, JobStatus } from "@/lib/database/types";
 
 export type PortalTokenPurpose =
-  "full" | "estimate" | "payment" | "inspection" | "contract";
+  "full" | "estimate" | "payment" | "inspection" | "contract" | "pickup";
 
 /** Token purposes allowed to view estimates and record customer decisions. */
 export function portalPurposeAllowsEstimate(purpose: PortalTokenPurpose): boolean {
@@ -25,6 +25,14 @@ export function portalPurposeAllowsEstimate(purpose: PortalTokenPurpose): boolea
 /** Token purposes allowed to view invoice/payment state. */
 export function portalPurposeAllowsPayment(purpose: PortalTokenPurpose): boolean {
   return purpose === "payment" || purpose === "full";
+}
+
+/**
+ * Ready-for-pickup links show auction prices and bike valuation only.
+ * Shop estimates, job prices, parts prices, and invoices stay off that page.
+ */
+export function portalPurposeShowsShopPrices(purpose: PortalTokenPurpose): boolean {
+  return purpose !== "pickup";
 }
 
 /** Token purposes allowed to sign the drop-off contract. */
@@ -94,12 +102,12 @@ export type PortalWorkOrderView = {
     payUrl: string | null;
     totalCents: number;
   } | null;
-  inspection_completed: boolean;
   has_signed_contract: boolean;
-  has_inspection_ack: boolean;
   /** Purpose capabilities so the page never offers actions the token lacks. */
   can_decide_estimate: boolean;
   can_sign_contract: boolean;
+  /** False for ready-for-pickup links. Those omit the estimate and every shop price. */
+  show_shop_prices: boolean;
 };
 
 export async function createPortalToken(input: {
@@ -193,53 +201,45 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
   if (error) throw error;
   if (!wo) throw new Error("WORK_ORDER_NOT_FOUND");
 
-  const { data: jobRows } = await admin
-    .from("job")
-    .select("job_id, service_name_snapshot, status, standard_price_snapshot")
-    .eq("work_order_id", session.work_order_id)
-    .not("status", "eq", "cancelled");
-
-  const jobs: PortalWorkOrderView["jobs"] = (jobRows ?? []).map((j) => ({
-    job_id: j.job_id,
-    name_snapshot: j.service_name_snapshot,
-    status: j.status,
-    standard_price_snapshot: j.standard_price_snapshot,
-    require_approval: j.status === "waiting_for_approval",
-  }));
-
-  const jobIds = jobs.map((j) => j.job_id);
+  const showShopPrices = portalPurposeShowsShopPrices(session.purpose);
+  let jobs: PortalWorkOrderView["jobs"] = [];
   let parts: PortalWorkOrderView["parts"] = [];
 
-  if (jobIds.length > 0) {
-    const { data: partRows } = await admin
-      .from("part")
-      .select("part_name, quantity, unit_price, job_id")
-      .in("job_id", jobIds)
-      .not("status", "in", "(cancelled,not_required)");
+  if (showShopPrices) {
+    const { data: jobRows } = await admin
+      .from("job")
+      .select("job_id, service_name_snapshot, status, standard_price_snapshot")
+      .eq("work_order_id", session.work_order_id)
+      .not("status", "eq", "cancelled");
 
-    parts = (partRows ?? []).map((p) => ({
-      part_name: p.part_name,
-      quantity: p.quantity,
-      unit_price: p.unit_price,
-      job_name: jobs.find((j) => j.job_id === p.job_id)?.name_snapshot ?? "Job",
+    jobs = (jobRows ?? []).map((j) => ({
+      job_id: j.job_id,
+      name_snapshot: j.service_name_snapshot,
+      status: j.status,
+      standard_price_snapshot: j.standard_price_snapshot,
+      require_approval: j.status === "waiting_for_approval",
     }));
-  }
 
-  const { data: inspection } = await admin
-    .from("inspection")
-    .select("inspection_id, completed_at")
-    .eq("work_order_id", session.work_order_id)
-    .maybeSingle();
+    const jobIds = jobs.map((j) => j.job_id);
+    if (jobIds.length > 0) {
+      const { data: partRows } = await admin
+        .from("part")
+        .select("part_name, quantity, unit_price, job_id")
+        .in("job_id", jobIds)
+        .not("status", "in", "(cancelled,not_required)");
+
+      parts = (partRows ?? []).map((p) => ({
+        part_name: p.part_name,
+        quantity: p.quantity,
+        unit_price: p.unit_price,
+        job_name: jobs.find((j) => j.job_id === p.job_id)?.name_snapshot ?? "Job",
+      }));
+    }
+  }
 
   const { data: contract } = await admin
     .from("drop_off_agreement")
     .select("agreement_id")
-    .eq("work_order_id", session.work_order_id)
-    .maybeSingle();
-
-  const { data: ack } = await admin
-    .from("inspection_acknowledgement")
-    .select("acknowledgement_id")
     .eq("work_order_id", session.work_order_id)
     .maybeSingle();
 
@@ -252,14 +252,13 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
     motorcycle: wo.motorcycle as unknown as PortalWorkOrderView["motorcycle"],
     jobs,
     parts,
-    square_invoice_id: wo.square_invoice_id,
-    square_payment_status: wo.square_payment_status,
-    wix_invoice: await portalWixInvoice(wo.work_order_id),
-    inspection_completed: Boolean(inspection?.completed_at),
+    square_invoice_id: showShopPrices ? wo.square_invoice_id : null,
+    square_payment_status: showShopPrices ? wo.square_payment_status : null,
+    wix_invoice: showShopPrices ? await portalWixInvoice(wo.work_order_id) : null,
     has_signed_contract: Boolean(contract),
-    has_inspection_ack: Boolean(ack),
     can_decide_estimate: portalPurposeAllowsEstimate(session.purpose),
     can_sign_contract: portalPurposeAllowsContract(session.purpose),
+    show_shop_prices: showShopPrices,
   };
 }
 
@@ -663,57 +662,5 @@ export async function portalSignContract(
     entity_id: agreementId,
     description: `Drop-off agreement signed by ${input.signer_name} (portal)`,
     new_value: { signer_name: input.signer_name, via: "portal" },
-  });
-}
-
-export async function portalAcknowledgeInspection(
-  token: string,
-  input: { signer_name: string; signature_data_url?: string }
-): Promise<void> {
-  const session = await resolvePortalSession(token);
-  const admin = createAdminClient();
-
-  const { data: inspection } = await admin
-    .from("inspection")
-    .select("inspection_id, completed_at")
-    .eq("work_order_id", session.work_order_id)
-    .maybeSingle();
-
-  if (!inspection?.completed_at) throw new Error("INSPECTION_NOT_COMPLETED");
-
-  let storagePath: string | null = null;
-  if (input.signature_data_url) {
-    const match = input.signature_data_url.match(/^data:image\/(png|jpeg);base64,(.+)$/);
-    if (match) {
-      const ext = match[1] === "jpeg" ? "jpg" : "png";
-      storagePath = `${session.work_order_id}/inspection-${inspection.inspection_id}.${ext}`;
-      await admin.storage
-        .from("contract-signatures")
-        .upload(storagePath, Buffer.from(match[2], "base64"), {
-          contentType: `image/${match[1]}`,
-          upsert: false,
-        });
-    }
-  }
-
-  await admin.from("inspection_acknowledgement").upsert(
-    {
-      work_order_id: session.work_order_id,
-      inspection_id: inspection.inspection_id,
-      signer_name: input.signer_name,
-      signature_storage_path: storagePath,
-      portal_token_id: session.token_id,
-    },
-    { onConflict: "work_order_id,inspection_id" }
-  );
-
-  await addTimelineEvent(admin, {
-    work_order_id: session.work_order_id,
-    user_id: null,
-    event_type: TimelineEventType.INSPECTION_ACKNOWLEDGED,
-    entity_type: "inspection",
-    entity_id: inspection.inspection_id,
-    description: `Inspection acknowledged by ${input.signer_name}`,
-    new_value: { signer_name: input.signer_name },
   });
 }
