@@ -64,7 +64,7 @@ describe("signStoragePaths", () => {
     expect(createSignedUrls).toHaveBeenCalledTimes(2);
   });
 
-  it("signs a short-lived link again instead of reusing the staff cache", async () => {
+  it("signs a short-lived link fresh every time", async () => {
     const path = `wo/portal/${crypto.randomUUID()}.jpg`;
     const createSignedUrls = vi
       .fn()
@@ -85,5 +85,36 @@ describe("signStoragePaths", () => {
 
     expect(createSignedUrls).toHaveBeenCalledTimes(2);
     expect(second.get(path)).toBe("https://cdn.example/b");
+  });
+
+  it("keeps short-lived links and the staff cache apart", async () => {
+    const path = `wo/portal/${crypto.randomUUID()}.jpg`;
+    const createSignedUrls = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: [{ path, signedUrl: "https://cdn.example/short" }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{ path, signedUrl: "https://cdn.example/staff" }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: [{ path, signedUrl: "https://cdn.example/short-again" }],
+        error: null,
+      });
+    const supabase = {
+      storage: { from: () => ({ createSignedUrls }) },
+    };
+
+    await signStoragePaths(supabase as never, [path], 60);
+    const staff = await signStoragePaths(supabase as never, [path]);
+    const portal = await signStoragePaths(supabase as never, [path], 60);
+    const staffAgain = await signStoragePaths(supabase as never, [path]);
+
+    expect(staff.get(path)).toBe("https://cdn.example/staff");
+    expect(portal.get(path)).toBe("https://cdn.example/short-again");
+    expect(staffAgain.get(path)).toBe("https://cdn.example/staff");
+    expect(createSignedUrls).toHaveBeenCalledTimes(3);
   });
 });

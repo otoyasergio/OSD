@@ -135,6 +135,9 @@ describe("parseDiagnosticSessionForm", () => {
       ok: false,
       error: "Work order is not valid.",
     });
+  });
+
+  it("rejects an unknown scan result or source, and notes that are too long", () => {
     expect(parseDiagnosticSessionForm(form({ scan_results: "done" }))).toEqual({
       ok: false,
       error: "Choose whether the scan finished, was partial, or had no results.",

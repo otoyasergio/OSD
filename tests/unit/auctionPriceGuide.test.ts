@@ -194,7 +194,7 @@ describe("make and model matching", () => {
 });
 
 describe("auction price summary", () => {
-  it("uses the median of sold prices and ignores unsold lots", () => {
+  it("uses the median of sold prices and ignores unsold and withdrawn lots", () => {
     expect(median([100, 400, 200, 300])).toBe(250);
     const guide = guideFrom({
       bike: iron,
@@ -206,6 +206,12 @@ describe("auction price summary", () => {
           title: "unsold",
           priceUsd: 20000,
           status: "unsold",
+          saleDate: "2024-05-01",
+        }),
+        lot({
+          title: "withdrawn",
+          priceUsd: 20000,
+          status: "withdrawn",
           saleDate: "2024-05-01",
         }),
         lot({
@@ -451,7 +457,7 @@ describe("ALT/FNDATA records", () => {
     expect(safeHttpUrl("https://example.com/lot")).toBe("https://example.com/lot");
   });
 
-  it("keeps an impossible date or a non-sale amount out of the price", () => {
+  it("drops an impossible sale date and an amount that cannot be a sale price", () => {
     const impossible = mapAltfnMotorcycleRow({
       item_title: "2014 Honda CB500F",
       manufacturer_name: "Honda",
@@ -475,7 +481,9 @@ describe("ALT/FNDATA records", () => {
         })?.priceUsd
       ).toBeNull();
     }
+  });
 
+  it("marks bought-in and withdrawn lots as not sold", () => {
     expect(
       mapAltfnMotorcycleRow({
         item_title: "2014 Honda CB500F",

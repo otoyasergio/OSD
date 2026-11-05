@@ -71,6 +71,25 @@ describe("Ontario licence barcode", () => {
     expect(parseAamvaLicence("ANSI 636012 just a header")).toBeNull();
   });
 
+  it("leaves a date blank when it is not a real calendar day", () => {
+    const scan = parseAamvaLicence(
+      SPEC_PAYLOAD.replace("DBB01011990", "DBB13451990").replace(
+        "DBA01012030",
+        "DBA20300231"
+      )
+    );
+    expect(scan?.dateOfBirth).toBe("");
+    expect(scan?.licenceExpiry).toBe("");
+    expect(scan?.licenceNumber).toBe(EXPECTED.licenceNumber);
+
+    expect(
+      parseAamvaLicence(SPEC_PAYLOAD.replace("DBB01011990", "DBB02292024"))?.dateOfBirth
+    ).toBe("2024-02-29");
+    expect(
+      parseAamvaLicence(SPEC_PAYLOAD.replace("DBB01011990", "DBB02292023"))?.dateOfBirth
+    ).toBe("");
+  });
+
   it("reads a subfile whose first element keeps the DL prefix", () => {
     const scan = parseAamvaLicence(
       [
