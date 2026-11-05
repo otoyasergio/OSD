@@ -13,8 +13,75 @@ export type WaitingInspection = {
 
 export const SCAN_REPORT_ADDRESS = "scans@torontomoto.com";
 
-const CODE = /\b([PCBU][0-9A-F]{4})\b([^\n]{0,80})?/gi;
+const SAE = /\b([PCBU][0-9A-F]{4})\b([^\n]{0,80})?/gi;
 const VIN = /\b([A-HJ-NPR-Z0-9]{17})\b/;
+const CODE_LINE = /^([0-9A-F]{5,8}|[PCBU][0-9A-F]{4})(?:[ \t]+(.*))?$/i;
+
+function addCode(codes: ScanCode[], code: string, description: string): void {
+  const normalized = code.toUpperCase();
+  if (codes.some((row) => row.code === normalized)) return;
+  const written = description.replace(/\s+/g, " ").trim();
+  const fallback = /^[PCBU]/.test(normalized)
+    ? saeJ2012System(normalized) || normalized
+    : normalized;
+  codes.push({ code: normalized, description: written || fallback });
+}
+
+function isStatusLine(line: string): boolean {
+  return /^(?:fault not currently(?:\s+present)?|present|no fault|fault)$/i.test(line);
+}
+
+function isCodeLine(line: string): boolean {
+  return CODE_LINE.test(line);
+}
+
+function nextBoundary(line: string): boolean {
+  return (
+    isCodeLine(line) ||
+    isStatusLine(line) ||
+    /\(\d+\s*fault codes?\)/i.test(line) ||
+    /^(?:dtc description status|disclaimer|summary|full system report\b|page \d+)$/i.test(
+      line
+    )
+  );
+}
+
+/** Topdon prints module DTCs such as 480682 and E11436, plus SAE J2012 codes. */
+function readScanCodes(text: string): ScanCode[] {
+  const codes: ScanCode[] = [];
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(CODE_LINE);
+    if (!match) continue;
+    let description = match[2] ?? "";
+    let historical = /fault not currently/i.test(description);
+    description = description.replace(/\s*fault not currently(?:\s+present)?\s*$/i, "");
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const line = lines[next];
+      if (isCodeLine(line) || /\(\d+\s*fault codes?\)/i.test(line)) break;
+      if (/^fault not currently/i.test(line)) {
+        historical = true;
+        continue;
+      }
+      if (nextBoundary(line)) break;
+      description = `${description} ${line}`;
+    }
+    description = description.replace(/\s+/g, " ").trim();
+    if (historical && description) description = `${description} (not currently present)`;
+    addCode(codes, match[1], description);
+  }
+  for (const match of text.matchAll(SAE)) {
+    const written = (match[2] ?? "")
+      .replace(/^[\s:\-–]+/, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    addCode(codes, match[1], written);
+  }
+  return codes;
+}
 
 export function readTopGuruReport(text: string): {
   outcome: ScanOutcome;
@@ -22,23 +89,18 @@ export function readTopGuruReport(text: string): {
   codes: ScanCode[];
 } {
   const vin = text.toUpperCase().match(VIN)?.[1] ?? null;
-  const codes: ScanCode[] = [];
-  for (const match of text.matchAll(CODE)) {
-    const code = match[1].toUpperCase();
-    if (codes.some((row) => row.code === code)) continue;
-    const written = (match[2] ?? "").replace(/^[\s:\-–]+/, "").trim();
-    codes.push({
-      code,
-      description: written || saeJ2012System(code) || code,
-    });
-  }
+  const codes = readScanCodes(text);
   if (codes.length > 0) return { outcome: "codes", vin, codes };
 
   const folded = text.toLowerCase();
   if (/no connection|unable to connect|communication (error|failed)/.test(folded)) {
     return { outcome: "no_connection", vin, codes: [] };
   }
-  if (/no (fault|dtc|trouble) codes?|0 faults?/.test(folded)) {
+  if (
+    /no (fault|dtc|trouble) codes?|0 faults?|altogether\s+0\s+dtcs|\b0\s+dtcs were found\b/.test(
+      folded
+    )
+  ) {
     return { outcome: "no_codes", vin, codes: [] };
   }
   return { outcome: "needs_confirmation", vin, codes: [] };
@@ -90,8 +152,8 @@ export type GmailFullMessage = {
 
 function header(part: GmailPart | undefined, name: string): string {
   return (
-    part?.headers?.find((item) => item.name.toLowerCase() === name.toLowerCase())?.value ??
-    ""
+    part?.headers?.find((item) => item.name.toLowerCase() === name.toLowerCase())
+      ?.value ?? ""
   );
 }
 
@@ -117,6 +179,26 @@ function stripHtml(value: string): string {
     .trim();
 }
 
+export function pdfAttachments(
+  message: GmailFullMessage
+): Array<{ attachmentId: string | null; data: string | null }> {
+  const found: Array<{ attachmentId: string | null; data: string | null }> = [];
+  const walk = (part: GmailPart | undefined) => {
+    if (!part || found.length >= 2) return;
+    const filename = part.filename?.toLowerCase() ?? "";
+    const isPdf = part.mimeType === "application/pdf" || filename.endsWith(".pdf");
+    if (isPdf && (part.body?.attachmentId || part.body?.data)) {
+      found.push({
+        attachmentId: part.body?.attachmentId ?? null,
+        data: part.body?.data ?? null,
+      });
+    }
+    for (const child of part.parts ?? []) walk(child);
+  };
+  walk(message.payload);
+  return found;
+}
+
 export function textFromGmailMessage(message: GmailFullMessage): {
   subject: string;
   from: string;
@@ -125,7 +207,8 @@ export function textFromGmailMessage(message: GmailFullMessage): {
   const plain: string[] = [];
   const html: string[] = [];
   collectText(message.payload, plain, html);
-  const text = plain.join("\n").trim() || stripHtml(html.join("\n")) || (message.snippet ?? "");
+  const text =
+    plain.join("\n").trim() || stripHtml(html.join("\n")) || (message.snippet ?? "");
   return {
     subject: header(message.payload, "Subject"),
     from: header(message.payload, "From"),
@@ -177,7 +260,7 @@ export function scanCustomerLines(input: {
 }
 
 const ODOMETER =
-  /(?:odometer|\bmileage\b|\bodo\b)\s*[:#\-]?\s*(\d{1,3}(?:[, ]\d{3})+|\d{1,7})(?:\s*(km|mi|miles|kilometers|kilometres))?\b/i;
+  /(?:odometer|\bmileage\b|\bodo\b|distance traveled)\s*[:#\-]?\s*(\d{1,3}(?:[, ]\d{3})+|\d{1,7})(?:\.(\d{1,3}))?(?:\s*(km|mi|miles|kilometers|kilometres))?\b/i;
 
 function odometerUnit(raw: string | undefined): "km" | "mi" | null {
   if (!raw) return null;
@@ -191,9 +274,11 @@ export function readOdometer(text: string): ReportedOdometer | null {
   const withoutVoltage = text.replace(/\b(?:charging\s+)?voltage\b[^.\n]*/gi, " ");
   const match = withoutVoltage.match(ODOMETER);
   if (!match) return null;
-  const value = Number(match[1].replace(/[, ]/g, ""));
+  const whole = match[1].replace(/[, ]/g, "");
+  const reading = match[2] ? Number(`${whole}.${match[2]}`) : Number(whole);
+  const value = Math.round(reading);
   if (!Number.isInteger(value) || value < 0 || value > 9_999_999) return null;
-  return { value, unit: odometerUnit(match[2]) };
+  return { value, unit: odometerUnit(match[3]) };
 }
 
 export function mileageDecision(input: {
