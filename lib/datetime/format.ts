@@ -181,6 +181,19 @@ export function isFridayShopReportHour(now: Date = new Date()): boolean {
   );
 }
 
+/** Local hour when the day's staff screen notes are packed into one archive. */
+export const STAFF_FEEDBACK_SQUASH_HOUR = 23;
+
+/**
+ * True during the 11:00 p.m. America/Toronto hour.
+ * Vercel cron is UTC, so the route is scheduled at both 03:00 and 04:00 UTC
+ * and this gate keeps a single run across daylight saving.
+ */
+export function isStaffFeedbackSquashHour(now: Date = new Date()): boolean {
+  const hour = Math.floor(shopLocalMinutesSinceMidnight(now) / 60);
+  return hour === STAFF_FEEDBACK_SQUASH_HOUR;
+}
+
 /** YYYY-MM-DD calendar date in America/Toronto. */
 export function shopDateKey(value: string | Date | null | undefined): string {
   const date = toDate(value);

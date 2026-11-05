@@ -327,6 +327,11 @@ export function canUseMessenger(role: UserRole) {
   return ACTIVE_STAFF_ROLES.includes(role);
 }
 
+/** Corner button for "this screen doesn't make sense." Not the kiosk tablet. */
+export function canSubmitStaffFeedback(role: UserRole) {
+  return ACTIVE_STAFF_ROLES.includes(role);
+}
+
 /** Shop PSTN (customer inbound/outbound). Front office only — not techs, head tech, or admin. */
 export function canUseShopPhone(role: UserRole) {
   return FRONT_OFFICE.includes(role);

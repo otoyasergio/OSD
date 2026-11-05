@@ -482,6 +482,21 @@ const MESSAGES: Record<string, string> = {
   CLIENT_ACTION_MESSAGE_REQUIRED: "Write the text before sending.",
   CLIENT_ACTION_MESSAGE_TOO_LONG: "Keep the text to 900 characters or fewer.",
   CLIENT_ACTION_SMS_UNAVAILABLE: "This customer cannot receive a text.",
+  STAFF_FEEDBACK_NOTE_REQUIRED: "Write what doesn't make sense before sending.",
+  STAFF_FEEDBACK_NOTE_TOO_LONG: "Keep the note to 2000 characters or fewer.",
+  STAFF_FEEDBACK_PAGE_INVALID:
+    "That screen could not be recorded. Try again from the page you're on.",
+  STAFF_FEEDBACK_RATE_LIMITED:
+    "You've sent several notes in the last hour. Wait a bit, then try again.",
+  STAFF_FEEDBACK_SCREENSHOT_INVALID:
+    "The screen picture could not be read. Send the note without it.",
+  STAFF_FEEDBACK_SCREENSHOT_TOO_LARGE:
+    "The screen picture is too large. Send the note without it.",
+  STAFF_FEEDBACK_UPLOAD_FAILED: "Could not upload the screen picture. Try again.",
+  STAFF_FEEDBACK_SAVE_FAILED: "Could not save the note. Try again.",
+  STAFF_FEEDBACK_LOAD_FAILED: "Could not load staff notes.",
+  STAFF_FEEDBACK_MISCONFIGURED: "Staff notes are not configured on the server.",
+  STAFF_FEEDBACK_SQUASH_FAILED: "Could not pack today's staff notes.",
 };
 
 export function toFormErrorMessage(error: unknown): string {
