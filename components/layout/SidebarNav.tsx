@@ -27,6 +27,7 @@ import {
   Images,
   UserRound,
   Scale,
+  Bell,
 } from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
@@ -59,6 +60,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/control-center": Gauge,
   "/dashboard": LayoutDashboard,
   "/advisor": UserRound,
+  "/actions": Bell,
   "/work_orders": ClipboardList,
   "/gallery": Images,
   "/parts": Package,
@@ -134,6 +136,11 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
       href: "/advisor",
       label: "Advisor desk",
       icon: iconFor("/advisor"),
+    });
+    shopFloorLinks.push({
+      href: "/actions",
+      label: "Client actions",
+      icon: iconFor("/actions"),
     });
   }
   if (!isFloorTech(role)) {

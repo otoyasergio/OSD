@@ -65,6 +65,21 @@ describe("buildNavCategories", () => {
     }
   });
 
+  it("shows Client actions to the front office only", () => {
+    for (const role of ["owner", "manager", "service_advisor"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((category) =>
+        category.subgroups.flatMap((group) => group.links.map((link) => link.href))
+      );
+      expect(hrefs).toContain("/actions");
+    }
+    for (const role of ["technician", "head_tech", "admin"] as const) {
+      const hrefs = buildNavCategories(role).flatMap((category) =>
+        category.subgroups.flatMap((group) => group.links.map((link) => link.href))
+      );
+      expect(hrefs).not.toContain("/actions");
+    }
+  });
+
   it("exposes Assign docket under Docket for front office only", () => {
     for (const role of ["owner", "manager", "service_advisor"] as const) {
       const hrefs = buildNavCategories(role).flatMap((c) =>
