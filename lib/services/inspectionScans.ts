@@ -134,7 +134,7 @@ async function openUnsignedInspection(workOrderId: string) {
   const supabase = await createClient();
   const { data: workOrder, error } = await supabase
     .from("work_order")
-    .select("work_order_id, location_id, status")
+    .select("work_order_id, location_id, status, motorcycle_id")
     .eq("work_order_id", workOrderId)
     .maybeSingle();
   if (error) throw error;
@@ -154,6 +154,7 @@ async function openUnsignedInspection(workOrderId: string) {
   return {
     locationId: workOrder.location_id as string,
     inspectionId: inspection.inspection_id as string,
+    motorcycleId: workOrder.motorcycle_id as string,
   };
 }
 
@@ -161,6 +162,7 @@ async function insertManualScan(input: {
   workOrderId: string;
   locationId: string;
   inspectionId: string;
+  motorcycleId: string;
   subject: string;
   outcome: ScanOutcome;
   vin: string | null;
@@ -182,11 +184,15 @@ async function insertManualScan(input: {
     report_text: input.reportText.slice(0, 20_000),
     inspection_id: input.inspectionId,
     work_order_id: input.workOrderId,
+    motorcycle_id: input.motorcycleId,
   });
   if (error) throw error;
 }
 
-export async function pasteInspectionScan(workOrderId: string, text: string): Promise<void> {
+export async function pasteInspectionScan(
+  workOrderId: string,
+  text: string
+): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error("SCAN_REPORT_REQUIRED");
   const open = await openUnsignedInspection(workOrderId);
@@ -195,6 +201,7 @@ export async function pasteInspectionScan(workOrderId: string, text: string): Pr
     workOrderId,
     locationId: open.locationId,
     inspectionId: open.inspectionId,
+    motorcycleId: open.motorcycleId,
     subject: "Pasted scan",
     outcome: parsed.outcome,
     vin: parsed.vin,
@@ -209,6 +216,7 @@ export async function markInspectionNoConnection(workOrderId: string): Promise<v
     workOrderId,
     locationId: open.locationId,
     inspectionId: open.inspectionId,
+    motorcycleId: open.motorcycleId,
     subject: "No connection",
     outcome: "no_connection",
     vin: null,
@@ -232,7 +240,8 @@ export async function confirmInspectionScan(
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("SCAN_REPORT_NOT_FOUND");
-  if (data.outcome !== "needs_confirmation") throw new Error("SCAN_REPORT_ALREADY_CONFIRMED");
+  if (data.outcome !== "needs_confirmation")
+    throw new Error("SCAN_REPORT_ALREADY_CONFIRMED");
 
   let codes: ScanCode[] = [];
   if (outcome === "codes") {

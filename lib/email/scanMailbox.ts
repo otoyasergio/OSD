@@ -28,7 +28,8 @@ export async function listScanMailboxes(): Promise<ScanMailbox[]> {
   return ((data ?? []) as MailboxRow[])
     .filter(
       (row) =>
-        row.email_address.trim().toLowerCase() === SCAN_REPORT_ADDRESS && row.refresh_token
+        row.email_address.trim().toLowerCase() === SCAN_REPORT_ADDRESS &&
+        row.refresh_token
     )
     .map((row) => ({
       locationId: row.location_id,
@@ -93,7 +94,10 @@ export async function deleteScanMailbox(locationId: string): Promise<void> {
     .eq("location_id", locationId)
     .maybeSingle();
   const refreshToken = (data as { refresh_token?: string } | null)?.refresh_token;
-  const { error } = await admin.from("scan_mailbox").delete().eq("location_id", locationId);
+  const { error } = await admin
+    .from("scan_mailbox")
+    .delete()
+    .eq("location_id", locationId);
   if (error) throw error;
   if (!refreshToken) return;
   try {
@@ -107,27 +111,37 @@ export type ScanReportSummary = {
   subject: string;
   outcome: ScanOutcome;
   workOrderNumber: string | null;
+  onBike: boolean;
 };
 
-export async function listRecentScanReports(locationId: string): Promise<ScanReportSummary[]> {
+export async function listRecentScanReports(
+  locationId: string
+): Promise<ScanReportSummary[]> {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("scan_report")
-    .select("subject, outcome, work_order:work_order_id(work_order_number)")
+    .select(
+      "subject, outcome, motorcycle_id, work_order:work_order_id(work_order_number)"
+    )
     .eq("location_id", locationId)
     .order("received_at", { ascending: false })
     .limit(8);
   if (error) throw error;
-  return ((data ?? []) as Array<{
-    subject: string | null;
-    outcome: ScanOutcome;
-    work_order: { work_order_number?: string } | { work_order_number?: string }[] | null;
-  }>).map((row) => {
+  return (
+    (data ?? []) as Array<{
+      subject: string | null;
+      outcome: ScanOutcome;
+      motorcycle_id: string | null;
+      work_order:
+        { work_order_number?: string } | { work_order_number?: string }[] | null;
+    }>
+  ).map((row) => {
     const workOrder = Array.isArray(row.work_order) ? row.work_order[0] : row.work_order;
     return {
       subject: row.subject?.trim() || "Scan report",
       outcome: row.outcome,
       workOrderNumber: workOrder?.work_order_number ?? null,
+      onBike: Boolean(row.motorcycle_id),
     };
   });
 }

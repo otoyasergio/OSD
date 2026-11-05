@@ -5,13 +5,18 @@ import {
   updateScanMailboxRefreshToken,
 } from "@/lib/email/scanMailbox";
 import { markScanMailRead, readUnreadScanMail } from "@/lib/email/scanInbox";
-import { filingsForUnreadMail, type WaitingInspection } from "@/lib/email/scanReport";
+import {
+  filingsForUnreadMail,
+  type ScanBike,
+  type WaitingInspection,
+} from "@/lib/email/scanReport";
 import { applyEmptyReportedMileage } from "@/lib/services/inspectionScans";
 import { logger } from "@/lib/security/logger";
 
 type WorkOrderRow = {
   work_order_id: string;
   work_order_number: string;
+  motorcycle_id: string;
   motorcycle: { vin?: string | null } | Array<{ vin?: string | null }> | null;
 };
 
@@ -26,7 +31,9 @@ async function waitingInspections(locationId: string): Promise<WaitingInspection
   const admin = createAdminClient();
   const { data: orders, error: orderError } = await admin
     .from("work_order")
-    .select("work_order_id, work_order_number, motorcycle:motorcycle_id(vin)")
+    .select(
+      "work_order_id, work_order_number, motorcycle_id, motorcycle:motorcycle_id(vin)"
+    )
     .eq("location_id", locationId)
     .not("status", "in", "(completed,cancelled)");
   if (orderError) throw orderError;
@@ -52,15 +59,32 @@ async function waitingInspections(locationId: string): Promise<WaitingInspection
         inspectionId: inspection.inspection_id,
         workOrderId: workOrder.work_order_id,
         workOrderNumber: workOrder.work_order_number,
+        motorcycleId: workOrder.motorcycle_id,
         vin: vinOf(workOrder.motorcycle),
       };
     })
     .filter((row): row is WaitingInspection => row !== null);
 }
 
+async function bikesForScan(): Promise<ScanBike[]> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("motorcycle")
+    .select("motorcycle_id, vin")
+    .not("vin", "is", null);
+  if (error) throw error;
+  return ((data ?? []) as Array<{ motorcycle_id: string; vin: string | null }>).map(
+    (row) => ({
+      motorcycleId: row.motorcycle_id,
+      vin: row.vin,
+    })
+  );
+}
+
 export async function ingestScanMail(): Promise<{ filed: number; held: number }> {
   const mailboxes = await listScanMailboxes();
   if (mailboxes.length === 0) return { filed: 0, held: 0 };
+  const bikes = await bikesForScan();
 
   const config = getGmailOAuthConfig();
   const admin = createAdminClient();
@@ -96,6 +120,7 @@ export async function ingestScanMail(): Promise<{ filed: number; held: number }>
         text: [message.subject, message.text].filter(Boolean).join("\n"),
       })),
       waiting,
+      bikes,
       alreadyFiledIds,
     });
     const plannedById = new Map(planned.map((row) => [row.gmailMessageId, row]));
@@ -116,12 +141,14 @@ export async function ingestScanMail(): Promise<{ filed: number; held: number }>
           report_text: row.reportText,
           inspection_id: row.inspectionId,
           work_order_id: row.workOrderId,
+          motorcycle_id: row.motorcycleId,
         });
         if (error && error.code !== "23505") throw error;
         if (row.workOrderId) {
           await applyEmptyReportedMileage(admin, row.workOrderId, row.reportText);
-          filed += 1;
-        } else held += 1;
+        }
+        if (row.workOrderId || row.motorcycleId) filed += 1;
+        else held += 1;
       }
       try {
         await markScanMailRead({

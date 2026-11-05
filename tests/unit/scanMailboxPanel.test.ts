@@ -1,7 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ScanMailboxPanel, scanMailboxNotice } from "@/components/settings/ScanMailboxPanel";
+import {
+  ScanMailboxPanel,
+  scanMailboxNotice,
+} from "@/components/settings/ScanMailboxPanel";
 
 describe("scanMailboxNotice", () => {
   it("says the connected mailbox receives scan reports", () => {
@@ -43,6 +46,7 @@ describe("ScanMailboxPanel", () => {
             subject: "TopScan report",
             outcome: "codes",
             workOrderNumber: "WO-1042",
+            onBike: true,
           },
         ],
         notice: scanMailboxNotice("connected"),
