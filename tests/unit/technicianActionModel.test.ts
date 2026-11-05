@@ -183,6 +183,36 @@ describe("buildFloorActionModel matrix", () => {
     assertInvariant(safetyTheirs, "safety theirs");
   });
 
+  it("opens an unfinished arrival inspection even when another bike is next", () => {
+    const steps = buildPitBoardSteps({
+      inspection_complete: false,
+      service_name: "Winter storage",
+      checklist: [
+        { job_checklist_item_id: "c1", title: "Perform work per SOP", checked_at: null },
+      ],
+      parts: [],
+      proof_count: 0,
+      has_proof_exception: false,
+      complete_gate_ok: false,
+    });
+    const blocked = modelFor({
+      job_status: "approved",
+      work_order_status: "inspection_in_progress",
+      floor_acknowledged_at: TS,
+      job_timer_running: false,
+      can_start: false,
+      steps,
+    });
+    expect(blocked.primary).toMatchObject({
+      action: "advance_step",
+      label: "Open inspection ▶",
+      enabled: true,
+      step: expect.objectContaining({ kind: "inspect", state: "open" }),
+    });
+    expect(blocked.primary.disabledReason).toBeUndefined();
+    assertInvariant(blocked, "inspection ahead of the line");
+  });
+
   it("starts an offered or next bike in one tap", () => {
     const offered = modelFor({
       job_status: "ready_to_start",
