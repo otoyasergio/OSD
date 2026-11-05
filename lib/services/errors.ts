@@ -478,6 +478,10 @@ const MESSAGES: Record<string, string> = {
   SCAN_REPORT_NOT_FOUND: "That scan report is no longer on this inspection.",
   SCAN_REPORT_ALREADY_CONFIRMED: "That scan report was already confirmed.",
   SCAN_MILEAGE_MISSING: "That report has no mileage to use.",
+  CLIENT_ACTION_NOT_OPEN: "That prompt is no longer on the list.",
+  CLIENT_ACTION_MESSAGE_REQUIRED: "Write the text before sending.",
+  CLIENT_ACTION_MESSAGE_TOO_LONG: "Keep the text to 900 characters or fewer.",
+  CLIENT_ACTION_SMS_UNAVAILABLE: "This customer cannot receive a text.",
 };
 
 export function toFormErrorMessage(error: unknown): string {
