@@ -22,9 +22,15 @@ function PartWaitingCard({
 }) {
   const price = canViewPricing ? moneyLabel(item.unit_price) : null;
 
+  const daysTone = item.days_waiting >= 3 ? "stage-chip--danger" : "stage-chip--orange";
+
   return (
     <article className="td-board-card">
       <p className="td-board-card-title">{item.part_name}</p>
+      <p className="td-board-card-sub">{item.motorcycle_label}</p>
+      {item.part_number ? (
+        <p className="td-board-card-sub font-mono">{item.part_number}</p>
+      ) : null}
       {item.customer_label ? (
         <p className="td-board-card-sub">{item.customer_label}</p>
       ) : null}
@@ -33,7 +39,6 @@ function PartWaitingCard({
         {item.quantity > 1 ? ` · qty ${item.quantity}` : ""}
         {price ? ` · ${price}` : ""}
       </p>
-      <p className="td-board-card-sub">{item.motorcycle_label}</p>
       {item.assigned_technician_label ? (
         <p className="td-board-card-sub">Tech: {item.assigned_technician_label}</p>
       ) : null}
@@ -41,14 +46,11 @@ function PartWaitingCard({
         <Link href={item.href} className="wo-card-number data-table-link">
           {item.work_order_number}
         </Link>
-        <span className="stage-chip stage-chip--orange">
-          {daysLabel(item.days_waiting)}
-        </span>
+        <span className={`stage-chip ${daysTone}`}>{daysLabel(item.days_waiting)}</span>
       </div>
-      {item.supplier || item.part_number || item.supplier_stock != null ? (
+      {item.supplier || item.supplier_stock != null ? (
         <p className="td-board-card-sub">
           {[
-            item.part_number,
             item.supplier,
             item.supplier_stock != null ? `PC stock ${item.supplier_stock}` : null,
           ]
@@ -57,7 +59,7 @@ function PartWaitingCard({
         </p>
       ) : null}
       <div className="td-board-card-actions">
-        <Link href={item.href} className="btn btn-primary">
+        <Link href={item.href} className="btn btn-secondary">
           Open
         </Link>
       </div>

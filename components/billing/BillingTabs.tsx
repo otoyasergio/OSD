@@ -24,7 +24,7 @@ export function BillingTabs({
             href={`/billing?tab=${tab.id}`}
             role="tab"
             aria-selected={isActive}
-            className={isActive ? "btn btn-primary" : "btn btn-secondary"}
+            className={isActive ? "gallery-pill gallery-pill--active" : "gallery-pill"}
           >
             {tab.label}
           </Link>

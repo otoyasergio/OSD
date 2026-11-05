@@ -24,7 +24,20 @@ import { BoardPrefsControls } from "@/components/work_orders/BoardPrefsControls"
 import { DashboardViewToggle } from "@/components/work_orders/DashboardViewToggle";
 import { DashboardMorePanel } from "@/components/work_orders/DashboardMorePanel";
 import { SELECT_CLASS } from "@/components/forms/Field";
+import { dashboardIcon, IconWell, type IconTone } from "@/components/ui/shopIcons";
 import type { WorkOrderStatus } from "@/lib/database/types";
+
+const GLANCE_CARDS: Array<{
+  key: DashboardCardKey;
+  tone: string;
+  well: IconTone;
+}> = [
+  { key: "waiting_approval", tone: "stat-card--warning", well: "warning" },
+  { key: "waiting_parts", tone: "stat-card--waiting", well: "waiting" },
+  { key: "in_progress", tone: "stat-card--info", well: "teal" },
+  { key: "ready_for_pickup", tone: "stat-card--success", well: "success" },
+  { key: "overdue", tone: "stat-card--danger", well: "danger" },
+];
 
 export const dynamic = "force-dynamic";
 
@@ -141,7 +154,9 @@ export default async function DashboardPage({
       />
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        {DASHBOARD_CARDS.map((card) => {
+        {GLANCE_CARDS.map((glance) => {
+          const card = DASHBOARD_CARDS.find((entry) => entry.key === glance.key);
+          if (!card) return null;
           const active = data.filters.card === card.key;
           return (
             <Link
@@ -150,17 +165,52 @@ export default async function DashboardPage({
                 ...filterBase,
                 card: active ? undefined : card.key,
               })}
-              className={active ? "stat-card stat-card-active" : "stat-card"}
+              className={
+                active
+                  ? `stat-card stat-card-active td-enter ${glance.tone}`
+                  : `stat-card td-enter ${glance.tone}`
+              }
               aria-current={active ? "true" : undefined}
             >
-              <span className="stat-card-label">{card.label}</span>
-              <span className="stat-card-value">{data.counts[card.key]}</span>
+              <span className="stat-card-top">
+                <IconWell icon={dashboardIcon(card.key)} tone={glance.well} />
+                <span>
+                  <span className="stat-card-label">{card.label}</span>
+                  <span className="stat-card-value">{data.counts[card.key]}</span>
+                </span>
+              </span>
             </Link>
           );
         })}
       </div>
 
       <DashboardMorePanel>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {DASHBOARD_CARDS.filter(
+            (card) => !GLANCE_CARDS.some((glance) => glance.key === card.key)
+          ).map((card) => {
+            const active = data.filters.card === card.key;
+            return (
+              <Link
+                key={card.key}
+                href={buildHref({
+                  ...filterBase,
+                  card: active ? undefined : card.key,
+                })}
+                className={active ? "stat-card stat-card-active" : "stat-card"}
+                aria-current={active ? "true" : undefined}
+              >
+                <span className="stat-card-top">
+                  <IconWell icon={dashboardIcon(card.key)} tone="muted" />
+                  <span>
+                    <span className="stat-card-label">{card.label}</span>
+                    <span className="stat-card-value">{data.counts[card.key]}</span>
+                  </span>
+                </span>
+              </Link>
+            );
+          })}
+        </div>
         <form method="get" className="filter-panel">
           <input type="hidden" name="view" value={view} />
           {hideEmpty ? <input type="hidden" name="hide_empty" value="1" /> : null}
@@ -226,7 +276,7 @@ export default async function DashboardPage({
             </select>
           </label>
           <div className="flex flex-wrap items-end gap-2 sm:col-span-2 lg:col-span-5">
-            <button type="submit" className="btn btn-primary">
+            <button type="submit" className="btn btn-secondary">
               Apply filters
             </button>
             <Link href={`/dashboard?view=${view}`} className="btn btn-secondary">

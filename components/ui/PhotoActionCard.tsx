@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Flag } from "lucide-react";
 import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
+import { EmptyBikeFrame } from "@/components/ui/EmptyBikeFrame";
 import { StageChip, type StageChipTone } from "@/components/ui/StageChip";
 
 export function PhotoActionCard({
@@ -15,6 +16,7 @@ export function PhotoActionCard({
   badges = [],
   flagged = false,
   compact = false,
+  technicianName = null,
 }: {
   href: string;
   photoUrl?: string | null;
@@ -28,13 +30,24 @@ export function PhotoActionCard({
   badges?: string[];
   flagged?: boolean;
   compact?: boolean;
+  technicianName?: string | null;
 }) {
+  const techInitials = technicianName
+    ? technicianName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part.slice(0, 1).toUpperCase())
+        .join("")
+    : "";
+
   return (
     <Link
       href={href}
       draggable={false}
       className={[
         "photo-action-card",
+        "td-enter",
         compact ? "photo-action-card--compact" : "",
         flagged ? "photo-action-card--flagged" : "",
       ]
@@ -42,6 +55,7 @@ export function PhotoActionCard({
         .join(" ")}
     >
       <div className="photo-action-card-media" aria-hidden={!photoUrl}>
+        {subtitle ? <span className="photo-action-card-ticket">{subtitle}</span> : null}
         {photoUrl ? (
           <RecoverableSignedImage
             src={photoUrl}
@@ -51,17 +65,7 @@ export function PhotoActionCard({
             draggable={false}
           />
         ) : (
-          <div className="photo-action-card-placeholder">
-            <svg viewBox="0 0 48 32" className="photo-action-card-bike" aria-hidden>
-              <path
-                d="M8 22c2-6 6-10 10-11 3 4 7 6 12 6 2 0 4-.4 6-1.2L40 22H8z"
-                fill="currentColor"
-                opacity="0.4"
-              />
-              <circle cx="16" cy="12" r="3" fill="currentColor" opacity="0.5" />
-              <path d="M6 24h36v2H6z" fill="currentColor" opacity="0.3" />
-            </svg>
-          </div>
+          <EmptyBikeFrame />
         )}
       </div>
       <div className="photo-action-card-body">
@@ -69,10 +73,21 @@ export function PhotoActionCard({
           <p className="photo-action-card-title">{title}</p>
           <StageChip label={stageLabel} tone={stageTone} />
         </div>
-        {customerName ? (
-          <p className="photo-action-card-customer">{customerName}</p>
+        {customerName || techInitials ? (
+          <div className="flex items-center gap-2">
+            {customerName ? (
+              <p className="photo-action-card-customer">{customerName}</p>
+            ) : null}
+            {techInitials ? (
+              <span
+                className="photo-action-card-tech"
+                title={technicianName ?? undefined}
+              >
+                {techInitials}
+              </span>
+            ) : null}
+          </div>
         ) : null}
-        <p className="photo-action-card-subtitle">{subtitle}</p>
         {badges.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {badges.map((badge) => (

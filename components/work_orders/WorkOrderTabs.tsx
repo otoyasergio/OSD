@@ -8,6 +8,7 @@ import {
   WORK_ORDER_TABS,
   type WorkOrderTabId,
 } from "@/lib/workOrders/tabs";
+import { tabIcon } from "@/components/ui/shopIcons";
 
 export function WorkOrderTabs({
   workOrderId,
@@ -37,6 +38,7 @@ export function WorkOrderTabs({
     <nav aria-label="Work order sections" className="tab-bar tab-bar-scroll">
       {primary.map((tab) => {
         const active = tab.id === activeTab;
+        const Icon = tabIcon(tab.id);
         return (
           <Link
             key={tab.id}
@@ -44,6 +46,7 @@ export function WorkOrderTabs({
             className={active ? "tab-link tab-link-active" : "tab-link"}
             aria-current={active ? "page" : undefined}
           >
+            <Icon size={16} aria-hidden />
             {tab.label}
           </Link>
         );
@@ -65,19 +68,21 @@ export function WorkOrderTabs({
           >
             {more.map((tab) => {
               const active = tab.id === activeTab;
+              const Icon = tabIcon(tab.id);
               return (
                 <Link
                   key={tab.id}
                   role="menuitem"
                   href={`/work_orders/${workOrderId}?tab=${tab.id}`}
                   className={[
-                    "block px-3 py-2 text-sm",
+                    "flex items-center gap-2 px-3 py-2 text-sm",
                     active
                       ? "bg-[var(--surface-muted)] font-semibold text-foreground"
                       : "text-foreground hover:bg-[var(--surface-muted)]",
                   ].join(" ")}
                   onClick={() => setOpen(false)}
                 >
+                  <Icon size={16} aria-hidden />
                   {tab.label}
                 </Link>
               );

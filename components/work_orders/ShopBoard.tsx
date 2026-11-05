@@ -14,7 +14,12 @@ import {
 import { useBoardDragSensors } from "@/lib/client/useBoardDragSensors";
 import { useDebouncedRouterRefresh } from "@/lib/client/useDebouncedRouterRefresh";
 import type { UserRole, WorkOrderStatus } from "@/lib/database/types";
-import { SHOP_BOARD_COLUMNS, GALLERY_BOARD_COLUMNS } from "@/lib/status/pipeline";
+import {
+  SHOP_BOARD_COLUMNS,
+  GALLERY_BOARD_COLUMNS,
+  boardColumnCountTone,
+} from "@/lib/status/pipeline";
+import { columnIcon, IconWell } from "@/components/ui/shopIcons";
 import {
   allowsShopBoardDrop,
   boardColumnIdForStatus,
@@ -75,8 +80,15 @@ function BoardColumn({
       aria-label={label}
     >
       <header className="shop-board-column-header">
-        <h2 className="shop-board-column-title">{label}</h2>
-        <span className="shop-board-column-count">{cards.length}</span>
+        <div className="shop-board-column-heading">
+          <IconWell icon={columnIcon(columnId)} tone={boardColumnCountTone(columnId)} />
+          <h2 className="shop-board-column-title">{label}</h2>
+        </div>
+        <span
+          className={`shop-board-column-count shop-board-column-count--${boardColumnCountTone(columnId)}`}
+        >
+          {cards.length}
+        </span>
       </header>
       <VirtualColumnList
         className="shop-board-column-body"

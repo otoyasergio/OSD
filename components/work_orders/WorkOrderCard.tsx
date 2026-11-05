@@ -61,6 +61,11 @@ export function WorkOrderCard({
       stageLabel={stage.label}
       stageTone={stage.tone}
       primaryLabel="Open"
+      technicianName={
+        workOrder.primary_technician
+          ? `${workOrder.primary_technician.first_name} ${workOrder.primary_technician.last_name}`.trim()
+          : null
+      }
       badges={agreementBadge ? [agreementBadge] : []}
       flagged={flagged}
       compact={compact}

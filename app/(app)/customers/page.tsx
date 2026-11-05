@@ -65,26 +65,17 @@ export default async function CustomersPage({
     <div className="page-stack">
       <PageHeader
         title="Customers"
-        subtitle="Search and manage customer records."
+        subtitle={
+          q || accountType
+            ? `${customers.length} match${customers.length === 1 ? "" : "es"}`
+            : `${totalCustomers} on file`
+        }
         actions={
           <Link href="/customers/new" className="btn btn-primary">
             New customer
           </Link>
         }
       />
-
-      <div className="grid gap-2 sm:grid-cols-2 lg:max-w-md">
-        <div className="stat-card" aria-label={`${totalCustomers} customers on file`}>
-          <span className="stat-card-label">Customers on file</span>
-          <span className="stat-card-value">{totalCustomers}</span>
-        </div>
-        {q || accountType ? (
-          <div className="stat-card" aria-label={`${customers.length} search matches`}>
-            <span className="stat-card-label">Matches</span>
-            <span className="stat-card-value">{customers.length}</span>
-          </div>
-        ) : null}
-      </div>
 
       <form method="get" className="filter-panel sm:grid-cols-1 lg:grid-cols-3">
         <label className="block sm:col-span-2 lg:col-span-1">
@@ -112,7 +103,7 @@ export default async function CustomersPage({
           </select>
         </label>
         <div className="flex items-end gap-2">
-          <button type="submit" className="btn btn-primary">
+          <button type="submit" className="btn btn-secondary">
             Search
           </button>
           {q || accountType ? (
@@ -182,7 +173,7 @@ export default async function CustomersPage({
                       </span>
                     ) : null}
                   </td>
-                  <td className="text-[var(--status-neutral-fg)]">
+                  <td className="font-mono text-sm text-[var(--status-neutral-fg)]">
                     {customer.phone ?? "—"}
                   </td>
                   <td className="text-[var(--status-neutral-fg)]">

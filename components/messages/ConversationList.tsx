@@ -45,7 +45,7 @@ export function ConversationList({
           active ? "bg-[var(--accent-muted)]" : "hover:bg-[var(--surface-muted)]"
         }`}
       >
-        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--surface-muted)] text-sm font-semibold text-slate-700">
+        <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--signal-teal-muted)] text-sm font-semibold text-[var(--signal-teal)]">
           {c.display_name.slice(0, 1).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
@@ -69,7 +69,7 @@ export function ConversationList({
               {c.last_message_preview ?? "No messages yet"}
             </p>
             {c.unread ? (
-              <span className="ml-auto h-2.5 w-2.5 shrink-0 rounded-full bg-[var(--accent)]" />
+              <span className="ml-auto h-2 w-2 shrink-0 rounded-full bg-[var(--accent)]" />
             ) : null}
           </div>
         </div>

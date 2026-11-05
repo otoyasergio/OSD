@@ -215,22 +215,42 @@ export function KioskShell({ staff }: Props) {
               No punchable staff at this location.
             </p>
           ) : (
-            staff.map((person) => (
-              <button
-                key={person.user_id}
-                type="button"
-                onClick={() => selectStaff(person)}
-                className="flex min-h-28 flex-col items-start justify-center rounded-xl border border-[var(--border)] bg-white px-4 py-5 text-left shadow-sm transition hover:border-[var(--accent)] hover:shadow"
-              >
-                <span className="text-xl font-semibold text-foreground">
-                  {person.first_name} {person.last_name}
-                </span>
-                <span className="mt-1 text-sm text-[var(--status-neutral)]">
-                  {roleLabel(person.role)}
-                  {!person.has_pin ? " · No PIN" : ""}
-                </span>
-              </button>
-            ))
+            staff.map((person) => {
+              const initials =
+                `${person.first_name.slice(0, 1)}${person.last_name.slice(0, 1)}`.toUpperCase();
+              const presenceClass =
+                person.presence === "in"
+                  ? "kiosk-person--in"
+                  : person.presence === "meal"
+                    ? "kiosk-person--meal"
+                    : "";
+              return (
+                <button
+                  key={person.user_id}
+                  type="button"
+                  onClick={() => selectStaff(person)}
+                  className={`flex min-h-36 flex-col items-start justify-center gap-2 rounded-xl border border-[var(--border)] bg-white px-4 py-5 text-left shadow-sm ${presenceClass}`}
+                >
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--signal-teal-muted)] text-lg font-bold text-[var(--signal-teal)]">
+                    {initials}
+                  </span>
+                  <span className="text-2xl font-semibold text-foreground">
+                    {person.first_name}
+                  </span>
+                  <span className="text-sm text-[var(--status-neutral)]">
+                    {person.last_name}
+                  </span>
+                  <span className="badge bg-[var(--surface-muted)] text-[var(--status-neutral-fg)]">
+                    {roleLabel(person.role)}
+                  </span>
+                  {!person.has_pin ? (
+                    <span className="badge bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]">
+                      No PIN
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })
           )}
         </div>
       ) : null}
@@ -265,7 +285,11 @@ export function KioskShell({ staff }: Props) {
                     else if (key === "ok") void submitPin();
                     else appendDigit(key);
                   }}
-                  className="min-h-16 rounded-xl border border-[var(--border)] bg-white text-2xl font-semibold text-foreground hover:bg-[var(--surface-muted)] disabled:opacity-50"
+                  className={
+                    key === "ok"
+                      ? "btn btn-primary min-h-16 rounded-xl text-2xl"
+                      : "min-h-16 rounded-xl border border-[var(--border)] bg-white text-2xl font-semibold text-foreground hover:bg-[var(--surface-muted)] disabled:opacity-50"
+                  }
                 >
                   {key === "clear" ? "Clear" : key === "ok" ? "OK" : key}
                 </button>

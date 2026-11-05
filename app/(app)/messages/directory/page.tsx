@@ -45,7 +45,7 @@ export default async function DirectoryPage({ searchParams }: Props) {
           defaultValue={q ?? ""}
           placeholder="Search by name"
         />
-        <button type="submit" className="btn btn-primary">
+        <button type="submit" className="btn btn-secondary">
           Search
         </button>
       </form>

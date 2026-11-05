@@ -6,6 +6,8 @@ import { listAdvisorQueue, type AdvisorQueueRow } from "@/lib/services/advisorDe
 import { toFormErrorMessage } from "@/lib/services/errors";
 import { WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { advisorIcon } from "@/components/ui/shopIcons";
 import type { AdvisorQueueKind } from "@/lib/accountability/stageContract";
 import { formatDateTime } from "@/lib/datetime/format";
 
@@ -43,9 +45,11 @@ export default async function AdvisorDeskPage() {
           {loadError}
         </p>
       ) : rows.length === 0 ? (
-        <p className="card card-pad text-sm text-[var(--status-neutral)]">
-          The desk is clear.
-        </p>
+        <EmptyState
+          variant="work-orders"
+          title="Nothing is waiting on the desk"
+          description="Bikes with no advisor, and bikes waiting on a message, an approval, parts, a promise, or a customer update, show up here."
+        />
       ) : (
         <ul className="space-y-3">
           {rows.map((row) => (
@@ -54,23 +58,35 @@ export default async function AdvisorDeskPage() {
                 href={`/work_orders/${row.work_order_id}`}
                 className="card card-pad block space-y-2 transition-shadow active:shadow-md"
               >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-semibold text-foreground">
-                    {row.work_order_number} · {row.customer_name}
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="wo-number-stamp">{row.work_order_number}</span>
                   <span className="text-sm text-[var(--status-neutral)]">
                     {WORK_ORDER_STATUS_LABELS[row.status] ?? row.status}
                   </span>
                 </div>
-                <p className="text-sm text-[var(--status-neutral)]">{row.bike_label}</p>
+                <p className="advisor-row-title">{row.bike_label}</p>
+                <p className="text-sm text-[var(--status-neutral)]">
+                  {row.customer_name}
+                </p>
                 {row.kinds.length > 0 ? (
-                  <p className="text-sm font-medium text-foreground">
-                    {row.kinds.map((kind) => KIND_LABEL[kind]).join(" · ")}
-                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {row.kinds.map((kind) => {
+                      const Icon = advisorIcon(kind);
+                      return (
+                        <span
+                          key={kind}
+                          className="badge bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]"
+                        >
+                          <Icon size={14} aria-hidden strokeWidth={2.25} />
+                          {KIND_LABEL[kind]}
+                        </span>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <p className="text-sm font-medium text-foreground">
+                  <span className="badge bg-[var(--status-neutral-bg)] text-[var(--status-neutral-fg)]">
                     No advisor of record
-                  </p>
+                  </span>
                 )}
                 <p className="text-sm text-[var(--status-neutral)]">
                   {row.contract.responsibleName

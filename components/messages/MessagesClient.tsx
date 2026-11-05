@@ -60,14 +60,18 @@ export function MessagesClient({
       <div className="mb-3 flex gap-2">
         <button
           type="button"
-          className={tab === "chats" ? "btn btn-primary" : "btn"}
+          className={
+            tab === "chats" ? "gallery-pill gallery-pill--active" : "gallery-pill"
+          }
           onClick={() => setTab("chats")}
         >
           Chats
         </button>
         <button
           type="button"
-          className={tab === "calls" ? "btn btn-primary" : "btn"}
+          className={
+            tab === "calls" ? "gallery-pill gallery-pill--active" : "gallery-pill"
+          }
           onClick={() => setTab("calls")}
         >
           Calls
