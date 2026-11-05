@@ -75,6 +75,12 @@ const MESSAGES: Record<string, string> = {
     "Waiting on client approval — front desk will send it back to Perform work when approved.",
   JOB_WAITING_FOR_PARTS:
     "Parts are not here yet — this bike stays parked until parts arrive.",
+  START_BENCH_OCCUPIED: "Finish the bike on the bench before starting another.",
+  START_NOT_NEXT: "The bike ahead of this one is next.",
+  START_WAITING: "This bike is waiting. It cannot be started until that wait is clear.",
+  PARK_REASON_NOT_ALLOWED: "The only floor stop is a tool or lift.",
+  SWAP_NOT_ALLOWED: "Bikes stay in the advisor's order. Swap is not a floor stop.",
+  TOOL_WAIT_NOT_OPEN: "This bike is not waiting on a tool or lift.",
   JOB_ASSIGNED_TO_OTHER_TECH: "You can only start or complete jobs assigned to you.",
   JOB_NOT_IN_PROGRESS: "Only a bike on the bench can be completed.",
   WORK_ORDER_NOT_WORKABLE:

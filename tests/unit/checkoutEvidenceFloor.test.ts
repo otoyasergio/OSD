@@ -41,6 +41,7 @@ vi.mock("@/app/(app)/technician/floor-actions", () => ({
   passPeerQcAction: vi.fn(),
   pullOntoBenchAction: vi.fn(),
   resumeParkedJobAction: vi.fn(),
+  clearToolWaitAction: vi.fn(),
   skipProofAction: vi.fn(),
   swapBenchJobAction: vi.fn(),
   toggleChecklistAction: vi.fn(),

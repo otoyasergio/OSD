@@ -9,6 +9,7 @@ import type { SafetyFormState } from "@/app/(app)/work_orders/safety-actions";
 import { FormError, TextAreaField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
 import { formatDateTime } from "@/lib/datetime/format";
+import { formatWaitAge } from "@/lib/technician/floorQueue";
 import { isSafetyRequired } from "@/lib/status/safetyRequired";
 import { getWorkOrderNextAction } from "@/lib/work-orders/nextAction";
 import { buildVisitWorkList } from "@/lib/work-orders/visitWorkList";
@@ -80,6 +81,7 @@ export function OverviewTab({
   checkoutOverrideAction,
   checkoutCoverage,
   checkoutOverridden,
+  openServiceBlockers = [],
 }: {
   detail: WorkOrderDetail;
   openRecommendations?: Array<{
@@ -118,6 +120,13 @@ export function OverviewTab({
   checkoutOverrideAction?: QualityAction;
   checkoutCoverage?: CheckoutCoverage;
   checkoutOverridden?: boolean;
+  openServiceBlockers?: Array<{
+    job_id: string;
+    service_name: string;
+    kind: "approval" | "parts";
+    owner: string;
+    opened_at: string;
+  }>;
 }) {
   const [assignState, assignFormAction] = useActionState(assignAction, {
     error: null,
@@ -231,6 +240,40 @@ export function OverviewTab({
               {nextAction.cta}
             </Link>
           ) : null}
+        </section>
+      ) : null}
+
+      {openServiceBlockers.length > 0 ? (
+        <section className="rounded border border-[var(--border)] bg-white p-4">
+          <h2 className="text-lg font-semibold text-foreground">Open service waits</h2>
+          <ul className="mt-3 flex flex-col gap-2">
+            {openServiceBlockers.map((blocker) => {
+              const reason =
+                blocker.kind === "approval"
+                  ? "Waiting for customer OK"
+                  : "Waiting for parts";
+              const owner =
+                blocker.owner === "parts"
+                  ? "Parts"
+                  : blocker.owner === "technician"
+                    ? "Technician"
+                    : "Front desk";
+              const age = formatWaitAge(blocker.opened_at);
+              return (
+                <li
+                  key={`${blocker.job_id}-${blocker.kind}`}
+                  className="text-sm text-foreground"
+                >
+                  <span className="font-medium">{blocker.service_name}</span>
+                  {" — "}
+                  {reason}
+                  {" · "}
+                  {owner}
+                  {age ? ` · ${age}` : ""}
+                </li>
+              );
+            })}
+          </ul>
         </section>
       ) : null}
 

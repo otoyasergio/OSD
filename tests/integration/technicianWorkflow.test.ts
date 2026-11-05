@@ -98,7 +98,7 @@ describeIntegration("workflow_v2 floor commands (isolated db)", () => {
     await admin.from("location").delete().eq("location_id", ids.location);
   });
 
-  it("enforces attendance, swaps atomically, gates completion, and excludes visit workers from QC", async () => {
+  it("enforces attendance, switches the clock on the same bike, gates completion, and excludes visit workers from QC", async () => {
     if (!admin) return;
 
     // Pull without attendance fails and leaves no timer.
@@ -124,13 +124,13 @@ describeIntegration("workflow_v2 floor commands (isolated db)", () => {
     });
     expect(pullError).toBeNull();
 
-    // Pulling job B parks job A and moves the single open timer.
+    // Pulling job B on the same bike switches the clock. It does not park job A.
     const { data: swap, error: swapError } = await admin.rpc(
       "workflow_v2_pull_job_onto_bench",
       { p_job_id: ids.jobB, p_actor_user_id: ids.techA }
     );
     expect(swapError).toBeNull();
-    expect((swap as { parked_job_id: string }).parked_job_id).toBe(ids.jobA);
+    expect((swap as { parked_job_id: string | null }).parked_job_id).toBeNull();
 
     const { data: openTimers } = await admin
       .from("job_time_entry")
@@ -146,7 +146,7 @@ describeIntegration("workflow_v2 floor commands (isolated db)", () => {
       .eq("job_id", ids.jobA)
       .single();
     expect(parkedA?.status).toBe("ready_to_start");
-    expect(parkedA?.floor_park_reason).toBe("swapped");
+    expect(parkedA?.floor_park_reason).toBeNull();
 
     // Completion is gated on the checklist.
     await admin.from("job_checklist_item").insert({

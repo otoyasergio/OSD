@@ -21,6 +21,7 @@ import {
   stampDisplayLabel,
 } from "@/lib/technician/docketCardDisplay";
 import { canDragDocketItemToBench } from "@/lib/technician/benchDrag";
+import { formatWaitAge } from "@/lib/technician/floorQueue";
 import { DraggableDocketCard } from "@/components/technician/DraggableDocketCard";
 
 const STAMP_ICONS: Record<PitBoardStamp, LucideIcon> = {
@@ -49,11 +50,18 @@ function DocketWaitLine({ item }: { item: DocketItem }) {
   const owner = item.wait_owner_kind
     ? waitOwnerDisplayLabel(item.wait_owner_kind)
     : item.wait_owner_label || "Front desk";
+  const age = formatWaitAge(item.wait_opened_at ?? null);
   return (
     <span className="pit-queue-wait">
       {reason}
       <span aria-hidden> · </span>
       <span className="pit-queue-wait-owner">{owner}</span>
+      {age ? (
+        <>
+          <span aria-hidden> · </span>
+          <span>{age}</span>
+        </>
+      ) : null}
     </span>
   );
 }
@@ -218,6 +226,11 @@ export function TechnicianDocketList({
                     <span className="pit-queue-wo">{item.subtitle}</span>
                   </span>
                   <DocketServiceLines item={item} />
+                  {(item.queue_notes ?? []).map((note) => (
+                    <span key={note} className="pit-queue-wait">
+                      {note}
+                    </span>
+                  ))}
                   <DocketWaitLine item={item} />
                 </span>
                 <DocketStamp stamp={item.board_stamp} />

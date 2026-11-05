@@ -40,6 +40,7 @@ import {
 } from "@/app/(app)/work_orders/safety-actions";
 import {
   acknowledgeDocketJobAction,
+  clearToolWaitAction,
   completeJobFloorAction,
   completePerformWorkAction,
   failPeerQcAction,
@@ -49,7 +50,6 @@ import {
   pullOntoBenchAction,
   resumeParkedJobAction,
   skipProofAction,
-  swapBenchJobAction,
   toggleChecklistAction,
   type FloorActionState,
 } from "@/app/(app)/technician/floor-actions";
@@ -70,11 +70,7 @@ import {
   floorSpineStates,
   type FloorStage,
 } from "@/lib/technician/floorStage";
-import {
-  PARK_REASON_OPTIONS,
-  isFloorJobFinished,
-  type PitBoardStep,
-} from "@/lib/technician/pitBoard";
+import { isFloorJobFinished, type PitBoardStep } from "@/lib/technician/pitBoard";
 import {
   evaluatePerformWorkDocumentation,
   hasWorkPhotoChoice,
@@ -84,7 +80,6 @@ import {
 import { presentPeerQcPickerOptions } from "@/lib/jobs-v2/peerQcCompletion";
 import {
   buildFloorActionModel,
-  splitDocketByWait,
   waitOwnerDisplayLabel,
   type FloorActionModel,
 } from "@/lib/technician/floorActionModel";
@@ -208,7 +203,7 @@ function JobPacketErrorState({ backHref }: { backHref: string }) {
 }
 
 type Overlay =
-  null | "park" | "fail" | "swap" | "qc_pick" | "sign_qc" | "sign_safety" | "work_doc";
+  null | "park" | "fail" | "qc_pick" | "sign_qc" | "sign_safety" | "work_doc";
 
 /**
  * Identity-bound floor actions: acknowledgement, bench/timer flows, and QC or
@@ -225,7 +220,7 @@ const PREVIEW_LOCKED_ACTIONS = new Set([
   "pass_safety",
   "fail_safety",
   "park",
-  "swap",
+  "clear_tool",
 ]);
 
 const PREVIEW_LOCK_REASON =
@@ -327,7 +322,10 @@ export function TechnicianFloorShell({
     resumeParkedJobAction,
     null
   );
-  const [swapState, swapAction, swapPending] = useActionState(swapBenchJobAction, null);
+  const [clearState, clearAction, clearPending] = useActionState(
+    clearToolWaitAction,
+    null
+  );
   const [completeState, completeAction, completePending] = useActionState(
     completeJobFloorAction,
     null
@@ -380,7 +378,7 @@ export function TechnicianFloorShell({
       pullState,
       parkState,
       resumeState,
-      swapState,
+      clearState,
       completeState,
       skipState,
       workState,
@@ -404,7 +402,7 @@ export function TechnicianFloorShell({
     pullState,
     parkState,
     resumeState,
-    swapState,
+    clearState,
     completeState,
     skipState,
     workState,
@@ -494,23 +492,14 @@ export function TechnicianFloorShell({
     return `work-order-${surface.work_order_id}`;
   }, [surface]);
 
-  // A bike appears in exactly one list: working or honestly waiting.
-  const { workNow: workNowItems, waiting: waitingItems } = splitDocketByWait(docketItems);
-  const shopItems = useMemo(
-    () => [...workNowItems, ...waitingItems],
-    [workNowItems, waitingItems]
+  const benchItems = docketItems.filter((item) => item.board_status === "bench");
+  const waitingItems = docketItems.filter((item) => item.board_status === "waiting");
+  const lineItems = docketItems.filter(
+    (item) => item.board_status !== "bench" && item.board_status !== "waiting"
   );
   const benchBikeLabel =
-    docketItems.find((item) => item.board_status === "bench")?.motorcycle_label ??
+    benchItems[0]?.motorcycle_label ??
     (surface?.board_status === "bench" ? surface.motorcycle_label : null);
-  const swapTargets = docketItems.filter(
-    (item) =>
-      item.job_id &&
-      item.job_id !== surface?.job_id &&
-      (item.board_status === "next" ||
-        item.board_status === "waiting" ||
-        item.board_status === "offered")
-  );
 
   const onBench = surface?.board_status === "bench";
   const parked = surface?.board_status === "waiting";
@@ -535,7 +524,7 @@ export function TechnicianFloorShell({
     ackPending ||
     pullPending ||
     resumePending ||
-    swapPending ||
+    clearPending ||
     completePending ||
     skipPending ||
     workPending ||
@@ -561,13 +550,16 @@ export function TechnicianFloorShell({
         qc_checks_done: qcAllDone,
         qc_assignee_is_me: surface.qc_assignee_is_me,
         can_safety: surface.can_safety,
-        has_swap_targets: swapTargets.length > 0,
+        can_start: docketItems.find(
+          (item) =>
+            item.work_order_id === surface.work_order_id &&
+            (item.kind === "now" || item.kind === "assigned")
+        )?.can_start,
         pending_action: pending,
       })
     : null;
   const model = builtModel && previewMode ? applyPreviewLock(builtModel) : builtModel;
   const parkControl = model?.secondary.find((control) => control.action === "park");
-  const swapControl = model?.secondary.find((control) => control.action === "swap");
   const failQcControl = model?.secondary.find((control) => control.action === "fail_qc");
 
   function dispatchFloorAction(
@@ -639,6 +631,13 @@ export function TechnicianFloorShell({
     }
     if (primary.action === "resume" && surface.job_id) {
       dispatchFloorAction(resumeAction, {
+        job_id: surface.job_id,
+        work_order_id: surface.work_order_id,
+      });
+      return;
+    }
+    if (primary.action === "clear_tool" && surface.job_id) {
+      dispatchFloorAction(clearAction, {
         job_id: surface.job_id,
         work_order_id: surface.work_order_id,
       });
@@ -757,14 +756,27 @@ export function TechnicianFloorShell({
       >
         <div className="pit-layout">
           <aside className="pit-rail">
-            <section className="pit-rail-group" aria-label="In shop">
-              <h2 className="pit-rail-title">In shop</h2>
-              <p className="pit-rail-help">
-                Bikes assigned to you. Drag one onto your workbench to start the clock.
-              </p>
-              {shopItems.length > 0 ? (
+            <section className="pit-rail-group" aria-label="On the bench">
+              <h2 className="pit-rail-title">On the bench</h2>
+              <p className="pit-rail-help">The bike with your running clock.</p>
+              {benchItems.length > 0 ? (
                 <TechnicianDocketList
-                  items={shopItems}
+                  items={benchItems}
+                  selectedKey={selectedKey}
+                  dnd={{ enabled: false }}
+                />
+              ) : (
+                <p className="floor-muted">Bench is empty.</p>
+              )}
+            </section>
+            <section className="pit-rail-group" aria-label="Your line">
+              <h2 className="pit-rail-title">Your line</h2>
+              <p className="pit-rail-help">
+                Advisor order. Drag the first bike onto the bench when it is empty.
+              </p>
+              {lineItems.length > 0 ? (
+                <TechnicianDocketList
+                  items={lineItems}
                   selectedKey={selectedKey}
                   dnd={{
                     enabled: shopDndEnabled && !pending,
@@ -772,7 +784,22 @@ export function TechnicianFloorShell({
                   }}
                 />
               ) : (
-                <p className="floor-muted">Nothing in the shop for you right now.</p>
+                <p className="floor-muted">Nothing waiting in line.</p>
+              )}
+            </section>
+            <section className="pit-rail-group" aria-label="Waiting">
+              <h2 className="pit-rail-title">Waiting</h2>
+              <p className="pit-rail-help">
+                These bikes are out of the line until the wait is cleared.
+              </p>
+              {waitingItems.length > 0 ? (
+                <TechnicianDocketList
+                  items={waitingItems}
+                  selectedKey={selectedKey}
+                  dnd={{ enabled: false }}
+                />
+              ) : (
+                <p className="floor-muted">No bikes waiting.</p>
               )}
             </section>
           </aside>
@@ -1056,10 +1083,8 @@ export function TechnicianFloorShell({
                   <FloorDock
                     model={model}
                     parkControl={parkControl}
-                    swapControl={swapControl}
                     failQcControl={failQcControl}
                     onPark={() => setOverlay("park")}
-                    onSwap={() => setOverlay("swap")}
                     onFailQc={() => setOverlay("fail")}
                     onGo={runGo}
                     message={
@@ -1069,8 +1094,8 @@ export function TechnicianFloorShell({
                             ? pullState
                             : ackState?.error
                               ? ackState
-                              : resumeState?.error
-                                ? resumeState
+                              : clearState?.error
+                                ? clearState
                                 : completeState?.error
                                   ? completeState
                                   : toggleState?.error
@@ -1118,15 +1143,19 @@ export function TechnicianFloorShell({
           <div className="pit-sheet">
             {overlay === "park" && surface?.job_id ? (
               <>
-                <h3 className="pit-sheet-title">Why park?</h3>
+                <h3 className="pit-sheet-title">Tool or lift busy</h3>
+                <p className="pit-sheet-or">
+                  The whole bike leaves your line. Parts and customer waits stay on the
+                  record.
+                </p>
                 <label className="pit-sheet-label">
-                  What&apos;s waiting?
+                  Note
                   <textarea
                     className="pit-sheet-input"
                     rows={3}
                     value={parkNote}
                     onChange={(event) => setParkNote(event.target.value)}
-                    placeholder="What's waiting?"
+                    placeholder="Optional"
                   />
                 </label>
                 <FloorPhotoField
@@ -1135,27 +1164,21 @@ export function TechnicianFloorShell({
                   jobId={surface.job_id}
                   category="job_work"
                 />
-                <p className="pit-sheet-or">Write one line, then pick why.</p>
-                <div className="pit-sheet-grid">
-                  {PARK_REASON_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.reason}
-                      type="button"
-                      className="pit-sheet-btn"
-                      disabled={parkPending || !parkNote.trim()}
-                      onClick={() =>
-                        dispatchFloorAction(parkAction, {
-                          job_id: surface.job_id!,
-                          work_order_id: surface.work_order_id,
-                          reason: opt.reason,
-                          note: parkNote.trim(),
-                        })
-                      }
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+                <button
+                  type="button"
+                  className="pit-sheet-btn"
+                  disabled={parkPending}
+                  onClick={() =>
+                    dispatchFloorAction(parkAction, {
+                      job_id: surface.job_id!,
+                      work_order_id: surface.work_order_id,
+                      reason: "tool",
+                      note: parkNote.trim(),
+                    })
+                  }
+                >
+                  Tool or lift busy
+                </button>
                 {parkState?.error ? (
                   <p className="pit-photo-error" role="alert">
                     {parkState.error}
@@ -1328,35 +1351,6 @@ export function TechnicianFloorShell({
                     {passSafetyState.error}
                   </p>
                 ) : null}
-              </>
-            ) : null}
-
-            {overlay === "swap" && surface?.job_id ? (
-              <>
-                <h3 className="pit-sheet-title">Swap onto</h3>
-                <ul className="pit-sheet-list">
-                  {swapTargets.map((item) => (
-                    <li key={item.key}>
-                      <form action={swapAction}>
-                        <input type="hidden" name="from_job_id" value={surface.job_id!} />
-                        <input type="hidden" name="to_job_id" value={item.job_id!} />
-                        <input
-                          type="hidden"
-                          name="work_order_id"
-                          value={item.work_order_id}
-                        />
-                        <button
-                          type="submit"
-                          className="pit-sheet-btn"
-                          disabled={swapPending}
-                        >
-                          {item.motorcycle_label}
-                          <span className="pit-sheet-btn-sub">{item.service_label}</span>
-                        </button>
-                      </form>
-                    </li>
-                  ))}
-                </ul>
               </>
             ) : null}
           </div>

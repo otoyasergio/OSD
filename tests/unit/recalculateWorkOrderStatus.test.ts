@@ -50,11 +50,26 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("on_hold");
   });
 
-  it("sets waiting_for_customer_approval when any job waiting", () => {
+  it("stays in the bay when one service is waiting and another can be worked", () => {
     expect(
       deriveWorkOrderStatus({
         currentStatus: "open",
-        jobs: [{ status: "waiting_for_approval" }, { status: "approved" }],
+        jobs: [
+          { status: "waiting_for_approval", job_id: "wait" },
+          { status: "approved", job_id: "go" },
+        ],
+        parts: [],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("ready_for_technician");
+  });
+
+  it("sets waiting_for_customer_approval when nothing left can be worked", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [{ status: "waiting_for_approval", job_id: "wait" }],
         parts: [],
         inspectionComplete: true,
         qualityCheckComplete: false,
