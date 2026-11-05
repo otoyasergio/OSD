@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { scanGmailAuthorizationUrl } from "@/lib/email/gmail";
 import { readUnreadScanMail } from "@/lib/email/scanInbox";
@@ -27,7 +28,9 @@ describe("readUnreadScanMail", () => {
     const fetchImpl = vi.fn(async (url: string, _init?: RequestInit) => {
       const href = String(url);
       if (href.includes("oauth2.googleapis.com")) {
-        return new Response(JSON.stringify({ access_token: "access-1" }), { status: 200 });
+        return new Response(JSON.stringify({ access_token: "access-1" }), {
+          status: 200,
+        });
       }
       if (href.includes("/messages/m1")) {
         return new Response(
@@ -47,7 +50,9 @@ describe("readUnreadScanMail", () => {
         );
       }
       if (href.includes("/messages?")) {
-        return new Response(JSON.stringify({ messages: [{ id: "m1" }] }), { status: 200 });
+        return new Response(JSON.stringify({ messages: [{ id: "m1" }] }), {
+          status: 200,
+        });
       }
       return new Response("unexpected", { status: 500 });
     });
@@ -71,6 +76,63 @@ describe("readUnreadScanMail", () => {
     const urls = fetchImpl.mock.calls.map((call) => String(call[0]));
     expect(urls.some((url) => url.includes("/messages/send"))).toBe(false);
     expect(initUnused(fetchImpl.mock.calls)).toBe(true);
+  });
+
+  it("reads a TopGuru PDF attachment when the message body is empty", async () => {
+    const pdf = readFileSync("tests/fixtures/topguru-min.pdf").toString("base64url");
+    const fetchImpl = vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes("oauth2.googleapis.com")) {
+        return new Response(JSON.stringify({ access_token: "access-1" }), {
+          status: 200,
+        });
+      }
+      if (href.includes("/attachments/att-1")) {
+        return new Response(JSON.stringify({ data: pdf }), { status: 200 });
+      }
+      if (href.includes("/messages/m-pdf")) {
+        return new Response(
+          JSON.stringify({
+            id: "m-pdf",
+            snippet: "",
+            payload: {
+              mimeType: "multipart/mixed",
+              headers: [
+                { name: "Subject", value: "Full System Report" },
+                { name: "From", value: "TopGuru <reports@topdon.example>" },
+              ],
+              parts: [
+                {
+                  mimeType: "application/pdf",
+                  filename: "BMW-R1250GS-2018_Pre-Scan_FullSystemReport.pdf",
+                  body: { attachmentId: "att-1" },
+                },
+              ],
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      if (href.includes("/messages?")) {
+        return new Response(JSON.stringify({ messages: [{ id: "m-pdf" }] }), {
+          status: 200,
+        });
+      }
+      return new Response("unexpected", { status: 500 });
+    });
+
+    const result = await readUnreadScanMail({
+      refreshToken: "refresh-1",
+      clientId: "client",
+      clientSecret: "secret",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result.messages[0]?.text).toContain("WB10J9303KZH99235");
+    expect(result.messages[0]?.text).toContain(
+      "480682 ABS: Pullaway assistant deactivated"
+    );
+    expect(result.messages[0]?.text).not.toContain("FullSystemReport.pdf");
   });
 });
 

@@ -1,0 +1,68 @@
+Report Number : TD1793829041
+Date Created : 2026-11-04
+SN: 0E000984G10461
+TOPDON ID: F0ZLETR48D
+BMW -R 1250 GS-2018_Pre-Scan_Full System Report
+Ticket No.:
+Customer: Phone Number of Customer:
+VIN: WB10J9303KZH99235 Diagnostic Scan Path: Automatic/Auto Scan
+Vehicle Software Version: V5.00 Diagnostic Application Version: V6.55.001
+Sub Model: A74B12M1 Diagnostic Time: 2026-11-04 16:50:41
+Distance Traveled: 51381.707 miles Engine: A74
+Model: R 1250 GS Year: 2018
+Plate Number: Make: BMW
+Summary
+8 systems were scanned, and 4 of them were detected with DTCs. Altogether 8 DTCs were found. For safe
+driving, please read the report carefully and perform related repair in a timely manner.
+Full System Report(8)
+Pre-Scan
+System System Status
+ABS(Conti Antilock Brake System) 1Fault
+RDC(Tyre Pressure Control) 1Fault
+EWS(Electronic Immobiliser) 1Fault
+KOMBI(Instrument Cluster) 5Fault
+DME(Engine Control) 0No fault
+DWA(Anti-theft Alarm System) 0No fault
+ESA(Electronic Suspension Adjustment) 0No fault
+GM(Basic Module (BCL)) 0No fault
+Page 1
+Report Number : TD1793829041
+Date Created : 2026-11-04
+SN: 0E000984G10461
+TOPDON ID: F0ZLETR48D
+ABS(Conti Antilock Brake System) (1Fault Code)
+DTC Description Status
+480682 ABS: Pullaway assistant deactivated Fault not currently
+present
+RDC(Tyre Pressure Control) (1Fault Code)
+DTC Description Status
+481F84 RDC: Undervoltage Fault not currently
+present
+EWS(Electronic Immobiliser) (1Fault Code)
+DTC Description Status
+80401D Fuel filler cap switch Fault not currently
+present
+KOMBI(Instrument Cluster) (5Fault Code)
+DTC Description Status
+E11436 Instrument panel: No CAN message status tire access (from EWS) Fault not currently
+present
+E11438 Instrument panel: No spring strut adjustment CAN message (from ESA) Fault not currently
+present
+E11432 Instrument panel: No CAN message for anti-theft alarm status (from
+the DWA)
+Fault not currently
+present
+E11422 Instrument panel: No CAN message for vehicle speed (from the ABS
+or GM)
+Fault not currently
+present
+E11442 Instrument panel: No CAN message relative mileage (from ABS or GM) Fault not currently
+present
+Disclaimer
+This diagnostic report is provided for the purpose of displaying diagnostic data and is for reference
+only. It does not constitute any judgment, conclusion, or basis for action. The Company shall not be
+liable for any decisions or actions taken by the user based on the content of this report.
+When a user chooses to save the diagnostic report to the App client, the relevant report content will
+be stored in accordance with the App’s functional requirements for the purpose of subsequent
+access.
+Page 2

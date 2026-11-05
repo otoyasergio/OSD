@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   chooseInspectionForScan,
@@ -22,7 +23,9 @@ const open = {
 
 describe("readTopGuruReport", () => {
   it("keeps each code and the description on its line", () => {
-    const report = readTopGuruReport("VIN 1HD1BJY174Y023456\nP0301 Misfire detected\nC0561");
+    const report = readTopGuruReport(
+      "VIN 1HD1BJY174Y023456\nP0301 Misfire detected\nC0561"
+    );
     expect(report.outcome).toBe("codes");
     expect(report.vin).toBe("1HD1BJY174Y023456");
     expect(report.codes).toEqual([
@@ -48,15 +51,52 @@ describe("readTopGuruReport", () => {
       "needs_confirmation"
     );
   });
+
+  it("reads a Topdon full system report", () => {
+    const text = readFileSync("tests/fixtures/topguru-r1250gs.txt", "utf8");
+    const report = readTopGuruReport(text);
+    expect(report.outcome).toBe("codes");
+    expect(report.vin).toBe("WB10J9303KZH99235");
+    expect(report.codes.map((code) => code.code)).toEqual([
+      "480682",
+      "481F84",
+      "80401D",
+      "E11436",
+      "E11438",
+      "E11432",
+      "E11422",
+      "E11442",
+    ]);
+    expect(report.codes[0]?.description).toBe(
+      "ABS: Pullaway assistant deactivated (not currently present)"
+    );
+    expect(report.codes.find((code) => code.code === "E11432")?.description).toBe(
+      "Instrument panel: No CAN message for anti-theft alarm status (from the DWA) (not currently present)"
+    );
+    expect(report.codes.find((code) => code.code === "E11422")?.description).toBe(
+      "Instrument panel: No CAN message for vehicle speed (from the ABS or GM) (not currently present)"
+    );
+    expect(readOdometer(text)).toEqual({ value: 51382, unit: "mi" });
+  });
+
+  it("reads a Topdon report with no DTCs as no codes", () => {
+    expect(
+      readTopGuruReport(
+        "VIN WB10J9303KZH99235\nAltogether 0 DTCs were found.\nDME(Engine Control)\nNo fault"
+      ).outcome
+    ).toBe("no_codes");
+  });
 });
 
 describe("chooseInspectionForScan", () => {
   it("files a report onto the open inspection with the same VIN", () => {
-    const other = { ...open, inspectionId: "insp-2", workOrderId: "wo-2", vin: "JH2SC5912KK123456" };
-    const chosen = chooseInspectionForScan(
-      { vin: "1HD1BJY174Y023456" },
-      [open, other]
-    );
+    const other = {
+      ...open,
+      inspectionId: "insp-2",
+      workOrderId: "wo-2",
+      vin: "JH2SC5912KK123456",
+    };
+    const chosen = chooseInspectionForScan({ vin: "1HD1BJY174Y023456" }, [open, other]);
     expect(chosen?.workOrderId).toBe("wo-1");
   });
 
@@ -70,22 +110,26 @@ describe("chooseInspectionForScan", () => {
   });
 
   it("does not file a report onto an inspection with a different VIN", () => {
-    expect(
-      chooseInspectionForScan({ vin: "JH2SC5912KK123456" }, [open])
-    ).toBeNull();
+    expect(chooseInspectionForScan({ vin: "JH2SC5912KK123456" }, [open])).toBeNull();
   });
 });
 
 describe("scanAddressAllowed", () => {
   it("accepts only scans@torontomoto.com", () => {
-    expect(scanAddressAllowed("scans@torontomoto.com", "info@torontomoto.com")).toBe(true);
+    expect(scanAddressAllowed("scans@torontomoto.com", "info@torontomoto.com")).toBe(
+      true
+    );
     expect(scanAddressAllowed("Scans@TorontoMoto.com", null)).toBe(true);
     expect(scanAddressAllowed("other@torontomoto.com", null)).toBe(false);
-    expect(scanAddressAllowed("info@torontomoto.com", "info@torontomoto.com")).toBe(false);
+    expect(scanAddressAllowed("info@torontomoto.com", "info@torontomoto.com")).toBe(
+      false
+    );
   });
 
   it("refuses scans@torontomoto.com when that address also sends customer email", () => {
-    expect(scanAddressAllowed("scans@torontomoto.com", "scans@torontomoto.com")).toBe(false);
+    expect(scanAddressAllowed("scans@torontomoto.com", "scans@torontomoto.com")).toBe(
+      false
+    );
   });
 });
 
@@ -154,6 +198,10 @@ describe("readOdometer", () => {
   it("reads kilometres and miles from the report", () => {
     expect(readOdometer("Odometer: 12,345 km")).toEqual({ value: 12345, unit: "km" });
     expect(readOdometer("Mileage 8200 miles")).toEqual({ value: 8200, unit: "mi" });
+    expect(readOdometer("Distance Traveled: 51381.707 miles")).toEqual({
+      value: 51382,
+      unit: "mi",
+    });
   });
 
   it("ignores charging voltage", () => {
