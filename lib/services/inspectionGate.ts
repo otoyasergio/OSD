@@ -193,9 +193,19 @@ export function itemGateKey(result: InspectionGateResult): string {
   );
 }
 
+/** Brake hardware that has to be answered on every visit. */
+export function isVisitBrakeItem(itemName: string): boolean {
+  return /brake lining|rotor|caliper|brake pad/i.test(itemName);
+}
+
+/** Every motorcycle has friction material at both ends. */
+export function brakeLiningRequiredEveryVisit(itemName: string): boolean {
+  return /brake lining/i.test(itemName);
+}
+
 /**
- * Skip only counts when the tech marks it OK and writes why this visit is not
- * inspecting brakes and tires. A bare OK does not waive the section.
+ * Skip only counts when the tech marks it OK and writes why the tire lines are
+ * not being inspected. It never waives the front or rear brakes.
  */
 export function isBrakeInspectionWaived(results: InspectionGateResult[]): boolean {
   const skip = results.find(
@@ -225,13 +235,26 @@ export function inspectionResultGaps(results: InspectionGateResult[]): Inspectio
 
   for (const result of results) {
     const key = itemGateKey(result);
-    const unansweredBrake =
+    const unansweredTire =
       waived &&
       result.status == null &&
       isBrakeSectionItem(result.category_snapshot, result.item_name_snapshot) &&
-      result.item_name_snapshot !== BRAKE_INSPECTION_SKIP_ITEM;
+      result.item_name_snapshot !== BRAKE_INSPECTION_SKIP_ITEM &&
+      !isVisitBrakeItem(result.item_name_snapshot);
 
-    if (unansweredBrake) continue;
+    if (unansweredTire) continue;
+
+    if (
+      brakeLiningRequiredEveryVisit(result.item_name_snapshot) &&
+      result.status === "not_applicable"
+    ) {
+      gaps.push({
+        key,
+        kind: "reason",
+        item_name: result.item_name_snapshot,
+        detail: "Inspect this brake on every visit.",
+      });
+    }
 
     if (result.status == null) {
       gaps.push({
@@ -252,11 +275,15 @@ export function inspectionResultGaps(results: InspectionGateResult[]): Inspectio
         key,
         kind: "reason",
         item_name: result.item_name_snapshot,
-        detail: "Say why brakes and tires were not inspected this visit.",
+        detail: "Say why the tires were not inspected this visit.",
       });
     }
 
-    if (result.status === "not_applicable" && !isSubstantiveNote(result.notes)) {
+    if (
+      result.status === "not_applicable" &&
+      !brakeLiningRequiredEveryVisit(result.item_name_snapshot) &&
+      !isSubstantiveNote(result.notes)
+    ) {
       gaps.push({
         key,
         kind: "reason",
@@ -425,17 +452,17 @@ function evidenceGroupNeedsPhoto(
   brakeWaived: boolean
 ): boolean {
   if (items.length === 0) return false;
-  const brakeGroup =
-    spec.label.startsWith("Front tire") ||
-    spec.label.startsWith("Rear tire") ||
-    spec.label.startsWith("Front brake") ||
-    spec.label.startsWith("Rear brake");
+  const tireGroup =
+    spec.label.startsWith("Front tire") || spec.label.startsWith("Rear tire");
   if (
     brakeWaived &&
-    brakeGroup &&
+    tireGroup &&
     items.every((item) => item.status == null || item.status === "not_applicable")
   ) {
     return false;
+  }
+  if (spec.label.startsWith("Front brake") || spec.label.startsWith("Rear brake")) {
+    return true;
   }
   if (spec.whenAnswered) {
     return items.some(
@@ -450,11 +477,12 @@ function evidenceGroupNeedsPhoto(
 
 /**
  * Photos required before the inspection can be signed.
- * Front and rear tires and brakes each need their own photo. A single
- * combined shot does not clear both. Forks, leaks, battery, and both sides
- * are required too. Chain or belt is required once that line is answered
- * and is not N/A. Yellow or red lines that are not already covered need a
- * photo of the finding.
+ * Front and rear brakes each need their own photo on every visit. Front and
+ * rear tires do too, unless those lines were left blank with a real reason.
+ * A single combined shot does not clear both ends. Forks, leaks, battery,
+ * and both sides are required too. Chain or belt is required once that line
+ * is answered and is not N/A. Yellow or red lines that are not already
+ * covered need a photo of the finding.
  */
 export function getRequiredInspectionPhotos(
   results: InspectionGateResult[]

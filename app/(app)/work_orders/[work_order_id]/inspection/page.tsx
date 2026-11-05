@@ -108,9 +108,10 @@ export default async function InspectionPage({
         ) : null}
         {!readOnly ? (
           <p className="inspection-fullscreen-hint">
-            Mark every line OK, Future, or Now. “Doesn’t apply” needs a real reason. Enter
-            every measurement. Photograph front and rear tires, front and rear brakes,
-            forks, and the other evidence slots. Sign the report at the end.
+            Mark every line OK, Future, or Now. Inspect the front and rear brakes on every
+            visit. “Doesn’t apply” needs a real reason. Enter every measurement.
+            Photograph front and rear tires, front and rear brakes, forks, and the other
+            evidence slots. Sign the report at the end.
           </p>
         ) : null}
 
