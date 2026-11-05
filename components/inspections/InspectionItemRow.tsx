@@ -8,6 +8,7 @@ import { saveInspectionResultAction } from "@/app/(app)/work_orders/[work_order_
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import {
   BRAKE_INSPECTION_SKIP_ITEM,
+  brakeLiningRequiredEveryVisit,
   isSubstantiveNote,
   measurementIsRecorded,
 } from "@/lib/services/inspectionGate";
@@ -358,6 +359,7 @@ export function InspectionItemRow({
     status === "future_attention" || status === "immediate_attention";
   const unit = measurementHint(result.item_name_snapshot);
   const isSkip = result.item_name_snapshot === BRAKE_INSPECTION_SKIP_ITEM;
+  const liningEveryVisit = brakeLiningRequiredEveryVisit(result.item_name_snapshot);
   const isAcknowledgment = /acknowledgment/i.test(result.item_name_snapshot);
   const showMeasurement =
     !isSkip &&
@@ -396,7 +398,11 @@ export function InspectionItemRow({
       <div className="inspection-item-main">
         <div className="inspection-item-title-row">
           <h3 className="inspection-item-title">
-            {isSkip ? result.item_name_snapshot : displayName(result.item_name_snapshot)}
+            {isSkip && !readOnly
+              ? "Tires not inspected this visit"
+              : isSkip
+                ? result.item_name_snapshot
+                : displayName(result.item_name_snapshot)}
           </h3>
           {!readOnly ? (
             <span
@@ -478,7 +484,7 @@ export function InspectionItemRow({
           </div>
         )}
       </div>
-      {!readOnly && !isSkip ? (
+      {!readOnly && !isSkip && !liningEveryVisit ? (
         <button
           type="button"
           onClick={() => saveStatus("not_applicable")}
@@ -492,8 +498,13 @@ export function InspectionItemRow({
       ) : null}
       {!readOnly && isSkip ? (
         <p className="inspection-skip-note">
-          Only when this visit is not a brake and tire inspection. A real reason is
-          required. Tire and brake photos stay required until that reason is saved.
+          Front and rear brakes are inspected every visit. This only leaves tire lines
+          blank, and only with a real reason. Brake photos are still required.
+        </p>
+      ) : null}
+      {!readOnly && liningEveryVisit ? (
+        <p className="inspection-skip-note">
+          Inspected on every visit. Mark it OK, Future, or Now, and enter the measurement.
         </p>
       ) : null}
 
@@ -640,7 +651,7 @@ export function InspectionItemRow({
                 aria-invalid={notesMissing || undefined}
                 placeholder={
                   isSkip
-                    ? "Why aren't brakes and tires being inspected this visit?"
+                    ? "Why aren't the tires being inspected this visit?"
                     : status === "not_applicable"
                       ? "Why doesn't this apply? For example: shaft drive, no center stand."
                       : needsAttention
