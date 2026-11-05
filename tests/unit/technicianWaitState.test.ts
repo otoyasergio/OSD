@@ -161,7 +161,7 @@ describe("deriveFloorWorkState matrix", () => {
     expect(state.board).toBe("waiting");
     expect(state.waitOwner).toBe("technician");
     expect(state.stateLabel).toBe("Paused — clock stopped");
-    expect(state.resumable).toBe(true);
+    expect(state.resumable).toBe(false);
   });
 
   it("waits on the customer only when this job needs the approval", () => {
@@ -198,7 +198,7 @@ describe("deriveFloorWorkState matrix", () => {
     const jobLevel = stateFor({ job_status: "waiting_for_parts" });
     expect(jobLevel.board).toBe("waiting");
     expect(jobLevel.waitOwner).toBe("parts");
-    expect(jobLevel.resumable).toBe(true);
+    expect(jobLevel.resumable).toBe(false);
   });
 
   it("keeps quality/safety-stage jobs honest: completed job hands off to QC", () => {

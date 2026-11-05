@@ -12,6 +12,7 @@ import {
 } from "@/lib/database/schemaCompat";
 import { confirmEstimate } from "@/lib/services/estimates";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { syncFloorQueue } from "@/lib/services/floorQueueSync";
 import type { AuthorizationDecision, JobStatus } from "@/lib/database/types";
 
 export type PortalTokenPurpose =
@@ -301,6 +302,7 @@ export async function portalApproveJob(token: string, jobId: string): Promise<vo
   });
 
   await recalculateWorkOrderStatus(admin, session.work_order_id, null);
+  await syncFloorQueue(admin, session.work_order_id, null);
   await refreshPortalBillingProjection(session.work_order_id);
 }
 
@@ -346,6 +348,7 @@ export async function portalDeclineJob(
   });
 
   await recalculateWorkOrderStatus(admin, session.work_order_id, null);
+  await syncFloorQueue(admin, session.work_order_id, null);
   await refreshPortalBillingProjection(session.work_order_id);
 }
 

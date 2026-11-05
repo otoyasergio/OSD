@@ -60,6 +60,7 @@ import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
 import { listPartsForWorkOrder } from "@/lib/services/parts";
 import { listIntakePhotos } from "@/lib/services/photos";
 import { getWorkOrderAccountability } from "@/lib/services/workOrderAccountability";
+import { listOpenServiceBlockers } from "@/lib/services/floorQueueSync";
 import { listAdvisorsForActiveLocation } from "@/lib/services/advisorDesk";
 import { AccountabilityPanel } from "@/components/work_orders/AccountabilityPanel";
 import {
@@ -372,6 +373,8 @@ export default async function WorkOrderDetailPage({
       }).catch(() => undefined);
     });
   }
+  const openServiceBlockers =
+    activeTab === "overview" ? await listOpenServiceBlockers(work_order_id) : [];
   const auctionGuide = auctionLoaded?.view ?? null;
 
   const canAssign = canAssignTechnician(viewRole);
@@ -611,6 +614,7 @@ export default async function WorkOrderDetailPage({
           ) : null}
           <OverviewTab
             detail={detail}
+            openServiceBlockers={openServiceBlockers}
             openRecommendations={recommendations.filter(
               (rec) =>
                 !rec.converted_job_id &&
