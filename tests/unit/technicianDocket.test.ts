@@ -63,6 +63,7 @@ describe("buildTechnicianDocketItems", () => {
           motorcycle_label: "Yamaha R3",
           status: "in_progress",
           status_label: "In Progress",
+          job_timer_running: true,
         },
       ],
       qcItems: [
@@ -148,6 +149,7 @@ describe("buildTechnicianDocketItems", () => {
           status: "in_progress",
           status_label: "In Progress",
           docket_position: 2,
+          job_timer_running: true,
         },
       ],
       qcItems: [],
@@ -246,6 +248,7 @@ describe("buildTechnicianDocketItems", () => {
           status: "in_progress",
           status_label: "In Progress",
           docket_position: 3,
+          job_timer_running: true,
         },
         {
           job_id: "j-queued-second",
@@ -483,11 +486,8 @@ describe("buildTechnicianDocketItems", () => {
           work_order_number: "WO-2",
           service_name: "Brakes",
           motorcycle_label: "Yamaha R3",
-          status: "in_progress",
-          status_label: "In Progress",
-          floor_acknowledged_at: "2026-07-17T12:00:00Z",
-          floor_parked_at: "2026-07-17T13:00:00Z",
-          floor_park_reason: "parts",
+          status: "waiting_for_parts",
+          status_label: "Waiting For Parts",
         },
       ],
       qcItems: [

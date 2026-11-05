@@ -14,6 +14,7 @@ import {
 } from "@/lib/permissions";
 import { addJobSchema, approvalMethodSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { syncFloorQueue } from "@/lib/services/floorQueueSync";
 import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
 import { seedDefaultJobChecklist } from "@/lib/services/jobChecklist";
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
@@ -848,6 +849,7 @@ export async function updateJobStatus(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  await syncFloorQueue(supabase, job.work_order_id, user.user_id);
 }
 
 export async function recordCustomerApproval(
@@ -911,6 +913,7 @@ export async function recordCustomerApproval(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  await syncFloorQueue(supabase, job.work_order_id, user.user_id);
 }
 
 export async function recordCustomerDecline(
@@ -973,4 +976,5 @@ export async function recordCustomerDecline(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  await syncFloorQueue(supabase, job.work_order_id, user.user_id);
 }

@@ -208,20 +208,11 @@ describe("buildFloorActionModel matrix", () => {
     });
   });
 
-  it("hides park/swap everywhere except the bench, and never on QC/safety", () => {
+  it("offers tool park on the bench and nowhere else", () => {
     const bench = modelFor({ job_status: "in_progress", has_swap_targets: true });
-    expect(bench.secondary.map((control) => control.action)).toEqual(["park", "swap"]);
+    expect(bench.secondary.map((control) => control.action)).toEqual(["park"]);
     expect(bench.secondary.every((control) => control.enabled)).toBe(true);
-
-    const benchNoTargets = modelFor({
-      job_status: "in_progress",
-      has_swap_targets: false,
-    });
-    const swap = benchNoTargets.secondary.find((control) => control.action === "swap");
-    expect(swap).toMatchObject({
-      enabled: false,
-      disabledReason: "No other bike in your line",
-    });
+    expect(bench.secondary.some((control) => control.action === "swap")).toBe(false);
 
     for (const model of [
       modelFor({ job_status: "ready_to_start", job_timer_running: false }),
@@ -238,13 +229,13 @@ describe("buildFloorActionModel matrix", () => {
     }
   });
 
-  it("disables resume only for customer-owned waits", () => {
+  it("does not resume a wait; a tool wait can be marked clear", () => {
     const approvalParked = modelFor({
       floor_parked_at: TS,
       floor_park_reason: "approval",
       job_timer_running: false,
     });
-    expect(approvalParked.primary).toMatchObject({ action: "resume", enabled: false });
+    expect(approvalParked.primary.enabled).toBe(false);
     expect(approvalParked.waitOwner).toBe("front_desk");
 
     const jobAwaitingApproval = modelFor({
@@ -255,13 +246,24 @@ describe("buildFloorActionModel matrix", () => {
     expect(jobAwaitingApproval.primary.enabled).toBe(false);
     expect(jobAwaitingApproval.waitOwner).toBe("front_desk");
 
-    for (const reason of ["parts", "tool", "other", "swapped"] as const) {
+    const tool = modelFor({
+      floor_parked_at: TS,
+      floor_park_reason: "tool",
+      job_timer_running: false,
+    });
+    expect(tool.primary).toMatchObject({
+      action: "clear_tool",
+      label: "Mark clear",
+      enabled: true,
+    });
+
+    for (const reason of ["parts", "other", "swapped"] as const) {
       const model = modelFor({
         floor_parked_at: TS,
         floor_park_reason: reason,
         job_timer_running: false,
       });
-      expect(model.primary, reason).toMatchObject({ action: "resume", enabled: true });
+      expect(model.primary.enabled, reason).toBe(false);
     }
   });
 

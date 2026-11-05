@@ -167,6 +167,7 @@ export type GoAction =
   | "complete"
   | "pass_qc"
   | "pass_safety"
+  | "clear_tool"
   | "none";
 
 export type GoLabelResult = {
@@ -192,7 +193,7 @@ export function deriveGoAction(input: {
     return {
       action: "pull_onto_bench",
       label: "Start this bike",
-      sub: "Starts your job clock. Anything on the bench parks itself.",
+      sub: "Starts your job clock.",
       enabled: true,
     };
   }
@@ -388,12 +389,7 @@ export function buildPitBoardSteps(input: {
 export const PARK_REASON_OPTIONS: Array<{
   reason: FloorParkReason;
   label: string;
-}> = [
-  { reason: "parts", label: "Parts not here" },
-  { reason: "approval", label: "Needs approval" },
-  { reason: "tool", label: "Tool or lift busy" },
-  { reason: "other", label: "Other interruption" },
-];
+}> = [{ reason: "tool", label: "Tool or lift busy" }];
 
 export const PROOF_SKIP_OPTIONS = [
   "Nothing visible to show",

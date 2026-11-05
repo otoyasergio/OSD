@@ -13,6 +13,7 @@ import {
 import { partSchema, partStatusSchema } from "@/lib/validation/schemas";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { syncFloorQueue } from "@/lib/services/floorQueueSync";
 import { isUndefinedTableError } from "@/lib/database/schemaCompat";
 
 export type Part = {
@@ -425,5 +426,6 @@ export async function updatePartStatus(
   }
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  await syncFloorQueue(supabase, job.work_order_id, user.user_id);
   return part;
 }

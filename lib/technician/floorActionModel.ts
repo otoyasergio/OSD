@@ -107,7 +107,7 @@ function parkWait(reason: FloorParkReason | null): ParkWait {
         stateLabel: "Waiting for parts",
         waitReason: "Waiting for parts",
         waitOwner: "parts",
-        resumable: true,
+        resumable: false,
       };
     case "approval":
       return {
@@ -118,32 +118,31 @@ function parkWait(reason: FloorParkReason | null): ParkWait {
       };
     case "tool":
       return {
-        stateLabel: "Paused — tool busy",
+        stateLabel: "Tool or lift busy",
         waitReason: "Tool or lift busy",
         waitOwner: "technician",
-        resumable: true,
+        resumable: false,
       };
     case "swapped":
       return {
         stateLabel: "Parked — swapped bikes",
         waitReason: "You swapped onto another bike",
         waitOwner: "technician",
-        resumable: true,
+        resumable: false,
       };
     case "other":
       return {
         stateLabel: "Paused",
         waitReason: "Paused by you",
         waitOwner: "technician",
-        resumable: true,
+        resumable: false,
       };
     default:
-      // Legacy park rows without a reason/owner — the tech owns resuming.
       return {
         stateLabel: "Paused — clock stopped",
         waitReason: "Paused — clock stopped",
         waitOwner: "technician",
-        resumable: true,
+        resumable: false,
       };
   }
 }
@@ -236,7 +235,7 @@ export function deriveFloorWorkState(input: FloorWorkStateInput): FloorWorkState
       stateLabel: "Waiting for parts",
       waitReason: "Waiting for parts",
       waitOwner: "parts",
-      resumable: true,
+      resumable: false,
     };
   }
 
@@ -315,6 +314,8 @@ export type FloorActionModelInput = {
   qc_assignee_is_me?: boolean;
   can_safety?: boolean;
   has_swap_targets?: boolean;
+  /** False when a bike ahead of this one is still in the line. */
+  can_start?: boolean;
   pending_action?: boolean;
 };
 
@@ -484,7 +485,9 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
         primary: {
           action: start.action,
           label: start.label,
-          enabled: start.enabled,
+          enabled: input.can_start === false ? false : start.enabled,
+          disabledReason:
+            input.can_start === false ? "The bike ahead of this one is next." : undefined,
           hint: start.sub,
         },
         secondary: [],
@@ -494,31 +497,32 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
   }
 
   if (state.board === "waiting") {
-    if (!state.resumable) {
-      return {
-        ...base,
-        primary: {
-          action: "resume",
-          label: "Resume ▶",
-          enabled: false,
-          disabledReason: "Waiting for customer OK — front desk will release it",
+    if (input.floor_park_reason === "tool") {
+      return applyPending(
+        {
+          ...base,
+          primary: {
+            action: "clear_tool",
+            label: "Mark clear",
+            enabled: true,
+            hint: "The bike returns to its place in line. The clock stays off.",
+          },
+          secondary: [],
         },
-        secondary: [],
-      };
+        pending
+      );
     }
-    return applyPending(
-      {
-        ...base,
-        primary: {
-          action: "resume",
-          label: "Resume ▶",
-          enabled: true,
-          hint: "Puts this bike back on the bench and restarts the clock.",
-        },
-        secondary: [],
+    return {
+      ...base,
+      primary: {
+        action: "none",
+        label: state.waitReason ?? "Waiting",
+        enabled: false,
+        disabledReason:
+          state.waitReason ?? "This bike is waiting. It starts again only from the line.",
       },
-      pending
-    );
+      secondary: [],
+    };
   }
 
   // On the bench — the pit-board step engine picks the next move.
@@ -538,17 +542,7 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
         step: go.step ?? null,
         hint: go.sub,
       },
-      secondary: [
-        { action: "park", label: "Park", enabled: true },
-        {
-          action: "swap",
-          label: "Swap",
-          enabled: Boolean(input.has_swap_targets),
-          disabledReason: input.has_swap_targets
-            ? undefined
-            : "No other bike in your line",
-        },
-      ],
+      secondary: [{ action: "park", label: "Tool or lift busy", enabled: true }],
     },
     pending
   );

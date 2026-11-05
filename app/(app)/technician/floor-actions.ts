@@ -24,6 +24,7 @@ import { chooseNextFloorItem } from "@/lib/technician/nextFloorItem";
 import {
   acknowledgeDocketJob,
   clearParkOnComplete,
+  clearToolWait,
   floorIdempotencyKey,
   parkJob,
   pullOntoBench,
@@ -68,13 +69,7 @@ export async function startJobFloorAction(
   try {
     const jobId = String(formData.get("job_id") ?? "");
     const workOrderId = String(formData.get("work_order_id") ?? "");
-    if (v2WritesEnabled(readWorkflowV2Flags())) {
-      // Starting a job on the floor is a bench pull: one transaction parks
-      // any current bench job, starts this one, and opens its timer.
-      await pullOntoBench(jobId);
-    } else {
-      await updateJobStatus(jobId, "in_progress");
-    }
+    await pullOntoBench(jobId);
     revalidateFloor(workOrderId);
     return { success: "Job started." };
   } catch (error) {
@@ -124,6 +119,21 @@ export async function parkJobAction(
     await parkJob(jobId, reason, note);
     revalidateFloor(workOrderId);
     return { success: "Parked — your spot is saved and the clock is paused." };
+  } catch (error) {
+    return { error: toFormErrorMessage(error) };
+  }
+}
+
+export async function clearToolWaitAction(
+  _prev: FloorActionState,
+  formData: FormData
+): Promise<FloorActionState> {
+  try {
+    const jobId = String(formData.get("job_id") ?? "");
+    const workOrderId = String(formData.get("work_order_id") ?? "");
+    await clearToolWait(jobId);
+    revalidateFloor(workOrderId);
+    return { success: "Cleared. The bike is back in line and the clock stays off." };
   } catch (error) {
     return { error: toFormErrorMessage(error) };
   }
