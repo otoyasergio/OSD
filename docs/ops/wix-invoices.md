@@ -41,6 +41,14 @@ A voided invoice stays on the customer and the motorcycle and is left out of the
 
 Publishing sends the invoice through Wix. The app does not send a second copy.
 
+## Store credit
+
+A customer's store credit goes on the open Wix invoice as a `Customer credit` discount, up to the invoice total before tax. That amount is held on the invoice, so a second invoice cannot spend it. When lines come off the invoice, the difference goes back to the customer's balance.
+
+Deleting a draft in Wix returns everything it held. A paid or voided invoice keeps what it holds and takes no more.
+
+If intake stops after Wix created the invoice, the retry uses the same invoice. To abandon that intake instead, delete the draft in Wix so the credit returns.
+
 ## Licence scan
 
 The intake customer step and the customer form read the PDF417 barcode in Safari with the rear camera. Licence number and expiry are stored on `customer_private_profile` for owner, manager, service advisor, and admin. They are not sent to Wix and are not used in a promotion.

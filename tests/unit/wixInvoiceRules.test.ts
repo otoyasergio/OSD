@@ -15,6 +15,7 @@ import {
   allowsEnteredWixInvoiceNumber,
   intakeBannerMessage,
   intakeFailureMessage,
+  intakeSetupFailureMessage,
   isLegacyInvoicesApiUnavailable,
   LEGACY_INVOICES_API_REASON,
   normalizeEnteredWixInvoiceNumber,
@@ -29,6 +30,7 @@ import {
   squareDecision,
   squareIdempotencyKey,
   preTaxLineItems,
+  preTaxSubtotalCents,
   recordedCentsForVisit,
   shopDueDateIso,
   squareRecordName,
@@ -144,12 +146,47 @@ describe("HST is sent once", () => {
   });
 });
 
+describe("store credit limit", () => {
+  it("adds up the lines Wix will bill, before tax", () => {
+    expect(
+      preTaxSubtotalCents([
+        { name: "Oil change", price: 100 },
+        { name: "Brake pads", price: 19.99, quantity: 2 },
+        { name: "HST (13%)", price: 18.2 },
+        { name: "Goodwill", price: -5 },
+      ])
+    ).toBe(13998);
+    expect(preTaxSubtotalCents([])).toBe(0);
+  });
+});
+
+describe("intake failure after Wix made the invoice", () => {
+  it("names the invoice and does not offer a typed invoice number", () => {
+    const message = intakeSetupFailureMessage({
+      clientName: "Evan Kerr",
+      bikeLabel: "2017 TRIUMPH Bonneville T100",
+      displayNumber: "0003894",
+    });
+    expect(message).toContain("Wix created invoice 0003894 for Evan Kerr");
+    expect(message).toContain("2017 TRIUMPH Bonneville T100");
+    expect(message).toContain("No work order was created.");
+    expect(allowsEnteredWixInvoiceNumber(message)).toBe(false);
+    expect(isLegacyInvoicesApiUnavailable(message)).toBe(false);
+  });
+});
+
 describe("invoice number allocation", () => {
   it("publishes a draft that has no display number and leaves a numbered invoice alone", () => {
     expect(draftNeedsNumberAllocation({ status: "DRAFT", displayNumber: "" })).toBe(true);
-    expect(draftNeedsNumberAllocation({ status: undefined, displayNumber: null })).toBe(true);
-    expect(draftNeedsNumberAllocation({ status: "DRAFT", displayNumber: "0003895" })).toBe(false);
-    expect(draftNeedsNumberAllocation({ status: "PUBLISHED", displayNumber: "" })).toBe(false);
+    expect(draftNeedsNumberAllocation({ status: undefined, displayNumber: null })).toBe(
+      true
+    );
+    expect(
+      draftNeedsNumberAllocation({ status: "DRAFT", displayNumber: "0003895" })
+    ).toBe(false);
+    expect(draftNeedsNumberAllocation({ status: "PUBLISHED", displayNumber: "" })).toBe(
+      false
+    );
     expect(canSyncCustomerBlock("DRAFT")).toBe(true);
     expect(canSyncCustomerBlock("PUBLISHED")).toBe(true);
     expect(canSyncCustomerBlock("PAID")).toBe(false);
@@ -164,30 +201,38 @@ describe("revision, square, and acknowledgement", () => {
   });
 
   it("squares PayPal once and skips a void", () => {
-    expect(squareDecision({
-      method: "PayPal",
-      voided: false,
-      excludeFromSquare: false,
-      alreadySquared: false,
-    }).action).toBe("auto_square");
-    expect(squareDecision({
-      method: "CreditCard",
-      voided: false,
-      excludeFromSquare: false,
-      alreadySquared: false,
-    }).action).toBe("ask");
-    expect(squareDecision({
-      method: "PayPal",
-      voided: true,
-      excludeFromSquare: false,
-      alreadySquared: false,
-    }).action).toBe("skip_void");
-    expect(squareDecision({
-      method: "PayPal",
-      voided: false,
-      excludeFromSquare: false,
-      alreadySquared: true,
-    }).action).toBe("already_squared");
+    expect(
+      squareDecision({
+        method: "PayPal",
+        voided: false,
+        excludeFromSquare: false,
+        alreadySquared: false,
+      }).action
+    ).toBe("auto_square");
+    expect(
+      squareDecision({
+        method: "CreditCard",
+        voided: false,
+        excludeFromSquare: false,
+        alreadySquared: false,
+      }).action
+    ).toBe("ask");
+    expect(
+      squareDecision({
+        method: "PayPal",
+        voided: true,
+        excludeFromSquare: false,
+        alreadySquared: false,
+      }).action
+    ).toBe("skip_void");
+    expect(
+      squareDecision({
+        method: "PayPal",
+        voided: false,
+        excludeFromSquare: false,
+        alreadySquared: true,
+      }).action
+    ).toBe("already_squared");
     expect(squareIdempotencyKey("pay-1")).toBe("pay-1");
     expect(squareRecordName("Ada Lovelace", "0003894")).toBe("Ada Lovelace 0003894");
   });
@@ -227,18 +272,22 @@ describe("revision, square, and acknowledgement", () => {
   });
 
   it("counts a voided visit against the amount staff recorded", () => {
-    expect(visitIsSquared({
-      voided: true,
-      wixCollectedCents: 0,
-      squareRecordedCents: 5000,
-      staffRecordedCents: 5000,
-    })).toBe(true);
-    expect(visitIsSquared({
-      voided: false,
-      wixCollectedCents: 5000,
-      squareRecordedCents: 5000,
-      staffRecordedCents: 0,
-    })).toBe(true);
+    expect(
+      visitIsSquared({
+        voided: true,
+        wixCollectedCents: 0,
+        squareRecordedCents: 5000,
+        staffRecordedCents: 5000,
+      })
+    ).toBe(true);
+    expect(
+      visitIsSquared({
+        voided: false,
+        wixCollectedCents: 5000,
+        squareRecordedCents: 5000,
+        staffRecordedCents: 0,
+      })
+    ).toBe(true);
   });
 
   it("clears the acknowledgement only after a successful retry", () => {

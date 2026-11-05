@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import { createAnonClient, createServiceClient, describeIntegration } from "./helpers";
 
 describeIntegration("reserve customer credit", () => {
-  it("spends a balance once across two invoices, including a simultaneous reserve", async () => {
+  it("moves a balance onto invoices once and gives it back, including a simultaneous reserve", async () => {
     const admin = createServiceClient();
     const customerId = randomUUID();
     const otherCustomerId = randomUUID();
@@ -162,6 +162,104 @@ describeIntegration("reserve customer credit", () => {
         0
       );
       expect(leftover).toBe(0);
+
+      const balances = async () => {
+        const rows = await admin
+          .from("customer_credit")
+          .select("credit_id, remaining_amount")
+          .eq("customer_id", customerId);
+        return new Map(
+          (rows.data ?? []).map((row) => [
+            row.credit_id as string,
+            Number(row.remaining_amount),
+          ])
+        );
+      };
+      const held = async (invoiceId: string) => {
+        const row = await admin
+          .from("wix_invoice")
+          .select("credit_applied_cents")
+          .eq("wix_invoice_id", invoiceId)
+          .single();
+        return Number(row.data?.credit_applied_cents);
+      };
+
+      // A lower target gives the difference back, newest balance first.
+      const heldOnA = appliedById.get(invoiceA)!;
+      const lowered = await admin.rpc("reserve_customer_credit", {
+        p_customer_id: customerId,
+        p_wix_invoice_id: invoiceA,
+        p_target_cents: heldOnA - 1000,
+      });
+      expect(lowered.error).toBeNull();
+      expect(lowered.data).toBe(heldOnA - 1000);
+      expect(await held(invoiceA)).toBe(heldOnA - 1000);
+      expect((await balances()).get(creditNew)).toBe(10);
+      expect((await balances()).get(creditOld)).toBe(0);
+
+      // A paid invoice cannot take more credit, but can still give it back.
+      expect(
+        (
+          await admin
+            .from("wix_invoice")
+            .update({ status: "PAID" })
+            .eq("wix_invoice_id", invoiceB)
+        ).error
+      ).toBeNull();
+      const heldOnB = await held(invoiceB);
+      const sealed = await admin.rpc("reserve_customer_credit", {
+        p_customer_id: customerId,
+        p_wix_invoice_id: invoiceB,
+        p_target_cents: heldOnB + 500,
+      });
+      expect(sealed.error?.message ?? "").toMatch(/WIX_INVOICE_SEALED/);
+      expect(await held(invoiceB)).toBe(heldOnB);
+      expect((await balances()).get(creditNew)).toBe(10);
+
+      // Zero returns everything, and a balance that no longer exists is replaced.
+      expect(
+        (await admin.from("customer_credit").delete().eq("credit_id", creditOld)).error
+      ).toBeNull();
+      const returnedA = await admin.rpc("reserve_customer_credit", {
+        p_customer_id: customerId,
+        p_wix_invoice_id: invoiceA,
+        p_target_cents: 0,
+      });
+      const returnedB = await admin.rpc("reserve_customer_credit", {
+        p_customer_id: customerId,
+        p_wix_invoice_id: invoiceB,
+        p_target_cents: 0,
+      });
+      expect(returnedA.error).toBeNull();
+      expect(returnedB.error).toBeNull();
+      expect(returnedA.data).toBe(0);
+      expect(returnedB.data).toBe(0);
+      expect(await held(invoiceA)).toBe(0);
+      expect(await held(invoiceB)).toBe(0);
+      const afterReturn = await balances();
+      expect(afterReturn.get(creditNew)).toBe(40.1);
+      const returnedCents = [...afterReturn.values()].reduce(
+        (sum, dollars) => sum + Math.round(dollars * 100),
+        0
+      );
+      expect(returnedCents).toBe(10010);
+      const replacement = await admin
+        .from("customer_credit")
+        .select("reason, amount")
+        .eq("customer_id", customerId)
+        .like("reason", "Returned from invoice %");
+      const replacedCents = (replacement.data ?? []).reduce(
+        (sum, row) => sum + Math.round(Number(row.amount) * 100),
+        0
+      );
+      expect(replacedCents).toBe(6000);
+
+      const negative = await admin.rpc("reserve_customer_credit", {
+        p_customer_id: customerId,
+        p_wix_invoice_id: invoiceA,
+        p_target_cents: -1,
+      });
+      expect(negative.error?.message ?? "").toMatch(/CREDIT_RESERVE_INVALID/);
 
       const anon = createAnonClient();
       const denied = await anon.rpc("reserve_customer_credit", {

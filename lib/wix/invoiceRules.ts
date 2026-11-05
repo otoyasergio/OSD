@@ -122,11 +122,7 @@ export function wixStatusLabel(
 ): string {
   const normalized = (status ?? "").toUpperCase();
   const flags = qualifiers.map((item) => item.toUpperCase());
-  if (
-    flags.includes("OVERDUE") &&
-    normalized !== "PAID" &&
-    normalized !== "VOIDED"
-  ) {
+  if (flags.includes("OVERDUE") && normalized !== "PAID" && normalized !== "VOIDED") {
     return "Overdue";
   }
   switch (normalized) {
@@ -182,6 +178,14 @@ export function preTaxLineItems(lines: PreTaxLine[]): PreTaxLine[] {
     }));
 }
 
+/** What the lines add up to before tax, as Wix will total them. */
+export function preTaxSubtotalCents(lines: PreTaxLine[]): number {
+  return preTaxLineItems(lines).reduce(
+    (sum, line) => sum + Math.round(line.price * 100 * (line.quantity ?? 1)),
+    0
+  );
+}
+
 export function moneyToCents(amount: string | number | null | undefined): number {
   if (amount == null || amount === "") return 0;
   const value = typeof amount === "number" ? amount : Number(amount);
@@ -229,7 +233,10 @@ export function squareIdempotencyKey(sourceId: string): string {
 }
 
 export function squareRecordName(clientName: string, displayNumber: string): string {
-  return `${clientName.trim()} ${displayNumber.trim()}`.replace(/\s+/g, " ").trim().slice(0, 255);
+  return `${clientName.trim()} ${displayNumber.trim()}`
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 255);
 }
 
 /**
@@ -237,7 +244,10 @@ export function squareRecordName(clientName: string, displayNumber: string): str
  * 16:00 UTC stays on that day in both EST and EDT.
  * A full timestamp keeps its calendar date the same way.
  */
-export function shopDueDateIso(value: string | null | undefined, fallbackIso: string): string {
+export function shopDueDateIso(
+  value: string | null | undefined,
+  fallbackIso: string
+): string {
   const trimmed = value?.trim() ?? "";
   const dateOnly = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
   if (dateOnly) return `${dateOnly[1]}T16:00:00.000Z`;
@@ -282,7 +292,8 @@ export function acknowledgementClearedOnSuccess(input: {
  * Shown in the red form error during the appId outage. A successful
  * acknowledge is a status, and the next create has to run from the same tap.
  */
-export const ACKNOWLEDGED_INTAKE_SUCCESS = "Acknowledged. Try again to create the invoice.";
+export const ACKNOWLEDGED_INTAKE_SUCCESS =
+  "Acknowledged. Try again to create the invoice.";
 
 export function intakeBannerMessage(input: {
   error: string | null;
@@ -366,10 +377,13 @@ export function allowsEnteredWixInvoiceNumber(text: string | null | undefined): 
  * acknowledge. `hold_revision` moves forward so a late Acknowledge for the
  * error staff already saw cannot stamp the new one.
  */
-export function acknowledgementFieldsOnFailedRetry(input: {
-  holdRevision: number;
-}): { acknowledged_at: null; hold_revision: number } {
-  const current = Number.isFinite(input.holdRevision) ? Math.trunc(input.holdRevision) : 1;
+export function acknowledgementFieldsOnFailedRetry(input: { holdRevision: number }): {
+  acknowledged_at: null;
+  hold_revision: number;
+} {
+  const current = Number.isFinite(input.holdRevision)
+    ? Math.trunc(input.holdRevision)
+    : 1;
   return {
     acknowledged_at: null,
     hold_revision: Math.max(1, current) + 1,
@@ -419,9 +433,7 @@ export function vinsFromInvoiceText(
   });
 }
 
-export type IntakeReadiness =
-  | { ok: true }
-  | { ok: false; code: string; message: string };
+export type IntakeReadiness = { ok: true } | { ok: false; code: string; message: string };
 
 export function assertIntakeInvoiceReady(input: {
   clientName: string;
@@ -473,4 +485,13 @@ export function intakeFailureMessage(input: {
     return `Wix cannot create the invoice from the app yet for ${client} on ${bike}. This site is still on the older Wix invoices. Create the invoice in Wix, then enter that invoice number here. That number is the work order number. No work order number was created.`;
   }
   return `Wix did not return an invoice number for ${client} on ${bike}. ${reason} Acknowledge this before trying again. No work order number was created.`;
+}
+
+/** Wix made the invoice, but linking it or reserving store credit failed. */
+export function intakeSetupFailureMessage(input: {
+  clientName: string;
+  bikeLabel: string;
+  displayNumber: string;
+}): string {
+  return `Wix created invoice ${input.displayNumber.trim()} for ${input.clientName.trim()} on ${input.bikeLabel.trim()}, but the app could not finish setting it up. Acknowledge this before trying again. The retry uses the same invoice. No work order was created.`;
 }

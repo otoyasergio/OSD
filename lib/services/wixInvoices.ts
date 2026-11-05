@@ -45,6 +45,7 @@ import {
   draftNeedsNumberAllocation,
   formatPreviewDisplayNumber,
   intakeFailureMessage,
+  intakeSetupFailureMessage,
   isLegacyInvoicesApiUnavailable,
   LEGACY_INVOICES_API_REASON,
   LEGACY_INVOICE_SKIP_MAX_AGE_MS,
@@ -56,6 +57,7 @@ import {
   isWixInvoiceId,
   invoiceTitle,
   isVoidStatus,
+  preTaxSubtotalCents,
   recordedCentsForVisit,
   shopDueDateIso,
   shouldIgnoreIncomingRevision,
@@ -63,6 +65,7 @@ import {
   squareIdempotencyKey,
   squareRecordName,
   wixStatusLabel,
+  type PreTaxLine,
 } from "@/lib/wix/invoiceRules";
 import { syncCustomerToWix } from "@/lib/services/wixContacts";
 import {
@@ -139,11 +142,12 @@ export async function previewNextDisplayNumber(): Promise<string | null> {
 }
 
 async function creditCentsForCustomer(admin: Admin, customerId: string): Promise<number> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("customer_credit")
     .select("remaining_amount")
     .eq("customer_id", customerId)
     .gt("remaining_amount", 0);
+  if (error) throw error;
   const dollars = (data ?? []).reduce(
     (sum: number, row: { remaining_amount?: number | string | null }) =>
       sum + Number(row.remaining_amount ?? 0),
@@ -152,26 +156,28 @@ async function creditCentsForCustomer(admin: Admin, customerId: string): Promise
   return Math.max(0, Math.round(dollars * 100));
 }
 
-/** Remaining credit plus the amount already reserved on this invoice. */
-async function creditCentsForOpenInvoice(
+/** What this invoice already holds, and the most it could: that plus the unspent balance. */
+async function creditForOpenInvoice(
   admin: Admin,
   customerId: string,
-  wixInvoiceId: string | null
-): Promise<number> {
+  wixInvoiceId: string
+): Promise<{ heldCents: number; availableCents: number }> {
   const remaining = await creditCentsForCustomer(admin, customerId);
-  if (!wixInvoiceId) return remaining;
-  const { data } = await admin
+  const { data, error } = await admin
     .from("wix_invoice")
     .select("credit_applied_cents")
     .eq("wix_invoice_id", wixInvoiceId)
     .maybeSingle();
-  return remaining + Number(data?.credit_applied_cents ?? 0);
+  if (error) throw error;
+  const heldCents = Number(data?.credit_applied_cents ?? 0);
+  return { heldCents, availableCents: remaining + heldCents };
 }
 
 /**
- * Keep the discount on later edits, and stop the next invoice from applying it
- * again. The balance and the invoice stamp move in one database transaction.
- * Returns the cents now reserved on this invoice (never more than the balance).
+ * Set the store credit this invoice holds. The balance and the invoice stamp
+ * move in one database transaction: a higher target draws from the customer's
+ * balance, a lower one gives the difference back. Returns the cents now held,
+ * which is less than the target when the balance runs out.
  */
 export async function reserveCustomerCredit(
   admin: Admin,
@@ -179,11 +185,10 @@ export async function reserveCustomerCredit(
   wixInvoiceId: string,
   targetCents: number
 ): Promise<number> {
-  if (targetCents <= 0) return 0;
   const { data, error } = await admin.rpc("reserve_customer_credit", {
     p_customer_id: customerId,
     p_wix_invoice_id: wixInvoiceId,
-    p_target_cents: targetCents,
+    p_target_cents: Math.max(0, Math.round(targetCents)),
   });
   if (error) throw error;
   const reserved = Number(data);
@@ -194,36 +199,60 @@ export async function reserveCustomerCredit(
 }
 
 /**
- * Reserve whatever credit this invoice should hold, then put that exact amount
- * on the Wix draft. Reservation happens first so a failed Wix write can be
+ * Hold as much of the customer's credit on this invoice as its lines can use.
+ * The discount is pre-tax, so the pre-tax subtotal is the most it can be.
+ * `clearDiscount` is set when the invoice held credit and now holds none, so
+ * the discount already on the Wix invoice has to come off.
+ */
+async function reserveCreditForLines(
+  admin: Admin,
+  customerId: string,
+  wixInvoiceId: string,
+  lines: PreTaxLine[]
+): Promise<{ reservedCents: number; clearDiscount: boolean }> {
+  const { heldCents, availableCents } = await creditForOpenInvoice(
+    admin,
+    customerId,
+    wixInvoiceId
+  );
+  if (availableCents <= 0) return { reservedCents: 0, clearDiscount: false };
+  const reservedCents = await reserveCustomerCredit(
+    admin,
+    customerId,
+    wixInvoiceId,
+    Math.min(availableCents, preTaxSubtotalCents(lines))
+  );
+  return { reservedCents, clearDiscount: heldCents > 0 && reservedCents === 0 };
+}
+
+/**
+ * Reserve the credit this invoice should hold, then put that exact amount on
+ * the Wix invoice. Reservation happens first so a failed Wix write can be
  * retried without spending the balance twice.
  */
-async function syncReservedCreditOnInvoice(
+export async function syncReservedCreditOnInvoice(
   admin: Admin,
   input: {
     customerId: string;
     wixInvoiceId: string;
     revision: string;
     status: string | null | undefined;
-    lines: Array<{ name: string; price: number; quantity?: number }>;
+    lines: PreTaxLine[];
     title: string;
     header: ReturnType<typeof bikeHeaderFields>;
     technicianName: string | null;
   }
 ): Promise<void> {
-  const target = await creditCentsForOpenInvoice(
-    admin,
-    input.customerId,
-    input.wixInvoiceId
-  );
-  if (target <= 0) return;
-  const reserved = await reserveCustomerCredit(
+  // Credit reserved on an invoice Wix no longer lets us edit would be spent
+  // with no discount to show for it.
+  if (!canSyncInvoiceLines(input.status)) return;
+  const { reservedCents, clearDiscount } = await reserveCreditForLines(
     admin,
     input.customerId,
     input.wixInvoiceId,
-    target
+    input.lines
   );
-  if (reserved <= 0 || !canSyncInvoiceLines(input.status)) return;
+  if (reservedCents <= 0 && !clearDiscount) return;
   const updated = await updateWixInvoice(
     input.wixInvoiceId,
     buildLineUpdate({
@@ -232,7 +261,8 @@ async function syncReservedCreditOnInvoice(
       title: input.title,
       header: input.header,
       technicianName: input.technicianName,
-      creditCents: reserved,
+      creditCents: reservedCents,
+      clearCredit: clearDiscount,
     }).invoice as Record<string, unknown>
   );
   await upsertInvoiceFromRecord(updated);
@@ -508,6 +538,26 @@ async function applyDraftPricesToJobs(
 
 export async function deleteInvoiceLocally(wixInvoiceId: string): Promise<void> {
   const admin = createAdminClient();
+  const { data: row, error } = await admin
+    .from("wix_invoice")
+    .select("customer_id, credit_applied_cents")
+    .eq("wix_invoice_id", wixInvoiceId)
+    .maybeSingle();
+  if (error) throw error;
+  // The invoice no longer exists in Wix, so the credit it held was never used.
+  if (Number(row?.credit_applied_cents ?? 0) > 0) {
+    if (row?.customer_id) {
+      await reserveCustomerCredit(admin, String(row.customer_id), wixInvoiceId, 0);
+    } else {
+      console.error(
+        "Deleted Wix invoice held store credit with no customer to return it to",
+        {
+          wixInvoiceId,
+          creditAppliedCents: Number(row?.credit_applied_cents),
+        }
+      );
+    }
+  }
   await admin.from("wix_invoice").delete().eq("wix_invoice_id", wixInvoiceId);
 }
 
@@ -939,21 +989,6 @@ export async function prepareIntakeInvoice(input: {
       record = await getWixInvoice(String(pending.wix_invoice_id));
     }
   }
-  if (!record && input.existingWorkOrderId) {
-    const { data: linked, error: linkedError } = await admin
-      .from("wix_invoice")
-      .select("wix_invoice_id, status, voided")
-      .eq("work_order_id", input.existingWorkOrderId)
-      .order("invoice_number", { ascending: false });
-    if (linkedError) throw linkedError;
-    const editable = (linked ?? []).find(
-      (row) => !row.voided && canSyncInvoiceLines(String(row.status))
-    );
-    if (editable?.wix_invoice_id) {
-      record = await getWixInvoice(String(editable.wix_invoice_id));
-    }
-  }
-
   const namedLines = await resolveServiceNames(admin, input.serviceLines);
   const technician =
     input.technicianName ?? (await technicianName(admin, input.technicianUserId ?? null));
@@ -1130,8 +1165,15 @@ export async function prepareIntakeInvoice(input: {
     await linkPreparedInvoice(admin, preparedLink);
   } catch (error) {
     if (error instanceof WixIntakeBlockedError) throw error;
-    const reason = error instanceof Error ? error.message : "Wix invoice credit failed.";
-    const message = intakeFailureMessage({ clientName, bikeLabel, wixReason: reason });
+    console.error("Wix intake could not link the invoice or reserve store credit", {
+      wixInvoiceId: record.id,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    const message = intakeSetupFailureMessage({
+      clientName,
+      bikeLabel,
+      displayNumber: record.numbering!.displayNumber!,
+    });
     const opened = await openHold(admin, {
       customerId: input.customerId,
       motorcycleId: input.motorcycleId,
@@ -1261,16 +1303,11 @@ export async function pushWorkOrderLinesToWix(workOrderId: string): Promise<void
     admin,
     workOrder.primary_technician_id as string | null
   );
-  const creditTarget = await creditCentsForOpenInvoice(
-    admin,
-    String(workOrder.customer_id),
-    String(open.wix_invoice_id)
-  );
-  const reserved = await reserveCustomerCredit(
+  const { reservedCents, clearDiscount } = await reserveCreditForLines(
     admin,
     String(workOrder.customer_id),
     String(open.wix_invoice_id),
-    creditTarget
+    lines
   );
   const updated = await updateWixInvoice(
     String(open.wix_invoice_id),
@@ -1285,7 +1322,8 @@ export async function pushWorkOrderLinesToWix(workOrderId: string): Promise<void
         mileage: `${workOrder.mileage ?? 0} ${workOrder.mileage_unit ?? "km"}`,
       }),
       technicianName: tech,
-      creditCents: reserved,
+      creditCents: reservedCents,
+      clearCredit: clearDiscount,
     }).invoice as Record<string, unknown>
   );
   await upsertInvoiceFromRecord(updated);
