@@ -4,25 +4,42 @@ import { isFloorTech } from "@/lib/permissions/checks";
 export type AssignmentVisibilityFields = {
   primary_technician_id?: string | null;
   quality_check_assigned_to?: string | null;
+  /** work_order_technician rows. Front office assigns the visit here. */
+  technician_ids?: readonly string[] | null;
   /** Used for head_tech safety-stage access. */
   status?: string | null;
   jobs?: Array<{ assigned_technician_id?: string | null }> | null;
 };
 
-/** True when the tech is primary, QC assignee, or assigned on any job. */
+/** Ids from a work_order_technician embed, which may arrive as one row or many. */
+export function technicianIdsFromAssignment(
+  rows:
+    | ReadonlyArray<{ technician_id?: string | null }>
+    | { technician_id?: string | null }
+    | null
+    | undefined
+): string[] {
+  const list = Array.isArray(rows) ? rows : rows ? [rows] : [];
+  return list
+    .map((row) => row.technician_id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+}
+
+/** True when the tech is on the visit, primary, QC assignee, or assigned on any job. */
 export function isWorkOrderAssignedToTechnician(
   workOrder: AssignmentVisibilityFields,
   technicianUserId: string
 ): boolean {
   if (workOrder.primary_technician_id === technicianUserId) return true;
   if (workOrder.quality_check_assigned_to === technicianUserId) return true;
+  if ((workOrder.technician_ids ?? []).includes(technicianUserId)) return true;
   return (workOrder.jobs ?? []).some(
     (job) => job.assigned_technician_id === technicianUserId
   );
 }
 
 /**
- * Floor techs may only open WOs they are assigned to (job / primary / QC).
+ * Floor techs may only open WOs they are assigned to (visit / job / primary / QC).
  * Head tech may also open WOs in the safety_check stage.
  * Front office / admin retain full access.
  */

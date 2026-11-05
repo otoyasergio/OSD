@@ -156,6 +156,20 @@ export type DocketFlagInput = {
   location_code?: string | null;
 };
 
+/**
+ * A visit the front office assigned to this tech (primary or work_order_technician)
+ * that has no job of theirs yet. Opening it does not start the clock.
+ */
+export type DocketAssignedVisitInput = {
+  work_order_id: string;
+  work_order_number: string;
+  motorcycle_label: string;
+  work_order_status?: WorkOrderStatus | null;
+  /** Services on the visit, including jobs assigned to someone else. */
+  service_names: string[];
+  location_code?: string | null;
+};
+
 /** A received part waiting to be installed, created when the front office receives a line. */
 export type DocketInstallInput = {
   install_task_id: string;
@@ -205,6 +219,17 @@ export function filterActiveAssignedJobs(
   );
 }
 
+/** Visits that left the bay stay off the working list. */
+export function filterActiveAssignedVisits(
+  visits: readonly DocketAssignedVisitInput[]
+): DocketAssignedVisitInput[] {
+  return visits.filter(
+    (visit) =>
+      !isTerminalWorkOrderStatus(visit.work_order_status ?? null) &&
+      !workOrderLeftTechDocket(visit.work_order_status ?? null)
+  );
+}
+
 /** Pure filter — flags whose work order is closed or left the bay are stale. */
 export function filterActiveDocketFlags(
   flags: readonly DocketFlagInput[]
@@ -219,6 +244,7 @@ export function filterActiveDocketFlags(
 /** Pure builder — numbered What’s next list for one tech’s load. */
 export function buildTechnicianDocketItems(input: {
   assignedJobs: DocketAssignedJobInput[];
+  assignedVisits?: DocketAssignedVisitInput[];
   qcItems: DocketQcInput[];
   safetyItems: DocketSafetyInput[];
   flags: DocketFlagInput[];
@@ -501,6 +527,42 @@ export function buildTechnicianDocketItems(input: {
 
   const representedWorkOrders = new Set(items.map((item) => item.work_order_id));
 
+  for (const visit of filterActiveAssignedVisits(input.assignedVisits ?? [])) {
+    if (representedWorkOrders.has(visit.work_order_id)) continue;
+    const named = [
+      ...new Set(visit.service_names.map((name) => name.trim()).filter(Boolean)),
+    ];
+    const serviceNames = named.length > 0 ? named : ["Assigned to you"];
+    const serviceLabel = serviceNames.join(" · ");
+    items.push({
+      kind: "assigned",
+      key: `work-order-${visit.work_order_id}`,
+      motorcycle_label: visit.motorcycle_label,
+      service_label: serviceLabel,
+      service_names: serviceNames,
+      title: `${visit.motorcycle_label} · ${serviceLabel}`,
+      subtitle: docketWorkOrderSubtitle(visit.work_order_number, visit.location_code),
+      status_label: "Assigned to you",
+      job_id: null,
+      work_order_id: visit.work_order_id,
+      href: floorHref({ workOrderId: visit.work_order_id }),
+      overview_href: techJobPacketHref(visit.work_order_id, { section: "notes" }),
+      board_status: "offered",
+      board_stamp: "NEW",
+      floor_park_reason: null,
+      floor_wait_owner: null,
+      wait_owner_label: "",
+      park_reason_label: "",
+      state_label: "Assigned to you",
+      wait_reason: null,
+      wait_owner_kind: null,
+      awaiting_customer: false,
+      can_start: false,
+      primary_photo_url: null,
+    });
+    representedWorkOrders.add(visit.work_order_id);
+  }
+
   for (const flag of activeFlags) {
     // The selected motorcycle surface shows its open flags; avoid duplicating the
     // same motorcycle as both an assigned card and a separate flag card.
@@ -617,6 +679,114 @@ async function loadOpenInstallTasks(
       location_code: shopCode(String(row.location_id)),
     };
   });
+}
+
+/** Statuses that still belong on a tech's working list. */
+const VISIT_ON_BAY_STATUSES: WorkOrderStatus[] = [
+  "draft",
+  "open",
+  "inspection_in_progress",
+  "waiting_for_customer_approval",
+  "waiting_for_parts",
+  "ready_for_technician",
+  "in_progress",
+  "quality_check",
+  "on_hold",
+];
+
+const ASSIGNED_VISIT_SELECT = `
+  work_order_id, work_order_number, status, location_id,
+  motorcycle:motorcycle_id ( year, make, model ),
+  job ( service_name_snapshot, status )
+`;
+
+type AssignedVisitRow = {
+  work_order_id: string;
+  work_order_number: string;
+  status: WorkOrderStatus;
+  location_id: string;
+  motorcycle:
+    | { year: number; make: string; model: string }
+    | { year: number; make: string; model: string }[]
+    | null;
+  job:
+    | Array<{ service_name_snapshot: string; status: string }>
+    | { service_name_snapshot: string; status: string }
+    | null;
+};
+
+function mapAssignedVisitRow(
+  row: AssignedVisitRow,
+  shopCode: (locationId: string) => string | null
+): DocketAssignedVisitInput {
+  const motoRaw = row.motorcycle;
+  const moto = Array.isArray(motoRaw) ? motoRaw[0] : motoRaw;
+  const jobs = Array.isArray(row.job) ? row.job : row.job ? [row.job] : [];
+  const serviceNames = [
+    ...new Set(
+      jobs
+        .filter((job) => !isTerminalJobStatus(job.status))
+        .map((job) => job.service_name_snapshot.trim())
+        .filter(Boolean)
+    ),
+  ];
+  return {
+    work_order_id: row.work_order_id,
+    work_order_number: row.work_order_number,
+    motorcycle_label: motorcycleLabel(moto ?? null),
+    work_order_status: row.status,
+    service_names: serviceNames,
+    location_code: shopCode(row.location_id),
+  };
+}
+
+/**
+ * Visits the front office put on this tech (primary or visit membership)
+ * that are still in the bay. Job assignment is loaded separately.
+ */
+async function loadAssignedVisits(
+  supabase: DbClient,
+  technicianUserId: string,
+  allowedLocationIds: string[],
+  shopCode: (locationId: string) => string | null
+): Promise<DocketAssignedVisitInput[]> {
+  if (allowedLocationIds.length === 0) return [];
+
+  const membershipQuery = supabase
+    .from("work_order")
+    .select(
+      `
+      ${ASSIGNED_VISIT_SELECT},
+      work_order_technician!inner ( technician_id )
+    `
+    )
+    .in("location_id", allowedLocationIds)
+    .in("status", VISIT_ON_BAY_STATUSES)
+    .eq("work_order_technician.technician_id", technicianUserId);
+
+  const primaryQuery = supabase
+    .from("work_order")
+    .select(ASSIGNED_VISIT_SELECT)
+    .in("location_id", allowedLocationIds)
+    .in("status", VISIT_ON_BAY_STATUSES)
+    .eq("primary_technician_id", technicianUserId);
+
+  const [membership, primary] = await Promise.all([membershipQuery, primaryQuery]);
+  if (membership.error) throw membership.error;
+  if (primary.error) throw primary.error;
+
+  const byId = new Map<string, DocketAssignedVisitInput>();
+  for (const row of (primary.data ?? []) as AssignedVisitRow[]) {
+    byId.set(row.work_order_id, mapAssignedVisitRow(row, shopCode));
+  }
+  for (const row of (membership.data ?? []) as AssignedVisitRow[]) {
+    if (!byId.has(row.work_order_id)) {
+      byId.set(row.work_order_id, mapAssignedVisitRow(row, shopCode));
+    }
+  }
+  return [...byId.values()].sort((a, b) =>
+    a.work_order_number.localeCompare(b.work_order_number)
+  );
 }
 
 export async function getTechnicianDocket(
@@ -989,8 +1159,16 @@ export async function getTechnicianDocket(
     }
   }
 
+  const assignedVisits = await loadAssignedVisits(
+    supabase,
+    technicianUserId,
+    allowedLocationIds,
+    shopCode
+  );
+
   const bareItems = buildTechnicianDocketItems({
     assignedJobs,
+    assignedVisits,
     qcItems,
     safetyItems,
     flags,

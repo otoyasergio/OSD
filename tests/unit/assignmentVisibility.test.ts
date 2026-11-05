@@ -56,6 +56,20 @@ describe("isWorkOrderAssignedToTechnician", () => {
       )
     ).toBe(false);
   });
+
+  it("matches a visit the front office assigned without a job", () => {
+    expect(
+      isWorkOrderAssignedToTechnician(
+        {
+          primary_technician_id: null,
+          quality_check_assigned_to: null,
+          technician_ids: ["tech-1"],
+          jobs: [{ assigned_technician_id: "tech-2" }],
+        },
+        "tech-1"
+      )
+    ).toBe(true);
+  });
 });
 
 describe("canViewerAccessWorkOrder", () => {
@@ -75,6 +89,19 @@ describe("canViewerAccessWorkOrder", () => {
   it("denies floor techs on unassigned work orders", () => {
     expect(canViewerAccessWorkOrder(unassigned, "technician", "tech-1")).toBe(false);
     expect(canViewerAccessWorkOrder(unassigned, "head_tech", "tech-1")).toBe(false);
+  });
+
+  it("allows floor techs when the visit is assigned to them", () => {
+    expect(
+      canViewerAccessWorkOrder(
+        {
+          ...unassigned,
+          technician_ids: ["tech-1"],
+        },
+        "technician",
+        "tech-1"
+      )
+    ).toBe(true);
   });
 
   it("allows floor techs when a job is assigned to them", () => {

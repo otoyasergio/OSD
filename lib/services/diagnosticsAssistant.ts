@@ -19,6 +19,7 @@ import {
   canViewerAccessWorkOrder,
   canViewerAccessWorkOrderLocation,
   canViewerReadWorkOrderLocation,
+  technicianIdsFromAssignment,
 } from "@/lib/workOrders/assignmentVisibility";
 import {
   shapeDiagnosticsContext,
@@ -518,6 +519,8 @@ export type DiagnosticsWorkOrderScope = {
   status: string;
   primaryTechnicianId: string | null;
   qualityCheckAssignedTo: string | null;
+  /** Visit membership from work_order_technician. Omitted when unknown. */
+  technicianIds?: readonly string[] | null;
   jobs: Array<{
     jobId: string;
     assignedTechnicianId: string | null;
@@ -785,6 +788,7 @@ export function assertDiagnosticsAccess(
       {
         primary_technician_id: workOrder.primaryTechnicianId,
         quality_check_assigned_to: workOrder.qualityCheckAssignedTo,
+        technician_ids: workOrder.technicianIds,
         status: workOrder.status,
         jobs: workOrder.jobs.map((job) => ({
           assigned_technician_id: job.assignedTechnicianId,
@@ -1101,7 +1105,7 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
     const { data, error } = await this.session
       .from("work_order")
       .select(
-        "work_order_id, location_id, status, primary_technician_id, quality_check_assigned_to, location:location_id(status), jobs:job(job_id, assigned_technician_id)"
+        "work_order_id, location_id, status, primary_technician_id, quality_check_assigned_to, location:location_id(status), work_order_technician(technician_id), jobs:job(job_id, assigned_technician_id)"
       )
       .eq("work_order_id", workOrderId)
       .maybeSingle();
@@ -1121,6 +1125,12 @@ export class SupabaseDiagnosticsRepository implements DiagnosticsAssistantReposi
       qualityCheckAssignedTo: row.quality_check_assigned_to
         ? String(row.quality_check_assigned_to)
         : null,
+      technicianIds: technicianIdsFromAssignment(
+        row.work_order_technician as
+          | Array<{ technician_id?: string | null }>
+          | { technician_id?: string | null }
+          | null
+      ),
       jobs: jobs.map((job) => ({
         jobId: String(job.job_id),
         assignedTechnicianId: job.assigned_technician_id
