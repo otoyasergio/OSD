@@ -12,16 +12,16 @@ export function isUndefinedColumnError(
 }
 
 /**
- * Postgres undefined_table (42P01) — PostgREST surfaces this when a query
- * references a table whose migration has not been applied to the remote DB
- * yet. Used to keep additive V2 writes (external_billing_document,
- * integration_event) from breaking flows on legacy databases.
+ * Missing relation. Postgres reports 42P01 once the query reaches the database.
+ * PostgREST reports PGRST205 ("Could not find the table … in the schema cache")
+ * when the table was never migrated, before any SQL runs. Callers use this so
+ * an unapplied migration degrades to an empty result instead of a page error.
  */
 export function isUndefinedTableError(
   error: { code?: string; message?: string } | null | undefined,
   tableFragment?: string
 ): boolean {
-  if (!error || error.code !== "42P01") return false;
+  if (!error || (error.code !== "42P01" && error.code !== "PGRST205")) return false;
   if (!tableFragment) return true;
   return (error.message ?? "").toLowerCase().includes(tableFragment.toLowerCase());
 }
