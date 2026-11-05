@@ -14,6 +14,7 @@ import { listTechnicianNotes, type TechnicianNote } from "@/lib/services/notes";
 import {
   assertViewerCanAccessWorkOrder,
   canViewerAccessWorkOrderLocation,
+  technicianIdsFromAssignment,
 } from "@/lib/workOrders/assignmentVisibility";
 
 export type JobPacketJob = {
@@ -155,6 +156,7 @@ export async function getJobPacket(
       motorcycle:motorcycle_id (
         year, make, model
       ),
+      work_order_technician ( technician_id ),
       job (
         job_id, service_name_snapshot, status, origin, assigned_technician_id, notes, created_at
       )
@@ -182,6 +184,12 @@ export async function getJobPacket(
     {
       primary_technician_id: wo.primary_technician_id,
       quality_check_assigned_to: wo.quality_check_assigned_to,
+      technician_ids: technicianIdsFromAssignment(
+        wo.work_order_technician as
+          | Array<{ technician_id?: string | null }>
+          | { technician_id?: string | null }
+          | null
+      ),
       status: wo.status,
       jobs: jobRows,
     },

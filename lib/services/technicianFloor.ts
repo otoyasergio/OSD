@@ -22,6 +22,7 @@ import { canPerformSafetyCheck } from "@/lib/permissions";
 import {
   canViewerAccessWorkOrder,
   canViewerAccessWorkOrderLocation,
+  technicianIdsFromAssignment,
   floorAssignedLocationIds,
 } from "@/lib/workOrders/assignmentVisibility";
 import { technicianNotesOnBenchFilter } from "@/lib/workOrders/sharedNotes";
@@ -1062,6 +1063,7 @@ export async function getTechnicianFloorOs(input: {
         work_order_id, work_order_number, status, location_id,
         primary_technician_id, quality_check_assigned_to, quality_checked_at,
         quality_checked_by_user_id, checkout_evidence_required,
+        work_order_technician ( technician_id ),
         motorcycle:motorcycle_id (
           year, make, model,
           customer:customer_id ( first_name, last_name )
@@ -1087,6 +1089,16 @@ export async function getTechnicianFloorOs(input: {
         {
           primary_technician_id: wo.primary_technician_id,
           quality_check_assigned_to: wo.quality_check_assigned_to,
+          technician_ids: technicianIdsFromAssignment(
+            (
+              wo as {
+                work_order_technician?:
+                  | Array<{ technician_id?: string | null }>
+                  | { technician_id?: string | null }
+                  | null;
+              }
+            ).work_order_technician
+          ),
           status: wo.status,
           jobs: (wo.job as Array<{ assigned_technician_id: string | null }> | null) ?? [],
         },

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildTechnicianDocketItems } from "@/lib/services/technicianDocket";
+import { canDragDocketItemToBench } from "@/lib/technician/benchDrag";
 import {
   docketCardAccessibleName,
   docketCardJobLine,
@@ -500,10 +501,58 @@ describe("buildTechnicianDocketItems", () => {
     const { workNow, waiting } = splitDocketByWait(items);
     expect(workNow.length + waiting.length).toBe(items.length);
     expect(new Set([...workNow, ...waiting]).size).toBe(items.length);
-    expect(waiting.map((item) => item.work_order_id)).toEqual(["w2"]);
-    // The waiting card carries its own reason and owner — no separate panel.
-    expect(waiting[0].wait_reason).toBe("Waiting for parts");
-    expect(waiting[0].wait_owner_kind).toBe("parts");
+    // Missing parts stay on the line. They do not move the bike to Waiting.
+    expect(waiting).toEqual([]);
+    const partsBike = workNow.find((item) => item.work_order_id === "w2");
+    expect(partsBike).toMatchObject({
+      board_status: "offered",
+      can_start: false,
+    });
+    expect(partsBike?.queue_notes).toContain("Brakes — waiting on parts");
+  });
+
+  it("starts the parts service when another service is waiting on the customer", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j-parts",
+          work_order_id: "w-parts",
+          work_order_number: "WO-9",
+          service_name: "Tire",
+          motorcycle_label: "Honda CB",
+          status: "waiting_for_parts",
+          status_label: "Waiting For Parts",
+          docket_position: 1,
+        },
+        {
+          job_id: "j-ok",
+          work_order_id: "w-parts",
+          work_order_number: "WO-9",
+          service_name: "Chain",
+          motorcycle_label: "Honda CB",
+          status: "waiting_for_approval",
+          status_label: "Waiting For Approval",
+          docket_position: 2,
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      job_id: "j-parts",
+      board_status: "offered",
+      can_start: true,
+    });
+    expect(canDragDocketItemToBench(items[0]!)).toBe(true);
+    expect(items[0]?.queue_notes).toEqual(
+      expect.arrayContaining([
+        "Tire — waiting on parts",
+        "Chain — waiting on the customer",
+      ])
+    );
   });
 
   it("never includes customer PII in docket display fields", () => {
@@ -545,5 +594,131 @@ describe("buildTechnicianDocketItems", () => {
     const flag = items.find((item) => item.kind === "flag");
     expect(flag?.subtitle).toBe("WO-2");
     expect(flag?.subtitle).not.toContain("Customer");
+  });
+
+  it("opens a visit assigned by the front office when none of its jobs are theirs", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [],
+      assignedVisits: [
+        {
+          work_order_id: "w-visit",
+          work_order_number: "WO-9",
+          motorcycle_label: "2022 Yamaha MT-07",
+          work_order_status: "inspection_in_progress",
+          service_names: ["Oil change"],
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      key: "work-order-w-visit",
+      work_order_id: "w-visit",
+      job_id: null,
+      service_label: "Oil change",
+      href: "/technician?wo=w-visit",
+      can_start: false,
+    });
+    expect(items[0].href).not.toContain("job=");
+    expect(canDragDocketItemToBench(items[0])).toBe(false);
+  });
+
+  it("does not add a second card when the tech already has a job on that visit", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j-mine",
+          work_order_id: "w1",
+          work_order_number: "WO-1",
+          service_name: "Brakes",
+          motorcycle_label: "Yamaha R3",
+          status: "approved",
+          status_label: "Approved",
+        },
+      ],
+      assignedVisits: [
+        {
+          work_order_id: "w1",
+          work_order_number: "WO-1",
+          motorcycle_label: "Yamaha R3",
+          work_order_status: "ready_for_technician",
+          service_names: ["Brakes"],
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0].job_id).toBe("j-mine");
+    expect(items[0].href).toContain("job=j-mine");
+  });
+
+  it("keeps a visit that left the bay off the working list", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [],
+      assignedVisits: [
+        {
+          work_order_id: "w-storage",
+          work_order_number: "WO-8",
+          motorcycle_label: "Honda CB500F",
+          work_order_status: "in_storage",
+          service_names: ["Oil change"],
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+
+    expect(items).toEqual([]);
+  });
+
+  it("does not make another tech's job startable from a visit card", () => {
+    const items = buildTechnicianDocketItems({
+      assignedJobs: [
+        {
+          job_id: "j-mine",
+          work_order_id: "w1",
+          work_order_number: "WO-1",
+          service_name: "Brakes",
+          motorcycle_label: "Yamaha R3",
+          status: "approved",
+          status_label: "Approved",
+          docket_position: 1,
+        },
+      ],
+      assignedVisits: [
+        {
+          work_order_id: "w-other",
+          work_order_number: "WO-9",
+          motorcycle_label: "2022 Yamaha MT-07",
+          work_order_status: "in_progress",
+          service_names: ["Oil change"],
+        },
+      ],
+      qcItems: [],
+      safetyItems: [],
+      flags: [],
+      includeSafeties: false,
+    });
+
+    const visit = items.find((item) => item.work_order_id === "w-other");
+    expect(visit).toMatchObject({
+      job_id: null,
+      can_start: false,
+      service_label: "Oil change",
+    });
+    expect(canDragDocketItemToBench(visit!)).toBe(false);
+    expect(
+      items.filter((item) => item.can_start).map((item) => item.work_order_id)
+    ).toEqual(["w1"]);
   });
 });

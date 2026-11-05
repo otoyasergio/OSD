@@ -670,6 +670,7 @@ export async function getWorkOrderDetail(
     {
       primary_technician_id: detail.primary_technician_id,
       quality_check_assigned_to: detail.quality_check_assigned_to,
+      technician_ids: technicians.map((row) => row.technician_id),
       status: detail.status,
       jobs: detail.jobs,
     },
