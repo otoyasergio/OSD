@@ -8692,8 +8692,10 @@ button.pit-current-card {
   -webkit-tap-highlight-color: transparent;
 }
 
-.staff-feedback-launcher:hover {
-  background: var(--chrome-elevated, #18181b);
+@media (hover: hover) {
+  .staff-feedback-launcher:hover {
+    background: var(--chrome-elevated, #18181b);
+  }
 }
 
 .staff-feedback-status,
