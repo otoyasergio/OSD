@@ -81,7 +81,7 @@ export function MessageBubble({
         <div
           className={`relative rounded-2xl px-3 py-2 text-sm shadow-sm ${
             mine
-              ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
+              ? "bg-[var(--chrome)] text-[var(--chrome-foreground)]"
               : "bg-[var(--surface-muted)] text-slate-900"
           }`}
           onContextMenu={(e) => {
@@ -93,7 +93,7 @@ export function MessageBubble({
           {message.reply_to ? (
             <div
               className={`mb-1 border-l-2 pl-2 text-xs opacity-80 ${
-                mine ? "border-black/30" : "border-slate-400"
+                mine ? "border-white/40" : "border-slate-400"
               }`}
             >
               {message.reply_to.body ??

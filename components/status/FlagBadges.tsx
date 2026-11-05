@@ -1,3 +1,5 @@
+import { flagIcon } from "@/components/ui/shopIcons";
+
 const FLAG_STYLES: Record<string, string> = {
   "Missing VIN": "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
   "No intake photos": "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]",
@@ -23,14 +25,18 @@ export function FlagBadges({ flags, empty = "—" }: { flags: string[]; empty?: 
 
   return (
     <div className="flex flex-wrap gap-1.5">
-      {flags.map((flag) => (
-        <span
-          key={flag}
-          className={`badge ${FLAG_STYLES[flag] ?? "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]"}`}
-        >
-          {flag}
-        </span>
-      ))}
+      {flags.map((flag) => {
+        const Icon = flagIcon(flag);
+        return (
+          <span
+            key={flag}
+            className={`badge ${FLAG_STYLES[flag] ?? "bg-[var(--status-warning-bg)] text-[var(--status-warning-fg)]"}`}
+          >
+            {Icon ? <Icon size={14} aria-hidden strokeWidth={2.25} /> : null}
+            {flag}
+          </span>
+        );
+      })}
     </div>
   );
 }

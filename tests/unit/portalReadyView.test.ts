@@ -92,6 +92,7 @@ function view(showShopPrices: boolean): PortalWorkOrderView {
     has_signed_contract: true,
     inspection_completed: true,
     has_inspection_ack: false,
+    hero_photo_url: null,
   } as PortalWorkOrderView;
 }
 

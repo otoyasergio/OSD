@@ -5,6 +5,7 @@ import type { IntakePhoto } from "@/lib/services/photos";
 import { toLightboxPhotos } from "@/lib/photos/lightbox";
 import { PhotoLightbox } from "@/components/photos/PhotoLightbox";
 import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
+import { EmptyBikeFrame } from "@/components/ui/EmptyBikeFrame";
 
 export function WorkOrderPhotoStrip({ photos }: { photos: IntakePhoto[] }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
@@ -18,7 +19,13 @@ export function WorkOrderPhotoStrip({ photos }: { photos: IntakePhoto[] }) {
     return toLightboxPhotos(ordered);
   }, [photos]);
 
-  if (lightboxPhotos.length === 0) return null;
+  if (lightboxPhotos.length === 0) {
+    return (
+      <div className="wo-photo-empty" aria-label="No intake photos">
+        <EmptyBikeFrame />
+      </div>
+    );
+  }
 
   return (
     <div className="wo-photo-strip" aria-label="Intake photos">

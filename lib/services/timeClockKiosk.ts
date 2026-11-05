@@ -38,6 +38,7 @@ export type KioskStaffRow = {
   last_name: string;
   role: UserRole;
   has_pin: boolean;
+  presence: "out" | "in" | "meal";
 };
 
 async function requireKiosk() {
@@ -125,12 +126,50 @@ export async function listKioskStaff(): Promise<KioskStaffRow[]> {
     .order("first_name", { ascending: true });
   if (error) throw error;
 
-  return (data ?? []).map((row) => ({
+  const rows = data ?? [];
+  const userIdList = rows.map((row) => row.user_id);
+  const clockedIn = new Set<string>();
+  const onMeal = new Set<string>();
+  if (userIdList.length > 0) {
+    const { data: entries, error: entryError } = await supabase
+      .from("time_clock_entry")
+      .select("entry_id, user_id")
+      .eq("location_id", locationId)
+      .in("user_id", userIdList)
+      .is("clock_out_at", null)
+      .is("voided_at", null);
+    if (entryError) throw entryError;
+    const openEntries = entries ?? [];
+    const entryIds = openEntries.map((entry) => entry.entry_id);
+    const mealEntryIds = new Set<string>();
+    if (entryIds.length > 0) {
+      const { data: breaks, error: breakError } = await supabase
+        .from("time_clock_break")
+        .select("entry_id, break_type")
+        .in("entry_id", entryIds)
+        .is("break_end_at", null);
+      if (breakError) throw breakError;
+      for (const entry of breaks ?? []) {
+        if (entry.break_type === "meal") mealEntryIds.add(entry.entry_id);
+      }
+    }
+    for (const entry of openEntries) {
+      clockedIn.add(entry.user_id);
+      if (mealEntryIds.has(entry.entry_id)) onMeal.add(entry.user_id);
+    }
+  }
+
+  return rows.map((row) => ({
     user_id: row.user_id,
     first_name: row.first_name,
     last_name: row.last_name,
     role: row.role as UserRole,
     has_pin: Boolean(row.time_clock_pin_hash),
+    presence: onMeal.has(row.user_id)
+      ? "meal"
+      : clockedIn.has(row.user_id)
+        ? "in"
+        : "out",
   }));
 }
 
@@ -257,6 +296,7 @@ export async function verifyStaffPin(
       last_name: data.last_name,
       role: data.role as UserRole,
       has_pin: true,
+      presence: "out",
     },
   };
 }

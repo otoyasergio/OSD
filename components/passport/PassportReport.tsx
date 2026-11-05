@@ -29,16 +29,22 @@ export function PassportReport({
 
   return (
     <article className="passport-report rounded-lg border border-[var(--border-strong)] bg-white p-5 text-foreground shadow-sm print:border-0 print:p-0 print:shadow-none">
-      <header className="border-b border-[var(--border)] pb-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--status-neutral)]">
-          {payload.issuer.legal_name}
+      <header className="passport-band">
+        <p className="font-mono text-xs font-bold tracking-[0.16em] text-[var(--signal-teal-bright)] print:text-black">
+          OTOMOTO
         </p>
-        <Title className="mt-2 text-2xl font-semibold tracking-tight">
-          Vehicle service passport
+        <p className="mt-2 font-mono text-xs font-bold tracking-wide">
+          {payload.passport_number}
+        </p>
+        <Title className="mt-1 text-2xl font-semibold tracking-tight">
+          {vehicleLabel}
         </Title>
-        <p className="mt-1 text-sm text-[var(--status-neutral)]">
-          {payload.passport_number} · Version {payload.report_version} · Issued{" "}
+        <p className="mt-1 text-sm text-[var(--chrome-muted)] print:text-black">
+          Vehicle service passport · Version {payload.report_version} · Issued{" "}
           {formatDate(payload.issued_at)}
+        </p>
+        <p className="mt-2 text-xs text-[var(--chrome-muted)] print:text-black">
+          {payload.issuer.legal_name}
         </p>
       </header>
 
@@ -68,47 +74,50 @@ export function PassportReport({
 
       <section className="py-5">
         <h2 className="text-lg font-semibold">Documented services</h2>
-        <div className="mt-4 flex flex-col gap-4">
+        <ol className="passport-timeline mt-4">
           {payload.service_entries.map((entry) => (
-            <section
+            <li
               key={`${entry.service_date}-${entry.work_order_reference}`}
-              className="rounded border border-[var(--border)] p-4 break-inside-avoid"
+              className="passport-timeline-item"
             >
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="font-semibold">{formatDate(entry.service_date)}</h3>
-                <p className="text-xs text-[var(--status-neutral)]">
-                  {entry.work_order_reference} · {entry.location}
-                </p>
-              </div>
-              <p className="mt-1 text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
-                {entry.source_label}
-                {entry.mileage
-                  ? ` · ${entry.mileage.value.toLocaleString("en-CA")} ${entry.mileage.unit}`
-                  : null}
-              </p>
-              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
-                {entry.completed_services.map((service, index) => (
-                  <li key={`${service}-${index}`}>{service}</li>
-                ))}
-              </ul>
-              {entry.installed_parts.length > 0 ? (
-                <div className="mt-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
-                    Installed parts
-                  </h4>
-                  <ul className="mt-1 space-y-1 text-sm">
-                    {entry.installed_parts.map((part, index) => (
-                      <li key={`${part.part_number ?? part.description}-${index}`}>
-                        {formatQuantity(part.quantity)} × {part.description}
-                        {part.part_number ? ` · ${part.part_number}` : null}
-                      </li>
-                    ))}
-                  </ul>
+              <span className="passport-timeline-dot" aria-hidden />
+              <section className="rounded border border-[var(--border)] p-4 break-inside-avoid">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h3 className="font-semibold">{formatDate(entry.service_date)}</h3>
+                  <p className="text-xs text-[var(--status-neutral)]">
+                    {entry.work_order_reference} · {entry.location}
+                  </p>
                 </div>
-              ) : null}
-            </section>
+                <p className="mt-1 text-xs font-medium uppercase tracking-wide text-[var(--status-neutral)]">
+                  {entry.source_label}
+                  {entry.mileage
+                    ? ` · ${entry.mileage.value.toLocaleString("en-CA")} ${entry.mileage.unit}`
+                    : null}
+                </p>
+                <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
+                  {entry.completed_services.map((service, index) => (
+                    <li key={`${service}-${index}`}>{service}</li>
+                  ))}
+                </ul>
+                {entry.installed_parts.length > 0 ? (
+                  <div className="mt-3">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--status-neutral)]">
+                      Installed parts
+                    </h4>
+                    <ul className="mt-1 space-y-1 text-sm">
+                      {entry.installed_parts.map((part, index) => (
+                        <li key={`${part.part_number ?? part.description}-${index}`}>
+                          {formatQuantity(part.quantity)} × {part.description}
+                          {part.part_number ? ` · ${part.part_number}` : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </section>
+            </li>
           ))}
-        </div>
+        </ol>
       </section>
 
       <footer className="border-t border-[var(--border)] pt-5">

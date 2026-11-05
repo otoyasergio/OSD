@@ -7,7 +7,7 @@ import { WorkOrderJobTodo } from "@/components/work_orders/WorkOrderJobTodo";
 import { WorkOrderPipeline } from "@/components/work_orders/WorkOrderPipeline";
 import { WorkOrderPhotoStrip } from "@/components/work_orders/WorkOrderPhotoStrip";
 import { getGalleryStageForStatus, getWorkOrderNextAction } from "@/lib/status/pipeline";
-import { formatDateTime } from "@/lib/datetime/format";
+import { formatDateTime, formatTime, shopDateKey } from "@/lib/datetime/format";
 import { formatMileage } from "@/lib/mileage/format";
 import { ClickToCallButton } from "@/components/comms/ClickToCallButton";
 import { UserAvatar } from "@/components/ui/UserAvatar";
@@ -17,6 +17,22 @@ const INACTIVE_JOB_STATUSES = new Set(["cancelled", "declined", "completed"]);
 function formatDate(value: string | null) {
   if (!value) return "—";
   return formatDateTime(value);
+}
+
+function promiseStamp(
+  detail: WorkOrderDetail
+): { label: string; overdue: boolean } | null {
+  const overdueFlag = detail.flags.includes("Overdue");
+  const raw = detail.estimated_completion;
+  if (!raw) return overdueFlag ? { label: "OVERDUE", overdue: true } : null;
+  const dueKey = shopDateKey(raw);
+  const todayKey = shopDateKey(new Date());
+  if (!dueKey || dueKey > todayKey) {
+    return overdueFlag ? { label: "OVERDUE", overdue: true } : null;
+  }
+  if (dueKey < todayKey || overdueFlag) return { label: "OVERDUE", overdue: true };
+  const time = formatTime(raw);
+  return { label: time ? `PROMISED ${time}` : "PROMISED", overdue: false };
 }
 
 function sumActiveEstimatedHours(detail: WorkOrderDetail): number | null {
@@ -51,6 +67,10 @@ export function WorkOrderHeader({
   const nextAction = getWorkOrderNextAction(detail.status, detail.flags);
   const estimatedLabourTotal = sumActiveEstimatedHours(detail);
   const galleryStage = getGalleryStageForStatus(detail.status);
+  const bikeTitle = bike
+    ? `${bike.year} ${bike.make} ${bike.model}`
+    : detail.work_order_number;
+  const promise = promiseStamp(detail);
 
   return (
     <header className="card overflow-hidden">
@@ -58,13 +78,22 @@ export function WorkOrderHeader({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--status-neutral)]">
-                Work order
-              </p>
+              <span className="wo-number-stamp">{detail.work_order_number}</span>
               <StageChip label={galleryStage.label} tone={galleryStage.tone} />
+              {promise ? (
+                <span
+                  className={
+                    promise.overdue
+                      ? "promise-stamp promise-stamp--overdue stamp-urgent"
+                      : "promise-stamp promise-stamp--ok stamp-urgent"
+                  }
+                >
+                  {promise.label}
+                </span>
+              ) : null}
             </div>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-              {detail.work_order_number}
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+              {bikeTitle}
             </h1>
             {canViewPricing && detail.external_invoice_number ? (
               <p className="mt-1 text-sm text-[var(--status-neutral)]">
@@ -81,29 +110,26 @@ export function WorkOrderHeader({
 
         {bike || customer ? (
           <div className="mt-4 rounded-lg border border-border bg-surface px-4 py-3">
-            {bike ? (
-              <p className="text-lg font-bold text-foreground">
-                {bike.year} {bike.make} {bike.model}
-              </p>
-            ) : null}
             {customer ? (
               <div className="mt-1 flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--status-neutral-fg)]">
-                <UserAvatar
-                  firstName={customer.first_name}
-                  lastName={customer.last_name}
-                  photoUrl={customer.photo_url}
-                  size="sm"
-                />
-                <p>
-                  <Link
-                    href={`/customers/${customer.customer_id}`}
-                    className="data-table-link"
-                  >
-                    {customer.first_name} {customer.last_name}
-                  </Link>
-                  {customer.phone ? ` · ${customer.phone}` : ""}
-                  {customer.email ? ` · ${customer.email}` : ""}
-                </p>
+                <Link
+                  href={`/customers/${customer.customer_id}`}
+                  aria-label={`${customer.first_name} ${customer.last_name}`}
+                >
+                  <UserAvatar
+                    firstName={customer.first_name}
+                    lastName={customer.last_name}
+                    photoUrl={customer.photo_url}
+                    size="sm"
+                  />
+                </Link>
+                {customer.phone || customer.email ? (
+                  <p className="font-mono">
+                    {customer.phone ? customer.phone : null}
+                    {customer.phone && customer.email ? " · " : null}
+                    {customer.email ? customer.email : null}
+                  </p>
+                ) : null}
                 <ClickToCallButton
                   phone={customer.phone}
                   customerId={customer.customer_id}

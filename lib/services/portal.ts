@@ -12,8 +12,9 @@ import {
 } from "@/lib/database/schemaCompat";
 import { confirmEstimate } from "@/lib/services/estimates";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { resolveBoardPrimaryPhotos } from "@/lib/services/photos";
 import { syncFloorQueue } from "@/lib/services/floorQueueSync";
-import type { AuthorizationDecision, JobStatus } from "@/lib/database/types";
+import type { AuthorizationDecision, DbClient, JobStatus } from "@/lib/database/types";
 
 export type PortalTokenPurpose =
   "full" | "estimate" | "payment" | "inspection" | "contract" | "pickup";
@@ -109,6 +110,7 @@ export type PortalWorkOrderView = {
   can_sign_contract: boolean;
   /** False for ready-for-pickup links. Those omit the estimate and every shop price. */
   show_shop_prices: boolean;
+  hero_photo_url: string | null;
 };
 
 export async function createPortalToken(input: {
@@ -244,6 +246,16 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
     .eq("work_order_id", session.work_order_id)
     .maybeSingle();
 
+  let hero_photo_url: string | null = null;
+  try {
+    const photos = await resolveBoardPrimaryPhotos(admin as unknown as DbClient, [
+      session.work_order_id,
+    ]);
+    hero_photo_url = photos.urls.get(session.work_order_id) ?? null;
+  } catch {
+    hero_photo_url = null;
+  }
+
   return {
     work_order_id: wo.work_order_id,
     work_order_number: wo.work_order_number,
@@ -260,6 +272,7 @@ export async function getPortalWorkOrder(token: string): Promise<PortalWorkOrder
     can_decide_estimate: portalPurposeAllowsEstimate(session.purpose),
     can_sign_contract: portalPurposeAllowsContract(session.purpose),
     show_shop_prices: showShopPrices,
+    hero_photo_url,
   };
 }
 

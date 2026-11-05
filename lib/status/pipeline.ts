@@ -179,6 +179,30 @@ export const GALLERY_BOARD_COLUMNS = [
   },
 ] as const;
 
+/** Count-pill tone for a board column. In bay stays teal; QC and safety are orange. */
+export function boardColumnCountTone(columnId: string): "teal" | "orange" | "muted" {
+  if (
+    columnId === "gallery_qc" ||
+    columnId === "qc" ||
+    columnId === "gallery_safety" ||
+    columnId === "safety"
+  ) {
+    return "orange";
+  }
+  if (
+    columnId === "gallery_ready" ||
+    columnId === "pickup" ||
+    columnId === "gallery_storage" ||
+    columnId === "storage" ||
+    columnId === "complete" ||
+    columnId === "insurance" ||
+    columnId === "on_hold"
+  ) {
+    return "muted";
+  }
+  return "teal";
+}
+
 export function getGalleryStageForStatus(status: WorkOrderStatus): {
   label: string;
   tone: "teal" | "orange" | "muted" | "danger";

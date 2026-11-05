@@ -39,6 +39,7 @@ import {
 import { registerStaffNotificationRealtime } from "@/lib/staffNotifications/realtime";
 import { staffNotificationHref } from "@/lib/technician/assignmentHref";
 import { FloorTopBar } from "@/components/technician/FloorTopBar";
+import { ShopClock } from "@/components/layout/ShopClock";
 import { CommsLayer } from "@/components/comms/CommsLayer";
 import { CommsDock } from "@/components/comms/CommsDock";
 import { StaffFeedbackButton } from "@/components/feedback/StaffFeedbackButton";
@@ -438,6 +439,9 @@ export function AppShell({
               OTOMOTO
             </span>
           </Link>
+          <div className="px-4 pb-3">
+            <ShopClock />
+          </div>
           {rolePreview ? <RolePreviewSwitcher preview={rolePreview} /> : null}
           <SidebarNav role={viewRole} onNavigate={() => setMobileNavOpen(false)} />
         </aside>

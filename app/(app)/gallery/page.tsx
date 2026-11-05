@@ -106,9 +106,7 @@ export default async function GalleryPage({
             <Link
               key={entry.id}
               href={hrefFor({ group: entry.id, before: null })}
-              className={["btn min-h-10", active ? "btn-primary" : "btn-secondary"].join(
-                " "
-              )}
+              className={active ? "gallery-pill gallery-pill--active" : "gallery-pill"}
               aria-current={active ? "page" : undefined}
             >
               {entry.label}

@@ -6,6 +6,7 @@ import {
   isWithinWixContactsSyncWindow,
   nextShopBusinessCompletionValue,
   parseShopLocalDateTimeInput,
+  shopClockStatus,
 } from "@/lib/datetime/format";
 
 describe("formatDateTime / formatDate / formatTime", () => {
@@ -109,6 +110,22 @@ describe("nextShopBusinessCompletionValue", () => {
     expect(nextShopBusinessCompletionValue("2026-07-18T16:00:00.000Z")).toBe(
       "2026-07-20T19:00"
     );
+  });
+
+  it("marks weekday shop hours open and Sunday closed", () => {
+    const open = shopClockStatus(new Date("2026-07-16T20:00:00.000Z"));
+    expect(open.open).toBe(true);
+    expect(open.label).toContain("Thu");
+    expect(open.label).toContain(`Open until ${formatTime("2026-07-16T23:00:00.000Z")}`);
+
+    const beforeOpen = shopClockStatus(new Date("2026-07-16T15:00:00.000Z"));
+    expect(beforeOpen.open).toBe(false);
+    expect(beforeOpen.label).toContain("Closed");
+
+    const sunday = shopClockStatus(new Date("2026-07-12T18:00:00.000Z"));
+    expect(sunday.open).toBe(false);
+    expect(sunday.label).toMatch(/^Sun /);
+    expect(sunday.label).toContain("Closed");
   });
 
   it("skips configured closure dates", () => {

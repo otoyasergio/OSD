@@ -125,7 +125,7 @@ export default async function PartsWaitingPage({
           </select>
         </label>
         <div className="flex items-end gap-2">
-          <button type="submit" className="btn btn-primary">
+          <button type="submit" className="btn btn-secondary">
             Filter
           </button>
           {technicianId ? (

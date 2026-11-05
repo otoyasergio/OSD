@@ -268,6 +268,32 @@ function shopWeekdayIndex(date: Date): number {
   return WEEKDAY_TO_INDEX[label] ?? 0;
 }
 
+/** Sidebar clock. Regular hours only: Mon–Fri 12:00–19:00, Sat 10:00–16:00. */
+export function shopClockStatus(now: Date = new Date()): {
+  label: string;
+  open: boolean;
+} {
+  const weekday = new Intl.DateTimeFormat("en-US", {
+    timeZone: SHOP_TIMEZONE,
+    weekday: "short",
+  }).format(now);
+  const clock = formatTime(now);
+  const prefix = `${weekday} ${clock}`;
+  const dayIndex = shopWeekdayIndex(now);
+  if (dayIndex === 0) return { label: `${prefix} · Closed`, open: false };
+
+  const minutes = shopLocalMinutesSinceMidnight(now);
+  const openStart = dayIndex === 6 ? 10 * 60 : 12 * 60;
+  const openEnd = dayIndex === 6 ? 16 * 60 : 19 * 60;
+  if (minutes < openStart || minutes >= openEnd) {
+    return { label: `${prefix} · Closed`, open: false };
+  }
+
+  const closeAt = dayIndex === 6 ? "16:00" : "19:00";
+  const close = formatTime(parseShopLocalDateTimeInput(`${shopDateKey(now)}T${closeAt}`));
+  return { label: `${prefix} · Open until ${close}`, open: true };
+}
+
 function addDaysToDateKey(dateKey: string, days: number): string {
   const [y, m, d] = dateKey.split("-").map(Number);
   const utc = new Date(Date.UTC(y, m - 1, d + days));

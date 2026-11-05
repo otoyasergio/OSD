@@ -1,5 +1,6 @@
 import type { WorkOrderStatus } from "@/lib/database/types";
 import { VISIT_PIPELINE_STAGES, getPipelineStageIndex } from "@/lib/status/pipeline";
+import { pipelineIcon } from "@/components/ui/shopIcons";
 
 export function WorkOrderPipeline({ status }: { status: WorkOrderStatus }) {
   const activeIndex = getPipelineStageIndex(status);
@@ -21,13 +22,16 @@ export function WorkOrderPipeline({ status }: { status: WorkOrderStatus }) {
             state = "current";
           }
 
+          const Icon = pipelineIcon(stage.id);
           return (
             <li
               key={stage.id}
               className={`wo-pipeline-step wo-pipeline-step-${state}`}
               aria-current={state === "current" ? "step" : undefined}
             >
-              <span className="wo-pipeline-dot" aria-hidden />
+              <span className="wo-pipeline-dot" aria-hidden>
+                {state === "current" ? <Icon strokeWidth={2.5} /> : null}
+              </span>
               <span className="wo-pipeline-label">{stage.shortLabel}</span>
             </li>
           );
