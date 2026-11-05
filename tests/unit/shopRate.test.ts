@@ -2,11 +2,14 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_SHOP_HOURLY_RATE,
   defaultServiceLinePrice,
+  isFlatRateService,
   labourPriceFromHours,
+  MAX_SHOP_HOURLY_RATE,
   normalizeShopHourlyRate,
   resolveShopHourlyRate,
   suggestedPriceFromLabourHours,
 } from "@/lib/pricing/shopRate";
+import { shopRateSchema } from "@/lib/validation/schemas";
 
 describe("shopRate", () => {
   it("defaults to the current shop rate of $156/h", () => {
@@ -17,9 +20,23 @@ describe("shopRate", () => {
     expect(normalizeShopHourlyRate("156")).toBe(156);
     expect(normalizeShopHourlyRate("156.50")).toBe(156.5);
     expect(normalizeShopHourlyRate(200)).toBe(200);
+    expect(normalizeShopHourlyRate(" 180 ")).toBe(180);
     expect(normalizeShopHourlyRate("0")).toBeNull();
     expect(normalizeShopHourlyRate("-10")).toBeNull();
     expect(normalizeShopHourlyRate("")).toBeNull();
+    expect(normalizeShopHourlyRate("156abc")).toBeNull();
+    expect(normalizeShopHourlyRate(MAX_SHOP_HOURLY_RATE)).toBe(MAX_SHOP_HOURLY_RATE);
+    expect(normalizeShopHourlyRate(MAX_SHOP_HOURLY_RATE + 0.01)).toBeNull();
+  });
+
+  it("accepts the owner form at the cap and rejects a rate past it", () => {
+    expect(shopRateSchema.safeParse({ hourly_rate: "156.555" })).toEqual({
+      success: true,
+      data: { hourly_rate: 156.56 },
+    });
+    expect(shopRateSchema.safeParse({ hourly_rate: "0" }).success).toBe(false);
+    expect(shopRateSchema.safeParse({ hourly_rate: "10000" }).success).toBe(false);
+    expect(shopRateSchema.safeParse({ hourly_rate: "nope" }).success).toBe(false);
   });
 
   it("falls back to the default shop rate when the setting is missing", () => {
@@ -34,6 +51,8 @@ describe("shopRate", () => {
     expect(labourPriceFromHours(0.25, 156)).toBe(39);
     expect(labourPriceFromHours(1, 180)).toBe(180);
     expect(labourPriceFromHours(null, 156)).toBeNull();
+    expect(labourPriceFromHours(-1, 156)).toBeNull();
+    expect(labourPriceFromHours(1, 156.005)).toBe(156.01);
   });
 
   it("suggests price from labour hours string at the given shop rate", () => {
@@ -66,9 +85,15 @@ describe("shopRate", () => {
 });
 
 describe("isFlatRateService", () => {
-  it("treats Storage category as flat rate", async () => {
-    const { isFlatRateService } = await import("@/lib/pricing/shopRate");
+  it("treats storage and tire work as flat rate", () => {
     expect(isFlatRateService({ category: "Storage", name: "Winter Storage" })).toBe(true);
+    expect(isFlatRateService({ category: "storage", name: "Bay hold" })).toBe(true);
+    expect(isFlatRateService({ category: "Maintenance", name: "Winter storage" })).toBe(
+      true
+    );
+    expect(isFlatRateService({ category: "Tires", name: "Front tire" })).toBe(true);
+    expect(isFlatRateService({ category: "Tires", name: "Rear tire" })).toBe(true);
+    expect(isFlatRateService({ category: "Tires", name: "Tire change" })).toBe(true);
     expect(isFlatRateService({ category: "Maintenance", name: "Oil Change" })).toBe(
       false
     );
