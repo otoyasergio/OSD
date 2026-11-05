@@ -170,6 +170,7 @@ export const saveInspectionResultSchema = z.object({
   angle_after_torque: z.boolean().optional(),
   replace_fastener: z.boolean().optional(),
   notes: z.string().nullable().optional(),
+  expected_updated_at: z.string().min(1).optional(),
 });
 
 export const recommendationSchema = z.object({

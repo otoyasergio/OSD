@@ -45,16 +45,18 @@ export async function saveInspectionResultAction(
     status?: InspectionResultStatus | null;
     measurement?: string | null;
     notes?: string | null;
+    expected_updated_at?: string;
   }
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; updated_at: string } | { ok: false; error: string }> {
+  let saved: Awaited<ReturnType<typeof saveInspectionResult>>;
   try {
-    await saveInspectionResult(inspectionResultId, input);
+    saved = await saveInspectionResult(inspectionResultId, input);
   } catch (error) {
     return { ok: false, error: toFormErrorMessage(error) };
   }
 
   revalidateInspection(workOrderId);
-  return { ok: true };
+  return { ok: true, updated_at: saved.updated_at };
 }
 
 export async function completeInspectionAction(

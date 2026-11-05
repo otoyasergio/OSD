@@ -307,4 +307,135 @@ describe("inspection finish waits for the checklist save", () => {
       ["4.5", null],
     ]);
   });
+
+  it("sends the line version it loaded, then the one the last save returned", async () => {
+    let releaseFirst: (value: { ok: true; updated_at: string }) => void = () => {};
+    const calls: Array<{ expected_updated_at?: string }> = [];
+    saveInspectionResultAction.mockImplementation((_workOrder, _resultId, input) => {
+      calls.push(input);
+      if (calls.length === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve({ ok: true, updated_at: "2026-11-03T12:06:00.000Z" });
+    });
+
+    await renderReady();
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    await act(async () => {
+      setInput(input, "4.5");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+
+    await act(async () => {
+      releaseFirst({ ok: true, updated_at: "2026-11-03T12:05:00.000Z" });
+      await Promise.resolve();
+    });
+
+    expect(calls.map((call) => call.expected_updated_at)).toEqual([
+      "2026-11-03T12:00:00.000Z",
+      "2026-11-03T12:05:00.000Z",
+    ]);
+  });
+
+  it("keeps the old line version while a typed draft hides a newer server value", async () => {
+    saveInspectionResultAction.mockResolvedValue({
+      ok: false,
+      error: "This line was changed somewhere else",
+    });
+    await renderReady();
+
+    const changedElsewhere = inspection();
+    changedElsewhere.results[0].measurement = "9";
+    changedElsewhere.results[0].updated_at = "2026-11-03T12:04:00.000Z";
+    await act(async () => {
+      root.render(
+        createElement(InspectionChecklist, {
+          inspection: changedElsewhere,
+          canEdit: true,
+          canForceComplete: false,
+        })
+      );
+    });
+
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    expect(input.value).toBe("12");
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+
+    expect(saveInspectionResultAction).toHaveBeenCalledWith(
+      WORK_ORDER,
+      RESULT,
+      expect.objectContaining({
+        measurement: "12",
+        expected_updated_at: "2026-11-03T12:00:00.000Z",
+      })
+    );
+    expect(container.textContent).toContain("This line was changed somewhere else");
+    expect(input.value).toBe("12");
+  });
+
+  it("moves to the newer line version once the tech is shown the server value", async () => {
+    saveInspectionResultAction.mockResolvedValue({
+      ok: true,
+      updated_at: "2026-11-03T12:06:00.000Z",
+    });
+    await act(async () => {
+      root.render(
+        createElement(InspectionChecklist, {
+          inspection: inspection(),
+          canEdit: true,
+          canForceComplete: false,
+        })
+      );
+    });
+
+    const changedElsewhere = inspection();
+    changedElsewhere.results[0].measurement = "9";
+    changedElsewhere.results[0].updated_at = "2026-11-03T12:04:00.000Z";
+    await act(async () => {
+      root.render(
+        createElement(InspectionChecklist, {
+          inspection: changedElsewhere,
+          canEdit: true,
+          canForceComplete: false,
+        })
+      );
+    });
+
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    expect(input.value).toBe("9");
+    await act(async () => {
+      setInput(input, "8");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+
+    expect(saveInspectionResultAction).toHaveBeenCalledWith(
+      WORK_ORDER,
+      RESULT,
+      expect.objectContaining({
+        measurement: "8",
+        expected_updated_at: "2026-11-03T12:04:00.000Z",
+      })
+    );
+  });
 });

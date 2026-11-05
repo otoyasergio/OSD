@@ -137,6 +137,8 @@ const MESSAGES: Record<string, string> = {
   TEMPLATE_ITEM_NOT_FOUND: "That inspection template item no longer exists.",
   INSPECTION_NOT_FOUND: "That inspection no longer exists.",
   INSPECTION_RESULT_NOT_FOUND: "That inspection result no longer exists.",
+  INSPECTION_RESULT_CHANGED:
+    "This line was changed somewhere else after this page loaded it, so that was not saved. Reload the page, then enter it again. What you typed is still on this screen.",
   INSPECTION_ALREADY_COMPLETE: "This inspection is already complete.",
   INSPECTION_INCOMPLETE:
     "Every line needs a result before you can sign. Measured items need a number, anything that does not apply needs a real reason, and items marked for attention need a description.",

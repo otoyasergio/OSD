@@ -17,6 +17,7 @@ import {
   shouldApplyServerInspectionText,
   textSaveStillMatchesLocal,
 } from "@/lib/inspections/inspectionItemTextSync";
+import { laterLineVersion } from "@/lib/inspections/inspectionLineVersion";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -133,8 +134,13 @@ export function InspectionItemRow({
   const textDirtyRef = useRef(false);
   const inflightRef = useRef<Promise<void> | null>(null);
   // One save at a time. A slower earlier request must not commit after the
-  // measurement the tech just corrected.
+  // measurement the tech just corrected, and each save has to carry the line
+  // version the one before it produced.
   const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  // The `updated_at` this device last saw for the line. The server refuses a
+  // save made against an older version than the one it holds.
+  const versionRef = useRef(result.updated_at);
+  const [shownVersion, setShownVersion] = useState(result.updated_at);
   const flushForFinishRef = useRef<(() => Promise<"clean" | "saved" | "failed">) | null>(
     null
   );
@@ -168,8 +174,16 @@ export function InspectionItemRow({
     ) {
       setMeasurement(result.measurement ?? "");
       setNotes(result.notes ?? "");
+      // Only now is the tech looking at what this version holds. A draft kept
+      // over newer server text stays on the old version, so saving it is
+      // refused instead of replacing a change the tech never saw.
+      setShownVersion(result.updated_at);
     }
   }
+
+  useEffect(() => {
+    versionRef.current = laterLineVersion(versionRef.current, shownVersion);
+  }, [shownVersion]);
 
   useEffect(() => {
     measurementRef.current = measurement;
@@ -228,7 +242,10 @@ export function InspectionItemRow({
       async (): Promise<"saved" | "failed" | "superseded"> => {
         let response: Awaited<ReturnType<typeof saveInspectionResultAction>>;
         try {
-          response = await saveInspectionResultAction(workOrderId, resultId, payload);
+          response = await saveInspectionResultAction(workOrderId, resultId, {
+            ...payload,
+            expected_updated_at: versionRef.current,
+          });
         } catch (error) {
           if (seq !== saveSeqRef.current) return "superseded";
           // A thrown action did not write. Keep the draft on screen.
@@ -237,6 +254,7 @@ export function InspectionItemRow({
           onBusyChange?.(resultId, false);
           return "failed";
         }
+        if (response.ok) versionRef.current = response.updated_at;
         if (seq !== saveSeqRef.current) {
           // A newer save superseded this one; leave UI to the latest request.
           return "superseded";
