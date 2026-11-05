@@ -80,7 +80,7 @@ describe("countIncompleteInspectionResults", () => {
     ).toBe(1);
   });
 
-  it("does not waive brakes until the skip line has a real reason", () => {
+  it("does not waive brakes, and only waives tire lines after a real reason", () => {
     const rows = [
       {
         status: null,
@@ -110,11 +110,11 @@ describe("countIncompleteInspectionResults", () => {
         ...rows.slice(0, 2),
         {
           ...rows[2],
-          notes: "Customer declined a brake and tire inspection this visit.",
+          notes: "Customer asked to leave the tires for the next visit.",
         },
         rows[3],
       ])
-    ).toBe(1);
+    ).toBe(2);
   });
 
   it("still requires brake items when skip is not marked OK", () => {
@@ -208,21 +208,53 @@ describe("countIncompleteInspectionResults", () => {
     ).toBe(0);
   });
 
-  it("counts a waived brake section from the full checklist, not one column", () => {
+  it("counts a waived tire line from the full checklist, not one column", () => {
     const front = {
       inspection_result_id: "front",
       status: null,
       category_snapshot: "Brakes & Tires — Front",
       item_name_snapshot: "Front spokes",
     };
+    const lining = {
+      inspection_result_id: "lining",
+      status: null,
+      category_snapshot: "Brakes & Tires — Rear",
+      item_name_snapshot: "Rear brake lining",
+    };
     const skip = {
       inspection_result_id: "skip",
       status: "ok" as const,
       category_snapshot: "Brakes & Tires",
       item_name_snapshot: BRAKE_INSPECTION_SKIP_ITEM,
-      notes: "Customer declined a brake and tire inspection this visit.",
+      notes: "Customer asked to leave the tires for the next visit.",
     };
-    expect(countIncompleteInspectionResults([front, skip], { within: [front] })).toBe(0);
+    expect(
+      countIncompleteInspectionResults([front, lining, skip], { within: [front] })
+    ).toBe(0);
+    expect(
+      countIncompleteInspectionResults([front, lining, skip], { within: [lining] })
+    ).toBe(1);
+  });
+
+  it("requires front and rear brake lining on every visit", () => {
+    const lining = {
+      status: "not_applicable" as const,
+      notes: "Not looking at brakes today.",
+      category_snapshot: "Brakes & Tires — Front",
+      item_name_snapshot: "Front brake lining",
+      requires_measurement: true,
+    };
+    expect(countIncompleteInspectionResults([lining])).toBe(1);
+    expect(
+      countIncompleteInspectionResults([
+        {
+          ...lining,
+          status: "ok",
+          notes: null,
+          measurement: "4",
+        },
+      ])
+    ).toBe(0);
   });
 });
 
@@ -308,7 +340,7 @@ describe("inspection photo requirements", () => {
     );
   });
 
-  it("waives unanswered tire and brake photos only after a real skip reason", () => {
+  it("still requires both brake photos after a tire skip", () => {
     const unanswered = [
       {
         inspection_result_id: "a0000000-0000-4000-8000-000000000011",
@@ -323,6 +355,12 @@ describe("inspection photo requirements", () => {
         item_name_snapshot: "Rear brake lining",
       },
       {
+        inspection_result_id: "a0000000-0000-4000-8000-000000000014",
+        status: null,
+        category_snapshot: "Brakes & Tires — Front",
+        item_name_snapshot: "Front brake lining",
+      },
+      {
         inspection_result_id: "a0000000-0000-4000-8000-000000000013",
         status: "ok" as const,
         category_snapshot: "Brakes & Tires",
@@ -332,16 +370,16 @@ describe("inspection photo requirements", () => {
     ];
     expect(
       getRequiredInspectionPhotos(unanswered).map((requirement) => requirement.label)
-    ).toEqual(["Front tire photo", "Rear brake photo"]);
+    ).toEqual(["Front tire photo", "Front brake photo", "Rear brake photo"]);
     expect(
       getRequiredInspectionPhotos([
-        ...unanswered.slice(0, 2),
+        ...unanswered.slice(0, 3),
         {
-          ...unanswered[2],
-          notes: "Customer declined a brake and tire inspection this visit.",
+          ...unanswered[3],
+          notes: "Customer asked to leave the tires for the next visit.",
         },
       ]).map((requirement) => requirement.label)
-    ).toEqual([]);
+    ).toEqual(["Front brake photo", "Rear brake photo"]);
   });
 
   it("still requires a tire photo when that end was marked and then skipped", () => {
@@ -350,7 +388,7 @@ describe("inspection photo requirements", () => {
       {
         inspection_result_id: "a0000000-0000-4000-8000-000000000099",
         status: "ok",
-        notes: "Customer declined a brake and tire inspection this visit.",
+        notes: "Customer asked to leave the tires for the next visit.",
         category_snapshot: "Brakes & Tires",
         item_name_snapshot: BRAKE_INSPECTION_SKIP_ITEM,
       },

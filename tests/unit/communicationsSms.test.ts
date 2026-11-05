@@ -182,6 +182,11 @@ describe("sendWorkOrderMessage Wix SMS", () => {
       channel: "sms",
     });
 
+    expect(createPortalToken).toHaveBeenCalledWith({
+      workOrderId: "wo-1",
+      purpose: "full",
+      expiresInDays: 14,
+    });
     expect(sendCustomerSms).toHaveBeenCalledWith({
       customerId: "cust-1",
       wixContactId: "11111111-1111-4111-8111-111111111111",
@@ -389,5 +394,23 @@ describe("sendWorkOrderMessage Wix SMS", () => {
         error: "uncertain update failed",
       })
     );
+  });
+
+  it("sends a ready text without shop prices and opens the pickup portal", async () => {
+    await sendWorkOrderMessage({
+      work_order_id: "wo-1",
+      template_key: "ready_for_pickup",
+      channel: "sms",
+    });
+
+    expect(createPortalToken).toHaveBeenCalledWith({
+      workOrderId: "wo-1",
+      purpose: "pickup",
+      expiresInDays: 14,
+    });
+    const body = String(sendCustomerSms.mock.calls[0]?.[0]?.body);
+    expect(body).toContain("Auction prices and bike valuation:");
+    expect(body).toContain("https://service.torontomoto.com/c/portal-token");
+    expect(body).not.toMatch(/estimate summary|pay online|\$\s?\d/i);
   });
 });

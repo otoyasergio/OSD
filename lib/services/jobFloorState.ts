@@ -6,20 +6,17 @@ import type { FloorParkReason } from "@/lib/database/types";
 import { readWorkflowV2Flags, v2WritesEnabled } from "@/lib/config/features";
 import {
   isUndefinedColumnError,
+  isUndefinedTableError,
   OPTIONAL_COLUMNS,
   getOptionalColumnSupport,
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
 import { toRpcErrorCode } from "@/lib/services/errors";
-import {
-  isTerminalWorkOrderStatus,
-  workOrderLeftTechDocket,
-} from "@/lib/technician/floorActionModel";
-import { waitOwnerForParkReason } from "@/lib/technician/pitBoard";
 import { pauseJobTime, switchJobTime } from "@/lib/services/jobTimeClock";
 import { updateJobStatus } from "@/lib/services/jobs";
 import { addTechnicianNote } from "@/lib/services/notes";
 import { parkNoteForReason } from "@/lib/status/workDocumentation";
+import { assertCanStartJob, syncFloorQueue } from "@/lib/services/floorQueueSync";
 
 const FLOOR_COLUMNS =
   "job_id, status, assigned_technician_id, floor_acknowledged_at, floor_acknowledged_by, floor_parked_at, floor_park_reason, floor_wait_owner, work_order_id";
@@ -94,7 +91,7 @@ function assertAssignedToMe(job: JobFloorRow, userId: string) {
  * Same intent + job + actor within one time bucket → same key.
  */
 export function floorIdempotencyKey(
-  intent: "pull" | "park" | "complete",
+  intent: "pull" | "park" | "complete" | "clear",
   jobId: string,
   actorUserId: string,
   options: { extra?: string; bucketMs?: number; nowMs?: number } = {}
@@ -180,6 +177,9 @@ export async function parkJob(
   reason: FloorParkReason,
   note?: string | null
 ): Promise<JobFloorRow> {
+  if (reason !== "tool") {
+    throw new Error("PARK_REASON_NOT_ALLOWED");
+  }
   const user = await requireUser();
   const line = parkNoteForReason(reason, note);
 
@@ -189,11 +189,11 @@ export async function parkJob(
     const result = await callFloorCommand("workflow_v2_park_job", {
       p_job_id: jobId,
       p_actor_user_id: user.user_id,
-      p_reason: reason,
-      p_owner: waitOwnerForParkReason(reason),
+      p_reason: "tool",
+      p_owner: "technician",
       p_note: line,
       p_idempotency_key: floorIdempotencyKey("park", jobId, user.user_id, {
-        extra: `${reason}:${line}`,
+        extra: `tool:${line}`,
       }),
     });
     if (result.replayed !== true) {
@@ -223,7 +223,7 @@ export async function parkJob(
 
   const supabase = await createClient();
   const now = new Date().toISOString();
-  const waitOwner = waitOwnerForParkReason(reason);
+  const waitOwner = "technician";
   const { data, error } = await supabase
     .from("job")
     .update({
@@ -255,6 +255,7 @@ export async function parkJob(
   });
 
   await recordFloorLine(jobId, line);
+  await openToolBlocker(jobId, user.user_id);
 
   return data as JobFloorRow;
 }
@@ -281,56 +282,65 @@ async function clearParkFields(jobId: string): Promise<void> {
   }
 }
 
-/** Find this tech's other in-progress job (if any) and park it as swapped. */
-async function autoParkBenchSibling(exceptJobId: string): Promise<string | null> {
-  const user = await requireUser();
-  const supabase = await createClient();
-  const support = getOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck);
-
-  const query = supabase
-    .from("job")
-    .select(
-      support === false
-        ? "job_id, status, work_order:work_order_id ( status )"
-        : "job_id, status, floor_parked_at, work_order:work_order_id ( status )"
-    )
-    .eq("assigned_technician_id", user.user_id)
-    .eq("status", "in_progress")
-    .neq("job_id", exceptJobId);
-
-  const { data, error } = await query;
-  if (error) {
-    if (support !== false && isUndefinedColumnError(error, "floor_parked")) {
-      setOptionalColumnSupport(OPTIONAL_COLUMNS.jobFloorParkAck, false);
-      return autoParkBenchSibling(exceptJobId);
+async function openToolBlocker(jobId: string, userId: string): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { error } = await admin.from("job_blocker").insert({
+      job_id: jobId,
+      kind: "tool",
+      owner: "technician",
+      opened_by_user_id: userId,
+    });
+    if (error && error.code !== "23505" && !isUndefinedTableError(error)) {
+      throw error;
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === "PARTS_CANADA_SYNC_MISCONFIGURED") {
+      return;
     }
     throw error;
   }
+}
 
-  const siblings = (data ?? []) as unknown as Array<{
-    job_id: string;
-    status: string;
-    floor_parked_at?: string | null;
-    work_order?: unknown;
-  }>;
-
-  const active = siblings.find((j) => {
-    if (j.floor_parked_at) return false;
-    const wo = (Array.isArray(j.work_order) ? j.work_order[0] : j.work_order) as {
-      status?: string | null;
-    } | null;
-    if (
-      wo?.status &&
-      (isTerminalWorkOrderStatus(wo.status) || workOrderLeftTechDocket(wo.status))
-    ) {
-      return false;
+async function closeToolBlocker(jobId: string, userId: string): Promise<void> {
+  try {
+    const admin = createAdminClient();
+    const { error } = await admin
+      .from("job_blocker")
+      .update({
+        cleared_at: new Date().toISOString(),
+        cleared_by_user_id: userId,
+      })
+      .eq("job_id", jobId)
+      .eq("kind", "tool")
+      .is("cleared_at", null);
+    if (error && !isUndefinedTableError(error)) throw error;
+  } catch (error) {
+    if (error instanceof Error && error.message === "PARTS_CANADA_SYNC_MISCONFIGURED") {
+      return;
     }
-    return true;
-  });
-  if (!active) return null;
+    throw error;
+  }
+}
 
-  await parkJob(active.job_id, "swapped");
-  return active.job_id;
+/** Same-bike services share one clock. Demote the sibling before the new start. */
+async function releaseSameBikeClock(
+  workOrderId: string,
+  exceptJobId: string,
+  userId: string
+): Promise<void> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("job")
+    .update({
+      status: "ready_to_start",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("work_order_id", workOrderId)
+    .eq("assigned_technician_id", userId)
+    .eq("status", "in_progress")
+    .neq("job_id", exceptJobId);
+  if (error) throw error;
 }
 
 export async function pullOntoBench(jobId: string): Promise<{
@@ -338,27 +348,19 @@ export async function pullOntoBench(jobId: string): Promise<{
   parked_job_id: string | null;
 }> {
   const user = await requireUser();
+  await assertCanStartJob(user.user_id, jobId);
 
-  // V2: the command atomically parks the current bench job (only after the
-  // replacement validates), starts this job, and opens its timer.
   if (v2WritesEnabled(readWorkflowV2Flags())) {
-    const result = await callFloorCommand("workflow_v2_pull_job_onto_bench", {
+    await callFloorCommand("workflow_v2_pull_job_onto_bench", {
       p_job_id: jobId,
       p_actor_user_id: user.user_id,
       p_idempotency_key: floorIdempotencyKey("pull", jobId, user.user_id),
     });
-    const parkedJobId = (result.parked_job_id as string | null) ?? null;
-    if (parkedJobId && result.replayed !== true) {
-      await recordFloorLine(parkedJobId, parkNoteForReason("swapped", null));
-    }
     let job = await loadJob(jobId);
     if (!job.floor_acknowledged_at) {
       job = await acknowledgeDocketJob(jobId);
     }
-    return {
-      job,
-      parked_job_id: (result.parked_job_id as string | null) ?? null,
-    };
+    return { job, parked_job_id: null };
   }
 
   const job = await loadJob(jobId);
@@ -375,7 +377,7 @@ export async function pullOntoBench(jobId: string): Promise<{
     await acknowledgeDocketJob(jobId);
   }
 
-  const parkedJobId = await autoParkBenchSibling(jobId);
+  await releaseSameBikeClock(job.work_order_id, jobId, user.user_id);
 
   if (job.status !== "in_progress") {
     await updateJobStatus(jobId, "in_progress");
@@ -384,9 +386,10 @@ export async function pullOntoBench(jobId: string): Promise<{
   }
 
   await clearParkFields(jobId);
+  await syncFloorQueue(await createClient(), job.work_order_id, user.user_id);
 
   const refreshed = await loadJob(jobId);
-  return { job: refreshed, parked_job_id: parkedJobId };
+  return { job: refreshed, parked_job_id: null };
 }
 
 export async function resumeParkedJob(jobId: string): Promise<JobFloorRow> {
@@ -394,36 +397,54 @@ export async function resumeParkedJob(jobId: string): Promise<JobFloorRow> {
   return result.job;
 }
 
+/** Swap is no longer a floor stop. The advisor's order is the line. */
 export async function swapBenchJob(
-  fromJobId: string,
-  toJobId: string
+  _fromJobId: string,
+  _toJobId: string
 ): Promise<{
   from: JobFloorRow;
   to: JobFloorRow;
 }> {
-  if (fromJobId === toJobId) {
-    throw new Error("SWAP_SAME_JOB");
-  }
+  throw new Error("SWAP_NOT_ALLOWED");
+}
 
-  // V2: pull parks the bench job in the same transaction, so a swap is a
-  // single pull of the target job.
-  if (v2WritesEnabled(readWorkflowV2Flags())) {
-    const pulled = await pullOntoBench(toJobId);
-    return { from: await loadJob(fromJobId), to: pulled.job };
-  }
-
+/**
+ * The technician who owns a tool wait marks it clear.
+ * The bike returns to its place in line. The clock stays stopped.
+ */
+export async function clearToolWait(jobId: string): Promise<JobFloorRow> {
   const user = await requireUser();
-  const from = await loadJob(fromJobId);
-  const to = await loadJob(toJobId);
-  assertAssignedToMe(from, user.user_id);
-  assertAssignedToMe(to, user.user_id);
+  const job = await loadJob(jobId);
+  assertAssignedToMe(job, user.user_id);
 
-  if (from.status === "in_progress" && !from.floor_parked_at) {
-    await parkJob(fromJobId, "swapped");
+  if (v2WritesEnabled(readWorkflowV2Flags())) {
+    await callFloorCommand("workflow_v2_clear_tool_wait", {
+      p_job_id: jobId,
+      p_actor_user_id: user.user_id,
+      p_idempotency_key: floorIdempotencyKey("clear", jobId, user.user_id),
+    });
+    return loadJob(jobId);
   }
 
-  const pulled = await pullOntoBench(toJobId);
-  return { from: await loadJob(fromJobId), to: pulled.job };
+  if (job.floor_park_reason !== "tool") {
+    throw new Error("TOOL_WAIT_NOT_OPEN");
+  }
+
+  await clearParkFields(jobId);
+  if (job.status === "in_progress") {
+    const supabase = await createClient();
+    const { error } = await supabase
+      .from("job")
+      .update({
+        status: "ready_to_start",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("job_id", jobId);
+    if (error) throw error;
+  }
+  await closeToolBlocker(jobId, user.user_id);
+  await syncFloorQueue(await createClient(), job.work_order_id, user.user_id);
+  return loadJob(jobId);
 }
 
 export async function clearParkOnComplete(jobId: string): Promise<void> {

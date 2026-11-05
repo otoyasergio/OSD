@@ -7,6 +7,7 @@ import { getMotorcycleById, searchMotorcycles } from "@/lib/services/motorcycles
 import { listServices } from "@/lib/services/serviceCatalogue";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
 import { listUpcomingShopClosureDates } from "@/lib/services/shopClosures";
+import { getActiveLocationHourlyRate } from "@/lib/services/shopRate";
 import { CreateWorkOrderFormLazy } from "@/components/forms/CreateWorkOrderFormLazy";
 import { wixInvoicesEnabled } from "@/lib/config/features";
 
@@ -23,15 +24,15 @@ export default async function NewWorkOrderPage({
 
   const { customer_id = "", motorcycle_id = "" } = await searchParams;
 
-  const [customers, motorcycles, services, technicians, closureDates] = await Promise.all(
-    [
+  const [customers, motorcycles, services, technicians, closureDates, shopHourlyRate] =
+    await Promise.all([
       searchCustomers("", { preferShopCustomers: true }),
       searchMotorcycles(""),
       listServices({ includeInactive: false }),
       listTechniciansForActiveLocation(),
       listUpcomingShopClosureDates(),
-    ]
-  );
+      getActiveLocationHourlyRate(),
+    ]);
 
   // search* caps at 50; deep links must still resolve the selected records.
   let customerOptions = customers;
@@ -72,6 +73,7 @@ export default async function NewWorkOrderPage({
           initialMotorcycleId={motorcycle_id}
           closureDates={closureDates}
           wixAssignsNumber={wixInvoicesEnabled()}
+          shopHourlyRate={shopHourlyRate}
         />
       </div>
     </div>

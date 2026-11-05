@@ -1,4 +1,7 @@
-import { suggestedPriceFromLabourHours } from "@/lib/pricing/shopRate";
+import {
+  DEFAULT_SHOP_HOURLY_RATE,
+  suggestedPriceFromLabourHours,
+} from "@/lib/pricing/shopRate";
 
 export type ServiceLineInput = {
   service_id: string;
@@ -90,6 +93,7 @@ export function createIntakeServiceLineDraft(args: {
   estimatedLabour: number | null;
   standardPrice: number | null;
   fitment?: BikePackageFitment | null;
+  shopHourlyRate?: number;
 }): ServiceLineDraft {
   const diagnostic = isDiagnosticService(args.name);
   const hasFixedPrice = args.standardPrice != null && Number.isFinite(args.standardPrice);
@@ -104,6 +108,7 @@ export function createIntakeServiceLineDraft(args: {
     : !hasFixedPrice && catalogueLabour != null
       ? String(catalogueLabour)
       : "";
+  const shopHourlyRate = args.shopHourlyRate ?? DEFAULT_SHOP_HOURLY_RATE;
 
   return {
     note: isSeasonalTuneUp(args.name) ? tuneUpIncludedNote(args.fitment) : "",
@@ -111,7 +116,7 @@ export function createIntakeServiceLineDraft(args: {
     price: hasFixedPrice
       ? String(args.standardPrice)
       : labourHours
-        ? suggestedPriceFromLabourHours(labourHours)
+        ? suggestedPriceFromLabourHours(labourHours, shopHourlyRate)
         : "",
   };
 }

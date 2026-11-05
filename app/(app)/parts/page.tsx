@@ -11,9 +11,12 @@ import { listPartsWaitingForLocation } from "@/lib/services/partsBoard";
 import { getPartsCanadaSyncStatus } from "@/lib/services/partsCanadaCatalog";
 import { listTechniciansForActiveLocation } from "@/lib/services/workOrders";
 import { getFitmentImportStatus } from "@/lib/services/fitment";
+import { listOpenPartsToOrder, listPurchaseOrders } from "@/lib/services/purchasing";
+import { toFormErrorMessage } from "@/lib/services/errors";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { PartsWaitingBoard } from "@/components/parts/PartsWaitingBoard";
 import { PartsCanadaSyncPanel } from "@/components/parts/PartsCanadaSyncPanel";
+import { PurchasingDesk } from "@/components/parts/PurchasingDesk";
 import { YmmFitmentFilter } from "@/components/fitment/YmmFitmentFilter";
 import { SELECT_CLASS } from "@/components/forms/Field";
 
@@ -34,17 +37,27 @@ export default async function PartsWaitingPage({
   const technicianId = params.technician_id?.trim() || "";
   const canSync = canSyncPartsCanadaCatalog(viewRole);
 
-  const [items, technicians, syncStatus, fitmentStatus] = await Promise.all([
-    listPartsWaitingForLocation(user.active_location_id, {
-      technicianId: technicianId || undefined,
-      view: { role: viewRole, subjectUserId: preview.subjectUserId },
-    }),
-    listTechniciansForActiveLocation(),
-    canOrderPart(viewRole)
-      ? getPartsCanadaSyncStatus().catch(() => null)
-      : Promise.resolve(null),
-    getFitmentImportStatus().catch(() => ({ vehicle_count: 0, last_run: null })),
-  ]);
+  const [items, technicians, syncStatus, fitmentStatus, openParts, purchaseOrders] =
+    await Promise.all([
+      listPartsWaitingForLocation(user.active_location_id, {
+        technicianId: technicianId || undefined,
+        view: { role: viewRole, subjectUserId: preview.subjectUserId },
+      }),
+      listTechniciansForActiveLocation(),
+      canOrderPart(viewRole)
+        ? getPartsCanadaSyncStatus().catch(() => null)
+        : Promise.resolve(null),
+      getFitmentImportStatus().catch(() => ({ vehicle_count: 0, last_run: null })),
+      canOrderPart(viewRole)
+        ? listOpenPartsToOrder().catch(() => [])
+        : Promise.resolve([]),
+      canOrderPart(viewRole)
+        ? listPurchaseOrders().catch((error: unknown) => {
+            console.warn("purchase orders unavailable", error);
+            return { error: toFormErrorMessage(error) };
+          })
+        : Promise.resolve([]),
+    ]);
 
   const toOrderCount = items.filter((item) => item.bucket === "to_order").length;
   const inStockCount = items.filter((item) => item.bucket === "in_stock").length;
@@ -65,8 +78,12 @@ export default async function PartsWaitingPage({
         </h2>
         <p className="text-sm text-[var(--status-neutral)]">
           {fitmentStatus.vehicle_count > 0
-            ? `${fitmentStatus.vehicle_count.toLocaleString()} vehicles in catalogue.`
-            : "Import fitment data with scripts/import-fitment.ts to enable Year / Make / Model lookup."}
+            ? `${fitmentStatus.vehicle_count.toLocaleString()} vehicles in the catalogue${
+                fitmentStatus.last_run?.source_path
+                  ? ` from ${fitmentStatus.last_run.source_path}`
+                  : ""
+              }. A catalogue match is a hint until someone confirms fitment on the purchase order.`
+            : "Import fitment data with scripts/import-fitment.ts to enable Year / Make / Model lookup. A catalogue match stays a hint until someone confirms fitment."}
         </p>
         {fitmentStatus.vehicle_count > 0 ? <YmmFitmentFilter /> : null}
       </div>
@@ -118,6 +135,16 @@ export default async function PartsWaitingPage({
           ) : null}
         </div>
       </form>
+
+      {canOrderPart(viewRole) ? (
+        Array.isArray(purchaseOrders) ? (
+          <PurchasingDesk parts={openParts} orders={purchaseOrders} />
+        ) : (
+          <p className="card card-pad text-sm text-[var(--status-danger)]" role="alert">
+            {purchaseOrders.error}
+          </p>
+        )
+      ) : null}
 
       <PartsWaitingBoard items={items} canViewPricing={canViewPricing(viewRole)} />
     </div>

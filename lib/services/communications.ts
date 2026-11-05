@@ -8,7 +8,7 @@ import { normalizePhoneE164 } from "@/lib/phone/e164";
 import { sendEmail, isEmailConfigured } from "@/lib/email/send";
 import { portalUrl } from "@/lib/portal/tokens";
 import { sendCustomerSms } from "@/lib/services/customerSms";
-import { createPortalToken } from "@/lib/services/portal";
+import { createPortalToken, type PortalTokenPurpose } from "@/lib/services/portal";
 import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import { logger } from "@/lib/security/logger";
 
@@ -56,23 +56,25 @@ export type ReadyForPickupMessage = {
 export function renderReadyForPickupMessage(ctx: TemplateContext): ReadyForPickupMessage {
   const name = ctx.customerName.trim() || "there";
   const workOrderNumber = ctx.workOrderNumber.trim();
-  const payLine = ctx.portalLink ? ` Pay online: ${ctx.portalLink}` : "";
+  const guideLine = ctx.portalLink
+    ? ` Auction prices and bike valuation: ${ctx.portalLink}`
+    : "";
   const sms = withSmsOptOut(
-    `Hi ${name}, your motorcycle (${workOrderNumber}) is ready for pickup at ${TORONTO_SHOP.tradeName}, ${TORONTO_SHOP.streetAddress}. Hours: ${TORONTO_SHOP.hours}. ${TORONTO_SHOP.sunday}.${payLine}`
+    `Hi ${name}, your motorcycle (${workOrderNumber}) is ready for pickup at ${TORONTO_SHOP.tradeName}, ${TORONTO_SHOP.streetAddress}. Hours: ${TORONTO_SHOP.hours}. ${TORONTO_SHOP.sunday}.${guideLine}`
   );
   const safeName = escapeHtml(name);
   const safeWorkOrder = escapeHtml(workOrderNumber);
-  const payHtml = ctx.portalLink
-    ? `<p><a href="${escapeHtml(ctx.portalLink)}">Pay online</a></p>`
+  const guideHtml = ctx.portalLink
+    ? `<p><a href="${escapeHtml(ctx.portalLink)}">Auction prices and bike valuation</a></p>`
     : "";
-  const emailHtml = `<p>Hi ${safeName},</p><p>Your motorcycle (${safeWorkOrder}) is ready for pickup at <strong>${escapeHtml(TORONTO_SHOP.fullAddress)}</strong>.</p><p>Hours: ${escapeHtml(TORONTO_SHOP.hours)}. ${escapeHtml(TORONTO_SHOP.sunday)}.</p><p>Phone: ${escapeHtml(TORONTO_SHOP.phoneDisplay)}</p>${payHtml}<p>— ${escapeHtml(TORONTO_SHOP.legalName)}</p>`;
+  const emailHtml = `<p>Hi ${safeName},</p><p>Your motorcycle (${safeWorkOrder}) is ready for pickup at <strong>${escapeHtml(TORONTO_SHOP.fullAddress)}</strong>.</p><p>Hours: ${escapeHtml(TORONTO_SHOP.hours)}. ${escapeHtml(TORONTO_SHOP.sunday)}.</p><p>Phone: ${escapeHtml(TORONTO_SHOP.phoneDisplay)}</p>${guideHtml}<p>— ${escapeHtml(TORONTO_SHOP.legalName)}</p>`;
   const emailText = [
     `Hi ${name},`,
     "",
     `Your motorcycle (${workOrderNumber}) is ready for pickup at ${TORONTO_SHOP.fullAddress}.`,
     `Hours: ${TORONTO_SHOP.hours}. ${TORONTO_SHOP.sunday}.`,
     `Phone: ${TORONTO_SHOP.phoneDisplay}`,
-    ...(ctx.portalLink ? [`Pay online: ${ctx.portalLink}`] : []),
+    ...(ctx.portalLink ? [`Auction prices and bike valuation: ${ctx.portalLink}`] : []),
     "",
     TORONTO_SHOP.legalName,
   ].join("\n");
@@ -128,6 +130,14 @@ const TEMPLATES: Record<
       `<p>Hi ${ctx.customerName},</p><p>Your invoice for ${ctx.workOrderNumber} is still outstanding.</p><p><a href="${ctx.portalLink}">Pay now</a></p>`,
   },
 };
+
+function portalPurposeForTemplate(
+  templateKey: keyof typeof TEMPLATES
+): PortalTokenPurpose {
+  if (templateKey === "payment_reminder") return "payment";
+  if (templateKey === "ready_for_pickup") return "pickup";
+  return "full";
+}
 
 export async function listCommunicationLog(
   workOrderId: string
@@ -188,7 +198,7 @@ export async function sendWorkOrderMessage(input: {
 
   const { token } = await createPortalToken({
     workOrderId: input.work_order_id,
-    purpose: input.template_key === "payment_reminder" ? "payment" : "full",
+    purpose: portalPurposeForTemplate(input.template_key),
     expiresInDays: 14,
   });
 

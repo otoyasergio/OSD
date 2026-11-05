@@ -12,6 +12,7 @@ import { checkoutEvidenceOverridden } from "@/lib/status/checkoutEvidence";
 import { loadCommittedCheckoutCoverage } from "@/lib/services/checkoutEvidence";
 import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 import { entersSafetyColumn } from "@/lib/status/safetyReadyText";
+import { isWorkableService } from "@/lib/technician/floorQueue";
 
 export type DeriveJobInput = {
   status: JobStatus | string;
@@ -51,6 +52,19 @@ function isActiveJob(status: string) {
 
 function isWaitingPartStatus(status: string) {
   return status === "needed" || status === "ordered";
+}
+
+function partsForJob(job: DeriveJobInput, parts: DerivePartInput[]): DerivePartInput[] {
+  if (!job.job_id) return [];
+  return parts.filter((part) => part.job_id === job.job_id);
+}
+
+/** A service the floor can still wrench. A blocking part makes in-progress unworkable. */
+export function jobIsWorkable(job: DeriveJobInput, parts: DerivePartInput[]): boolean {
+  return isWorkableService({
+    status: String(job.status),
+    parts: partsForJob(job, parts),
+  });
 }
 
 function jobHasWaitingParts(job: DeriveJobInput, parts: DerivePartInput[]): boolean {
@@ -95,24 +109,37 @@ export function deriveWorkOrderStatus(
     return currentStatus;
   }
 
-  if (jobs.some((job) => job.status === "waiting_for_approval")) {
+  const workableJobs = jobs.filter((job) => jobIsWorkable(job, parts));
+  const anyWorkable = workableJobs.length > 0;
+
+  // A partial approval or parts block stays in the bay while another service
+  // can still be worked. The front desk row is only for a bike with nothing left.
+  if (!anyWorkable && jobs.some((job) => job.status === "waiting_for_approval")) {
     return "waiting_for_customer_approval";
   }
 
   // A drop into Ready for safety stays there until the check is stamped.
-  // A failed check adds a job that needs approval, which already returned above.
+  // A failed check adds a job that needs approval, which already returned above
+  // when that job is the only remaining work.
   if (currentStatus === "safety_check" && !safetyCheckComplete) {
     return "safety_check";
   }
 
   if (
-    jobs.some((job) => job.status === "waiting_for_parts") ||
-    jobs.some((job) => jobHasWaitingParts(job, parts))
+    !anyWorkable &&
+    (jobs.some((job) => job.status === "waiting_for_parts") ||
+      jobs.some((job) => jobHasWaitingParts(job, parts)))
   ) {
     return "waiting_for_parts";
   }
 
-  if (jobs.some((job) => job.status === "in_progress")) {
+  // An in-progress job with a blocking part does not keep the visit out of
+  // the parts or approval row once nothing else is workable. Those returns
+  // already happened above. A blocked clock plus other workable work stays here.
+  if (
+    workableJobs.some((job) => job.status === "in_progress") ||
+    (anyWorkable && jobs.some((job) => job.status === "in_progress"))
+  ) {
     return "in_progress";
   }
 
@@ -161,9 +188,11 @@ export function deriveWorkOrderStatus(
   // Ignore already-completed jobs — approved recommendation work after finish
   // must land back on ready_for_technician, not fall through to "open".
   const unfinishedJobs = activeJobs.filter((job) => job.status !== "completed");
+  // Waiting siblings must not hide a service that can still be worked.
+  const readyPool = anyWorkable ? workableJobs : unfinishedJobs;
   const allReadyForTechnician =
-    unfinishedJobs.length > 0 &&
-    unfinishedJobs.every(
+    readyPool.length > 0 &&
+    readyPool.every(
       (job) => job.status === "approved" || job.status === "ready_to_start"
     );
 

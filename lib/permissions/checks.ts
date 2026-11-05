@@ -204,6 +204,16 @@ export function canConnectShopMailbox(role: UserRole) {
 export function canManageLocations(role: UserRole) {
   return OWNERS.includes(role);
 }
+
+/** Append-only Ontario estimate rules. Owner and manager. */
+export function canManageLegalParameters(role: UserRole) {
+  return OWNERS_MANAGERS.includes(role);
+}
+
+/** Hourly shop labour rate used on intake. Owner-only shop setting. */
+export function canManageShopRate(role: UserRole) {
+  return OWNERS.includes(role);
+}
 export function canViewAuditLog(role: UserRole) {
   return OWNERS.includes(role);
 }

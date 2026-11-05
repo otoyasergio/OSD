@@ -8,6 +8,7 @@ import { saveInspectionResultAction } from "@/app/(app)/work_orders/[work_order_
 import { InspectionPhotoSlot } from "@/components/inspections/InspectionPhotoSlot";
 import {
   BRAKE_INSPECTION_SKIP_ITEM,
+  brakeLiningRequiredEveryVisit,
   isSubstantiveNote,
   measurementIsRecorded,
 } from "@/lib/services/inspectionGate";
@@ -113,6 +114,16 @@ export function InspectionItemRow({
 }) {
   const [status, setStatus] = useState<InspectionResultStatus | null>(result.status);
   const [measurement, setMeasurement] = useState(result.measurement ?? "");
+  const [measurementUnit, setMeasurementUnit] = useState(result.measurement_unit ?? "");
+  const [measurementSource, setMeasurementSource] = useState(
+    result.measurement_source ?? ""
+  );
+  const [angleAfterTorque, setAngleAfterTorque] = useState(
+    Boolean(result.angle_after_torque)
+  );
+  const [replaceFastener, setReplaceFastener] = useState(
+    Boolean(result.replace_fastener)
+  );
   const [notes, setNotes] = useState(result.notes ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +139,10 @@ export function InspectionItemRow({
     null
   );
   const measurementRef = useRef(measurement);
+  const unitRef = useRef(measurementUnit);
+  const sourceRef = useRef(measurementSource);
+  const angleRef = useRef(angleAfterTorque);
+  const replaceRef = useRef(replaceFastener);
   const notesRef = useRef(notes);
   const statusBeforeSaveRef = useRef<InspectionResultStatus | null>(result.status);
   const saveSeqRef = useRef(0);
@@ -158,14 +173,34 @@ export function InspectionItemRow({
 
   useEffect(() => {
     measurementRef.current = measurement;
+    unitRef.current = measurementUnit;
+    sourceRef.current = measurementSource;
+    angleRef.current = angleAfterTorque;
+    replaceRef.current = replaceFastener;
     notesRef.current = notes;
-  }, [measurement, notes]);
+  }, [
+    measurement,
+    measurementUnit,
+    measurementSource,
+    angleAfterTorque,
+    replaceFastener,
+    notes,
+  ]);
 
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, []);
+
+  function measurementFacts() {
+    return {
+      measurement_unit: unitRef.current.trim() || null,
+      measurement_source: sourceRef.current.trim() || null,
+      angle_after_torque: angleRef.current,
+      replace_fastener: replaceRef.current,
+    };
+  }
 
   useEffect(() => {
     const resultId = result.inspection_result_id;
@@ -186,11 +221,14 @@ export function InspectionItemRow({
     setSaveState("saving");
     onBusyChange?.(resultId, true);
     setError(null);
+    // Read the unit, source, and fastener flags now, so a save that waits its
+    // turn sends them as they were alongside this measurement and note.
+    const payload = { ...input, ...measurementFacts() };
     const task = saveChainRef.current.then(
       async (): Promise<"saved" | "failed" | "superseded"> => {
         let response: Awaited<ReturnType<typeof saveInspectionResultAction>>;
         try {
-          response = await saveInspectionResultAction(workOrderId, resultId, input);
+          response = await saveInspectionResultAction(workOrderId, resultId, payload);
         } catch (error) {
           if (seq !== saveSeqRef.current) return "superseded";
           // A thrown action did not write. Keep the draft on screen.
@@ -327,6 +365,7 @@ export function InspectionItemRow({
     status === "future_attention" || status === "immediate_attention";
   const unit = measurementHint(result.item_name_snapshot);
   const isSkip = result.item_name_snapshot === BRAKE_INSPECTION_SKIP_ITEM;
+  const liningEveryVisit = brakeLiningRequiredEveryVisit(result.item_name_snapshot);
   const isAcknowledgment = /acknowledgment/i.test(result.item_name_snapshot);
   const showMeasurement =
     !isSkip &&
@@ -365,7 +404,11 @@ export function InspectionItemRow({
       <div className="inspection-item-main">
         <div className="inspection-item-title-row">
           <h3 className="inspection-item-title">
-            {isSkip ? result.item_name_snapshot : displayName(result.item_name_snapshot)}
+            {isSkip && !readOnly
+              ? "Tires not inspected this visit"
+              : isSkip
+                ? result.item_name_snapshot
+                : displayName(result.item_name_snapshot)}
           </h3>
           {!readOnly ? (
             <span
@@ -447,7 +490,7 @@ export function InspectionItemRow({
           </div>
         )}
       </div>
-      {!readOnly && !isSkip ? (
+      {!readOnly && !isSkip && !liningEveryVisit ? (
         <button
           type="button"
           onClick={() => saveStatus("not_applicable")}
@@ -461,8 +504,13 @@ export function InspectionItemRow({
       ) : null}
       {!readOnly && isSkip ? (
         <p className="inspection-skip-note">
-          Only when this visit is not a brake and tire inspection. A real reason is
-          required. Tire and brake photos stay required until that reason is saved.
+          Front and rear brakes are inspected every visit. This only leaves tire lines
+          blank, and only with a real reason. Brake photos are still required.
+        </p>
+      ) : null}
+      {!readOnly && liningEveryVisit ? (
+        <p className="inspection-skip-note">
+          Inspected on every visit. Mark it OK, Future, or Now, and enter the measurement.
         </p>
       ) : null}
 
@@ -486,14 +534,18 @@ export function InspectionItemRow({
       ) : (
         <>
           {showMeasurement ? (
-            <label className="inspection-measurement">
-              <span className="inspection-measurement-label">
+            <div className="inspection-measurement">
+              <label
+                htmlFor={`measurement-${result.inspection_result_id}`}
+                className="inspection-measurement-label"
+              >
                 {unit ? `Measurement (${unit})` : "Measurement"}
                 {measurementRequired ? (
                   <span className="inspection-notes-required">Required</span>
                 ) : null}
-              </span>
+              </label>
               <input
+                id={`measurement-${result.inspection_result_id}`}
                 className={`inspection-measurement-input ${
                   measurementMissing ? "is-missing" : ""
                 }`}
@@ -517,7 +569,69 @@ export function InspectionItemRow({
                 onFocus={onTextFocus}
                 onBlur={onTextBlur}
               />
-            </label>
+              <label
+                htmlFor={`measurement-unit-${result.inspection_result_id}`}
+                className="inspection-measurement-label"
+              >
+                Unit
+              </label>
+              <input
+                id={`measurement-unit-${result.inspection_result_id}`}
+                className="inspection-measurement-input"
+                value={measurementUnit}
+                placeholder={unit ?? "Nm, mm, psi"}
+                onChange={(e) => {
+                  setTextDirty(true);
+                  setMeasurementUnit(e.target.value);
+                  scheduleTextSave();
+                }}
+                onFocus={onTextFocus}
+                onBlur={onTextBlur}
+              />
+              <label
+                htmlFor={`measurement-source-${result.inspection_result_id}`}
+                className="inspection-measurement-label"
+              >
+                Source
+              </label>
+              <input
+                id={`measurement-source-${result.inspection_result_id}`}
+                className="inspection-measurement-input"
+                value={measurementSource}
+                placeholder="Manual and page, or not recorded"
+                onChange={(e) => {
+                  setTextDirty(true);
+                  setMeasurementSource(e.target.value);
+                  scheduleTextSave();
+                }}
+                onFocus={onTextFocus}
+                onBlur={onTextBlur}
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={angleAfterTorque}
+                  onChange={(e) => {
+                    setAngleAfterTorque(e.target.checked);
+                    angleRef.current = e.target.checked;
+                    scheduleTextSave();
+                  }}
+                />
+                Angle after torque
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={replaceFastener}
+                  onChange={(e) => {
+                    setReplaceFastener(e.target.checked);
+                    replaceRef.current = e.target.checked;
+                    scheduleTextSave();
+                  }}
+                />
+                Replace the fastener
+              </label>
+            </div>
           ) : null}
 
           {!compact || notes || notesRequired ? (
@@ -544,7 +658,7 @@ export function InspectionItemRow({
                 aria-invalid={notesMissing || undefined}
                 placeholder={
                   isSkip
-                    ? "Why aren't brakes and tires being inspected this visit?"
+                    ? "Why aren't the tires being inspected this visit?"
                     : status === "not_applicable"
                       ? "Why doesn't this apply? For example: shaft drive, no center stand."
                       : needsAttention

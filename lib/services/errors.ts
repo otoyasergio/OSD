@@ -75,6 +75,12 @@ const MESSAGES: Record<string, string> = {
     "Waiting on client approval — front desk will send it back to Perform work when approved.",
   JOB_WAITING_FOR_PARTS:
     "Parts are not here yet — this bike stays parked until parts arrive.",
+  START_BENCH_OCCUPIED: "Finish the bike on the bench before starting another.",
+  START_NOT_NEXT: "The bike ahead of this one is next.",
+  START_WAITING: "This bike is waiting. It cannot be started until that wait is clear.",
+  PARK_REASON_NOT_ALLOWED: "The only floor stop is a tool or lift.",
+  SWAP_NOT_ALLOWED: "Bikes stay in the advisor's order. Swap is not a floor stop.",
+  TOOL_WAIT_NOT_OPEN: "This bike is not waiting on a tool or lift.",
   JOB_ASSIGNED_TO_OTHER_TECH: "You can only start or complete jobs assigned to you.",
   JOB_NOT_IN_PROGRESS: "Only a bike on the bench can be completed.",
   WORK_ORDER_NOT_WORKABLE:
@@ -435,6 +441,53 @@ const MESSAGES: Record<string, string> = {
   PASSWORD_CONFIRM_MISMATCH: "New password and confirmation do not match.",
   PASSWORD_UNCHANGED: "Choose a new password that is different from your current one.",
   PASSWORD_UPDATE_FAILED: "Could not update your password. Try again.",
+  NEEDS_SUPPLEMENTAL_ESTIMATE:
+    "This work is not on the confirmed estimate. Present a new version and get approval before it starts.",
+  EXCEEDS_AUTHORIZED_MAXIMUM:
+    "That amount is past the authorized maximum, including the 10 percent ceiling. Record a new authorization before the work starts.",
+  NEEDS_AUTHORIZATION:
+    "Chargeable work needs a confirmed estimate or a recorded maximum authorization.",
+  DECLINED_SAFETY_ACK_REQUIRED:
+    "The customer needs to acknowledge the declined safety repairs before the bike is released. The acknowledgment records the facts and does not remove responsibility.",
+  PROMISE_ASSUMES_FULL_DELIVERY:
+    "A line on the purchase order is still short. Set the promise date after the delivery is complete.",
+  PROMISE_DATE_INVALID: "Enter a valid promise date.",
+  MAXIMUM_AUTHORIZATION_INVALID: "Enter the maximum amount in dollars.",
+  ACCOUNTABILITY_NOT_MIGRATED:
+    "Accountability fields are not on this database yet. Apply the latest migrations.",
+  SUPPLIER_REQUIRED: "Enter the supplier name.",
+  PO_LINES_REQUIRED: "Choose at least one part to order.",
+  RECEIPT_QUANTITY_INVALID: "Enter a quantity greater than zero.",
+  PO_LINE_NOT_FOUND: "That purchase order line no longer exists.",
+  PO_LINE_COST_INVALID:
+    "Enter each unit cost in dollars, or leave it blank until the invoice arrives.",
+  REQUIREMENT_NOT_FOUND: "That part requirement no longer exists.",
+  RETURN_QUANTITY_INVALID: "Returned quantity cannot exceed the quantity ordered.",
+  SUPPLIER_CREDIT_NONE: "There is no supplier credit on this line to recover.",
+  VERIFIER_WORKED_THE_JOB:
+    "The verifier clocked time on this visit. Choose someone who did not do the work.",
+  VERIFIER_MUST_DIFFER: "The technician and the verifier must be two different accounts.",
+  BOTH_ACCOUNTS_REQUIRED: "Choose both the technician and the verifier.",
+  FINAL_CHECK_INVALID: "Complete the final-check record before saving.",
+  FINAL_CHECK_SELF_RECORDED:
+    "The technician who did the work cannot record the final check.",
+  FINAL_CHECK_VERIFIER_MUST_RECORD:
+    "On the floor, the verifier records the final check from their own account.",
+  ACCOUNTABILITY_WRITE_FORBIDDEN:
+    "Only the front office can change advisor, authorization, or acknowledgment records.",
+  SHOP_RATE_WRITE_FORBIDDEN: "Only the owner can change the shop rate.",
+  ACK_SIGNER_REQUIRED:
+    "Enter the name of the person acknowledging the declined safety repairs.",
+  NO_DECLINED_SAFETY: "There are no declined safety repairs to acknowledge.",
+  SCAN_REPORT_REQUIRED: "Paste the TopGuru report.",
+  SCAN_CODES_REQUIRED: "Paste the fault codes from the report.",
+  SCAN_REPORT_NOT_FOUND: "That scan report is no longer on this inspection.",
+  SCAN_REPORT_ALREADY_CONFIRMED: "That scan report was already confirmed.",
+  SCAN_MILEAGE_MISSING: "That report has no mileage to use.",
+  CLIENT_ACTION_NOT_OPEN: "That prompt is no longer on the list.",
+  CLIENT_ACTION_MESSAGE_REQUIRED: "Write the text before sending.",
+  CLIENT_ACTION_MESSAGE_TOO_LONG: "Keep the text to 900 characters or fewer.",
+  CLIENT_ACTION_SMS_UNAVAILABLE: "This customer cannot receive a text.",
 };
 
 export function toFormErrorMessage(error: unknown): string {

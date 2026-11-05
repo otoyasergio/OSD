@@ -24,7 +24,7 @@ export function FloorDock({
   swapControl?: FloorActionControl;
   failQcControl?: FloorActionControl;
   onPark: () => void;
-  onSwap: () => void;
+  onSwap?: () => void;
   onFailQc: () => void;
   onGo: () => void;
   message?: ReactNode;
@@ -56,7 +56,7 @@ export function FloorDock({
             disabled={!swapControl.enabled}
             title={swapControl.disabledReason ?? "Swap"}
             aria-label={swapControl.label}
-            onClick={onSwap}
+            onClick={() => onSwap?.()}
           >
             <ArrowLeftRight size={22} aria-hidden />
             <span className="sr-only">{swapControl.label}</span>

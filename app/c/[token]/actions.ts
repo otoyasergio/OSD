@@ -4,7 +4,6 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import {
-  portalAcknowledgeInspection,
   portalApproveJob,
   portalConfirmEstimate,
   portalDeclineJob,
@@ -102,24 +101,6 @@ export async function portalSignContractAction(
     });
 
     await portalSignContract(token, parsed);
-    revalidatePath(`/c/${token}`);
-    return { error: null };
-  } catch (error) {
-    return { error: toFormErrorMessage(error) };
-  }
-}
-
-export async function portalAckInspectionAction(
-  token: string,
-  signerName: string,
-  signatureDataUrl?: string
-): Promise<{ error: string | null }> {
-  try {
-    await assertPortalRateLimit(token);
-    await portalAcknowledgeInspection(token, {
-      signer_name: signerName,
-      signature_data_url: signatureDataUrl,
-    });
     revalidatePath(`/c/${token}`);
     return { error: null };
   } catch (error) {

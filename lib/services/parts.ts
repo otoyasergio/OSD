@@ -13,6 +13,8 @@ import {
 import { partSchema, partStatusSchema } from "@/lib/validation/schemas";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { syncFloorQueue } from "@/lib/services/floorQueueSync";
+import { isUndefinedTableError } from "@/lib/database/schemaCompat";
 
 export type Part = {
   part_id: string;
@@ -277,6 +279,32 @@ export async function updatePartUnitPrice(
   return part;
 }
 
+/** Installing the part closes the install task that receiving opened. */
+async function completeInstallTasksForPart(
+  supabase: DbClient,
+  partId: string,
+  completedAt: string
+): Promise<void> {
+  const { data: requirements, error: requirementError } = await supabase
+    .from("job_part_requirement")
+    .select("requirement_id")
+    .eq("part_id", partId);
+  if (requirementError) {
+    if (isUndefinedTableError(requirementError, "job_part_requirement")) return;
+    throw requirementError;
+  }
+  const ids = ((requirements ?? []) as Array<{ requirement_id: string }>).map(
+    (row) => row.requirement_id
+  );
+  if (ids.length === 0) return;
+  const { error } = await supabase
+    .from("install_task")
+    .update({ completed_at: completedAt })
+    .in("requirement_id", ids)
+    .is("completed_at", null);
+  if (error && !isUndefinedTableError(error, "install_task")) throw error;
+}
+
 export async function updatePartStatus(
   partId: string,
   newStatus: PartStatus
@@ -341,6 +369,10 @@ export async function updatePartStatus(
   if (error) throw error;
   const part = data as Part;
 
+  if (parsedStatus === "installed") {
+    await completeInstallTasksForPart(supabase, partId, now);
+  }
+
   await addTimelineEvent(supabase, {
     work_order_id: job.work_order_id,
     user_id: user.user_id,
@@ -394,5 +426,6 @@ export async function updatePartStatus(
   }
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  await syncFloorQueue(supabase, job.work_order_id, user.user_id);
   return part;
 }

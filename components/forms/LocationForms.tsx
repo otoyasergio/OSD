@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import type { LocationFormState } from "@/app/(app)/settings/locations/actions";
+import { MAX_SHOP_HOURLY_RATE } from "@/lib/pricing/shopRate";
 import type { LocationRecord, LocationUserOption } from "@/lib/services/locations";
 import { FormError, TextField } from "@/components/forms/Field";
 import { SubmitButton } from "@/components/forms/SubmitButton";
@@ -66,6 +67,18 @@ export function LocationEditForm({
         <FormError message={updateState.error} />
         <TextField label="Name" name="name" required defaultValue={location.name} />
         <TextField label="Code" name="code" required defaultValue={location.code} />
+        <TextField
+          label="Shop rate ($/h)"
+          name="hourly_rate"
+          type="number"
+          required
+          defaultValue={location.hourly_rate}
+          inputMode="decimal"
+          min={0.01}
+          max={MAX_SHOP_HOURLY_RATE}
+          step={0.01}
+          hint="Hourly labour rate used on intake for this location."
+        />
         <TextField
           label="Shop phone (E.164)"
           name="voice_e164"

@@ -15,6 +15,10 @@ vi.mock("@/app/(app)/work_orders/[work_order_id]/inspection/actions", () => ({
   completeInspectionAction,
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: () => undefined }),
+}));
+
 vi.mock("@/components/inspections/SignOffPad", () => ({
   SignOffPad: ({ onReadyChange }: { onReadyChange?: (ready: boolean) => void }) => {
     useEffect(() => {
@@ -217,5 +221,90 @@ describe("inspection finish waits for the checklist save", () => {
     });
 
     expect(calls.map((call) => call.measurement)).toEqual(["12", "4.5"]);
+  });
+
+  it("still sends the corrected measurement when the earlier save throws", async () => {
+    let failFirst: (reason: Error) => void = () => {};
+    const calls: Array<{ measurement?: string | null }> = [];
+    saveInspectionResultAction.mockImplementation((_workOrder, _resultId, input) => {
+      calls.push(input);
+      if (calls.length === 1) {
+        return new Promise((_resolve, reject) => {
+          failFirst = reject;
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    await renderReady();
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    await act(async () => {
+      setInput(input, "4.5");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    expect(saveInspectionResultAction).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      failFirst(new Error("Failed to fetch"));
+      await Promise.resolve();
+    });
+
+    expect(calls.map((call) => call.measurement)).toEqual(["12", "4.5"]);
+    expect(container.textContent).not.toContain("was not saved");
+  });
+
+  it("sends a waiting save with the unit it had when it was queued", async () => {
+    let releaseFirst: (value: { ok: true }) => void = () => {};
+    const calls: Array<{
+      measurement?: string | null;
+      measurement_unit?: string | null;
+    }> = [];
+    saveInspectionResultAction.mockImplementation((_workOrder, _resultId, input) => {
+      calls.push(input);
+      if (calls.length === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    await renderReady();
+    const [input, unitInput] = [
+      ...container.querySelectorAll("input.inspection-measurement-input"),
+    ] as HTMLInputElement[];
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    await act(async () => {
+      setInput(input, "4.5");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    await act(async () => {
+      setInput(unitInput, "mm");
+    });
+
+    await act(async () => {
+      releaseFirst({ ok: true });
+      await Promise.resolve();
+    });
+
+    expect(calls.map((call) => [call.measurement, call.measurement_unit])).toEqual([
+      ["12", null],
+      ["4.5", null],
+    ]);
   });
 });

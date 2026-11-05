@@ -17,14 +17,26 @@ const MOTO = "33333333-3333-4333-8333-333333333333";
 const LOC = "44444444-4444-4444-8444-444444444444";
 
 describe("createIntakeServiceLineDraft", () => {
-  it("starts Diagnostic at one hour and the $156 pre-tax shop rate", () => {
+  it("starts Diagnostic at one hour and the shop hourly rate", () => {
     expect(
       createIntakeServiceLineDraft({
         name: "Diagnostic",
         estimatedLabour: 1,
         standardPrice: null,
+        shopHourlyRate: 156,
       })
     ).toEqual({ note: "", labourHours: "1", price: "156" });
+  });
+
+  it("uses the owner-set shop rate instead of a hardcoded default", () => {
+    expect(
+      createIntakeServiceLineDraft({
+        name: "Diagnostic",
+        estimatedLabour: 1,
+        standardPrice: null,
+        shopHourlyRate: 180,
+      })
+    ).toEqual({ note: "", labourHours: "1", price: "180" });
   });
 
   it("falls back to one hour when Diagnostic has no catalogue labour", () => {
@@ -33,6 +45,7 @@ describe("createIntakeServiceLineDraft", () => {
         name: "Diagnostics",
         estimatedLabour: null,
         standardPrice: null,
+        shopHourlyRate: 156,
       })
     ).toEqual({ note: "", labourHours: "1", price: "156" });
   });

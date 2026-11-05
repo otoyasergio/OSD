@@ -11,6 +11,7 @@ import {
   staffHomePath,
 } from "@/lib/permissions";
 import { getInspectionForWorkOrder } from "@/lib/services/inspections";
+import { latestInspectionScan } from "@/lib/services/inspectionScans";
 import { isInspectionReadOnly } from "@/lib/services/inspectionGate";
 import { InspectionChecklist } from "@/components/inspections/InspectionChecklist";
 import { IntakeCompleteNotice } from "@/components/work_orders/IntakeCompleteNotice";
@@ -70,6 +71,7 @@ export default async function InspectionPage({
     canEdit,
   });
   const bike = inspection.header.motorcycle;
+  const scan = await latestInspectionScan(work_order_id);
   const auction = bike
     ? await loadAuctionPriceGuide({
         motorcycleId: bike.motorcycle_id,
@@ -106,9 +108,10 @@ export default async function InspectionPage({
         ) : null}
         {!readOnly ? (
           <p className="inspection-fullscreen-hint">
-            Mark every line OK, Future, or Now. “Doesn’t apply” needs a real reason. Enter
-            every measurement. Photograph front and rear tires, front and rear brakes,
-            forks, and the other evidence slots. Sign the report at the end.
+            Mark every line OK, Future, or Now. Inspect the front and rear brakes on every
+            visit. “Doesn’t apply” needs a real reason. Enter every measurement.
+            Photograph front and rear tires, front and rear brakes, forks, and the other
+            evidence slots. Sign the report at the end.
           </p>
         ) : null}
 
@@ -123,6 +126,7 @@ export default async function InspectionPage({
 
         <InspectionChecklist
           inspection={inspection}
+          scan={scan}
           canEdit={canEdit}
           canForceComplete={canForce}
           canRecommend={canRecommend}

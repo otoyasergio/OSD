@@ -42,10 +42,15 @@ describe("benchDrag", () => {
     expect(docketDragId(item())).toBe("job:job-1");
   });
 
-  it("allows offered, next, and resumable waiting bikes", () => {
-    expect(canDragDocketItemToBench(item({ board_status: "offered" }))).toBe(true);
+  it("drags only the first in-line bike, never a waiting bike", () => {
+    expect(
+      canDragDocketItemToBench(item({ board_status: "offered", can_start: true }))
+    ).toBe(true);
     expect(canDragDocketItemToBench(item({ board_status: "next" }))).toBe(true);
-    expect(canDragDocketItemToBench(item({ board_status: "waiting" }))).toBe(true);
+    expect(
+      canDragDocketItemToBench(item({ board_status: "next", can_start: false }))
+    ).toBe(false);
+    expect(canDragDocketItemToBench(item({ board_status: "waiting" }))).toBe(false);
   });
 
   it("blocks bench, QC, and customer-gated bikes", () => {
@@ -58,9 +63,9 @@ describe("benchDrag", () => {
     expect(canDragDocketItemToBench(item({ awaiting_customer: true }))).toBe(false);
   });
 
-  it("maps waiting bikes to resume and others to pull", () => {
+  it("pulls a line bike and refuses a waiting bike", () => {
     expect(benchDropActionForItem(item({ board_status: "next" }))).toBe("pull");
-    expect(benchDropActionForItem(item({ board_status: "waiting" }))).toBe("resume");
+    expect(benchDropActionForItem(item({ board_status: "waiting" }))).toBe(null);
     expect(
       benchDropActionForItem(item({ board_status: "bench", board_stamp: "NOW" }))
     ).toBe(null);

@@ -674,8 +674,16 @@ describe("price guide wiring", () => {
     const guideUi = readFileSync("components/auctions/AuctionPriceGuide.tsx", "utf8");
     expect(guideUi).toContain("formatCad");
     expect(guideUi).toContain("Canadian dollars");
+    expect(guideUi).toContain("Bike valuation");
+    expect(guideUi).toContain("Auction prices");
+    expect(guideUi).toContain("Price history");
+    expect(guideUi).toContain("<polyline");
+    expect(guideUi).toContain("Year of sale");
+    expect(guideUi).toContain("Median price (CAD)");
     expect(guideUi).not.toContain("formatUsd");
     expect(guideUi).not.toContain("US$");
+    expect(portalClient).not.toMatch(/Inspection acknowledgement/i);
+    expect(portalClient).toContain("show_shop_prices");
   });
 
   it("shows the auction price on the inspection report", () => {

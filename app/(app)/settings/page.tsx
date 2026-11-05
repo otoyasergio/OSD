@@ -5,6 +5,8 @@ import {
   canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
+  canManageLegalParameters,
+  canManageShopRate,
   canManageServiceCatalogue,
   canManageShopClosures,
   canManageTimesheets,
@@ -36,10 +38,22 @@ export default async function SettingsPage() {
       visible: canConnectShopMailbox(viewRole),
     },
     {
+      href: "/settings/scan-mail",
+      label: "Scan reports",
+      description: "TopGuru sends scan reports to scans@torontomoto.com.",
+      visible: canConnectShopMailbox(viewRole),
+    },
+    {
       href: "/settings/timesheets",
       label: "Timesheets",
       description: "Who is punched in, weekly hours, and punch corrections.",
       visible: canManageTimesheets(viewRole),
+    },
+    {
+      href: "/settings/shop_rate",
+      label: "Shop rate",
+      description: "Set the hourly labour rate used on intake.",
+      visible: canManageShopRate(viewRole),
     },
     {
       href: "/settings/services",
@@ -70,6 +84,13 @@ export default async function SettingsPage() {
       label: "Locations",
       description: "Create shops and assign staff to them.",
       visible: canManageLocations(viewRole),
+    },
+    {
+      href: "/settings/legal",
+      label: "Estimate rules",
+      description:
+        "Ontario authorization ceiling, estimate fee, and warranty text. New rows only.",
+      visible: canManageLegalParameters(viewRole),
     },
     {
       href: "/settings/users",

@@ -13,24 +13,22 @@ export function parseDocketDragId(id: string): { jobId: string | null; key: stri
   return { jobId: null, key: id };
 }
 
-/** Bikes the tech can drag onto their bench (assigned jobs only). */
+/** The first in-line bike can be dragged when the bench is empty. Waiting cannot. */
 export function canDragDocketItemToBench(item: DocketItem): boolean {
   if (!item.job_id) return false;
+  if (item.board_status === "waiting") return false;
   if (item.board_status === "bench" || item.board_status === "done") return false;
   if (item.board_status === "check" || item.board_status === "safety") return false;
+  if (item.can_start === true) return true;
+  if (item.can_start === false) return false;
   if (item.awaiting_customer) return false;
-  return (
-    item.board_status === "offered" ||
-    item.board_status === "next" ||
-    item.board_status === "waiting"
-  );
+  return item.board_status === "offered" || item.board_status === "next";
 }
 
 export type BenchDropAction = "pull" | "resume";
 
 export function benchDropActionForItem(item: DocketItem): BenchDropAction | null {
   if (!canDragDocketItemToBench(item)) return null;
-  if (item.board_status === "waiting") return "resume";
   return "pull";
 }
 

@@ -14,6 +14,7 @@ import {
 } from "@/lib/permissions";
 import { addJobSchema, approvalMethodSchema } from "@/lib/validation/schemas";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { syncFloorQueue } from "@/lib/services/floorQueueSync";
 import { assertInspectionCompletedForJobFinish } from "@/lib/services/inspectionGate";
 import { seedDefaultJobChecklist } from "@/lib/services/jobChecklist";
 import { evaluateJobCompleteGate } from "@/lib/status/jobCompleteGate";
@@ -565,6 +566,8 @@ export async function pullJob(
   }
 
   if (options.andStart) {
+    const { assertChargeableJobMayStart } = await import("@/lib/services/chargeableWork");
+    await assertChargeableJobMayStart(supabase, jobId);
     const { data: otherActive, error: activeError } = await supabase
       .from("job")
       .select("job_id, work_order:work_order_id ( status )")
@@ -786,6 +789,11 @@ export async function updateJobStatus(
     }
   }
 
+  if (nextStatus === "in_progress") {
+    const { assertChargeableJobMayStart } = await import("@/lib/services/chargeableWork");
+    await assertChargeableJobMayStart(supabase, jobId);
+  }
+
   const updates: Record<string, unknown> = {
     status: nextStatus,
     updated_at: new Date().toISOString(),
@@ -841,6 +849,7 @@ export async function updateJobStatus(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  await syncFloorQueue(supabase, job.work_order_id, user.user_id);
 }
 
 export async function recordCustomerApproval(
@@ -904,6 +913,7 @@ export async function recordCustomerApproval(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  await syncFloorQueue(supabase, job.work_order_id, user.user_id);
 }
 
 export async function recordCustomerDecline(
@@ -966,4 +976,5 @@ export async function recordCustomerDecline(
   });
 
   await recalculateWorkOrderStatus(supabase, job.work_order_id, user.user_id);
+  await syncFloorQueue(supabase, job.work_order_id, user.user_id);
 }

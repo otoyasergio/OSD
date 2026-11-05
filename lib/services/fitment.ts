@@ -56,6 +56,7 @@ export async function getFitmentImportStatus(): Promise<{
     status: string;
     started_at: string;
     row_count: number | null;
+    source_path: string | null;
   } | null;
 }> {
   await requireUser();
@@ -66,7 +67,7 @@ export async function getFitmentImportStatus(): Promise<{
       .select("vehicle_id", { count: "estimated", head: true }),
     supabase
       .from("fitment_import_run")
-      .select("status, started_at, row_count")
+      .select("status, started_at, row_count, source_path")
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -79,6 +80,7 @@ export async function getFitmentImportStatus(): Promise<{
           status: lastRun.status,
           started_at: lastRun.started_at,
           row_count: lastRun.row_count,
+          source_path: lastRun.source_path ?? null,
         }
       : null,
   };

@@ -16,6 +16,13 @@ import {
 } from "@/lib/permissions";
 import { JOB_STATUS_LABELS, WORK_ORDER_STATUS_LABELS } from "@/lib/status/labels";
 import {
+  decideFloorQueue,
+  isWorkableService,
+  queueNoteLabel,
+  waitReasonLabel,
+  type QueueBlocker,
+} from "@/lib/technician/floorQueue";
+import {
   moveDocketJob,
   sortByDocketPosition,
   type DocketMoveDirection,
@@ -23,6 +30,7 @@ import {
 import { groupAssignedJobsByWorkOrder } from "@/lib/technician/groupAssignedWorkOrders";
 import {
   isUndefinedColumnError,
+  isUndefinedTableError,
   OPTIONAL_COLUMNS,
   getOptionalColumnSupport,
   setOptionalColumnSupport,
@@ -46,7 +54,7 @@ import { docketWorkOrderSubtitle } from "@/lib/technician/docketCardDisplay";
 import { floorAssignedLocationIds } from "@/lib/workOrders/assignmentVisibility";
 import type { DbClient } from "@/lib/database/types";
 
-export type DocketItemKind = "now" | "assigned" | "qc" | "safety" | "flag";
+export type DocketItemKind = "now" | "assigned" | "install" | "qc" | "safety" | "flag";
 
 export type DocketItem = {
   position: number;
@@ -80,6 +88,12 @@ export type DocketItem = {
   wait_owner_kind: FloorWaitOwnerKind | null;
   /** Estimate decision pending with the customer — badge only, never a freeze. */
   awaiting_customer: boolean;
+  /** Start is legal for this card right now. Omitted on cards that are not a line bike. */
+  can_start?: boolean;
+  /** When this wait opened, for the elapsed time on a Waiting card. */
+  wait_opened_at?: string | null;
+  /** Partial parts or approval notes while the bike stays in the line. */
+  queue_notes?: string[];
 };
 
 export type TechnicianDocket = {
@@ -111,6 +125,8 @@ export type DocketAssignedJobInput = {
   job_timer_running?: boolean;
   /** Shop code when this tech’s floor spans TOR and OTT. */
   location_code?: string | null;
+  parts?: Array<{ status: string }>;
+  open_blockers?: Array<{ kind: string; opened_at: string }>;
 };
 
 export type DocketQcInput = {
@@ -137,6 +153,18 @@ export type DocketFlagInput = {
   motorcycle_label: string;
   reason: string;
   note: string | null;
+  location_code?: string | null;
+};
+
+/** A received part waiting to be installed, created when the front office receives a line. */
+export type DocketInstallInput = {
+  install_task_id: string;
+  work_order_id: string;
+  work_order_number: string;
+  work_order_status?: WorkOrderStatus | null;
+  job_id: string | null;
+  motorcycle_label: string;
+  description: string;
   location_code?: string | null;
 };
 
@@ -194,6 +222,7 @@ export function buildTechnicianDocketItems(input: {
   qcItems: DocketQcInput[];
   safetyItems: DocketSafetyInput[];
   flags: DocketFlagInput[];
+  installTasks?: DocketInstallInput[];
   includeSafeties: boolean;
 }): DocketItem[] {
   const items: Omit<DocketItem, "position">[] = [];
@@ -206,9 +235,75 @@ export function buildTechnicianDocketItems(input: {
     }))
   );
   const workOrders = groupAssignedJobsByWorkOrder(orderedJobs);
+  const queueBlockers: QueueBlocker[] = [];
+  for (const job of orderedJobs) {
+    for (const blocker of job.open_blockers ?? []) {
+      queueBlockers.push({
+        job_id: job.job_id,
+        kind: blocker.kind,
+        opened_at: blocker.opened_at,
+      });
+    }
+    const listedTool = (job.open_blockers ?? []).some(
+      (blocker) => blocker.kind === "tool"
+    );
+    if (job.floor_park_reason === "tool" && job.floor_parked_at && !listedTool) {
+      queueBlockers.push({
+        job_id: job.job_id,
+        kind: "tool",
+        opened_at: job.floor_parked_at,
+      });
+    }
+  }
+  const decision = decideFloorQueue({
+    technician_id: "self",
+    services: orderedJobs.map((job) => ({
+      job_id: job.job_id,
+      work_order_id: job.work_order_id,
+      assigned_technician_id: "self",
+      status: job.status,
+      docket_position: job.docket_position ?? null,
+      service_name: job.service_name,
+      parts: job.parts ?? [],
+      timer_running: Boolean(job.job_timer_running),
+    })),
+    blockers: queueBlockers,
+  });
+  const bikeByWorkOrder = new Map(
+    decision.bikes.map((bike) => [bike.work_order_id, bike])
+  );
+  const laneRank = (lane: string | undefined) =>
+    lane === "bench" ? 0 : lane === "waiting" ? 2 : 1;
+  const sortedGroups = [...workOrders].sort((a, b) => {
+    const left = bikeByWorkOrder.get(a.work_order_id);
+    const right = bikeByWorkOrder.get(b.work_order_id);
+    const laneDelta = laneRank(left?.lane) - laneRank(right?.lane);
+    if (laneDelta !== 0) return laneDelta;
+    const ap = left?.position ?? null;
+    const bp = right?.position ?? null;
+    if (ap == null && bp == null) return 0;
+    if (ap == null) return 1;
+    if (bp == null) return -1;
+    return ap - bp;
+  });
 
-  for (const group of workOrders) {
-    const job = group.representative;
+  for (const group of sortedGroups) {
+    const bike = bikeByWorkOrder.get(group.work_order_id);
+    const timerJob = group.jobs.find((row) => row.job_timer_running);
+    const workable = [...group.jobs]
+      .filter((row) => isWorkableService({ status: row.status, parts: row.parts }))
+      .sort((a, b) => {
+        const ap = a.docket_position ?? null;
+        const bp = b.docket_position ?? null;
+        if (ap == null && bp == null) return 0;
+        if (ap == null) return 1;
+        if (bp == null) return -1;
+        return ap - bp;
+      });
+    const job =
+      bike?.lane === "bench"
+        ? (timerJob ?? workable[0] ?? group.representative)
+        : (workable[0] ?? group.representative);
     const serviceNames = [...new Set(group.jobs.map((row) => row.service_name))];
     const serviceLabel = serviceNames.join(" · ");
     const hasOpenFlag = activeFlags.some(
@@ -231,26 +326,42 @@ export function buildTechnicianDocketItems(input: {
       floor_park_reason: job.floor_park_reason ?? null,
       job_timer_running: Boolean(job.job_timer_running),
     });
-    // DocketItem keeps the legacy PitBoardStatus vocabulary; the richer
-    // held/terminal states collapse to "waiting" (terminal is filtered above).
-    const boardStatus: PitBoardStatus =
-      state.board === "held" || state.board === "terminal" ? "waiting" : state.board;
+    let boardStatus: PitBoardStatus = "next";
+    if (state.board === "held" || state.board === "terminal") boardStatus = "waiting";
+    else boardStatus = state.board;
+    const held = state.board === "held" || state.board === "terminal";
+    if (bike && !held) {
+      if (bike.lane === "bench") boardStatus = "bench";
+      else if (bike.lane === "waiting") boardStatus = "waiting";
+      else boardStatus = job.floor_acknowledged_at ? "next" : "offered";
+    }
+    const queueWaiting = Boolean(bike && bike.lane === "waiting" && !held);
     const boardStamp: PitBoardStamp =
-      boardStatus === "waiting"
-        ? "HOLD"
-        : stampForBoard({
-            status: boardStatus,
-            floor_parked_at: job.floor_parked_at ?? null,
-            job_timer_running: Boolean(job.job_timer_running),
-          });
-    const effectiveParkReason = awaitingClient
-      ? ("approval" as const)
-      : (job.floor_park_reason ?? null);
+      boardStatus === "bench"
+        ? "NOW"
+        : boardStatus === "waiting"
+          ? "HOLD"
+          : boardStatus === "offered"
+            ? "NEW"
+            : boardStatus === "next"
+              ? "NEXT"
+              : stampForBoard({
+                  status: boardStatus,
+                  floor_parked_at: job.floor_parked_at ?? null,
+                  job_timer_running: Boolean(job.job_timer_running),
+                });
+    const queueReason = queueWaiting ? (bike?.reason ?? null) : null;
+    const effectiveParkReason = queueReason
+      ? queueReason
+      : awaitingClient
+        ? ("approval" as const)
+        : (job.floor_park_reason ?? null);
     const effectiveWaitOwner = awaitingClient
       ? ("front_desk" as const)
       : (job.floor_wait_owner ?? null);
+    const queueOwner = queueWaiting ? (bike?.owner ?? null) : null;
     items.push({
-      kind: group.is_active && boardStatus === "bench" ? "now" : "assigned",
+      kind: boardStatus === "bench" ? "now" : "assigned",
       key: `work-order-${job.work_order_id}`,
       motorcycle_label: job.motorcycle_label,
       service_label: serviceLabel,
@@ -269,15 +380,61 @@ export function buildTechnicianDocketItems(input: {
       board_stamp: boardStamp,
       floor_park_reason: effectiveParkReason,
       floor_wait_owner: effectiveWaitOwner,
-      wait_owner_label: waitOwnerLabel(effectiveWaitOwner),
+      wait_owner_label: queueOwner
+        ? waitOwnerLabel(
+            queueOwner === "parts" ? null : (queueOwner as FloorWaitOwner)
+          ) || (queueOwner === "parts" ? "Parts" : "")
+        : waitOwnerLabel(effectiveWaitOwner),
       park_reason_label:
         state.board === "held"
           ? (state.waitReason ?? parkReasonLabel(effectiveParkReason))
-          : parkReasonLabel(effectiveParkReason),
-      state_label: state.stateLabel,
-      wait_reason: state.waitReason,
-      wait_owner_kind: state.waitOwner,
+          : queueReason
+            ? waitReasonLabel(queueReason)
+            : parkReasonLabel(effectiveParkReason),
+      state_label: queueReason ? waitReasonLabel(queueReason) : state.stateLabel,
+      wait_reason: queueReason ? waitReasonLabel(queueReason) : state.waitReason,
+      wait_owner_kind: queueOwner ?? state.waitOwner,
       awaiting_customer: workOrderStatus === "waiting_for_customer_approval",
+      can_start: bike?.can_start ?? false,
+      wait_opened_at: queueWaiting ? (bike?.opened_at ?? null) : null,
+      queue_notes: (bike?.notes ?? []).map((note) => queueNoteLabel(note)),
+      primary_photo_url: null,
+    });
+  }
+
+  for (const task of input.installTasks ?? []) {
+    if (
+      isTerminalWorkOrderStatus(task.work_order_status ?? null) ||
+      workOrderLeftTechDocket(task.work_order_status ?? null)
+    ) {
+      continue;
+    }
+    items.push({
+      kind: "install",
+      key: `install-${task.install_task_id}`,
+      motorcycle_label: task.motorcycle_label,
+      service_label: task.description,
+      service_names: [task.description],
+      title: `${task.motorcycle_label} · ${task.description}`,
+      subtitle: docketWorkOrderSubtitle(task.work_order_number, task.location_code),
+      status_label: "Part received",
+      job_id: task.job_id,
+      work_order_id: task.work_order_id,
+      href: floorHref({ jobId: task.job_id, workOrderId: task.work_order_id }),
+      overview_href: techJobPacketHref(task.work_order_id, {
+        jobId: task.job_id ?? undefined,
+        section: "notes",
+      }),
+      board_status: "offered",
+      board_stamp: "NEW",
+      floor_park_reason: null,
+      floor_wait_owner: null,
+      wait_owner_label: "",
+      park_reason_label: "",
+      state_label: "Part received. Install it and mark the part installed",
+      wait_reason: null,
+      wait_owner_kind: null,
+      awaiting_customer: false,
       primary_photo_url: null,
     });
   }
@@ -394,6 +551,72 @@ async function attachDocketPrimaryPhotos(
     ...item,
     primary_photo_url: urls.get(item.work_order_id) ?? null,
   }));
+}
+
+async function loadOpenInstallTasks(
+  supabase: DbClient,
+  technicianUserId: string,
+  allowedLocationIds: string[],
+  shopCode: (locationId: string) => string | null
+): Promise<DocketInstallInput[]> {
+  const { data, error } = await supabase
+    .from("install_task")
+    .select(
+      `
+      install_task_id, description, location_id,
+      requirement:requirement_id ( job_id ),
+      work_order:work_order_id!inner (
+        work_order_id, work_order_number, status,
+        motorcycle:motorcycle_id ( year, make, model )
+      )
+    `
+    )
+    .eq("assigned_technician_id", technicianUserId)
+    .in("location_id", allowedLocationIds)
+    .is("completed_at", null)
+    .order("created_at", { ascending: true });
+  if (error) {
+    if (isUndefinedTableError(error, "install_task")) return [];
+    throw error;
+  }
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => {
+    const woRaw = row.work_order as
+      | {
+          work_order_id: string;
+          work_order_number: string;
+          status: WorkOrderStatus;
+          motorcycle: unknown;
+        }
+      | {
+          work_order_id: string;
+          work_order_number: string;
+          status: WorkOrderStatus;
+          motorcycle: unknown;
+        }[]
+      | null;
+    const wo = Array.isArray(woRaw) ? woRaw[0] : woRaw;
+    const motoRaw = wo?.motorcycle as
+      | { year: number; make: string; model: string }
+      | { year: number; make: string; model: string }[]
+      | null
+      | undefined;
+    const moto = Array.isArray(motoRaw) ? motoRaw[0] : motoRaw;
+    const requirementRaw = row.requirement as
+      { job_id?: string | null } | { job_id?: string | null }[] | null;
+    const requirement = Array.isArray(requirementRaw)
+      ? requirementRaw[0]
+      : requirementRaw;
+    return {
+      install_task_id: String(row.install_task_id),
+      work_order_id: wo?.work_order_id ?? "",
+      work_order_number: wo?.work_order_number ?? "",
+      work_order_status: wo?.status ?? null,
+      job_id: requirement?.job_id ?? null,
+      motorcycle_label: motorcycleLabel(moto ?? null),
+      description: String(row.description ?? "Install part"),
+      location_code: shopCode(String(row.location_id)),
+    };
+  });
 }
 
 export async function getTechnicianDocket(
@@ -710,11 +933,68 @@ export async function getTechnicianDocket(
     }
   }
 
+  const installTasks = await loadOpenInstallTasks(
+    supabase,
+    technicianUserId,
+    allowedLocationIds,
+    shopCode
+  );
+
+  const assignedJobIds = assignedJobs.map((job) => job.job_id);
+  if (assignedJobIds.length > 0) {
+    const [clocks, parts, blockers] = await Promise.all([
+      supabase
+        .from("job_time_entry")
+        .select("job_id, user_id")
+        .in("job_id", assignedJobIds)
+        .eq("user_id", technicianUserId)
+        .is("ended_at", null),
+      supabase.from("part").select("job_id, status").in("job_id", assignedJobIds),
+      supabase
+        .from("job_blocker")
+        .select("job_id, kind, opened_at")
+        .in("job_id", assignedJobIds)
+        .is("cleared_at", null),
+    ]);
+    if (clocks.error && !isUndefinedTableError(clocks.error, "job_time_entry")) {
+      throw clocks.error;
+    }
+    if (parts.error) throw parts.error;
+    if (blockers.error && !isUndefinedTableError(blockers.error, "job_blocker")) {
+      throw blockers.error;
+    }
+    const running = new Set(
+      ((clocks.data ?? []) as Array<{ job_id: string }>).map((row) => row.job_id)
+    );
+    const partsByJob = new Map<string, Array<{ status: string }>>();
+    for (const part of (parts.data ?? []) as Array<{ job_id: string; status: string }>) {
+      const list = partsByJob.get(part.job_id) ?? [];
+      list.push({ status: part.status });
+      partsByJob.set(part.job_id, list);
+    }
+    const blockersByJob = new Map<string, Array<{ kind: string; opened_at: string }>>();
+    for (const blocker of (blockers.data ?? []) as Array<{
+      job_id: string;
+      kind: string;
+      opened_at: string;
+    }>) {
+      const list = blockersByJob.get(blocker.job_id) ?? [];
+      list.push({ kind: blocker.kind, opened_at: blocker.opened_at });
+      blockersByJob.set(blocker.job_id, list);
+    }
+    for (const job of assignedJobs) {
+      job.job_timer_running = running.has(job.job_id);
+      job.parts = partsByJob.get(job.job_id) ?? [];
+      job.open_blockers = blockersByJob.get(job.job_id) ?? [];
+    }
+  }
+
   const bareItems = buildTechnicianDocketItems({
     assignedJobs,
     qcItems,
     safetyItems,
     flags,
+    installTasks,
     includeSafeties: canPerformSafetyCheck(tech.role as UserRole),
   });
   const items = await attachDocketPrimaryPhotos(supabase, bareItems);

@@ -95,6 +95,15 @@ export function dollarsToCents(amount: number): number {
   return Math.round(amount * 100);
 }
 
+/** Cents for a dollars form field; null when blank, negative, or not a number. */
+export function parseDollarsToCents(raw: string): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const amount = Number(trimmed);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  return dollarsToCents(amount);
+}
+
 export function centsToDollars(cents: number): number {
   return cents / 100;
 }

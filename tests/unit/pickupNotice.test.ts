@@ -180,6 +180,23 @@ describe("ready for pickup copy", () => {
     expect(message.emailHtml).toContain(TORONTO_SHOP.legalName);
     expect(message.emailHtml).toContain("Mon–Fri 12:00–19:00");
     expect(message.emailText).toContain("Sat 10:00–16:00");
+    for (const part of [
+      message.sms,
+      message.emailSubject,
+      message.emailHtml,
+      message.emailText,
+    ]) {
+      expect(part).not.toMatch(/estimate summary/i);
+      expect(part).not.toMatch(/pay online/i);
+      expect(part).not.toMatch(/\$\s?\d/);
+      expect(part).not.toMatch(/\bHST\b/);
+    }
+    expect(message.sms).toContain("Auction prices and bike valuation:");
+    expect(message.sms).toContain("https://service.torontomoto.com/c/token");
+    expect(message.emailHtml).toContain("Auction prices and bike valuation");
+    expect(message.emailText).toContain(
+      "Auction prices and bike valuation: https://service.torontomoto.com/c/token"
+    );
   });
 
   it("asks with the street address and shop hours", () => {
@@ -311,6 +328,14 @@ describe("sendReadyForPickupNotice", () => {
     expect(logs.find((row) => row.channel === "sms")?.from_address).toBe(
       TORONTO_SHOP.phoneE164
     );
+    expect(createPortalToken).toHaveBeenCalledWith({
+      workOrderId: "wo-1",
+      purpose: "pickup",
+      expiresInDays: 14,
+    });
+    const smsBody = String(logs.find((row) => row.channel === "sms")?.body);
+    expect(smsBody).not.toMatch(/estimate summary|pay online|\$\s?\d/i);
+    expect(smsBody).toContain("Auction prices and bike valuation:");
   });
 
   it("sends nothing when email is missing", async () => {

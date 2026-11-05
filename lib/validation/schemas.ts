@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_SHOP_HOURLY_RATE, roundToCents } from "@/lib/pricing/shopRate";
 import { normalizeVin, validateOptionalVin } from "@/lib/vin/validate";
 
 export const customerAccountTypeSchema = z.enum(["retail", "fleet", "commercial"]);
@@ -164,6 +165,10 @@ export const saveInspectionResultSchema = z.object({
     .nullable()
     .optional(),
   measurement: z.string().nullable().optional(),
+  measurement_unit: z.string().max(40).nullable().optional(),
+  measurement_source: z.string().max(240).nullable().optional(),
+  angle_after_torque: z.boolean().optional(),
+  replace_fastener: z.boolean().optional(),
   notes: z.string().nullable().optional(),
 });
 
@@ -281,10 +286,11 @@ export const sendMessageSchema = z.object({
   channel: z.enum(["sms", "email"]),
 });
 
-export const portalAcknowledgementSchema = z.object({
-  signer_name: z.string().min(1),
-  signature_data_url: z.string().optional(),
-});
+const shopHourlyRateSchema = z.coerce
+  .number({ error: "Shop rate must be a number" })
+  .positive("Shop rate must be greater than 0")
+  .max(MAX_SHOP_HOURLY_RATE, "Shop rate is too high")
+  .transform(roundToCents);
 
 export const locationSchema = z.object({
   name: z.string().min(1, "Location name is required"),
@@ -294,6 +300,7 @@ export const locationSchema = z.object({
     .max(16, "Code must be 16 characters or fewer")
     .regex(/^[A-Za-z0-9_-]+$/, "Use letters, numbers, hyphens, or underscores"),
   status: z.enum(["active", "inactive"]).default("active"),
+  hourly_rate: shopHourlyRateSchema.optional(),
   voice_e164: z
     .string()
     .trim()
@@ -304,6 +311,10 @@ export const locationSchema = z.object({
       (value) => value === null || /^\+[1-9][0-9]{7,14}$/.test(value),
       "Shop phone must be E.164 (e.g. +14165551212)"
     ),
+});
+
+export const shopRateSchema = z.object({
+  hourly_rate: shopHourlyRateSchema,
 });
 
 const centsSchema = z.number().int("Amounts must be integer cents");

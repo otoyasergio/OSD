@@ -12,6 +12,7 @@ import {
   Users,
   Bike,
   Settings,
+  CircleDollarSign,
   MapPin,
   FileCheck,
   ScrollText,
@@ -24,6 +25,9 @@ import {
   ListOrdered,
   Gauge,
   Images,
+  UserRound,
+  Scale,
+  Bell,
 } from "lucide-react";
 import type { UserRole } from "@/lib/database/types";
 import {
@@ -31,6 +35,8 @@ import {
   canManageContractTemplate,
   canManageInspectionTemplate,
   canManageLocations,
+  canManageLegalParameters,
+  canManageShopRate,
   canManageServiceCatalogue,
   canManageTimesheets,
   canManageUsers,
@@ -40,6 +46,7 @@ import {
   canViewBillingArea,
   canViewClients,
   canViewDashboard,
+  canEditWorkOrder,
   canViewFiledArchive,
   canViewPartsBoard,
   canViewReports,
@@ -52,6 +59,8 @@ type NavLink = { href: string; label: string; icon: LucideIcon };
 const NAV_ICONS: Record<string, LucideIcon> = {
   "/control-center": Gauge,
   "/dashboard": LayoutDashboard,
+  "/advisor": UserRound,
+  "/actions": Bell,
   "/work_orders": ClipboardList,
   "/gallery": Images,
   "/parts": Package,
@@ -63,6 +72,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/motorcycles": Bike,
   "/settings": Settings,
   "/settings/locations": MapPin,
+  "/settings/legal": Scale,
+  "/settings/shop_rate": CircleDollarSign,
   "/settings/inspection_template": FileCheck,
   "/settings/contract_template": ScrollText,
   "/settings/services": BookOpen,
@@ -120,6 +131,18 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
       icon: iconFor("/dashboard"),
     });
   }
+  if (canEditWorkOrder(role)) {
+    shopFloorLinks.push({
+      href: "/advisor",
+      label: "Advisor desk",
+      icon: iconFor("/advisor"),
+    });
+    shopFloorLinks.push({
+      href: "/actions",
+      label: "Client actions",
+      icon: iconFor("/actions"),
+    });
+  }
   if (!isFloorTech(role)) {
     shopFloorLinks.push({
       href: "/work_orders",
@@ -173,6 +196,20 @@ export function buildNavCategories(role: UserRole): NavCategory[] {
       href: "/settings/locations",
       label: "Locations",
       icon: iconFor("/settings/locations"),
+    });
+  }
+  if (canManageLegalParameters(role)) {
+    shopSettings.push({
+      href: "/settings/legal",
+      label: "Estimate rules",
+      icon: iconFor("/settings/legal"),
+    });
+  }
+  if (canManageShopRate(role)) {
+    shopSettings.push({
+      href: "/settings/shop_rate",
+      label: "Shop rate",
+      icon: iconFor("/settings/shop_rate"),
     });
   }
   if (canManageInspectionTemplate(role)) {
