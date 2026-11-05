@@ -271,7 +271,8 @@ describe("buildFloorActionModel matrix", () => {
         floor_park_reason: reason,
         job_timer_running: false,
       });
-      expect(model.primary.enabled, reason).toBe(false);
+      expect(model.primary.enabled, reason).toBe(true);
+      expect(model.primary.action, reason).not.toBe("none");
     }
   });
 

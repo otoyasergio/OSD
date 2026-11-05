@@ -18,6 +18,14 @@ const partsWorkSql = readFileSync(
   "utf8"
 );
 
+const closedBikeSql = readFileSync(
+  resolve(
+    process.cwd(),
+    "supabase/migrations/20261105234500_floor_skips_closed_bikes.sql"
+  ),
+  "utf8"
+);
+
 describe("floor queue migration", () => {
   it("closes swapped and other blockers and stops writing a swap park", () => {
     expect(sql).toContain("kind IN ('swapped', 'other')");
@@ -34,5 +42,23 @@ describe("floor queue migration", () => {
     expect(partsWorkSql).not.toContain("kind IN ('approval', 'parts')");
     expect(partsWorkSql).toContain("OR target.status = 'waiting_for_approval'");
     expect(partsWorkSql).not.toContain("parts_blocked");
+  });
+
+  it("keeps closed and post-bay visits out of the next-bike line", () => {
+    for (const status of [
+      "completed",
+      "cancelled",
+      "on_hold",
+      "safety_check",
+      "ready_for_pickup",
+      "in_storage",
+      "insurance",
+    ]) {
+      expect(closedBikeSql).toContain(`'${status}'`);
+    }
+    expect(closedBikeSql).toContain("JOIN work_order line_wo");
+    expect(closedBikeSql).toContain("floor_park_reason IN ('swapped', 'other')");
+    expect(closedBikeSql).toContain("kind IN ('swapped', 'other')");
+    expect(closedBikeSql).not.toContain("floor_park_reason = 'swapped'");
   });
 });

@@ -70,6 +70,24 @@ export function workOrderLeftTechDocket(
   );
 }
 
+/**
+ * Bikes that still belong in the technician's line.
+ * On hold, closed, and post-bay visits do not. The database start command
+ * uses the same set.
+ */
+export function workOrderStillOnTechnicianFloor(
+  status: WorkOrderStatus | string | null | undefined
+): boolean {
+  if (!status) return true;
+  if (status === "on_hold") return false;
+  return !isTerminalWorkOrderStatus(status) && !workOrderLeftTechDocket(status);
+}
+
+/** Swap and "other" stops were retired. Old rows must not freeze the bike. */
+export function isRetiredFloorPark(reason: FloorParkReason | null | undefined): boolean {
+  return reason === "swapped" || reason === "other";
+}
+
 /** Closed jobs — cancelled/declined rows must not linger on the floor. */
 export function isTerminalJobStatus(
   status: JobStatus | string | null | undefined
@@ -230,7 +248,12 @@ export function deriveFloorWorkState(input: FloorWorkStateInput): FloorWorkState
   }
 
   // A parts wait is a note. The tech can still start and keep the clock.
-  if (input.floor_parked_at && input.floor_park_reason !== "parts") {
+  // Retired swap and other parks are leftover rows, not a current stop.
+  if (
+    input.floor_parked_at &&
+    input.floor_park_reason !== "parts" &&
+    !isRetiredFloorPark(input.floor_park_reason)
+  ) {
     const wait = parkWait(input.floor_park_reason);
     return {
       board: "waiting",
