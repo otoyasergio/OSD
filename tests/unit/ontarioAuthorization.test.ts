@@ -65,6 +65,34 @@ describe("chargeableStartDecision", () => {
     ).toBe(true);
   });
 
+  it("lets a line on the confirmed estimate start without a separate maximum", () => {
+    expect(
+      chargeableStartDecision({
+        priceCents: 25000,
+        legacyApproved: false,
+        jobApprovedOnConfirmedVersion: true,
+        estimateDocumentExists: true,
+        maximumAuthorizationCents: null,
+        alreadyAuthorizedSpendCents: 0,
+        ceilingBps: ceiling,
+      })
+    ).toEqual({ ok: true });
+  });
+
+  it("refuses chargeable work that has no estimate, maximum, or legacy approval", () => {
+    expect(
+      chargeableStartDecision({
+        priceCents: 8000,
+        legacyApproved: false,
+        jobApprovedOnConfirmedVersion: false,
+        estimateDocumentExists: false,
+        maximumAuthorizationCents: null,
+        alreadyAuthorizedSpendCents: 0,
+        ceilingBps: ceiling,
+      })
+    ).toEqual({ ok: false, reason: "NEEDS_AUTHORIZATION" });
+  });
+
   it("refuses work past the authorized maximum plus the statutory ceiling", () => {
     expect(
       chargeableStartDecision({
@@ -84,6 +112,8 @@ describe("exceedsAuthorizedCeiling", () => {
   it("treats 10 percent as the default ceiling and nothing beyond it", () => {
     expect(exceedsAuthorizedCeiling(10000, 11000, 1000)).toBe(false);
     expect(exceedsAuthorizedCeiling(10000, 11001, 1000)).toBe(true);
+    expect(exceedsAuthorizedCeiling(-1, 0, 1000)).toBe(true);
+    expect(exceedsAuthorizedCeiling(10000, -1, 1000)).toBe(true);
   });
 });
 

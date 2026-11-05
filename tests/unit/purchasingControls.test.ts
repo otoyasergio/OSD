@@ -17,6 +17,12 @@ describe("purchasing controls", () => {
     expect(
       requirementStateAfterReceipt({ quantityOrdered: 2, quantityReceived: 2 })
     ).toBe("received");
+    expect(
+      requirementStateAfterReceipt({ quantityOrdered: 2, quantityReceived: 0 })
+    ).toBe("ordered");
+    expect(
+      requirementStateAfterReceipt({ quantityOrdered: 2, quantityReceived: 3 })
+    ).toBe("received");
   });
 
   it("keeps a purchase order partially received until every line is complete", () => {
@@ -48,6 +54,12 @@ describe("purchasing controls", () => {
         lines: [{ ordered: 2, received: 2 }],
       })
     ).toBe(false);
+    expect(
+      promiseAssumesFullDelivery({
+        hasPromise: false,
+        lines: [{ ordered: 2, received: 0 }],
+      })
+    ).toBe(false);
   });
 
   it("flags a supplier invoice that does not match received cost plus freight", () => {
@@ -75,6 +87,14 @@ describe("purchasing controls", () => {
         costComplete: false,
       })
     ).toBe("cost_missing");
+    expect(
+      invoiceCheck({
+        invoiceTotalCents: null,
+        receivedCostCents: 4500,
+        freightCents: 0,
+        costComplete: true,
+      })
+    ).toBe("unset");
   });
 
   it("leaves margin empty until acquisition cost is known, then flags a thin margin", () => {
@@ -84,5 +104,10 @@ describe("purchasing controls", () => {
     expect(margin).toBe(1000);
     expect(margin).toBeLessThan(PARTS_MARGIN_FLOOR_BPS);
     expect(thinPartsMargin({ sellCents: 10000, costCents: 9000 })).toBe(true);
+    expect(partsMarginBps({ sellCents: 10000, costCents: 8000 })).toBe(
+      PARTS_MARGIN_FLOOR_BPS
+    );
+    expect(thinPartsMargin({ sellCents: 10000, costCents: 8000 })).toBe(false);
+    expect(thinPartsMargin({ sellCents: 0, costCents: 100 })).toBe(false);
   });
 });

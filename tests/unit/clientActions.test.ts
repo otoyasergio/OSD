@@ -262,6 +262,36 @@ describe("decideClientActions visit cards", () => {
     });
     expect(cards).toEqual([]);
   });
+
+  it("ignores completed and cancelled visits", () => {
+    for (const status of ["completed", "cancelled"] as const) {
+      const cards = decide({
+        visits: [
+          visit({
+            status,
+            openedAt: "2026-01-01T18:00:00.000Z",
+            latestMessageDirection: "inbound",
+            latestInboundAt: NOW,
+            pendingRecommendationIds: ["rec-1"],
+          }),
+        ],
+      });
+      expect(cards).toEqual([]);
+    }
+  });
+
+  it("does not turn a ready bike with no ready time into a four-day update", () => {
+    const cards = decide({
+      visits: [
+        visit({
+          status: "ready_for_pickup",
+          readyForPickupAt: null,
+          openedAt: "2026-01-01T18:00:00.000Z",
+        }),
+      ],
+    });
+    expect(cards).toEqual([]);
+  });
 });
 
 describe("decideClientActions reminders", () => {
@@ -338,6 +368,32 @@ describe("decideClientActions reminders", () => {
     });
     expect(onTheDay.map((card) => card.reason)).toEqual(["birthday"]);
     expect(dayBefore).toEqual([]);
+  });
+
+  it("still shows reminders when the only visit is a draft", () => {
+    const cards = decide({
+      now: "2026-07-04T18:00:00.000Z",
+      visits: [visit({ status: "draft", openedAt: "2026-07-04T18:00:00.000Z" })],
+      motorcycles: [bike({ lastCompletedAt: "2024-01-01T18:00:00.000Z" })],
+      customers: [customer({ dateOfBirth: "1990-07-04" })],
+    });
+    expect(cards.map((card) => card.reason)).toEqual(["annual", "birthday"]);
+  });
+
+  it("does not hide one customer's reminder because another customer has an open visit", () => {
+    const cards = decide({
+      visits: [visit()],
+      motorcycles: [
+        bike({
+          motorcycleId: "bike-2",
+          customerId: "cust-2",
+          lastCompletedAt: "2025-11-06T18:00:00.000Z",
+        }),
+      ],
+      customers: [customer(), customer({ customerId: "cust-2" })],
+    });
+    expect(cards.map((card) => card.reason)).toEqual(["shop_days", "annual"]);
+    expect(cards[1]?.customerId).toBe("cust-2");
   });
 
   it("skips a birthday when the date is missing or the customer has no completed visit", () => {
@@ -430,6 +486,29 @@ describe("decideClientActions send and dismiss", () => {
     });
     expect(noPhone[0]?.smsBlock).toBe("phone");
     expect(optedOut[0]?.smsBlock).toBe("opt_out");
+  });
+
+  it("treats an unusable phone as a missing number", () => {
+    const cards = decide({
+      visits: [visit()],
+      customers: [customer({ phone: "555" })],
+    });
+    expect(cards[0]?.smsBlock).toBe("phone");
+  });
+
+  it("keeps a dismissed reminder hidden when no snooze date was stored", () => {
+    const cards = decide({
+      motorcycles: [bike({ lastCompletedAt: "2025-11-06T18:00:00.000Z" })],
+      resolutions: [
+        {
+          reason: "annual",
+          cycleKey: "motorcycle:bike-1:annual:2025-11-06T18:00:00.000Z",
+          outcome: "dismissed",
+          snoozeUntil: null,
+        },
+      ],
+    });
+    expect(cards).toEqual([]);
   });
 });
 

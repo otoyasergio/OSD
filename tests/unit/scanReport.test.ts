@@ -7,6 +7,7 @@ import {
   diagnosticToCreate,
   filingsForUnreadMail,
   mileageDecision,
+  pdfAttachments,
   readOdometer,
   readTopGuruReport,
   scanAddressAllowed,
@@ -114,6 +115,11 @@ describe("chooseInspectionForScan", () => {
   it("does not file a report onto an inspection with a different VIN", () => {
     expect(chooseInspectionForScan({ vin: "JH2SC5912KK123456" }, [open])).toBeNull();
   });
+
+  it("holds a report when two open inspections share the VIN", () => {
+    const second = { ...open, inspectionId: "insp-2", workOrderId: "wo-2" };
+    expect(chooseInspectionForScan({ vin: open.vin }, [open, second])).toBeNull();
+  });
 });
 
 describe("chooseMotorcycleForScan", () => {
@@ -188,6 +194,72 @@ describe("textFromGmailMessage", () => {
     expect(parsed.text).toContain("P0301 Misfire");
     expect(parsed.text).not.toContain("report.pdf");
   });
+
+  it("reads codes from an HTML-only message and drops style text", () => {
+    const html = Buffer.from(
+      "<style>P9999 Fake style code</style><p>VIN WB10J9303KZH99235</p><p>P0301 Misfire detected</p>",
+      "utf8"
+    ).toString("base64url");
+    const parsed = textFromGmailMessage({
+      id: "m2",
+      snippet: "P8888 snippet code",
+      payload: {
+        mimeType: "text/html",
+        body: { data: html },
+      },
+    });
+    const report = readTopGuruReport(parsed.text);
+    expect(report.vin).toBe("WB10J9303KZH99235");
+    expect(report.codes.map((code) => code.code)).toEqual(["P0301"]);
+  });
+
+  it("uses the snippet when the message has no body", () => {
+    expect(
+      textFromGmailMessage({
+        id: "m3",
+        snippet: "No fault codes",
+        payload: { mimeType: "multipart/mixed" },
+      }).text
+    ).toBe("No fault codes");
+  });
+});
+
+describe("pdfAttachments", () => {
+  it("keeps the first two PDFs and skips other files", () => {
+    expect(
+      pdfAttachments({
+        id: "m1",
+        payload: {
+          mimeType: "multipart/mixed",
+          parts: [
+            {
+              mimeType: "application/pdf",
+              filename: "a.pdf",
+              body: { attachmentId: "a" },
+            },
+            {
+              mimeType: "image/jpeg",
+              filename: "photo.jpg",
+              body: { attachmentId: "img" },
+            },
+            {
+              mimeType: "application/octet-stream",
+              filename: "b.PDF",
+              body: { data: "abc" },
+            },
+            {
+              mimeType: "application/pdf",
+              filename: "c.pdf",
+              body: { attachmentId: "c" },
+            },
+          ],
+        },
+      })
+    ).toEqual([
+      { attachmentId: "a", data: null },
+      { attachmentId: null, data: "abc" },
+    ]);
+  });
 });
 
 describe("scanCustomerLines", () => {
@@ -230,9 +302,23 @@ describe("readOdometer", () => {
   it("ignores charging voltage", () => {
     expect(readOdometer("Charging voltage: 14.4 V\nBattery voltage 12.6 V")).toBeNull();
   });
+
+  it("rejects a reading above 9,999,999", () => {
+    expect(readOdometer("Odometer: 12,345,678 km")).toBeNull();
+  });
 });
 
 describe("mileageDecision", () => {
+  it("fills an empty mileage in the work order unit when the report has none", () => {
+    expect(
+      mileageDecision({
+        reported: { value: 12000, unit: null },
+        current: null,
+        currentUnit: "km",
+      })
+    ).toEqual({ action: "fill", value: 12000, unit: "km" });
+  });
+
   it("fills an empty work order mileage", () => {
     expect(
       mileageDecision({
@@ -351,6 +437,23 @@ describe("filingsForUnreadMail", () => {
       workOrderId: null,
       inspectionId: null,
       motorcycleId: "bike-1",
+    });
+  });
+
+  it("does not attach a work order when two open inspections share the VIN", () => {
+    const second = { ...open, inspectionId: "insp-2", workOrderId: "wo-2" };
+    const filings = filingsForUnreadMail({
+      messages: [{ id: "scan-1", text: `VIN ${open.vin}\nP0301 Misfire` }],
+      waiting: [open, second],
+      bikes: [{ motorcycleId: "bike-9", vin: open.vin }],
+      alreadyFiledIds: [],
+    });
+
+    expect(filings[0]).toMatchObject({
+      outcome: "codes",
+      workOrderId: null,
+      inspectionId: null,
+      motorcycleId: "bike-9",
     });
   });
 });
