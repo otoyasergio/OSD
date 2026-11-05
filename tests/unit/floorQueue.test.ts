@@ -184,6 +184,38 @@ describe("decideFloorQueue", () => {
     });
   });
 
+  it("ignores a closed work order that shares the first docket position", () => {
+    const decision = decideFloorQueue({
+      technician_id: TECH,
+      services: [
+        service({
+          job_id: "ghost",
+          work_order_id: "closed",
+          status: "in_progress",
+          docket_position: 1,
+          work_order_status: "completed",
+        }),
+        service({
+          job_id: "live",
+          work_order_id: "open",
+          status: "approved",
+          docket_position: 1,
+          work_order_status: "waiting_for_parts",
+        }),
+        service({
+          job_id: "stored",
+          work_order_id: "storage",
+          status: "in_progress",
+          docket_position: 2,
+          work_order_status: "in_storage",
+        }),
+      ],
+    });
+    expect(decision.bikes.map((bike) => bike.work_order_id)).toEqual(["open"]);
+    expect(startRefusal(decision, "open")).toBeNull();
+    expect(startRefusal(decision, "closed")).toBe("START_NOT_NEXT");
+  });
+
   it("starts only the first bike in line when the bench is empty", () => {
     const decision = decideFloorQueue({
       technician_id: TECH,

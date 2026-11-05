@@ -51,6 +51,7 @@ import {
   type PitBoardStep,
 } from "@/lib/technician/pitBoard";
 import {
+  isRetiredFloorPark,
   isTerminalWorkOrderStatus,
   workOrderLeftTechDocket,
 } from "@/lib/technician/floorActionModel";
@@ -867,12 +868,17 @@ export async function getTechnicianFloorOs(input: {
 
       const floorAck =
         (job as { floor_acknowledged_at?: string | null }).floor_acknowledged_at ?? null;
-      const floorParked =
+      const storedParkedAt =
         (job as { floor_parked_at?: string | null }).floor_parked_at ?? null;
-      const floorParkReason = ((job as { floor_park_reason?: FloorParkReason | null })
+      const storedParkReason = ((job as { floor_park_reason?: FloorParkReason | null })
         .floor_park_reason ?? null) as FloorParkReason | null;
-      const floorWaitOwner = ((job as { floor_wait_owner?: FloorWaitOwner | null })
-        .floor_wait_owner ?? null) as FloorWaitOwner | null;
+      const retiredPark = isRetiredFloorPark(storedParkReason);
+      const floorParked = retiredPark ? null : storedParkedAt;
+      const floorParkReason = retiredPark ? null : storedParkReason;
+      const floorWaitOwner = retiredPark
+        ? null
+        : (((job as { floor_wait_owner?: FloorWaitOwner | null }).floor_wait_owner ??
+            null) as FloorWaitOwner | null);
       const timerRunning = Boolean(
         openJobTimer && openJobTimer.job_id === job.job_id && !openJobTimer.ended_at
       );

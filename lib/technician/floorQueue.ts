@@ -5,6 +5,8 @@
  * is the line. A bike leaves that line only for a standard stop.
  */
 
+import { workOrderStillOnTechnicianFloor } from "@/lib/technician/floorActionModel";
+
 export type QueuePart = { status: string };
 
 export type QueueService = {
@@ -17,6 +19,11 @@ export type QueueService = {
   parts?: readonly QueuePart[];
   /** This technician has an open job clock on this service. */
   timer_running?: boolean;
+  /**
+   * When set, a visit that has left the bay is ignored. Omitted keeps the
+   * older callers, which already filtered those visits out.
+   */
+  work_order_status?: string | null;
 };
 
 export type QueueBlocker = {
@@ -174,7 +181,9 @@ export function decideFloorQueue(input: {
 }): FloorQueueDecision {
   const blockers = input.blockers ?? [];
   const mine = input.services.filter(
-    (service) => service.assigned_technician_id === input.technician_id
+    (service) =>
+      service.assigned_technician_id === input.technician_id &&
+      workOrderStillOnTechnicianFloor(service.work_order_status)
   );
   const byBike = new Map<string, QueueService[]>();
   for (const service of mine) {

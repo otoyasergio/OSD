@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/database/supabase-admin";
 import type { DbClient } from "@/lib/database/types";
 import { isUndefinedTableError } from "@/lib/database/schemaCompat";
 import { recalculateWorkOrderStatus } from "@/lib/status/recalculateWorkOrderStatus";
+import { workOrderStillOnTechnicianFloor } from "@/lib/technician/floorActionModel";
 import {
   decideFloorQueue,
   planFloorSync,
@@ -303,7 +304,9 @@ export async function assertCanStartJob(
 
   const { data: jobs, error: jobsError } = await admin
     .from("job")
-    .select("job_id, work_order_id, status, assigned_technician_id, docket_position")
+    .select(
+      "job_id, work_order_id, status, assigned_technician_id, docket_position, work_order:work_order_id ( status )"
+    )
     .eq("assigned_technician_id", assignee)
     .not("status", "in", '("completed","cancelled","declined")');
   if (jobsError) throw jobsError;
@@ -313,7 +316,21 @@ export async function assertCanStartJob(
     status: string;
     assigned_technician_id: string | null;
     docket_position: number | null;
+    work_order: { status?: string | null } | { status?: string | null }[] | null;
   }>;
+  const workOrderStatus = (
+    workOrder: (typeof jobRows)[number]["work_order"]
+  ): string | null => {
+    const row = Array.isArray(workOrder) ? workOrder[0] : workOrder;
+    return row?.status ?? null;
+  };
+  const targetRow = jobRows.find((job) => job.job_id === jobId);
+  if (
+    targetRow &&
+    !workOrderStillOnTechnicianFloor(workOrderStatus(targetRow.work_order))
+  ) {
+    throw new Error("WORK_ORDER_NOT_WORKABLE");
+  }
   const jobIds = jobRows.map((job) => job.job_id);
   if (!jobIds.includes(jobId)) {
     jobIds.push(jobId);
@@ -347,6 +364,7 @@ export async function assertCanStartJob(
     assigned_technician_id: assignee,
     status: job.status,
     docket_position: job.docket_position,
+    work_order_status: workOrderStatus(job.work_order),
     parts: partRows.filter((part) => part.job_id === job.job_id),
     timer_running: job.job_id === clockJobId,
   }));

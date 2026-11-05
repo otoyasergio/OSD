@@ -151,7 +151,7 @@ describe("deriveFloorWorkState matrix", () => {
     expect(parts.waitReason).toBe("Some parts still on order");
 
     for (const [reason, owner] of Object.entries(ownerByReason)) {
-      if (reason === "parts") continue;
+      if (reason === "parts" || reason === "swapped" || reason === "other") continue;
       const state = stateFor({
         floor_parked_at: TS,
         floor_park_reason: reason as FloorParkReason,
@@ -159,6 +159,16 @@ describe("deriveFloorWorkState matrix", () => {
       });
       expect(state.board).toBe("waiting");
       expect(state.waitOwner).toBe(owner);
+    }
+
+    for (const reason of ["swapped", "other"] as const) {
+      const state = stateFor({
+        floor_parked_at: TS,
+        floor_park_reason: reason,
+        job_timer_running: false,
+      });
+      expect(state.board, reason).toBe("bench");
+      expect(state.waitReason, reason).toBeNull();
     }
   });
 
