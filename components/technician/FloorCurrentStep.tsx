@@ -162,6 +162,13 @@ function CompletionSummary({ surface }: { surface: FloorOsSurface }) {
 
 function plateFor(s: FloorOsSurface) {
   if (s.board_status === "offered") {
+    if (!s.inspection_complete) {
+      return {
+        kicker: "ARRIVAL INSPECTION",
+        title: "Open the inspection",
+        body: "Tap Open inspection. Your clock stays off, and a bike further up the line does not block this.",
+      };
+    }
     return {
       kicker: "ASSIGNED BY FRONT DESK",
       title: `${s.service_name ?? "Job"} — ready when you are`,
@@ -183,6 +190,13 @@ function plateFor(s: FloorOsSurface) {
     };
   }
   if (s.board_status === "next") {
+    if (!s.inspection_complete) {
+      return {
+        kicker: "ARRIVAL INSPECTION",
+        title: "Open the inspection",
+        body: "Tap Open inspection. Your clock stays off, and a bike further up the line does not block this.",
+      };
+    }
     return {
       kicker: "IN YOUR LINE — NOT STARTED",
       title: "Ready when you are",
@@ -296,6 +310,17 @@ export function FloorCurrentStep({
     return (
       <>
         {finished ? <CompletionSummary surface={surface} /> : null}
+        {!surface.inspection_complete ? (
+          <button type="button" className="pit-current-card" onClick={onOpenInspection}>
+            <ClipboardCheck className="pit-current-hero-icon" size={40} aria-hidden />
+            <p className="pit-current-kicker">Step 1</p>
+            <h3 className="pit-current-title">Open arrival inspection</h3>
+            <p className="pit-current-body">
+              Fullscreen checklist — sign off when done, then you return to Work. This
+              does not start your clock.
+            </p>
+          </button>
+        ) : null}
         {plate ? (
           <Plate
             kicker={plate.kicker}

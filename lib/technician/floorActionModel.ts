@@ -493,6 +493,27 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
   }
 
   if (state.board === "offered" || state.board === "next") {
+    const inspection = input.steps.find(
+      (step) => step.kind === "inspect" && step.state === "open"
+    );
+    // Arrival inspection does not take the bench or the clock, so a bike
+    // further up the line must not block it.
+    if (inspection) {
+      return applyPending(
+        {
+          ...base,
+          primary: {
+            action: "advance_step",
+            label: "Open inspection ▶",
+            enabled: true,
+            step: inspection,
+            hint: "Fullscreen arrival inspection. Your clock stays off.",
+          },
+          secondary: [],
+        },
+        pending
+      );
+    }
     const start = deriveGoAction({
       status: state.board,
       steps: input.steps,
