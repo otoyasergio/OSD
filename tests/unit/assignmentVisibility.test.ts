@@ -7,7 +7,54 @@ import {
   floorAssignedLocationIds,
   isWorkOrderAssignedToTechnician,
   scopeWorkOrdersForViewer,
+  technicianIdsFromAssignment,
 } from "@/lib/workOrders/assignmentVisibility";
+
+describe("technicianIdsFromAssignment", () => {
+  it("reads one embedded row or many and drops blanks", () => {
+    expect(technicianIdsFromAssignment({ technician_id: "tech-1" })).toEqual(["tech-1"]);
+    expect(
+      technicianIdsFromAssignment([
+        { technician_id: "tech-1" },
+        { technician_id: "" },
+        { technician_id: null },
+        {},
+        { technician_id: "tech-2" },
+      ])
+    ).toEqual(["tech-1", "tech-2"]);
+    expect(technicianIdsFromAssignment(null)).toEqual([]);
+    expect(technicianIdsFromAssignment(undefined)).toEqual([]);
+  });
+
+  it("lets a floor tech in when the visit embed is a single row", () => {
+    expect(
+      canViewerAccessWorkOrder(
+        {
+          primary_technician_id: null,
+          quality_check_assigned_to: null,
+          status: "in_progress",
+          technician_ids: technicianIdsFromAssignment({ technician_id: "tech-1" }),
+          jobs: [],
+        },
+        "technician",
+        "tech-1"
+      )
+    ).toBe(true);
+    expect(
+      canViewerAccessWorkOrder(
+        {
+          primary_technician_id: null,
+          quality_check_assigned_to: null,
+          status: "in_progress",
+          technician_ids: technicianIdsFromAssignment([{ technician_id: "" }]),
+          jobs: [],
+        },
+        "technician",
+        "tech-1"
+      )
+    ).toBe(false);
+  });
+});
 
 describe("isWorkOrderAssignedToTechnician", () => {
   it("matches primary technician", () => {

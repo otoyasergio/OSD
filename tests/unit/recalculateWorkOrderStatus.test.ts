@@ -138,6 +138,73 @@ describe("deriveWorkOrderStatus", () => {
     ).toBe("waiting_for_parts");
   });
 
+  it("moves a blocked clock to parts when nothing else can be worked", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [{ status: "in_progress", job_id: "oil" }],
+        parts: [{ job_id: "oil", status: "ordered" }],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("waiting_for_parts");
+  });
+
+  it("keeps the bay when another service can still be worked", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [
+          { status: "in_progress", job_id: "oil" },
+          { status: "approved", job_id: "chain" },
+        ],
+        parts: [{ job_id: "oil", status: "needed" }],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("in_progress");
+  });
+
+  it("prefers customer approval when a blocked clock has no other work", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [
+          { status: "in_progress", job_id: "oil" },
+          { status: "waiting_for_approval", job_id: "pads" },
+        ],
+        parts: [{ job_id: "oil", status: "ordered" }],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("waiting_for_customer_approval");
+  });
+
+  it("does not let a part from another job block the clock", () => {
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [{ status: "in_progress", job_id: "oil" }],
+        parts: [
+          { job_id: "oil", status: "installed" },
+          { job_id: "other", status: "needed" },
+        ],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("in_progress");
+
+    expect(
+      deriveWorkOrderStatus({
+        currentStatus: "in_progress",
+        jobs: [{ status: "in_progress" }],
+        parts: [{ job_id: "oil", status: "needed" }],
+        inspectionComplete: true,
+        qualityCheckComplete: false,
+      })
+    ).toBe("in_progress");
+  });
+
   it("sets in_progress when any job in_progress", () => {
     expect(
       deriveWorkOrderStatus({

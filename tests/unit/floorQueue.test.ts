@@ -216,6 +216,53 @@ describe("decideFloorQueue", () => {
     expect(startRefusal(decision, "closed")).toBe("START_NOT_NEXT");
   });
 
+  it("keeps hold, insurance, safety, pickup, and cancelled visits off the line", () => {
+    const decision = decideFloorQueue({
+      technician_id: TECH,
+      services: [
+        service({
+          job_id: "hold",
+          work_order_id: "hold",
+          status: "in_progress",
+          work_order_status: "on_hold",
+        }),
+        service({
+          job_id: "claim",
+          work_order_id: "claim",
+          status: "approved",
+          work_order_status: "insurance",
+        }),
+        service({
+          job_id: "safety",
+          work_order_id: "safety",
+          status: "completed",
+          work_order_status: "safety_check",
+        }),
+        service({
+          job_id: "pickup",
+          work_order_id: "pickup",
+          status: "completed",
+          work_order_status: "ready_for_pickup",
+        }),
+        service({
+          job_id: "cancelled",
+          work_order_id: "cancelled",
+          status: "in_progress",
+          work_order_status: "cancelled",
+        }),
+        service({
+          job_id: "live",
+          work_order_id: "live",
+          status: "approved",
+        }),
+      ],
+    });
+    expect(decision.bikes.map((bike) => bike.work_order_id)).toEqual(["live"]);
+    expect(startRefusal(decision, "hold")).toBe("START_NOT_NEXT");
+    expect(startRefusal(decision, "claim")).toBe("START_NOT_NEXT");
+    expect(startRefusal(decision, "cancelled")).toBe("START_NOT_NEXT");
+  });
+
   it("starts any assigned bike when the bench is empty", () => {
     const decision = decideFloorQueue({
       technician_id: TECH,
@@ -419,6 +466,30 @@ describe("planFloorSync", () => {
     expect(plan.clocks[0]).toMatchObject({ action: "keep", job_id: "oil" });
   });
 
+  it("plans a separate clock for each technician", () => {
+    const plan = planFloorSync({
+      services: [
+        service({
+          job_id: "pads",
+          work_order_id: "held",
+          status: "waiting_for_approval",
+          timer_running: true,
+        }),
+        service({
+          job_id: "oil",
+          work_order_id: "other",
+          status: "approved",
+          assigned_technician_id: "tech-2",
+          timer_running: true,
+        }),
+      ],
+    });
+    expect(plan.clocks).toEqual([
+      { technician_id: TECH, action: "stop", job_id: null },
+      { technician_id: "tech-2", action: "keep", job_id: "oil" },
+    ]);
+  });
+
   it("leaves a tool blocker alone", () => {
     const plan = planFloorSync({
       services: [
@@ -434,6 +505,59 @@ describe("planFloorSync", () => {
     expect(plan.open).toEqual([]);
     expect(plan.close).toEqual([]);
     expect(plan.clocks[0]).toMatchObject({ action: "stop" });
+  });
+});
+
+describe("planTechnicianClock", () => {
+  it("moves the clock to the earlier service on the same bike", () => {
+    expect(
+      planTechnicianClock({
+        technician_id: TECH,
+        services: [
+          service({
+            job_id: "pads",
+            work_order_id: "bike",
+            status: "waiting_for_approval",
+            timer_running: true,
+            docket_position: 1,
+          }),
+          service({
+            job_id: "later",
+            work_order_id: "bike",
+            status: "approved",
+            docket_position: 5,
+          }),
+          service({
+            job_id: "sooner",
+            work_order_id: "bike",
+            status: "ready_to_start",
+            docket_position: 2,
+          }),
+        ],
+      })
+    ).toEqual({ technician_id: TECH, action: "switch", job_id: "sooner" });
+  });
+
+  it("stops a customer-wait clock instead of moving it onto another bike", () => {
+    expect(
+      planTechnicianClock({
+        technician_id: TECH,
+        services: [
+          service({
+            job_id: "pads",
+            work_order_id: "held",
+            status: "waiting_for_approval",
+            timer_running: true,
+          }),
+          service({
+            job_id: "oil",
+            work_order_id: "other",
+            status: "approved",
+            docket_position: 1,
+          }),
+        ],
+      })
+    ).toEqual({ technician_id: TECH, action: "stop", job_id: null });
   });
 });
 

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { isStaffFeedbackSquashHour } from "@/lib/datetime/format";
 import { compressStaffFeedbackScreenshot } from "@/lib/staffFeedback/compressScreenshot";
 import {
+  isStaffFeedbackManagedPath,
   isZipArchive,
   repairStaffFeedbackStorage,
   selectUnreferencedStaffFeedbackObjects,
@@ -16,6 +17,7 @@ import {
   normalizeStaffFeedbackViewport,
 } from "@/lib/staffFeedback/fields";
 import {
+  buildStaffFeedbackArchive,
   planStaffFeedbackSquash,
   squishStaffFeedbackReports,
   staffFeedbackArchivePath,
@@ -158,6 +160,73 @@ describe("staff feedback archive", () => {
     expect(unzipped[`reports/${ALEX}.jpg`]).toEqual(jpeg);
     expect(unzipped[`reports/${SAM}.jpg`]).toBeUndefined();
   });
+
+  it("keeps the earlier notes when the zip has to shrink", () => {
+    const earlier = {
+      reportId: ALEX,
+      createdAt: "2026-11-05T16:00:00.000Z",
+      actorName: "Alex Chen",
+      role: "technician",
+      pagePath: "/technician",
+      note: "The dock covers the save button.",
+      screenshot: null,
+    };
+    const later = {
+      reportId: SAM,
+      createdAt: "2026-11-05T21:00:00.000Z",
+      actorName: "Sam Lee",
+      role: "service_advisor",
+      pagePath: "/billing",
+      note: "Tax shows twice on the same invoice line.",
+      screenshot: null,
+    };
+    const one = squishStaffFeedbackReports([earlier], "2026-11-05");
+    const packed = buildStaffFeedbackArchive(
+      [earlier, later],
+      "2026-11-05",
+      one.bytes.byteLength
+    );
+    expect(packed.reportIds).toEqual([ALEX]);
+    expect(packed.bytes.byteLength).toBeLessThanOrEqual(one.bytes.byteLength);
+  });
+
+  it("refuses a single note that cannot fit in one archive", () => {
+    expect(() =>
+      buildStaffFeedbackArchive(
+        [
+          {
+            reportId: ALEX,
+            createdAt: "2026-11-05T16:00:00.000Z",
+            actorName: "Alex Chen",
+            role: "technician",
+            pagePath: "/technician",
+            note: "The dock covers the save button.",
+            screenshot: null,
+          },
+        ],
+        "2026-11-05",
+        1
+      )
+    ).toThrow("STAFF_FEEDBACK_SQUASH_FAILED");
+  });
+
+  it("refuses a duplicated report id and a blank note", () => {
+    const report = {
+      reportId: ALEX,
+      createdAt: "2026-11-05T16:00:00.000Z",
+      actorName: "Alex Chen",
+      role: "technician",
+      pagePath: "/technician",
+      note: "The dock covers the save button.",
+      screenshot: null,
+    };
+    expect(() => squishStaffFeedbackReports([report, report], "2026-11-05")).toThrow(
+      "STAFF_FEEDBACK_REPORT_INVALID"
+    );
+    expect(() =>
+      squishStaffFeedbackReports([{ ...report, note: " \n\u0000 " }], "2026-11-05")
+    ).toThrow("STAFF_FEEDBACK_NOTE_REQUIRED");
+  });
 });
 
 describe("staff feedback screenshot compression", () => {
@@ -215,6 +284,26 @@ describe("staff feedback repair", () => {
         ],
       })
     ).toEqual([]);
+  });
+
+  it("leaves a referenced file alone when only the letter case differs", () => {
+    const now = new Date("2026-11-06T05:00:00.000Z");
+    expect(
+      selectUnreferencedStaffFeedbackObjects({
+        now,
+        referencedPaths: new Set(["  DIGESTS/2026-11-04.ZIP  "]),
+        objects: [
+          { path: "digests/2026-11-04.zip", createdAt: "2026-11-04T04:00:00.000Z" },
+          { path: oldPicture.path, createdAt: "2026-11-06T03:00:00.000Z" },
+          { path: ` ${oldPicture.path} `, createdAt: "2026-11-01T00:00:00.000Z" },
+          { path: `${ALEX}/${ALEX}.jpg`, createdAt: "2026-11-06T03:00:00.001Z" },
+          { path: "digests/not-a-date.zip", createdAt: "2026-11-01T00:00:00.000Z" },
+          { path: "../digests/2026-11-01.zip", createdAt: "2026-11-01T00:00:00.000Z" },
+        ],
+      })
+    ).toEqual([oldPicture.path]);
+    expect(isStaffFeedbackManagedPath(`Digests/2026-11-04.ZIP`)).toBe(true);
+    expect(isStaffFeedbackManagedPath("notes/not-ours.txt")).toBe(false);
   });
 
   it("selects a leftover picture and a zip that no longer has a night", () => {
@@ -341,6 +430,50 @@ describe("staff feedback repair", () => {
       removeObjects: async () => {},
     });
     expect(put).toHaveBeenCalledTimes(1);
+    expect(counts.archivesRebuilt).toBe(0);
+    expect(counts.archivesFailed).toBe(1);
+  });
+
+  it("does not rewrite a night whose path is wrong, blank, or too long", async () => {
+    const put = vi.fn();
+    const counts = await repairStaffFeedbackStorage({
+      now: new Date("2026-11-06T05:00:00.000Z"),
+      digests: [
+        {
+          digestId: "wrong",
+          shopDate: "2026-11-05",
+          archivePath: "notes/2026-11-05.zip",
+          summary: "kept off the digest path",
+        },
+        {
+          digestId: "blank",
+          shopDate: "2026-11-04",
+          archivePath: "digests/2026-11-04.zip",
+          summary: "   ",
+        },
+        {
+          digestId: "huge",
+          shopDate: "2026-11-03",
+          archivePath: "digests/2026-11-03.zip",
+          summary: "x".repeat(12_001),
+        },
+        {
+          digestId: "bad-date",
+          shopDate: "2026-11-02/../other",
+          archivePath: "digests/2026-11-02.zip",
+          summary: "do not follow this path",
+        },
+      ],
+      archiveExists: async () => false,
+      reportsForDigest: async () => [],
+      putArchive: put,
+      recordArchive: async () => {},
+      clearLoosePictures: async () => 0,
+      listObjects: async () => [],
+      referencedPaths: async () => [],
+      removeObjects: async () => {},
+    });
+    expect(put).not.toHaveBeenCalled();
     expect(counts.archivesRebuilt).toBe(0);
     expect(counts.archivesFailed).toBe(1);
   });
