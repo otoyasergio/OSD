@@ -6,6 +6,7 @@ import {
   diagnosticFromScan,
   diagnosticToCreate,
   filingsForUnreadMail,
+  needsLookForUnreadPdf,
   mileageDecision,
   readOdometer,
   readTopGuruReport,
@@ -321,8 +322,8 @@ describe("filingsForUnreadMail", () => {
   it("skips a message that was already filed and files the new one", () => {
     const filings = filingsForUnreadMail({
       messages: [
-        { id: "old", text: "P0301 Misfire" },
-        { id: "new", text: "VIN 1HD1BJY174Y023456\nNo fault codes" },
+        { id: "old", text: "P0301 Misfire\nTOPDON" },
+        { id: "new", text: "VIN 1HD1BJY174Y023456\nNo fault codes\nFull System Report" },
       ],
       waiting: [open],
       bikes: [],
@@ -341,7 +342,9 @@ describe("filingsForUnreadMail", () => {
 
   it("files a VIN match onto the bike profile when no inspection is open", () => {
     const filings = filingsForUnreadMail({
-      messages: [{ id: "scan-1", text: "VIN WB10J9303KZH99235\n480682 ABS: Pullaway" }],
+      messages: [
+        { id: "scan-1", text: "VIN WB10J9303KZH99235\n480682 ABS: Pullaway\nTOPDON" },
+      ],
       waiting: [],
       bikes: [{ motorcycleId: "bike-1", vin: "WB10J9303KZH99235" }],
       alreadyFiledIds: [],
@@ -353,5 +356,85 @@ describe("filingsForUnreadMail", () => {
       inspectionId: null,
       motorcycleId: "bike-1",
     });
+  });
+
+  it("does not file Gmail welcome mail", () => {
+    const filings = filingsForUnreadMail({
+      messages: [
+        {
+          id: "welcome",
+          text: "Get the official Gmail app\nWelcome to your inbox\nTips for using your new inbox",
+        },
+      ],
+      waiting: [open],
+      bikes: [{ motorcycleId: "bike-1", vin: "1HD1BJY174Y023456" }],
+      alreadyFiledIds: [],
+    });
+
+    expect(filings).toEqual([]);
+  });
+
+  it("files the R 1250 GS report on the bike when no inspection is open", () => {
+    const text = readFileSync("tests/fixtures/topguru-r1250gs.txt", "utf8");
+    const filings = filingsForUnreadMail({
+      messages: [{ id: "r1250", text }],
+      waiting: [],
+      bikes: [{ motorcycleId: "bike-1", vin: "WB10J9303KZH99235" }],
+      alreadyFiledIds: [],
+    });
+
+    expect(filings[0]).toMatchObject({
+      gmailMessageId: "r1250",
+      outcome: "codes",
+      workOrderId: null,
+      inspectionId: null,
+      motorcycleId: "bike-1",
+      vin: "WB10J9303KZH99235",
+    });
+  });
+
+  it("files the R 1250 GS report on the open inspection with that VIN", () => {
+    const text = readFileSync("tests/fixtures/topguru-r1250gs.txt", "utf8");
+    const filings = filingsForUnreadMail({
+      messages: [{ id: "r1250", text }],
+      waiting: [
+        {
+          inspectionId: "insp-gs",
+          workOrderId: "wo-gs",
+          workOrderNumber: "WO-GS",
+          motorcycleId: "bike-1",
+          vin: "WB10J9303KZH99235",
+        },
+      ],
+      bikes: [{ motorcycleId: "bike-1", vin: "WB10J9303KZH99235" }],
+      alreadyFiledIds: [],
+    });
+
+    expect(filings[0]).toMatchObject({
+      outcome: "codes",
+      workOrderId: "wo-gs",
+      inspectionId: "insp-gs",
+      motorcycleId: "bike-1",
+    });
+  });
+
+  it("keeps an unreadable PDF as a look with no bike", () => {
+    expect(
+      needsLookForUnreadPdf({ id: "invoice", text: "Invoice 100\nThank you" })
+    ).toMatchObject({
+      gmailMessageId: "invoice",
+      outcome: "needs_confirmation",
+      vin: null,
+      codes: [],
+      inspectionId: null,
+      workOrderId: null,
+      motorcycleId: null,
+    });
+    expect(
+      needsLookForUnreadPdf({
+        id: "report",
+        text: readFileSync("tests/fixtures/topguru-r1250gs.txt", "utf8"),
+      })
+    ).toBeNull();
   });
 });

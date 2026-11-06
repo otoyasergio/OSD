@@ -8,6 +8,7 @@ import {
 
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const MAX_PDF_BYTES = 8_000_000;
+const UNREAD_PDF_QUERY = "is:unread filename:pdf";
 
 export type UnreadScanMessage = {
   id: string;
@@ -29,13 +30,13 @@ async function gmailGet(
   return response.json();
 }
 
-export async function readUnreadScanMail(input: {
+export async function listUnreadPdfMessageIds(input: {
   refreshToken: string;
   clientId: string;
   clientSecret: string;
   fetchImpl?: typeof fetch;
 }): Promise<{
-  messages: UnreadScanMessage[];
+  ids: string[];
   accessToken: string;
   refreshToken: string | null;
 }> {
@@ -49,33 +50,64 @@ export async function readUnreadScanMail(input: {
   const listed = (await gmailGet(
     fetchImpl,
     token.accessToken,
-    `/messages?q=${encodeURIComponent("is:unread")}&maxResults=10`
+    `/messages?q=${encodeURIComponent(UNREAD_PDF_QUERY)}&maxResults=10`
   )) as { messages?: Array<{ id?: string }> };
+  const ids = (listed.messages ?? []).flatMap((item) => (item.id ? [item.id] : []));
+  return { ids, accessToken: token.accessToken, refreshToken: token.refreshToken };
+}
+
+export async function readUnreadScanMail(input: {
+  refreshToken: string;
+  clientId: string;
+  clientSecret: string;
+  fetchImpl?: typeof fetch;
+  skipIds?: string[];
+  accessToken?: string;
+  messageIds?: string[];
+}): Promise<{
+  messages: UnreadScanMessage[];
+  accessToken: string;
+  refreshToken: string | null;
+}> {
+  const fetchImpl = input.fetchImpl ?? fetch;
+  let accessToken = input.accessToken ?? "";
+  let refreshToken: string | null = null;
+  let ids = input.messageIds;
+  if (!ids) {
+    const listed = await listUnreadPdfMessageIds(input);
+    accessToken = listed.accessToken;
+    refreshToken = listed.refreshToken;
+    const skip = new Set(input.skipIds ?? []);
+    ids = listed.ids.filter((id) => !skip.has(id));
+  } else if (!accessToken) {
+    const token = await refreshGmailAccessToken({
+      refreshToken: input.refreshToken,
+      clientId: input.clientId,
+      clientSecret: input.clientSecret,
+      fetchImpl,
+    });
+    accessToken = token.accessToken;
+    refreshToken = token.refreshToken;
+  }
 
   const messages: UnreadScanMessage[] = [];
-  for (const item of listed.messages ?? []) {
-    if (!item.id) continue;
+  for (const id of ids) {
     const full = (await gmailGet(
       fetchImpl,
-      token.accessToken,
-      `/messages/${encodeURIComponent(item.id)}?format=full`
+      accessToken,
+      `/messages/${encodeURIComponent(id)}?format=full`
     )) as GmailFullMessage;
     const parsed = textFromGmailMessage(full);
-    const attached = await textFromPdfAttachments(
-      fetchImpl,
-      token.accessToken,
-      item.id,
-      full
-    );
+    const attached = await textFromPdfAttachments(fetchImpl, accessToken, id, full);
     const text = [parsed.text.trim(), attached].filter(Boolean).join("\n");
     messages.push({
-      id: item.id,
+      id,
       subject: parsed.subject,
       from: parsed.from,
       text,
     });
   }
-  return { messages, accessToken: token.accessToken, refreshToken: token.refreshToken };
+  return { messages, accessToken, refreshToken };
 }
 
 async function textFromPdfAttachments(
@@ -107,25 +139,4 @@ async function textFromPdfAttachments(
     }
   }
   return chunks.join("\n");
-}
-
-export async function markScanMailRead(input: {
-  accessToken: string;
-  messageId: string;
-  fetchImpl?: typeof fetch;
-}): Promise<void> {
-  const fetchImpl = input.fetchImpl ?? fetch;
-  const response = await fetchImpl(
-    `${GMAIL_API}/messages/${encodeURIComponent(input.messageId)}/modify`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${input.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ removeLabelIds: ["UNREAD"] }),
-      signal: AbortSignal.timeout(15_000),
-    }
-  );
-  if (!response.ok) throw new Error("SCAN_MAIL_READ_FAILED");
 }

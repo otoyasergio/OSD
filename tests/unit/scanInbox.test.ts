@@ -74,8 +74,58 @@ describe("readUnreadScanMail", () => {
       },
     ]);
     const urls = fetchImpl.mock.calls.map((call) => String(call[0]));
+    const listUrl = urls.find((url) => url.includes("/messages?")) ?? "";
+    expect(decodeURIComponent(listUrl)).toContain("is:unread filename:pdf");
     expect(urls.some((url) => url.includes("/messages/send"))).toBe(false);
+    expect(urls.some((url) => url.includes("/modify"))).toBe(false);
     expect(initUnused(fetchImpl.mock.calls)).toBe(true);
+  });
+
+  it("does not download a PDF that was already stored", async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes("oauth2.googleapis.com")) {
+        return new Response(JSON.stringify({ access_token: "access-1" }), {
+          status: 200,
+        });
+      }
+      if (href.includes("/messages?")) {
+        return new Response(JSON.stringify({ messages: [{ id: "m1" }, { id: "m2" }] }), {
+          status: 200,
+        });
+      }
+      if (href.includes("/messages/m2")) {
+        return new Response(
+          JSON.stringify({
+            id: "m2",
+            snippet: "",
+            payload: {
+              mimeType: "text/plain",
+              headers: [
+                { name: "Subject", value: "Full System Report" },
+                { name: "From", value: "TopGuru <reports@topdon.example>" },
+              ],
+              body: { data: Buffer.from("TOPDON", "utf8").toString("base64url") },
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response("unexpected", { status: 500 });
+    });
+
+    const result = await readUnreadScanMail({
+      refreshToken: "refresh-1",
+      clientId: "client",
+      clientSecret: "secret",
+      skipIds: ["m1"],
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result.messages.map((message) => message.id)).toEqual(["m2"]);
+    const urls = fetchImpl.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("/messages/m1"))).toBe(false);
+    expect(urls.some((url) => url.includes("/modify"))).toBe(false);
   });
 
   it("reads a TopGuru PDF attachment when the message body is empty", async () => {
