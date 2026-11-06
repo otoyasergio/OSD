@@ -17,7 +17,7 @@ export type ScanBike = {
   vin: string | null;
 };
 
-export const SCAN_REPORT_ADDRESS = "scans@torontomoto.com";
+export const SCAN_REPORT_ADDRESS = "diagnostics@torontomoto.com";
 
 const SAE = /\b([PCBU][0-9A-F]{4})\b([^\n]{0,80})?/gi;
 const VIN = /\b([A-HJ-NPR-Z0-9]{17})\b/;

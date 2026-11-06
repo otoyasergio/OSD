@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
- * Reads unread TopGuru reports from the scans mailbox and files each one
+ * Reads unread TopGuru reports from the diagnostics mailbox and files each one
  * on the open inspection with the same VIN.
  * Protect with CRON_SECRET via Authorization: Bearer <secret> only.
  */

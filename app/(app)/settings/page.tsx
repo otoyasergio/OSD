@@ -15,6 +15,7 @@ import {
   canViewAuditLog,
 } from "@/lib/permissions";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SCAN_REPORT_ADDRESS } from "@/lib/email/scanReport";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +41,7 @@ export default async function SettingsPage() {
     {
       href: "/settings/scan-mail",
       label: "Scan reports",
-      description: "TopGuru sends scan reports to scans@torontomoto.com.",
+      description: `TopGuru sends scan reports to ${SCAN_REPORT_ADDRESS}.`,
       visible: canConnectShopMailbox(viewRole),
     },
     {

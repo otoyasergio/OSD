@@ -138,21 +138,22 @@ describe("chooseMotorcycleForScan", () => {
 });
 
 describe("scanAddressAllowed", () => {
-  it("accepts only scans@torontomoto.com", () => {
-    expect(scanAddressAllowed("scans@torontomoto.com", "info@torontomoto.com")).toBe(
-      true
-    );
-    expect(scanAddressAllowed("Scans@TorontoMoto.com", null)).toBe(true);
+  it("accepts only diagnostics@torontomoto.com", () => {
+    expect(
+      scanAddressAllowed("diagnostics@torontomoto.com", "info@torontomoto.com")
+    ).toBe(true);
+    expect(scanAddressAllowed("Diagnostics@TorontoMoto.com", null)).toBe(true);
+    expect(scanAddressAllowed("scans@torontomoto.com", null)).toBe(false);
     expect(scanAddressAllowed("other@torontomoto.com", null)).toBe(false);
     expect(scanAddressAllowed("info@torontomoto.com", "info@torontomoto.com")).toBe(
       false
     );
   });
 
-  it("refuses scans@torontomoto.com when that address also sends customer email", () => {
-    expect(scanAddressAllowed("scans@torontomoto.com", "scans@torontomoto.com")).toBe(
-      false
-    );
+  it("refuses diagnostics@torontomoto.com when that address also sends customer email", () => {
+    expect(
+      scanAddressAllowed("diagnostics@torontomoto.com", "diagnostics@torontomoto.com")
+    ).toBe(false);
   });
 });
 

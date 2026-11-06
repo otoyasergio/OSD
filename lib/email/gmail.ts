@@ -22,7 +22,7 @@ export function gmailAuthorizationUrl(input: {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
-/** Read-only consent for scans@torontomoto.com. This token cannot send mail. */
+/** Read-only consent for diagnostics@torontomoto.com. This token cannot send mail. */
 export function scanGmailAuthorizationUrl(input: {
   clientId: string;
   redirectUri: string;
