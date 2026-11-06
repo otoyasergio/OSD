@@ -179,4 +179,263 @@ describe("inspection finish waits for the checklist save", () => {
     expect(container.textContent).toContain("Could not save this line");
     expect(completeInspectionAction).not.toHaveBeenCalled();
   });
+
+  it("does not send a corrected measurement until the earlier save finishes", async () => {
+    let releaseFirst: (value: { ok: true }) => void = () => {};
+    const calls: Array<{ measurement?: string | null }> = [];
+    saveInspectionResultAction.mockImplementation((_workOrder, _resultId, input) => {
+      calls.push(input);
+      if (calls.length === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    await renderReady();
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    expect(calls.map((call) => call.measurement)).toEqual(["12"]);
+
+    await act(async () => {
+      setInput(input, "4.5");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+
+    // The corrected value must wait. An earlier request that finishes last
+    // would otherwise overwrite 4.5mm with 12mm on the signed report.
+    expect(saveInspectionResultAction).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      releaseFirst({ ok: true });
+      await Promise.resolve();
+    });
+
+    expect(calls.map((call) => call.measurement)).toEqual(["12", "4.5"]);
+  });
+
+  it("still sends the corrected measurement when the earlier save throws", async () => {
+    let failFirst: (reason: Error) => void = () => {};
+    const calls: Array<{ measurement?: string | null }> = [];
+    saveInspectionResultAction.mockImplementation((_workOrder, _resultId, input) => {
+      calls.push(input);
+      if (calls.length === 1) {
+        return new Promise((_resolve, reject) => {
+          failFirst = reject;
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    await renderReady();
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    await act(async () => {
+      setInput(input, "4.5");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    expect(saveInspectionResultAction).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      failFirst(new Error("Failed to fetch"));
+      await Promise.resolve();
+    });
+
+    expect(calls.map((call) => call.measurement)).toEqual(["12", "4.5"]);
+    expect(container.textContent).not.toContain("was not saved");
+  });
+
+  it("sends a waiting save with the unit it had when it was queued", async () => {
+    let releaseFirst: (value: { ok: true }) => void = () => {};
+    const calls: Array<{
+      measurement?: string | null;
+      measurement_unit?: string | null;
+    }> = [];
+    saveInspectionResultAction.mockImplementation((_workOrder, _resultId, input) => {
+      calls.push(input);
+      if (calls.length === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    await renderReady();
+    const [input, unitInput] = [
+      ...container.querySelectorAll("input.inspection-measurement-input"),
+    ] as HTMLInputElement[];
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    await act(async () => {
+      setInput(input, "4.5");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    await act(async () => {
+      setInput(unitInput, "mm");
+    });
+
+    await act(async () => {
+      releaseFirst({ ok: true });
+      await Promise.resolve();
+    });
+
+    expect(calls.map((call) => [call.measurement, call.measurement_unit])).toEqual([
+      ["12", null],
+      ["4.5", null],
+    ]);
+  });
+
+  it("sends the line version it loaded, then the one the last save returned", async () => {
+    let releaseFirst: (value: { ok: true; updated_at: string }) => void = () => {};
+    const calls: Array<{ expected_updated_at?: string }> = [];
+    saveInspectionResultAction.mockImplementation((_workOrder, _resultId, input) => {
+      calls.push(input);
+      if (calls.length === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = resolve;
+        });
+      }
+      return Promise.resolve({ ok: true, updated_at: "2026-11-03T12:06:00.000Z" });
+    });
+
+    await renderReady();
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+    await act(async () => {
+      setInput(input, "4.5");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+
+    await act(async () => {
+      releaseFirst({ ok: true, updated_at: "2026-11-03T12:05:00.000Z" });
+      await Promise.resolve();
+    });
+
+    expect(calls.map((call) => call.expected_updated_at)).toEqual([
+      "2026-11-03T12:00:00.000Z",
+      "2026-11-03T12:05:00.000Z",
+    ]);
+  });
+
+  it("keeps the old line version while a typed draft hides a newer server value", async () => {
+    saveInspectionResultAction.mockResolvedValue({
+      ok: false,
+      error: "This line was changed somewhere else",
+    });
+    await renderReady();
+
+    const changedElsewhere = inspection();
+    changedElsewhere.results[0].measurement = "9";
+    changedElsewhere.results[0].updated_at = "2026-11-03T12:04:00.000Z";
+    await act(async () => {
+      root.render(
+        createElement(InspectionChecklist, {
+          inspection: changedElsewhere,
+          canEdit: true,
+          canForceComplete: false,
+        })
+      );
+    });
+
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    expect(input.value).toBe("12");
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+
+    expect(saveInspectionResultAction).toHaveBeenCalledWith(
+      WORK_ORDER,
+      RESULT,
+      expect.objectContaining({
+        measurement: "12",
+        expected_updated_at: "2026-11-03T12:00:00.000Z",
+      })
+    );
+    expect(container.textContent).toContain("This line was changed somewhere else");
+    expect(input.value).toBe("12");
+  });
+
+  it("moves to the newer line version once the tech is shown the server value", async () => {
+    saveInspectionResultAction.mockResolvedValue({
+      ok: true,
+      updated_at: "2026-11-03T12:06:00.000Z",
+    });
+    await act(async () => {
+      root.render(
+        createElement(InspectionChecklist, {
+          inspection: inspection(),
+          canEdit: true,
+          canForceComplete: false,
+        })
+      );
+    });
+
+    const changedElsewhere = inspection();
+    changedElsewhere.results[0].measurement = "9";
+    changedElsewhere.results[0].updated_at = "2026-11-03T12:04:00.000Z";
+    await act(async () => {
+      root.render(
+        createElement(InspectionChecklist, {
+          inspection: changedElsewhere,
+          canEdit: true,
+          canForceComplete: false,
+        })
+      );
+    });
+
+    const input = container.querySelector(
+      "input.inspection-measurement-input"
+    ) as HTMLInputElement;
+    expect(input.value).toBe("9");
+    await act(async () => {
+      setInput(input, "8");
+    });
+    await act(async () => {
+      input.focus();
+      input.blur();
+    });
+
+    expect(saveInspectionResultAction).toHaveBeenCalledWith(
+      WORK_ORDER,
+      RESULT,
+      expect.objectContaining({
+        measurement: "8",
+        expected_updated_at: "2026-11-03T12:04:00.000Z",
+      })
+    );
+  });
 });

@@ -17,6 +17,7 @@ import {
   shouldApplyServerInspectionText,
   textSaveStillMatchesLocal,
 } from "@/lib/inspections/inspectionItemTextSync";
+import { laterLineVersion } from "@/lib/inspections/inspectionLineVersion";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -132,6 +133,14 @@ export function InspectionItemRow({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textDirtyRef = useRef(false);
   const inflightRef = useRef<Promise<void> | null>(null);
+  // One save at a time. A slower earlier request must not commit after the
+  // measurement the tech just corrected, and each save has to carry the line
+  // version the one before it produced.
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  // The `updated_at` this device last saw for the line. The server refuses a
+  // save made against an older version than the one it holds.
+  const versionRef = useRef(result.updated_at);
+  const [shownVersion, setShownVersion] = useState(result.updated_at);
   const flushForFinishRef = useRef<(() => Promise<"clean" | "saved" | "failed">) | null>(
     null
   );
@@ -165,8 +174,16 @@ export function InspectionItemRow({
     ) {
       setMeasurement(result.measurement ?? "");
       setNotes(result.notes ?? "");
+      // Only now is the tech looking at what this version holds. A draft kept
+      // over newer server text stays on the old version, so saving it is
+      // refused instead of replacing a change the tech never saw.
+      setShownVersion(result.updated_at);
     }
   }
+
+  useEffect(() => {
+    versionRef.current = laterLineVersion(versionRef.current, shownVersion);
+  }, [shownVersion]);
 
   useEffect(() => {
     measurementRef.current = measurement;
@@ -218,62 +235,69 @@ export function InspectionItemRow({
     setSaveState("saving");
     onBusyChange?.(resultId, true);
     setError(null);
-    const task = (async (): Promise<"saved" | "failed" | "superseded"> => {
-      let response: Awaited<ReturnType<typeof saveInspectionResultAction>>;
-      try {
-        response = await saveInspectionResultAction(workOrderId, resultId, {
-          ...input,
-          ...measurementFacts(),
-        });
-      } catch (error) {
-        if (seq !== saveSeqRef.current) return "superseded";
-        // A thrown action did not write. Keep the draft on screen.
-        setSaveState("error");
-        setError(describeInspectionSaveFailure(error));
-        onBusyChange?.(resultId, false);
-        return "failed";
-      }
-      if (seq !== saveSeqRef.current) {
-        // A newer save superseded this one; leave UI to the latest request.
-        return "superseded";
-      }
-      if (!response.ok) {
-        if ("status" in input) {
-          const reverted = statusBeforeSaveRef.current;
-          setStatus(reverted);
-          onLocalStatusChange?.(resultId, reverted);
+    // Read the unit, source, and fastener flags now, so a save that waits its
+    // turn sends them as they were alongside this measurement and note.
+    const payload = { ...input, ...measurementFacts() };
+    const task = saveChainRef.current.then(
+      async (): Promise<"saved" | "failed" | "superseded"> => {
+        let response: Awaited<ReturnType<typeof saveInspectionResultAction>>;
+        try {
+          response = await saveInspectionResultAction(workOrderId, resultId, {
+            ...payload,
+            expected_updated_at: versionRef.current,
+          });
+        } catch (error) {
+          if (seq !== saveSeqRef.current) return "superseded";
+          // A thrown action did not write. Keep the draft on screen.
+          setSaveState("error");
+          setError(describeInspectionSaveFailure(error));
+          onBusyChange?.(resultId, false);
+          return "failed";
         }
-        setSaveState("error");
-        setError(response.error);
+        if (response.ok) versionRef.current = response.updated_at;
+        if (seq !== saveSeqRef.current) {
+          // A newer save superseded this one; leave UI to the latest request.
+          return "superseded";
+        }
+        if (!response.ok) {
+          if ("status" in input) {
+            const reverted = statusBeforeSaveRef.current;
+            setStatus(reverted);
+            onLocalStatusChange?.(resultId, reverted);
+          }
+          setSaveState("error");
+          setError(response.error);
+          onBusyChange?.(resultId, false);
+          return "failed";
+        }
+        if ("status" in input) {
+          statusBeforeSaveRef.current = input.status ?? null;
+        }
+        if (
+          ("notes" in input || "measurement" in input) &&
+          textSaveStillMatchesLocal({
+            localNotes: notesRef.current,
+            localMeasurement: measurementRef.current,
+            savedNotes: input.notes,
+            savedMeasurement: input.measurement,
+          })
+        ) {
+          textDirtyRef.current = false;
+          setTextDirty(false);
+        }
+        setSaveState("saved");
         onBusyChange?.(resultId, false);
-        return "failed";
+        window.setTimeout(() => {
+          if (seq === saveSeqRef.current) setSaveState("idle");
+        }, 1200);
+        return "saved";
       }
-      if ("status" in input) {
-        statusBeforeSaveRef.current = input.status ?? null;
-      }
-      if (
-        ("notes" in input || "measurement" in input) &&
-        textSaveStillMatchesLocal({
-          localNotes: notesRef.current,
-          localMeasurement: measurementRef.current,
-          savedNotes: input.notes,
-          savedMeasurement: input.measurement,
-        })
-      ) {
-        textDirtyRef.current = false;
-        setTextDirty(false);
-      }
-      setSaveState("saved");
-      onBusyChange?.(resultId, false);
-      window.setTimeout(() => {
-        if (seq === saveSeqRef.current) setSaveState("idle");
-      }, 1200);
-      return "saved";
-    })();
+    );
     const settled = task.then(
       () => undefined,
       () => undefined
     );
+    saveChainRef.current = settled;
     inflightRef.current = settled;
     void settled.finally(() => {
       if (inflightRef.current === settled) inflightRef.current = null;
@@ -550,6 +574,7 @@ export function InspectionItemRow({
                 aria-invalid={measurementMissing || undefined}
                 onChange={(e) => {
                   const next = e.target.value;
+                  measurementRef.current = next;
                   textDirtyRef.current = true;
                   setTextDirty(true);
                   setMeasurement(next);
@@ -662,6 +687,7 @@ export function InspectionItemRow({
                 }
                 onChange={(e) => {
                   const next = e.target.value;
+                  notesRef.current = next;
                   textDirtyRef.current = true;
                   setTextDirty(true);
                   setNotes(next);

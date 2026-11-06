@@ -17,6 +17,7 @@ import {
   technicianIdsFromAssignment,
 } from "@/lib/workOrders/assignmentVisibility";
 import { saveInspectionResultSchema } from "@/lib/validation/schemas";
+import { isSameInstant } from "@/lib/inspections/inspectionLineVersion";
 import {
   getOptionalColumnSupport,
   isUndefinedColumnError,
@@ -520,6 +521,8 @@ export async function saveInspectionResult(
     angle_after_torque?: boolean;
     replace_fastener?: boolean;
     notes?: string | null;
+    /** The line's `updated_at` as the caller last saw it. */
+    expected_updated_at?: string;
   }
 ): Promise<InspectionResultRow> {
   const user = await requireUser();
@@ -640,36 +643,59 @@ export async function saveInspectionResult(
         ? parsed.replace_fastener
         : Boolean(row.replace_fastener),
   };
-  const baseUpdate = {
-    status: nextStatus,
-    measurement: nextMeasurement,
-    notes: nextNotes,
-    updated_by_user_id: user.user_id,
-    updated_at: new Date().toISOString(),
-  };
-  let updatedResult = await supabase
-    .from("inspection_result")
-    .update(
-      getOptionalColumnSupport(MEASUREMENT_FACTS_KEY) === false
-        ? baseUpdate
-        : { ...baseUpdate, ...factUpdate }
-    )
-    .eq("inspection_result_id", inspectionResultId)
-    .select(RESULT_COLUMNS)
-    .single();
-  if (noteMeasurementColumnSupport(updatedResult.error)) {
-    updatedResult = await supabase
-      .from("inspection_result")
-      .update(baseUpdate)
-      .eq("inspection_result_id", inspectionResultId)
-      .select(RESULT_COLUMNS_BASE)
-      .single();
-  }
-  const updated = updatedResult.data;
-  const error = updatedResult.error;
+  const factsSupported = getOptionalColumnSupport(MEASUREMENT_FACTS_KEY) !== false;
+  const unchanged =
+    nextStatus === row.status &&
+    nextMeasurement === row.measurement &&
+    nextNotes === row.notes &&
+    (!factsSupported ||
+      (factUpdate.measurement_unit === (row.measurement_unit ?? null) &&
+        factUpdate.measurement_source === (row.measurement_source ?? null) &&
+        factUpdate.angle_after_torque === Boolean(row.angle_after_torque) &&
+        factUpdate.replace_fastener === Boolean(row.replace_fastener)));
 
-  if (error) throw error;
-  const result = updated as unknown as InspectionResultRow;
+  let result: InspectionResultRow;
+  if (unchanged) {
+    // Leave the line alone, so re-sending what is already saved does not look
+    // like a change to another device with this line open.
+    const { inspection: _inspection, ...current } = row;
+    result = current;
+  } else {
+    if (
+      parsed.expected_updated_at !== undefined &&
+      !isSameInstant(parsed.expected_updated_at, row.updated_at)
+    ) {
+      throw new Error("INSPECTION_RESULT_CHANGED");
+    }
+    const baseUpdate = {
+      status: nextStatus,
+      measurement: nextMeasurement,
+      notes: nextNotes,
+      updated_by_user_id: user.user_id,
+      updated_at: new Date().toISOString(),
+    };
+    // Matching on the version just read makes the merge above and this write
+    // one step: a save that lands in between leaves no row to update.
+    let updatedResult = await supabase
+      .from("inspection_result")
+      .update(factsSupported ? { ...baseUpdate, ...factUpdate } : baseUpdate)
+      .eq("inspection_result_id", inspectionResultId)
+      .eq("updated_at", row.updated_at)
+      .select(RESULT_COLUMNS)
+      .maybeSingle();
+    if (noteMeasurementColumnSupport(updatedResult.error)) {
+      updatedResult = await supabase
+        .from("inspection_result")
+        .update(baseUpdate)
+        .eq("inspection_result_id", inspectionResultId)
+        .eq("updated_at", row.updated_at)
+        .select(RESULT_COLUMNS_BASE)
+        .maybeSingle();
+    }
+    if (updatedResult.error) throw updatedResult.error;
+    if (!updatedResult.data) throw new Error("INSPECTION_RESULT_CHANGED");
+    result = updatedResult.data as unknown as InspectionResultRow;
+  }
 
   if (!inspection.started_at) {
     const now = new Date().toISOString();
