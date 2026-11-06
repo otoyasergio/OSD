@@ -1,8 +1,14 @@
 import { unzipSync, strFromU8 } from "fflate";
 import sharp from "sharp";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { isStaffFeedbackSquashHour } from "@/lib/datetime/format";
 import { compressStaffFeedbackScreenshot } from "@/lib/staffFeedback/compressScreenshot";
+import {
+  isZipArchive,
+  repairStaffFeedbackStorage,
+  selectUnreferencedStaffFeedbackObjects,
+  staffFeedbackSummaryArchive,
+} from "@/lib/staffFeedback/repair";
 import {
   assertStaffFeedbackRate,
   normalizeStaffFeedbackNote,
@@ -180,5 +186,169 @@ describe("staff feedback screenshot compression", () => {
     await expect(
       compressStaffFeedbackScreenshot(Uint8Array.from([1, 2, 3, 4]))
     ).rejects.toThrow("STAFF_FEEDBACK_SCREENSHOT_INVALID");
+  });
+});
+
+describe("staff feedback repair", () => {
+  const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]);
+  const oldPicture = {
+    path: `${SAM}/${SAM}.jpg`,
+    createdAt: "2026-11-05T12:00:00.000Z",
+  };
+
+  it("recognizes a zip and ignores a plain picture", () => {
+    expect(isZipArchive(Uint8Array.from([0x50, 0x4b, 0x03, 0x04]))).toBe(true);
+    expect(isZipArchive(jpeg)).toBe(false);
+  });
+
+  it("keeps a fresh upload, a saved picture, and a file this bucket does not own", () => {
+    const now = new Date("2026-11-06T05:00:00.000Z");
+    expect(
+      selectUnreferencedStaffFeedbackObjects({
+        now,
+        referencedPaths: new Set([oldPicture.path]),
+        objects: [
+          oldPicture,
+          { path: `${ALEX}/${ALEX}.jpg`, createdAt: "2026-11-06T04:30:00.000Z" },
+          { path: "notes/not-a-picture.txt", createdAt: "2026-11-01T00:00:00.000Z" },
+          { path: `${SAM}/${ALEX}.jpg`, createdAt: "" },
+        ],
+      })
+    ).toEqual([]);
+  });
+
+  it("selects a leftover picture and a zip that no longer has a night", () => {
+    expect(
+      selectUnreferencedStaffFeedbackObjects({
+        now: new Date("2026-11-06T05:00:00.000Z"),
+        referencedPaths: new Set(),
+        objects: [
+          oldPicture,
+          { path: "digests/2026-11-04.zip", createdAt: "2026-11-04T04:00:00.000Z" },
+        ],
+      })
+    ).toEqual([oldPicture.path, "digests/2026-11-04.zip"]);
+  });
+
+  it("rebuilds a missing night from the notes, then deletes a leftover picture", async () => {
+    const put: string[] = [];
+    const recorded: number[] = [];
+    const removed: string[] = [];
+    const counts = await repairStaffFeedbackStorage({
+      now: new Date("2026-11-06T05:00:00.000Z"),
+      digests: [
+        {
+          digestId: "digest-1",
+          shopDate: "2026-11-05",
+          archivePath: "digests/2026-11-05.zip",
+          summary: "old summary",
+        },
+      ],
+      archiveExists: async () => false,
+      reportsForDigest: async () => [
+        {
+          reportId: ALEX,
+          createdAt: "2026-11-05T16:00:00.000Z",
+          actorName: "Alex Chen",
+          role: "technician",
+          pagePath: "/technician",
+          note: "The dock covers the save button.",
+          screenshot: jpeg,
+        },
+      ],
+      putArchive: async (path, bytes) => {
+        put.push(path);
+        expect(isZipArchive(bytes)).toBe(true);
+        const unzipped = unzipSync(bytes);
+        expect(unzipped[`reports/${ALEX}.jpg`]).toEqual(jpeg);
+      },
+      recordArchive: async (_digestId, archiveBytes) => {
+        recorded.push(archiveBytes);
+      },
+      clearLoosePictures: async () => 2,
+      listObjects: async () => [oldPicture],
+      referencedPaths: async () => [],
+      removeObjects: async (paths) => {
+        removed.push(...paths);
+      },
+    });
+
+    expect(put).toEqual(["digests/2026-11-05.zip"]);
+    expect(recorded).toHaveLength(1);
+    expect(removed).toEqual([oldPicture.path]);
+    expect(counts).toEqual({
+      archivesRebuilt: 1,
+      archivesFailed: 0,
+      loosePicturesRemoved: 2,
+      orphanPicturesRemoved: 1,
+    });
+  });
+
+  it("writes the saved summary when the note rows are already gone", async () => {
+    let manifest = "";
+    await repairStaffFeedbackStorage({
+      now: new Date("2026-11-06T05:00:00.000Z"),
+      digests: [
+        {
+          digestId: "digest-1",
+          shopDate: "2026-11-05",
+          archivePath: "digests/2026-11-05.zip",
+          summary: "Alex Chen, Technician\nThe dock covers the save button.",
+        },
+      ],
+      archiveExists: async () => false,
+      reportsForDigest: async () => [],
+      putArchive: async (_path, bytes) => {
+        manifest = strFromU8(unzipSync(bytes)["manifest.txt"] ?? new Uint8Array());
+      },
+      recordArchive: async () => {},
+      clearLoosePictures: async () => 0,
+      listObjects: async () => [],
+      referencedPaths: async () => [],
+      removeObjects: async () => {},
+    });
+    expect(manifest).toContain("The dock covers the save button.");
+  });
+
+  it("leaves a stored night alone and still reports a rebuild that failed", async () => {
+    const put = vi.fn();
+    const counts = await repairStaffFeedbackStorage({
+      now: new Date("2026-11-06T05:00:00.000Z"),
+      digests: [
+        {
+          digestId: "kept",
+          shopDate: "2026-11-05",
+          archivePath: "digests/2026-11-05.zip",
+          summary: "kept",
+        },
+        {
+          digestId: "broken",
+          shopDate: "2026-11-04",
+          archivePath: "digests/2026-11-04.zip",
+          summary: "broken",
+        },
+      ],
+      archiveExists: async (path) => path.endsWith("2026-11-05.zip"),
+      reportsForDigest: async () => [],
+      putArchive: async () => {
+        put();
+        throw new Error("storage down");
+      },
+      recordArchive: async () => {},
+      clearLoosePictures: async () => 0,
+      listObjects: async () => [],
+      referencedPaths: async () => [],
+      removeObjects: async () => {},
+    });
+    expect(put).toHaveBeenCalledTimes(1);
+    expect(counts.archivesRebuilt).toBe(0);
+    expect(counts.archivesFailed).toBe(1);
+  });
+
+  it("packs a summary by itself when that is all that remains", () => {
+    const bytes = staffFeedbackSummaryArchive("Tax shows twice.", "2026-11-05");
+    expect(strFromU8(unzipSync(bytes)["manifest.txt"] ?? new Uint8Array())).toBe(
+      "Tax shows twice."
+    );
   });
 });
