@@ -78,7 +78,6 @@ export function ProfilePhotoForm({
       <form
         key={uploadState.resetKey}
         action={uploadFormAction}
-        encType="multipart/form-data"
         className="flex flex-col gap-3"
         onSubmit={(event) => {
           // The raw file goes straight to the action; Vercel refuses bodies over

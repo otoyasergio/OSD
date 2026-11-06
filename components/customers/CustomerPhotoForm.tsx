@@ -65,7 +65,6 @@ export function CustomerPhotoForm({
       <form
         key={uploadState.resetKey}
         action={uploadFormAction}
-        encType="multipart/form-data"
         className="flex flex-col gap-2"
         onSubmit={(event) => {
           const file = event.currentTarget.elements.namedItem("file");
