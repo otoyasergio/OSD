@@ -35,8 +35,16 @@ export type WixInvoiceRecord = {
   issueDate?: string;
   dueDate?: string;
   sourceReference?: { appId?: string; externalReferenceId?: string };
-  numbering?: { number?: number; displayNumber?: string; prefix?: string; suffix?: string };
-  customerInfo?: { contactId?: string; contactDetails?: { firstName?: string; lastName?: string } };
+  numbering?: {
+    number?: number;
+    displayNumber?: string;
+    prefix?: string;
+    suffix?: string;
+  };
+  customerInfo?: {
+    contactId?: string;
+    contactDetails?: { firstName?: string; lastName?: string };
+  };
   customFields?: {
     headerCustomFields?: WixCustomField[];
     businessCustomFields?: WixCustomField[];
@@ -138,6 +146,8 @@ export function buildLineUpdate(input: {
   technicianName?: string | null;
   dueDate?: string | null;
   creditCents?: number;
+  /** Take the credit discount off an invoice that no longer holds any. */
+  clearCredit?: boolean;
 }): Record<string, unknown> {
   const lines = preTaxLineItems(input.lines);
   const invoice: Record<string, unknown> = {
@@ -167,6 +177,8 @@ export function buildLineUpdate(input: {
         fixedDiscount: centsToMoney(input.creditCents),
       },
     ];
+  } else if (input.clearCredit) {
+    invoice.discounts = [];
   }
   return { invoice };
 }
@@ -181,7 +193,10 @@ export function invoiceTextBlob(invoice: WixInvoiceRecord): string {
   return [invoice.title, header, lines].filter(Boolean).join("\n");
 }
 
-export function vinsOnInvoice(invoice: WixInvoiceRecord, modelYear: number | null = null): string[] {
+export function vinsOnInvoice(
+  invoice: WixInvoiceRecord,
+  modelYear: number | null = null
+): string[] {
   return vinsFromInvoiceText(invoiceTextBlob(invoice), modelYear);
 }
 

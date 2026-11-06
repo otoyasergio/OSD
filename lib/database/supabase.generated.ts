@@ -1095,6 +1095,14 @@ export type Database = {
         Args: { object_name: string };
         Returns: boolean;
       };
+      reserve_customer_credit: {
+        Args: {
+          p_customer_id: string;
+          p_wix_invoice_id: string;
+          p_target_cents: number;
+        };
+        Returns: number;
+      };
       record_diagnostic_session: {
         Args: {
           p_motorcycle_id: string;
