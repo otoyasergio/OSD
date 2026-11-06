@@ -96,6 +96,7 @@ export type ClientActionResolution = {
 export type ClientActionCard = {
   reason: ClientActionReason;
   title: string;
+  detail: string;
   customerId: string;
   motorcycleId: string | null;
   workOrderId: string | null;
@@ -110,6 +111,24 @@ export type DecideClientActionsInput = {
   customers: ClientActionCustomer[];
   resolutions: ClientActionResolution[];
 };
+
+/**
+ * Newest photo first. A front shot wins over a later left-side shot.
+ * Rows with no storage path are skipped.
+ */
+export function chooseVisitPhotoPath(
+  rows: Array<{ workOrderId: string; category: string; path: string | null }>
+): Map<string, string> {
+  const chosen = new Map<string, { category: string; path: string }>();
+  for (const row of rows) {
+    if (!row.path) continue;
+    const current = chosen.get(row.workOrderId);
+    if (!current || (row.category === "front" && current.category !== "front")) {
+      chosen.set(row.workOrderId, { category: row.category, path: row.path });
+    }
+  }
+  return new Map([...chosen].map(([workOrderId, photo]) => [workOrderId, photo.path]));
+}
 
 export function isClientActionOilService(name: string): boolean {
   return isOilChangeService(name) || isSeasonalTuneUp(name);
@@ -184,8 +203,56 @@ function isCleared(
   return shopDate < resolution.snoozeUntil;
 }
 
+function shopDaysLabel(age: number): string {
+  return age === 1 ? "1 shop day" : `${age} shop days`;
+}
+
+function visitDetail(
+  reason: ClientActionReason,
+  visit: ClientActionVisit,
+  shopDate: string
+): string {
+  switch (reason) {
+    case "reply":
+      return "The customer texted and nobody answered.";
+    case "approval": {
+      const count = visit.pendingRecommendationIds.length;
+      return count === 1
+        ? "One recommendation is waiting for the customer to approve."
+        : `${count} recommendations are waiting for the customer to approve.`;
+    }
+    case "parts": {
+      if (!visit.partsEnteredAt) return "This bike is waiting on parts.";
+      const age = shopDaySpan(shopDateKey(visit.partsEnteredAt), shopDate);
+      if (age <= 0) return "This bike started waiting on parts today.";
+      return `This bike has been waiting on parts for ${shopDaysLabel(age)}.`;
+    }
+    case "pickup": {
+      const age = visit.readyForPickupAt
+        ? shopDaySpan(shopDateKey(visit.readyForPickupAt), shopDate)
+        : 0;
+      if (age <= 0) return "Ready for pickup today.";
+      return `Ready for pickup for ${shopDaysLabel(age)}.`;
+    }
+    case "pickup_week": {
+      const age = visit.readyForPickupAt
+        ? shopDaySpan(shopDateKey(visit.readyForPickupAt), shopDate)
+        : PICKUP_WEEK_AFTER_DAYS;
+      return `Still here ${shopDaysLabel(age)} after it was ready.`;
+    }
+    case "shop_days": {
+      const droppedOff = visit.openedAt ?? visit.createdAt;
+      const age = shopDaySpan(shopDateKey(droppedOff), shopDate);
+      return `In the shop for ${shopDaysLabel(age)}.`;
+    }
+    default:
+      return TITLES[reason];
+  }
+}
+
 function card(input: {
   reason: ClientActionReason;
+  detail: string;
   customerId: string;
   motorcycleId: string | null;
   workOrderId: string | null;
@@ -285,6 +352,7 @@ export function decideClientActions(input: DecideClientActionsInput): ClientActi
     cards.push(
       card({
         reason: chosen.reason,
+        detail: visitDetail(chosen.reason, visit, shopDate),
         customerId: visit.customerId,
         motorcycleId: visit.motorcycleId,
         workOrderId: visit.workOrderId,
@@ -309,6 +377,7 @@ export function decideClientActions(input: DecideClientActionsInput): ClientActi
         cards.push(
           card({
             reason: "annual",
+            detail: `Last visit was ${shopDaysLabel(age)} ago.`,
             customerId: motorcycle.customerId,
             motorcycleId: motorcycle.motorcycleId,
             workOrderId: null,
@@ -329,6 +398,7 @@ export function decideClientActions(input: DecideClientActionsInput): ClientActi
         cards.push(
           card({
             reason: "oil",
+            detail: `Last oil change was ${shopDaysLabel(age)} ago.`,
             customerId: motorcycle.customerId,
             motorcycleId: motorcycle.motorcycleId,
             workOrderId: null,
@@ -358,6 +428,7 @@ export function decideClientActions(input: DecideClientActionsInput): ClientActi
     cards.push(
       card({
         reason: "birthday",
+        detail: "Today is their birthday.",
         customerId: customer.customerId,
         motorcycleId: null,
         workOrderId: null,

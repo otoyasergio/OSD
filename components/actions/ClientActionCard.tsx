@@ -7,6 +7,7 @@ import {
   sendClientActionAction,
 } from "@/app/(app)/actions/actions";
 import { FormError } from "@/components/forms/Field";
+import { RecoverableSignedImage } from "@/components/photos/RecoverableSignedImage";
 import type { ClientActionListItem } from "@/lib/services/clientActions";
 
 const BLOCK_COPY = {
@@ -45,16 +46,28 @@ export function ClientActionCard({ item }: { item: ClientActionListItem }) {
 
   return (
     <article className="card card-pad space-y-3">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-semibold text-foreground">{item.title}</h2>
-        <Link href={href} className="text-sm font-medium text-foreground underline">
-          {linkLabel}
-        </Link>
+      <div className="flex gap-3">
+        {item.photoUrl ? (
+          <RecoverableSignedImage
+            src={item.photoUrl}
+            alt={item.bikeLabel ?? "Motorcycle"}
+            className="h-16 w-24 shrink-0 rounded-md bg-[var(--surface-muted)] object-cover"
+          />
+        ) : null}
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-semibold text-foreground">{item.title}</h2>
+            <Link href={href} className="text-sm font-medium text-foreground underline">
+              {linkLabel}
+            </Link>
+          </div>
+          <p className="text-sm text-foreground">
+            {item.customerName}
+            {item.bikeLabel ? ` · ${item.bikeLabel}` : ""}
+          </p>
+          <p className="text-sm text-[var(--status-neutral)]">{item.detail}</p>
+        </div>
       </div>
-      <p className="text-sm text-foreground">
-        {item.customerName}
-        {item.bikeLabel ? ` · ${item.bikeLabel}` : ""}
-      </p>
       {item.smsBlock ? (
         <p className="text-sm text-[var(--status-neutral)]">
           {BLOCK_COPY[item.smsBlock]}

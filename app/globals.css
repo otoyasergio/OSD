@@ -3846,6 +3846,9 @@ button.board-control-link {
   gap: 0.75rem;
   border-top: 1px solid var(--border);
   padding-top: 1rem;
+  /* The raised Something's off launcher sits in this corner. */
+  padding-bottom: calc(6.25rem + 2.75rem + 0.75rem);
+  padding-right: 11.5rem;
 }
 
 .intake-wizard-nav-spacer {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chooseVisitPhotoPath,
   composeStaffSms,
   decideClientActions,
   isClientActionOilService,
@@ -69,6 +70,20 @@ function decide(input: {
   });
 }
 
+describe("chooseVisitPhotoPath", () => {
+  it("prefers a front photo over a newer left-side photo", () => {
+    const chosen = chooseVisitPhotoPath([
+      { workOrderId: "wo-1", category: "left_side", path: "left.jpg" },
+      { workOrderId: "wo-1", category: "front", path: "front.jpg" },
+      { workOrderId: "wo-2", category: "left_side", path: "only-left.jpg" },
+      { workOrderId: "wo-3", category: "front", path: null },
+    ]);
+    expect(chosen.get("wo-1")).toBe("front.jpg");
+    expect(chosen.get("wo-2")).toBe("only-left.jpg");
+    expect(chosen.has("wo-3")).toBe(false);
+  });
+});
+
 describe("decideClientActions visit cards", () => {
   it("shows one card when the latest message is inbound", () => {
     const cards = decide({
@@ -84,6 +99,7 @@ describe("decideClientActions visit cards", () => {
     });
     expect(cards.map((card) => card.reason)).toEqual(["reply"]);
     expect(cards[0]?.title).toBe("Customer is waiting on a reply");
+    expect(cards[0]?.detail).toBe("The customer texted and nobody answered.");
     expect(cards[0]?.cycleKey).toBe("wo:wo-1:reply:2026-11-06T15:00:00.000Z");
     expect(cards[0]?.workOrderId).toBe("wo-1");
   });
@@ -100,6 +116,9 @@ describe("decideClientActions visit cards", () => {
     });
     expect(cards.map((card) => card.reason)).toEqual(["approval"]);
     expect(cards[0]?.title).toBe("Approval is waiting");
+    expect(cards[0]?.detail).toBe(
+      "2 recommendations are waiting for the customer to approve."
+    );
     expect(cards[0]?.cycleKey).toBe("wo:wo-1:approval:rec-a,rec-b");
   });
 
@@ -131,6 +150,7 @@ describe("decideClientActions visit cards", () => {
     });
     expect(cards.map((card) => card.reason)).toEqual(["pickup"]);
     expect(cards[0]?.title).toBe("Ready for pickup");
+    expect(cards[0]?.detail).toBe("Ready for pickup for 2 shop days.");
     expect(cards[0]?.cycleKey).toBe("wo:wo-1:pickup:2026-11-04T18:00:00.000Z");
   });
 
@@ -150,6 +170,7 @@ describe("decideClientActions visit cards", () => {
     expect(shopDateKey("2026-11-09T18:00:00.000Z")).toBe("2026-11-09");
     expect(cards.map((card) => card.reason)).toEqual(["pickup_week"]);
     expect(cards[0]?.title).toBe("Still waiting for pickup");
+    expect(cards[0]?.detail).toBe("Still here 7 shop days after it was ready.");
   });
 
   it("keeps the week card after the same-day text was sent", () => {
@@ -195,6 +216,7 @@ describe("decideClientActions visit cards", () => {
     });
     expect(cards.map((card) => card.reason)).toEqual(["shop_days"]);
     expect(cards[0]?.title).toBe("In the shop longer than four days");
+    expect(cards[0]?.detail).toBe("In the shop for 4 shop days.");
     expect(cards[0]?.cycleKey).toBe("wo:wo-1:shop_days");
   });
 
@@ -274,10 +296,12 @@ describe("decideClientActions reminders", () => {
     });
     expect(cards.map((card) => card.reason)).toEqual(["annual", "oil"]);
     expect(cards[0]?.title).toBe("Last visit was a year ago");
+    expect(cards[0]?.detail).toBe("Last visit was 365 shop days ago.");
     expect(cards[1]?.title).toBe("Oil change is due");
+    expect(cards[1]?.detail).toBe("Last oil change was 180 shop days ago.");
+    expect(cards[0]?.workOrderId).toBeNull();
     expect(cards[0]?.cycleKey).toBe(`motorcycle:bike-1:annual:${oldVisit}`);
     expect(cards[1]?.cycleKey).toBe(`motorcycle:bike-1:oil:${oldOil}`);
-    expect(cards[0]?.workOrderId).toBeNull();
   });
 
   it("does not show a year card until 365 shop days have passed", () => {
@@ -316,6 +340,8 @@ describe("decideClientActions reminders", () => {
     });
     expect(cards.map((card) => card.reason)).toEqual(["birthday"]);
     expect(cards[0]?.title).toBe("Birthday");
+    expect(cards[0]?.detail).toBe("Today is their birthday.");
+    expect(cards[0]?.workOrderId).toBeNull();
     expect(cards[0]?.cycleKey).toBe("customer:cust-1:birthday:2026");
   });
 
