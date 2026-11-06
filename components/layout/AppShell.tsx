@@ -496,7 +496,7 @@ export function AppShell({
             {children}
           </main>
         </div>
-        <StaffFeedbackButton role={user.role} />
+        <StaffFeedbackButton role={user.role} raised />
       </div>
     </CommsLayer>
   );

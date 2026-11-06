@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/database/supabase-admin";
 import { createClient } from "@/lib/database/supabase-server";
 import {
   CLIENT_ACTION_REASONS,
+  chooseVisitPhotoPath,
   composeStaffSms,
   decideClientActions,
   reminderSnoozeUntil,
@@ -15,7 +16,8 @@ import {
   type ClientActionVisit,
 } from "@/lib/actions/clientActions";
 import { clientDisplayName } from "@/lib/customers/displayName";
-import type { WorkOrderStatus } from "@/lib/database/types";
+import type { DbClient, WorkOrderStatus } from "@/lib/database/types";
+import { signStoragePaths } from "@/lib/photos/signedUrls";
 import { shopDateKey } from "@/lib/datetime/format";
 import { canEditWorkOrder } from "@/lib/permissions";
 import { normalizePhoneE164 } from "@/lib/phone/e164";
@@ -33,6 +35,7 @@ export type ClientActionListItem = ClientActionCard & {
   customerName: string;
   bikeLabel: string | null;
   workOrderNumber: string | null;
+  photoUrl: string | null;
 };
 
 type CustomerRow = {
@@ -412,6 +415,11 @@ async function loadBoard(user: AppUser): Promise<Board> {
     resolutions: resolutionFacts,
   });
 
+  const photoUrls = await loadVisitPhotoUrls(
+    supabase,
+    cards.flatMap((card) => (card.workOrderId ? [card.workOrderId] : []))
+  );
+
   const items = cards.map((card) => {
     const order = card.workOrderId ? workOrders.get(card.workOrderId) : undefined;
     const motorcycleId = card.motorcycleId ?? order?.motorcycle_id ?? null;
@@ -420,10 +428,45 @@ async function loadBoard(user: AppUser): Promise<Board> {
       customerName: clientDisplayName(customers.get(card.customerId)) ?? "Customer",
       bikeLabel: bikeLabel(motorcycleId ? (motorcycles.get(motorcycleId) ?? null) : null),
       workOrderNumber: order?.work_order_number ?? null,
+      photoUrl: card.workOrderId ? (photoUrls.get(card.workOrderId) ?? null) : null,
     };
   });
 
   return { items, customers };
+}
+
+/** Front intake photo, or the left side when the front was not taken. */
+async function loadVisitPhotoUrls(
+  supabase: DbClient,
+  workOrderIds: string[]
+): Promise<Map<string, string>> {
+  const rows: Array<{ workOrderId: string; category: string; path: string | null }> = [];
+  for (const chunk of chunks(workOrderIds, ID_CHUNK)) {
+    const { data, error } = await supabase
+      .from("intake_photo")
+      .select("work_order_id, category, storage_path, thumb_storage_path, created_at")
+      .in("work_order_id", chunk)
+      .in("category", ["front", "left_side"])
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    for (const row of data ?? []) {
+      if (!row.work_order_id || !row.category) continue;
+      rows.push({
+        workOrderId: row.work_order_id as string,
+        category: row.category as string,
+        path: ((row.thumb_storage_path || row.storage_path) as string | null) ?? null,
+      });
+    }
+  }
+
+  const chosen = chooseVisitPhotoPath(rows);
+  const signed = await signStoragePaths(supabase, [...chosen.values()]);
+  const urls = new Map<string, string>();
+  for (const [workOrderId, path] of chosen) {
+    const url = signed.get(path);
+    if (url) urls.set(workOrderId, url);
+  }
+  return urls;
 }
 
 async function loadCustomers(
