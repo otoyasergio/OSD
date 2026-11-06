@@ -1,6 +1,14 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useNowTick } from "@/lib/client/useNowTick";
@@ -321,6 +329,36 @@ function TechOldestMeta({ bikes }: { bikes: ControlCenterBike[] }) {
       </span>
       <span>oldest {bikes.length > 0 ? formatElapsedTimer(oldestMs) : "—"}</span>
     </div>
+  );
+}
+
+/**
+ * The waiting pool has to be a child of DndContext. useDroppable in the same
+ * component that renders DndContext registers with the parent context, so a
+ * drop on Waiting for tech never finds a target.
+ */
+function WaitingForTechDrop({
+  disabled,
+  className,
+  children,
+}: {
+  disabled: boolean;
+  className: string;
+  children: ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: POOL_ID,
+    disabled,
+  });
+  return (
+    <section
+      ref={setNodeRef}
+      className={[className, isOver && !disabled ? "cc-pool--over" : ""]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {children}
+    </section>
   );
 }
 
@@ -801,10 +839,6 @@ export function ControlCenterShell({
 
   const canRearrange = canRearrangeControlCenter(data.role);
   const canPlaceOnTech = canAssign || canRearrange;
-  const { setNodeRef: setPoolRef, isOver: poolOver } = useDroppable({
-    id: POOL_ID,
-    disabled: !canPlaceOnTech,
-  });
   const { collapsed: poolCollapsed, toggle: togglePool } = useCollapsedSection("pool");
 
   const stageQueues = useMemo(
@@ -1516,13 +1550,9 @@ export function ControlCenterShell({
           releaseSuppressBikeClick();
         }}
       >
-        <section
-          ref={setPoolRef}
-          className={[
-            "cc-pool",
-            poolCollapsed ? "cc-pool--collapsed" : "",
-            poolOver && canPlaceOnTech ? "cc-pool--over" : "",
-          ]
+        <WaitingForTechDrop
+          disabled={!canPlaceOnTech}
+          className={["cc-pool", poolCollapsed ? "cc-pool--collapsed" : ""]
             .filter(Boolean)
             .join(" ")}
         >
@@ -1607,7 +1637,7 @@ export function ControlCenterShell({
               )}
             </div>
           )}
-        </section>
+        </WaitingForTechDrop>
 
         <div className="cc-tech-grid">
           {techs.map((tech) => (

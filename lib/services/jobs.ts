@@ -27,6 +27,7 @@ import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignm
 import {
   getOptionalColumnSupport,
   isUndefinedColumnError,
+  isUndefinedTableError,
   OPTIONAL_COLUMNS,
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
@@ -241,9 +242,79 @@ export async function assignUnassignedJobsOnWorkOrderToTechnician(
   return { assigned_count };
 }
 
+/** Stop a running clock when the front office takes the bike off that tech. */
+async function endOpenClocksOnWorkOrder(supabase: DbClient, workOrderId: string) {
+  const { data: jobs, error } = await supabase
+    .from("job")
+    .select("job_id")
+    .eq("work_order_id", workOrderId);
+  if (error) throw error;
+  const jobIds = (jobs ?? []).map((row) => row.job_id as string);
+  if (jobIds.length === 0) return;
+
+  const { error: clockError } = await supabase
+    .from("job_time_entry")
+    .update({ ended_at: new Date().toISOString() })
+    .in("job_id", jobIds)
+    .is("ended_at", null);
+  if (clockError && isUndefinedTableError(clockError, "job_time_entry")) return;
+  if (clockError) throw clockError;
+}
+
+/**
+ * The tech docket lists a visit from work_order_technician even after the
+ * jobs are cleared. Control Center moves have to change that membership too.
+ */
+async function replaceWorkOrderTechnicianMembership(
+  supabase: DbClient,
+  workOrderId: string,
+  technicianId: string | null,
+  actorUserId: string
+) {
+  let removal = supabase
+    .from("work_order_technician")
+    .delete()
+    .eq("work_order_id", workOrderId);
+  if (technicianId) removal = removal.neq("technician_id", technicianId);
+  const { error: deleteError } = await removal;
+  if (deleteError) throw deleteError;
+  if (!technicianId) return;
+
+  const { data: existing, error: existingError } = await supabase
+    .from("work_order_technician")
+    .select("technician_id")
+    .eq("work_order_id", workOrderId)
+    .eq("technician_id", technicianId)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return;
+
+  const { error: insertError } = await supabase.from("work_order_technician").insert({
+    work_order_id: workOrderId,
+    technician_id: technicianId,
+    assigned_by_user_id: actorUserId,
+  });
+  if (insertError) throw insertError;
+}
+
+async function releaseWorkOrderDispatch(
+  supabase: DbClient,
+  workOrderId: string,
+  technicianId: string | null,
+  actorUserId: string
+) {
+  await replaceWorkOrderTechnicianMembership(
+    supabase,
+    workOrderId,
+    technicianId,
+    actorUserId
+  );
+  await endOpenClocksOnWorkOrder(supabase, workOrderId);
+}
+
 /**
  * Control Center dispatch: assign every active job on a work order to one tech
- * (reassigns jobs already on another tech). Does not touch primary_technician_id.
+ * (reassigns jobs already on another tech).
  */
 export async function assignAllActiveJobsOnWorkOrderToTechnician(
   workOrderId: string,
@@ -269,6 +340,8 @@ export async function assignAllActiveJobsOnWorkOrderToTechnician(
   if (!tech || !isFloorTech(tech.role) || tech.status !== "active") {
     throw new Error("TECHNICIAN_NOT_FOUND");
   }
+
+  await releaseWorkOrderDispatch(supabase, workOrderId, technicianId, user.user_id);
 
   const { data: jobs, error } = await supabase
     .from("job")
@@ -388,6 +461,7 @@ export async function unassignAllActiveJobsOnWorkOrder(
   }
 
   const { supabase, workOrder } = await requireMutableWorkOrder(user, workOrderId);
+  await releaseWorkOrderDispatch(supabase, workOrderId, null, user.user_id);
 
   const { data: jobs, error } = await supabase
     .from("job")

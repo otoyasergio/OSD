@@ -338,5 +338,45 @@ describe("control center dnd helpers", () => {
         techIds: techs,
       })
     ).toBe(true);
+
+    for (const role of ["owner", "admin", "service_advisor"] as const) {
+      expect(
+        allowsControlCenterDrop({
+          role,
+          currentStatus: "in_progress",
+          targetId: "pool",
+          poolId: "pool",
+          techIds: techs,
+        })
+      ).toBe(true);
+      expect(
+        allowsControlCenterDrop({
+          role,
+          currentStatus: "in_progress",
+          targetId: "tech-b",
+          poolId: "pool",
+          techIds: techs,
+        })
+      ).toBe(true);
+      expect(
+        allowsControlCenterDrop({
+          role,
+          currentStatus: "open",
+          targetId: "pool",
+          poolId: "pool",
+          techIds: techs,
+        })
+      ).toBe(true);
+    }
+
+    expect(
+      allowsControlCenterDrop({
+        role: "technician",
+        currentStatus: "in_progress",
+        targetId: "pool",
+        poolId: "pool",
+        techIds: techs,
+      })
+    ).toBe(false);
   });
 });
