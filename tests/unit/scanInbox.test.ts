@@ -4,7 +4,7 @@ import { scanGmailAuthorizationUrl } from "@/lib/email/gmail";
 import { readUnreadScanMail } from "@/lib/email/scanInbox";
 
 describe("scanGmailAuthorizationUrl", () => {
-  it("asks Google for read-only access to the scans mailbox", () => {
+  it("asks Google for read-only access to the diagnostics mailbox", () => {
     const url = new URL(
       scanGmailAuthorizationUrl({
         clientId: "client-id",
@@ -18,7 +18,7 @@ describe("scanGmailAuthorizationUrl", () => {
     expect(scope).toContain("https://www.googleapis.com/auth/userinfo.email");
     expect(scope).not.toContain("gmail.send");
     expect(url.searchParams.get("prompt")).toBe("consent select_account");
-    expect(url.searchParams.get("login_hint")).toBe("scans@torontomoto.com");
+    expect(url.searchParams.get("login_hint")).toBe("diagnostics@torontomoto.com");
   });
 });
 

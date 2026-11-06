@@ -13,15 +13,15 @@ export function scanMailboxNotice(code: string | undefined): string | null {
     case "connected":
       return "Scan mailbox connected. TopGuru scan reports sent there stay in the shop.";
     case "customer_mailbox":
-      return "That address sends customer email. Scan reports use scans@torontomoto.com.";
+      return `That address sends customer email. Scan reports use ${SCAN_REPORT_ADDRESS}.`;
     case "wrong_address":
-      return "Scan reports go to scans@torontomoto.com. Sign in as that user.";
+      return `Scan reports go to ${SCAN_REPORT_ADDRESS}. Sign in as that user.`;
     case "forbidden":
       return "Only an owner can connect the scan mailbox.";
     case "oauth":
       return "Google sign-in is not set up on the server yet.";
     case "denied":
-      return "Google sign-in was cancelled. Connect the scans mailbox to receive TopGuru reports.";
+      return "Google sign-in was cancelled. Connect the diagnostics mailbox to receive TopGuru reports.";
     case "state":
       return "That connection attempt expired. Start it again.";
     case "location":

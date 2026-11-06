@@ -1,10 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { disconnectScanMailboxAction } from "./actions";
-import { ScanMailboxPanel, scanMailboxNotice } from "@/components/settings/ScanMailboxPanel";
+import {
+  ScanMailboxPanel,
+  scanMailboxNotice,
+} from "@/components/settings/ScanMailboxPanel";
 import { getRolePreviewContext } from "@/lib/auth/role-preview";
 import { createClient } from "@/lib/database/supabase-server";
 import { customerEmailLocationAllowed, isGmailOAuthConfigured } from "@/lib/email/config";
+import { SCAN_REPORT_ADDRESS } from "@/lib/email/scanReport";
 import { getScanMailboxAddress, listRecentScanReports } from "@/lib/email/scanMailbox";
 import { canConnectShopMailbox } from "@/lib/permissions";
 
@@ -59,8 +63,8 @@ export default async function ScanMailboxPage({
           Scan reports
         </h1>
         <p className="mt-1 text-sm text-[var(--status-neutral)]">
-          TopGuru sends scan reports to scans@torontomoto.com. Customer email stays on its own
-          mailbox.
+          TopGuru sends scan reports to {SCAN_REPORT_ADDRESS}. Customer email stays on its
+          own mailbox.
         </p>
       </div>
 

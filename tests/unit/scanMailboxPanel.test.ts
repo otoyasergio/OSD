@@ -9,7 +9,8 @@ import {
 describe("scanMailboxNotice", () => {
   it("says the connected mailbox receives scan reports", () => {
     expect(scanMailboxNotice("connected")).toMatch(/scan reports/i);
-    expect(scanMailboxNotice("customer_mailbox")).toMatch(/customer email/i);
+    expect(scanMailboxNotice("customer_mailbox")).toMatch(/diagnostics@torontomoto\.com/);
+    expect(scanMailboxNotice("wrong_address")).toMatch(/diagnostics@torontomoto\.com/);
     expect(scanMailboxNotice(undefined)).toBeNull();
   });
 });
@@ -29,7 +30,7 @@ describe("ScanMailboxPanel", () => {
 
     expect(html).toContain("/api/google/scan-mail/start");
     expect(html).toContain("TopGuru sends scan reports to");
-    expect(html).toContain("scans@torontomoto.com");
+    expect(html).toContain("diagnostics@torontomoto.com");
     expect(html).toMatch(/Customers do not receive/i);
     expect(html).not.toContain("such as");
     expect(html).not.toContain("Ready for pickup");
@@ -40,7 +41,7 @@ describe("ScanMailboxPanel", () => {
       createElement(ScanMailboxPanel, {
         oauthConfigured: true,
         locationAllowed: true,
-        emailAddress: "scans@torontomoto.com",
+        emailAddress: "diagnostics@torontomoto.com",
         reports: [
           {
             subject: "TopScan report",
@@ -54,7 +55,7 @@ describe("ScanMailboxPanel", () => {
       })
     );
 
-    expect(html).toContain("scans@torontomoto.com");
+    expect(html).toContain("diagnostics@torontomoto.com");
     expect(html).toContain("TopScan report");
     expect(html).toContain("WO-1042");
     expect(html).toContain("Disconnect");
