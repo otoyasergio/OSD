@@ -89,6 +89,14 @@ function readScanCodes(text: string): ScanCode[] {
   return codes;
 }
 
+const TOPGURU_REPORT =
+  /topdon|full system report|distance traveled|dtc description|\bdtcs were found\b|altogether\s+\d+\s+dtcs/i;
+
+/** Email that is a TopGuru file, not a mailbox notice or another PDF. */
+export function isTopGuruReport(text: string): boolean {
+  return TOPGURU_REPORT.test(text);
+}
+
 export function readTopGuruReport(text: string): {
   outcome: ScanOutcome;
   vin: string | null;
@@ -373,7 +381,7 @@ export function filingsForUnreadMail(input: {
   const filed = new Set(input.alreadyFiledIds);
   const rows = [];
   for (const message of input.messages) {
-    if (filed.has(message.id)) continue;
+    if (filed.has(message.id) || !isTopGuruReport(message.text)) continue;
     const report = readTopGuruReport(message.text);
     const match = chooseInspectionForScan(report, input.waiting);
     const bike = chooseMotorcycleForScan(report, input.bikes);
@@ -389,4 +397,28 @@ export function filingsForUnreadMail(input: {
     });
   }
   return rows;
+}
+
+/** A PDF that is not a TopGuru report is kept once, with no bike and no visit. */
+export function needsLookForUnreadPdf(message: { id: string; text: string }): {
+  gmailMessageId: string;
+  outcome: "needs_confirmation";
+  vin: null;
+  codes: [];
+  inspectionId: null;
+  workOrderId: null;
+  motorcycleId: null;
+  reportText: string;
+} | null {
+  if (isTopGuruReport(message.text)) return null;
+  return {
+    gmailMessageId: message.id,
+    outcome: "needs_confirmation",
+    vin: null,
+    codes: [],
+    inspectionId: null,
+    workOrderId: null,
+    motorcycleId: null,
+    reportText: message.text.slice(0, 20_000),
+  };
 }

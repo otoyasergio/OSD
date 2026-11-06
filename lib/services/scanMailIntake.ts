@@ -4,14 +4,14 @@ import {
   listScanMailboxes,
   updateScanMailboxRefreshToken,
 } from "@/lib/email/scanMailbox";
-import { markScanMailRead, readUnreadScanMail } from "@/lib/email/scanInbox";
+import { listUnreadPdfMessageIds, readUnreadScanMail } from "@/lib/email/scanInbox";
 import {
   filingsForUnreadMail,
+  needsLookForUnreadPdf,
   type ScanBike,
   type WaitingInspection,
 } from "@/lib/email/scanReport";
 import { applyEmptyReportedMileage } from "@/lib/services/inspectionScans";
-import { logger } from "@/lib/security/logger";
 
 type WorkOrderRow = {
   work_order_id: string;
@@ -92,26 +92,35 @@ export async function ingestScanMail(): Promise<{ filed: number; held: number }>
   let held = 0;
 
   for (const mailbox of mailboxes) {
-    const read = await readUnreadScanMail({
+    const listed = await listUnreadPdfMessageIds({
       refreshToken: mailbox.refreshToken,
       clientId: config.clientId,
       clientSecret: config.clientSecret,
     });
-    if (read.refreshToken) {
-      await updateScanMailboxRefreshToken(mailbox.locationId, read.refreshToken);
+    if (listed.refreshToken) {
+      await updateScanMailboxRefreshToken(mailbox.locationId, listed.refreshToken);
     }
-    if (read.messages.length === 0) continue;
+    if (listed.ids.length === 0) continue;
 
-    const ids = read.messages.map((message) => message.id);
     const { data: existing, error: existingError } = await admin
       .from("scan_report")
       .select("gmail_message_id")
       .eq("location_id", mailbox.locationId)
-      .in("gmail_message_id", ids);
+      .in("gmail_message_id", listed.ids);
     if (existingError) throw existingError;
     const alreadyFiledIds = ((existing ?? []) as Array<{ gmail_message_id: string }>).map(
       (row) => row.gmail_message_id
     );
+    const freshIds = listed.ids.filter((id) => !alreadyFiledIds.includes(id));
+    if (freshIds.length === 0) continue;
+
+    const read = await readUnreadScanMail({
+      refreshToken: mailbox.refreshToken,
+      clientId: config.clientId,
+      clientSecret: config.clientSecret,
+      accessToken: listed.accessToken,
+      messageIds: freshIds,
+    });
 
     const waiting = await waitingInspections(mailbox.locationId);
     const planned = filingsForUnreadMail({
@@ -124,44 +133,31 @@ export async function ingestScanMail(): Promise<{ filed: number; held: number }>
       alreadyFiledIds,
     });
     const plannedById = new Map(planned.map((row) => [row.gmailMessageId, row]));
-    const originalById = new Map(read.messages.map((message) => [message.id, message]));
 
     for (const message of read.messages) {
-      const row = plannedById.get(message.id);
-      if (row) {
-        const source = originalById.get(message.id);
-        const { error } = await admin.from("scan_report").insert({
-          location_id: mailbox.locationId,
-          gmail_message_id: row.gmailMessageId,
-          subject: (source?.subject ?? "").slice(0, 500),
-          from_address: (source?.from ?? "").slice(0, 320),
-          outcome: row.outcome,
-          vin_in_report: row.vin,
-          codes: row.codes,
-          report_text: row.reportText,
-          inspection_id: row.inspectionId,
-          work_order_id: row.workOrderId,
-          motorcycle_id: row.motorcycleId,
-        });
-        if (error && error.code !== "23505") throw error;
-        if (row.workOrderId) {
-          await applyEmptyReportedMileage(admin, row.workOrderId, row.reportText);
-        }
-        if (row.workOrderId || row.motorcycleId) filed += 1;
-        else held += 1;
+      const text = [message.subject, message.text].filter(Boolean).join("\n");
+      const row =
+        plannedById.get(message.id) ?? needsLookForUnreadPdf({ id: message.id, text });
+      if (!row) continue;
+      const { error } = await admin.from("scan_report").insert({
+        location_id: mailbox.locationId,
+        gmail_message_id: row.gmailMessageId,
+        subject: message.subject.slice(0, 500),
+        from_address: message.from.slice(0, 320),
+        outcome: row.outcome,
+        vin_in_report: row.vin,
+        codes: row.codes,
+        report_text: row.reportText,
+        inspection_id: row.inspectionId,
+        work_order_id: row.workOrderId,
+        motorcycle_id: row.motorcycleId,
+      });
+      if (error && error.code !== "23505") throw error;
+      if (row.workOrderId) {
+        await applyEmptyReportedMileage(admin, row.workOrderId, row.reportText);
       }
-      try {
-        await markScanMailRead({
-          accessToken: read.accessToken,
-          messageId: message.id,
-        });
-      } catch (error) {
-        logger.warn("Scan report stayed unread", {
-          locationId: mailbox.locationId,
-          messageId: message.id,
-          error: error instanceof Error ? error.message : "SCAN_MAIL_READ_FAILED",
-        });
-      }
+      if (row.workOrderId || row.motorcycleId) filed += 1;
+      else held += 1;
     }
   }
 
