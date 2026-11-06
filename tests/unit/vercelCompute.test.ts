@@ -50,7 +50,7 @@ describe("Vercel compute allocation", () => {
       { path: "/api/cron/wix-contacts-sync", schedule: "*/4 * * * *" },
       { path: "/api/cron/weekly-shop-report", schedule: "0 0,1 * * 6" },
       { path: "/api/cron/scan-mail", schedule: "*/2 * * * *" },
-      { path: "/api/cron/staff-feedback-squash", schedule: "0 3,4 * * *" },
+      { path: "/api/cron/staff-feedback-squash", schedule: "0 3,4,5 * * *" },
     ]);
   });
 });

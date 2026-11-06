@@ -38,7 +38,7 @@
     },
     {
       "path": "/api/cron/staff-feedback-squash",
-      "schedule": "0 3,4 * * *"
+      "schedule": "0 3,4,5 * * *"
     }
   ]
 }
