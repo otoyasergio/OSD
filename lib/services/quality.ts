@@ -335,12 +335,14 @@ export async function completeWorkOrder(
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canCompleteWorkOrder(user.role)) throw new Error("FORBIDDEN");
 
+  // Owner and Control Center skips cover inspection, safety, and checkout.
+  // A declined safety repair still needs the customer's acknowledgment.
+  // Missing columns are tolerated inside the check so an unmigrated shop can file.
+  const { assertDeclinedSafetyAcknowledged } =
+    await import("@/lib/services/finalCheckRecord");
+  await assertDeclinedSafetyAcknowledged(workOrderId);
+
   const ownerSkip = user.role === "owner" || options.ownerSkip === true;
-  if (!ownerSkip) {
-    const { assertDeclinedSafetyAcknowledged } =
-      await import("@/lib/services/finalCheckRecord");
-    await assertDeclinedSafetyAcknowledged(workOrderId);
-  }
   const fileWithoutFinalInspection =
     ownerSkip ||
     (Boolean(options.waiveQualityCheck) && canCompleteWithoutFinalInspection(user.role));

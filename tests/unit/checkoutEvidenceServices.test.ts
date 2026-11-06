@@ -61,7 +61,7 @@ function thenableSelect(
   log: QueryLog[],
   resolve: (filters: Array<{ method: string; args: unknown[] }>) => {
     data: unknown;
-    error: null;
+    error: { code?: string; message?: string } | null;
   }
 ) {
   const filters: Array<{ method: string; args: unknown[] }> = [];
@@ -71,10 +71,19 @@ function thenableSelect(
     eq: (...args: unknown[]) => unknown;
     in: (...args: unknown[]) => unknown;
     order: (...args: unknown[]) => unknown;
-    maybeSingle: () => Promise<{ data: unknown; error: null }>;
-    single: () => Promise<{ data: unknown; error: null }>;
+    maybeSingle: () => Promise<{
+      data: unknown;
+      error: { code?: string; message?: string } | null;
+    }>;
+    single: () => Promise<{
+      data: unknown;
+      error: { code?: string; message?: string } | null;
+    }>;
     then: (
-      onFulfilled: (value: { data: unknown; error: null }) => unknown
+      onFulfilled: (value: {
+        data: unknown;
+        error: { code?: string; message?: string } | null;
+      }) => unknown
     ) => Promise<unknown>;
   } = {
     select: (...args: unknown[]) => {
@@ -118,6 +127,9 @@ function makeClient(options: {
   services?: Array<Record<string, unknown>>;
   existingWo?: Record<string, unknown> | null;
   templateItems?: Array<Record<string, unknown>>;
+  recommendations?: Array<Record<string, unknown>>;
+  /** Simulate a shop that has not received the acknowledgement columns. */
+  missingAckColumns?: boolean;
 }) {
   const log: QueryLog[] = [];
   const updates: Array<{ table: string; payload: Record<string, unknown> }> = [];
@@ -153,7 +165,21 @@ function makeClient(options: {
             ) {
               return { data: options.existingWo ?? null, error: null };
             }
+            const selected = filters.find((filter) => filter.method === "select");
+            const columns = String(selected?.args[0] ?? "");
+            if (options.missingAckColumns && columns.includes("declined_safety_ack")) {
+              return {
+                data: null,
+                error: {
+                  code: "42703",
+                  message: 'column "declined_safety_ack_at" does not exist',
+                },
+              };
+            }
             return { data: workOrder, error: null };
+          }
+          if (table === "recommendation") {
+            return { data: options.recommendations ?? [], error: null };
           }
           if (table === "job") {
             return {
@@ -338,6 +364,93 @@ describe("pickup service gates query committed checkout photos", () => {
       "CHECKOUT_EVIDENCE_REQUIRED"
     );
     expect(client.updates.some((row) => row.payload.status === "completed")).toBe(false);
+  });
+
+  it("blocks release while declined safety repairs are unacknowledged", async () => {
+    const declinedBrake = {
+      description: "Worn front brake pads",
+      severity: "safety_critical",
+      status: "declined",
+    };
+    const readyBike = {
+      status: "ready_for_pickup",
+      ready_for_pickup_at: "2026-10-01T12:10:00.000Z",
+      declined_safety_ack_at: null,
+      declined_safety_ack_items: null,
+      checkout_evidence_required: false,
+    };
+
+    requireUser.mockResolvedValue(owner);
+    const ownerClient = makeClient({
+      workOrder: readyBike,
+      recommendations: [declinedBrake],
+    });
+    createClient.mockResolvedValue(ownerClient);
+    await expect(completeWorkOrder(WO, "keys")).rejects.toThrow(
+      "DECLINED_SAFETY_ACK_REQUIRED"
+    );
+    expect(ownerClient.updates.some((row) => row.payload.status === "completed")).toBe(
+      false
+    );
+
+    requireUser.mockResolvedValue({ ...owner, role: "admin" });
+    const adminClient = makeClient({
+      workOrder: readyBike,
+      recommendations: [declinedBrake],
+      jobs: [{ job_id: "j1", status: "completed", service_name_snapshot: "Brakes" }],
+    });
+    createClient.mockResolvedValue(adminClient);
+    await expect(moveWorkOrderOnBoard(WO, "complete")).rejects.toThrow(
+      "DECLINED_SAFETY_ACK_REQUIRED"
+    );
+    expect(adminClient.updates.some((row) => row.payload.status === "completed")).toBe(
+      false
+    );
+  });
+
+  it("files the bike once the declined safety items are acknowledged", async () => {
+    requireUser.mockResolvedValue(owner);
+    const client = makeClient({
+      workOrder: {
+        status: "ready_for_pickup",
+        ready_for_pickup_at: "2026-10-01T12:10:00.000Z",
+        declined_safety_ack_at: "2026-10-01T12:00:00.000Z",
+        declined_safety_ack_items: "Worn front brake pads",
+        checkout_evidence_required: false,
+      },
+      recommendations: [
+        {
+          description: "Worn front brake pads",
+          severity: "safety_critical",
+          status: "declined",
+        },
+      ],
+    });
+    createClient.mockResolvedValue(client);
+    await completeWorkOrder(WO, "keys");
+    expect(client.updates.some((row) => row.payload.status === "completed")).toBe(true);
+  });
+
+  it("still lets the owner file when the acknowledgement columns are not migrated", async () => {
+    requireUser.mockResolvedValue(owner);
+    const client = makeClient({
+      workOrder: {
+        status: "ready_for_pickup",
+        ready_for_pickup_at: "2026-10-01T12:10:00.000Z",
+        checkout_evidence_required: false,
+      },
+      recommendations: [
+        {
+          description: "Worn front brake pads",
+          severity: "safety_critical",
+          status: "declined",
+        },
+      ],
+      missingAckColumns: true,
+    });
+    createClient.mockResolvedValue(client);
+    await completeWorkOrder(WO, "keys");
+    expect(client.updates.some((row) => row.payload.status === "completed")).toBe(true);
   });
 
   it("lets the owner and admin move a filed bike back to another category", async () => {
