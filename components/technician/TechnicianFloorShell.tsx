@@ -776,7 +776,8 @@ export function TechnicianFloorShell({
             <section className="pit-rail-group" aria-label="Your line">
               <h2 className="pit-rail-title">Your line</h2>
               <p className="pit-rail-help">
-                Advisor order. Drag the first bike onto the bench when it is empty.
+                Advisor order. Drag any assigned bike onto the bench. Starting another
+                parks the one on the clock.
               </p>
               {lineItems.length > 0 ? (
                 <TechnicianDocketList
