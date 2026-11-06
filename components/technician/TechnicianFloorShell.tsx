@@ -70,7 +70,11 @@ import {
   floorSpineStates,
   type FloorStage,
 } from "@/lib/technician/floorStage";
-import { isFloorJobFinished, type PitBoardStep } from "@/lib/technician/pitBoard";
+import {
+  isFloorJobFinished,
+  PARK_REASON_OPTIONS,
+  type PitBoardStep,
+} from "@/lib/technician/pitBoard";
 import {
   evaluatePerformWorkDocumentation,
   hasWorkPhotoChoice,
@@ -1143,19 +1147,15 @@ export function TechnicianFloorShell({
           <div className="pit-sheet">
             {overlay === "park" && surface?.job_id ? (
               <>
-                <h3 className="pit-sheet-title">Tool or lift busy</h3>
-                <p className="pit-sheet-or">
-                  The whole bike leaves your line. Parts and customer waits stay on the
-                  record.
-                </p>
+                <h3 className="pit-sheet-title">Why park?</h3>
                 <label className="pit-sheet-label">
-                  Note
+                  What&apos;s waiting?
                   <textarea
                     className="pit-sheet-input"
                     rows={3}
                     value={parkNote}
                     onChange={(event) => setParkNote(event.target.value)}
-                    placeholder="Optional"
+                    placeholder="What's waiting?"
                   />
                 </label>
                 <FloorPhotoField
@@ -1164,21 +1164,27 @@ export function TechnicianFloorShell({
                   jobId={surface.job_id}
                   category="job_work"
                 />
-                <button
-                  type="button"
-                  className="pit-sheet-btn"
-                  disabled={parkPending}
-                  onClick={() =>
-                    dispatchFloorAction(parkAction, {
-                      job_id: surface.job_id!,
-                      work_order_id: surface.work_order_id,
-                      reason: "tool",
-                      note: parkNote.trim(),
-                    })
-                  }
-                >
-                  Tool or lift busy
-                </button>
+                <p className="pit-sheet-or">Write one line, then pick why.</p>
+                <div className="pit-sheet-grid">
+                  {PARK_REASON_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.reason}
+                      type="button"
+                      className="pit-sheet-btn"
+                      disabled={parkPending || !parkNote.trim()}
+                      onClick={() =>
+                        dispatchFloorAction(parkAction, {
+                          job_id: surface.job_id!,
+                          work_order_id: surface.work_order_id,
+                          reason: opt.reason,
+                          note: parkNote.trim(),
+                        })
+                      }
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
                 {parkState?.error ? (
                   <p className="pit-photo-error" role="alert">
                     {parkState.error}

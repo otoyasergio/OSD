@@ -506,7 +506,7 @@ describe("buildTechnicianDocketItems", () => {
     const partsBike = workNow.find((item) => item.work_order_id === "w2");
     expect(partsBike).toMatchObject({
       board_status: "offered",
-      can_start: false,
+      can_start: true,
     });
     expect(partsBike?.queue_notes).toContain("Brakes — waiting on parts");
   });

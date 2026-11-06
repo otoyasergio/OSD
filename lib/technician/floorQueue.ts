@@ -1,9 +1,9 @@
 /**
  * Technician floor queue.
  *
- * One bike on the bench (a running job clock). Docket order is how the
- * line is shown. Any assigned bike in that line can start when the bench
- * is empty. A bike leaves the line only for a standard stop.
+ * One clock at a time. Starting another assigned bike parks the current
+ * one. Docket order is how the line is shown. A tool wait or a customer
+ * approval wait still holds that bike.
  */
 
 import { workOrderStillOnTechnicianFloor } from "@/lib/technician/floorActionModel";
@@ -241,9 +241,9 @@ export function decideFloorQueue(input: {
   bikes.sort((a, b) => comparePosition(a.position, b.position));
   const bench = bikes.find((bike) => bike.lane === "bench") ?? null;
   const line = bikes.filter((bike) => bike.lane === "line");
-  if (!bench) {
-    for (const bike of line) bike.can_start = true;
-  }
+  // A running clock does not lock the rest of the line. Starting one of
+  // these parks the bike that is on the bench.
+  for (const bike of line) bike.can_start = true;
 
   return {
     bench_work_order_id: bench?.work_order_id ?? null,
@@ -259,9 +259,6 @@ export function startRefusal(
   if (!bike) return "START_NOT_NEXT";
   if (bike.lane === "waiting") return "START_WAITING";
   if (bike.lane === "bench") return null;
-  if (decision.bench_work_order_id && decision.bench_work_order_id !== workOrderId) {
-    return "START_BENCH_OCCUPIED";
-  }
   return null;
 }
 

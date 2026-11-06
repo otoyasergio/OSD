@@ -62,6 +62,26 @@ describe("floor queue migration", () => {
     expect(closedBikeSql).not.toContain("floor_park_reason = 'swapped'");
   });
 
+  it("lets any assigned bike start and swaps the bike already on the bench", () => {
+    const freedomSql = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20261106040000_restore_tech_floor_freedom.sql"
+      ),
+      "utf8"
+    );
+    expect(freedomSql).toContain("bench_open");
+    expect(freedomSql).toContain("floor_park_reason = 'swapped'");
+    expect(freedomSql).toContain(
+      "p_reason NOT IN ('parts', 'approval', 'tool', 'other')"
+    );
+    expect(freedomSql).toContain("RAISE EXCEPTION 'JOB_ASSIGNED_TO_OTHER_TECH'");
+    expect(freedomSql).toContain("RAISE EXCEPTION 'WORK_ORDER_NOT_WORKABLE'");
+    expect(freedomSql).not.toContain("START_BENCH_OCCUPIED");
+    expect(freedomSql).not.toContain("START_NOT_NEXT");
+    expect(freedomSql).toContain("'waiting_for_parts'");
+  });
+
   it("lets any assigned bike start and still keeps one clock", () => {
     const anyOrderSql = readFileSync(
       resolve(

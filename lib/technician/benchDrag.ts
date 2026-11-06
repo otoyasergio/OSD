@@ -13,7 +13,7 @@ export function parseDocketDragId(id: string): { jobId: string | null; key: stri
   return { jobId: null, key: id };
 }
 
-/** An assigned in-line bike can be dragged when the bench is empty. Waiting cannot. */
+/** An assigned in-line bike can be dragged onto the bench. Waiting cannot. */
 export function canDragDocketItemToBench(item: DocketItem): boolean {
   if (!item.job_id) return false;
   if (item.board_status === "waiting") return false;

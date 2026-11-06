@@ -389,7 +389,12 @@ export function buildPitBoardSteps(input: {
 export const PARK_REASON_OPTIONS: Array<{
   reason: FloorParkReason;
   label: string;
-}> = [{ reason: "tool", label: "Tool or lift busy" }];
+}> = [
+  { reason: "parts", label: "Parts not here" },
+  { reason: "approval", label: "Needs approval" },
+  { reason: "tool", label: "Tool or lift busy" },
+  { reason: "other", label: "Other interruption" },
+];
 
 export const PROOF_SKIP_OPTIONS = [
   "Nothing visible to show",

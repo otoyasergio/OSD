@@ -531,7 +531,7 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
           enabled: input.can_start === false ? false : start.enabled,
           disabledReason:
             input.can_start === false
-              ? "Finish the bike on the bench before starting another."
+              ? "This bike is waiting. It starts again only from the line."
               : undefined,
           hint: start.sub,
         },
@@ -587,7 +587,7 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
         step: go.step ?? null,
         hint: go.sub,
       },
-      secondary: [{ action: "park", label: "Tool or lift busy", enabled: true }],
+      secondary: [{ action: "park", label: "Park", enabled: true }],
     },
     pending
   );

@@ -244,7 +244,7 @@ describe("decideFloorQueue", () => {
     ).toBe(true);
   });
 
-  it("refuses a different bike while one clock is running", () => {
+  it("starts another assigned bike while one clock is running", () => {
     const decision = decideFloorQueue({
       technician_id: TECH,
       services: [
@@ -263,7 +263,11 @@ describe("decideFloorQueue", () => {
         }),
       ],
     });
-    expect(startRefusal(decision, "next")).toBe("START_BENCH_OCCUPIED");
+    expect(startRefusal(decision, "next")).toBeNull();
+    expect(decision.bikes.find((bike) => bike.work_order_id === "next")?.can_start).toBe(
+      true
+    );
+    expect(startRefusal(decision, "bench")).toBeNull();
   });
 
   it("keeps the running service when its parts are still on order", () => {

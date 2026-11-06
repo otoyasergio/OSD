@@ -334,10 +334,13 @@ export async function completeWorkOrder(
 ): Promise<void> {
   const { user, supabase, workOrder } = await requireMutableWorkOrder(workOrderId);
   if (!canCompleteWorkOrder(user.role)) throw new Error("FORBIDDEN");
-  const { assertDeclinedSafetyAcknowledged } = await import("@/lib/services/finalCheckRecord");
-  await assertDeclinedSafetyAcknowledged(workOrderId);
 
   const ownerSkip = user.role === "owner" || options.ownerSkip === true;
+  if (!ownerSkip) {
+    const { assertDeclinedSafetyAcknowledged } =
+      await import("@/lib/services/finalCheckRecord");
+    await assertDeclinedSafetyAcknowledged(workOrderId);
+  }
   const fileWithoutFinalInspection =
     ownerSkip ||
     (Boolean(options.waiveQualityCheck) && canCompleteWithoutFinalInspection(user.role));

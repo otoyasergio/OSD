@@ -16,6 +16,7 @@ import { pauseJobTime, switchJobTime } from "@/lib/services/jobTimeClock";
 import { updateJobStatus } from "@/lib/services/jobs";
 import { addTechnicianNote } from "@/lib/services/notes";
 import { parkNoteForReason } from "@/lib/status/workDocumentation";
+import { waitOwnerForParkReason } from "@/lib/technician/pitBoard";
 import { assertCanStartJob, syncFloorQueue } from "@/lib/services/floorQueueSync";
 
 const FLOOR_COLUMNS =
@@ -172,16 +173,33 @@ async function recordFloorLine(jobId: string, note: string): Promise<void> {
   });
 }
 
+const TECH_PARK_REASONS = new Set<FloorParkReason>([
+  "parts",
+  "approval",
+  "tool",
+  "other",
+]);
+
+function parkBlockerOwner(
+  reason: FloorParkReason
+): "technician" | "front_desk" | "parts" {
+  if (reason === "parts") return "parts";
+  if (reason === "approval") return "front_desk";
+  if (reason === "tool") return "technician";
+  return waitOwnerForParkReason(reason) === "technician" ? "technician" : "front_desk";
+}
+
 export async function parkJob(
   jobId: string,
   reason: FloorParkReason,
   note?: string | null
 ): Promise<JobFloorRow> {
-  if (reason !== "tool") {
+  if (!TECH_PARK_REASONS.has(reason)) {
     throw new Error("PARK_REASON_NOT_ALLOWED");
   }
   const user = await requireUser();
   const line = parkNoteForReason(reason, note);
+  const blockerOwner = parkBlockerOwner(reason);
 
   // V2: one transaction stops the timer, parks the job, and records the
   // blocker + domain event — no partial states on retry.
@@ -189,11 +207,11 @@ export async function parkJob(
     const result = await callFloorCommand("workflow_v2_park_job", {
       p_job_id: jobId,
       p_actor_user_id: user.user_id,
-      p_reason: "tool",
-      p_owner: "technician",
+      p_reason: reason,
+      p_owner: blockerOwner,
       p_note: line,
       p_idempotency_key: floorIdempotencyKey("park", jobId, user.user_id, {
-        extra: `tool:${line}`,
+        extra: `${reason}:${line}`,
       }),
     });
     if (result.replayed !== true) {
@@ -223,10 +241,11 @@ export async function parkJob(
 
   const supabase = await createClient();
   const now = new Date().toISOString();
-  const waitOwner = "technician";
+  const waitOwner = blockerOwner === "technician" ? "technician" : "front_desk";
   const { data, error } = await supabase
     .from("job")
     .update({
+      status: reason === "parts" ? "waiting_for_parts" : "ready_to_start",
       floor_parked_at: now,
       floor_park_reason: reason,
       floor_wait_owner: waitOwner,
@@ -255,7 +274,7 @@ export async function parkJob(
   });
 
   await recordFloorLine(jobId, line);
-  await openToolBlocker(jobId, user.user_id);
+  await openParkBlocker(jobId, user.user_id, reason, blockerOwner);
 
   return data as JobFloorRow;
 }
@@ -282,13 +301,18 @@ async function clearParkFields(jobId: string): Promise<void> {
   }
 }
 
-async function openToolBlocker(jobId: string, userId: string): Promise<void> {
+async function openParkBlocker(
+  jobId: string,
+  userId: string,
+  reason: FloorParkReason,
+  owner: string
+): Promise<void> {
   try {
     const admin = createAdminClient();
     const { error } = await admin.from("job_blocker").insert({
       job_id: jobId,
-      kind: "tool",
-      owner: "technician",
+      kind: reason,
+      owner,
       opened_by_user_id: userId,
     });
     if (error && error.code !== "23505" && !isUndefinedTableError(error)) {
@@ -324,6 +348,46 @@ async function closeToolBlocker(jobId: string, userId: string): Promise<void> {
 }
 
 /** Same-bike services share one clock. Demote the sibling before the new start. */
+/** Starting a different bike parks whatever clock is already running. */
+async function parkOtherOpenClocks(userId: string, exceptJobId: string): Promise<void> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("job_time_entry")
+    .select("job_id")
+    .eq("user_id", userId)
+    .is("ended_at", null)
+    .neq("job_id", exceptJobId);
+  if (error) {
+    if (isUndefinedTableError(error, "job_time_entry")) return;
+    throw error;
+  }
+  const ids = ((data ?? []) as Array<{ job_id: string }>)
+    .map((row) => row.job_id)
+    .filter((id) => id !== exceptJobId);
+  if (ids.length === 0) return;
+
+  const now = new Date().toISOString();
+  const { error: endError } = await supabase
+    .from("job_time_entry")
+    .update({ ended_at: now })
+    .eq("user_id", userId)
+    .is("ended_at", null)
+    .neq("job_id", exceptJobId);
+  if (endError) throw endError;
+
+  const { error: parkError } = await supabase
+    .from("job")
+    .update({
+      status: "ready_to_start",
+      floor_parked_at: now,
+      floor_park_reason: "swapped",
+      floor_wait_owner: "technician",
+      updated_at: now,
+    })
+    .in("job_id", ids);
+  if (parkError && !isUndefinedColumnError(parkError, "floor_park")) throw parkError;
+}
+
 async function releaseSameBikeClock(
   workOrderId: string,
   exceptJobId: string,
@@ -378,6 +442,7 @@ export async function pullOntoBench(jobId: string): Promise<{
   }
 
   await releaseSameBikeClock(job.work_order_id, jobId, user.user_id);
+  await parkOtherOpenClocks(user.user_id, jobId);
 
   if (job.status !== "in_progress") {
     await updateJobStatus(jobId, "in_progress");
@@ -397,15 +462,17 @@ export async function resumeParkedJob(jobId: string): Promise<JobFloorRow> {
   return result.job;
 }
 
-/** Swap is no longer a floor stop. The advisor's order is the line. */
+/** Starting the other bike parks the one on the bench. */
 export async function swapBenchJob(
-  _fromJobId: string,
-  _toJobId: string
+  fromJobId: string,
+  toJobId: string
 ): Promise<{
   from: JobFloorRow;
   to: JobFloorRow;
 }> {
-  throw new Error("SWAP_NOT_ALLOWED");
+  const result = await pullOntoBench(toJobId);
+  const from = await loadJob(fromJobId);
+  return { from, to: result.job };
 }
 
 /**

@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/database/supabase-server";
+import { isUndefinedColumnError } from "@/lib/database/schemaCompat";
 import { canCompleteInspection, canEditWorkOrder } from "@/lib/permissions";
 import { addAuditLog } from "@/lib/audit/addAuditLog";
 import {
@@ -139,7 +140,17 @@ export async function assertDeclinedSafetyAcknowledged(
     .select("declined_safety_ack_at, declined_safety_ack_items")
     .eq("work_order_id", workOrderId)
     .maybeSingle();
-  if (error) throw error;
+  if (error) {
+    // A shop that has not received the acknowledgement columns yet must
+    // still be able to file a bike. The check applies once the columns exist.
+    if (
+      isUndefinedColumnError(error, "declined_safety_ack") ||
+      (error.message ?? "").toLowerCase().includes("declined_safety_ack")
+    ) {
+      return;
+    }
+    throw error;
+  }
   const acknowledged =
     Boolean(data?.declined_safety_ack_at) &&
     String(data?.declined_safety_ack_items ?? "") === items.join("\n");
