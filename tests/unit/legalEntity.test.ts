@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertContractNamesLegalEntity,
   contractNamesLegalEntity,
+  visibleContractText,
 } from "@/lib/contracts/legalEntity";
 import { toFormErrorMessage } from "@/lib/services/errors";
 
@@ -24,6 +25,13 @@ const packet = {
 
 const SEEDED_TRADE_NAME =
   "<h2>Toronto Moto — Drop-Off Agreement</h2><p>By signing below, the customer acknowledges and agrees to the following terms for motorcycle service at Toronto Moto.</p>";
+
+const SCRIPT_ONLY =
+  "<script>OTOMOTO TORONTO MOTO INC.</script><p>Toronto Moto stores the motorcycle.</p>";
+const ATTRIBUTE_ONLY =
+  '<p title="OTOMOTO TORONTO MOTO INC.">Toronto Moto stores the motorcycle.</p>';
+const SPLIT_ACROSS_TAGS =
+  "<p>Otomoto <strong>Toronto</strong>&nbsp;Moto Inc stores the motorcycle.</p>";
 
 describe("contract legal entity", () => {
   it("rejects the original trade-name seed and accepts the published contract", () => {
@@ -45,10 +53,24 @@ describe("contract legal entity", () => {
     );
   });
 
+  it("counts the legal name only in text a signer can see", () => {
+    expect(visibleContractText(SCRIPT_ONLY).toLowerCase()).not.toContain("otomoto");
+    expect(visibleContractText(ATTRIBUTE_ONLY).toLowerCase()).not.toContain("otomoto");
+    expect(contractNamesLegalEntity(SCRIPT_ONLY)).toBe(false);
+    expect(contractNamesLegalEntity(ATTRIBUTE_ONLY)).toBe(false);
+    expect(contractNamesLegalEntity(SPLIT_ACROSS_TAGS)).toBe(true);
+    expect(() => assertContractNamesLegalEntity(SCRIPT_ONLY)).toThrow(
+      "CONTRACT_LEGAL_ENTITY_REQUIRED"
+    );
+  });
+
   it("matches the App Builder action on the same contract bodies", () => {
     for (const bodyHtml of [
       SEEDED_TRADE_NAME,
       "<p>This agreement is made with OTOMOTO TORONTO MOTO INC.</p>",
+      SCRIPT_ONLY,
+      ATTRIBUTE_ONLY,
+      SPLIT_ACROSS_TAGS,
     ]) {
       const named = contractNamesLegalEntity(bodyHtml);
       const result = composeDropOffAgreement({ ...packet, body_html: bodyHtml });

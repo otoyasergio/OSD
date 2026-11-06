@@ -56,17 +56,29 @@ function personName(value: string): string {
   return value.replace(/,/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** ISO date for a real calendar day between 1900 and 2100, otherwise blank. */
+function calendarDate(year: number, month: number, day: number): string {
+  if (year < 1900 || year > 2100) return "";
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return "";
+  }
+  return date.toISOString().slice(0, 10);
+}
+
 /** AAMVA dates are usually MMDDCCYY. Some cards use CCYYMMDD. */
 export function aamvaDateToIso(value: string | undefined): string {
   const digits = (value ?? "").replace(/\D/g, "");
   if (digits.length !== 8) return "";
-  const asMonthFirst = `${digits.slice(4, 8)}-${digits.slice(0, 2)}-${digits.slice(2, 4)}`;
-  const asYearFirst = `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
-  const monthFirstYear = Number(digits.slice(4, 8));
-  if (monthFirstYear >= 1900 && monthFirstYear <= 2100) return asMonthFirst;
-  const yearFirst = Number(digits.slice(0, 4));
-  if (yearFirst >= 1900 && yearFirst <= 2100) return asYearFirst;
-  return "";
+  const part = (start: number, end: number) => Number(digits.slice(start, end));
+  return (
+    calendarDate(part(4, 8), part(0, 2), part(2, 4)) ||
+    calendarDate(part(0, 4), part(4, 6), part(6, 8))
+  );
 }
 
 export function parseAamvaLicence(raw: string): LicenceScan | null {

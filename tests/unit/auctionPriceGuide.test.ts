@@ -194,7 +194,7 @@ describe("make and model matching", () => {
 });
 
 describe("auction price summary", () => {
-  it("uses the median of sold prices and ignores unsold lots", () => {
+  it("uses the median of sold prices and ignores unsold and withdrawn lots", () => {
     expect(median([100, 400, 200, 300])).toBe(250);
     const guide = guideFrom({
       bike: iron,
@@ -206,6 +206,12 @@ describe("auction price summary", () => {
           title: "unsold",
           priceUsd: 20000,
           status: "unsold",
+          saleDate: "2024-05-01",
+        }),
+        lot({
+          title: "withdrawn",
+          priceUsd: 20000,
+          status: "withdrawn",
           saleDate: "2024-05-01",
         }),
         lot({
@@ -449,6 +455,60 @@ describe("ALT/FNDATA records", () => {
     expect(mapped?.saleDate).toBe("2024-01-15");
     expect(mapped?.lotUrl).toBeNull();
     expect(safeHttpUrl("https://example.com/lot")).toBe("https://example.com/lot");
+  });
+
+  it("drops an impossible sale date and an amount that cannot be a sale price", () => {
+    const impossible = mapAltfnMotorcycleRow({
+      item_title: "2014 Honda CB500F",
+      manufacturer_name: "Honda",
+      model: "CB500F",
+      production_year: 2014,
+      usd_price_decimal: "0",
+      sale_date: "2024-02-31",
+      status: "Sold",
+    });
+    expect(impossible?.saleDate).toBeNull();
+    expect(impossible?.priceUsd).toBeNull();
+
+    for (const amount of ["-5", "50000001", "$0"]) {
+      expect(
+        mapAltfnMotorcycleRow({
+          item_title: "2014 Honda CB500F",
+          manufacturer_name: "Honda",
+          model: "CB500F",
+          usd_price_decimal: amount,
+          status: "Sold",
+        })?.priceUsd
+      ).toBeNull();
+    }
+  });
+
+  it("marks bought-in and withdrawn lots as not sold", () => {
+    expect(
+      mapAltfnMotorcycleRow({
+        item_title: "2014 Honda CB500F",
+        manufacturer_name: "Honda",
+        model: "CB500F",
+        usd_price_decimal: 4500,
+        status: "Bought-in",
+      })?.status
+    ).toBe("unsold");
+    expect(
+      mapAltfnMotorcycleRow({
+        item_title: "2014 Honda CB500F",
+        manufacturer_name: "Honda",
+        model: "CB500F",
+        usd_price_decimal: 4500,
+        status: "Withdrawn",
+      })?.status
+    ).toBe("withdrawn");
+  });
+
+  it("rejects a source slug that is not safe to store and an empty file", () => {
+    expect(() => recordsFromAuctionFile("[]", "../secrets")).toThrow(/slug/);
+    expect(() => recordsFromAuctionFile("{}", "altfndata")).toThrow(/array of rows/);
+    expect(recordsFromAuctionFile(" \n ", " AltFnData ")).toEqual([]);
+    expect(recordsFromAuctionFile("title,make\n", "iconic")).toEqual([]);
   });
 
   it("does not treat a pound hammer as US dollars", () => {
