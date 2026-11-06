@@ -184,6 +184,76 @@ describe("readUnreadScanMail", () => {
     );
     expect(result.messages[0]?.text).not.toContain("FullSystemReport.pdf");
   });
+
+  it("skips an empty or oversized PDF and does not download a third one", async () => {
+    const huge = Buffer.alloc(8_000_001).toString("base64url");
+    const fetchImpl = vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes("/attachments/huge")) {
+        return new Response(JSON.stringify({ data: huge }), { status: 200 });
+      }
+      if (href.includes("/attachments/empty")) {
+        return new Response(JSON.stringify({ data: "" }), { status: 200 });
+      }
+      if (href.includes("/messages/m-big")) {
+        return new Response(
+          JSON.stringify({
+            id: "m-big",
+            snippet: "",
+            payload: {
+              mimeType: "multipart/mixed",
+              headers: [
+                { name: "Subject", value: "scan" },
+                { name: "From", value: "TopGuru <reports@topdon.example>" },
+              ],
+              parts: [
+                {
+                  mimeType: "text/plain",
+                  body: {
+                    data: Buffer.from("TOPDON\nNo fault codes", "utf8").toString(
+                      "base64url"
+                    ),
+                  },
+                },
+                {
+                  mimeType: "application/pdf",
+                  filename: "huge.pdf",
+                  body: { attachmentId: "huge" },
+                },
+                {
+                  mimeType: "application/pdf",
+                  filename: "empty.pdf",
+                  body: { attachmentId: "empty" },
+                },
+                {
+                  mimeType: "application/pdf",
+                  filename: "third.pdf",
+                  body: { attachmentId: "third" },
+                },
+              ],
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response("unexpected", { status: 500 });
+    });
+
+    const result = await readUnreadScanMail({
+      refreshToken: "refresh-1",
+      clientId: "client",
+      clientSecret: "secret",
+      accessToken: "access-1",
+      messageIds: ["m-big"],
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result.messages[0]?.text).toContain("No fault codes");
+    const urls = fetchImpl.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((url) => url.includes("/attachments/huge"))).toBe(true);
+    expect(urls.some((url) => url.includes("/attachments/empty"))).toBe(true);
+    expect(urls.some((url) => url.includes("/attachments/third"))).toBe(false);
+  });
 });
 
 function initUnused(calls: unknown[][]): boolean {

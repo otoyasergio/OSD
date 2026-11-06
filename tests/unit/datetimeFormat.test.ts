@@ -128,6 +128,26 @@ describe("nextShopBusinessCompletionValue", () => {
     expect(sunday.label).toContain("Closed");
   });
 
+  it("uses Saturday hours and closes when the posted minute starts", () => {
+    const saturdayOpen = shopClockStatus(new Date("2026-07-18T14:00:00.000Z"));
+    expect(saturdayOpen.open).toBe(true);
+    expect(saturdayOpen.label).toMatch(/^Sat /);
+    expect(saturdayOpen.label).toContain(
+      `Open until ${formatTime("2026-07-18T20:00:00.000Z")}`
+    );
+
+    const beforeOpen = shopClockStatus(new Date("2026-07-18T13:59:00.000Z"));
+    expect(beforeOpen.open).toBe(false);
+    expect(beforeOpen.label).toContain("Closed");
+
+    const atClose = shopClockStatus(new Date("2026-07-18T20:00:00.000Z"));
+    expect(atClose.open).toBe(false);
+
+    const weekdayClose = shopClockStatus(new Date("2026-07-16T23:00:00.000Z"));
+    expect(weekdayClose.open).toBe(false);
+    expect(weekdayClose.label).toMatch(/^Thu /);
+  });
+
   it("skips configured closure dates", () => {
     expect(
       nextShopBusinessCompletionValue("2026-07-15T16:00:00.000Z", [

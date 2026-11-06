@@ -7,6 +7,7 @@ import {
   diagnosticToCreate,
   filingsForUnreadMail,
   needsLookForUnreadPdf,
+  pdfAttachments,
   mileageDecision,
   readOdometer,
   readTopGuruReport,
@@ -155,6 +156,39 @@ describe("scanAddressAllowed", () => {
     expect(
       scanAddressAllowed("diagnostics@torontomoto.com", "diagnostics@torontomoto.com")
     ).toBe(false);
+  });
+});
+
+describe("pdfAttachments", () => {
+  it("reads at most two PDFs and ignores other files", () => {
+    const message = {
+      id: "m1",
+      payload: {
+        mimeType: "multipart/mixed",
+        parts: [
+          { mimeType: "text/plain", filename: "notes.txt", body: { data: "a" } },
+          {
+            mimeType: "application/octet-stream",
+            filename: "scan.PDF",
+            body: { attachmentId: "first" },
+          },
+          {
+            mimeType: "application/pdf",
+            filename: "second.pdf",
+            body: { data: "cGRm" },
+          },
+          {
+            mimeType: "application/pdf",
+            filename: "third.pdf",
+            body: { attachmentId: "third" },
+          },
+        ],
+      },
+    };
+    expect(pdfAttachments(message)).toEqual([
+      { attachmentId: "first", data: null },
+      { attachmentId: null, data: "cGRm" },
+    ]);
   });
 });
 
@@ -416,6 +450,62 @@ describe("filingsForUnreadMail", () => {
       inspectionId: "insp-gs",
       motorcycleId: "bike-1",
     });
+  });
+
+  it("does not file an invoice that quotes a VIN and a fault code", () => {
+    const text = [
+      "Invoice 4821",
+      "VIN WB10J9303KZH99235",
+      "P0301 Misfire on the previous receipt",
+      "Balance due",
+    ].join("\n");
+    const filings = filingsForUnreadMail({
+      messages: [{ id: "invoice", text }],
+      waiting: [],
+      bikes: [{ motorcycleId: "bike-1", vin: "WB10J9303KZH99235" }],
+      alreadyFiledIds: [],
+    });
+    expect(filings).toEqual([]);
+    expect(needsLookForUnreadPdf({ id: "invoice", text })).toMatchObject({
+      outcome: "needs_confirmation",
+      motorcycleId: null,
+      workOrderId: null,
+      vin: null,
+    });
+  });
+
+  it("files a TopGuru DTC list that never says Topdon", () => {
+    const filings = filingsForUnreadMail({
+      messages: [
+        {
+          id: "dtc",
+          text: [
+            "VIN WB10J9303KZH99235",
+            "DTC Description Status",
+            "480682 ABS: Pullaway assistant deactivated",
+          ].join("\n"),
+        },
+      ],
+      waiting: [],
+      bikes: [{ motorcycleId: "bike-1", vin: "WB10J9303KZH99235" }],
+      alreadyFiledIds: [],
+    });
+    expect(filings[0]).toMatchObject({
+      gmailMessageId: "dtc",
+      outcome: "codes",
+      motorcycleId: "bike-1",
+      workOrderId: null,
+      vin: "WB10J9303KZH99235",
+    });
+  });
+
+  it("stores only the first 20,000 characters of a non-report PDF", () => {
+    const look = needsLookForUnreadPdf({
+      id: "long",
+      text: `Invoice\n${"x".repeat(25_000)}`,
+    });
+    expect(look?.reportText).toHaveLength(20_000);
+    expect(look?.reportText.startsWith("Invoice\n")).toBe(true);
   });
 
   it("keeps an unreadable PDF as a look with no bike", () => {
