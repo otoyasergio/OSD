@@ -333,7 +333,10 @@ export type FloorActionModelInput = {
   qc_assignee_is_me?: boolean;
   can_safety?: boolean;
   has_swap_targets?: boolean;
-  /** False when a bike ahead of this one is still in the line. */
+  /**
+   * False when this assigned bike cannot start because another clock is
+   * already running. Docket order does not turn this off.
+   */
   can_start?: boolean;
   pending_action?: boolean;
 };
@@ -527,7 +530,9 @@ export function buildFloorActionModel(input: FloorActionModelInput): FloorAction
           label: start.label,
           enabled: input.can_start === false ? false : start.enabled,
           disabledReason:
-            input.can_start === false ? "The bike ahead of this one is next." : undefined,
+            input.can_start === false
+              ? "Finish the bike on the bench before starting another."
+              : undefined,
           hint: start.sub,
         },
         secondary: [],

@@ -140,7 +140,7 @@ describe("decideFloorQueue", () => {
     expect(startRefusal(decision, "bike")).toBeNull();
   });
 
-  it("does not let a parts wait skip a bike that is ahead in line", () => {
+  it("lets a parts-waiting bike start even when another bike is earlier in line", () => {
     const decision = decideFloorQueue({
       technician_id: TECH,
       services: [
@@ -159,7 +159,7 @@ describe("decideFloorQueue", () => {
         }),
       ],
     });
-    expect(startRefusal(decision, "parts")).toBe("START_NOT_NEXT");
+    expect(startRefusal(decision, "parts")).toBeNull();
     expect(startRefusal(decision, "ahead")).toBeNull();
   });
 
@@ -216,7 +216,7 @@ describe("decideFloorQueue", () => {
     expect(startRefusal(decision, "closed")).toBe("START_NOT_NEXT");
   });
 
-  it("starts only the first bike in line when the bench is empty", () => {
+  it("starts any assigned bike when the bench is empty", () => {
     const decision = decideFloorQueue({
       technician_id: TECH,
       services: [
@@ -235,10 +235,13 @@ describe("decideFloorQueue", () => {
       ],
     });
     expect(startRefusal(decision, "first")).toBeNull();
-    expect(startRefusal(decision, "second")).toBe("START_NOT_NEXT");
+    expect(startRefusal(decision, "second")).toBeNull();
     expect(decision.bikes.find((bike) => bike.work_order_id === "first")?.can_start).toBe(
       true
     );
+    expect(
+      decision.bikes.find((bike) => bike.work_order_id === "second")?.can_start
+    ).toBe(true);
   });
 
   it("refuses a different bike while one clock is running", () => {
@@ -352,9 +355,10 @@ describe("decideFloorQueue", () => {
       blockers,
     });
     const returned = decision.bikes.find((bike) => bike.work_order_id === "returned");
-    expect(returned).toMatchObject({ lane: "line", position: 4, can_start: false });
+    expect(returned).toMatchObject({ lane: "line", position: 4, can_start: true });
     expect(decision.bench_work_order_id).toBeNull();
-    expect(startRefusal(decision, "returned")).toBe("START_NOT_NEXT");
+    expect(startRefusal(decision, "returned")).toBeNull();
+    expect(startRefusal(decision, "ahead")).toBeNull();
   });
 });
 
