@@ -61,4 +61,18 @@ describe("floor queue migration", () => {
     expect(closedBikeSql).toContain("kind IN ('swapped', 'other')");
     expect(closedBikeSql).not.toContain("floor_park_reason = 'swapped'");
   });
+
+  it("lets any assigned bike start and still keeps one clock", () => {
+    const anyOrderSql = readFileSync(
+      resolve(
+        process.cwd(),
+        "supabase/migrations/20261106020000_start_any_assigned_bike.sql"
+      ),
+      "utf8"
+    );
+    expect(anyOrderSql).toContain("RAISE EXCEPTION 'START_BENCH_OCCUPIED'");
+    expect(anyOrderSql).toContain("RAISE EXCEPTION 'JOB_ASSIGNED_TO_OTHER_TECH'");
+    expect(anyOrderSql).not.toContain("START_NOT_NEXT");
+    expect(anyOrderSql).not.toContain("docket_position");
+  });
 });

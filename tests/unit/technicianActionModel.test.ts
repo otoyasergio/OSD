@@ -213,6 +213,20 @@ describe("buildFloorActionModel matrix", () => {
     assertInvariant(blocked, "inspection ahead of the line");
   });
 
+  it("says the bench is busy when another clock is already running", () => {
+    const blocked = modelFor({
+      job_status: "ready_to_start",
+      floor_acknowledged_at: TS,
+      job_timer_running: false,
+      can_start: false,
+    });
+    expect(blocked.primary).toMatchObject({
+      action: "pull_onto_bench",
+      enabled: false,
+      disabledReason: "Finish the bike on the bench before starting another.",
+    });
+  });
+
   it("starts an offered or next bike in one tap", () => {
     const offered = modelFor({
       job_status: "ready_to_start",

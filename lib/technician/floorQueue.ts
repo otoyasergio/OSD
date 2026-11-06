@@ -1,8 +1,9 @@
 /**
  * Technician floor queue.
  *
- * One bike on the bench (a running job clock). The advisor's docket order
- * is the line. A bike leaves that line only for a standard stop.
+ * One bike on the bench (a running job clock). Docket order is how the
+ * line is shown. Any assigned bike in that line can start when the bench
+ * is empty. A bike leaves the line only for a standard stop.
  */
 
 import { workOrderStillOnTechnicianFloor } from "@/lib/technician/floorActionModel";
@@ -240,7 +241,9 @@ export function decideFloorQueue(input: {
   bikes.sort((a, b) => comparePosition(a.position, b.position));
   const bench = bikes.find((bike) => bike.lane === "bench") ?? null;
   const line = bikes.filter((bike) => bike.lane === "line");
-  if (!bench && line[0]) line[0].can_start = true;
+  if (!bench) {
+    for (const bike of line) bike.can_start = true;
+  }
 
   return {
     bench_work_order_id: bench?.work_order_id ?? null,
@@ -259,7 +262,6 @@ export function startRefusal(
   if (decision.bench_work_order_id && decision.bench_work_order_id !== workOrderId) {
     return "START_BENCH_OCCUPIED";
   }
-  if (!bike.can_start) return "START_NOT_NEXT";
   return null;
 }
 

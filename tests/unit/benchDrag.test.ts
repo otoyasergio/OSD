@@ -42,7 +42,7 @@ describe("benchDrag", () => {
     expect(docketDragId(item())).toBe("job:job-1");
   });
 
-  it("drags only the first in-line bike, never a waiting bike", () => {
+  it("drags an assigned in-line bike, never a waiting or busy-bench bike", () => {
     expect(
       canDragDocketItemToBench(item({ board_status: "offered", can_start: true }))
     ).toBe(true);
