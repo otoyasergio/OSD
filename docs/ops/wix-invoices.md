@@ -47,6 +47,8 @@ A customer's store credit goes on the open Wix invoice as a `Customer credit` di
 
 Deleting a draft in Wix returns everything it held. A paid or voided invoice keeps what it holds and takes no more.
 
+A void does not return credit, because the app cannot tell a cancelled visit from one paid by cash, e-transfer, cheque, or terminal. When staff void an invoice to cancel a visit the customer did not pay for, staff put the credit back on the customer by hand.
+
 If intake stops after Wix created the invoice, the retry uses the same invoice. To abandon that intake instead, delete the draft in Wix so the credit returns.
 
 ## Licence scan
