@@ -184,6 +184,81 @@ describe("readUnreadScanMail", () => {
     );
     expect(result.messages[0]?.text).not.toContain("FullSystemReport.pdf");
   });
+
+  it("reads the inbox after Google returns one server error", async () => {
+    const plain = Buffer.from("P0301 Misfire", "utf8").toString("base64url");
+    let listAttempts = 0;
+    const fetchImpl = vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes("oauth2.googleapis.com")) {
+        return new Response(JSON.stringify({ access_token: "access-1" }), {
+          status: 200,
+        });
+      }
+      if (href.includes("/messages/m1")) {
+        return new Response(
+          JSON.stringify({
+            id: "m1",
+            snippet: "",
+            payload: {
+              mimeType: "text/plain",
+              headers: [
+                { name: "Subject", value: "TopScan report" },
+                { name: "From", value: "tech@shop.example" },
+              ],
+              body: { data: plain },
+            },
+          }),
+          { status: 200 }
+        );
+      }
+      if (href.includes("/messages?")) {
+        listAttempts += 1;
+        if (listAttempts === 1) return new Response("busy", { status: 503 });
+        return new Response(JSON.stringify({ messages: [{ id: "m1" }] }), {
+          status: 200,
+        });
+      }
+      return new Response("unexpected", { status: 500 });
+    });
+
+    const result = await readUnreadScanMail({
+      refreshToken: "refresh-1",
+      clientId: "client",
+      clientSecret: "secret",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(listAttempts).toBe(2);
+    expect(result.messages.map((message) => message.id)).toEqual(["m1"]);
+  });
+
+  it("stops reading after a second server error", async () => {
+    let listAttempts = 0;
+    const fetchImpl = vi.fn(async (url: string) => {
+      const href = String(url);
+      if (href.includes("oauth2.googleapis.com")) {
+        return new Response(JSON.stringify({ access_token: "access-1" }), {
+          status: 200,
+        });
+      }
+      if (href.includes("/messages?")) {
+        listAttempts += 1;
+        return new Response("down", { status: 503 });
+      }
+      return new Response("unexpected", { status: 500 });
+    });
+
+    await expect(
+      readUnreadScanMail({
+        refreshToken: "refresh-1",
+        clientId: "client",
+        clientSecret: "secret",
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      })
+    ).rejects.toThrow("SCAN_MAIL_READ_FAILED");
+    expect(listAttempts).toBe(2);
+  });
 });
 
 function initUnused(calls: unknown[][]): boolean {

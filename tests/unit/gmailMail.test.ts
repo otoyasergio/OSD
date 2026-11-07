@@ -5,6 +5,7 @@ import {
   buildGmailMime,
   exchangeGmailAuthorizationCode,
   gmailAuthorizationUrl,
+  gmailRequest,
   revokeGmailRefreshToken,
   sendGmailApiMessage,
   toGmailRaw,
@@ -158,6 +159,127 @@ describe("sendGmailApiMessage", () => {
 
     expect(result.id).toBe("msg-2");
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("tries the message send once more after a timeout", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "access-1" }), { status: 200 })
+      )
+      .mockRejectedValueOnce(timeoutError())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "msg-3" }), { status: 200 })
+      );
+
+    const result = await sendGmailApiMessage({
+      refreshToken: "refresh-1",
+      clientId: "client",
+      clientSecret: "secret",
+      fromAddress: "info@torontomoto.com",
+      to: "ada@example.com",
+      subject: "Ready",
+      html: "<p>Ready</p>",
+      text: "Ready",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result.id).toBe("msg-3");
+    const sendCalls = fetchImpl.mock.calls.filter((call) =>
+      String(call[0]).includes("/messages/send")
+    );
+    expect(sendCalls).toHaveLength(2);
+  });
+});
+
+describe("gmailRequest", () => {
+  it("retries a server error once and gives the second try 45 seconds", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(new Response("sent", { status: 200 }));
+
+    const response = await gmailRequest(
+      fetchImpl as unknown as typeof fetch,
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+      { method: "POST" }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("sent");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(timeout).toHaveBeenNthCalledWith(1, 15_000);
+    expect(timeout).toHaveBeenNthCalledWith(2, 45_000);
+    timeout.mockRestore();
+  });
+
+  it("returns a rate limit without a second send", async () => {
+    const fetchImpl = vi.fn(async () => new Response("slow down", { status: 429 }));
+    const response = await gmailRequest(
+      fetchImpl as unknown as typeof fetch,
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    );
+    expect(response.status).toBe(429);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops after a second timeout", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw timeoutError();
+    });
+    await expect(
+      gmailRequest(
+        fetchImpl as unknown as typeof fetch,
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+      )
+    ).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a network error that is not a timeout", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("ECONNRESET");
+    });
+    await expect(
+      gmailRequest(
+        fetchImpl as unknown as typeof fetch,
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+      )
+    ).rejects.toThrow("ECONNRESET");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the second server error instead of trying a third time", async () => {
+    const fetchImpl = vi.fn(async () => new Response("down", { status: 500 }));
+    const response = await gmailRequest(
+      fetchImpl as unknown as typeof fetch,
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    );
+    expect(response.status).toBe(500);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries when cancelling the failed body throws", async () => {
+    const first = new Response("busy", { status: 502 });
+    Object.defineProperty(first, "body", {
+      value: {
+        cancel: async () => {
+          throw new Error("cancel failed");
+        },
+      },
+    });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(first)
+      .mockResolvedValueOnce(new Response("sent", { status: 200 }));
+
+    const response = await gmailRequest(
+      fetchImpl as unknown as typeof fetch,
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+    );
+    expect(response.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });
 
