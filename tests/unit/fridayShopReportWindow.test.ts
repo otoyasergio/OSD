@@ -40,6 +40,11 @@ describe("isWeeklyShopReportDue", () => {
     expect(isWeeklyShopReportDue(new Date("2026-11-07T17:00:00.000Z"))).toBe(false);
     // Friday Oct 30, 2026 9:00 p.m. EDT, the spare summer UTC slot
     expect(isWeeklyShopReportDue(new Date("2026-10-31T01:00:00.000Z"))).toBe(true);
+    // Saturday Nov 7, 2026 11:59 a.m. EST is still inside the catch-up.
+    expect(isWeeklyShopReportDue(new Date("2026-11-07T16:59:00.000Z"))).toBe(true);
+    // Sunday Nov 8, 2026 8:00 a.m. EST and Thursday Nov 5, 2026 9:00 p.m. EST are closed.
+    expect(isWeeklyShopReportDue(new Date("2026-11-08T13:00:00.000Z"))).toBe(false);
+    expect(isWeeklyShopReportDue(new Date("2026-11-06T02:00:00.000Z"))).toBe(false);
   });
 
   it("closes a late catch-up at Friday 8:00 p.m.", () => {
@@ -48,6 +53,21 @@ describe("isWeeklyShopReportDue", () => {
     );
     expect(weeklyShopReportAsOf(new Date("2026-11-07T01:30:00.000Z")).toISOString()).toBe(
       "2026-11-07T01:30:00.000Z"
+    );
+    // Friday Nov 6, 2026 8:59 p.m. EST is still the live hour.
+    expect(weeklyShopReportAsOf(new Date("2026-11-07T01:59:00.000Z")).toISOString()).toBe(
+      "2026-11-07T01:59:00.000Z"
+    );
+    // Friday Nov 6, 2026 9:00 p.m. EST is the first minute after that hour.
+    expect(weeklyShopReportAsOf(new Date("2026-11-07T02:00:00.000Z")).toISOString()).toBe(
+      "2026-11-07T01:00:00.000Z"
+    );
+    // Summer spare slot: Friday Oct 30, 2026 9:00 p.m. EDT, and Saturday 9:00 a.m. EDT.
+    expect(weeklyShopReportAsOf(new Date("2026-10-31T01:00:00.000Z")).toISOString()).toBe(
+      "2026-10-31T00:00:00.000Z"
+    );
+    expect(weeklyShopReportAsOf(new Date("2026-10-31T13:00:00.000Z")).toISOString()).toBe(
+      "2026-10-31T00:00:00.000Z"
     );
   });
 });

@@ -85,6 +85,27 @@ describe("weekly shop report cron", () => {
     expect(send).toHaveBeenCalledWith(new Date("2026-11-07T01:00:00.000Z"));
   });
 
+  it("closes the spare summer slot at Friday 8:00 p.m., not 9:00 p.m.", async () => {
+    vi.setSystemTime(new Date("2026-10-31T01:00:00.000Z"));
+    send.mockResolvedValueOnce({ ok: true, messageId: "gmail-3" });
+
+    const response = await GET(request("Bearer cron-secret"));
+
+    expect(response.status).toBe(200);
+    expect(send).toHaveBeenCalledWith(new Date("2026-10-31T00:00:00.000Z"));
+  });
+
+  it("skips Saturday noon", async () => {
+    vi.setSystemTime(new Date("2026-11-07T17:00:00.000Z"));
+    const response = await GET(request("Bearer cron-secret"));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      skipped: "outside_window",
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("returns 500 with the email code when the mailbox is not configured", async () => {
     send.mockRejectedValueOnce(new Error("EMAIL_NOT_CONFIGURED"));
     const response = await GET(request("Bearer cron-secret"));
