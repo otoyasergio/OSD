@@ -23,11 +23,14 @@ import {
   workOrderLeftTechDocket,
 } from "@/lib/technician/floorActionModel";
 import { nextDocketPosition } from "@/lib/technician/docketOrder";
+import {
+  releaseDispatchedBench,
+  type DispatchReleaseClient,
+} from "@/lib/technician/dispatchRelease";
 import { assertViewerCanAccessWorkOrderLocation } from "@/lib/workOrders/assignmentVisibility";
 import {
   getOptionalColumnSupport,
   isUndefinedColumnError,
-  isUndefinedTableError,
   OPTIONAL_COLUMNS,
   setOptionalColumnSupport,
 } from "@/lib/database/schemaCompat";
@@ -242,23 +245,12 @@ export async function assignUnassignedJobsOnWorkOrderToTechnician(
   return { assigned_count };
 }
 
-/** Stop a running clock when the front office takes the bike off that tech. */
+/**
+ * Stop the running clock and take the visit off the bench. A job left
+ * in progress with no clock still blocks the technician's next start.
+ */
 async function endOpenClocksOnWorkOrder(supabase: DbClient, workOrderId: string) {
-  const { data: jobs, error } = await supabase
-    .from("job")
-    .select("job_id")
-    .eq("work_order_id", workOrderId);
-  if (error) throw error;
-  const jobIds = (jobs ?? []).map((row) => row.job_id as string);
-  if (jobIds.length === 0) return;
-
-  const { error: clockError } = await supabase
-    .from("job_time_entry")
-    .update({ ended_at: new Date().toISOString() })
-    .in("job_id", jobIds)
-    .is("ended_at", null);
-  if (clockError && isUndefinedTableError(clockError, "job_time_entry")) return;
-  if (clockError) throw clockError;
+  await releaseDispatchedBench(supabase as unknown as DispatchReleaseClient, workOrderId);
 }
 
 /**
