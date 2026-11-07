@@ -114,6 +114,10 @@ type TokenPayload = {
   error?: string | { status?: string; message?: string };
 };
 
+const GMAIL_TIMEOUT_MS = 15_000;
+const GMAIL_RETRY_TIMEOUT_MS = 45_000;
+const RETRYABLE_GMAIL_STATUS = new Set([500, 502, 503, 504]);
+
 function failureCode(payload: TokenPayload | null): string {
   const error = payload?.error;
   if (error === "invalid_grant") return "GMAIL_RECONNECT_REQUIRED";
@@ -121,6 +125,40 @@ function failureCode(payload: TokenPayload | null): string {
     return "GMAIL_RECONNECT_REQUIRED";
   }
   return "EMAIL_SEND_FAILED";
+}
+
+function isGmailTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === "TimeoutError";
+}
+
+/**
+ * One extra try when Google hangs or returns a server error. The second
+ * attempt gets a longer timeout so a large weekly report can finish.
+ */
+export async function gmailRequest(
+  fetchImpl: typeof fetch,
+  url: string,
+  init: RequestInit = {}
+): Promise<Response> {
+  const timeouts = [GMAIL_TIMEOUT_MS, GMAIL_RETRY_TIMEOUT_MS];
+  let lastError: unknown;
+  for (let attempt = 0; attempt < timeouts.length; attempt += 1) {
+    try {
+      const response = await fetchImpl(url, {
+        ...init,
+        signal: AbortSignal.timeout(timeouts[attempt]!),
+      });
+      if (RETRYABLE_GMAIL_STATUS.has(response.status) && attempt === 0) {
+        await response.body?.cancel().catch(() => undefined);
+        continue;
+      }
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (!isGmailTimeout(error) || attempt === timeouts.length - 1) throw error;
+    }
+  }
+  throw lastError;
 }
 
 async function readJson(response: Response): Promise<TokenPayload | null> {
@@ -137,17 +175,20 @@ export async function refreshGmailAccessToken(input: {
   clientSecret: string;
   fetchImpl: typeof fetch;
 }): Promise<{ accessToken: string; refreshToken: string | null }> {
-  const response = await input.fetchImpl("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: input.clientId,
-      client_secret: input.clientSecret,
-      refresh_token: input.refreshToken,
-      grant_type: "refresh_token",
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
+  const response = await gmailRequest(
+    input.fetchImpl,
+    "https://oauth2.googleapis.com/token",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: input.clientId,
+        client_secret: input.clientSecret,
+        refresh_token: input.refreshToken,
+        grant_type: "refresh_token",
+      }),
+    }
+  );
   const payload = await readJson(response);
   if (!response.ok || !payload?.access_token) {
     throw new Error(failureCode(payload));
@@ -239,7 +280,8 @@ export async function sendGmailApiMessage(input: {
       text: input.text,
     })
   );
-  const response = await fetchImpl(
+  const response = await gmailRequest(
+    fetchImpl,
     "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
     {
       method: "POST",
@@ -248,7 +290,6 @@ export async function sendGmailApiMessage(input: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ raw }),
-      signal: AbortSignal.timeout(15_000),
     }
   );
   const payload = await readJson(response);

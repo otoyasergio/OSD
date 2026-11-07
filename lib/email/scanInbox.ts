@@ -1,4 +1,4 @@
-import { refreshGmailAccessToken } from "@/lib/email/gmail";
+import { gmailRequest, refreshGmailAccessToken } from "@/lib/email/gmail";
 import { textFromPdf } from "@/lib/email/pdfText";
 import {
   pdfAttachments,
@@ -22,9 +22,8 @@ async function gmailGet(
   accessToken: string,
   path: string
 ): Promise<unknown> {
-  const response = await fetchImpl(`${GMAIL_API}${path}`, {
+  const response = await gmailRequest(fetchImpl, `${GMAIL_API}${path}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
-    signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error("SCAN_MAIL_READ_FAILED");
   return response.json();

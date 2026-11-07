@@ -171,14 +171,39 @@ export const FRIDAY_SHOP_REPORT_HOUR = 20;
 
 /**
  * True during the 8:00 p.m. America/Toronto hour on Friday.
- * Vercel cron is UTC, so the route is scheduled at both Saturday 00:00 UTC
- * and Saturday 01:00 UTC and this gate keeps a single send across DST.
+ * The UTC schedule fires an hour earlier or later across daylight saving.
+ * This hour is the one that sends the report as of the current minute.
  */
 export function isFridayShopReportHour(now: Date = new Date()): boolean {
   const hour = Math.floor(shopLocalMinutesSinceMidnight(now) / 60);
   return (
     shopWeekdayIndex(now) === WEEKDAY_TO_INDEX.Fri && hour === FRIDAY_SHOP_REPORT_HOUR
   );
+}
+
+/**
+ * Friday 8:00 p.m. through Saturday noon, America/Toronto.
+ * The 8:00 p.m. slot sends. A later slot sends only when that attempt did not.
+ */
+export function isWeeklyShopReportDue(now: Date = new Date()): boolean {
+  const weekday = shopWeekdayIndex(now);
+  const minutes = shopLocalMinutesSinceMidnight(now);
+  if (weekday === WEEKDAY_TO_INDEX.Fri) {
+    return minutes >= FRIDAY_SHOP_REPORT_HOUR * 60;
+  }
+  if (weekday === WEEKDAY_TO_INDEX.Sat) return minutes < 12 * 60;
+  return false;
+}
+
+/**
+ * During the 8:00 p.m. hour, the report is current as of now.
+ * A later catch-up still closes the week at Friday 8:00 p.m.
+ */
+export function weeklyShopReportAsOf(now: Date = new Date()): Date {
+  if (isFridayShopReportHour(now)) return now;
+  const week = getShopWeekRange(now);
+  const fridayKey = addDaysToDateKey(week.startDateKey, 4);
+  return fridayReportCutoff(fridayKey);
 }
 
 /** Local hour when the day's staff screen notes are packed into one archive. */

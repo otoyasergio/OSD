@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isFridayShopReportHour } from "@/lib/datetime/format";
+import { isWeeklyShopReportDue, weeklyShopReportAsOf } from "@/lib/datetime/format";
 import { sendWeeklyShopReport } from "@/lib/services/weeklyShopReport";
 import { logger, newRequestId } from "@/lib/security/logger";
 import { captureException } from "@/lib/security/sentry";
@@ -9,8 +9,9 @@ export const maxDuration = 300;
 
 /**
  * Friday 8:00 p.m. America/Toronto shop report.
- * Vercel cron is UTC, so this runs at Saturday 00:00 and 01:00 UTC.
- * Only the slot that lands on Friday 20:00 Toronto sends.
+ * Vercel cron is UTC, so this runs at Saturday 00:00, 01:00, and 13:00 UTC.
+ * Friday 8:00 p.m. sends. A later slot the same night, through Saturday noon,
+ * sends only if that attempt never landed.
  * Protect with CRON_SECRET via Authorization: Bearer <secret> only.
  */
 export async function GET(request: Request) {
@@ -27,13 +28,13 @@ export async function GET(request: Request) {
   }
 
   const now = new Date();
-  if (!isFridayShopReportHour(now)) {
+  if (!isWeeklyShopReportDue(now)) {
     logger.info("Weekly shop report cron skipped outside Friday 8 p.m.", { requestId });
     return NextResponse.json({ ok: true, skipped: "outside_window" });
   }
 
   try {
-    const result = await sendWeeklyShopReport(now);
+    const result = await sendWeeklyShopReport(weeklyShopReportAsOf(now));
     logger.info("Weekly shop report cron finished", { requestId, ...result });
     return NextResponse.json(result);
   } catch (error) {

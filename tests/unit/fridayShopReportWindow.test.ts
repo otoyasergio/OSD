@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getFridayShopReportWindow, isFridayShopReportHour } from "@/lib/datetime/format";
+import {
+  getFridayShopReportWindow,
+  isFridayShopReportHour,
+  isWeeklyShopReportDue,
+  weeklyShopReportAsOf,
+} from "@/lib/datetime/format";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -20,6 +25,30 @@ describe("isFridayShopReportHour", () => {
     // The other UTC slot is 9:00 p.m. Friday in summer and 7:00 p.m. Friday in winter.
     expect(isFridayShopReportHour(new Date("2026-10-31T01:00:00.000Z"))).toBe(false);
     expect(isFridayShopReportHour(new Date("2027-01-16T00:00:00.000Z"))).toBe(false);
+  });
+});
+
+describe("isWeeklyShopReportDue", () => {
+  it("stays open from Friday 8:00 p.m. through Saturday morning", () => {
+    // Friday Nov 6, 2026 7:00 p.m. EST
+    expect(isWeeklyShopReportDue(new Date("2026-11-07T00:00:00.000Z"))).toBe(false);
+    // Friday Nov 6, 2026 8:00 p.m. EST
+    expect(isWeeklyShopReportDue(new Date("2026-11-07T01:00:00.000Z"))).toBe(true);
+    // Saturday Nov 7, 2026 8:00 a.m. EST
+    expect(isWeeklyShopReportDue(new Date("2026-11-07T13:00:00.000Z"))).toBe(true);
+    // Saturday Nov 7, 2026 12:00 p.m. EST
+    expect(isWeeklyShopReportDue(new Date("2026-11-07T17:00:00.000Z"))).toBe(false);
+    // Friday Oct 30, 2026 9:00 p.m. EDT, the spare summer UTC slot
+    expect(isWeeklyShopReportDue(new Date("2026-10-31T01:00:00.000Z"))).toBe(true);
+  });
+
+  it("closes a late catch-up at Friday 8:00 p.m.", () => {
+    expect(weeklyShopReportAsOf(new Date("2026-11-07T13:00:00.000Z")).toISOString()).toBe(
+      "2026-11-07T01:00:00.000Z"
+    );
+    expect(weeklyShopReportAsOf(new Date("2026-11-07T01:30:00.000Z")).toISOString()).toBe(
+      "2026-11-07T01:30:00.000Z"
+    );
   });
 });
 

@@ -48,7 +48,7 @@ describe("Vercel compute allocation", () => {
     expect(config.crons).toEqual([
       { path: "/api/cron/parts-canada-sync", schedule: "0 */4 * * *" },
       { path: "/api/cron/wix-contacts-sync", schedule: "*/4 * * * *" },
-      { path: "/api/cron/weekly-shop-report", schedule: "0 0,1 * * 6" },
+      { path: "/api/cron/weekly-shop-report", schedule: "0 0,1,13 * * 6" },
       { path: "/api/cron/scan-mail", schedule: "*/2 * * * *" },
       { path: "/api/cron/staff-feedback-squash", schedule: "0 3,4,5 * * *" },
     ]);

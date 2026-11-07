@@ -10,6 +10,12 @@ import {
   toGmailRaw,
 } from "@/lib/email/gmail";
 
+function timeoutError(): Error {
+  const error = new Error("The operation was aborted due to timeout");
+  error.name = "TimeoutError";
+  return error;
+}
+
 describe("gmailAuthorizationUrl", () => {
   it("asks Google for offline send access and a refresh token", () => {
     const url = new URL(
@@ -124,6 +130,34 @@ describe("sendGmailApiMessage", () => {
         fetchImpl: fetchImpl as unknown as typeof fetch,
       })
     ).rejects.toThrow("GMAIL_RECONNECT_REQUIRED");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("tries the token refresh once more after a timeout", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(timeoutError())
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "access-1" }), { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "msg-2" }), { status: 200 })
+      );
+
+    const result = await sendGmailApiMessage({
+      refreshToken: "refresh-1",
+      clientId: "client",
+      clientSecret: "secret",
+      fromAddress: "info@torontomoto.com",
+      to: "ada@example.com",
+      subject: "Ready",
+      html: "<p>Ready</p>",
+      text: "Ready",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    expect(result.id).toBe("msg-2");
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 });
 
