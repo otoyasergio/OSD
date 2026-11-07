@@ -3,10 +3,11 @@
  * The saved work order number is only the display number Wix returns.
  */
 
+import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import { validateVinForModelYear, VIN_CHARSET, normalizeVin } from "@/lib/vin/validate";
 
 export const HST_LINE_PATTERN = /^\s*hst\b/i;
-export const LEGAL_ENTITY_NAME = "OTOMOTO TORONTO MOTO INC.";
+export const LEGAL_ENTITY_NAME = TORONTO_SHOP.legalName;
 
 /** New invoice page for torontomoto.com while the site is still on legacy invoices. */
 export const WIX_NEW_INVOICE_URL =
@@ -122,11 +123,7 @@ export function wixStatusLabel(
 ): string {
   const normalized = (status ?? "").toUpperCase();
   const flags = qualifiers.map((item) => item.toUpperCase());
-  if (
-    flags.includes("OVERDUE") &&
-    normalized !== "PAID" &&
-    normalized !== "VOIDED"
-  ) {
+  if (flags.includes("OVERDUE") && normalized !== "PAID" && normalized !== "VOIDED") {
     return "Overdue";
   }
   switch (normalized) {
@@ -229,7 +226,10 @@ export function squareIdempotencyKey(sourceId: string): string {
 }
 
 export function squareRecordName(clientName: string, displayNumber: string): string {
-  return `${clientName.trim()} ${displayNumber.trim()}`.replace(/\s+/g, " ").trim().slice(0, 255);
+  return `${clientName.trim()} ${displayNumber.trim()}`
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 255);
 }
 
 /**
@@ -237,7 +237,10 @@ export function squareRecordName(clientName: string, displayNumber: string): str
  * 16:00 UTC stays on that day in both EST and EDT.
  * A full timestamp keeps its calendar date the same way.
  */
-export function shopDueDateIso(value: string | null | undefined, fallbackIso: string): string {
+export function shopDueDateIso(
+  value: string | null | undefined,
+  fallbackIso: string
+): string {
   const trimmed = value?.trim() ?? "";
   const dateOnly = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
   if (dateOnly) return `${dateOnly[1]}T16:00:00.000Z`;
@@ -282,7 +285,8 @@ export function acknowledgementClearedOnSuccess(input: {
  * Shown in the red form error during the appId outage. A successful
  * acknowledge is a status, and the next create has to run from the same tap.
  */
-export const ACKNOWLEDGED_INTAKE_SUCCESS = "Acknowledged. Try again to create the invoice.";
+export const ACKNOWLEDGED_INTAKE_SUCCESS =
+  "Acknowledged. Try again to create the invoice.";
 
 export function intakeBannerMessage(input: {
   error: string | null;
@@ -366,10 +370,13 @@ export function allowsEnteredWixInvoiceNumber(text: string | null | undefined): 
  * acknowledge. `hold_revision` moves forward so a late Acknowledge for the
  * error staff already saw cannot stamp the new one.
  */
-export function acknowledgementFieldsOnFailedRetry(input: {
-  holdRevision: number;
-}): { acknowledged_at: null; hold_revision: number } {
-  const current = Number.isFinite(input.holdRevision) ? Math.trunc(input.holdRevision) : 1;
+export function acknowledgementFieldsOnFailedRetry(input: { holdRevision: number }): {
+  acknowledged_at: null;
+  hold_revision: number;
+} {
+  const current = Number.isFinite(input.holdRevision)
+    ? Math.trunc(input.holdRevision)
+    : 1;
   return {
     acknowledged_at: null,
     hold_revision: Math.max(1, current) + 1,
@@ -419,9 +426,7 @@ export function vinsFromInvoiceText(
   });
 }
 
-export type IntakeReadiness =
-  | { ok: true }
-  | { ok: false; code: string; message: string };
+export type IntakeReadiness = { ok: true } | { ok: false; code: string; message: string };
 
 export function assertIntakeInvoiceReady(input: {
   clientName: string;

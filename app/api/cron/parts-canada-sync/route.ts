@@ -3,6 +3,7 @@ import { isWithinShopCronWindow } from "@/lib/datetime/format";
 import { syncPartsCanadaCatalog } from "@/lib/services/partsCanadaCatalog";
 import { logger, newRequestId } from "@/lib/security/logger";
 import { captureException } from "@/lib/security/sentry";
+import { bearerAuthorizationMatches } from "@/lib/security/webhooks";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
   }
 
   const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${secret}`) {
+  if (!bearerAuthorizationMatches(authHeader, secret)) {
     logger.warn("Cron unauthorized", { requestId });
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

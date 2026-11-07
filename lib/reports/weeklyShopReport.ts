@@ -2,6 +2,7 @@ import {
   getFridayShopReportWindow,
   type FridayShopReportSpan,
 } from "@/lib/datetime/format";
+import { TORONTO_SHOP } from "@/lib/shop/toronto";
 import {
   efficiencyPercent,
   roundTenth,
@@ -518,7 +519,7 @@ export function renderWeeklyShopReport(
   const intro = `${span}. The seven days ending Friday 8:00 p.m. America/Toronto, compared with the seven days before.`;
 
   const textLines: string[] = [
-    "OTOMOTO TORONTO MOTO INC.",
+    TORONTO_SHOP.legalName,
     subject,
     intro,
     "",
@@ -636,7 +637,7 @@ function renderHtml(subject: string, intro: string, report: WeeklyShopReport): s
   return `<!DOCTYPE html>
 <html>
 <body style="font-family: Georgia, serif; color: #111; line-height: 1.45;">
-  <p><strong>OTOMOTO TORONTO MOTO INC.</strong></p>
+  <p><strong>${escapeHtml(TORONTO_SHOP.legalName)}</strong></p>
   <h1>${escapeHtml(subject)}</h1>
   <p>${escapeHtml(intro)}</p>
   <h2>Compared with last week</h2>
