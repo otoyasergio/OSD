@@ -5,6 +5,11 @@ import {
   type PartsCanadaCatalogRow,
 } from "@/lib/partsCanada/parseInventory";
 
+/** One extra download when Parts Canada answers with a server error. */
+export const PARTS_CANADA_RETRY_DELAY_MS = 2_000;
+
+const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
+
 async function fetchAuthorized(path: string): Promise<Response> {
   const { apiUrl, apiKey } = getPartsCanadaConfig();
   const response = await fetch(`${apiUrl}${path}`, {
@@ -19,6 +24,25 @@ async function fetchAuthorized(path: string): Promise<Response> {
   return response;
 }
 
+/**
+ * Parts Canada sometimes returns 500 while the nightly file is being built.
+ * One retry stays inside the 10-request daily limit (the shop window makes
+ * four scheduled calls).
+ */
+export async function responseAfterOneServerRetry(
+  load: () => Promise<Response>,
+  sleep: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    })
+): Promise<Response> {
+  const first = await load();
+  if (!RETRYABLE_STATUS.has(first.status)) return first;
+  await first.body?.cancel().catch(() => undefined);
+  await sleep(PARTS_CANADA_RETRY_DELAY_MS);
+  return load();
+}
+
 function extractCsvFromZip(buffer: ArrayBuffer): string {
   const unzipped = unzipSync(new Uint8Array(buffer));
   const csvEntry = Object.entries(unzipped).find(([name]) =>
@@ -31,11 +55,11 @@ function extractCsvFromZip(buffer: ArrayBuffer): string {
 }
 
 /**
- * Download nightly inventory ZIP from Parts Canada and parse CSV rows.
- * Rate limit: 10 requests / 24 hours — call at most once per day.
+ * Download the inventory ZIP from Parts Canada and parse CSV rows.
+ * Rate limit: 10 requests / 24 hours. A server error is tried once more.
  */
 export async function downloadInventoryCatalog(): Promise<PartsCanadaCatalogRow[]> {
-  const response = await fetchAuthorized("/inventory");
+  const response = await responseAfterOneServerRetry(() => fetchAuthorized("/inventory"));
   if (response.status === 403) throw new Error("PARTS_CANADA_FORBIDDEN");
   if (response.status === 404) throw new Error("PARTS_CANADA_INVENTORY_MISSING");
   if (response.status === 429) throw new Error("PARTS_CANADA_RATE_LIMITED");
